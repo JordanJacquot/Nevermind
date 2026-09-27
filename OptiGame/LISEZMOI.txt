@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.2
+﻿OptiGame 1.0.3
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -73,6 +73,12 @@ Réseau
 Nettoyage
   Supprime les fichiers temporaires et les restes de mises à jour.
   Ne touche jamais à tes documents, à la corbeille ni aux caches des jeux.
+
+Tests
+  Teste chaque composant : vitesse et santé détaillée de chaque disque,
+  processeur (puissance, fréquence en charge, stabilité), mémoire vive,
+  capteurs de la carte graphique, débit Internet, pixels morts des écrans,
+  et rapport de batterie sur les portables.
 
 Sauvegarde
   Annule TOUS les changements d'OptiGame en un clic, crée un point de

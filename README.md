@@ -19,6 +19,7 @@ Les mises à jour sont ensuite proposées directement dans l'application.
 - **Tableau de bord** : mesures en direct, santé de chaque composant, score et liste de ce qui peut être amélioré.
 - **Fiches de correction** : ce qui a été trouvé, ce que l'app va faire, bouton Exécuter, puis « Revenir en arrière » si besoin.
 - **Optimisation gaming** : plan d'alimentation, mode jeu, Game Bar, planification GPU, accélération de la souris...
+- **Tests des composants** : vitesse et santé de chaque disque, processeur (puissance, stabilité), mémoire, capteurs de la carte graphique, débit Internet, pixels morts.
 - **Démarrage**, **Réseau** (ping, gigue, DNS), **Nettoyage**, **Sauvegarde** (tout annuler, point de restauration, rapport HTML).
 - **PC portables** : mode « Meilleures performances », jeux forcés sur la carte graphique dédiée, santé de la batterie.
 

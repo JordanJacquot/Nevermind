@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.2
+    OptiGame 1.0.3
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,13 +10,13 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.2'
+$AppVersion = '1.0.3'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
 # Droits administrateur
 # ---------------------------------------------------------------------------
-Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Drawing
+Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Drawing, System.Windows.Forms
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -138,6 +138,335 @@ public static class OGNative
     public static uint SetOverlay(string scheme)
     {
         return PowerSetActiveOverlayScheme(new Guid(scheme));
+    }
+
+    // =====================================================================
+    // Tests des composants (lancés dans un fil séparé, progression lue par l'interface)
+    // =====================================================================
+    public static volatile bool Cancel;
+    public static double Progress;
+    public static string Phase = "";
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr sec, uint disposition, uint flags, IntPtr template);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool WriteFile(Microsoft.Win32.SafeHandles.SafeFileHandle h, IntPtr buffer, uint count, out uint done, IntPtr overlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool ReadFile(Microsoft.Win32.SafeHandles.SafeFileHandle h, IntPtr buffer, uint count, out uint done, IntPtr overlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool SetFilePointerEx(Microsoft.Win32.SafeHandles.SafeFileHandle h, long distance, out long newPosition, uint method);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr VirtualAlloc(IntPtr address, UIntPtr size, uint type, uint protect);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool VirtualFree(IntPtr address, UIntPtr size, uint type);
+
+    // Vitesse d'un disque, sans passer par le cache de Windows.
+    // Retourne { écriture Mo/s, lecture Mo/s, lecture 4K Mo/s, opérations 4K par seconde } ou null si arrêté.
+    public static double[] DiskTest(string file, long size)
+    {
+        const int block = 8 * 1024 * 1024;
+        const uint GENERIC_READ = 0x80000000, GENERIC_WRITE = 0x40000000;
+        const uint NO_BUFFERING = 0x20000000, WRITE_THROUGH = 0x80000000, SEQUENTIAL = 0x08000000, RANDOM = 0x10000000;
+        size = Math.Max(block, size / block * block);
+        long blocks = size / block;
+        IntPtr buf = VirtualAlloc(IntPtr.Zero, (UIntPtr)block, 0x3000, 0x04);
+        if (buf == IntPtr.Zero) throw new Exception("Mémoire insuffisante pour le test.");
+        double[] r = new double[4];
+        try
+        {
+            byte[] rnd = new byte[block];
+            new Random(42).NextBytes(rnd);
+            Marshal.Copy(rnd, 0, buf, block);
+            uint done;
+
+            Phase = "write";
+            using (var h = CreateFile(file, GENERIC_WRITE, 0, IntPtr.Zero, 2, NO_BUFFERING | WRITE_THROUGH, IntPtr.Zero))
+            {
+                if (h.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                for (long i = 0; i < blocks; i++)
+                {
+                    if (Cancel) return null;
+                    if (!WriteFile(h, buf, (uint)block, out done, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                    Progress = 40.0 * (i + 1) / blocks;
+                }
+                r[0] = size / 1048576.0 / sw.Elapsed.TotalSeconds;
+            }
+
+            Phase = "read";
+            using (var h = CreateFile(file, GENERIC_READ, 1, IntPtr.Zero, 3, NO_BUFFERING | SEQUENTIAL, IntPtr.Zero))
+            {
+                if (h.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                for (long i = 0; i < blocks; i++)
+                {
+                    if (Cancel) return null;
+                    if (!ReadFile(h, buf, (uint)block, out done, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                    Progress = 40 + 30.0 * (i + 1) / blocks;
+                }
+                r[1] = size / 1048576.0 / sw.Elapsed.TotalSeconds;
+            }
+
+            Phase = "random";
+            using (var h = CreateFile(file, GENERIC_READ, 1, IntPtr.Zero, 3, NO_BUFFERING | RANDOM, IntPtr.Zero))
+            {
+                if (h.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                var rng = new Random(7);
+                long pages = size / 4096, count = 0, pos;
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (sw.Elapsed.TotalSeconds < 5)
+                {
+                    if (Cancel) return null;
+                    SetFilePointerEx(h, (long)(rng.NextDouble() * pages) * 4096, out pos, 0);
+                    if (!ReadFile(h, buf, 4096, out done, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+                    count++;
+                    if ((count & 127) == 0) Progress = 70 + 30 * Math.Min(1, sw.Elapsed.TotalSeconds / 5);
+                }
+                double s = sw.Elapsed.TotalSeconds;
+                r[3] = count / s;
+                r[2] = count * 4096 / 1048576.0 / s;
+            }
+            Progress = 100;
+            return r;
+        }
+        finally
+        {
+            VirtualFree(buf, UIntPtr.Zero, 0x8000);
+            try { System.IO.File.Delete(file); } catch { }
+        }
+    }
+
+    // Calcul déterministe: le même résultat doit toujours sortir, sinon le processeur est instable.
+    static long CpuWork(long seed, long iterations)
+    {
+        long x = seed;
+        double d = seed;
+        for (long i = 0; i < iterations; i++)
+        {
+            x = x * 6364136223846793005L + 1442695040888963407L;
+            d = d * 1.0000001 + (x & 1023) * 0.5;
+            if (d > 1e12) d = d / 3.0;
+        }
+        return x ^ (long)d;
+    }
+
+    // Retourne { score 1 cœur, score tous les cœurs, erreurs de calcul, nombre de threads } ou null si arrêté.
+    public static double[] CpuTest(double singleSeconds, double multiSeconds)
+    {
+        const long chunk = 2000000;
+        long reference = CpuWork(12345, chunk);
+        double total = singleSeconds + multiSeconds;
+        long errors = 0;
+
+        Phase = "single";
+        long n = 0;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.Elapsed.TotalSeconds < singleSeconds)
+        {
+            if (Cancel) return null;
+            if (CpuWork(12345, chunk) != reference) errors++;
+            n++;
+            Progress = 100 * sw.Elapsed.TotalSeconds / total;
+        }
+        double single = n / sw.Elapsed.TotalSeconds;
+
+        Phase = "multi";
+        int threads = Environment.ProcessorCount;
+        long count = 0;
+        var start = System.Diagnostics.Stopwatch.StartNew();
+        var ths = new System.Threading.Thread[threads];
+        for (int t = 0; t < threads; t++)
+        {
+            ths[t] = new System.Threading.Thread(() =>
+            {
+                long local = 0, bad = 0;
+                while (start.Elapsed.TotalSeconds < multiSeconds && !Cancel)
+                {
+                    if (CpuWork(12345, chunk) != reference) bad++;
+                    local++;
+                }
+                System.Threading.Interlocked.Add(ref count, local);
+                System.Threading.Interlocked.Add(ref errors, bad);
+            });
+            ths[t].IsBackground = true;
+            ths[t].Priority = System.Threading.ThreadPriority.BelowNormal;
+            ths[t].Start();
+        }
+        foreach (var th in ths)
+        {
+            while (!th.Join(100)) Progress = 100 * (singleSeconds + Math.Min(multiSeconds, start.Elapsed.TotalSeconds)) / total;
+        }
+        if (Cancel) return null;
+        double multi = count / start.Elapsed.TotalSeconds;
+        Progress = 100;
+        return new double[] { single * 10, multi * 10, errors, threads };
+    }
+
+    static void ParallelChunks(List<long[]> mem, Action<long[], int> work, double p0, double p1)
+    {
+        int next = -1, finished = 0, total = mem.Count;
+        int threads = Math.Min(Environment.ProcessorCount, total);
+        var ths = new System.Threading.Thread[threads];
+        for (int t = 0; t < threads; t++)
+        {
+            ths[t] = new System.Threading.Thread(() =>
+            {
+                while (!Cancel)
+                {
+                    int i = System.Threading.Interlocked.Increment(ref next);
+                    if (i >= total) break;
+                    work(mem[i], i);
+                    int f = System.Threading.Interlocked.Increment(ref finished);
+                    Progress = p0 + (p1 - p0) * f / total;
+                }
+            });
+            ths[t].IsBackground = true;
+            ths[t].Start();
+        }
+        foreach (var th in ths) th.Join();
+    }
+
+    // Mémoire vive: écrit des motifs, les relit et compte les erreurs.
+    // Retourne { écriture Go/s, lecture Go/s, copie Go/s, erreurs, Go testés } ou null si arrêté.
+    public static double[] MemTest(long bytes)
+    {
+        const int chunkLongs = 8 * 1024 * 1024;
+        const long mult = -7046029254386353131L;
+        int chunks = (int)Math.Max(2, bytes / (chunkLongs * 8L));
+        var mem = new List<long[]>();
+        try
+        {
+            Phase = "alloc";
+            for (int i = 0; i < chunks; i++)
+            {
+                if (Cancel) return null;
+                mem.Add(new long[chunkLongs]);
+                Progress = 5.0 * (i + 1) / chunks;
+            }
+            double gb = chunks * (chunkLongs * 8.0) / 1073741824.0;
+            long errors = 0;
+
+            Phase = "write";
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            ParallelChunks(mem, (a, c) => { long k = ((long)c << 32) ^ 0x5555555555555555L; for (int j = 0; j < a.Length; j++) a[j] = k ^ (j * mult); }, 5, 30);
+            if (Cancel) return null;
+            double write = gb / sw.Elapsed.TotalSeconds;
+
+            Phase = "read";
+            sw.Restart();
+            ParallelChunks(mem, (a, c) => { long k = ((long)c << 32) ^ 0x5555555555555555L; long e = 0; for (int j = 0; j < a.Length; j++) if (a[j] != (k ^ (j * mult))) e++; if (e > 0) System.Threading.Interlocked.Add(ref errors, e); }, 30, 55);
+            if (Cancel) return null;
+            double read = gb / sw.Elapsed.TotalSeconds;
+
+            Phase = "pattern";
+            ParallelChunks(mem, (a, c) => { long k = ~(((long)c << 32) ^ 0x5555555555555555L); for (int j = 0; j < a.Length; j++) a[j] = ~(k ^ (j * mult)); }, 55, 70);
+            ParallelChunks(mem, (a, c) => { long k = ~(((long)c << 32) ^ 0x5555555555555555L); long e = 0; for (int j = 0; j < a.Length; j++) if (a[j] != ~(k ^ (j * mult))) e++; if (e > 0) System.Threading.Interlocked.Add(ref errors, e); }, 70, 85);
+            if (Cancel) return null;
+
+            Phase = "copy";
+            sw.Restart();
+            int pairs = 0;
+            for (int i = 0; i + 1 < chunks; i += 2)
+            {
+                if (Cancel) return null;
+                Array.Copy(mem[i], mem[i + 1], chunkLongs);
+                pairs++;
+                Progress = 85 + 15.0 * (i + 2) / chunks;
+            }
+            double copy = pairs * (chunkLongs * 8.0) / 1073741824.0 / sw.Elapsed.TotalSeconds;
+            Progress = 100;
+            return new double[] { write, read, copy, errors, gb };
+        }
+        finally
+        {
+            mem.Clear();
+            GC.Collect();
+        }
+    }
+
+    // Débit Internet en Mb/s (téléchargement ou envoi), plusieurs connexions en parallèle.
+    // Si un serveur refuse (trop de tests, panne), on passe au suivant. Retourne -1 si aucun n'a répondu.
+    public static double NetSpeed(string[] urls, bool upload, double seconds, int streams, double p0, double p1)
+    {
+        int urlIndex = 0;
+        System.Net.ServicePointManager.SecurityProtocol = System.Net.SecurityProtocolType.Tls12;
+        System.Net.ServicePointManager.DefaultConnectionLimit = 64;
+        System.Net.ServicePointManager.Expect100Continue = false;
+        long total = 0;
+        byte[] data = new byte[65536];
+        new Random(3).NextBytes(data);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var ths = new System.Threading.Thread[streams];
+        for (int t = 0; t < streams; t++)
+        {
+            ths[t] = new System.Threading.Thread(() =>
+            {
+                byte[] buf = new byte[65536];
+                while (sw.Elapsed.TotalSeconds < seconds && !Cancel)
+                {
+                    System.Net.HttpWebRequest req = null;
+                    int ui = urlIndex;
+                    if (ui >= urls.Length) break;
+                    try
+                    {
+                        req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(urls[ui]);
+                        req.UserAgent = "OptiGame";
+                        req.Timeout = 10000;
+                        req.ReadWriteTimeout = 10000;
+                        if (upload)
+                        {
+                            req.Method = "POST";
+                            req.ContentType = "application/octet-stream";
+                            req.AllowWriteStreamBuffering = false;
+                            req.SendChunked = true;
+                            using (var s = req.GetRequestStream())
+                            {
+                                for (int k = 0; k < 400 && sw.Elapsed.TotalSeconds < seconds && !Cancel; k++)
+                                {
+                                    s.Write(data, 0, data.Length);
+                                    System.Threading.Interlocked.Add(ref total, data.Length);
+                                }
+                            }
+                            try { using (req.GetResponse()) { } } catch { }
+                        }
+                        else
+                        {
+                            using (var resp = req.GetResponse())
+                            using (var s = resp.GetResponseStream())
+                            {
+                                int n;
+                                while ((n = s.Read(buf, 0, buf.Length)) > 0)
+                                {
+                                    System.Threading.Interlocked.Add(ref total, n);
+                                    if (sw.Elapsed.TotalSeconds >= seconds || Cancel) { req.Abort(); break; }
+                                }
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        if (sw.Elapsed.TotalSeconds >= seconds || Cancel) break;
+                        System.Threading.Interlocked.CompareExchange(ref urlIndex, ui + 1, ui);
+                        System.Threading.Thread.Sleep(100);
+                    }
+                }
+            });
+            ths[t].IsBackground = true;
+            ths[t].Start();
+        }
+        foreach (var th in ths)
+        {
+            while (!th.Join(100)) Progress = p0 + (p1 - p0) * Math.Min(1, sw.Elapsed.TotalSeconds / seconds);
+        }
+        double elapsed = Math.Min(sw.Elapsed.TotalSeconds, seconds + 0.5);
+        Progress = p1;
+        if (total == 0) return -1;
+        return total * 8 / 1e6 / elapsed;
     }
 
     public static void SetDarkTitleBar(IntPtr hwnd)
@@ -1321,6 +1650,29 @@ if ($Uninstall) {
           </ScrollViewer>
           <TextBlock Grid.Row="3" Style="{StaticResource Sub}" FontSize="12" Margin="0,12,0,0"
                      Text="OptiGame ne touche jamais à tes documents, à la corbeille ni aux caches de shaders des jeux: les vider provoquerait des saccades le temps qu'ils se reconstruisent."/>
+        </Grid>
+      </TabItem>
+
+      <!-- Tests -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE9D9;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Tests"/>
+          </StackPanel>
+        </TabItem.Header>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <StackPanel>
+            <TextBlock Style="{StaticResource H1}" Text="Tests des composants"/>
+            <TextBlock Style="{StaticResource Sub}" Text="Vérifie que chaque pièce de ton PC fonctionne bien et à la bonne vitesse. Ferme tes jeux avant de lancer un test."/>
+          </StackPanel>
+          <ScrollViewer Grid.Row="1" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="TestsPanel" Margin="0,0,8,0"/>
+          </ScrollViewer>
         </Grid>
       </TabItem>
 
@@ -3431,6 +3783,574 @@ $findRows
 }
 
 # ---------------------------------------------------------------------------
+# Onglet Tests
+# ---------------------------------------------------------------------------
+$script:TestButtons = New-Object System.Collections.ArrayList
+$script:TestRunning = $false
+
+# Travail lancé dans un fil séparé: seules les fonctions de [OGNative] y sont disponibles.
+$DiskWork = {
+    param($a)
+    try { $r = [OGNative]::DiskTest($a.File, [long]$a.Size); if ($null -eq $r) { @{ Cancelled = $true } } else { @{ R = $r } } }
+    catch { @{ Error = $_.Exception.GetBaseException().Message } }
+}
+$CpuWork = {
+    param($a)
+    try { $r = [OGNative]::CpuTest([double]$a.Single, [double]$a.Multi); if ($null -eq $r) { @{ Cancelled = $true } } else { @{ R = $r } } }
+    catch { @{ Error = $_.Exception.GetBaseException().Message } }
+}
+$MemWork = {
+    param($a)
+    try { $r = [OGNative]::MemTest([long]$a.Bytes); if ($null -eq $r) { @{ Cancelled = $true } } else { @{ R = $r } } }
+    catch { @{ Error = $_.Exception.GetBaseException().Message } }
+}
+$NetWork = {
+    param($a)
+    try {
+        [OGNative]::Phase = 'ping'
+        $ping = New-Object System.Net.NetworkInformation.Ping
+        $times = @()
+        for ($i = 0; $i -lt 10; $i++) {
+            if ([OGNative]::Cancel) { return @{ Cancelled = $true } }
+            try { $p = $ping.Send('1.1.1.1', 1000); if ($p.Status -eq 'Success') { $times += $p.RoundtripTime } } catch {}
+            [OGNative]::Progress = $i + 1
+            Start-Sleep -Milliseconds 100
+        }
+        [OGNative]::Phase = 'down'
+        $servers = [string[]]@('https://speed.cloudflare.com/__down?bytes=25000000', 'https://proof.ovh.net/files/1Gb.dat', 'https://nbg1-speed.hetzner.com/1GB.bin', 'https://fsn1-speed.hetzner.com/1GB.bin')
+        $down = [OGNative]::NetSpeed($servers, $false, 8, 4, 10, 55)
+        if ([OGNative]::Cancel) { return @{ Cancelled = $true } }
+        [OGNative]::Phase = 'up'
+        $up = [OGNative]::NetSpeed([string[]]@('https://speed.cloudflare.com/__up'), $true, 8, 4, 55, 100)
+        if ([OGNative]::Cancel) { return @{ Cancelled = $true } }
+        $avg = if ($times.Count) { ($times | Measure-Object -Average).Average } else { -1 }
+        @{ R = @($avg, $down, $up, (10 - $times.Count)) }
+    } catch { @{ Error = $_.Exception.GetBaseException().Message } }
+}
+$RepairWork = {
+    param($a)
+    $out = @()
+    foreach ($l in $a.Letters) {
+        [OGNative]::Phase = 'scan'
+        try { $out += "$l|$(Repair-Volume -DriveLetter $l -Scan -ErrorAction Stop)" } catch { $out += "$l|ERR $($_.Exception.Message)" }
+    }
+    @{ R = $out }
+}
+
+function New-TestCard([string]$Tag, [string]$Title, [string]$Sub, [string]$Desc) {
+    $card = New-Card
+    $card.Padding = New-Thickness 18 16 18 16
+    $card.Margin = New-Thickness 0 0 0 12
+    $sp = New-Object System.Windows.Controls.StackPanel
+
+    $head = New-Grid @('Auto', '*')
+    $tagB = New-Object System.Windows.Controls.Border
+    $tagB.Width = 46; $tagB.Height = 46
+    $tagB.CornerRadius = [System.Windows.CornerRadius]::new(10)
+    $bg = Get-Brush $Colors.info; $bg.Opacity = 0.14
+    $tagB.Background = $bg
+    $tt = New-Text $Tag 12 $Colors.info -Bold
+    $tt.TextWrapping = 'NoWrap'; $tt.HorizontalAlignment = 'Center'; $tt.VerticalAlignment = 'Center'
+    $tagB.Child = $tt
+    Add-ToGrid $head $tagB 0
+    $ts = New-Object System.Windows.Controls.StackPanel
+    $ts.Margin = New-Thickness 12 0 0 0
+    $ts.VerticalAlignment = 'Center'
+    [void]$ts.Children.Add((New-Text $Title 16 '#FFFFFF' -Semi))
+    if ($Sub) { [void]$ts.Children.Add((New-Text $Sub 12 '#9AA3B2')) }
+    Add-ToGrid $head $ts 1
+    [void]$sp.Children.Add($head)
+
+    $d = New-Text $Desc 13 '#C9CED8'
+    $d.Margin = New-Thickness 0 12 0 0
+    [void]$sp.Children.Add($d)
+
+    $btns = New-Object System.Windows.Controls.WrapPanel
+    $btns.Margin = New-Thickness 0 14 0 0
+    [void]$sp.Children.Add($btns)
+
+    $pbox = New-Object System.Windows.Controls.StackPanel
+    $pbox.Margin = New-Thickness 0 14 0 0
+    $pbox.Visibility = 'Collapsed'
+    $prow = New-Grid @('*', 'Auto')
+    $ptext = New-Text '' 13 '#E6E8EE' -Semi
+    $ptext.VerticalAlignment = 'Center'
+    Add-ToGrid $prow $ptext 0
+    $stop = New-Button 'Arrêter'
+    $stop.Add_Click({ [OGNative]::Cancel = $true })
+    Add-ToGrid $prow $stop 1
+    [void]$pbox.Children.Add($prow)
+    $pb = New-Object System.Windows.Controls.ProgressBar
+    $pb.Margin = New-Thickness 0 10 0 0
+    [void]$pbox.Children.Add($pb)
+    [void]$sp.Children.Add($pbox)
+
+    $res = New-Object System.Windows.Controls.StackPanel
+    [void]$sp.Children.Add($res)
+
+    $card.Child = $sp
+    [void]$ui.TestsPanel.Children.Add($card)
+    @{ Card = $card; Buttons = $btns; ProgressBox = $pbox; PhaseText = $ptext; Bar = $pb; Result = $res }
+}
+
+function Add-TestButton($T, [string]$Text, [scriptblock]$OnClick, $Context, [switch]$Primary) {
+    $b = New-Button $Text $(if ($Primary) { 'BtnPrimary' } else { 'BtnSecondary' })
+    $b.Margin = New-Thickness 0 0 10 6
+    $b.Tag = @{ T = $T; Ctx = $Context }
+    $b.Add_Click($OnClick)
+    [void]$T.Buttons.Children.Add($b)
+    [void]$script:TestButtons.Add($b)
+}
+
+function Add-TestTitle($T, [string]$Text) {
+    $title = New-Text $Text 13 '#9AA3B2' -Semi
+    $title.Margin = New-Thickness 0 16 0 4
+    [void]$T.Result.Children.Add($title)
+}
+
+function Add-TestRow($T, [string]$Label, [string]$Value, [string]$Color = '#E6E8EE') {
+    $r = New-Grid @('210', '*')
+    $r.Margin = New-Thickness 0 3 0 3
+    Add-ToGrid $r (New-Text $Label 13 '#9AA3B2') 0
+    Add-ToGrid $r (New-Text $Value 13 $Color -Semi) 1
+    [void]$T.Result.Children.Add($r)
+}
+
+function Add-TestBar($T, [string]$Label, [string]$Value, [double]$Pct, [string]$Color) {
+    $r = New-Grid @('*', 'Auto')
+    $r.Margin = New-Thickness 0 10 0 5
+    Add-ToGrid $r (New-Text $Label 13 '#9AA3B2') 0
+    Add-ToGrid $r (New-Text $Value 14 '#FFFFFF' -Bold) 1
+    [void]$T.Result.Children.Add($r)
+    $pb = New-Object System.Windows.Controls.ProgressBar
+    $pb.Value = [math]::Min(100, [math]::Max(2, $Pct))
+    $pb.Foreground = Get-Brush $Color
+    [void]$T.Result.Children.Add($pb)
+}
+
+function Add-TestVerdict($T, [string]$Status, [string]$Text) {
+    $b = New-Object System.Windows.Controls.Border
+    $bg = Get-Brush $Colors[$Status]; $bg.Opacity = 0.12
+    $b.Background = $bg
+    $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
+    $b.Padding = New-Thickness 12 9 12 9
+    $b.Margin = New-Thickness 0 14 0 0
+    $b.Child = New-Text $Text 13 $Colors[$Status]
+    [void]$T.Result.Children.Add($b)
+}
+
+$script:TestTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:TestTimer.Interval = [TimeSpan]::FromMilliseconds(200)
+$script:TestTimer.Add_Tick({
+    $t = $script:CurTest
+    if (-not $t) { return }
+    $ph = [OGNative]::Phase
+    $t.T.Bar.Value = [math]::Min(100, [OGNative]::Progress)
+    if ($ph -and $t.Labels.ContainsKey($ph)) { $t.T.PhaseText.Text = $t.Labels[$ph] }
+    if ($ph -and $Live.CpuPerf) {
+        if (-not $t.Freq.ContainsKey($ph)) { $t.Freq[$ph] = New-Object System.Collections.ArrayList }
+        [void]$t.Freq[$ph].Add([double]$Live.CpuPerf)
+    }
+})
+
+# Lance un test dans un fil séparé en affichant sa progression dans la carte.
+function Invoke-ComponentTest($T, [hashtable]$Labels, [scriptblock]$Work, $Arg) {
+    if ($script:TestRunning) { Show-Message 'Un test est déjà en cours : attends qu''il se termine.'; return $null }
+    $script:TestRunning = $true
+    foreach ($b in $script:TestButtons) { $b.IsEnabled = $false }
+    [OGNative]::Cancel = $false
+    [OGNative]::Progress = 0
+    [OGNative]::Phase = ''
+    $T.Result.Children.Clear()
+    $T.PhaseText.Text = 'Préparation...'
+    $T.Bar.Value = 0
+    $T.ProgressBox.Visibility = 'Visible'
+    $script:CurTest = @{ T = $T; Labels = $Labels; Freq = @{} }
+    $script:TestTimer.Start()
+    try {
+        $r = Invoke-Async $Work $Arg | Select-Object -First 1
+    } finally {
+        $script:TestTimer.Stop()
+        $T.ProgressBox.Visibility = 'Collapsed'
+        foreach ($b in $script:TestButtons) { $b.IsEnabled = $true }
+        $script:TestRunning = $false
+    }
+    $freq = $script:CurTest.Freq
+    $script:CurTest = $null
+    if (-not $r) { Add-TestVerdict $T 'warn' 'Le test n''a pas pu se terminer.'; return $null }
+    if ($r.Cancelled) { Add-TestVerdict $T 'info' 'Test arrêté.'; Set-Status 'Test arrêté.'; return $null }
+    if ($r.Error) { Write-Log "Test: $($r.Error)"; Add-TestVerdict $T 'bad' "Le test n'a pas pu aller au bout : $($r.Error)"; return $null }
+    @{ R = @($r.R); Freq = $freq }
+}
+
+function Get-GHz($Samples, [switch]$Max) {
+    if (-not $Samples -or -not $Samples.Count -or -not $Live.BaseMHz) { return $null }
+    $v = if ($Max) { ($Samples | Measure-Object -Maximum).Maximum } else { ($Samples | Measure-Object -Average).Average }
+    $Live.BaseMHz * $v / 100 / 1000
+}
+
+# --- Disques ---------------------------------------------------------------
+function Test-DiskSpeed($T, $Ctx) {
+    $vol = Get-Volume -DriveLetter $Ctx.Letter -ErrorAction SilentlyContinue
+    if (-not $vol -or $vol.SizeRemaining -lt 1GB) { Show-Message "Il faut au moins 1 Go de libre sur le lecteur $($Ctx.Letter): pour faire ce test."; return }
+    $size = if ($vol.SizeRemaining -gt 10GB) { 1GB } else { 256MB }
+    $file = if ("$($Ctx.Letter):" -eq $env:SystemDrive) { Join-Path $env:TEMP 'OptiGame-test-disque.tmp' } else { "$($Ctx.Letter):\OptiGame-test-disque.tmp" }
+    $labels = @{
+        write  = 'Écriture : le PC enregistre un gros fichier de test...'
+        read   = 'Lecture : le PC relit ce fichier...'
+        random = 'Petits fichiers : comme quand un jeu charge une partie...'
+    }
+    Set-Status "Test de vitesse du disque $($Ctx.Name)..."
+    $res = Invoke-ComponentTest $T $labels $DiskWork @{ File = $file; Size = [long]$size }
+    if (-not $res) { return }
+    $r = $res.R
+    $scale = switch ($Ctx.Kind) { 'NVMe' { 7000 } 'SSD' { 600 } 'HDD' { 250 } default { 1000 } }
+    Add-TestTitle $T 'Résultat du test de vitesse'
+    Add-TestBar $T 'Lecture (charger un jeu, ouvrir un fichier)' ('{0:N0} Mo/s' -f $r[1]) (100 * $r[1] / $scale) $Colors.ok
+    Add-TestBar $T 'Écriture (installer un jeu, copier des fichiers)' ('{0:N0} Mo/s' -f $r[0]) (100 * $r[0] / $scale) $Colors.info
+    Add-TestRow $T 'Petits fichiers' ('{0:N0} Mo/s ({1:N0} fichiers par seconde)' -f $r[2], $r[3])
+    Add-TestRow $T 'Pour comparer' 'Disque dur : 150 Mo/s   /   SSD : 550 Mo/s   /   SSD NVMe : 3 500 à 7 000 Mo/s' '#9AA3B2'
+    $min = switch ($Ctx.Kind) { 'NVMe' { 1200 } 'SSD' { 350 } 'HDD' { 80 } default { 0 } }
+    if ($min -and $r[1] -lt $min) {
+        Add-TestVerdict $T 'warn' "Plus lent que la normale pour ce type de disque. Causes possibles : disque presque plein, disque qui chauffe, ou SSD branché sur un port lent. Refais le test quand le PC ne fait rien d'autre."
+    } else {
+        Add-TestVerdict $T 'ok' 'Vitesse normale pour ce type de disque.'
+    }
+    Set-Status 'Test de vitesse terminé.'
+}
+
+function Show-DiskHealth($T, $Ctx) {
+    $T.Result.Children.Clear()
+    $d = Get-PhysicalDisk -ErrorAction SilentlyContinue | Where-Object { [string]$_.DeviceId -eq $Ctx.Id } | Select-Object -First 1
+    if (-not $d) { Add-TestVerdict $T 'warn' 'Disque introuvable.'; return }
+    $rel = $null
+    try { $rel = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}
+    $pstyle = try { [string](Get-Disk -Number ([int]$d.DeviceId) -ErrorAction Stop).PartitionStyle } catch { '' }
+    $status = 'ok'; $notes = @()
+
+    Add-TestTitle $T 'Identité du disque'
+    Add-TestRow $T 'Modèle' ([string]$d.FriendlyName).Trim()
+    if (([string]$d.SerialNumber).Trim()) { Add-TestRow $T 'Numéro de série' ([string]$d.SerialNumber).Trim().TrimEnd('.') }
+    if ($d.FirmwareVersion) { Add-TestRow $T 'Version du micrologiciel' ([string]$d.FirmwareVersion) }
+    Add-TestRow $T 'Type' "$($Ctx.KindLabel), branché en $([string]$d.BusType)"
+    Add-TestRow $T 'Capacité' (Format-Size $d.Size)
+    if ($pstyle) { Add-TestRow $T 'Style de partition' $pstyle }
+
+    Add-TestTitle $T 'Santé'
+    switch ([string]$d.HealthStatus) {
+        'Healthy'   { Add-TestRow $T 'État SMART' 'Bon' $Colors.ok }
+        'Warning'   { Add-TestRow $T 'État SMART' 'Avertissement' $Colors.warn; $status = 'warn'; $notes += 'Le disque signale lui même un problème.' }
+        'Unhealthy' { Add-TestRow $T 'État SMART' 'Défaillant' $Colors.bad; $status = 'bad'; $notes += 'Le disque annonce une panne proche.' }
+        default     { Add-TestRow $T 'État SMART' 'Inconnu' '#9AA3B2' }
+    }
+    if ($rel) {
+        if ($null -ne $rel.Wear -and $Ctx.Kind -ne 'HDD') {
+            $w = [int]$rel.Wear
+            Add-TestRow $T 'Usure' "$w %  (0 % = neuf, 100 % = fin de vie prévue)" (Get-LoadColor $w 70 90)
+            if ($w -ge 90) { $status = 'bad'; $notes += "SSD usé à $w %." } elseif ($w -ge 70) { if ($status -eq 'ok') { $status = 'warn' }; $notes += "SSD usé à $w %." }
+        }
+        if ($rel.Temperature -gt 0) {
+            $warnT = if ($Ctx.Kind -eq 'HDD') { 50 } else { 70 }
+            $txt = "$([int]$rel.Temperature) °C" + $(if ($rel.TemperatureMax -gt 0) { "  (limite du fabricant : $([int]$rel.TemperatureMax) °C)" } else { '' })
+            Add-TestRow $T 'Température' $txt (Get-LoadColor $rel.Temperature $warnT ($warnT + 10))
+            if ($rel.Temperature -ge $warnT) { if ($status -eq 'ok') { $status = 'warn' }; $notes += 'Le disque chauffe.' }
+        }
+        if ($rel.PowerOnHours -gt 0) {
+            $h = [long]$rel.PowerOnHours
+            Add-TestRow $T 'Temps allumé au total' ('{0:N0} heures (environ {1:N1} ans d''utilisation continue)' -f $h, ($h / 8766))
+        }
+        if ($rel.StartStopCycleCount -gt 0) { Add-TestRow $T 'Nombre de démarrages' ('{0:N0}' -f $rel.StartStopCycleCount) }
+        if ($null -ne $rel.ReadErrorsUncorrected) {
+            $e = [long]$rel.ReadErrorsUncorrected
+            Add-TestRow $T 'Erreurs de lecture non réparées' "$e" $(if ($e) { $Colors.warn } else { $Colors.ok })
+            if ($e) { if ($status -eq 'ok') { $status = 'warn' }; $notes += "$e erreur(s) de lecture." }
+        }
+        if ($null -ne $rel.ReadErrorsCorrected -and $rel.ReadErrorsCorrected -gt 0) { Add-TestRow $T 'Erreurs de lecture réparées' ('{0:N0}' -f $rel.ReadErrorsCorrected) '#9AA3B2' }
+        if ($null -ne $rel.WriteErrorsUncorrected) {
+            $e = [long]$rel.WriteErrorsUncorrected
+            Add-TestRow $T 'Erreurs d''écriture non réparées' "$e" $(if ($e) { $Colors.warn } else { $Colors.ok })
+            if ($e) { if ($status -eq 'ok') { $status = 'warn' }; $notes += "$e erreur(s) d'écriture." }
+        }
+        if ($rel.ReadLatencyMax -gt 0) { Add-TestRow $T 'Temps de réponse max (lecture)' "$($rel.ReadLatencyMax) ms" '#9AA3B2' }
+        if ($rel.WriteLatencyMax -gt 0) { Add-TestRow $T 'Temps de réponse max (écriture)' "$($rel.WriteLatencyMax) ms" '#9AA3B2' }
+    } else {
+        Add-TestRow $T 'Détails SMART' 'Non fournis par ce disque' '#9AA3B2'
+    }
+    foreach ($l in $Ctx.Letters) {
+        $v = Get-Volume -DriveLetter $l -ErrorAction SilentlyContinue
+        if ($v -and $v.Size) {
+            $pct = 100 * ($v.Size - $v.SizeRemaining) / $v.Size
+            Add-TestBar $T "Lecteur $($l): rempli à $([int]$pct) %" "$(Format-Size $v.SizeRemaining) libres" $pct (Get-LoadColor $pct 80 90)
+            if ($pct -ge 90) { if ($status -eq 'ok') { $status = 'warn' }; $notes += "Le lecteur $($l): est presque plein." }
+        }
+    }
+    $verdict = switch ($status) {
+        'ok'   { 'Ce disque est en bonne santé.' }
+        'warn' { 'À surveiller : ' + ($notes -join ' ') + ' Pense à sauvegarder tes fichiers importants.' }
+        'bad'  { 'Attention : ' + ($notes -join ' ') + ' Sauvegarde tes fichiers maintenant et prévois de remplacer ce disque.' }
+    }
+    Add-TestVerdict $T $status $verdict
+}
+
+function Test-DiskErrors($T, $Ctx) {
+    $labels = @{ scan = 'Recherche d''erreurs sur le disque (ça peut prendre quelques minutes)...' }
+    $res = Invoke-ComponentTest $T $labels $RepairWork @{ Letters = @($Ctx.Letters) }
+    if (-not $res) { return }
+    Add-TestTitle $T 'Recherche d''erreurs'
+    $bad = $false
+    foreach ($line in $res.R) {
+        $l, $v = ([string]$line) -split '\|', 2
+        if ($v -eq 'NoErrorsFound') { Add-TestRow $T "Lecteur $($l):" 'Aucune erreur' $Colors.ok }
+        elseif ($v -like 'ERR*') { Add-TestRow $T "Lecteur $($l):" 'Vérification impossible' '#9AA3B2' }
+        else { Add-TestRow $T "Lecteur $($l):" 'Erreurs trouvées' $Colors.warn; $bad = $true }
+    }
+    if ($bad) { Add-TestVerdict $T 'warn' 'Windows a trouvé des erreurs dans le système de fichiers. Redémarre le PC : Windows les répare souvent tout seul au démarrage.' }
+    else { Add-TestVerdict $T 'ok' 'Aucune erreur trouvée.' }
+}
+
+# --- Processeur ------------------------------------------------------------
+function Test-Cpu($T, $Ctx) {
+    $labels = @{
+        single = 'Test sur un seul cœur...'
+        multi  = 'Test sur tous les cœurs en même temps (le PC peut chauffer et souffler un peu, c''est normal)...'
+    }
+    Set-Status 'Test du processeur...'
+    $res = Invoke-ComponentTest $T $labels $CpuWork @{ Single = $Ctx.Single; Multi = $Ctx.Multi }
+    if (-not $res) { return }
+    $r = $res.R
+    $maxSingle = Get-GHz $res.Freq['single'] -Max
+    $avgMulti = Get-GHz $res.Freq['multi']
+    $base = $Live.BaseMHz / 1000
+    Add-TestTitle $T $(if ($Ctx.Multi -ge 120) { 'Résultat du test de stabilité' } else { 'Résultat du test rapide' })
+    Add-TestRow $T 'Score sur un cœur' ('{0:N0} points' -f $r[0]) '#FFFFFF'
+    Add-TestRow $T "Score sur les $([int]$r[3]) cœurs" ('{0:N0} points  ({1:N1} fois plus qu''un seul cœur)' -f $r[1], ($r[1] / [math]::Max(1, $r[0]))) '#FFFFFF'
+    if ($maxSingle) { Add-TestRow $T 'Fréquence max atteinte' ('{0:N1} GHz' -f $maxSingle) }
+    if ($avgMulti) { Add-TestRow $T 'Fréquence tenue en pleine charge' ('{0:N1} GHz  (fréquence de base : {1:N1} GHz)' -f $avgMulti, $base) $(if ($avgMulti -lt $base * 0.95) { $Colors.warn } else { '#E6E8EE' }) }
+    Add-TestRow $T 'Erreurs de calcul' "$([int]$r[2])" $(if ($r[2]) { $Colors.bad } else { $Colors.ok })
+    if ($r[2] -gt 0) {
+        Add-TestVerdict $T 'bad' "Le processeur a fait des erreurs de calcul : il est instable. Causes fréquentes : overclock ou undervolt trop poussé, profil XMP instable, surchauffe. Remets les réglages du BIOS par défaut et refais le test."
+    } elseif ($avgMulti -and $avgMulti -lt $base * 0.95) {
+        Add-TestVerdict $T 'warn' "Sous forte charge, le processeur descend sous sa fréquence de base : il ralentit sans doute parce qu'il chauffe trop ou manque d'alimentation. Vérifie le ventirad, la pâte thermique et le mode d'alimentation."
+    } else {
+        Add-TestVerdict $T 'ok' $(if ($Ctx.Multi -ge 120) { 'Aucune erreur pendant 5 minutes à pleine charge : ton processeur est stable.' } else { 'Tout est normal : pas d''erreur et le processeur garde bien sa vitesse.' })
+    }
+    Set-Status 'Test du processeur terminé.'
+}
+
+# --- Mémoire vive ----------------------------------------------------------
+function Test-Memory($T, $Ctx) {
+    $os = Get-CimInstance Win32_OperatingSystem
+    $free = [double]$os.FreePhysicalMemory * 1KB
+    $bytes = [long][math]::Min([double]2GB, [math]::Max([double]256MB, $free * 0.5))
+    $labels = @{
+        alloc   = 'Réservation de la mémoire à tester...'
+        write   = 'Écriture de données de test...'
+        read    = 'Relecture et vérification...'
+        pattern = 'Deuxième passage avec un autre motif...'
+        copy    = 'Mesure de la vitesse de copie...'
+    }
+    Set-Status 'Test de la mémoire...'
+    $res = Invoke-ComponentTest $T $labels $MemWork @{ Bytes = $bytes }
+    if (-not $res) { return }
+    $r = $res.R
+    Add-TestTitle $T 'Résultat du test de la mémoire'
+    Add-TestRow $T 'Mémoire testée' ('{0:N1} Go' -f $r[4])
+    Add-TestRow $T 'Vitesse de lecture' ('{0:N1} Go/s' -f $r[1]) '#FFFFFF'
+    Add-TestRow $T 'Vitesse d''écriture' ('{0:N1} Go/s' -f $r[0]) '#FFFFFF'
+    Add-TestRow $T 'Vitesse de copie' ('{0:N1} Go/s' -f $r[2]) '#FFFFFF'
+    Add-TestRow $T 'Erreurs trouvées' "$([int]$r[3])" $(if ($r[3]) { $Colors.bad } else { $Colors.ok })
+    if ($r[3] -gt 0) {
+        Add-TestVerdict $T 'bad' 'Des erreurs ont été trouvées dans la mémoire. Désactive le profil XMP / EXPO dans le BIOS et refais le test. Si les erreurs continuent, une barrette est défectueuse : lance le test complet de Windows.'
+    } else {
+        Add-TestVerdict $T 'ok' 'Aucune erreur. Ce test rapide ne vérifie qu''une partie de la mémoire : en cas de plantages, lance le test complet de Windows.'
+    }
+    Set-Status 'Test de la mémoire terminé.'
+}
+
+# --- Carte graphique -------------------------------------------------------
+function Show-GpuSensors($T, $Ctx) {
+    $T.Result.Children.Clear()
+    $g = $Ctx.Gpu
+    Add-TestTitle $T 'Relevé des capteurs'
+    if ($g.Name -match 'NVIDIA|GeForce' -and $SmiPath) {
+        $fields = 'driver_version,vbios_version,pstate,clocks.gr,clocks.max.gr,clocks.mem,clocks.max.mem,temperature.gpu,fan.speed,power.draw,power.limit,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max,utilization.gpu,memory.used,memory.total,clocks_throttle_reasons.active'
+        $o = & $SmiPath "--query-gpu=$fields" '--format=csv,noheader,nounits' 2>$null | Select-Object -First 1
+        if (-not $o) { Add-TestVerdict $T 'warn' 'Impossible de lire les capteurs de la carte.'; return }
+        $v = @($o -split ',' | ForEach-Object { $_.Trim() })
+        $num = { param($s) if ($s -match '^[\d\.]+$') { [double]::Parse($s, [Globalization.CultureInfo]::InvariantCulture) } else { $null } }
+        $temp = & $num $v[7]
+        Add-TestRow $T 'Utilisation' "$($v[15]) %"
+        Add-TestRow $T 'Fréquence du GPU' "$($v[3]) MHz (max $($v[4]) MHz)"
+        Add-TestRow $T 'Fréquence de la mémoire' "$($v[5]) MHz (max $($v[6]) MHz)"
+        if ($null -ne $temp) { Add-TestRow $T 'Température' "$([int]$temp) °C" (Get-LoadColor $temp 80 87) }
+        if ($v[8] -match '^\d') { Add-TestRow $T 'Ventilateurs' "$($v[8]) %" }
+        Add-TestRow $T 'Consommation' ('{0:N0} W sur {1:N0} W max' -f (& $num $v[9]), (& $num $v[10]))
+        Add-TestRow $T 'Mémoire vidéo utilisée' ('{0:N1} Go sur {1:N0} Go' -f ((& $num $v[16]) / 1024), ((& $num $v[17]) / 1024))
+        Add-TestRow $T 'Liaison PCIe' "Gen $($v[11]) x$($v[13])  (max Gen $($v[12]) x$($v[14]))"
+        Add-TestRow $T 'Pilote' $v[0] '#9AA3B2'
+        $bits = 0
+        try { $bits = [Convert]::ToUInt64(($v[18] -replace '^0x', ''), 16) } catch {}
+        $why = @()
+        if ($bits -band 0x4)  { $why += 'limite de consommation atteinte (normal en pleine charge)' }
+        if ($bits -band 0x20) { $why += 'la carte chauffe (ralentissement logiciel)' }
+        if ($bits -band 0x40) { $why += 'surchauffe (ralentissement matériel)' }
+        if ($bits -band 0x8)  { $why += 'ralentissement matériel' }
+        if ($bits -band 0x80) { $why += 'alimentation insuffisante' }
+        Add-TestRow $T 'Ralentissements en cours' $(if ($why) { $why -join ', ' } else { 'Aucun' }) $(if ($bits -band 0xE8) { $Colors.warn } else { $Colors.ok })
+        if ($bits -band 0xE8) {
+            Add-TestVerdict $T 'warn' 'La carte graphique ralentit à cause de la chaleur ou de l''alimentation. Dépoussière le PC, vérifie les ventilateurs du boîtier et les câbles d''alimentation de la carte.'
+        } elseif ($null -ne $temp -and $temp -ge 85) {
+            Add-TestVerdict $T 'warn' 'La carte graphique est très chaude. Dépoussière le PC et améliore l''aération du boîtier.'
+        } else {
+            Add-TestVerdict $T 'ok' 'Tout est normal. Astuce : lance un jeu, reviens ici avec Alt + Tab et relève les capteurs pour voir la carte en pleine charge. À vide, la vitesse PCIe baisse pour économiser l''énergie : c''est normal.'
+        }
+    } else {
+        Add-TestRow $T 'Modèle' $g.Name
+        if ($g.DriverVersion) { Add-TestRow $T 'Pilote' "$($g.DriverVersion)$(if ($g.DriverDate) { ' du ' + $g.DriverDate.ToString('dd/MM/yyyy') })" }
+        $vram = Get-GpuVram $g.Name
+        if ($vram) { Add-TestRow $T 'Mémoire vidéo' (Format-Size $vram) }
+        Add-TestRow $T 'Résolution actuelle' "$($g.CurrentHorizontalResolution) x $($g.CurrentVerticalResolution)"
+        Add-TestVerdict $T 'info' 'Les capteurs détaillés (température, fréquences, consommation) ne sont lisibles que sur les cartes NVIDIA. Pour les cartes AMD, ouvre AMD Software > Performances.'
+    }
+}
+
+# --- Réseau ----------------------------------------------------------------
+function Test-NetSpeed($T, $Ctx) {
+    $labels = @{ ping = 'Mesure du ping...'; down = 'Test du téléchargement...'; up = 'Test de l''envoi...' }
+    Set-Status 'Test du débit Internet...'
+    $res = Invoke-ComponentTest $T $labels $NetWork @{}
+    if (-not $res) { return }
+    $r = $res.R
+    Add-TestTitle $T 'Résultat du test de connexion'
+    if ($r[0] -ge 0) { Add-TestRow $T 'Ping (réactivité en jeu)' ('{0:N0} ms' -f $r[0]) $(if ($r[0] -gt 60) { $Colors.warn } else { $Colors.ok }) }
+    if ($r[1] -ge 0) { Add-TestBar $T 'Téléchargement (télécharger tes jeux)' ('{0:N0} Mb/s' -f $r[1]) (100 * $r[1] / 1000) $Colors.ok }
+    else { Add-TestRow $T 'Téléchargement' 'Pas pu être mesuré' '#9AA3B2' }
+    if ($r[2] -ge 0) { Add-TestBar $T 'Envoi (streamer, envoyer des fichiers)' ('{0:N0} Mb/s' -f $r[2]) (100 * $r[2] / 1000) $Colors.info }
+    else { Add-TestRow $T 'Envoi' 'Pas pu être mesuré' '#9AA3B2' }
+    $gb = if ($r[1] -gt 0) { 50 * 8000 / $r[1] / 60 } else { 0 }
+    if ($gb -gt 0) { Add-TestRow $T 'Un jeu de 50 Go se télécharge en' $(if ($gb -lt 60) { '{0:N0} minutes environ' -f $gb } else { '{0:N1} heures environ' -f ($gb / 60) }) '#9AA3B2' }
+    if ($r[1] -lt 0 -or $r[2] -lt 0) {
+        Add-TestVerdict $T 'info' 'Les serveurs de test n''ont pas répondu (trop de tests d''affilée ou pas de connexion). Réessaie dans quelques minutes.'
+    } elseif ($r[1] -lt 10) {
+        Add-TestVerdict $T 'warn' 'Connexion lente : les téléchargements seront longs. Pour jouer en ligne, c''est surtout le ping qui compte.'
+    } elseif ($r[0] -gt 60) {
+        Add-TestVerdict $T 'warn' 'Le débit est correct mais le ping est élevé : en Wi-Fi, rapproche toi de la box ou branche un câble.'
+    } else {
+        Add-TestVerdict $T 'ok' 'Bonne connexion pour jouer et télécharger.'
+    }
+    Set-Status 'Test de connexion terminé.'
+}
+
+# --- Écrans ----------------------------------------------------------------
+function Start-PixelTest([int]$Index) {
+    $screens = [System.Windows.Forms.Screen]::AllScreens
+    if ($Index -ge $screens.Count) { return }
+    $b = $screens[$Index].Bounds
+    $src = [System.Windows.PresentationSource]::FromVisual($Window)
+    $scale = if ($src) { $src.CompositionTarget.TransformToDevice.M11 } else { 1 }
+    $w = New-Object System.Windows.Window
+    $w.WindowStyle = 'None'; $w.ResizeMode = 'NoResize'; $w.Topmost = $true; $w.ShowInTaskbar = $false
+    $w.WindowStartupLocation = 'Manual'
+    $w.Width = 100; $w.Height = 100
+    $w.Left = ($b.X + $b.Width / 2) / $scale - 50
+    $w.Top = ($b.Y + $b.Height / 2) / $scale - 50
+    $w.Cursor = [System.Windows.Input.Cursors]::None
+    $script:PixColors = @('#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#808080')
+    $script:PixIndex = 0
+    $w.Background = Get-Brush $script:PixColors[0]
+    $hint = New-Text "Cherche les points qui ne sont pas de la bonne couleur.`n`nClic ou Espace : couleur suivante        Échap : quitter" 20 '#9AA3B2'
+    $hint.HorizontalAlignment = 'Center'; $hint.VerticalAlignment = 'Center'; $hint.TextAlignment = 'Center'
+    $w.Content = $hint
+    $w.Add_SourceInitialized({ param($s, $e) $s.WindowState = 'Maximized' })
+    $w.Add_MouseDown({
+        param($s, $e)
+        $script:PixIndex++
+        if ($script:PixIndex -ge $script:PixColors.Count) { $s.Close(); return }
+        $s.Content = $null
+        $s.Background = Get-Brush $script:PixColors[$script:PixIndex]
+    })
+    $w.Add_KeyDown({
+        param($s, $e)
+        if ($e.Key -eq 'Escape') { $s.Close(); return }
+        if ($e.Key -in 'Space', 'Enter', 'Right') {
+            $script:PixIndex++
+            if ($script:PixIndex -ge $script:PixColors.Count) { $s.Close(); return }
+            $s.Content = $null
+            $s.Background = Get-Brush $script:PixColors[$script:PixIndex]
+        }
+    })
+    [void]$w.ShowDialog()
+}
+
+# --- Construction de l'onglet -----------------------------------------------
+function Build-TestsTab {
+    $ui.TestsPanel.Children.Clear()
+    $script:TestButtons.Clear()
+
+    # Disques
+    foreach ($d in @(Get-PhysicalDisk -ErrorAction SilentlyContinue | Sort-Object { [int]$_.DeviceId })) {
+        $media = [string]$d.MediaType; $bus = [string]$d.BusType
+        $kind = if ($bus -eq 'NVMe') { 'NVMe' } elseif ($media -eq 'SSD') { 'SSD' } elseif ($media -eq 'HDD') { 'HDD' } elseif ($bus -eq 'USB') { 'USB' } else { 'SSD' }
+        $kindLabel = switch ($kind) { 'NVMe' { 'SSD NVMe' } 'SSD' { 'SSD' } 'HDD' { 'Disque dur' } default { 'Disque externe' } }
+        $letters = @()
+        try { $letters = @(Get-Partition -DiskNumber ([int]$d.DeviceId) -ErrorAction Stop | Where-Object { [int][char]$_.DriveLetter -ne 0 } | ForEach-Object { [string]$_.DriveLetter }) } catch {}
+        $sub = "$kindLabel, $(Format-Size $d.Size)" + $(if ($letters) { "   /   lecteur$(if ($letters.Count -gt 1) {'s'}) $(($letters | ForEach-Object { "$($_):" }) -join ' ')" } else { '' })
+        $tag = switch ($kind) { 'HDD' { 'HDD' } 'USB' { 'USB' } default { 'SSD' } }
+        $T = New-TestCard $tag (([string]$d.FriendlyName).Trim()) $sub 'Mesure la vitesse réelle du disque et vérifie sa santé : usure, température, erreurs. Le test de vitesse dure moins d''une minute et écrit un fichier temporaire, supprimé à la fin.'
+        $ctx = @{ Id = [string]$d.DeviceId; Name = ([string]$d.FriendlyName).Trim(); Kind = $kind; KindLabel = $kindLabel; Letters = $letters; Letter = $(if ($letters) { $letters[0] } else { $null }) }
+        if ($ctx.Letter) { Add-TestButton $T 'Tester la vitesse' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-DiskSpeed $x.T $x.Ctx } } $ctx -Primary }
+        Add-TestButton $T 'Santé détaillée' { param($s, $e) $x = $s.Tag; Invoke-Safe { Show-DiskHealth $x.T $x.Ctx } } $ctx
+        if ($ctx.Letter) { Add-TestButton $T 'Rechercher des erreurs' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-DiskErrors $x.T $x.Ctx } } $ctx }
+    }
+
+    # Processeur
+    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+    $T = New-TestCard 'CPU' (($cpu.Name -replace '\s+', ' ').Trim()) "$($cpu.NumberOfCores) cœurs, $($cpu.NumberOfLogicalProcessors) threads" 'Fait travailler le processeur à fond pour mesurer sa puissance, vérifier qu''il garde sa vitesse quand il chauffe et qu''il ne fait aucune erreur de calcul. Ferme tes jeux avant de lancer le test.'
+    Add-TestButton $T 'Test rapide (30 s)' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Cpu $x.T $x.Ctx } } @{ Single = 8; Multi = 22 } -Primary
+    Add-TestButton $T 'Test de stabilité (5 min)' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Cpu $x.T $x.Ctx } } @{ Single = 5; Multi = 295 }
+
+    # Mémoire vive
+    $mem = @(Get-CimInstance Win32_PhysicalMemory)
+    $totalGB = [math]::Round((($mem | Measure-Object Capacity -Sum).Sum) / 1GB)
+    $T = New-TestCard 'RAM' 'Mémoire vive' "$totalGB Go, $($mem.Count) barrette$(if ($mem.Count -gt 1) {'s'})" 'Écrit des données dans la mémoire, les relit pour vérifier qu''aucune n''a été abîmée, et mesure la vitesse. Dure quelques secondes.'
+    Add-TestButton $T 'Tester la mémoire' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Memory $x.T $x.Ctx } } @{} -Primary
+    Add-TestButton $T 'Test complet de Windows (au redémarrage)' { param($s, $e) Start-Process 'mdsched.exe' } @{}
+
+    # Cartes graphiques
+    foreach ($g in @(Get-CimInstance Win32_VideoController | Where-Object { $_.Name -notmatch 'Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta|Microsoft Basic' })) {
+        $T = New-TestCard 'GPU' $g.Name 'Carte graphique' 'Relève les capteurs de la carte graphique : fréquences, température, consommation, et si elle ralentit à cause de la chaleur.'
+        Add-TestButton $T 'Relever les capteurs' { param($s, $e) $x = $s.Tag; Invoke-Safe { Show-GpuSensors $x.T $x.Ctx } } @{ Gpu = $g } -Primary
+        $steam = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
+        if ($steam -and (Get-InstalledGames | Where-Object { $_.Name -eq '3DMark' })) {
+            Add-TestButton $T 'Test de charge avec 3DMark' { param($s, $e) Start-Process 'steam://rungameid/223850' } @{}
+        }
+    }
+
+    # Réseau
+    $T = New-TestCard 'NET' 'Connexion Internet' 'Ping, téléchargement et envoi' 'Mesure la réactivité de ta connexion et sa vitesse de téléchargement et d''envoi. Dure environ 20 secondes (serveurs de test en France et en Europe).'
+    Add-TestButton $T 'Tester ma connexion' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-NetSpeed $x.T $x.Ctx } } @{} -Primary
+
+    # Écrans
+    $screens = [System.Windows.Forms.Screen]::AllScreens
+    $T = New-TestCard 'HZ' 'Écrans' "$($screens.Count) écran$(if ($screens.Count -gt 1) {'s'})" 'Affiche des couleurs unies en plein écran pour repérer les pixels morts : un point qui reste noir, blanc ou d''une autre couleur. Clic ou Espace pour passer à la couleur suivante, Échap pour quitter.'
+    for ($i = 0; $i -lt $screens.Count; $i++) {
+        $label = "Tester l'écran $($i + 1)" + $(if ($screens[$i].Primary -and $screens.Count -gt 1) { ' (principal)' } else { '' })
+        Add-TestButton $T $label { param($s, $e) $x = $s.Tag; Start-PixelTest $x.Ctx.Index } @{ Index = $i } -Primary:($i -eq 0)
+    }
+
+    # Batterie
+    if ($script:IsLaptop -and @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue).Count) {
+        $T = New-TestCard 'BAT' 'Batterie' 'Rapport de Windows' 'Génère le rapport officiel de Windows sur ta batterie : capacité d''origine, capacité actuelle, historique d''utilisation et autonomie estimée.'
+        Add-TestButton $T 'Voir le rapport de batterie' {
+            param($s, $e)
+            $out = Join-Path $env:TEMP 'rapport-batterie.html'
+            Start-Process -FilePath 'powercfg.exe' -ArgumentList '/batteryreport', '/output', "`"$out`"" -Wait -WindowStyle Hidden
+            if (Test-Path $out) { Start-Process $out }
+        } @{} -Primary
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Mises à jour (GitHub)
 # ---------------------------------------------------------------------------
 # Script autonome: il tourne dans un fil séparé pour ne pas figer la fenêtre.
@@ -3591,6 +4511,16 @@ $ui.BtnRestorePoint.Add_Click({
 })
 $ui.BtnOpenRestore.Add_Click({ Start-Process 'rstrui.exe' })
 $ui.BtnExport.Add_Click({ Invoke-Safe { Export-Report } })
+$ui.Tabs.Add_SelectionChanged({
+    param($s, $e)
+    if ($e.OriginalSource -ne $ui.Tabs) { return }
+    if ($ui.Tabs.SelectedIndex -eq 5 -and -not $script:TestsBuilt) {
+        $script:TestsBuilt = $true
+        Set-Status 'Préparation des tests...'
+        Invoke-Safe { Build-TestsTab }
+        Set-Status 'Choisis un composant à tester.'
+    }
+})
 $ui.BtnUpdate.Add_Click({ Invoke-Safe { Install-Update } })
 $ui.BtnUpdateLater.Add_Click({ $ui.UpdateBanner.Visibility = 'Collapsed' })
 $ui.BtnCheckUpdate.Add_Click({
