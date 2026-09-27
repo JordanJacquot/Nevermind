@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.5
+    OptiGame 1.0.6
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,7 +10,7 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.5'
+$AppVersion = '1.0.6'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -507,6 +507,67 @@ public static class OGNative
         return total * 8 / 1e6 / elapsed;
     }
 
+    // =====================================================================
+    // Scan du réseau local
+    // =====================================================================
+    public static int Found;
+
+    // Ping de toutes les adresses en parallèle. Retourne "ip|ms" pour celles qui répondent.
+    public static string[] PingSweep(string[] ips, int timeoutMs)
+    {
+        var results = new List<string>();
+        var sync = new object();
+        Found = 0;
+        int done = 0;
+        var sem = new System.Threading.SemaphoreSlim(64);
+        var tasks = new List<System.Threading.Tasks.Task>();
+        foreach (string ip in ips)
+        {
+            if (Cancel) break;
+            sem.Wait();
+            var ping = new System.Net.NetworkInformation.Ping();
+            string addr = ip;
+            tasks.Add(ping.SendPingAsync(addr, timeoutMs).ContinueWith(t =>
+            {
+                try
+                {
+                    if (t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion && t.Result.Status == System.Net.NetworkInformation.IPStatus.Success)
+                    {
+                        lock (sync) { results.Add(addr + "|" + t.Result.RoundtripTime); }
+                        System.Threading.Interlocked.Increment(ref Found);
+                    }
+                }
+                finally
+                {
+                    ping.Dispose();
+                    sem.Release();
+                    int d = System.Threading.Interlocked.Increment(ref done);
+                    Progress = 70.0 * d / ips.Length;
+                }
+            }));
+        }
+        System.Threading.Tasks.Task.WaitAll(tasks.ToArray());
+        return results.ToArray();
+    }
+
+    // Noms des appareils (ceux que la box connaît). Retourne "ip|nom".
+    public static string[] ResolveNames(string[] ips, int timeoutMs)
+    {
+        var tasks = new List<System.Threading.Tasks.Task<string>>();
+        foreach (string ip in ips)
+        {
+            string a = ip;
+            tasks.Add(System.Threading.Tasks.Task.Run(() =>
+            {
+                try { return a + "|" + System.Net.Dns.GetHostEntry(a).HostName; } catch { return a + "|"; }
+            }));
+        }
+        try { System.Threading.Tasks.Task.WaitAll(tasks.ToArray(), timeoutMs); } catch { }
+        var list = new List<string>();
+        foreach (var t in tasks) if (t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion) list.Add(t.Result);
+        return list.ToArray();
+    }
+
     public static void SetDarkTitleBar(IntPtr hwnd)
     {
         int on = 1;
@@ -583,7 +644,7 @@ $IgnoreFile = Join-Path $DataDir 'ignores.json'
 function Import-Ignored {
     $script:Ignored = @()
     if (Test-Path $IgnoreFile) {
-        try { $script:Ignored = @(Get-Content $IgnoreFile -Raw -Encoding UTF8 | ConvertFrom-Json | ForEach-Object { [string]$_ }) } catch {}
+        try { $arr = ConvertFrom-Json (Get-Content $IgnoreFile -Raw -Encoding UTF8); $script:Ignored = @(@($arr) | ForEach-Object { [string]$_ }) } catch {}
     }
 }
 
@@ -1253,6 +1314,11 @@ if ($Uninstall) {
               <Trigger Property="IsMouseOver" Value="True">
                 <Setter Property="Foreground" Value="White"/>
               </Trigger>
+              <Trigger Property="Tag" Value="parent">
+                <Setter TargetName="Bd" Property="Background" Value="#1C212B"/>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#22D37A"/>
+                <Setter Property="Foreground" Value="White"/>
+              </Trigger>
               <Trigger Property="IsSelected" Value="True">
                 <Setter TargetName="Bd" Property="Background" Value="#1C212B"/>
                 <Setter TargetName="Bd" Property="BorderBrush" Value="#22D37A"/>
@@ -1425,13 +1491,24 @@ if ($Uninstall) {
                 <StackPanel IsItemsHost="True"/>
               </DockPanel>
             </Border>
-            <ContentPresenter Grid.Column="1" ContentSource="SelectedContent" Margin="28,22,28,16"/>
+            <Grid Grid.Column="1">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+              </Grid.RowDefinitions>
+              <DockPanel x:Name="NavBar" Margin="28,14,28,0" Visibility="Collapsed" LastChildFill="False">
+                <Button x:Name="NavBack" Style="{StaticResource BtnSecondary}" Content="←  Ordinateur" Padding="12,6" FontSize="12.5"/>
+                <TextBlock Text="›" Foreground="#5B6475" FontSize="16" Margin="12,0,10,2" VerticalAlignment="Center"/>
+                <TextBlock x:Name="NavCrumb" Foreground="#9AA3B2" FontSize="13" VerticalAlignment="Center"/>
+              </DockPanel>
+              <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Margin="28,18,28,16"/>
+            </Grid>
           </Grid>
         </ControlTemplate>
       </TabControl.Template>
 
       <!-- Tableau de bord -->
-      <TabItem>
+      <TabItem Visibility="Collapsed">
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="&#xE80F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
@@ -1546,7 +1623,7 @@ if ($Uninstall) {
       </TabItem>
 
       <!-- Optimisation gaming -->
-      <TabItem>
+      <TabItem Visibility="Collapsed">
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="&#xE7FC;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
@@ -1581,7 +1658,7 @@ if ($Uninstall) {
       </TabItem>
 
       <!-- Démarrage -->
-      <TabItem>
+      <TabItem Visibility="Collapsed">
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="&#xE7E8;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
@@ -1609,11 +1686,11 @@ if ($Uninstall) {
         </Grid>
       </TabItem>
       <!-- Réseau -->
-      <TabItem>
+      <TabItem Visibility="Collapsed">
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="&#xE774;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
-            <TextBlock Text="Réseau"/>
+            <TextBlock Text="Connexion"/>
           </StackPanel>
         </TabItem.Header>
         <Grid>
@@ -1624,7 +1701,7 @@ if ($Uninstall) {
           <DockPanel>
             <Button x:Name="BtnPing" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Tester ma connexion" VerticalAlignment="Center"/>
             <StackPanel>
-              <TextBlock Style="{StaticResource H1}" Text="Réseau"/>
+              <TextBlock Style="{StaticResource H1}" Text="Connexion"/>
               <TextBlock Style="{StaticResource Sub}" Text="Mesure ton ping, sa stabilité (gigue) et les pertes de paquets."/>
             </StackPanel>
           </DockPanel>
@@ -1658,7 +1735,7 @@ if ($Uninstall) {
       </TabItem>
 
       <!-- Nettoyage -->
-      <TabItem>
+      <TabItem Visibility="Collapsed">
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
@@ -1692,7 +1769,7 @@ if ($Uninstall) {
       </TabItem>
 
       <!-- Tests -->
-      <TabItem>
+      <TabItem Visibility="Collapsed">
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="&#xE9D9;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
@@ -1715,7 +1792,7 @@ if ($Uninstall) {
       </TabItem>
 
       <!-- Sécurité -->
-      <TabItem>
+      <TabItem Visibility="Collapsed">
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="&#xE72E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
@@ -1772,7 +1849,7 @@ if ($Uninstall) {
       </TabItem>
 
       <!-- Sauvegarde -->
-      <TabItem>
+      <TabItem Visibility="Collapsed">
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
             <TextBlock Text="&#xE777;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
@@ -1828,6 +1905,83 @@ if ($Uninstall) {
             </Border>
           </StackPanel>
         </ScrollViewer>
+      </TabItem>
+
+      <!-- Ordinateur (accueil) -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE7F4;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Ordinateur"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="0,0,8,0">
+            <TextBlock Style="{StaticResource H1}" Text="Ordinateur"/>
+            <TextBlock x:Name="HubSub" Style="{StaticResource Sub}"/>
+            <Border Style="{StaticResource Card}" Margin="0,18,0,0" Padding="18,14">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel x:Name="HubGaugeOpt" VerticalAlignment="Center"/>
+                <StackPanel x:Name="HubGaugeSec" Grid.Column="1" VerticalAlignment="Center"/>
+                <StackPanel x:Name="HubSummary" Grid.Column="2" VerticalAlignment="Center" Margin="24,0,0,0"/>
+              </Grid>
+            </Border>
+            <UniformGrid x:Name="HubCards" Columns="3" Margin="0,16,0,0"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Réseau (scan des appareils) -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE701;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Réseau"/>
+          </StackPanel>
+        </TabItem.Header>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <DockPanel>
+            <Button x:Name="BtnNetScan" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Scanner le réseau" VerticalAlignment="Center"/>
+            <StackPanel>
+              <TextBlock Style="{StaticResource H1}" Text="Réseau"/>
+              <TextBlock Style="{StaticResource Sub}" Text="Découvre tous les appareils connectés à ton réseau : téléphones, consoles, TV, box, objets connectés..."/>
+            </StackPanel>
+          </DockPanel>
+          <ScrollViewer Grid.Row="1" Margin="0,18,0,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="0,0,8,0">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="300"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource Card}" Margin="0,0,12,0">
+                  <StackPanel x:Name="NetHero" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource Card}">
+                  <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="Ton réseau"/>
+                    <StackPanel x:Name="NetScanInfo" Margin="0,10,0,0"/>
+                  </StackPanel>
+                </Border>
+              </Grid>
+              <DockPanel Margin="0,24,0,12">
+                <TextBlock x:Name="NetDevSummary" DockPanel.Dock="Right" Foreground="#9AA3B2" FontSize="12" VerticalAlignment="Bottom"/>
+                <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Appareils connectés"/>
+              </DockPanel>
+              <UniformGrid x:Name="NetDevices" Columns="3"/>
+              <TextBlock x:Name="NetDevHint" Style="{StaticResource Sub}" FontSize="12" Margin="0,8,0,0" Text="Lance un scan pour voir les appareils."/>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
       </TabItem>
     </TabControl>
 
@@ -5636,6 +5790,507 @@ function Invoke-FolderScan {
 }
 
 # ---------------------------------------------------------------------------
+# Navigation : accueil « Ordinateur » avec une carte par fonction
+# ---------------------------------------------------------------------------
+$HubIndex = 8
+$NetIndex = 9
+$PageNames = @{ 0 = 'Tableau de bord'; 1 = 'Optimisation gaming'; 2 = 'Démarrage'; 3 = 'Connexion'; 4 = 'Nettoyage'; 5 = 'Tests'; 6 = 'Sécurité'; 7 = 'Sauvegarde' }
+$HubPages = @(
+    @{ Index = 0; Glyph = 0xE80F; Title = 'Tableau de bord'; Desc = 'Santé des composants, score et ce qui peut être amélioré.'; Color = '#22D37A' },
+    @{ Index = 1; Glyph = 0xE7FC; Title = 'Optimisation gaming'; Desc = 'Les réglages de Windows qui font gagner des FPS.'; Color = '#B18CFF' },
+    @{ Index = 5; Glyph = 0xE9D9; Title = 'Tests'; Desc = 'Vitesse et santé de chaque composant.'; Color = '#4EA8FF' },
+    @{ Index = 6; Glyph = 0xE72E; Title = 'Sécurité'; Desc = 'Antivirus et recherche de tout ce qui est suspect.'; Color = '#22D37A' },
+    @{ Index = 2; Glyph = 0xE7E8; Title = 'Démarrage'; Desc = 'Les programmes qui se lancent avec Windows.'; Color = '#F5A524' },
+    @{ Index = 3; Glyph = 0xE774; Title = 'Connexion'; Desc = 'Ping, stabilité de la connexion et serveur DNS.'; Color = '#4EA8FF' },
+    @{ Index = 4; Glyph = 0xE74D; Title = 'Nettoyage'; Desc = 'Libère de la place sur le disque.'; Color = '#FF7AB6' },
+    @{ Index = 7; Glyph = 0xE777; Title = 'Sauvegarde'; Desc = 'Tout annuler, rapport du PC et mises à jour.'; Color = '#9AA3B2' }
+)
+
+function Show-Page([int]$Index) { $ui.Tabs.SelectedIndex = $Index }
+
+function Update-NavBar {
+    $i = $ui.Tabs.SelectedIndex
+    $sub = $i -ge 0 -and $i -lt $HubIndex
+    $ui.Tabs.Items[$HubIndex].Tag = if ($sub) { 'parent' } else { $null }
+    if ($script:NavBar) {
+        $script:NavBar.Visibility = if ($sub) { 'Visible' } else { 'Collapsed' }
+        if ($sub) { $script:NavCrumb.Text = $PageNames[$i] }
+    }
+}
+
+function Build-Hub {
+    $ui.HubCards.Children.Clear()
+    $script:HubStats = @{}
+    $n = 0
+    foreach ($pg in $HubPages) {
+        $card = New-Object System.Windows.Controls.Border
+        $card.Background = Get-Brush '#181C24'
+        $card.BorderBrush = Get-Brush '#232937'
+        $card.BorderThickness = New-Thickness 1 1 1 1
+        $card.CornerRadius = [System.Windows.CornerRadius]::new(14)
+        $card.Padding = New-Thickness 18 16 18 16
+        $card.Margin = New-Thickness 0 0 12 12
+        $card.Cursor = [System.Windows.Input.Cursors]::Hand
+        $move = New-Object System.Windows.Media.TranslateTransform
+        $card.RenderTransform = $move
+        $sp = New-Object System.Windows.Controls.StackPanel
+        $head = New-Grid @('Auto', '*', 'Auto')
+        $ic = New-Object System.Windows.Controls.Border
+        $ic.Width = 46; $ic.Height = 46
+        $ic.CornerRadius = [System.Windows.CornerRadius]::new(12)
+        $bg = Get-Brush $pg.Color; $bg.Opacity = 0.15
+        $ic.Background = $bg
+        $gl = New-Object System.Windows.Controls.TextBlock
+        $gl.Text = [string][char]$pg.Glyph
+        $gl.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'
+        $gl.FontSize = 20
+        $gl.Foreground = Get-Brush $pg.Color
+        $gl.HorizontalAlignment = 'Center'; $gl.VerticalAlignment = 'Center'
+        $ic.Child = $gl
+        Add-ToGrid $head $ic 0
+        $chev = New-Text '›' 24 '#5B6475' -Bold
+        $chev.VerticalAlignment = 'Center'
+        Add-ToGrid $head $chev 2
+        [void]$sp.Children.Add($head)
+        $t1 = New-Text $pg.Title 16 '#FFFFFF' -Semi
+        $t1.Margin = New-Thickness 0 12 0 0
+        [void]$sp.Children.Add($t1)
+        $d = New-Text $pg.Desc 12.5 '#9AA3B2'
+        $d.Margin = New-Thickness 0 3 0 0
+        $d.MinHeight = 34
+        [void]$sp.Children.Add($d)
+        $stat = New-Text ' ' 13 $pg.Color -Semi
+        $stat.Margin = New-Thickness 0 10 0 0
+        [void]$sp.Children.Add($stat)
+        $card.Child = $sp
+        $card.Tag = @{ Index = $pg.Index; Color = $pg.Color; Move = $move; Chev = $chev }
+        $card.Add_MouseEnter({
+            param($s, $e)
+            $s.BorderBrush = Get-Brush $s.Tag.Color
+            $s.Background = Get-Brush '#1C212B'
+            $s.Tag.Chev.Foreground = Get-Brush $s.Tag.Color
+            Start-WpfAnim $s.Tag.Move ([System.Windows.Media.TranslateTransform]::YProperty) -3 180
+        })
+        $card.Add_MouseLeave({
+            param($s, $e)
+            $s.BorderBrush = Get-Brush '#232937'
+            $s.Background = Get-Brush '#181C24'
+            $s.Tag.Chev.Foreground = Get-Brush '#5B6475'
+            Start-WpfAnim $s.Tag.Move ([System.Windows.Media.TranslateTransform]::YProperty) 0 180
+        })
+        $card.Add_MouseLeftButtonUp({ param($s, $e) Show-Page $s.Tag.Index })
+        $card.Opacity = 0
+        Start-WpfAnim $card ([System.Windows.UIElement]::OpacityProperty) 1 400 (60 * $n)
+        [void]$ui.HubCards.Children.Add($card)
+        $script:HubStats[$pg.Index] = $stat
+        $n++
+    }
+}
+
+function Update-Hub {
+    $a = $script:LastAnalysis
+    $info = if ($a) { $a.Info } else { @{} }
+    $ui.HubSub.Text = "$env:COMPUTERNAME" + $(if ($info['Windows']) { "   /   $($info['Windows'])" } else { '' })
+
+    # Jauges
+    $ui.HubGaugeOpt.Children.Clear(); $ui.HubGaugeSec.Children.Clear()
+    if ($a) {
+        $col = if ($a.Score -ge 85) { $Colors.ok } elseif ($a.Score -ge 65) { '#9BE15D' } elseif ($a.Score -ge 45) { $Colors.warn } else { $Colors.bad }
+        [void]$ui.HubGaugeOpt.Children.Add((New-Gauge 'Optimisation' $a.Score 100 '{0:N0}' 'sur 100' $col 0).El)
+    }
+    if ($null -ne $script:SecurityScore) {
+        $s = $script:SecurityScore
+        $col = if ($s -ge 80) { $Colors.ok } elseif ($s -ge 50) { $Colors.warn } else { $Colors.bad }
+        [void]$ui.HubGaugeSec.Children.Add((New-Gauge 'Protection' $s 100 '{0:N0}' 'sur 100' $col 150).El)
+    }
+
+    # Résumé du PC
+    $ui.HubSummary.Children.Clear()
+    foreach ($k in 'Processeur', 'Carte graphique', 'Mémoire', 'Disque système', 'Réseau') {
+        if ($info[$k]) {
+            $g = New-Grid @('130', '*')
+            $g.Margin = New-Thickness 0 4 0 4
+            Add-ToGrid $g (New-Text $k 12.5 '#9AA3B2') 0
+            $v = New-Text ([string]$info[$k]) 12.5 '#E6E8EE' -Semi
+            $v.TextTrimming = 'CharacterEllipsis'; $v.TextWrapping = 'NoWrap'
+            Add-ToGrid $g $v 1
+            [void]$ui.HubSummary.Children.Add($g)
+        }
+    }
+
+    # Infos en direct sur chaque carte
+    $st = $script:HubStats
+    if (-not $st) { return }
+    if ($a) {
+        $st[0].Text = "Score $($a.Score) sur 100"
+        $todo = @($a.Active | Where-Object { $_.Id -like 'tweak:*' -and $_.Status -eq 'warn' }).Count
+        $st[1].Text = if ($todo) { "$todo réglage$(if ($todo -gt 1) {'s'}) à faire" } else { 'Tout est optimisé' }
+    } else { $st[0].Text = 'Analyse en cours...'; $st[1].Text = ' ' }
+    $tested = @($ui.TestsPanel.Children | Where-Object { $_.Child -and $_.Child.Children.Count -gt 2 -and $_.Child.Children[2].Children.Count -and -not ($_.Child.Children[2].Children[0] -is [System.Windows.Controls.TextBlock]) }).Count
+    $st[5].Text = if ($tested) { "$tested composant$(if ($tested -gt 1) {'s'}) testé$(if ($tested -gt 1) {'s'})" } else { 'Aucun test pour le moment' }
+    $st[6].Text = if ($null -ne $script:SecurityScore) { "Protection $($script:SecurityScore) sur 100" } else { 'Clique pour vérifier' }
+    $on = @($script:StartupEntries | Where-Object { $_.Item.Enabled }).Count
+    $st[2].Text = "$on programme$(if ($on -gt 1) {'s'}) au démarrage"
+    $ping = @($script:PingResults | Where-Object { $_.Label -like 'Internet*' } | Select-Object -First 1)
+    $st[3].Text = if ($ping.Count) { "Ping $($ping[0].Avg) ms" } else { 'Tester ma connexion' }
+    $st[4].Text = 'Clique pour analyser'
+    $n = Get-BackupCount
+    $st[7].Text = if ($n) { "$n réglage$(if ($n -gt 1) {'s'}) modifié$(if ($n -gt 1) {'s'})" } else { "Version $AppVersion" }
+}
+
+# ---------------------------------------------------------------------------
+# Section Réseau : scan des appareils connectés
+# ---------------------------------------------------------------------------
+$OuiFile = Join-Path $DataDir 'fabricants.txt'
+$KnownFile = Join-Path $DataDir 'appareils.json'
+
+$NetScanWork = {
+    param($a)
+    try {
+        [OGNative]::Phase = 'ping'
+        $alive = @([OGNative]::PingSweep([string[]]$a.Ips, 800))
+        if ([OGNative]::Cancel) { return @{ Cancelled = $true } }
+        [OGNative]::Phase = 'arp'
+        [OGNative]::Progress = 72
+        Start-Sleep -Milliseconds 300
+        # Seulement les vrais appareils du réseau (pas les adresses techniques multicast / broadcast)
+        $inNet = @{}; foreach ($x in $a.Ips) { $inNet[$x] = $true }
+        $arp = @(Get-NetNeighbor -InterfaceIndex $a.If -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $inNet.ContainsKey([string]$_.IPAddress) -and $_.State -notin 'Unreachable', 'Incomplete', 'Permanent' -and $_.LinkLayerAddress -and $_.LinkLayerAddress -notmatch '^(00-00-00-00-00-00|FF-FF-FF-FF-FF-FF|01-00-5E.*)$' } |
+            ForEach-Object { "$($_.IPAddress)|$($_.LinkLayerAddress)|$($_.State)" })
+        [OGNative]::Phase = 'names'
+        [OGNative]::Progress = 80
+        $ips = @(@($alive | ForEach-Object { ($_ -split '\|')[0] }) + @($arp | ForEach-Object { ($_ -split '\|')[0] }) | Select-Object -Unique)
+        $names = @([OGNative]::ResolveNames([string[]]$ips, 2500))
+        [OGNative]::Phase = 'vendors'
+        [OGNative]::Progress = 92
+        if (-not (Test-Path -LiteralPath $a.Oui)) {
+            try {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+                $tmp = "$($a.Oui).csv"
+                Invoke-WebRequest 'https://standards-oui.ieee.org/oui/oui.csv' -OutFile $tmp -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0 OptiGame' } -TimeoutSec 60
+                Import-Csv -LiteralPath $tmp | ForEach-Object { "$($_.Assignment)|$($_.'Organization Name')" } | Set-Content -LiteralPath $a.Oui -Encoding UTF8
+                Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue
+            } catch {}
+        }
+        [OGNative]::Progress = 100
+        @{ Alive = $alive; Arp = $arp; Names = $names }
+    } catch { @{ Error = $_.Exception.GetBaseException().Message } }
+}
+
+function Get-SubnetIps([string]$Ip, [int]$Prefix) {
+    if ($Prefix -lt 24) { $Prefix = 24 }
+    $b = ([Net.IPAddress]::Parse($Ip)).GetAddressBytes(); [array]::Reverse($b)
+    $n = [double][BitConverter]::ToUInt32($b, 0)
+    $size = [math]::Pow(2, 32 - $Prefix)
+    $net = [math]::Floor($n / $size) * $size
+    for ($i = 1; $i -lt $size - 1; $i++) {
+        $bb = [BitConverter]::GetBytes([uint32]($net + $i)); [array]::Reverse($bb)
+        ([Net.IPAddress]::new($bb)).ToString()
+    }
+}
+
+function Get-Vendor([string]$Mac) {
+    if (-not $Mac) { return '' }
+    $hex = ($Mac -replace '[-:]', '').ToUpper()
+    if ($hex.Length -lt 6) { return '' }
+    if ([Convert]::ToInt32($hex.Substring(1, 1), 16) -band 2) { return 'Adresse privée' }
+    if (-not $script:Oui -and (Test-Path -LiteralPath $OuiFile)) {
+        $script:Oui = @{}
+        foreach ($l in [IO.File]::ReadLines($OuiFile)) { $i = $l.IndexOf('|'); if ($i -gt 0) { $script:Oui[$l.Substring(0, $i).Trim([char]0xFEFF)] = $l.Substring($i + 1) } }
+    }
+    if (-not $script:Oui) { return '' }
+    $v = [string]$script:Oui[$hex.Substring(0, 6)]
+    $v = $v -replace '(?i)[,\s]+(inc|incorporated|co|ltd|corporation|corp|gmbh|s\.?a\.?s|sarl|s\.a|limited|llc|b\.v|ag|oy|ab)\b\.?', ''
+    $v = $v -replace '(?i)\s+(technologies|technology|electronics|communications|broadband)\b', ''
+    $v.Trim(' ', ',', '.')
+}
+
+function Get-DeviceKind($D) {
+    $t = "$($D.Host) $($D.Vendor)"
+    if ($D.Self) { return @{ Kind = 'Ce PC'; Glyph = 0xE7F4; Color = $Colors.info } }
+    if ($D.Gateway) { return @{ Kind = 'Box Internet'; Glyph = 0xE80F; Color = $Colors.ok } }
+    if ($t -match '(?i)\brt-|router|routeur|archer|\bdeco\b|orbi|mesh|access.?point|repeater|répéteur|ubiquiti|unifi') { return @{ Kind = 'Routeur ou répéteur Wi-Fi'; Glyph = 0xE774; Color = $Colors.ok } }
+    if ($t -match '(?i)iphone|ipad|android|galaxy|pixel|redmi|oneplus|oppo|honor|phone|motorola|poco') { return @{ Kind = 'Téléphone ou tablette'; Glyph = 0xE8EA; Color = '#B18CFF' } }
+    if ($t -match '(?i)playstation|\bps[345]\b|sony interactive|nintendo|xbox|switch') { return @{ Kind = 'Console de jeu'; Glyph = 0xE7FC; Color = '#FF7AB6' } }
+    if ($t -match '(?i)webos|\btv\b|tizen|bravia|androidtv|chromecast|roku|fire.?tv|lg innotek|hisense|\btcl\b') { return @{ Kind = 'TV ou multimédia'; Glyph = 0xE7F4; Color = $Colors.warn } }
+    if ($t -match '(?i)printer|imprimante|hewlett|\bhp\b|canon|epson|brother|lexmark|kyocera') { return @{ Kind = 'Imprimante'; Glyph = 0xE749; Color = '#9AA3B2' } }
+    if ($t -match '(?i)sagemcom|sercomm|arcadyan|technicolor|freebox|livebox|bbox|decodeur|décodeur') { return @{ Kind = 'Box ou décodeur TV'; Glyph = 0xE80F; Color = $Colors.ok } }
+    if ($t -match '(?i)espressif|tuya|shelly|sonoff|signify|philips lighting|amazon|google|nest|ring|meross|netatmo|tapo|xiaomi') { return @{ Kind = 'Objet connecté'; Glyph = 0xE80F; Color = '#4EA8FF' } }
+    if ($t -match '(?i)\bapple\b') { return @{ Kind = 'Appareil Apple'; Glyph = 0xE8EA; Color = '#B18CFF' } }
+    if ($t -match '(?i)desktop|laptop|\bpc|asustek|micro-star|gigabyte|dell|lenovo|acer|intel|realtek|killer') { return @{ Kind = 'Ordinateur'; Glyph = 0xE7F4; Color = $Colors.info } }
+    if ($D.Vendor -eq 'Adresse privée') { return @{ Kind = 'Téléphone probable'; Glyph = 0xE8EA; Color = '#B18CFF' } }
+    @{ Kind = 'Appareil'; Glyph = 0xE774; Color = '#9AA3B2' }
+}
+
+function New-NetRadar([switch]$Spin) {
+    $g = New-Object System.Windows.Controls.Grid
+    $g.Width = 200; $g.Height = 200
+    $g.HorizontalAlignment = 'Center'
+    foreach ($r in 96, 68, 40) {
+        $e = New-Object System.Windows.Shapes.Ellipse
+        $e.Width = $r * 2; $e.Height = $r * 2
+        $e.Stroke = Get-Brush '#1F2633'; $e.StrokeThickness = 1.5
+        [void]$g.Children.Add($e)
+    }
+    $dots = New-Object System.Windows.Controls.Canvas
+    $dots.Width = 200; $dots.Height = 200
+    [void]$g.Children.Add($dots)
+    $sweep = New-Object System.Windows.Shapes.Path
+    $sweep.Data = Get-ArcGeometry 100 94 -90 70
+    $sweep.Stroke = Get-Brush $Colors.info; $sweep.StrokeThickness = 5
+    $sweep.StrokeStartLineCap = 'Round'; $sweep.StrokeEndLineCap = 'Round'
+    $sweep.Effect = New-Glow $Colors.info 18 0.9
+    $sweep.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5)
+    $rot = New-Object System.Windows.Media.RotateTransform
+    $sweep.RenderTransform = $rot
+    $sweep.Visibility = if ($Spin) { 'Visible' } else { 'Collapsed' }
+    [void]$g.Children.Add($sweep)
+    $center = New-Object System.Windows.Controls.Border
+    $center.Width = 64; $center.Height = 64
+    $center.CornerRadius = [System.Windows.CornerRadius]::new(32)
+    $center.Background = Get-Brush '#1A2A40'
+    $center.BorderBrush = Get-Brush $Colors.info; $center.BorderThickness = New-Thickness 2 2 2 2
+    $center.Effect = New-Glow $Colors.info 20 0.5
+    $num = New-Text '' 22 '#FFFFFF' -Bold
+    $num.HorizontalAlignment = 'Center'; $num.VerticalAlignment = 'Center'
+    $icon = New-Object System.Windows.Controls.TextBlock
+    $icon.Text = [string][char]0xE774
+    $icon.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'
+    $icon.FontSize = 26; $icon.Foreground = Get-Brush $Colors.info
+    $icon.HorizontalAlignment = 'Center'; $icon.VerticalAlignment = 'Center'
+    $inner = New-Object System.Windows.Controls.Grid
+    [void]$inner.Children.Add($icon)
+    [void]$inner.Children.Add($num)
+    $center.Child = $inner
+    $center.HorizontalAlignment = 'Center'; $center.VerticalAlignment = 'Center'
+    [void]$g.Children.Add($center)
+    if ($Spin) {
+        $a = New-Object System.Windows.Media.Animation.DoubleAnimation
+        $a.From = 0; $a.To = 360
+        $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(1400))
+        $a.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+        $rot.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
+    }
+    @{ El = $g; Dots = $dots; Rot = $rot; Sweep = $sweep; Num = $num; Icon = $icon; Shown = 0 }
+}
+
+# Ajoute un point lumineux sur le radar pour chaque appareil trouvé.
+$script:Rnd = New-Object System.Random
+function Add-RadarDot($Radar) {
+    $rnd = $script:Rnd
+    $ang = $rnd.NextDouble() * 2 * [math]::PI
+    $dist = 45 + $rnd.NextDouble() * 45
+    $dot = New-Object System.Windows.Shapes.Ellipse
+    $dot.Width = 9; $dot.Height = 9
+    $dot.Fill = Get-Brush '#FFFFFF'
+    $dot.Effect = New-Glow $Colors.info 14 1
+    [System.Windows.Controls.Canvas]::SetLeft($dot, 100 + $dist * [math]::Cos($ang) - 4.5)
+    [System.Windows.Controls.Canvas]::SetTop($dot, 100 + $dist * [math]::Sin($ang) - 4.5)
+    $dot.Opacity = 0
+    [void]$Radar.Dots.Children.Add($dot)
+    Start-WpfAnim $dot ([System.Windows.UIElement]::OpacityProperty) 1 400
+}
+
+function Update-NetScanInfo {
+    $ui.NetScanInfo.Children.Clear()
+    $net = Get-ActiveNet
+    if (-not $net) { [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Connexion' 'Aucune' 'bad')); return }
+    $ipInfo = Get-NetIPAddress -InterfaceIndex $net.IfIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
+    if ($net.Wifi) {
+        $w = netsh wlan show interfaces 2>$null
+        $ssid = ($w | Where-Object { $_ -match '^\s+SSID\s+:\s+(.+)$' } | Select-Object -First 1) -replace '^\s+SSID\s+:\s+', ''
+        $sig = ($w | Where-Object { $_ -match '^\s+Signal\s+:\s+(\d+)' } | Select-Object -First 1) -replace '^\s+Signal\s+:\s+', ''
+        [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Connexion' "Wi-Fi « $ssid »  ($sig)" $(if ([int]($sig -replace '\D', '') -ge 60) { 'ok' } else { 'warn' })))
+    } else {
+        [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Connexion' "Câble Ethernet, $($net.Speed)" 'ok'))
+    }
+    if ($ipInfo) {
+        [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Adresse de ce PC' $ipInfo.IPAddress 'info'))
+        $count = [math]::Pow(2, 32 - [math]::Max(24.0, $ipInfo.PrefixLength)) - 2
+        [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Taille du réseau' "$count adresses possibles" 'info'))
+    }
+    [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Box' $net.Gateway 'ok'))
+    $pub = Invoke-Async { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; [string](Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5) } catch { '' } } | Select-Object -First 1
+    if ("$pub") { [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Adresse Internet' "$pub" 'info')) }
+}
+
+function Show-NetHeroIdle {
+    $ui.NetHero.Children.Clear()
+    $r = New-NetRadar
+    [void]$ui.NetHero.Children.Add($r.El)
+    $t = New-Text 'Prêt à scanner ton réseau' 14 '#9AA3B2' -Semi
+    $t.HorizontalAlignment = 'Center'; $t.Margin = New-Thickness 0 12 0 0
+    [void]$ui.NetHero.Children.Add($t)
+}
+
+function New-DeviceTile($D, [int]$Index) {
+    $card = New-Card
+    $card.Padding = New-Thickness 16 14 16 14
+    $card.Margin = New-Thickness 0 0 12 12
+    $g = New-Grid @('Auto', '*')
+    $k = $D.KindInfo
+    $ic = New-Object System.Windows.Controls.Border
+    $ic.Width = 46; $ic.Height = 46
+    $ic.CornerRadius = [System.Windows.CornerRadius]::new(12)
+    $bg = Get-Brush $k.Color; $bg.Opacity = 0.15
+    $ic.Background = $bg
+    $ic.VerticalAlignment = 'Top'
+    $gl = New-Object System.Windows.Controls.TextBlock
+    $gl.Text = [string][char]$k.Glyph
+    $gl.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'
+    $gl.FontSize = 20; $gl.Foreground = Get-Brush $k.Color
+    $gl.HorizontalAlignment = 'Center'; $gl.VerticalAlignment = 'Center'
+    $ic.Child = $gl
+    Add-ToGrid $g $ic 0
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $sp.Margin = New-Thickness 12 0 0 0
+    $name = New-Text $D.Title 14.5 '#FFFFFF' -Semi
+    $name.TextTrimming = 'CharacterEllipsis'; $name.TextWrapping = 'NoWrap'; $name.ToolTip = $D.Title
+    [void]$sp.Children.Add($name)
+    [void]$sp.Children.Add((New-Text $k.Kind 12 '#9AA3B2'))
+    $badges = New-Object System.Windows.Controls.WrapPanel
+    $badges.Margin = New-Thickness -10 6 0 0
+    if ($D.Self) { [void]$badges.Children.Add((New-Badge 'Ce PC' $Colors.info)) }
+    if ($D.Gateway) { [void]$badges.Children.Add((New-Badge 'Ta box' $Colors.ok)) }
+    if ($D.New) { [void]$badges.Children.Add((New-Badge 'Nouveau' $Colors.warn)) }
+    if ($null -ne $D.Ms) { [void]$badges.Children.Add((New-Badge $(if ($D.Ms -lt 1) { '< 1 ms' } else { "$($D.Ms) ms" }) '#9AA3B2')) }
+    if ($badges.Children.Count) { [void]$sp.Children.Add($badges) }
+    $det = New-Text "$($D.Ip)$(if ($D.Vendor) { '   ' + $D.Vendor })" 11.5 '#5B6475'
+    $det.Margin = New-Thickness 0 8 0 0
+    $det.TextTrimming = 'CharacterEllipsis'; $det.TextWrapping = 'NoWrap'
+    $det.ToolTip = "Adresse : $($D.Ip)`nAdresse physique : $($D.Mac)`nFabricant : $($D.Vendor)"
+    [void]$sp.Children.Add($det)
+    if ($D.Gateway) {
+        $b = New-Button 'Ouvrir la box'
+        $b.HorizontalAlignment = 'Left'
+        $b.Margin = New-Thickness 0 10 0 0
+        $b.Tag = "http://$($D.Ip)"
+        $b.Add_Click({ param($s, $e) Start-Process $s.Tag })
+        [void]$sp.Children.Add($b)
+    }
+    Add-ToGrid $g $sp 1
+    $card.Child = $g
+    if ($D.New) { $card.BorderBrush = Get-Brush $Colors.warn }
+    $card.Opacity = 0
+    $move = New-Object System.Windows.Media.TranslateTransform 0, 12
+    $card.RenderTransform = $move
+    Start-WpfAnim $card ([System.Windows.UIElement]::OpacityProperty) 1 450 (70 * $Index)
+    Start-WpfAnim $move ([System.Windows.Media.TranslateTransform]::YProperty) 0 450 (70 * $Index)
+    $card
+}
+
+function Invoke-NetworkScan {
+    if ($script:NetScanning) { return }
+    $net = Get-ActiveNet
+    if (-not $net) { Show-Message 'Aucune connexion réseau détectée.'; return }
+    $ipInfo = Get-NetIPAddress -InterfaceIndex $net.IfIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
+    if (-not $ipInfo) { Show-Message 'Impossible de lire l''adresse de ce PC.'; return }
+    $ips = @(Get-SubnetIps $ipInfo.IPAddress $ipInfo.PrefixLength)
+    $script:NetScanning = $true
+    $ui.BtnNetScan.IsEnabled = $false
+    Set-Status 'Scan du réseau...'
+
+    $ui.NetHero.Children.Clear()
+    $radar = New-NetRadar -Spin
+    $radar.Icon.Visibility = 'Collapsed'
+    $radar.Num.Text = '0'
+    [void]$ui.NetHero.Children.Add($radar.El)
+    $phase = New-Text 'Recherche des appareils...' 13 '#9AA3B2' -Semi
+    $phase.HorizontalAlignment = 'Center'; $phase.Margin = New-Thickness 0 12 0 8
+    [void]$ui.NetHero.Children.Add($phase)
+    $bar = New-Object System.Windows.Controls.ProgressBar
+    $bar.Width = 220; $bar.Height = 5
+    [void]$ui.NetHero.Children.Add($bar)
+
+    [OGNative]::Cancel = $false; [OGNative]::Found = 0; [OGNative]::Progress = 0; [OGNative]::Phase = ''
+    $script:NetScanUi = @{ Radar = $radar; Phase = $phase; Bar = $bar }
+    $script:NetTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:NetTimer.Interval = [TimeSpan]::FromMilliseconds(120)
+    $script:NetTimer.Add_Tick({
+        $u = $script:NetScanUi
+        $f = [OGNative]::Found
+        while ($u.Radar.Shown -lt $f) { Add-RadarDot $u.Radar; $u.Radar.Shown++ }
+        $u.Radar.Num.Text = "$f"
+        $u.Bar.Value = [OGNative]::Progress
+        $u.Phase.Text = switch ([OGNative]::Phase) { 'ping' { 'Recherche des appareils...' } 'arp' { 'Recherche des appareils discrets...' } 'names' { 'Récupération des noms...' } 'vendors' { 'Identification des fabricants...' } default { 'Préparation...' } }
+    })
+    $script:NetTimer.Start()
+    try {
+        $r = Invoke-Async $NetScanWork @{ Ips = $ips; If = $net.IfIndex; Oui = $OuiFile } | Select-Object -First 1
+    } finally {
+        $script:NetTimer.Stop()
+        $script:NetScanning = $false
+        $ui.BtnNetScan.IsEnabled = $true
+    }
+    if (-not $r -or $r.Error) {
+        Show-NetHeroIdle
+        Show-Message "Le scan n'a pas pu se faire : $($r.Error)" 'Warning'
+        return
+    }
+
+    # Assemblage des appareils
+    $inNet = @{}; foreach ($x in $ips) { $inNet[$x] = $true }
+    $devs = @{}
+    foreach ($l in @($r.Alive)) { $p = ([string]$l) -split '\|'; $devs[$p[0]] = @{ Ip = $p[0]; Ms = [int]$p[1]; Mac = $null } }
+    foreach ($l in @($r.Arp)) {
+        $p = ([string]$l) -split '\|'
+        if (-not $inNet.ContainsKey($p[0])) { continue }
+        if ($devs.ContainsKey($p[0])) { $devs[$p[0]].Mac = $p[1] }
+        elseif ($p[2] -in 'Reachable', 'Stale', 'Delay', 'Probe') { $devs[$p[0]] = @{ Ip = $p[0]; Ms = $null; Mac = $p[1] } }
+    }
+    $self = $ipInfo.IPAddress
+    $selfMac = (Get-NetAdapter -InterfaceIndex $net.IfIndex -ErrorAction SilentlyContinue).MacAddress
+    if (-not $devs.ContainsKey($self)) { $devs[$self] = @{ Ip = $self; Ms = 0; Mac = $null } }
+    $devs[$self].Mac = $selfMac
+    $names = @{}
+    foreach ($l in @($r.Names)) { $p = ([string]$l) -split '\|', 2; if ($p[1] -and $p[1] -ne $p[0]) { $names[$p[0]] = ($p[1] -replace '(?i)\.(home|lan|local|localdomain|box|fritz\.box|station|bbox)$', '') } }
+
+    $known = @()
+    if (Test-Path -LiteralPath $KnownFile) { try { $arr = ConvertFrom-Json (Get-Content -LiteralPath $KnownFile -Raw -Encoding UTF8); $known = @(@($arr) | ForEach-Object { [string]$_ }) } catch {} }
+    $first = -not $known.Count
+    $list = foreach ($d in $devs.Values) {
+        $d.Self = $d.Ip -eq $self
+        $d.Gateway = $d.Ip -eq $net.Gateway
+        $d.Host = if ($d.Self) { $env:COMPUTERNAME } else { [string]$names[$d.Ip] }
+        $d.Vendor = Get-Vendor $d.Mac
+        $d.KindInfo = Get-DeviceKind $d
+        $d.Title = if ($d.Self) { "$env:COMPUTERNAME (ce PC)" } elseif ($d.Host -and $d.Host -ne 'lan') { $d.Host } elseif ($d.Gateway) { 'Box Internet' } elseif ($d.Vendor -and $d.Vendor -ne 'Adresse privée') { $d.Vendor } else { 'Appareil inconnu' }
+        $d.New = (-not $first) -and $d.Mac -and ($known -notcontains $d.Mac) -and -not $d.Self
+        $d
+    }
+    $list = @($list | Sort-Object @{ Expression = { if ($_.Self) { 0 } elseif ($_.Gateway) { 1 } else { 2 } } }, @{ Expression = { [version]$_.Ip } })
+    $allMacs = @($known + @($list | Where-Object { $_.Mac } | ForEach-Object { $_.Mac }) | Select-Object -Unique)
+    try { ConvertTo-Json -InputObject @($allMacs) | Set-Content -LiteralPath $KnownFile -Encoding UTF8 } catch {}
+    $newCount = @($list | Where-Object { $_.New }).Count
+
+    # Résultat
+    $radar.Rot.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null)
+    $radar.Sweep.Visibility = 'Collapsed'
+    $ui.NetHero.Children.Remove($bar)
+    Start-Anim { param($e, $s) $s.T.Text = '{0:N0}' -f ($s.V * $e) } @{ T = $radar.Num; V = [double]$list.Count } 900
+    $phase.Text = "appareil$(if ($list.Count -gt 1) {'s'}) connecté$(if ($list.Count -gt 1) {'s'})"
+    $phase.Foreground = Get-Brush '#FFFFFF'
+    if ($newCount) {
+        $nw = New-Text "dont $newCount nouveau$(if ($newCount -gt 1) {'x'}) depuis le dernier scan" 12.5 $Colors.warn -Semi
+        $nw.HorizontalAlignment = 'Center'
+        [void]$ui.NetHero.Children.Add($nw)
+    }
+    $ui.NetDevices.Children.Clear()
+    $i = 0
+    foreach ($d in $list) { [void]$ui.NetDevices.Children.Add((New-DeviceTile $d $i)); $i++ }
+    $ui.NetDevSummary.Text = "$($list.Count) appareil$(if ($list.Count -gt 1) {'s'})" + $(if ($newCount) { ", $newCount nouveau$(if ($newCount -gt 1) {'x'})" } else { '' })
+    $ui.NetDevHint.Text = if ($first) {
+        'Premier scan : ces appareils sont mémorisés. Au prochain scan, OptiGame te signalera tout nouvel appareil (pratique pour repérer quelqu''un sur ton Wi-Fi).'
+    } elseif ($newCount) {
+        'Un appareil « Nouveau » n''était pas là au scan précédent. Si tu ne le reconnais pas, change le mot de passe de ton Wi-Fi depuis la page de ta box. Attention : les téléphones récents changent parfois d''adresse et peuvent apparaître comme nouveaux.'
+    } else {
+        'Aucun nouvel appareil depuis le dernier scan. Passe la souris sur un appareil pour voir son adresse physique.'
+    }
+    Set-Status "Scan terminé : $($list.Count) appareils trouvés."
+}
+
+# ---------------------------------------------------------------------------
 # Mises à jour (GitHub)
 # ---------------------------------------------------------------------------
 # Script autonome: il tourne dans un fil séparé pour ne pas figer la fenêtre.
@@ -5778,6 +6433,7 @@ $ui.BtnScanFull.Add_Click({
 })
 $ui.BtnScanFolder.Add_Click({ Invoke-Safe { Invoke-FolderScan } })
 $ui.BtnScanUpdate.Add_Click({ Invoke-Safe { Update-Definitions } })
+$ui.BtnNetScan.Add_Click({ Invoke-Safe { Invoke-NetworkScan } })
 $ui.BtnSecRefresh.Add_Click({ Invoke-Safe { Update-SecurityTab } })
 $ui.BtnTestClose.Add_Click({ Hide-TestPanel })
 $ui.BtnTestX.Add_Click({ Hide-TestPanel })
@@ -5822,6 +6478,13 @@ $ui.BtnExport.Add_Click({ Invoke-Safe { Export-Report } })
 $ui.Tabs.Add_SelectionChanged({
     param($s, $e)
     if ($e.OriginalSource -ne $ui.Tabs) { return }
+    Update-NavBar
+    if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubStats) { Invoke-Safe { Update-Hub }; return }
+    if ($ui.Tabs.SelectedIndex -eq $NetIndex -and -not $script:NetBuilt) {
+        $script:NetBuilt = $true
+        Invoke-Safe { Show-NetHeroIdle; Update-NetScanInfo; Invoke-NetworkScan }
+        return
+    }
     if ($ui.Tabs.SelectedIndex -eq 6 -and -not $script:SecurityBuilt) {
         $script:SecurityBuilt = $true
         Invoke-Safe { Update-SecurityTab }
@@ -5847,6 +6510,13 @@ $Window.Add_ContentRendered({
     if ($logo -and $script:IconFrames) {
         $logo.Source = $script:IconFrames | Sort-Object PixelWidth | Where-Object { $_.PixelWidth -ge 128 } | Select-Object -First 1
     }
+    $script:NavBar = $ui.Tabs.Template.FindName('NavBar', $ui.Tabs)
+    $script:NavCrumb = $ui.Tabs.Template.FindName('NavCrumb', $ui.Tabs)
+    $back = $ui.Tabs.Template.FindName('NavBack', $ui.Tabs)
+    if ($back) { $back.Add_Click({ Show-Page $HubIndex }) }
+    Build-Hub
+    $ui.Tabs.SelectedIndex = $HubIndex
+    Update-Hub
     Start-Live
     Invoke-Safe {
         Invoke-Analysis
@@ -5854,6 +6524,11 @@ $Window.Add_ContentRendered({
         Update-StartupList
         Update-NetInfo
         Update-BackupSummary
+    }
+    Invoke-Safe {
+        if (-not $script:SecurityBuilt) { $script:SecurityBuilt = $true; Update-SecurityTab }
+        Update-Hub
+        Set-Status 'Prêt.'
     }
     try { Invoke-UpdateCheck } catch { Write-Log "Vérification de mise à jour: $_" }
 })

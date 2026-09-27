@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.5
+﻿OptiGame 1.0.6
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -33,6 +33,12 @@ Secours : fichiers\Désinstaller OptiGame (secours).bat
 
 CE QUE FAIT L'APPLICATION
 -------------------------
+L'application a deux grandes sections, dans le menu à gauche :
+  - Ordinateur : l'accueil, avec une carte pour chaque fonction ci dessous.
+  - Réseau : scan de tous les appareils connectés à ton réseau (téléphones,
+    consoles, TV, box...), avec leur fabricant. Les nouveaux appareils sont
+    signalés d'un scan à l'autre : pratique pour repérer un intrus sur ton Wi-Fi.
+
 Tableau de bord
   Mesures en direct : processeur, mémoire, carte graphique (et sa température
   sur les cartes NVIDIA).
@@ -67,7 +73,7 @@ Spécial PC portable
 Démarrage
   Désactive les programmes qui se lancent avec Windows (rien n'est supprimé).
 
-Réseau
+Connexion
   Mesure ton ping, la gigue et les pertes de paquets. Permet de changer de DNS.
 
 Nettoyage
