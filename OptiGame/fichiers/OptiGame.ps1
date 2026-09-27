@@ -3367,6 +3367,7 @@ function Install-Update {
     $errors = @()
     foreach ($f in Get-ChildItem -LiteralPath $src -Recurse -File) {
         $dest = Join-Path $appRoot $f.FullName.Substring($src.Length + 1)
+        if ((Test-Path -LiteralPath $dest) -and (Get-FileHash -LiteralPath $dest).Hash -eq (Get-FileHash -LiteralPath $f.FullName).Hash) { continue }
         try {
             New-Item -ItemType Directory -Force -Path (Split-Path $dest -Parent) | Out-Null
             Copy-Item -LiteralPath $f.FullName -Destination $dest -Force -ErrorAction Stop
@@ -3390,8 +3391,10 @@ function Install-Update {
 $IconPath = Join-Path $PSScriptRoot 'OptiGame.ico'
 if (Test-Path $IconPath) {
     try {
-        $Window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([Uri]$IconPath)
-        $script:IconFrames = [System.Windows.Media.Imaging.BitmapDecoder]::Create([Uri]$IconPath, 'None', 'OnLoad').Frames
+        # Chargée en mémoire pour ne pas bloquer le fichier (il doit pouvoir être remplacé par une mise à jour).
+        $iconStream = New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($IconPath))
+        $script:IconFrames = [System.Windows.Media.Imaging.BitmapDecoder]::Create($iconStream, 'None', 'OnLoad').Frames
+        $Window.Icon = $script:IconFrames | Sort-Object PixelWidth | Where-Object { $_.PixelWidth -ge 32 } | Select-Object -First 1
     } catch { Write-Log "Icône: $_" }
 }
 
