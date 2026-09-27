@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.3
+﻿OptiGame 1.0.4
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 

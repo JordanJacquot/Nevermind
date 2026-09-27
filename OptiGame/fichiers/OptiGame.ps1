@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.3
+    OptiGame 1.0.4
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,7 +10,7 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.3'
+$AppVersion = '1.0.4'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -146,6 +146,7 @@ public static class OGNative
     public static volatile bool Cancel;
     public static double Progress;
     public static string Phase = "";
+    public static double LiveValue;   // valeur instantanée pour la courbe en direct
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr sec, uint disposition, uint flags, IntPtr template);
@@ -174,6 +175,8 @@ public static class OGNative
         const uint NO_BUFFERING = 0x20000000, WRITE_THROUGH = 0x80000000, SEQUENTIAL = 0x08000000, RANDOM = 0x10000000;
         size = Math.Max(block, size / block * block);
         long blocks = size / block;
+        long written = 0;
+        const double PhaseSeconds = 6;
         IntPtr buf = VirtualAlloc(IntPtr.Zero, (UIntPtr)block, 0x3000, 0x04);
         if (buf == IntPtr.Zero) throw new Exception("Mémoire insuffisante pour le test.");
         double[] r = new double[4];
@@ -189,13 +192,20 @@ public static class OGNative
             {
                 if (h.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
                 var sw = System.Diagnostics.Stopwatch.StartNew();
+                double last = 0; LiveValue = 0;
                 for (long i = 0; i < blocks; i++)
                 {
                     if (Cancel) return null;
+                    if (sw.Elapsed.TotalSeconds > PhaseSeconds) break;
                     if (!WriteFile(h, buf, (uint)block, out done, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-                    Progress = 40.0 * (i + 1) / blocks;
+                    written = i + 1;
+                    Progress = 40.0 * Math.Max((double)(i + 1) / blocks, sw.Elapsed.TotalSeconds / PhaseSeconds);
+                    double now = sw.Elapsed.TotalSeconds;
+                    double inst = block / 1048576.0 / Math.Max(1e-6, now - last);
+                    LiveValue = LiveValue == 0 ? inst : LiveValue * 0.85 + inst * 0.15;
+                    last = now;
                 }
-                r[0] = size / 1048576.0 / sw.Elapsed.TotalSeconds;
+                r[0] = written * (double)block / 1048576.0 / sw.Elapsed.TotalSeconds;
             }
 
             Phase = "read";
@@ -203,13 +213,21 @@ public static class OGNative
             {
                 if (h.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                for (long i = 0; i < blocks; i++)
+                double last = 0; LiveValue = 0;
+                long readBlocks = 0;
+                for (long i = 0; i < written; i++)
                 {
                     if (Cancel) return null;
+                    if (sw.Elapsed.TotalSeconds > PhaseSeconds) break;
                     if (!ReadFile(h, buf, (uint)block, out done, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-                    Progress = 40 + 30.0 * (i + 1) / blocks;
+                    readBlocks = i + 1;
+                    Progress = 40 + 30.0 * Math.Max((double)(i + 1) / written, sw.Elapsed.TotalSeconds / PhaseSeconds);
+                    double now = sw.Elapsed.TotalSeconds;
+                    double inst = block / 1048576.0 / Math.Max(1e-6, now - last);
+                    LiveValue = LiveValue == 0 ? inst : LiveValue * 0.85 + inst * 0.15;
+                    last = now;
                 }
-                r[1] = size / 1048576.0 / sw.Elapsed.TotalSeconds;
+                r[1] = readBlocks * (double)block / 1048576.0 / sw.Elapsed.TotalSeconds;
             }
 
             Phase = "random";
@@ -217,7 +235,7 @@ public static class OGNative
             {
                 if (h.IsInvalid) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
                 var rng = new Random(7);
-                long pages = size / 4096, count = 0, pos;
+                long pages = written * (long)block / 4096, count = 0, pos;
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 while (sw.Elapsed.TotalSeconds < 5)
                 {
@@ -225,7 +243,11 @@ public static class OGNative
                     SetFilePointerEx(h, (long)(rng.NextDouble() * pages) * 4096, out pos, 0);
                     if (!ReadFile(h, buf, 4096, out done, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
                     count++;
-                    if ((count & 127) == 0) Progress = 70 + 30 * Math.Min(1, sw.Elapsed.TotalSeconds / 5);
+                    if ((count & 127) == 0)
+                    {
+                        Progress = 70 + 30 * Math.Min(1, sw.Elapsed.TotalSeconds / 5);
+                        LiveValue = count / Math.Max(1e-6, sw.Elapsed.TotalSeconds);
+                    }
                 }
                 double s = sw.Elapsed.TotalSeconds;
                 r[3] = count / s;
@@ -307,9 +329,13 @@ public static class OGNative
         return new double[] { single * 10, multi * 10, errors, threads };
     }
 
+    static long a_len(List<long[]> mem) { return mem.Count > 0 ? mem[0].Length : 0; }
+
     static void ParallelChunks(List<long[]> mem, Action<long[], int> work, double p0, double p1)
     {
         int next = -1, finished = 0, total = mem.Count;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        LiveValue = 0;
         int threads = Math.Min(Environment.ProcessorCount, total);
         var ths = new System.Threading.Thread[threads];
         for (int t = 0; t < threads; t++)
@@ -323,6 +349,7 @@ public static class OGNative
                     work(mem[i], i);
                     int f = System.Threading.Interlocked.Increment(ref finished);
                     Progress = p0 + (p1 - p0) * f / total;
+                    LiveValue = f * (a_len(mem) * 8.0) / 1073741824.0 / Math.Max(1e-6, clock.Elapsed.TotalSeconds);
                 }
             });
             ths[t].IsBackground = true;
@@ -459,9 +486,20 @@ public static class OGNative
             ths[t].IsBackground = true;
             ths[t].Start();
         }
+        long lastBytes = 0; double lastTime = 0; LiveValue = 0;
         foreach (var th in ths)
         {
-            while (!th.Join(100)) Progress = p0 + (p1 - p0) * Math.Min(1, sw.Elapsed.TotalSeconds / seconds);
+            while (!th.Join(100))
+            {
+                Progress = p0 + (p1 - p0) * Math.Min(1, sw.Elapsed.TotalSeconds / seconds);
+                double now = sw.Elapsed.TotalSeconds;
+                if (now - lastTime >= 0.3)
+                {
+                    long b = System.Threading.Interlocked.Read(ref total);
+                    LiveValue = (b - lastBytes) * 8 / 1e6 / (now - lastTime);
+                    lastBytes = b; lastTime = now;
+                }
+            }
         }
         double elapsed = Math.Min(sw.Elapsed.TotalSeconds, seconds + 0.5);
         Progress = p1;
@@ -1671,7 +1709,7 @@ if ($Uninstall) {
             <TextBlock Style="{StaticResource Sub}" Text="Vérifie que chaque pièce de ton PC fonctionne bien et à la bonne vitesse. Ferme tes jeux avant de lancer un test."/>
           </StackPanel>
           <ScrollViewer Grid.Row="1" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="TestsPanel" Margin="0,0,8,0"/>
+            <UniformGrid x:Name="TestsPanel" Columns="2" VerticalAlignment="Top"/>
           </ScrollViewer>
         </Grid>
       </TabItem>
@@ -1758,6 +1796,52 @@ if ($Uninstall) {
             <Button x:Name="SheetRun" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Exécuter" Margin="10,0,0,0"/>
             <Button x:Name="SheetOpen" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Ouvrir" Margin="10,0,0,0"/>
             <Button x:Name="SheetClose" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Fermer"/>
+          </DockPanel>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- Panneau des tests -->
+    <Grid x:Name="TestOverlay" Grid.RowSpan="3" Visibility="Collapsed">
+      <Border x:Name="TestBackdrop" Background="#D0080A0D"/>
+      <Border x:Name="TestCard" Background="#141820" BorderBrush="#2C3342" BorderThickness="1" CornerRadius="16"
+              Width="760" Margin="24,16" VerticalAlignment="Center" HorizontalAlignment="Center">
+        <Grid Margin="26,22,26,20">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <DockPanel>
+            <Button x:Name="BtnTestX" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="✕" Padding="12,6" VerticalAlignment="Top"/>
+            <Border DockPanel.Dock="Left" Width="48" Height="48" CornerRadius="12" Background="#1A2A40" Margin="0,0,14,0">
+              <TextBlock x:Name="TestTag" Foreground="#4EA8FF" FontWeight="Bold" FontSize="12.5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel VerticalAlignment="Center">
+              <TextBlock x:Name="TestTitle" Foreground="White" FontSize="19" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+              <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                <TextBlock x:Name="TestSub" Foreground="#9AA3B2" FontSize="12.5" VerticalAlignment="Center"/>
+                <Ellipse x:Name="TestStateDot" Width="8" Height="8" Margin="14,0,6,0" VerticalAlignment="Center" Fill="#4EA8FF"/>
+                <TextBlock x:Name="TestStateText" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              </StackPanel>
+            </StackPanel>
+          </DockPanel>
+          <Grid Grid.Row="1" Margin="0,16,0,12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <ProgressBar x:Name="TestProgress" Height="5" VerticalAlignment="Center"/>
+            <TextBlock x:Name="TestPct" Grid.Column="1" Foreground="#9AA3B2" FontSize="12" Margin="12,0,0,0" MinWidth="36" TextAlignment="Right"/>
+          </Grid>
+          <ScrollViewer x:Name="TestScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" MaxHeight="450">
+            <StackPanel x:Name="TestBody" Margin="0,0,12,0"/>
+          </ScrollViewer>
+          <DockPanel Grid.Row="3" Margin="0,16,0,0" LastChildFill="False">
+            <Button x:Name="BtnTestStop" DockPanel.Dock="Left" Style="{StaticResource BtnSecondary}" Content="Arrêter le test"/>
+            <Button x:Name="BtnTestClose" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Fermer"/>
+            <Button x:Name="BtnTestAgain" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Refaire le test" Margin="0,0,10,0"/>
           </DockPanel>
         </Grid>
       </Border>
@@ -2577,7 +2661,7 @@ function New-HealthCard($C) {
         Add-ToGrid $row (New-Text $b.Text 12.5 '#E6E8EE' -Semi) 1
         [void]$sp.Children.Add($row)
         $pb = New-Object System.Windows.Controls.ProgressBar
-        $pb.Value = [math]::Min(100, [math]::Max(0, [double]$b.Value))
+        $pb.Value = [math]::Min(100.0, [math]::Max(0.0, [double]$b.Value))
         $pb.Foreground = Get-Brush $b.Color
         [void]$sp.Children.Add($pb)
     }
@@ -3069,7 +3153,7 @@ function Invoke-Analysis {
         $design = (Get-CimInstance -Namespace root\wmi -ClassName BatteryStaticData -ErrorAction SilentlyContinue | Select-Object -First 1).DesignedCapacity
         $full = (Get-CimInstance -Namespace root\wmi -ClassName BatteryFullChargedCapacity -ErrorAction SilentlyContinue | Select-Object -First 1).FullChargedCapacity
         if ($design -and $full) {
-            $health = [math]::Min(100, 100 * $full / $design)
+            $health = [math]::Min(100.0, 100 * $full / $design)
             [void]$c.Bars.Add(@{ Label = 'Santé de la batterie'; Value = $health; Text = "$([int]$health) %"; Color = $(if ($health -lt 60) { $Colors.bad } elseif ($health -lt 80) { $Colors.warn } else { $Colors.ok }) })
             $c.Lines["Capacité d'origine"] = '{0:N0} mWh' -f $design
             $c.Lines['Capacité actuelle'] = '{0:N0} mWh' -f $full
@@ -3176,7 +3260,7 @@ $LiveScript = {
     while ($sync.Run) {
         try {
             $pi = Get-CimInstance Win32_PerfFormattedData_Counters_ProcessorInformation -Filter "Name='_Total'" -ErrorAction Stop
-            $sync.Cpu = [math]::Min(100, [double]$pi.PercentProcessorUtility)
+            $sync.Cpu = [math]::Min(100.0, [double]$pi.PercentProcessorUtility)
             $sync.CpuPerf = [double]$pi.PercentProcessorPerformance
         } catch {}
         try {
@@ -3199,18 +3283,18 @@ $LiveScript = {
         if (-not $gpuDone) {
             try {
                 $eng = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction Stop | Where-Object { $_.Name -like '*engtype_3D' }
-                $sync.Gpu = [math]::Min(100, [double](($eng | Measure-Object UtilizationPercentage -Sum).Sum))
+                $sync.Gpu = [math]::Min(100.0, [double](($eng | Measure-Object UtilizationPercentage -Sum).Sum))
             } catch {}
         }
         $sync.Updated = Get-Date
-        Start-Sleep -Milliseconds 1500
+        Start-Sleep -Milliseconds $(if ($sync.Fast) { 400 } else { 1500 })
     }
 }
 
 function Set-Gauge($Val, $Bar, $Sub, $Value, [string]$Text, [string]$SubText, [double]$Warn = 75, [double]$Bad = 90) {
     if ($null -eq $Value) { $Val.Text = 'N/D'; $Bar.Value = 0; $Sub.Text = $SubText; return }
     $Val.Text = $Text
-    $Bar.Value = [math]::Min(100, [math]::Max(0, [double]$Value))
+    $Bar.Value = [math]::Min(100.0, [math]::Max(0.0, [double]$Value))
     $Bar.Foreground = Get-Brush (Get-LoadColor $Value $Warn $Bad)
     $Sub.Text = $SubText
 }
@@ -3670,7 +3754,7 @@ function Invoke-Clean {
         Set-Status "Nettoyage: $($r.Target.Titre)..."
         [void](Invoke-Async $CleanScript $r.Target.Paths)
         $after = [double](Invoke-Async $SizeScript $r.Target.Paths)
-        $freed += [math]::Max(0, $r.Size - $after)
+        $freed += [math]::Max(0.0, $r.Size - $after)
     }
     Invoke-CleanScan
     $msg = "$(Format-Size $freed) libérés. Certains fichiers en cours d'utilisation ont pu être laissés en place, c'est normal."
@@ -3812,7 +3896,7 @@ $NetWork = {
         $times = @()
         for ($i = 0; $i -lt 10; $i++) {
             if ([OGNative]::Cancel) { return @{ Cancelled = $true } }
-            try { $p = $ping.Send('1.1.1.1', 1000); if ($p.Status -eq 'Success') { $times += $p.RoundtripTime } } catch {}
+            try { $p = $ping.Send('1.1.1.1', 1000); if ($p.Status -eq 'Success') { $times += $p.RoundtripTime; [OGNative]::LiveValue = $p.RoundtripTime } } catch {}
             [OGNative]::Progress = $i + 1
             Start-Sleep -Milliseconds 100
         }
@@ -3830,23 +3914,399 @@ $NetWork = {
 $RepairWork = {
     param($a)
     $out = @()
+    [OGNative]::Phase = 'scan'
+    $i = 0
     foreach ($l in $a.Letters) {
-        [OGNative]::Phase = 'scan'
         try { $out += "$l|$(Repair-Volume -DriveLetter $l -Scan -ErrorAction Stop)" } catch { $out += "$l|ERR $($_.Exception.Message)" }
+        $i++
+        [OGNative]::Progress = 100 * $i / @($a.Letters).Count
     }
     @{ R = $out }
 }
 
-function New-TestCard([string]$Tag, [string]$Title, [string]$Sub, [string]$Desc) {
+# ---------------------------------------------------------------------------
+# Animations
+# ---------------------------------------------------------------------------
+$script:Anims = New-Object System.Collections.ArrayList
+$script:AnimTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:AnimTimer.Interval = [TimeSpan]::FromMilliseconds(16)
+$script:AnimTimer.Add_Tick({
+    $now = [DateTime]::Now
+    foreach ($a in @($script:Anims)) {
+        $el = ($now - $a.Start).TotalMilliseconds - $a.Delay
+        if ($el -lt 0) { continue }
+        $p = [math]::Min(1.0, $el / $a.Ms)
+        $ease = 1 - [math]::Pow(1 - $p, 3)
+        try { & $a.Step $ease $a.State } catch {}
+        if ($p -ge 1) { $script:Anims.Remove($a) }
+    }
+    if (-not $script:Anims.Count) { $script:AnimTimer.Stop() }
+})
+
+# Anime une valeur de 0 à 1 (départ rapide, fin douce) en appelant $Step à chaque image.
+function Start-Anim([scriptblock]$Step, $State, [int]$Ms = 1100, [int]$Delay = 0) {
+    [void]$script:Anims.Add(@{ Step = $Step; State = $State; Ms = $Ms; Delay = $Delay; Start = [DateTime]::Now })
+    if (-not $script:AnimTimer.IsEnabled) { $script:AnimTimer.Start() }
+}
+
+function Start-WpfAnim($Element, $Property, [double]$To, [int]$Ms = 900, [int]$Delay = 0) {
+    $a = New-Object System.Windows.Media.Animation.DoubleAnimation
+    $a.To = $To
+    $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds($Ms))
+    $a.BeginTime = [TimeSpan]::FromMilliseconds($Delay)
+    $ease = New-Object System.Windows.Media.Animation.CubicEase
+    $ease.EasingMode = 'EaseOut'
+    $a.EasingFunction = $ease
+    $Element.BeginAnimation($Property, $a)
+}
+
+function Start-Pulse($Element) {
+    $a = New-Object System.Windows.Media.Animation.DoubleAnimation
+    $a.From = 1; $a.To = 0.25
+    $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(700))
+    $a.AutoReverse = $true
+    $a.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+    $Element.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $a)
+}
+
+function Stop-Pulse($Element) {
+    $Element.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null)
+    $Element.Opacity = 1
+}
+
+function New-Glow([string]$Hex, [double]$Blur = 16, [double]$Opacity = 0.55) {
+    $fx = New-Object System.Windows.Media.Effects.DropShadowEffect
+    $fx.Color = [System.Windows.Media.ColorConverter]::ConvertFromString($Hex)
+    $fx.BlurRadius = $Blur; $fx.ShadowDepth = 0; $fx.Opacity = $Opacity
+    $fx
+}
+
+# ---------------------------------------------------------------------------
+# Jauges circulaires, courbes en direct, barres de comparaison
+# ---------------------------------------------------------------------------
+function Get-ArcGeometry([double]$C, [double]$R, [double]$Start, [double]$Sweep) {
+    if ($Sweep -le 0.05) { return $null }
+    $a1 = $Start * [math]::PI / 180
+    $a2 = ($Start + $Sweep) * [math]::PI / 180
+    $p1 = [System.Windows.Point]::new($C + $R * [math]::Cos($a1), $C + $R * [math]::Sin($a1))
+    $p2 = [System.Windows.Point]::new($C + $R * [math]::Cos($a2), $C + $R * [math]::Sin($a2))
+    $seg = [System.Windows.Media.ArcSegment]::new($p2, [System.Windows.Size]::new($R, $R), 0.0, ($Sweep -gt 180), [System.Windows.Media.SweepDirection]::Clockwise, $true)
+    $fig = New-Object System.Windows.Media.PathFigure
+    $fig.StartPoint = $p1
+    [void]$fig.Segments.Add($seg)
+    $geo = New-Object System.Windows.Media.PathGeometry
+    [void]$geo.Figures.Add($fig)
+    $geo
+}
+
+function New-Gauge([string]$Label, [double]$Value, [double]$Max, [string]$Fmt, [string]$Unit, [string]$Color, [int]$Delay = 0) {
+    $c = 72; $r = 60
+    $root = New-Object System.Windows.Controls.StackPanel
+    $root.Width = 150
+    $root.Margin = New-Thickness 6 0 6 10
+    $g = New-Object System.Windows.Controls.Grid
+    $g.Width = 144; $g.Height = 144
+    foreach ($spec in @(@{ Hex = '#232937'; Sweep = 270 }, @{ Hex = $Color; Sweep = 0 })) {
+        $path = New-Object System.Windows.Shapes.Path
+        $path.Stroke = Get-Brush $spec.Hex
+        $path.StrokeThickness = 11
+        $path.StrokeStartLineCap = 'Round'; $path.StrokeEndLineCap = 'Round'
+        $path.Data = Get-ArcGeometry $c $r 135 $spec.Sweep
+        [void]$g.Children.Add($path)
+        $arc = $path
+    }
+    $arc.Effect = New-Glow $Color 18 0.6
+    $center = New-Object System.Windows.Controls.StackPanel
+    $center.VerticalAlignment = 'Center'; $center.HorizontalAlignment = 'Center'
+    $num = New-Text '0' 26 '#FFFFFF' -Bold
+    $num.HorizontalAlignment = 'Center'; $num.TextWrapping = 'NoWrap'
+    $u = New-Text $Unit 11.5 '#9AA3B2'
+    $u.HorizontalAlignment = 'Center'
+    [void]$center.Children.Add($num)
+    [void]$center.Children.Add($u)
+    [void]$g.Children.Add($center)
+    [void]$root.Children.Add($g)
+    $lbl = New-Text $Label 13 '#C9CED8' -Semi
+    $lbl.HorizontalAlignment = 'Center'; $lbl.TextAlignment = 'Center'
+    $lbl.Margin = New-Thickness 0 -8 0 0
+    [void]$root.Children.Add($lbl)
+    $state = @{ Arc = $arc; Num = $num; From = 0.0; To = $Value; Cur = 0.0; Max = [math]::Max(1e-6, $Max); Fmt = $Fmt; C = $c; R = $r }
+    Start-Anim { param($e, $s) $v = $s.From + ($s.To - $s.From) * $e; $s.Cur = $v; $f = [math]::Min(1.0, [math]::Max(0.0, $v / $s.Max)); $s.Arc.Data = Get-ArcGeometry $s.C $s.R 135 (270 * $f); $s.Num.Text = $s.Fmt -f $v } $state 1300 $Delay
+    @{ El = $root; State = $state }
+}
+
+# Fait glisser une jauge vers une nouvelle valeur (mode « en direct »).
+function Set-GaugeLive($Gauge, [double]$Value) {
+    $s = $Gauge.State
+    $s.From = $s.Cur; $s.To = $Value
+    Start-Anim { param($e, $st) $v = $st.From + ($st.To - $st.From) * $e; $st.Cur = $v; $f = [math]::Min(1.0, [math]::Max(0.0, $v / $st.Max)); $st.Arc.Data = Get-ArcGeometry $st.C $st.R 135 (270 * $f); $st.Num.Text = $st.Fmt -f $v } $s 700
+}
+
+function New-GaugeRow([array]$Gauges) {
+    $wp = New-Object System.Windows.Controls.WrapPanel
+    $wp.HorizontalAlignment = 'Center'
+    $wp.Margin = New-Thickness 0 6 0 4
+    foreach ($g in $Gauges) { [void]$wp.Children.Add($g.El) }
+    $wp
+}
+
+function New-LiveChart([string]$Color, [string]$Unit, [string]$Fmt = '{0:N0}') {
+    $w = 660; $h = 150
+    $cv = New-Object System.Windows.Controls.Canvas
+    $cv.Width = $w; $cv.Height = $h; $cv.ClipToBounds = $true
+    foreach ($y in 0.25, 0.5, 0.75) {
+        $ln = New-Object System.Windows.Shapes.Line
+        $ln.X1 = 0; $ln.X2 = $w; $ln.Y1 = $h * $y; $ln.Y2 = $h * $y
+        $ln.Stroke = Get-Brush '#1C212B'; $ln.StrokeThickness = 1
+        [void]$cv.Children.Add($ln)
+    }
+    $col = [System.Windows.Media.ColorConverter]::ConvertFromString($Color)
+    $grad = New-Object System.Windows.Media.LinearGradientBrush
+    $grad.StartPoint = [System.Windows.Point]::new(0, 0); $grad.EndPoint = [System.Windows.Point]::new(0, 1)
+    $top = [System.Windows.Media.Color]::FromArgb(110, $col.R, $col.G, $col.B)
+    $bottom = [System.Windows.Media.Color]::FromArgb(0, $col.R, $col.G, $col.B)
+    [void]$grad.GradientStops.Add([System.Windows.Media.GradientStop]::new($top, 0))
+    [void]$grad.GradientStops.Add([System.Windows.Media.GradientStop]::new($bottom, 1))
+    $fill = New-Object System.Windows.Shapes.Polygon
+    $fill.Fill = $grad
+    [void]$cv.Children.Add($fill)
+    $ref = New-Object System.Windows.Shapes.Line
+    $ref.X1 = 0; $ref.X2 = $w; $ref.Stroke = Get-Brush '#F5A524'; $ref.StrokeThickness = 1.2
+    $ref.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new([double[]]@(4, 4))
+    $ref.Visibility = 'Collapsed'
+    [void]$cv.Children.Add($ref)
+    $refText = New-Text '' 11 '#F5A524'
+    $refText.Visibility = 'Collapsed'
+    [void]$cv.Children.Add($refText)
+    $line = New-Object System.Windows.Shapes.Polyline
+    $line.Stroke = Get-Brush $Color; $line.StrokeThickness = 2.5
+    $line.StrokeLineJoin = 'Round'
+    $line.Effect = New-Glow $Color 10 0.7
+    [void]$cv.Children.Add($line)
+    $dot = New-Object System.Windows.Shapes.Ellipse
+    $dot.Width = 11; $dot.Height = 11; $dot.Fill = Get-Brush '#FFFFFF'
+    $dot.Effect = New-Glow $Color 14 0.9
+    $dot.Visibility = 'Hidden'
+    [void]$cv.Children.Add($dot)
+    $maxText = New-Text '' 11 '#5B6475'
+    [System.Windows.Controls.Canvas]::SetLeft($maxText, 4); [System.Windows.Controls.Canvas]::SetTop($maxText, 2)
+    [void]$cv.Children.Add($maxText)
+    $border = New-Object System.Windows.Controls.Border
+    $border.Background = Get-Brush '#10131A'
+    $border.CornerRadius = [System.Windows.CornerRadius]::new(12)
+    $border.Padding = New-Thickness 12 10 12 10
+    $border.Margin = New-Thickness 0 10 0 6
+    $border.Child = $cv
+    @{ El = $border; Line = $line; Fill = $fill; Dot = $dot; MaxText = $maxText; Ref = $ref; RefText = $refText; RefValue = $null
+       Values = New-Object System.Collections.ArrayList; W = $w; H = $h; Unit = $Unit; Fmt = $Fmt }
+}
+
+function Add-ChartPoint($Chart, [double]$Value) {
+    [void]$Chart.Values.Add($Value)
+    if ($Chart.Values.Count -gt 160) { $Chart.Values.RemoveAt(0) }
+    Update-Chart $Chart
+}
+
+function Update-Chart($Chart) {
+    $vals = $Chart.Values
+    $n = $vals.Count
+    if ($n -lt 2) { return }
+    $max = [double]($vals | Measure-Object -Maximum).Maximum
+    if ($Chart.RefValue) { $max = [math]::Max($max, $Chart.RefValue) }
+    if ($max -le 0) { $max = 1 }
+    $max *= 1.15
+    $w = $Chart.W; $h = $Chart.H
+    $step = $w / 159
+    $pts = New-Object System.Windows.Media.PointCollection
+    for ($i = 0; $i -lt $n; $i++) { [void]$pts.Add([System.Windows.Point]::new($i * $step, $h - [double]$vals[$i] / $max * ($h - 8))) }
+    $Chart.Line.Points = $pts
+    $fp = New-Object System.Windows.Media.PointCollection
+    foreach ($pt in $pts) { [void]$fp.Add($pt) }
+    [void]$fp.Add([System.Windows.Point]::new(($n - 1) * $step, $h))
+    [void]$fp.Add([System.Windows.Point]::new(0, $h))
+    $Chart.Fill.Points = $fp
+    $last = $pts[$n - 1]
+    [System.Windows.Controls.Canvas]::SetLeft($Chart.Dot, $last.X - 5.5)
+    [System.Windows.Controls.Canvas]::SetTop($Chart.Dot, $last.Y - 5.5)
+    $Chart.Dot.Visibility = 'Visible'
+    $Chart.MaxText.Text = "max $($Chart.Fmt -f ($max / 1.15)) $($Chart.Unit)"
+    if ($Chart.RefValue) {
+        $y = $h - $Chart.RefValue / $max * ($h - 8)
+        $Chart.Ref.Y1 = $y; $Chart.Ref.Y2 = $y; $Chart.Ref.Visibility = 'Visible'
+        [System.Windows.Controls.Canvas]::SetLeft($Chart.RefText, $w - 150)
+        [System.Windows.Controls.Canvas]::SetTop($Chart.RefText, $y - 16)
+        $Chart.RefText.Visibility = 'Visible'
+    }
+}
+
+# Barres horizontales qui se remplissent: ton composant comparé à des références.
+function New-CompareBars([array]$Rows, [string]$Unit) {
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $sp.Margin = New-Thickness 0 8 0 0
+    $max = [double](($Rows | ForEach-Object { $_.Value }) | Measure-Object -Maximum).Maximum
+    $barMax = 430.0
+    $i = 0
+    foreach ($row in $Rows) {
+        $g = New-Grid @('150', '440', '*')
+        $g.Margin = New-Thickness 0 5 0 5
+        $lbl = New-Text $row.Label 13 $(if ($row.Mine) { '#FFFFFF' } else { '#9AA3B2' })
+        if ($row.Mine) { $lbl.FontWeight = [System.Windows.FontWeights]::SemiBold }
+        $lbl.VerticalAlignment = 'Center'
+        Add-ToGrid $g $lbl 0
+        $track = New-Object System.Windows.Controls.Border
+        $track.Height = 12; $track.CornerRadius = [System.Windows.CornerRadius]::new(6)
+        $track.Background = Get-Brush '#1D222C'
+        $track.Width = $barMax; $track.HorizontalAlignment = 'Left'; $track.VerticalAlignment = 'Center'
+        $bar = New-Object System.Windows.Controls.Border
+        $bar.Height = 12; $bar.CornerRadius = [System.Windows.CornerRadius]::new(6)
+        $bar.HorizontalAlignment = 'Left'; $bar.Width = 0
+        $bar.Background = Get-Brush $(if ($row.Mine) { $row.Color } else { '#3A4252' })
+        if ($row.Mine) { $bar.Effect = New-Glow $row.Color 12 0.6 }
+        $track.Child = $bar
+        Add-ToGrid $g $track 1
+        $val = New-Text '' 13 $(if ($row.Mine) { '#FFFFFF' } else { '#9AA3B2' }) -Semi
+        $val.VerticalAlignment = 'Center'; $val.Margin = New-Thickness 12 0 0 0
+        Add-ToGrid $g $val 2
+        [void]$sp.Children.Add($g)
+        $target = [math]::Max(4.0, $barMax * $row.Value / [math]::Max(1.0, $max))
+        Start-WpfAnim $bar ([System.Windows.FrameworkElement]::WidthProperty) $target 1000 (150 * $i)
+        Start-Anim { param($e, $s) $s.T.Text = ('{0:N0} ' -f ($s.V * $e)) + $s.U } @{ T = $val; V = [double]$row.Value; U = $Unit } 1000 (150 * $i)
+        $i++
+    }
+    $sp
+}
+
+# Grande tuile chiffrée (score, nombre d'erreurs...) qui compte jusqu'à sa valeur.
+function New-StatTile([string]$Label, [double]$Value, [string]$Fmt, [string]$Color = '#FFFFFF', [int]$Delay = 0) {
+    $b = New-Object System.Windows.Controls.Border
+    $b.Background = Get-Brush '#1A1F29'
+    $b.CornerRadius = [System.Windows.CornerRadius]::new(12)
+    $b.Padding = New-Thickness 18 12 18 12
+    $b.Margin = New-Thickness 0 0 10 10
+    $b.MinWidth = 150
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $num = New-Text '0' 28 $Color -Bold
+    $num.TextWrapping = 'NoWrap'
+    [void]$sp.Children.Add($num)
+    [void]$sp.Children.Add((New-Text $Label 12.5 '#9AA3B2'))
+    $b.Child = $sp
+    Start-Anim { param($e, $s) $s.T.Text = $s.F -f ($s.V * $e) } @{ T = $num; V = $Value; F = $Fmt } 1200 $Delay
+    $b
+}
+
+function New-StatRow([array]$Tiles) {
+    $wp = New-Object System.Windows.Controls.WrapPanel
+    $wp.Margin = New-Thickness 0 10 0 0
+    foreach ($t2 in $Tiles) { [void]$wp.Children.Add($t2) }
+    $wp
+}
+
+function New-Verdict([string]$Status, [string]$Text) {
+    $b = New-Object System.Windows.Controls.Border
+    $bg = Get-Brush $Colors[$Status]; $bg.Opacity = 0.12
+    $b.Background = $bg
+    $b.BorderBrush = Get-Brush $Colors[$Status]; $b.BorderThickness = New-Thickness 0 0 0 0
+    $b.CornerRadius = [System.Windows.CornerRadius]::new(10)
+    $b.Padding = New-Thickness 14 11 14 11
+    $b.Margin = New-Thickness 0 14 0 0
+    $g = New-Grid @('Auto', '*')
+    $icon = New-Text $(switch ($Status) { 'ok' { '✓' } 'bad' { '!' } 'warn' { '!' } default { 'i' } }) 15 $Colors[$Status] -Bold
+    $icon.Margin = New-Thickness 0 0 12 0
+    Add-ToGrid $g $icon 0
+    Add-ToGrid $g (New-Text $Text 13.5 $Colors[$Status] -Semi) 1
+    $b.Child = $g
+    $b.Opacity = 0
+    Start-WpfAnim $b ([System.Windows.UIElement]::OpacityProperty) 1 600 700
+    $b
+}
+
+function New-SectionTitle([string]$Text) {
+    $title = New-Text $Text 12 '#5B6475' -Semi
+    $title.Margin = New-Thickness 0 16 0 2
+    $title
+}
+
+# Détails repliables: « Voir toutes les infos ».
+function New-Details([array]$Rows) {
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $sp.Margin = New-Thickness 0 12 0 0
+    $btn = New-Button 'Voir toutes les infos  ▾'
+    $btn.HorizontalAlignment = 'Left'
+    $box = New-Object System.Windows.Controls.StackPanel
+    $box.Visibility = 'Collapsed'
+    $box.Margin = New-Thickness 4 10 0 0
+    foreach ($r in $Rows) {
+        $g = New-Grid @('240', '*')
+        $g.Margin = New-Thickness 0 3 0 3
+        Add-ToGrid $g (New-Text $r[0] 12.5 '#9AA3B2') 0
+        $col = if ($r.Count -gt 2) { $r[2] } else { '#E6E8EE' }
+        Add-ToGrid $g (New-Text ([string]$r[1]) 12.5 $col) 1
+        [void]$box.Children.Add($g)
+    }
+    $btn.Tag = $box
+    $btn.Add_Click({
+        param($s, $e)
+        $open = $s.Tag.Visibility -ne 'Visible'
+        $s.Tag.Visibility = if ($open) { 'Visible' } else { 'Collapsed' }
+        $s.Content = if ($open) { 'Masquer les infos  ▴' } else { 'Voir toutes les infos  ▾' }
+    })
+    [void]$sp.Children.Add($btn)
+    [void]$sp.Children.Add($box)
+    $sp
+}
+
+# Étapes du test: ✓ faites, en cours (clignote), à venir.
+function New-Stepper($Steps) {
+    $wp = New-Object System.Windows.Controls.WrapPanel
+    $wp.Margin = New-Thickness 0 2 0 8
+    $chips = @{}
+    foreach ($k in $Steps.Keys) {
+        $b = New-Object System.Windows.Controls.Border
+        $b.CornerRadius = [System.Windows.CornerRadius]::new(14)
+        $b.Padding = New-Thickness 12 5 12 5
+        $b.Margin = New-Thickness 0 0 8 6
+        $b.Background = Get-Brush '#1A1F29'
+        $txt = New-Text "○  $($Steps[$k])" 12.5 '#5B6475' -Semi
+        $txt.TextWrapping = 'NoWrap'
+        $b.Child = $txt
+        [void]$wp.Children.Add($b)
+        $chips[$k] = @{ B = $b; T = $txt; Label = $Steps[$k] }
+    }
+    @{ El = $wp; Chips = $chips; Keys = @($Steps.Keys); Cur = $null }
+}
+
+function Update-Stepper($Stepper, [string]$Phase, [switch]$AllDone) {
+    if (-not $AllDone -and (-not $Phase -or $Stepper.Cur -eq $Phase -or -not $Stepper.Chips.ContainsKey($Phase))) { return }
+    $idx = if ($AllDone) { $Stepper.Keys.Count } else { [array]::IndexOf($Stepper.Keys, $Phase) }
+    for ($i = 0; $i -lt $Stepper.Keys.Count; $i++) {
+        $ch = $Stepper.Chips[$Stepper.Keys[$i]]
+        Stop-Pulse $ch.B
+        if ($i -lt $idx) {
+            $bg = Get-Brush $Colors.ok; $bg.Opacity = 0.15
+            $ch.B.Background = $bg; $ch.T.Text = "✓  $($ch.Label)"; $ch.T.Foreground = Get-Brush $Colors.ok
+        } elseif ($i -eq $idx) {
+            $bg = Get-Brush $Colors.info; $bg.Opacity = 0.2
+            $ch.B.Background = $bg; $ch.T.Text = "●  $($ch.Label)"; $ch.T.Foreground = Get-Brush '#FFFFFF'
+            Start-Pulse $ch.B
+        } else {
+            $ch.B.Background = Get-Brush '#1A1F29'; $ch.T.Text = "○  $($ch.Label)"; $ch.T.Foreground = Get-Brush '#5B6475'
+        }
+    }
+    $Stepper.Cur = $Phase
+}
+
+# ---------------------------------------------------------------------------
+# Tuiles de l'onglet et panneau de test
+# ---------------------------------------------------------------------------
+function New-TestTile([string]$Tag, [string]$Title, [string]$Sub, [string]$Desc) {
     $card = New-Card
     $card.Padding = New-Thickness 18 16 18 16
-    $card.Margin = New-Thickness 0 0 0 12
+    $card.Margin = New-Thickness 0 0 12 12
     $sp = New-Object System.Windows.Controls.StackPanel
-
-    $head = New-Grid @('Auto', '*')
+    $head = New-Grid @('Auto', '*', 'Auto')
     $tagB = New-Object System.Windows.Controls.Border
-    $tagB.Width = 46; $tagB.Height = 46
-    $tagB.CornerRadius = [System.Windows.CornerRadius]::new(10)
+    $tagB.Width = 44; $tagB.Height = 44
+    $tagB.CornerRadius = [System.Windows.CornerRadius]::new(12)
     $bg = Get-Brush $Colors.info; $bg.Opacity = 0.14
     $tagB.Background = $bg
     $tt = New-Text $Tag 12 $Colors.info -Bold
@@ -3854,133 +4314,235 @@ function New-TestCard([string]$Tag, [string]$Title, [string]$Sub, [string]$Desc)
     $tagB.Child = $tt
     Add-ToGrid $head $tagB 0
     $ts = New-Object System.Windows.Controls.StackPanel
-    $ts.Margin = New-Thickness 12 0 0 0
+    $ts.Margin = New-Thickness 12 0 8 0
     $ts.VerticalAlignment = 'Center'
-    [void]$ts.Children.Add((New-Text $Title 16 '#FFFFFF' -Semi))
+    $titleText = New-Text $Title 15 '#FFFFFF' -Semi
+    $titleText.TextTrimming = 'CharacterEllipsis'; $titleText.TextWrapping = 'NoWrap'
+    [void]$ts.Children.Add($titleText)
     if ($Sub) { [void]$ts.Children.Add((New-Text $Sub 12 '#9AA3B2')) }
     Add-ToGrid $head $ts 1
+    $dot = New-Object System.Windows.Shapes.Ellipse
+    $dot.Width = 10; $dot.Height = 10; $dot.Fill = Get-Brush '#343C4C'
+    $dot.VerticalAlignment = 'Top'; $dot.Margin = New-Thickness 0 6 0 0
+    $dot.ToolTip = 'Pas encore testé'
+    Add-ToGrid $head $dot 2
     [void]$sp.Children.Add($head)
-
-    $d = New-Text $Desc 13 '#C9CED8'
-    $d.Margin = New-Thickness 0 12 0 0
+    $d = New-Text $Desc 12.5 '#9AA3B2'
+    $d.Margin = New-Thickness 0 10 0 0
     [void]$sp.Children.Add($d)
-
+    $summary = New-Object System.Windows.Controls.WrapPanel
+    $summary.Margin = New-Thickness 0 12 0 0
+    $none = New-Text 'Pas encore testé' 12.5 '#5B6475'
+    [void]$summary.Children.Add($none)
+    [void]$sp.Children.Add($summary)
     $btns = New-Object System.Windows.Controls.WrapPanel
-    $btns.Margin = New-Thickness 0 14 0 0
+    $btns.Margin = New-Thickness 0 12 0 0
     [void]$sp.Children.Add($btns)
-
-    $pbox = New-Object System.Windows.Controls.StackPanel
-    $pbox.Margin = New-Thickness 0 14 0 0
-    $pbox.Visibility = 'Collapsed'
-    $prow = New-Grid @('*', 'Auto')
-    $ptext = New-Text '' 13 '#E6E8EE' -Semi
-    $ptext.VerticalAlignment = 'Center'
-    Add-ToGrid $prow $ptext 0
-    $stop = New-Button 'Arrêter'
-    $stop.Add_Click({ [OGNative]::Cancel = $true })
-    Add-ToGrid $prow $stop 1
-    [void]$pbox.Children.Add($prow)
-    $pb = New-Object System.Windows.Controls.ProgressBar
-    $pb.Margin = New-Thickness 0 10 0 0
-    [void]$pbox.Children.Add($pb)
-    [void]$sp.Children.Add($pbox)
-
-    $res = New-Object System.Windows.Controls.StackPanel
-    [void]$sp.Children.Add($res)
-
     $card.Child = $sp
     [void]$ui.TestsPanel.Children.Add($card)
-    @{ Card = $card; Buttons = $btns; ProgressBox = $pbox; PhaseText = $ptext; Bar = $pb; Result = $res }
+    $tile = @{ Card = $card; Buttons = $btns; Summary = $summary; Dot = $dot; Tag = $Tag; Title = $Title; Sub = $Sub; Last = $null; View = $null }
+    $view = New-Button 'Voir le résultat'
+    $view.Margin = New-Thickness 0 0 8 6
+    $view.Visibility = 'Collapsed'
+    $view.Tag = $tile
+    $view.Add_Click({ param($s, $e) Invoke-Safe { Show-LastResult $s.Tag } })
+    $tile.View = $view
+    $tile
 }
 
-function Add-TestButton($T, [string]$Text, [scriptblock]$OnClick, $Context, [switch]$Primary) {
+function Add-TestButton($Tile, [string]$Text, [scriptblock]$OnClick, $Context, [switch]$Primary) {
     $b = New-Button $Text $(if ($Primary) { 'BtnPrimary' } else { 'BtnSecondary' })
-    $b.Margin = New-Thickness 0 0 10 6
-    $b.Tag = @{ T = $T; Ctx = $Context }
+    $b.Margin = New-Thickness 0 0 8 6
+    $b.Tag = @{ T = $Tile; Ctx = $Context }
     $b.Add_Click($OnClick)
-    [void]$T.Buttons.Children.Add($b)
+    [void]$Tile.Buttons.Children.Add($b)
     [void]$script:TestButtons.Add($b)
 }
 
-function Add-TestTitle($T, [string]$Text) {
-    $title = New-Text $Text 13 '#9AA3B2' -Semi
-    $title.Margin = New-Thickness 0 16 0 4
-    [void]$T.Result.Children.Add($title)
+function Set-TileSummary($Tile, [array]$Chips, [string]$Status) {
+    $Tile.Summary.Children.Clear()
+    foreach ($c2 in $Chips) {
+        $b = New-Object System.Windows.Controls.Border
+        $b.Background = Get-Brush '#1A1F29'
+        $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
+        $b.Padding = New-Thickness 10 5 10 6
+        $b.Margin = New-Thickness 0 0 6 6
+        $sp = New-Object System.Windows.Controls.StackPanel
+        [void]$sp.Children.Add((New-Text $c2[1] 14 '#FFFFFF' -Bold))
+        [void]$sp.Children.Add((New-Text $c2[0] 11 '#9AA3B2'))
+        $b.Child = $sp
+        [void]$Tile.Summary.Children.Add($b)
+    }
+    $Tile.Dot.Fill = Get-Brush $Colors[$Status]
+    $Tile.Dot.ToolTip = "Testé à $((Get-Date).ToString('HH:mm'))"
+    if (-not $Tile.Buttons.Children.Contains($Tile.View)) { [void]$Tile.Buttons.Children.Add($Tile.View) }
+    $Tile.View.Visibility = 'Visible'
 }
 
-function Add-TestRow($T, [string]$Label, [string]$Value, [string]$Color = '#E6E8EE') {
-    $r = New-Grid @('210', '*')
-    $r.Margin = New-Thickness 0 3 0 3
-    Add-ToGrid $r (New-Text $Label 13 '#9AA3B2') 0
-    Add-ToGrid $r (New-Text $Value 13 $Color -Semi) 1
-    [void]$T.Result.Children.Add($r)
+function Set-TestState([string]$State, [string]$Text) {
+    $map = @{ run = $Colors.info; live = $Colors.ok; ok = $Colors.ok; warn = $Colors.warn; bad = $Colors.bad; info = '#9AA3B2' }
+    $ui.TestStateDot.Fill = Get-Brush $map[$State]
+    $ui.TestStateText.Text = $Text
+    $ui.TestStateText.Foreground = Get-Brush $map[$State]
+    if ($State -in 'run', 'live') { Start-Pulse $ui.TestStateDot } else { Stop-Pulse $ui.TestStateDot }
 }
 
-function Add-TestBar($T, [string]$Label, [string]$Value, [double]$Pct, [string]$Color) {
-    $r = New-Grid @('*', 'Auto')
-    $r.Margin = New-Thickness 0 10 0 5
-    Add-ToGrid $r (New-Text $Label 13 '#9AA3B2') 0
-    Add-ToGrid $r (New-Text $Value 14 '#FFFFFF' -Bold) 1
-    [void]$T.Result.Children.Add($r)
-    $pb = New-Object System.Windows.Controls.ProgressBar
-    $pb.Value = [math]::Min(100, [math]::Max(2, $Pct))
-    $pb.Foreground = Get-Brush $Color
-    [void]$T.Result.Children.Add($pb)
+function Show-TestPanel($Tile) {
+    $ui.TestTag.Text = $Tile.Tag
+    $ui.TestTitle.Text = $Tile.Title
+    $ui.TestSub.Text = $Tile.Sub
+    $ui.TestBody.Children.Clear()
+    $ui.TestProgress.Value = 0
+    $ui.TestPct.Text = ''
+    $ui.TestOverlay.Visibility = 'Visible'
+    $ui.TestCard.Opacity = 0
+    Start-WpfAnim $ui.TestCard ([System.Windows.UIElement]::OpacityProperty) 1 250
 }
 
-function Add-TestVerdict($T, [string]$Status, [string]$Text) {
-    $b = New-Object System.Windows.Controls.Border
-    $bg = Get-Brush $Colors[$Status]; $bg.Opacity = 0.12
-    $b.Background = $bg
-    $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
-    $b.Padding = New-Thickness 12 9 12 9
-    $b.Margin = New-Thickness 0 14 0 0
-    $b.Child = New-Text $Text 13 $Colors[$Status]
-    [void]$T.Result.Children.Add($b)
+function Hide-TestPanel {
+    if ($script:TestRunning) { return }
+    if ($script:MonitorTimer) { $script:MonitorTimer.Stop(); $script:MonitorTimer = $null }
+    $Live.Fast = $false
+    $ui.TestOverlay.Visibility = 'Collapsed'
+}
+
+function Set-TestButtons([string]$Mode) {
+    $ui.BtnTestStop.Visibility = if ($Mode -eq 'run') { 'Visible' } else { 'Collapsed' }
+    $ui.BtnTestAgain.Visibility = if ($Mode -eq 'done') { 'Visible' } else { 'Collapsed' }
+    $ui.BtnTestClose.IsEnabled = $Mode -ne 'run'
+    $ui.BtnTestX.IsEnabled = $Mode -ne 'run'
 }
 
 $script:TestTimer = New-Object System.Windows.Threading.DispatcherTimer
-$script:TestTimer.Interval = [TimeSpan]::FromMilliseconds(200)
+$script:TestTimer.Interval = [TimeSpan]::FromMilliseconds(100)
 $script:TestTimer.Add_Tick({
-    $t = $script:CurTest
-    if (-not $t) { return }
+    $cur = $script:CurTest
+    if (-not $cur) { return }
+    $prog = [math]::Min(100.0, [OGNative]::Progress)
+    $ui.TestProgress.Value = $prog
+    $ui.TestPct.Text = '{0:N0} %' -f $prog
     $ph = [OGNative]::Phase
-    $t.T.Bar.Value = [math]::Min(100, [OGNative]::Progress)
-    if ($ph -and $t.Labels.ContainsKey($ph)) { $t.T.PhaseText.Text = $t.Labels[$ph] }
+    Update-Stepper $cur.Stepper $ph
     if ($ph -and $Live.CpuPerf) {
-        if (-not $t.Freq.ContainsKey($ph)) { $t.Freq[$ph] = New-Object System.Collections.ArrayList }
-        [void]$t.Freq[$ph].Add([double]$Live.CpuPerf)
+        if (-not $cur.Freq.ContainsKey($ph)) { $cur.Freq[$ph] = New-Object System.Collections.ArrayList }
+        [void]$cur.Freq[$ph].Add([double]$Live.CpuPerf)
+    }
+    if ($cur.Chart -and $ph -and $cur.Def.Chart.Phases -contains $ph) {
+        if ($cur.Def.Chart.Source -eq 'cpu') {
+            if ($Live.Updated -eq $cur.LastSample) { return }
+            $cur.LastSample = $Live.Updated
+            $v = if ($Live.CpuPerf -and $Live.BaseMHz) { $Live.BaseMHz * $Live.CpuPerf / 100 / 1000 } else { 0 }
+        } else { $v = [OGNative]::LiveValue }
+        Add-ChartPoint $cur.Chart $v
+        $cur.LiveVal.Text = $cur.Def.Chart.Fmt -f $v
+        $cur.LiveLabel.Text = $cur.Def.Steps[$ph]
     }
 })
 
-# Lance un test dans un fil séparé en affichant sa progression dans la carte.
-function Invoke-ComponentTest($T, [hashtable]$Labels, [scriptblock]$Work, $Arg) {
-    if ($script:TestRunning) { Show-Message 'Un test est déjà en cours : attends qu''il se termine.'; return $null }
+# Lance un test: panneau animé pendant le test, puis résultat en jauges.
+function Invoke-ComponentTest($Tile, $Def, $Ctx, [string]$Rerun) {
+    if ($script:TestRunning) { Show-Message 'Un test est déjà en cours : attends qu''il se termine.'; return }
     $script:TestRunning = $true
+    $script:LastRun = @{ Fn = $Rerun; Tile = $Tile; Ctx = $Ctx }
     foreach ($b in $script:TestButtons) { $b.IsEnabled = $false }
+    Show-TestPanel $Tile
+    Set-TestState 'run' 'Test en cours'
+    Set-TestButtons 'run'
+    $Live.Fast = $true
+    $body = $ui.TestBody
+    $stepper = New-Stepper $Def.Steps
+    [void]$body.Children.Add($stepper.El)
+    $cur = @{ Def = $Def; Stepper = $stepper; Chart = $null; LiveVal = $null; LiveLabel = $null; Freq = @{}; LastSample = $null }
+    if ($Def.Chart) {
+        $head = New-Object System.Windows.Controls.StackPanel
+        $head.Orientation = 'Horizontal'
+        $cur.LiveVal = New-Text '0' 44 '#FFFFFF' -Bold
+        $cur.LiveVal.TextWrapping = 'NoWrap'
+        $unit = New-Text $Def.Chart.Unit 16 '#9AA3B2' -Semi
+        $unit.VerticalAlignment = 'Bottom'; $unit.Margin = New-Thickness 8 0 0 10
+        [void]$head.Children.Add($cur.LiveVal)
+        [void]$head.Children.Add($unit)
+        $cur.LiveLabel = New-Text 'Préparation...' 13 '#9AA3B2'
+        [void]$body.Children.Add($cur.LiveLabel)
+        [void]$body.Children.Add($head)
+        $cur.Head = $head
+        $cur.Chart = New-LiveChart $Def.Chart.Color $Def.Chart.Unit $Def.Chart.Fmt
+        if ($Def.Chart.Ref) { $cur.Chart.RefValue = $Def.Chart.Ref; $cur.Chart.RefText.Text = $Def.Chart.RefLabel }
+        [void]$body.Children.Add($cur.Chart.El)
+    }
     [OGNative]::Cancel = $false
     [OGNative]::Progress = 0
     [OGNative]::Phase = ''
-    $T.Result.Children.Clear()
-    $T.PhaseText.Text = 'Préparation...'
-    $T.Bar.Value = 0
-    $T.ProgressBox.Visibility = 'Visible'
-    $script:CurTest = @{ T = $T; Labels = $Labels; Freq = @{} }
+    [OGNative]::LiveValue = 0
+    $script:CurTest = $cur
     $script:TestTimer.Start()
     try {
-        $r = Invoke-Async $Work $Arg | Select-Object -First 1
+        $r = Invoke-Async $Def.Work $Def.Arg | Select-Object -First 1
     } finally {
         $script:TestTimer.Stop()
-        $T.ProgressBox.Visibility = 'Collapsed'
-        foreach ($b in $script:TestButtons) { $b.IsEnabled = $true }
+        $script:CurTest = $null
         $script:TestRunning = $false
+        $Live.Fast = $false
+        foreach ($b in $script:TestButtons) { $b.IsEnabled = $true }
+        Set-TestButtons 'done'
     }
-    $freq = $script:CurTest.Freq
-    $script:CurTest = $null
-    if (-not $r) { Add-TestVerdict $T 'warn' 'Le test n''a pas pu se terminer.'; return $null }
-    if ($r.Cancelled) { Add-TestVerdict $T 'info' 'Test arrêté.'; Set-Status 'Test arrêté.'; return $null }
-    if ($r.Error) { Write-Log "Test: $($r.Error)"; Add-TestVerdict $T 'bad' "Le test n'a pas pu aller au bout : $($r.Error)"; return $null }
-    @{ R = @($r.R); Freq = $freq }
+    if (-not $r -or $r.Error) {
+        if ($r.Error) { Write-Log "Test: $($r.Error)" }
+        Set-TestState 'bad' 'Échec'
+        [void]$body.Children.Add((New-Verdict 'bad' "Le test n'a pas pu aller au bout : $(if ($r.Error) { $r.Error } else { 'erreur inconnue' })"))
+        return
+    }
+    if ($r.Cancelled) {
+        Set-TestState 'info' 'Arrêté'
+        [void]$body.Children.Add((New-Verdict 'info' 'Test arrêté.'))
+        return
+    }
+    Update-Stepper $stepper '' -AllDone
+    $ui.TestProgress.Value = 100; $ui.TestPct.Text = '100 %'
+    if ($cur.LiveLabel) { $cur.LiveLabel.Text = 'Courbe du test'; $cur.Head.Visibility = 'Collapsed' }
+    $res = @{ R = @($r.R); Freq = $cur.Freq; ChartValues = $(if ($cur.Chart) { @($cur.Chart.Values) } else { @() }) }
+    $Tile.Last = @{ Def = $Def; Res = $res; Ctx = $Ctx }
+    $out = & $Def.Render $res $Ctx $body
+    Set-TestState $out.Status $(switch ($out.Status) { 'ok' { 'Terminé' } 'warn' { 'Terminé : à surveiller' } 'bad' { 'Problème détecté' } default { 'Terminé' } })
+    Show-ResultTop
+    Set-TileSummary $Tile $out.Chips $out.Status
+    Set-Status "$($Tile.Title) : test terminé."
+}
+
+# Réaffiche le dernier résultat (les jauges se réaniment).
+function Show-LastResult($Tile) {
+    $last = $Tile.Last
+    if (-not $last) { return }
+    if ($last.Live) { & $last.Live $Tile $last.Ctx; return }
+    Show-TestPanel $Tile
+    Set-TestButtons 'done'
+    $script:LastRun = @{ Fn = $last.Fn; Tile = $Tile; Ctx = $last.Ctx }
+    $body = $ui.TestBody
+    $stepper = New-Stepper $last.Def.Steps
+    [void]$body.Children.Add($stepper.El)
+    Update-Stepper $stepper '' -AllDone
+    if ($last.Def.Chart -and $last.Res.ChartValues.Count) {
+        [void]$body.Children.Add((New-Text 'Courbe du test' 13 '#9AA3B2'))
+        $ch = New-LiveChart $last.Def.Chart.Color $last.Def.Chart.Unit $last.Def.Chart.Fmt
+        if ($last.Def.Chart.Ref) { $ch.RefValue = $last.Def.Chart.Ref; $ch.RefText.Text = $last.Def.Chart.RefLabel }
+        foreach ($v in $last.Res.ChartValues) { [void]$ch.Values.Add([double]$v) }
+        [void]$body.Children.Add($ch.El)
+        Update-Chart $ch
+    }
+    $ui.TestProgress.Value = 100; $ui.TestPct.Text = ''
+    $out = & $last.Def.Render $last.Res $last.Ctx $body
+    Set-TestState $out.Status $(if ($out.Status -eq 'ok') { 'Terminé' } elseif ($out.Status -eq 'bad') { 'Problème détecté' } else { 'Terminé : à surveiller' })
+    Show-ResultTop
+}
+
+# Fait défiler le panneau jusqu'au résultat.
+function Show-ResultTop {
+    $ui.TestBody.UpdateLayout()
+    $target = $ui.TestBody.Children | Where-Object { $_ -is [System.Windows.Controls.TextBlock] -and $_.Text -eq 'RÉSULTAT' } | Select-Object -First 1
+    if ($target) {
+        $y = $target.TranslatePoint([System.Windows.Point]::new(0, 0), $ui.TestBody).Y
+        $ui.TestScroll.ScrollToVerticalOffset([math]::Max(0.0, $y - 8))
+    }
 }
 
 function Get-GHz($Samples, [switch]$Max) {
@@ -3989,259 +4551,376 @@ function Get-GHz($Samples, [switch]$Max) {
     $Live.BaseMHz * $v / 100 / 1000
 }
 
-# --- Disques ---------------------------------------------------------------
-function Test-DiskSpeed($T, $Ctx) {
+# ---------------------------------------------------------------------------
+# Disques
+# ---------------------------------------------------------------------------
+function Test-DiskSpeed($Tile, $Ctx) {
     $vol = Get-Volume -DriveLetter $Ctx.Letter -ErrorAction SilentlyContinue
     if (-not $vol -or $vol.SizeRemaining -lt 1GB) { Show-Message "Il faut au moins 1 Go de libre sur le lecteur $($Ctx.Letter): pour faire ce test."; return }
-    $size = if ($vol.SizeRemaining -gt 10GB) { 1GB } else { 256MB }
+    $size = if ($vol.SizeRemaining -gt 40GB) { 8GB } elseif ($vol.SizeRemaining -gt 10GB) { 2GB } else { 256MB }
     $file = if ("$($Ctx.Letter):" -eq $env:SystemDrive) { Join-Path $env:TEMP 'OptiGame-test-disque.tmp' } else { "$($Ctx.Letter):\OptiGame-test-disque.tmp" }
-    $labels = @{
-        write  = 'Écriture : le PC enregistre un gros fichier de test...'
-        read   = 'Lecture : le PC relit ce fichier...'
-        random = 'Petits fichiers : comme quand un jeu charge une partie...'
+    $steps = [ordered]@{ write = 'Écriture'; read = 'Lecture'; random = 'Petits fichiers' }
+    $def = @{
+        Steps = $steps; Work = $DiskWork; Arg = @{ File = $file; Size = [long]$size }
+        Chart = @{ Unit = 'Mo/s'; Fmt = '{0:N0}'; Color = $Colors.ok; Source = 'engine'; Phases = @('write', 'read') }
+        Render = {
+            param($res, $ctx, $body)
+            $r = $res.R
+            $scale = switch ($ctx.Kind) { 'NVMe' { 7000 } 'SSD' { 600 } 'HDD' { 250 } default { 1000 } }
+            [void]$body.Children.Add((New-SectionTitle 'RÉSULTAT'))
+            [void]$body.Children.Add((New-GaugeRow @(
+                (New-Gauge 'Lecture' $r[1] $scale '{0:N0}' 'Mo/s' $Colors.ok 0),
+                (New-Gauge 'Écriture' $r[0] $scale '{0:N0}' 'Mo/s' $Colors.info 150),
+                (New-Gauge 'Petits fichiers' $r[3] 25000 '{0:N0}' 'par seconde' '#B18CFF' 300)
+            )))
+            [void]$body.Children.Add((New-SectionTitle 'COMPARAISON (LECTURE)'))
+            [void]$body.Children.Add((New-CompareBars @(
+                @{ Label = 'Ton disque'; Value = $r[1]; Mine = $true; Color = $Colors.ok },
+                @{ Label = 'Disque dur'; Value = 150 },
+                @{ Label = 'SSD classique'; Value = 550 },
+                @{ Label = 'SSD NVMe récent'; Value = 5000 }
+            ) 'Mo/s'))
+            $min = switch ($ctx.Kind) { 'NVMe' { 1200 } 'SSD' { 350 } 'HDD' { 80 } default { 0 } }
+            if ($min -and $r[1] -lt $min) {
+                $status = 'warn'
+                $txt = 'Plus lent que la normale pour ce type de disque : disque presque plein, qui chauffe, ou SSD branché sur un port lent.'
+            } else {
+                $status = 'ok'
+                $txt = 'Vitesse normale pour ce type de disque.'
+            }
+            [void]$body.Children.Add((New-Verdict $status $txt))
+            @{ Status = $status; Chips = @(@('Lecture', ('{0:N0} Mo/s' -f $r[1])), @('Écriture', ('{0:N0} Mo/s' -f $r[0]))) }
+        }
     }
-    Set-Status "Test de vitesse du disque $($Ctx.Name)..."
-    $res = Invoke-ComponentTest $T $labels $DiskWork @{ File = $file; Size = [long]$size }
-    if (-not $res) { return }
-    $r = $res.R
-    $scale = switch ($Ctx.Kind) { 'NVMe' { 7000 } 'SSD' { 600 } 'HDD' { 250 } default { 1000 } }
-    Add-TestTitle $T 'Résultat du test de vitesse'
-    Add-TestBar $T 'Lecture (charger un jeu, ouvrir un fichier)' ('{0:N0} Mo/s' -f $r[1]) (100 * $r[1] / $scale) $Colors.ok
-    Add-TestBar $T 'Écriture (installer un jeu, copier des fichiers)' ('{0:N0} Mo/s' -f $r[0]) (100 * $r[0] / $scale) $Colors.info
-    Add-TestRow $T 'Petits fichiers' ('{0:N0} Mo/s ({1:N0} fichiers par seconde)' -f $r[2], $r[3])
-    Add-TestRow $T 'Pour comparer' 'Disque dur : 150 Mo/s   /   SSD : 550 Mo/s   /   SSD NVMe : 3 500 à 7 000 Mo/s' '#9AA3B2'
-    $min = switch ($Ctx.Kind) { 'NVMe' { 1200 } 'SSD' { 350 } 'HDD' { 80 } default { 0 } }
-    if ($min -and $r[1] -lt $min) {
-        Add-TestVerdict $T 'warn' "Plus lent que la normale pour ce type de disque. Causes possibles : disque presque plein, disque qui chauffe, ou SSD branché sur un port lent. Refais le test quand le PC ne fait rien d'autre."
-    } else {
-        Add-TestVerdict $T 'ok' 'Vitesse normale pour ce type de disque.'
-    }
-    Set-Status 'Test de vitesse terminé.'
+    $def.Chart.Phases = @('write', 'read')
+    Set-Status "Test de vitesse : $($Ctx.Name)..."
+    Invoke-ComponentTest $Tile $def $Ctx 'Test-DiskSpeed'
 }
 
-function Show-DiskHealth($T, $Ctx) {
-    $T.Result.Children.Clear()
+function Show-DiskHealth($Tile, $Ctx) {
     $d = Get-PhysicalDisk -ErrorAction SilentlyContinue | Where-Object { [string]$_.DeviceId -eq $Ctx.Id } | Select-Object -First 1
-    if (-not $d) { Add-TestVerdict $T 'warn' 'Disque introuvable.'; return }
+    if (-not $d) { Show-Message 'Disque introuvable.'; return }
+    $script:LastRun = @{ Fn = 'Show-DiskHealth'; Tile = $Tile; Ctx = $Ctx }
+    Show-TestPanel $Tile
+    Set-TestButtons 'done'
+    $ui.BtnTestAgain.Visibility = 'Collapsed'
+    $body = $ui.TestBody
     $rel = $null
     try { $rel = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}
-    $pstyle = try { [string](Get-Disk -Number ([int]$d.DeviceId) -ErrorAction Stop).PartitionStyle } catch { '' }
     $status = 'ok'; $notes = @()
-
-    Add-TestTitle $T 'Identité du disque'
-    Add-TestRow $T 'Modèle' ([string]$d.FriendlyName).Trim()
-    if (([string]$d.SerialNumber).Trim()) { Add-TestRow $T 'Numéro de série' ([string]$d.SerialNumber).Trim().TrimEnd('.') }
-    if ($d.FirmwareVersion) { Add-TestRow $T 'Version du micrologiciel' ([string]$d.FirmwareVersion) }
-    Add-TestRow $T 'Type' "$($Ctx.KindLabel), branché en $([string]$d.BusType)"
-    Add-TestRow $T 'Capacité' (Format-Size $d.Size)
-    if ($pstyle) { Add-TestRow $T 'Style de partition' $pstyle }
-
-    Add-TestTitle $T 'Santé'
     switch ([string]$d.HealthStatus) {
-        'Healthy'   { Add-TestRow $T 'État SMART' 'Bon' $Colors.ok }
-        'Warning'   { Add-TestRow $T 'État SMART' 'Avertissement' $Colors.warn; $status = 'warn'; $notes += 'Le disque signale lui même un problème.' }
-        'Unhealthy' { Add-TestRow $T 'État SMART' 'Défaillant' $Colors.bad; $status = 'bad'; $notes += 'Le disque annonce une panne proche.' }
-        default     { Add-TestRow $T 'État SMART' 'Inconnu' '#9AA3B2' }
+        'Warning'   { $status = 'warn'; $notes += 'Le disque signale lui même un problème.' }
+        'Unhealthy' { $status = 'bad'; $notes += 'Le disque annonce une panne proche.' }
     }
-    if ($rel) {
-        if ($null -ne $rel.Wear -and $Ctx.Kind -ne 'HDD') {
-            $w = [int]$rel.Wear
-            Add-TestRow $T 'Usure' "$w %  (0 % = neuf, 100 % = fin de vie prévue)" (Get-LoadColor $w 70 90)
-            if ($w -ge 90) { $status = 'bad'; $notes += "SSD usé à $w %." } elseif ($w -ge 70) { if ($status -eq 'ok') { $status = 'warn' }; $notes += "SSD usé à $w %." }
-        }
-        if ($rel.Temperature -gt 0) {
-            $warnT = if ($Ctx.Kind -eq 'HDD') { 50 } else { 70 }
-            $txt = "$([int]$rel.Temperature) °C" + $(if ($rel.TemperatureMax -gt 0) { "  (limite du fabricant : $([int]$rel.TemperatureMax) °C)" } else { '' })
-            Add-TestRow $T 'Température' $txt (Get-LoadColor $rel.Temperature $warnT ($warnT + 10))
-            if ($rel.Temperature -ge $warnT) { if ($status -eq 'ok') { $status = 'warn' }; $notes += 'Le disque chauffe.' }
-        }
-        if ($rel.PowerOnHours -gt 0) {
-            $h = [long]$rel.PowerOnHours
-            Add-TestRow $T 'Temps allumé au total' ('{0:N0} heures (environ {1:N1} ans d''utilisation continue)' -f $h, ($h / 8766))
-        }
-        if ($rel.StartStopCycleCount -gt 0) { Add-TestRow $T 'Nombre de démarrages' ('{0:N0}' -f $rel.StartStopCycleCount) }
-        if ($null -ne $rel.ReadErrorsUncorrected) {
-            $e = [long]$rel.ReadErrorsUncorrected
-            Add-TestRow $T 'Erreurs de lecture non réparées' "$e" $(if ($e) { $Colors.warn } else { $Colors.ok })
-            if ($e) { if ($status -eq 'ok') { $status = 'warn' }; $notes += "$e erreur(s) de lecture." }
-        }
-        if ($null -ne $rel.ReadErrorsCorrected -and $rel.ReadErrorsCorrected -gt 0) { Add-TestRow $T 'Erreurs de lecture réparées' ('{0:N0}' -f $rel.ReadErrorsCorrected) '#9AA3B2' }
-        if ($null -ne $rel.WriteErrorsUncorrected) {
-            $e = [long]$rel.WriteErrorsUncorrected
-            Add-TestRow $T 'Erreurs d''écriture non réparées' "$e" $(if ($e) { $Colors.warn } else { $Colors.ok })
-            if ($e) { if ($status -eq 'ok') { $status = 'warn' }; $notes += "$e erreur(s) d'écriture." }
-        }
-        if ($rel.ReadLatencyMax -gt 0) { Add-TestRow $T 'Temps de réponse max (lecture)' "$($rel.ReadLatencyMax) ms" '#9AA3B2' }
-        if ($rel.WriteLatencyMax -gt 0) { Add-TestRow $T 'Temps de réponse max (écriture)' "$($rel.WriteLatencyMax) ms" '#9AA3B2' }
+    $gauges = @()
+    $i = 0
+    if ($rel -and $null -ne $rel.Wear -and $Ctx.Kind -ne 'HDD') {
+        $life = 100 - [int]$rel.Wear
+        $gauges += New-Gauge 'Durée de vie restante' $life 100 '{0:N0}' '%' $(if ($life -le 10) { $Colors.bad } elseif ($life -le 30) { $Colors.warn } else { $Colors.ok }) 0
+        if ($life -le 10) { $status = 'bad'; $notes += "Il reste environ $life % de durée de vie." } elseif ($life -le 30) { if ($status -eq 'ok') { $status = 'warn' }; $notes += "Il reste environ $life % de durée de vie." }
     } else {
-        Add-TestRow $T 'Détails SMART' 'Non fournis par ce disque' '#9AA3B2'
+        $sh = switch ([string]$d.HealthStatus) { 'Healthy' { 100 } 'Warning' { 50 } 'Unhealthy' { 10 } default { 0 } }
+        $gauges += New-Gauge 'État SMART' $sh 100 '{0:N0}' '%' $(if ($sh -ge 100) { $Colors.ok } elseif ($sh -ge 50) { $Colors.warn } else { $Colors.bad }) 0
+    }
+    if ($rel -and $rel.Temperature -gt 0) {
+        $warnT = if ($Ctx.Kind -eq 'HDD') { 50 } else { 70 }
+        $gauges += New-Gauge 'Température' $rel.Temperature 90 '{0:N0}' '°C' (Get-LoadColor $rel.Temperature $warnT ($warnT + 10)) 150
+        if ($rel.Temperature -ge $warnT) { if ($status -eq 'ok') { $status = 'warn' }; $notes += 'Le disque chauffe : vérifie la ventilation.' }
+    }
+    $fillPct = $null
+    foreach ($l in $Ctx.Letters) {
+        $v = Get-Volume -DriveLetter $l -ErrorAction SilentlyContinue
+        if ($v -and $v.Size) { $fillPct = 100 * ($v.Size - $v.SizeRemaining) / $v.Size; break }
+    }
+    if ($null -ne $fillPct) {
+        $gauges += New-Gauge 'Rempli' $fillPct 100 '{0:N0}' '%' (Get-LoadColor $fillPct 80 90) 300
+        if ($fillPct -ge 90) { if ($status -eq 'ok') { $status = 'warn' }; $notes += 'Le disque est presque plein.' }
+    }
+    [void]$body.Children.Add((New-SectionTitle 'SANTÉ DU DISQUE'))
+    [void]$body.Children.Add((New-GaugeRow $gauges))
+    $tiles = @()
+    if ($rel -and $rel.PowerOnHours -gt 0) { $tiles += New-StatTile 'heures allumé au total' ([double]$rel.PowerOnHours) '{0:N0}' '#FFFFFF' 200 }
+    if ($rel -and $null -ne $rel.ReadErrorsUncorrected) {
+        $errs = [double]$rel.ReadErrorsUncorrected + $(if ($null -ne $rel.WriteErrorsUncorrected) { [double]$rel.WriteErrorsUncorrected } else { 0 })
+        $tiles += New-StatTile 'erreurs non réparées' $errs '{0:N0}' $(if ($errs) { $Colors.warn } else { $Colors.ok }) 350
+        if ($errs) { if ($status -eq 'ok') { $status = 'warn' }; $notes += "$errs erreur(s) de lecture ou d'écriture." }
+    }
+    if ($rel -and $rel.StartStopCycleCount -gt 0) { $tiles += New-StatTile 'démarrages' ([double]$rel.StartStopCycleCount) '{0:N0}' '#FFFFFF' 500 }
+    if ($tiles) { [void]$body.Children.Add((New-StatRow $tiles)) }
+    $rows = @(
+        @('Modèle', ([string]$d.FriendlyName).Trim()),
+        @('Numéro de série', ([string]$d.SerialNumber).Trim().TrimEnd('.')),
+        @('Version du micrologiciel', [string]$d.FirmwareVersion),
+        @('Type', "$($Ctx.KindLabel), branché en $([string]$d.BusType)"),
+        @('Capacité', (Format-Size $d.Size)),
+        @('État SMART', $(switch ([string]$d.HealthStatus) { 'Healthy' { 'Bon' } 'Warning' { 'Avertissement' } 'Unhealthy' { 'Défaillant' } default { 'Inconnu' } }))
+    )
+    if ($rel) {
+        if ($null -ne $rel.Wear) { $rows += , @('Usure', "$([int]$rel.Wear) %") }
+        if ($rel.TemperatureMax -gt 0) { $rows += , @('Température limite du fabricant', "$([int]$rel.TemperatureMax) °C") }
+        if ($null -ne $rel.ReadErrorsCorrected) { $rows += , @('Erreurs de lecture réparées', ('{0:N0}' -f $rel.ReadErrorsCorrected)) }
+        if ($null -ne $rel.ReadErrorsUncorrected) { $rows += , @('Erreurs de lecture non réparées', ('{0:N0}' -f $rel.ReadErrorsUncorrected)) }
+        if ($null -ne $rel.WriteErrorsUncorrected) { $rows += , @('Erreurs d''écriture non réparées', ('{0:N0}' -f $rel.WriteErrorsUncorrected)) }
+        if ($rel.ReadLatencyMax -gt 0) { $rows += , @('Temps de réponse max en lecture', "$($rel.ReadLatencyMax) ms") }
+        if ($rel.WriteLatencyMax -gt 0) { $rows += , @('Temps de réponse max en écriture', "$($rel.WriteLatencyMax) ms") }
+    } else {
+        $rows += , @('Détails SMART', 'Non fournis par ce disque', '#9AA3B2')
     }
     foreach ($l in $Ctx.Letters) {
         $v = Get-Volume -DriveLetter $l -ErrorAction SilentlyContinue
-        if ($v -and $v.Size) {
-            $pct = 100 * ($v.Size - $v.SizeRemaining) / $v.Size
-            Add-TestBar $T "Lecteur $($l): rempli à $([int]$pct) %" "$(Format-Size $v.SizeRemaining) libres" $pct (Get-LoadColor $pct 80 90)
-            if ($pct -ge 90) { if ($status -eq 'ok') { $status = 'warn' }; $notes += "Le lecteur $($l): est presque plein." }
-        }
+        if ($v -and $v.Size) { $rows += , @("Lecteur $($l):", "$(Format-Size $v.SizeRemaining) libres sur $(Format-Size $v.Size)") }
     }
-    $verdict = switch ($status) {
+    [void]$body.Children.Add((New-Details $rows))
+    $txt = switch ($status) {
         'ok'   { 'Ce disque est en bonne santé.' }
         'warn' { 'À surveiller : ' + ($notes -join ' ') + ' Pense à sauvegarder tes fichiers importants.' }
         'bad'  { 'Attention : ' + ($notes -join ' ') + ' Sauvegarde tes fichiers maintenant et prévois de remplacer ce disque.' }
     }
-    Add-TestVerdict $T $status $verdict
+    [void]$body.Children.Add((New-Verdict $status $txt))
+    Set-TestState $status $(switch ($status) { 'ok' { 'Bonne santé' } 'warn' { 'À surveiller' } default { 'Problème détecté' } })
+    $ui.TestProgress.Value = 100; $ui.TestPct.Text = ''
+    $chips = @(, @('Santé', $(switch ($status) { 'ok' { 'Bonne' } 'warn' { 'À surveiller' } default { 'Problème' } })))
+    if ($rel -and $rel.Temperature -gt 0) { $chips += , @('Température', "$([int]$rel.Temperature) °C") }
+    if (-not $Tile.Last) { $Tile.Last = @{ Live = { param($t2, $c2) Show-DiskHealth $t2 $c2 }; Ctx = $Ctx } }
+    Set-TileSummary $Tile $chips $status
 }
 
-function Test-DiskErrors($T, $Ctx) {
-    $labels = @{ scan = 'Recherche d''erreurs sur le disque (ça peut prendre quelques minutes)...' }
-    $res = Invoke-ComponentTest $T $labels $RepairWork @{ Letters = @($Ctx.Letters) }
-    if (-not $res) { return }
-    Add-TestTitle $T 'Recherche d''erreurs'
-    $bad = $false
-    foreach ($line in $res.R) {
-        $l, $v = ([string]$line) -split '\|', 2
-        if ($v -eq 'NoErrorsFound') { Add-TestRow $T "Lecteur $($l):" 'Aucune erreur' $Colors.ok }
-        elseif ($v -like 'ERR*') { Add-TestRow $T "Lecteur $($l):" 'Vérification impossible' '#9AA3B2' }
-        else { Add-TestRow $T "Lecteur $($l):" 'Erreurs trouvées' $Colors.warn; $bad = $true }
+function Test-DiskErrors($Tile, $Ctx) {
+    $def = @{
+        Steps = [ordered]@{ scan = 'Recherche d''erreurs (quelques minutes)' }
+        Work = $RepairWork; Arg = @{ Letters = @($Ctx.Letters) }
+        Chart = $null
+        Render = {
+            param($res, $ctx, $body)
+            [void]$body.Children.Add((New-SectionTitle 'RÉSULTAT'))
+            $bad = $false
+            $tiles = @()
+            $i = 0
+            foreach ($line in $res.R) {
+                $l, $v = ([string]$line) -split '\|', 2
+                $ok = $v -eq 'NoErrorsFound'
+                if (-not $ok -and $v -notlike 'ERR*') { $bad = $true }
+                $label = if ($ok) { 'aucune erreur' } elseif ($v -like 'ERR*') { 'vérification impossible' } else { 'erreurs trouvées' }
+                $tiles += New-StatTile "Lecteur $($l): $label" $(if ($ok) { 0 } else { 1 }) $(if ($ok) { '✓' } else { '!' }) $(if ($ok) { $Colors.ok } else { $Colors.warn }) (150 * $i)
+                $i++
+            }
+            [void]$body.Children.Add((New-StatRow $tiles))
+            if ($bad) {
+                [void]$body.Children.Add((New-Verdict 'warn' 'Windows a trouvé des erreurs dans le système de fichiers. Redémarre le PC : Windows les répare souvent tout seul.'))
+                @{ Status = 'warn'; Chips = @(, @('Erreurs', 'Trouvées')) }
+            } else {
+                [void]$body.Children.Add((New-Verdict 'ok' 'Aucune erreur trouvée sur ce disque.'))
+                @{ Status = 'ok'; Chips = @(, @('Erreurs', 'Aucune')) }
+            }
+        }
     }
-    if ($bad) { Add-TestVerdict $T 'warn' 'Windows a trouvé des erreurs dans le système de fichiers. Redémarre le PC : Windows les répare souvent tout seul au démarrage.' }
-    else { Add-TestVerdict $T 'ok' 'Aucune erreur trouvée.' }
+    Set-Status "Recherche d'erreurs : $($Ctx.Name)..."
+    Invoke-ComponentTest $Tile $def $Ctx 'Test-DiskErrors'
 }
 
-# --- Processeur ------------------------------------------------------------
-function Test-Cpu($T, $Ctx) {
-    $labels = @{
-        single = 'Test sur un seul cœur...'
-        multi  = 'Test sur tous les cœurs en même temps (le PC peut chauffer et souffler un peu, c''est normal)...'
+# ---------------------------------------------------------------------------
+# Processeur
+# ---------------------------------------------------------------------------
+function Test-Cpu($Tile, $Ctx) {
+    $base = $Live.BaseMHz / 1000
+    $def = @{
+        Steps = [ordered]@{ single = 'Un seul cœur'; multi = 'Tous les cœurs' }
+        Work = $CpuWork; Arg = @{ Single = $Ctx.Single; Multi = $Ctx.Multi }
+        Chart = @{ Unit = 'GHz'; Fmt = '{0:N1}'; Color = $Colors.info; Source = 'cpu'; Phases = @('single', 'multi'); Ref = $base; RefLabel = ('fréquence de base {0:N1} GHz' -f $base) }
+        Render = {
+            param($res, $ctx, $body)
+            $r = $res.R
+            $maxSingle = Get-GHz $res.Freq['single'] -Max
+            $avgMulti = Get-GHz $res.Freq['multi']
+            $base2 = $Live.BaseMHz / 1000
+            $top = [math]::Max(6.0, [math]::Ceiling(([double]$maxSingle) + 0.5))
+            [void]$body.Children.Add((New-SectionTitle 'RÉSULTAT'))
+            [void]$body.Children.Add((New-StatRow @(
+                (New-StatTile 'points sur un cœur' $r[0] '{0:N0}' '#FFFFFF' 0),
+                (New-StatTile "points sur les $([int]$r[3]) cœurs" $r[1] '{0:N0}' '#FFFFFF' 150),
+                (New-StatTile 'erreurs de calcul' $r[2] '{0:N0}' $(if ($r[2]) { $Colors.bad } else { $Colors.ok }) 300)
+            )))
+            $g = @()
+            if ($maxSingle) { $g += New-Gauge 'Fréquence max' $maxSingle $top '{0:N1}' 'GHz' $Colors.info 200 }
+            if ($avgMulti) { $g += New-Gauge 'En pleine charge' $avgMulti $top '{0:N1}' 'GHz' $(if ($avgMulti -lt $base2 * 0.95) { $Colors.warn } else { $Colors.ok }) 350 }
+            $g += New-Gauge 'Tous les cœurs vs un seul' ($r[1] / [math]::Max(1.0, $r[0])) ([math]::Max(1.0, $r[3])) '{0:N1}' 'fois plus' '#B18CFF' 500
+            [void]$body.Children.Add((New-GaugeRow $g))
+            if ($r[2] -gt 0) {
+                $status = 'bad'; $txt = 'Le processeur a fait des erreurs de calcul : il est instable (overclock ou undervolt trop poussé, XMP instable, surchauffe). Remets les réglages du BIOS par défaut et refais le test.'
+            } elseif ($avgMulti -and $avgMulti -lt $base2 * 0.95) {
+                $status = 'warn'; $txt = 'Sous forte charge, le processeur passe sous sa fréquence de base : il chauffe trop ou manque d''alimentation. Vérifie le ventirad et la pâte thermique.'
+            } else {
+                $status = 'ok'; $txt = $(if ($ctx.Multi -ge 120) { 'Aucune erreur pendant 5 minutes à pleine charge : ton processeur est stable.' } else { 'Tout est normal : aucune erreur et le processeur garde bien sa vitesse.' })
+            }
+            [void]$body.Children.Add((New-Verdict $status $txt))
+            @{ Status = $status; Chips = @(@('1 cœur', ('{0:N0} pts' -f $r[0])), @('Tous les cœurs', ('{0:N0} pts' -f $r[1])), @('En charge', $(if ($avgMulti) { '{0:N1} GHz' -f $avgMulti } else { '?' }))) }
+        }
     }
     Set-Status 'Test du processeur...'
-    $res = Invoke-ComponentTest $T $labels $CpuWork @{ Single = $Ctx.Single; Multi = $Ctx.Multi }
-    if (-not $res) { return }
-    $r = $res.R
-    $maxSingle = Get-GHz $res.Freq['single'] -Max
-    $avgMulti = Get-GHz $res.Freq['multi']
-    $base = $Live.BaseMHz / 1000
-    Add-TestTitle $T $(if ($Ctx.Multi -ge 120) { 'Résultat du test de stabilité' } else { 'Résultat du test rapide' })
-    Add-TestRow $T 'Score sur un cœur' ('{0:N0} points' -f $r[0]) '#FFFFFF'
-    Add-TestRow $T "Score sur les $([int]$r[3]) cœurs" ('{0:N0} points  ({1:N1} fois plus qu''un seul cœur)' -f $r[1], ($r[1] / [math]::Max(1, $r[0]))) '#FFFFFF'
-    if ($maxSingle) { Add-TestRow $T 'Fréquence max atteinte' ('{0:N1} GHz' -f $maxSingle) }
-    if ($avgMulti) { Add-TestRow $T 'Fréquence tenue en pleine charge' ('{0:N1} GHz  (fréquence de base : {1:N1} GHz)' -f $avgMulti, $base) $(if ($avgMulti -lt $base * 0.95) { $Colors.warn } else { '#E6E8EE' }) }
-    Add-TestRow $T 'Erreurs de calcul' "$([int]$r[2])" $(if ($r[2]) { $Colors.bad } else { $Colors.ok })
-    if ($r[2] -gt 0) {
-        Add-TestVerdict $T 'bad' "Le processeur a fait des erreurs de calcul : il est instable. Causes fréquentes : overclock ou undervolt trop poussé, profil XMP instable, surchauffe. Remets les réglages du BIOS par défaut et refais le test."
-    } elseif ($avgMulti -and $avgMulti -lt $base * 0.95) {
-        Add-TestVerdict $T 'warn' "Sous forte charge, le processeur descend sous sa fréquence de base : il ralentit sans doute parce qu'il chauffe trop ou manque d'alimentation. Vérifie le ventirad, la pâte thermique et le mode d'alimentation."
-    } else {
-        Add-TestVerdict $T 'ok' $(if ($Ctx.Multi -ge 120) { 'Aucune erreur pendant 5 minutes à pleine charge : ton processeur est stable.' } else { 'Tout est normal : pas d''erreur et le processeur garde bien sa vitesse.' })
-    }
-    Set-Status 'Test du processeur terminé.'
+    Invoke-ComponentTest $Tile $def $Ctx 'Test-Cpu'
 }
 
-# --- Mémoire vive ----------------------------------------------------------
-function Test-Memory($T, $Ctx) {
+# ---------------------------------------------------------------------------
+# Mémoire vive
+# ---------------------------------------------------------------------------
+function Test-Memory($Tile, $Ctx) {
     $os = Get-CimInstance Win32_OperatingSystem
     $free = [double]$os.FreePhysicalMemory * 1KB
     $bytes = [long][math]::Min([double]2GB, [math]::Max([double]256MB, $free * 0.5))
-    $labels = @{
-        alloc   = 'Réservation de la mémoire à tester...'
-        write   = 'Écriture de données de test...'
-        read    = 'Relecture et vérification...'
-        pattern = 'Deuxième passage avec un autre motif...'
-        copy    = 'Mesure de la vitesse de copie...'
+    $def = @{
+        Steps = [ordered]@{ alloc = 'Réservation'; write = 'Écriture'; read = 'Vérification'; pattern = '2e passage'; copy = 'Copie' }
+        Work = $MemWork; Arg = @{ Bytes = $bytes }
+        Chart = @{ Unit = 'Go/s'; Fmt = '{0:N1}'; Color = '#B18CFF'; Source = 'engine'; Phases = @('write', 'read', 'pattern') }
+        Render = {
+            param($res, $ctx, $body)
+            $r = $res.R
+            [void]$body.Children.Add((New-SectionTitle 'RÉSULTAT'))
+            [void]$body.Children.Add((New-GaugeRow @(
+                (New-Gauge 'Lecture' $r[1] 100 '{0:N1}' 'Go/s' $Colors.ok 0),
+                (New-Gauge 'Écriture' $r[0] 100 '{0:N1}' 'Go/s' $Colors.info 150),
+                (New-Gauge 'Copie' $r[2] 100 '{0:N1}' 'Go/s' '#B18CFF' 300)
+            )))
+            [void]$body.Children.Add((New-StatRow @(
+                (New-StatTile 'Go vérifiés' $r[4] '{0:N1}' '#FFFFFF' 300),
+                (New-StatTile 'erreurs trouvées' $r[3] '{0:N0}' $(if ($r[3]) { $Colors.bad } else { $Colors.ok }) 450)
+            )))
+            if ($r[3] -gt 0) {
+                $status = 'bad'; $txt = 'Des erreurs ont été trouvées. Désactive le profil XMP / EXPO dans le BIOS et refais le test. Si ça continue, une barrette est défectueuse : lance le test complet de Windows.'
+            } else {
+                $status = 'ok'; $txt = 'Aucune erreur. Ce test rapide ne vérifie qu''une partie de la mémoire : en cas de plantages, lance le test complet de Windows.'
+            }
+            [void]$body.Children.Add((New-Verdict $status $txt))
+            @{ Status = $status; Chips = @(@('Lecture', ('{0:N1} Go/s' -f $r[1])), @('Erreurs', ('{0:N0}' -f $r[3]))) }
+        }
     }
     Set-Status 'Test de la mémoire...'
-    $res = Invoke-ComponentTest $T $labels $MemWork @{ Bytes = $bytes }
-    if (-not $res) { return }
-    $r = $res.R
-    Add-TestTitle $T 'Résultat du test de la mémoire'
-    Add-TestRow $T 'Mémoire testée' ('{0:N1} Go' -f $r[4])
-    Add-TestRow $T 'Vitesse de lecture' ('{0:N1} Go/s' -f $r[1]) '#FFFFFF'
-    Add-TestRow $T 'Vitesse d''écriture' ('{0:N1} Go/s' -f $r[0]) '#FFFFFF'
-    Add-TestRow $T 'Vitesse de copie' ('{0:N1} Go/s' -f $r[2]) '#FFFFFF'
-    Add-TestRow $T 'Erreurs trouvées' "$([int]$r[3])" $(if ($r[3]) { $Colors.bad } else { $Colors.ok })
-    if ($r[3] -gt 0) {
-        Add-TestVerdict $T 'bad' 'Des erreurs ont été trouvées dans la mémoire. Désactive le profil XMP / EXPO dans le BIOS et refais le test. Si les erreurs continuent, une barrette est défectueuse : lance le test complet de Windows.'
-    } else {
-        Add-TestVerdict $T 'ok' 'Aucune erreur. Ce test rapide ne vérifie qu''une partie de la mémoire : en cas de plantages, lance le test complet de Windows.'
-    }
-    Set-Status 'Test de la mémoire terminé.'
+    Invoke-ComponentTest $Tile $def $Ctx 'Test-Memory'
 }
 
-# --- Carte graphique -------------------------------------------------------
-function Show-GpuSensors($T, $Ctx) {
-    $T.Result.Children.Clear()
+# ---------------------------------------------------------------------------
+# Carte graphique: surveillance en direct
+# ---------------------------------------------------------------------------
+function Show-GpuMonitor($Tile, $Ctx) {
     $g = $Ctx.Gpu
-    Add-TestTitle $T 'Relevé des capteurs'
-    if ($g.Name -match 'NVIDIA|GeForce' -and $SmiPath) {
+    $script:LastRun = @{ Fn = 'Show-GpuMonitor'; Tile = $Tile; Ctx = $Ctx }
+    Show-TestPanel $Tile
+    Set-TestButtons 'done'
+    $ui.BtnTestAgain.Visibility = 'Collapsed'
+    Set-TestState 'live' 'En direct'
+    $Live.Fast = $true
+    $body = $ui.TestBody
+    $nvidia = $g.Name -match 'NVIDIA|GeForce' -and $SmiPath
+    $info = $null
+    if ($nvidia) {
         $fields = 'driver_version,vbios_version,pstate,clocks.gr,clocks.max.gr,clocks.mem,clocks.max.mem,temperature.gpu,fan.speed,power.draw,power.limit,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max,utilization.gpu,memory.used,memory.total,clocks_throttle_reasons.active'
         $o = & $SmiPath "--query-gpu=$fields" '--format=csv,noheader,nounits' 2>$null | Select-Object -First 1
-        if (-not $o) { Add-TestVerdict $T 'warn' 'Impossible de lire les capteurs de la carte.'; return }
-        $v = @($o -split ',' | ForEach-Object { $_.Trim() })
-        $num = { param($s) if ($s -match '^[\d\.]+$') { [double]::Parse($s, [Globalization.CultureInfo]::InvariantCulture) } else { $null } }
-        $temp = & $num $v[7]
-        Add-TestRow $T 'Utilisation' "$($v[15]) %"
-        Add-TestRow $T 'Fréquence du GPU' "$($v[3]) MHz (max $($v[4]) MHz)"
-        Add-TestRow $T 'Fréquence de la mémoire' "$($v[5]) MHz (max $($v[6]) MHz)"
-        if ($null -ne $temp) { Add-TestRow $T 'Température' "$([int]$temp) °C" (Get-LoadColor $temp 80 87) }
-        if ($v[8] -match '^\d') { Add-TestRow $T 'Ventilateurs' "$($v[8]) %" }
-        Add-TestRow $T 'Consommation' ('{0:N0} W sur {1:N0} W max' -f (& $num $v[9]), (& $num $v[10]))
-        Add-TestRow $T 'Mémoire vidéo utilisée' ('{0:N1} Go sur {1:N0} Go' -f ((& $num $v[16]) / 1024), ((& $num $v[17]) / 1024))
-        Add-TestRow $T 'Liaison PCIe' "Gen $($v[11]) x$($v[13])  (max Gen $($v[12]) x$($v[14]))"
-        Add-TestRow $T 'Pilote' $v[0] '#9AA3B2'
+        if ($o) { $info = @($o -split ',' | ForEach-Object { $_.Trim() }) }
+    }
+    $num = { param($s) if ($s -match '^[\d\.]+$') { [double]::Parse($s, [Globalization.CultureInfo]::InvariantCulture) } else { 0 } }
+    $plimit = if ($info) { [math]::Max(50.0, (& $num $info[10])) } else { 300 }
+    [void]$body.Children.Add((New-Text 'Lance un jeu, puis reviens ici avec Alt + Tab : tout se met à jour en direct.' 13 '#9AA3B2'))
+    $gUse = New-Gauge 'Utilisation' ([double]$Live.Gpu) 100 '{0:N0}' '%' $Colors.info 0
+    $gauges = @($gUse)
+    $gTemp = $null; $gPow = $null
+    if ($nvidia) {
+        $gTemp = New-Gauge 'Température' ([double]$Live.GpuTemp) 100 '{0:N0}' '°C' $Colors.ok 150
+        $gPow = New-Gauge 'Consommation' ([double]$Live.GpuPower) $plimit '{0:N0}' 'W' $Colors.warn 300
+        $gauges += $gTemp; $gauges += $gPow
+    }
+    [void]$body.Children.Add((New-GaugeRow $gauges))
+    [void]$body.Children.Add((New-Text 'Utilisation de la carte graphique' 13 '#9AA3B2'))
+    $chart = New-LiveChart $Colors.info '%' '{0:N0}'
+    [void]$body.Children.Add($chart.El)
+    $status = 'ok'
+    if ($info) {
         $bits = 0
-        try { $bits = [Convert]::ToUInt64(($v[18] -replace '^0x', ''), 16) } catch {}
+        try { $bits = [Convert]::ToUInt64(($info[18] -replace '^0x', ''), 16) } catch {}
         $why = @()
-        if ($bits -band 0x4)  { $why += 'limite de consommation atteinte (normal en pleine charge)' }
-        if ($bits -band 0x20) { $why += 'la carte chauffe (ralentissement logiciel)' }
-        if ($bits -band 0x40) { $why += 'surchauffe (ralentissement matériel)' }
+        if ($bits -band 0x4)  { $why += 'limite de consommation (normal en pleine charge)' }
+        if ($bits -band 0x20) { $why += 'chauffe' }
+        if ($bits -band 0x40) { $why += 'surchauffe' }
         if ($bits -band 0x8)  { $why += 'ralentissement matériel' }
         if ($bits -band 0x80) { $why += 'alimentation insuffisante' }
-        Add-TestRow $T 'Ralentissements en cours' $(if ($why) { $why -join ', ' } else { 'Aucun' }) $(if ($bits -band 0xE8) { $Colors.warn } else { $Colors.ok })
-        if ($bits -band 0xE8) {
-            Add-TestVerdict $T 'warn' 'La carte graphique ralentit à cause de la chaleur ou de l''alimentation. Dépoussière le PC, vérifie les ventilateurs du boîtier et les câbles d''alimentation de la carte.'
-        } elseif ($null -ne $temp -and $temp -ge 85) {
-            Add-TestVerdict $T 'warn' 'La carte graphique est très chaude. Dépoussière le PC et améliore l''aération du boîtier.'
-        } else {
-            Add-TestVerdict $T 'ok' 'Tout est normal. Astuce : lance un jeu, reviens ici avec Alt + Tab et relève les capteurs pour voir la carte en pleine charge. À vide, la vitesse PCIe baisse pour économiser l''énergie : c''est normal.'
+        $rows = @(
+            @('Fréquence du GPU', "$($info[3]) MHz (max $($info[4]) MHz)"),
+            @('Fréquence de la mémoire', "$($info[5]) MHz (max $($info[6]) MHz)"),
+            @('Mémoire vidéo utilisée', ('{0:N1} Go sur {1:N0} Go' -f ((& $num $info[16]) / 1024), ((& $num $info[17]) / 1024))),
+            @('Ventilateurs', "$($info[8]) %"),
+            @('Liaison PCIe', "Gen $($info[11]) x$($info[13])  (max Gen $($info[12]) x$($info[14]))"),
+            @('Ralentissements', $(if ($why) { $why -join ', ' } else { 'Aucun' })),
+            @('Pilote', $info[0]),
+            @('BIOS de la carte', $info[1])
+        )
+        [void]$body.Children.Add((New-Details $rows))
+        if ($bits -band 0xE8) { $status = 'warn'; [void]$body.Children.Add((New-Verdict 'warn' 'La carte ralentit à cause de la chaleur ou de l''alimentation : dépoussière le PC et vérifie la ventilation du boîtier.')) }
+        else { [void]$body.Children.Add((New-Verdict 'ok' 'Aucun ralentissement. À vide, la carte baisse sa vitesse pour économiser l''énergie : c''est normal.')) }
+    } else {
+        $rows = @(@('Modèle', $g.Name), @('Pilote', [string]$g.DriverVersion), @('Résolution', "$($g.CurrentHorizontalResolution) x $($g.CurrentVerticalResolution)"))
+        [void]$body.Children.Add((New-Details $rows))
+        [void]$body.Children.Add((New-Verdict 'info' 'Température et consommation ne sont lisibles que sur les cartes NVIDIA. Pour une carte AMD : AMD Software > Performances.'))
+    }
+    $script:GpuLive = @{ Use = $gUse; Temp = $gTemp; Pow = $gPow; Chart = $chart; Last = $null }
+    $script:MonitorTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:MonitorTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+    $script:MonitorTimer.Add_Tick({
+        $m = $script:GpuLive
+        if (-not $m -or $Live.Updated -eq $m.Last) { return }
+        $m.Last = $Live.Updated
+        Set-GaugeLive $m.Use ([double]$Live.Gpu)
+        if ($m.Temp) { Set-GaugeLive $m.Temp ([double]$Live.GpuTemp) }
+        if ($m.Pow) { Set-GaugeLive $m.Pow ([double]$Live.GpuPower) }
+        Add-ChartPoint $m.Chart ([double]$Live.Gpu)
+    })
+    $script:MonitorTimer.Start()
+    $ui.TestProgress.Value = 0; $ui.TestPct.Text = ''
+    $chips = @(, @('Température', $(if ($Live.GpuTemp) { "$([int]$Live.GpuTemp) °C" } else { '?' })))
+    if ($info) { $chips += , @('Consommation', "$([int](& $num $info[9])) W") }
+    $Tile.Last = @{ Live = { param($t2, $c2) Show-GpuMonitor $t2 $c2 }; Ctx = $Ctx }
+    Set-TileSummary $Tile $chips $status
+}
+
+# ---------------------------------------------------------------------------
+# Réseau
+# ---------------------------------------------------------------------------
+function Test-NetSpeed($Tile, $Ctx) {
+    $def = @{
+        Steps = [ordered]@{ ping = 'Ping'; down = 'Téléchargement'; up = 'Envoi' }
+        Work = $NetWork; Arg = @{}
+        Chart = @{ Unit = 'Mb/s'; Fmt = '{0:N0}'; Color = $Colors.ok; Source = 'engine'; Phases = @('down', 'up') }
+        Render = {
+            param($res, $ctx, $body)
+            $r = $res.R
+            $scale = if ([math]::Max($r[1], $r[2]) -gt 1000) { 2500 } else { 1000 }
+            [void]$body.Children.Add((New-SectionTitle 'RÉSULTAT'))
+            $g = @()
+            if ($r[1] -ge 0) { $g += New-Gauge 'Téléchargement' $r[1] $scale '{0:N0}' 'Mb/s' $Colors.ok 0 }
+            if ($r[2] -ge 0) { $g += New-Gauge 'Envoi' $r[2] $scale '{0:N0}' 'Mb/s' $Colors.info 150 }
+            if ($r[0] -ge 0) { $g += New-Gauge 'Ping' $r[0] 100 '{0:N0}' 'ms' $(if ($r[0] -gt 60) { $Colors.warn } else { $Colors.ok }) 300 }
+            [void]$body.Children.Add((New-GaugeRow $g))
+            if ($r[1] -gt 0) {
+                $min = 50 * 8000 / $r[1] / 60
+                [void]$body.Children.Add((New-StatRow @((New-StatTile 'minutes pour télécharger un jeu de 50 Go' $min '{0:N0}' '#FFFFFF' 400))))
+            }
+            if ($r[1] -lt 0 -or $r[2] -lt 0) {
+                $status = 'info'; $txt = 'Les serveurs de test n''ont pas répondu (trop de tests d''affilée ou pas de connexion). Réessaie dans quelques minutes.'
+            } elseif ($r[1] -lt 10) {
+                $status = 'warn'; $txt = 'Connexion lente : les téléchargements seront longs. Pour jouer, c''est surtout le ping qui compte.'
+            } elseif ($r[0] -gt 60) {
+                $status = 'warn'; $txt = 'Le débit est correct mais le ping est élevé : en Wi-Fi, rapproche toi de la box ou branche un câble.'
+            } else {
+                $status = 'ok'; $txt = 'Bonne connexion pour jouer et télécharger.'
+            }
+            [void]$body.Children.Add((New-Verdict $status $txt))
+            @{ Status = $status; Chips = @(@('Téléchargement', $(if ($r[1] -ge 0) { '{0:N0} Mb/s' -f $r[1] } else { '?' })), @('Ping', $(if ($r[0] -ge 0) { '{0:N0} ms' -f $r[0] } else { '?' }))) }
         }
-    } else {
-        Add-TestRow $T 'Modèle' $g.Name
-        if ($g.DriverVersion) { Add-TestRow $T 'Pilote' "$($g.DriverVersion)$(if ($g.DriverDate) { ' du ' + $g.DriverDate.ToString('dd/MM/yyyy') })" }
-        $vram = Get-GpuVram $g.Name
-        if ($vram) { Add-TestRow $T 'Mémoire vidéo' (Format-Size $vram) }
-        Add-TestRow $T 'Résolution actuelle' "$($g.CurrentHorizontalResolution) x $($g.CurrentVerticalResolution)"
-        Add-TestVerdict $T 'info' 'Les capteurs détaillés (température, fréquences, consommation) ne sont lisibles que sur les cartes NVIDIA. Pour les cartes AMD, ouvre AMD Software > Performances.'
     }
+    Set-Status 'Test de la connexion...'
+    Invoke-ComponentTest $Tile $def $Ctx 'Test-NetSpeed'
 }
 
-# --- Réseau ----------------------------------------------------------------
-function Test-NetSpeed($T, $Ctx) {
-    $labels = @{ ping = 'Mesure du ping...'; down = 'Test du téléchargement...'; up = 'Test de l''envoi...' }
-    Set-Status 'Test du débit Internet...'
-    $res = Invoke-ComponentTest $T $labels $NetWork @{}
-    if (-not $res) { return }
-    $r = $res.R
-    Add-TestTitle $T 'Résultat du test de connexion'
-    if ($r[0] -ge 0) { Add-TestRow $T 'Ping (réactivité en jeu)' ('{0:N0} ms' -f $r[0]) $(if ($r[0] -gt 60) { $Colors.warn } else { $Colors.ok }) }
-    if ($r[1] -ge 0) { Add-TestBar $T 'Téléchargement (télécharger tes jeux)' ('{0:N0} Mb/s' -f $r[1]) (100 * $r[1] / 1000) $Colors.ok }
-    else { Add-TestRow $T 'Téléchargement' 'Pas pu être mesuré' '#9AA3B2' }
-    if ($r[2] -ge 0) { Add-TestBar $T 'Envoi (streamer, envoyer des fichiers)' ('{0:N0} Mb/s' -f $r[2]) (100 * $r[2] / 1000) $Colors.info }
-    else { Add-TestRow $T 'Envoi' 'Pas pu être mesuré' '#9AA3B2' }
-    $gb = if ($r[1] -gt 0) { 50 * 8000 / $r[1] / 60 } else { 0 }
-    if ($gb -gt 0) { Add-TestRow $T 'Un jeu de 50 Go se télécharge en' $(if ($gb -lt 60) { '{0:N0} minutes environ' -f $gb } else { '{0:N1} heures environ' -f ($gb / 60) }) '#9AA3B2' }
-    if ($r[1] -lt 0 -or $r[2] -lt 0) {
-        Add-TestVerdict $T 'info' 'Les serveurs de test n''ont pas répondu (trop de tests d''affilée ou pas de connexion). Réessaie dans quelques minutes.'
-    } elseif ($r[1] -lt 10) {
-        Add-TestVerdict $T 'warn' 'Connexion lente : les téléchargements seront longs. Pour jouer en ligne, c''est surtout le ping qui compte.'
-    } elseif ($r[0] -gt 60) {
-        Add-TestVerdict $T 'warn' 'Le débit est correct mais le ping est élevé : en Wi-Fi, rapproche toi de la box ou branche un câble.'
-    } else {
-        Add-TestVerdict $T 'ok' 'Bonne connexion pour jouer et télécharger.'
-    }
-    Set-Status 'Test de connexion terminé.'
-}
-
-# --- Écrans ----------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Écrans: pixels morts
+# ---------------------------------------------------------------------------
 function Start-PixelTest([int]$Index) {
     $screens = [System.Windows.Forms.Screen]::AllScreens
     if ($Index -ge $screens.Count) { return }
@@ -4282,66 +4961,59 @@ function Start-PixelTest([int]$Index) {
     [void]$w.ShowDialog()
 }
 
-# --- Construction de l'onglet -----------------------------------------------
+# ---------------------------------------------------------------------------
+# Construction de l'onglet
+# ---------------------------------------------------------------------------
 function Build-TestsTab {
     $ui.TestsPanel.Children.Clear()
     $script:TestButtons.Clear()
 
-    # Disques
     foreach ($d in @(Get-PhysicalDisk -ErrorAction SilentlyContinue | Sort-Object { [int]$_.DeviceId })) {
         $media = [string]$d.MediaType; $bus = [string]$d.BusType
         $kind = if ($bus -eq 'NVMe') { 'NVMe' } elseif ($media -eq 'SSD') { 'SSD' } elseif ($media -eq 'HDD') { 'HDD' } elseif ($bus -eq 'USB') { 'USB' } else { 'SSD' }
         $kindLabel = switch ($kind) { 'NVMe' { 'SSD NVMe' } 'SSD' { 'SSD' } 'HDD' { 'Disque dur' } default { 'Disque externe' } }
         $letters = @()
         try { $letters = @(Get-Partition -DiskNumber ([int]$d.DeviceId) -ErrorAction Stop | Where-Object { [int][char]$_.DriveLetter -ne 0 } | ForEach-Object { [string]$_.DriveLetter }) } catch {}
-        $sub = "$kindLabel, $(Format-Size $d.Size)" + $(if ($letters) { "   /   lecteur$(if ($letters.Count -gt 1) {'s'}) $(($letters | ForEach-Object { "$($_):" }) -join ' ')" } else { '' })
+        $sub = "$kindLabel, $(Format-Size $d.Size)" + $(if ($letters) { "  /  $(($letters | ForEach-Object { "$($_):" }) -join ' ')" } else { '' })
         $tag = switch ($kind) { 'HDD' { 'HDD' } 'USB' { 'USB' } default { 'SSD' } }
-        $T = New-TestCard $tag (([string]$d.FriendlyName).Trim()) $sub 'Mesure la vitesse réelle du disque et vérifie sa santé : usure, température, erreurs. Le test de vitesse dure moins d''une minute et écrit un fichier temporaire, supprimé à la fin.'
+        $tile = New-TestTile $tag (([string]$d.FriendlyName).Trim()) $sub 'Vitesse réelle et santé du disque (usure, température, erreurs).'
         $ctx = @{ Id = [string]$d.DeviceId; Name = ([string]$d.FriendlyName).Trim(); Kind = $kind; KindLabel = $kindLabel; Letters = $letters; Letter = $(if ($letters) { $letters[0] } else { $null }) }
-        if ($ctx.Letter) { Add-TestButton $T 'Tester la vitesse' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-DiskSpeed $x.T $x.Ctx } } $ctx -Primary }
-        Add-TestButton $T 'Santé détaillée' { param($s, $e) $x = $s.Tag; Invoke-Safe { Show-DiskHealth $x.T $x.Ctx } } $ctx
-        if ($ctx.Letter) { Add-TestButton $T 'Rechercher des erreurs' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-DiskErrors $x.T $x.Ctx } } $ctx }
+        if ($ctx.Letter) { Add-TestButton $tile 'Tester la vitesse' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-DiskSpeed $x.T $x.Ctx } } $ctx -Primary }
+        Add-TestButton $tile 'Santé' { param($s, $e) $x = $s.Tag; Invoke-Safe { Show-DiskHealth $x.T $x.Ctx } } $ctx
+        if ($ctx.Letter) { Add-TestButton $tile 'Erreurs' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-DiskErrors $x.T $x.Ctx } } $ctx }
     }
 
-    # Processeur
     $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-    $T = New-TestCard 'CPU' (($cpu.Name -replace '\s+', ' ').Trim()) "$($cpu.NumberOfCores) cœurs, $($cpu.NumberOfLogicalProcessors) threads" 'Fait travailler le processeur à fond pour mesurer sa puissance, vérifier qu''il garde sa vitesse quand il chauffe et qu''il ne fait aucune erreur de calcul. Ferme tes jeux avant de lancer le test.'
-    Add-TestButton $T 'Test rapide (30 s)' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Cpu $x.T $x.Ctx } } @{ Single = 8; Multi = 22 } -Primary
-    Add-TestButton $T 'Test de stabilité (5 min)' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Cpu $x.T $x.Ctx } } @{ Single = 5; Multi = 295 }
+    $tile = New-TestTile 'CPU' (($cpu.Name -replace '\s+', ' ').Trim()) "$($cpu.NumberOfCores) cœurs, $($cpu.NumberOfLogicalProcessors) threads" 'Puissance, vitesse tenue quand il chauffe et stabilité. Ferme tes jeux avant.'
+    Add-TestButton $tile 'Test rapide (30 s)' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Cpu $x.T $x.Ctx } } @{ Single = 8; Multi = 22 } -Primary
+    Add-TestButton $tile 'Stabilité (5 min)' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Cpu $x.T $x.Ctx } } @{ Single = 5; Multi = 295 }
 
-    # Mémoire vive
     $mem = @(Get-CimInstance Win32_PhysicalMemory)
     $totalGB = [math]::Round((($mem | Measure-Object Capacity -Sum).Sum) / 1GB)
-    $T = New-TestCard 'RAM' 'Mémoire vive' "$totalGB Go, $($mem.Count) barrette$(if ($mem.Count -gt 1) {'s'})" 'Écrit des données dans la mémoire, les relit pour vérifier qu''aucune n''a été abîmée, et mesure la vitesse. Dure quelques secondes.'
-    Add-TestButton $T 'Tester la mémoire' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Memory $x.T $x.Ctx } } @{} -Primary
-    Add-TestButton $T 'Test complet de Windows (au redémarrage)' { param($s, $e) Start-Process 'mdsched.exe' } @{}
+    $tile = New-TestTile 'RAM' 'Mémoire vive' "$totalGB Go, $($mem.Count) barrette$(if ($mem.Count -gt 1) {'s'})" 'Vitesse et recherche d''erreurs en quelques secondes.'
+    Add-TestButton $tile 'Tester la mémoire' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Memory $x.T $x.Ctx } } @{} -Primary
+    Add-TestButton $tile 'Test complet Windows' { param($s, $e) Start-Process 'mdsched.exe' } @{}
 
-    # Cartes graphiques
     foreach ($g in @(Get-CimInstance Win32_VideoController | Where-Object { $_.Name -notmatch 'Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta|Microsoft Basic' })) {
-        $T = New-TestCard 'GPU' $g.Name 'Carte graphique' 'Relève les capteurs de la carte graphique : fréquences, température, consommation, et si elle ralentit à cause de la chaleur.'
-        Add-TestButton $T 'Relever les capteurs' { param($s, $e) $x = $s.Tag; Invoke-Safe { Show-GpuSensors $x.T $x.Ctx } } @{ Gpu = $g } -Primary
-        $steam = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
-        if ($steam -and (Get-InstalledGames | Where-Object { $_.Name -eq '3DMark' })) {
-            Add-TestButton $T 'Test de charge avec 3DMark' { param($s, $e) Start-Process 'steam://rungameid/223850' } @{}
+        $tile = New-TestTile 'GPU' $g.Name 'Carte graphique' 'Température, utilisation et consommation en direct, et ralentissements éventuels.'
+        Add-TestButton $tile 'Surveiller en direct' { param($s, $e) $x = $s.Tag; Invoke-Safe { Show-GpuMonitor $x.T $x.Ctx } } @{ Gpu = $g } -Primary
+        if (Get-InstalledGames | Where-Object { $_.Name -eq '3DMark' }) {
+            Add-TestButton $tile '3DMark' { param($s, $e) Start-Process 'steam://rungameid/223850' } @{}
         }
     }
 
-    # Réseau
-    $T = New-TestCard 'NET' 'Connexion Internet' 'Ping, téléchargement et envoi' 'Mesure la réactivité de ta connexion et sa vitesse de téléchargement et d''envoi. Dure environ 20 secondes (serveurs de test en France et en Europe).'
-    Add-TestButton $T 'Tester ma connexion' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-NetSpeed $x.T $x.Ctx } } @{} -Primary
+    $tile = New-TestTile 'NET' 'Connexion Internet' 'Ping, téléchargement, envoi' 'Réactivité et vitesse de ta connexion, en 20 secondes.'
+    Add-TestButton $tile 'Tester ma connexion' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-NetSpeed $x.T $x.Ctx } } @{} -Primary
 
-    # Écrans
     $screens = [System.Windows.Forms.Screen]::AllScreens
-    $T = New-TestCard 'HZ' 'Écrans' "$($screens.Count) écran$(if ($screens.Count -gt 1) {'s'})" 'Affiche des couleurs unies en plein écran pour repérer les pixels morts : un point qui reste noir, blanc ou d''une autre couleur. Clic ou Espace pour passer à la couleur suivante, Échap pour quitter.'
+    $tile = New-TestTile 'HZ' 'Écrans' "$($screens.Count) écran$(if ($screens.Count -gt 1) {'s'})" 'Couleurs unies en plein écran pour repérer les pixels morts. Échap pour quitter.'
     for ($i = 0; $i -lt $screens.Count; $i++) {
-        $label = "Tester l'écran $($i + 1)" + $(if ($screens[$i].Primary -and $screens.Count -gt 1) { ' (principal)' } else { '' })
-        Add-TestButton $T $label { param($s, $e) $x = $s.Tag; Start-PixelTest $x.Ctx.Index } @{ Index = $i } -Primary:($i -eq 0)
+        Add-TestButton $tile "Écran $($i + 1)$(if ($screens[$i].Primary -and $screens.Count -gt 1) { ' (principal)' })" { param($s, $e) $x = $s.Tag; Start-PixelTest $x.Ctx.Index } @{ Index = $i } -Primary:($i -eq 0)
     }
 
-    # Batterie
     if ($script:IsLaptop -and @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue).Count) {
-        $T = New-TestCard 'BAT' 'Batterie' 'Rapport de Windows' 'Génère le rapport officiel de Windows sur ta batterie : capacité d''origine, capacité actuelle, historique d''utilisation et autonomie estimée.'
-        Add-TestButton $T 'Voir le rapport de batterie' {
+        $tile = New-TestTile 'BAT' 'Batterie' 'Rapport de Windows' 'Capacité d''origine, capacité actuelle et autonomie estimée.'
+        Add-TestButton $tile 'Voir le rapport' {
             param($s, $e)
             $out = Join-Path $env:TEMP 'rapport-batterie.html'
             Start-Process -FilePath 'powercfg.exe' -ArgumentList '/batteryreport', '/output', "`"$out`"" -Wait -WindowStyle Hidden
@@ -4479,8 +5151,18 @@ $ui.SheetIgnore.Add_Click({
         }
     }
 })
+$Window.Add_SizeChanged({ $ui.TestScroll.MaxHeight = [math]::Max(300.0, $Window.ActualHeight - 300) })
+$ui.BtnTestStop.Add_Click({ [OGNative]::Cancel = $true; Set-TestState 'info' 'Arrêt en cours...' })
+$ui.BtnTestClose.Add_Click({ Hide-TestPanel })
+$ui.BtnTestX.Add_Click({ Hide-TestPanel })
+$ui.TestBackdrop.Add_MouseLeftButtonUp({ Hide-TestPanel })
+$ui.BtnTestAgain.Add_Click({
+    $run = $script:LastRun
+    if ($run -and $run.Fn) { Invoke-Safe { & $run.Fn $run.Tile $run.Ctx } }
+})
 $Window.Add_KeyDown({
     param($s, $e)
+    if ($e.Key -eq 'Escape' -and $ui.TestOverlay.Visibility -eq 'Visible') { Hide-TestPanel; return }
     if ($e.Key -ne 'Escape' -or $ui.Overlay.Visibility -ne 'Visible') { return }
     if ($script:SheetMode -eq 'display') { $script:DisplayChoice = 'revert' } else { Close-Sheet }
 })
