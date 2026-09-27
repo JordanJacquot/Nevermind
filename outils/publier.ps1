@@ -16,6 +16,17 @@ $utf8   = New-Object Text.UTF8Encoding($true)
 
 if ($Version -notmatch '^\d+\.\d+(\.\d+)?$') { throw "Numéro de version invalide : $Version (exemple : 1.1)" }
 
+# Un numéro déjà publié ne doit jamais être réutilisé : GitHub garde l'ancien zip en cache.
+Push-Location $racine
+try {
+    $ErrorActionPreference = 'Continue'   # « introuvable » est la réponse attendue ici, pas une erreur
+    git rev-parse -q --verify "refs/tags/v$Version" 2>$null | Out-Null
+    $tagExiste = ($LASTEXITCODE -eq 0)
+    gh release view "v$Version" 2>$null | Out-Null
+    $releaseExiste = ($LASTEXITCODE -eq 0)
+} finally { Pop-Location; $ErrorActionPreference = 'Stop' }
+if ($tagExiste -or $releaseExiste) { throw "La version $Version existe déjà. Choisis un numéro plus grand (exemple : 1.0.2 ou 1.1)." }
+
 function Invoke-Native([string]$Exe, [string[]]$Arguments) {
     & $Exe @Arguments
     if ($LASTEXITCODE) { throw "Échec : $Exe $($Arguments -join ' ')" }
