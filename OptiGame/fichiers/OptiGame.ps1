@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.7
+    OptiGame 1.0.8
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,7 +10,7 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.7'
+$AppVersion = '1.0.8'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -566,6 +566,33 @@ public static class OGNative
         var list = new List<string>();
         foreach (var t in tasks) if (t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion) list.Add(t.Result);
         return list.ToArray();
+    }
+
+    // Ports TCP ouverts sur un appareil (tentatives de connexion en parallèle).
+    public static int[] ScanPorts(string ip, int[] ports, int timeoutMs)
+    {
+        var open = new List<int>();
+        var sync = new object();
+        var tasks = new List<System.Threading.Tasks.Task>();
+        foreach (int port in ports)
+        {
+            int p = port;
+            tasks.Add(System.Threading.Tasks.Task.Run(() =>
+            {
+                using (var client = new System.Net.Sockets.TcpClient())
+                {
+                    try
+                    {
+                        var t = client.ConnectAsync(ip, p);
+                        if (t.Wait(timeoutMs) && client.Connected) { lock (sync) { open.Add(p); } }
+                    }
+                    catch { }
+                }
+            }));
+        }
+        try { System.Threading.Tasks.Task.WaitAll(tasks.ToArray()); } catch { }
+        open.Sort();
+        return open.ToArray();
     }
 
     public static void SetDarkTitleBar(IntPtr hwnd)
@@ -4772,6 +4799,7 @@ function Show-TestPanel($Tile) {
 
 function Hide-TestPanel {
     if ($script:TestRunning) { return }
+    $script:DevPing = $null
     if ($script:MonitorTimer) { $script:MonitorTimer.Stop(); $script:MonitorTimer = $null }
     $Live.Fast = $false
     $ui.TestOverlay.Visibility = 'Collapsed'
@@ -6313,6 +6341,11 @@ function New-DeviceTile($D, [int]$Index) {
     Add-ToGrid $g $sp 1
     $card.Child = $g
     if ($D.New) { $card.BorderBrush = Get-Brush $Colors.warn }
+    $card.Cursor = [System.Windows.Input.Cursors]::Hand
+    $card.Tag = $D
+    $card.Add_MouseEnter({ param($s, $e) $s.BorderBrush = Get-Brush $s.Tag.KindInfo.Color; $s.Background = Get-Brush '#1C212B' })
+    $card.Add_MouseLeave({ param($s, $e) $s.BorderBrush = Get-Brush $(if ($s.Tag.New) { $Colors.warn } else { '#232937' }); $s.Background = Get-Brush '#181C24' })
+    $card.Add_MouseLeftButtonUp({ param($s, $e) Invoke-Safe { Show-DeviceDetail $s.Tag } })
     $card.Opacity = 0
     $move = New-Object System.Windows.Media.TranslateTransform 0, 12
     $card.RenderTransform = $move
@@ -6388,8 +6421,17 @@ function Invoke-NetworkScan {
     $names = @{}
     foreach ($l in @($r.Names)) { $p = ([string]$l) -split '\|', 2; if ($p[1] -and $p[1] -ne $p[0]) { $names[$p[0]] = ($p[1] -replace '(?i)\.(home|lan|local|localdomain|box|fritz\.box|station|bbox)$', '') } }
 
-    $known = @()
-    if (Test-Path -LiteralPath $KnownFile) { try { $arr = ConvertFrom-Json (Get-Content -LiteralPath $KnownFile -Raw -Encoding UTF8); $known = @(@($arr) | ForEach-Object { [string]$_ }) } catch {} }
+    # Appareils déjà vus, avec la date de leur première apparition
+    $knownMap = @{}
+    if (Test-Path -LiteralPath $KnownFile) {
+        try {
+            $j = ConvertFrom-Json (Get-Content -LiteralPath $KnownFile -Raw -Encoding UTF8)
+            if ($j -is [string]) { $knownMap[$j] = '' }
+            elseif ($j -is [array]) { foreach ($m in $j) { $knownMap[[string]$m] = '' } }
+            elseif ($j) { foreach ($pp in $j.PSObject.Properties) { $knownMap[$pp.Name] = [string]$pp.Value } }
+        } catch {}
+    }
+    $known = @($knownMap.Keys)
     $first = -not $known.Count
     $list = foreach ($d in $devs.Values) {
         $d.Self = $d.Ip -eq $self
@@ -6402,8 +6444,10 @@ function Invoke-NetworkScan {
         $d
     }
     $list = @($list | Sort-Object @{ Expression = { if ($_.Self) { 0 } elseif ($_.Gateway) { 1 } else { 2 } } }, @{ Expression = { [version]$_.Ip } })
-    $allMacs = @($known + @($list | Where-Object { $_.Mac } | ForEach-Object { $_.Mac }) | Select-Object -Unique)
-    try { ConvertTo-Json -InputObject @($allMacs) | Set-Content -LiteralPath $KnownFile -Encoding UTF8 } catch {}
+    $today = (Get-Date).ToString('yyyy-MM-dd')
+    foreach ($dv in $list) { if ($dv.Mac -and -not $knownMap.ContainsKey([string]$dv.Mac)) { $knownMap[[string]$dv.Mac] = $today } }
+    $script:KnownDevices = $knownMap
+    try { ConvertTo-Json -InputObject $knownMap | Set-Content -LiteralPath $KnownFile -Encoding UTF8 } catch {}
     $newCount = @($list | Where-Object { $_.New }).Count
 
     # Résultat
@@ -6423,13 +6467,248 @@ function Invoke-NetworkScan {
     foreach ($d in $list) { [void]$ui.NetDevices.Children.Add((New-DeviceTile $d $i)); $i++ }
     $ui.NetDevSummary.Text = "$($list.Count) appareil$(if ($list.Count -gt 1) {'s'})" + $(if ($newCount) { ", $newCount nouveau$(if ($newCount -gt 1) {'x'})" } else { '' })
     $ui.NetDevHint.Text = if ($first) {
-        'Premier scan : ces appareils sont mémorisés. Au prochain scan, OptiGame te signalera tout nouvel appareil (pratique pour repérer quelqu''un sur ton Wi-Fi).'
+        'Premier scan : ces appareils sont mémorisés, OptiGame te signalera tout nouvel appareil au prochain scan. Clique sur un appareil pour voir ses détails.'
     } elseif ($newCount) {
         'Un appareil « Nouveau » n''était pas là au scan précédent. Si tu ne le reconnais pas, change le mot de passe de ton Wi-Fi depuis la page de ta box. Attention : les téléphones récents changent parfois d''adresse et peuvent apparaître comme nouveaux.'
     } else {
-        'Aucun nouvel appareil depuis le dernier scan. Passe la souris sur un appareil pour voir son adresse physique.'
+        'Aucun nouvel appareil depuis le dernier scan. Clique sur un appareil pour voir ses détails, son ping en direct et ses services ouverts.'
     }
     Set-Status "Scan terminé : $($list.Count) appareils trouvés."
+}
+
+# ---------------------------------------------------------------------------
+# Fiche détaillée d'un appareil du réseau
+# ---------------------------------------------------------------------------
+$DevTags = @{
+    'Ce PC' = 'PC'; 'Box Internet' = 'BOX'; 'Routeur ou répéteur Wi-Fi' = 'WIFI'; 'Téléphone ou tablette' = 'TEL'
+    'Console de jeu' = 'JEU'; 'TV ou multimédia' = 'TV'; 'Imprimante' = 'IMP'; 'Box ou décodeur TV' = 'BOX'
+    'Objet connecté' = 'IOT'; 'Appareil Apple' = 'APP'; 'Ordinateur' = 'PC'; 'Téléphone probable' = 'TEL'; 'Appareil' = 'NET'
+}
+
+# Port : nom, niveau (info, warn, bad), explication, adresse web éventuelle
+$PortInfo = @{
+    21    = @('Transfert de fichiers (FTP)', 'warn', 'Les fichiers et les mots de passe passent en clair sur le réseau.', '')
+    22    = @('Accès à distance sécurisé (SSH)', 'info', 'Permet de prendre la main sur l''appareil à distance, de façon chiffrée.', '')
+    23    = @('Accès à distance non protégé (Telnet)', 'bad', 'Accès à distance sans aucun chiffrement : à désactiver dans les réglages de l''appareil.', '')
+    25    = @('Envoi de mails (SMTP)', 'info', 'Serveur d''envoi de mails.', '')
+    53    = @('Serveur DNS', 'info', 'Traduit les noms de sites en adresses. Normal pour une box ou un routeur.', '')
+    80    = @('Page web', 'info', 'Page de réglages accessible depuis un navigateur.', 'http://{0}')
+    110   = @('Réception de mails (POP3)', 'info', 'Serveur de mails.', '')
+    135   = @('Services Windows', 'info', 'Communication interne de Windows. Normal sur un PC Windows.', '')
+    139   = @('Partage de fichiers (ancien)', 'warn', 'Ancienne version du partage de fichiers Windows. Normal sur un PC, mais à éviter ailleurs.', '')
+    143   = @('Réception de mails (IMAP)', 'info', 'Serveur de mails.', '')
+    443   = @('Page web sécurisée', 'info', 'Page de réglages chiffrée, accessible depuis un navigateur.', 'https://{0}')
+    445   = @('Partage de fichiers Windows', 'info', 'Dossiers ou imprimantes partagés. Vérifie que tu partages seulement ce que tu veux.', '')
+    515   = @('Impression', 'info', 'Service d''impression réseau.', '')
+    548   = @('Partage de fichiers Apple', 'info', 'Partage de fichiers d''un Mac ou d''un NAS.', '')
+    554   = @('Flux vidéo', 'info', 'Souvent une caméra de surveillance ou un décodeur TV.', '')
+    631   = @('Impression', 'info', 'Service d''impression réseau.', '')
+    1883  = @('Objets connectés (MQTT)', 'info', 'Messagerie utilisée par la domotique.', '')
+    3389  = @('Bureau à distance Windows', 'warn', 'Permet de prendre le contrôle du PC à distance. Désactive le si tu ne t''en sers pas.', '')
+    5000  = @('Interface web (NAS, AirPlay)', 'info', 'Page de réglages ou service de diffusion.', 'http://{0}:5000')
+    5001  = @('Interface web sécurisée (NAS)', 'info', 'Page de réglages chiffrée.', 'https://{0}:5001')
+    5357  = @('Découverte réseau Windows', 'info', 'Permet aux autres appareils de voir ce PC sur le réseau.', '')
+    5900  = @('Contrôle à distance (VNC)', 'warn', 'Prise de contrôle de l''écran à distance, souvent mal protégée.', '')
+    7000  = @('AirPlay', 'info', 'Diffusion depuis un iPhone, un iPad ou un Mac.', '')
+    8008  = @('Google Cast', 'info', 'Diffusion depuis un téléphone (Chromecast).', '')
+    8009  = @('Google Cast', 'info', 'Diffusion depuis un téléphone (Chromecast).', '')
+    8080  = @('Page web (autre port)', 'info', 'Page de réglages accessible depuis un navigateur.', 'http://{0}:8080')
+    8123  = @('Home Assistant', 'info', 'Interface de domotique.', 'http://{0}:8123')
+    8443  = @('Page web sécurisée (autre port)', 'info', 'Page de réglages chiffrée.', 'https://{0}:8443')
+    9100  = @('Imprimante réseau', 'info', 'Impression directe sur l''imprimante.', '')
+    9295  = @('PlayStation Remote Play', 'info', 'Jouer à distance sur la console.', '')
+    32400 = @('Serveur Plex', 'info', 'Serveur de films et séries.', 'http://{0}:32400/web')
+    62078 = @('Synchronisation iPhone ou iPad', 'info', 'Synchronisation avec un ordinateur. Normal sur un appareil Apple.', '')
+}
+
+function New-InfoRows([array]$Rows) {
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $sp.Margin = New-Thickness 0 6 0 0
+    foreach ($r in $Rows) {
+        $g = New-Grid @('200', '*')
+        $g.Margin = New-Thickness 0 3 0 3
+        Add-ToGrid $g (New-Text $r[0] 13 '#9AA3B2') 0
+        $v = New-Text ([string]$r[1]) 13 $(if ($r.Count -gt 2) { $r[2] } else { '#FFFFFF' }) -Semi
+        $v.TextWrapping = 'Wrap'
+        Add-ToGrid $g $v 1
+        [void]$sp.Children.Add($g)
+    }
+    $sp
+}
+
+# Un ping toutes les 400 ms, sans bloquer la fenêtre.
+function Update-DevPing {
+    $m = $script:DevPing
+    if (-not $m) { return }
+    if ($m.Task) {
+        if (-not $m.Task.IsCompleted) { return }
+        $m.Sent++
+        $rtt = $null
+        try { if (-not $m.Task.IsFaulted -and [string]$m.Task.Result.Status -eq 'Success') { $rtt = [double]$m.Task.Result.RoundtripTime } } catch {}
+        if ($null -ne $rtt) {
+            [void]$m.Times.Add($rtt)
+            if ($m.Times.Count -gt 60) { $m.Times.RemoveAt(0) }
+            $m.Gauge.State.Max = [math]::Max(100.0, ($m.Times | Measure-Object -Maximum).Maximum * 1.2)
+            Set-GaugeLive $m.Gauge $rtt
+            Add-ChartPoint $m.Chart $rtt
+        } else {
+            $m.Lost++
+            Add-ChartPoint $m.Chart 0
+        }
+        $loss = 100 * $m.Lost / [math]::Max(1.0, $m.Sent)
+        if ($m.Times.Count) {
+            $avg = ($m.Times | Measure-Object -Average).Average
+            $jit = 0
+            for ($i = 1; $i -lt $m.Times.Count; $i++) { $jit += [math]::Abs($m.Times[$i] - $m.Times[$i - 1]) }
+            if ($m.Times.Count -gt 1) { $jit = $jit / ($m.Times.Count - 1) }
+            $m.S.Avg.Text = if ($avg -lt 1) { '< 1 ms' } else { '{0:N0} ms' -f $avg }
+            $m.S.Min.Text = '{0:N0} ms' -f ($m.Times | Measure-Object -Minimum).Minimum
+            $m.S.Max.Text = '{0:N0} ms' -f ($m.Times | Measure-Object -Maximum).Maximum
+            $m.S.Jit.Text = '{0:N1} ms' -f $jit
+        }
+        $m.S.Loss.Text = '{0:N0} %' -f $loss
+        $m.S.Loss.Foreground = Get-Brush $(if ($loss -gt 0) { $Colors.warn } else { $Colors.ok })
+        if ($m.Sent -ge 3) {
+            if (-not $m.Times.Count) {
+                $m.S.Verdict.Text = 'Cet appareil ne répond pas au ping. C''est normal pour certains téléphones, consoles ou PC qui le bloquent.'
+                $m.S.Verdict.Foreground = Get-Brush '#9AA3B2'
+            } elseif ($loss -ge 5 -or $jit -gt 15) {
+                $m.S.Verdict.Text = 'Connexion instable : des réponses se perdent ou arrivent en retard. Souvent le signe d''un Wi-Fi faible.'
+                $m.S.Verdict.Foreground = Get-Brush $Colors.warn
+            } else {
+                $m.S.Verdict.Text = 'Connexion stable.'
+                $m.S.Verdict.Foreground = Get-Brush $Colors.ok
+            }
+        }
+        $m.Task = $null
+    }
+    try { $m.Task = $m.Ping.SendPingAsync($m.Ip, 1000) } catch { $m.Task = $null }
+}
+
+function Show-DeviceDetail($D) {
+    if ($script:TestRunning) { return }
+    $token = [guid]::NewGuid()
+    $script:DevToken = $token
+    if ($script:MonitorTimer) { $script:MonitorTimer.Stop(); $script:MonitorTimer = $null }
+    $tag = $DevTags[$D.KindInfo.Kind]; if (-not $tag) { $tag = 'NET' }
+    Show-TestPanel @{ Tag = $tag; Title = $D.Title; Sub = $D.KindInfo.Kind }
+    Set-TestButtons 'done'
+    $ui.BtnTestAgain.Visibility = 'Collapsed'
+    Set-TestState 'live' 'Ping en direct'
+    $ui.TestProgress.Value = 0
+    $body = $ui.TestBody
+
+    # Identité
+    [void]$body.Children.Add((New-SectionTitle 'IDENTITÉ'))
+    $first = [string]$script:KnownDevices[[string]$D.Mac]
+    $firstTxt = if ($D.Self) { 'Ce PC' } elseif ($first) { ([datetime]$first).ToString('dd/MM/yyyy') } elseif ($D.Mac) { 'Avant la mise à jour 1.0.8' } else { 'Inconnue' }
+    $rows = @(
+        @('Adresse sur le réseau', $D.Ip),
+        @('Adresse physique (MAC)', $(if ($D.Mac) { $D.Mac } else { 'Inconnue' })),
+        @('Fabricant', $(if ($D.Vendor) { $D.Vendor } else { 'Inconnu' })),
+        @('Type', $D.KindInfo.Kind)
+    )
+    if ($D.Host) { $rows += , @('Nom sur le réseau', $D.Host) }
+    $rows += , @('Vu pour la première fois', $firstTxt)
+    if ($D.New) { $rows += , @('Statut', 'Nouvel appareil depuis le dernier scan', $Colors.warn) }
+    if ($D.Vendor -eq 'Adresse privée') { $rows += , @('Bon à savoir', 'Les téléphones récents cachent leur vraie adresse physique : le fabricant ne peut pas être connu.', '#9AA3B2') }
+    [void]$body.Children.Add((New-InfoRows $rows))
+
+    # Ping en direct
+    [void]$body.Children.Add((New-SectionTitle 'TEMPS DE RÉPONSE EN DIRECT'))
+    $row = New-Grid @('Auto', '*')
+    $gauge = New-Gauge 'Temps de réponse' 0 100 '{0:N0}' 'ms' $Colors.info 0
+    Add-ToGrid $row $gauge.El 0
+    $stats = @{}
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $sp.VerticalAlignment = 'Center'
+    $sp.Margin = New-Thickness 18 0 0 0
+    foreach ($s in @(@('Avg', 'Moyenne'), @('Min', 'Plus rapide'), @('Max', 'Plus lent'), @('Jit', 'Variation (gigue)'), @('Loss', 'Réponses perdues'))) {
+        $g = New-Grid @('170', '*')
+        $g.Margin = New-Thickness 0 3 0 3
+        Add-ToGrid $g (New-Text $s[1] 13 '#9AA3B2') 0
+        $v = New-Text '...' 13 '#FFFFFF' -Semi
+        Add-ToGrid $g $v 1
+        [void]$sp.Children.Add($g)
+        $stats[$s[0]] = $v
+    }
+    $verdict = New-Text 'Mesure en cours...' 12.5 '#9AA3B2' -Semi
+    $verdict.Margin = New-Thickness 0 10 0 0
+    [void]$sp.Children.Add($verdict)
+    $stats.Verdict = $verdict
+    Add-ToGrid $row $sp 1
+    [void]$body.Children.Add($row)
+    $chart = New-LiveChart $Colors.info 'ms' '{0:N0}'
+    [void]$body.Children.Add($chart.El)
+
+    $script:DevPing = @{ Ip = $D.Ip; Ping = (New-Object System.Net.NetworkInformation.Ping); Task = $null; Times = (New-Object System.Collections.ArrayList); Lost = 0; Sent = 0; Gauge = $gauge; Chart = $chart; S = $stats }
+    $script:MonitorTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:MonitorTimer.Interval = [TimeSpan]::FromMilliseconds(400)
+    $script:MonitorTimer.Add_Tick({ try { Update-DevPing } catch {} })
+    $script:MonitorTimer.Start()
+
+    # Services ouverts (en arrière plan)
+    [void]$body.Children.Add((New-SectionTitle 'SERVICES OUVERTS'))
+    $wait = New-Text 'Recherche des services proposés par cet appareil...' 13 '#9AA3B2'
+    [void]$body.Children.Add($wait)
+    $ports = [int[]]@($PortInfo.Keys)
+    $open = @(Invoke-Async { param($a) [OGNative]::ScanPorts($a.Ip, [int[]]$a.Ports, 600) } @{ Ip = $D.Ip; Ports = $ports })
+    if ($script:DevToken -ne $token -or $ui.TestOverlay.Visibility -ne 'Visible') { return }
+    $body.Children.Remove($wait)
+    $worst = 'ok'
+    $notes = @()
+    if (-not $open.Count) {
+        [void]$body.Children.Add((New-Text 'Aucun service ouvert parmi les plus courants. C''est normal pour un téléphone, une console ou une TV : ils n''acceptent pas de connexions.' 13 '#9AA3B2'))
+    }
+    $i = 0
+    foreach ($port in $open) {
+        $pi = $PortInfo[[int]$port]
+        if (-not $pi) { continue }
+        $col = switch ($pi[1]) { 'bad' { $Colors.bad } 'warn' { $Colors.warn } default { $Colors.info } }
+        if ($pi[1] -eq 'bad') { $worst = 'bad'; $notes += $pi[0] } elseif ($pi[1] -eq 'warn' -and $worst -ne 'bad') { $worst = 'warn'; $notes += $pi[0] }
+        $card = New-Object System.Windows.Controls.Border
+        $card.Background = Get-Brush '#1A1F29'
+        $card.CornerRadius = [System.Windows.CornerRadius]::new(10)
+        $card.Padding = New-Thickness 12 9 12 9
+        $card.Margin = New-Thickness 0 0 0 6
+        $g = New-Grid @('Auto', '*', 'Auto')
+        $badge = New-Object System.Windows.Controls.Border
+        $bg = Get-Brush $col; $bg.Opacity = 0.16
+        $badge.Background = $bg
+        $badge.CornerRadius = [System.Windows.CornerRadius]::new(8)
+        $badge.MinWidth = 62
+        $badge.Padding = New-Thickness 8 4 8 4
+        $badge.VerticalAlignment = 'Center'
+        $bt = New-Text "$port" 13 $col -Bold
+        $bt.HorizontalAlignment = 'Center'
+        $badge.Child = $bt
+        Add-ToGrid $g $badge 0
+        $txt = New-Object System.Windows.Controls.StackPanel
+        $txt.Margin = New-Thickness 12 0 8 0
+        [void]$txt.Children.Add((New-Text $pi[0] 13.5 '#FFFFFF' -Semi))
+        [void]$txt.Children.Add((New-Text $pi[2] 12 '#9AA3B2'))
+        Add-ToGrid $g $txt 1
+        if ($pi[3]) {
+            $b = New-Button 'Ouvrir'
+            $b.Tag = $pi[3] -f $D.Ip
+            $b.Add_Click({ param($s, $e) Start-Process $s.Tag })
+            Add-ToGrid $g $b 2
+        }
+        $card.Child = $g
+        $card.Opacity = 0
+        Start-WpfAnim $card ([System.Windows.UIElement]::OpacityProperty) 1 350 (80 * $i)
+        [void]$body.Children.Add($card)
+        $i++
+    }
+    $txt = switch ($worst) {
+        'bad'  { "À corriger : $($notes -join ', '). Désactive ce service dans les réglages de l'appareil, ou demande à la personne qui l'a installé." }
+        'warn' { "À surveiller : $($notes -join ', '). Si tu ne sais pas pourquoi c'est ouvert, désactive le dans les réglages de l'appareil." }
+        default { if ($open.Count) { 'Rien d''inhabituel pour ce type d''appareil.' } else { 'Rien à signaler.' } }
+    }
+    [void]$body.Children.Add((New-Verdict $worst $txt))
+    $note = New-Text "Seuls les $($ports.Count) services les plus courants sont vérifiés." 11.5 '#5B6475'
+    $note.Margin = New-Thickness 0 8 0 0
+    [void]$body.Children.Add($note)
 }
 
 # ---------------------------------------------------------------------------
@@ -6680,6 +6959,7 @@ $Window.Add_ContentRendered({
 # ---------------------------------------------------------------------------
 Import-Backup
 Import-Ignored
+$script:KnownDevices = @{}
 $script:RestoreDone = $false
 $script:Build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue).CurrentBuildNumber
 $script:Pool = [RunspaceFactory]::CreateRunspacePool(1, 4)
