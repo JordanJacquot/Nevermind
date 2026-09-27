@@ -16,7 +16,7 @@ Les mises à jour sont ensuite proposées directement dans l'application.
 
 ## Ce que fait l'application
 
-Deux sections : **Ordinateur** (accueil avec une carte par fonction) et **Réseau** (scan des appareils connectés, fabricant, détection des nouveaux appareils).
+Deux sections : **Ordinateur** (accueil avec une carte par fonction) et **Réseau** (scan des appareils connectés, fabricant, détection des nouveaux appareils, fiche détaillée par appareil, audit de sécurité avec note, corrections et rapport HTML).
 
 - **Tableau de bord** : mesures en direct, santé de chaque composant, score et liste de ce qui peut être amélioré.
 - **Fiches de correction** : ce qui a été trouvé, ce que l'app va faire, bouton Exécuter, puis « Revenir en arrière » si besoin.

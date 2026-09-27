@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.8
+﻿OptiGame 1.0.9
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -38,6 +38,10 @@ L'application a deux grandes sections, dans le menu à gauche :
   - Réseau : scan de tous les appareils connectés à ton réseau (téléphones,
     consoles, TV, box...), avec leur fabricant. Les nouveaux appareils sont
     signalés d'un scan à l'autre : pratique pour repérer un intrus sur ton Wi-Fi.
+    Clique sur un appareil pour voir sa fiche (ping en direct, services ouverts).
+    L'audit de sécurité vérifie ton Wi-Fi, ta box (WPS, UPnP), le DNS, tes
+    appareils et ce PC, donne une note sur 100, corrige ce qui peut l'être sur
+    ce PC et exporte un rapport.
 
 Tableau de bord
   Mesures en direct : processeur, mémoire, carte graphique (et sa température
