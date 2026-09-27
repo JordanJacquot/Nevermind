@@ -20,6 +20,7 @@ Les mises à jour sont ensuite proposées directement dans l'application.
 - **Fiches de correction** : ce qui a été trouvé, ce que l'app va faire, bouton Exécuter, puis « Revenir en arrière » si besoin.
 - **Optimisation gaming** : plan d'alimentation, mode jeu, Game Bar, planification GPU, accélération de la souris...
 - **Tests des composants** : vitesse et santé de chaque disque, processeur (puissance, stabilité), mémoire, capteurs de la carte graphique, débit Internet, pixels morts.
+- **Sécurité** : niveau de protection, analyses Microsoft Defender, recherche de fichiers déguisés, programmes cachés, tâches planifiées suspectes, exclusions d'antivirus, hosts et proxy.
 - **Démarrage**, **Réseau** (ping, gigue, DNS), **Nettoyage**, **Sauvegarde** (tout annuler, point de restauration, rapport HTML).
 - **PC portables** : mode « Meilleures performances », jeux forcés sur la carte graphique dédiée, santé de la batterie.
 

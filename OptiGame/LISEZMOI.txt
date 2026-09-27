@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.4
+﻿OptiGame 1.0.5
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -79,6 +79,12 @@ Tests
   processeur (puissance, fréquence en charge, stabilité), mémoire vive,
   capteurs de la carte graphique, débit Internet, pixels morts des écrans,
   et rapport de batterie sur les portables.
+
+Sécurité
+  Niveau de protection sur 100, analyses antivirus avec Microsoft Defender
+  (rapide, complète ou d'un dossier), et recherche de points suspects : fichiers
+  déguisés (facture.pdf.exe), programmes cachés non signés, tâches planifiées
+  douteuses, exclusions de l'antivirus, fichier hosts, proxy, pare-feu.
 
 Sauvegarde
   Annule TOUS les changements d'OptiGame en un clic, crée un point de
