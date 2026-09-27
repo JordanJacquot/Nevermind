@@ -1,0 +1,97 @@
+﻿OptiGame 1.0
+Analyse et optimisation gaming pour Windows 10 et 11
+=====================================================
+
+INSTALLATION
+------------
+1. Clic droit sur le zip > Extraire tout.
+2. Dans le dossier extrait, double clique sur « OptiGame.exe »
+   (l'icône avec la jauge verte).
+3. Clique sur « Oui » quand Windows demande l'autorisation.
+
+La première fois seulement, Windows peut afficher « Windows a protégé votre
+ordinateur » : clique sur « Informations complémentaires » puis « Exécuter
+quand même ». C'est normal pour un programme qui ne vient pas du Microsoft
+Store. OptiGame se débloque ensuite tout seul : plus d'avertissement après.
+
+Rien à installer : l'application utilise PowerShell, déjà présent dans Windows.
+Le dossier « fichiers » contient l'application elle même : ne le supprime pas.
+
+Si ton antivirus bloque OptiGame.exe, utilise le lanceur de secours :
+fichiers\Lancer OptiGame (secours).bat
+
+
+DÉSINSTALLATION
+---------------
+Double clique sur « Désinstaller OptiGame.exe » (l'icône avec le rond rouge).
+L'application :
+  - remet tous les réglages de Windows qu'elle a modifiés comme avant,
+  - supprime ses données (sauvegarde, journal, préférences),
+  - supprime ses fichiers. Les autres fichiers du dossier ne sont pas touchés.
+Les points de restauration Windows sont conservés.
+Secours : fichiers\Désinstaller OptiGame (secours).bat
+
+CE QUE FAIT L'APPLICATION
+-------------------------
+Tableau de bord
+  Mesures en direct : processeur, mémoire, carte graphique (et sa température
+  sur les cartes NVIDIA).
+  Santé de chaque composant : processeur, carte graphique, écrans, mémoire vive,
+  chaque disque (état SMART, usure, température, remplissage), carte mère et
+  BIOS (Secure Boot, TPM), stabilité du système (écrans bleus, erreurs
+  matérielles), réseau, et batterie sur les portables.
+  Puis un score sur 100 et « Pour gagner des points » : clique sur un point pour
+  ouvrir sa fiche (ce qui a été trouvé, ce que l'app va faire). Le bouton
+  Exécuter corrige tout seul quand c'est possible. « Ignorer (c'est voulu) »
+  retire du score un point volontaire (ex : un écran gardé en 60 Hz).
+  Les recommandations détaillées suivent. Elle repère notamment :
+  écran bridé à 60 Hz alors qu'il peut faire plus, mémoire en simple canal,
+  profil XMP / EXPO désactivé, pilote graphique ancien, Windows sur disque dur,
+  disque plein, Wi-Fi, trop de programmes au démarrage...
+
+Optimisation gaming
+  Plan d'alimentation Performances élevées, mode jeu, enregistrement en arrière
+  plan de la Game Bar, planification GPU matérielle, optimisations des jeux en
+  fenêtré, accélération de la souris, raccourci Maj x5, partage des mises à jour.
+
+Spécial PC portable
+  L'app reconnaît un portable d'après le type de boîtier déclaré par le PC (un PC
+  fixe branché sur un onduleur n'est pas pris pour un portable). Sur un portable :
+  - le mode « Meilleures performances » de Windows est activé au lieu du plan
+    Performances élevées ;
+  - si le portable a deux cartes graphiques, tes jeux Steam et Epic sont réglés
+    pour toujours utiliser la carte dédiée (et pas la puce intégrée) ;
+  - la santé de la batterie est affichée, et l'app prévient si tu joues sans
+    le chargeur.
+
+Démarrage
+  Désactive les programmes qui se lancent avec Windows (rien n'est supprimé).
+
+Réseau
+  Mesure ton ping, la gigue et les pertes de paquets. Permet de changer de DNS.
+
+Nettoyage
+  Supprime les fichiers temporaires et les restes de mises à jour.
+  Ne touche jamais à tes documents, à la corbeille ni aux caches des jeux.
+
+Sauvegarde
+  Annule TOUS les changements d'OptiGame en un clic, crée un point de
+  restauration Windows, exporte un rapport HTML pour comparer vos PC.
+
+
+SÉCURITÉ
+--------
+- Aucune modification n'est faite sans que tu cliques sur un bouton.
+- Après chaque correction, le bouton « Revenir en arrière » annule exactement
+  ce qui vient d'être fait.
+- Après un changement de fréquence d'écran, l'app demande si l'affichage est
+  correct. Sans réponse (écran noir), elle revient seule à l'ancien réglage
+  au bout de 15 secondes.
+- Chaque réglage modifié est sauvegardé avant d'être changé
+  (dans %LOCALAPPDATA%\OptiGame\sauvegarde.json).
+- Un point de restauration Windows est créé avant les optimisations
+  (case cochée par défaut).
+- L'application ne se connecte à rien, sauf pour le test de ping.
+- Le code est lisible : ouvre fichiers\OptiGame.ps1 avec le Bloc-notes pour vérifier.
+
+En cas de problème, le journal est dans %LOCALAPPDATA%\OptiGame\journal.txt

@@ -1,0 +1,13 @@
+# Copie installée à la racine (celle du raccourci du bureau)
+/fichiers/
+/OptiGame.exe
+/Désinstaller OptiGame.exe
+/LISEZMOI.txt
+
+# Fichiers générés par outils/construire.ps1
+/OptiGame.zip
+/OptiGame/*.exe
+/outils/icones/
+
+# Tests
+/_test/
