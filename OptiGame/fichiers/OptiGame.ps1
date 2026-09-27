@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.1
+    OptiGame 1.0.2
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,13 +10,13 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.1'
+$AppVersion = '1.0.2'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
 # Droits administrateur
 # ---------------------------------------------------------------------------
-Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
+Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Drawing
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -549,6 +549,24 @@ function Test-StartupEnabled([string]$Approved, [string]$Name) {
     $true
 }
 
+# Retrouve le programme lancé par une entrée de démarrage (ou $null si ce n'est pas un vrai programme).
+function Resolve-StartupExe([string]$Command) {
+    if (-not $Command) { return $null }
+    $cmd = [Environment]::ExpandEnvironmentVariables($Command.Trim())
+    if ($cmd -match '^"([^"]+)"') { $exe = $matches[1] }
+    elseif ($cmd -match '^(.+?\.(exe|lnk|bat|cmd|url))(\s|$)') { $exe = $matches[1] }
+    else { $exe = $cmd }
+    if ($exe -notmatch '[\\/]') { $exe = Join-Path "$env:windir\System32" $exe }
+    try { if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { return $null } } catch { return $null }
+    if ($exe -like '*.lnk') {
+        try {
+            $t = (New-Object -ComObject WScript.Shell).CreateShortcut($exe).TargetPath
+            if ($t -and (Test-Path -LiteralPath $t -PathType Leaf)) { return $t }
+        } catch {}
+    }
+    $exe
+}
+
 function Get-StartupItems {
     foreach ($s in $StartupSources) {
         if (-not $s.Path -or -not (Test-Path -LiteralPath $s.Path)) { continue }
@@ -564,6 +582,8 @@ function Get-StartupItems {
             }
         }
         foreach ($e in $entries) {
+            $exe = Resolve-StartupExe $e.Command
+            if (-not $exe) { continue }
             $enabled = Test-StartupEnabled $s.Approved $e.Name
             [pscustomobject]@{
                 Nom       = $e.Display
@@ -573,6 +593,7 @@ function Get-StartupItems {
                 Approved  = $s.Approved
                 ValueName = $e.Name
                 Enabled   = $enabled
+                Exe       = $exe
             }
         }
     }
@@ -633,7 +654,7 @@ function Get-GpuPreference([string]$Exe) {
     try { [string]$k.GetValue($Exe) } finally { $k.Close() }
 }
 
-$SafeStartup = '\b(Discord|Steam|Epic ?Games|EpicGamesLauncher|Spotify|OneDrive|Teams|Skype|EADesktop|EA app|Origin|Battle\.net|Ubisoft|Uplay|GOG Galaxy|GalaxyClient|Riot ?Client|Overwolf|Medal|Zoom|WhatsApp|Telegram|Messenger|CCleaner|MicrosoftEdgeAutoLaunch|Opera|Brave|Adobe Creative Cloud|CCXProcess|AdobeGCInvoker)\b'
+$SafeStartup = '\b(Blitz|Discord|Steam|Epic ?Games|EpicGamesLauncher|Spotify|OneDrive|Teams|Skype|EADesktop|EA app|Origin|Battle\.net|Ubisoft|Uplay|GOG Galaxy|GalaxyClient|Riot ?Client|Overwolf|Medal|Zoom|WhatsApp|Telegram|Messenger|CCleaner|MicrosoftEdgeAutoLaunch|Opera|Brave|Adobe Creative Cloud|CCXProcess|AdobeGCInvoker)\b|MicrosoftEdgeAutoLaunch|\bEA\b|EALauncher'
 
 function Set-StartupState($Item, [bool]$Enable) {
     $first = if ($Enable) { 2 } else { 3 }
@@ -943,7 +964,29 @@ if ($Uninstall) {
           </Setter>
         </Trigger>
       </Style.Triggers>
-    </Style>    <Style TargetType="ProgressBar">
+    </Style>    <Style x:Key="Switch" TargetType="CheckBox">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Border x:Name="Track" Width="46" Height="26" CornerRadius="13" Background="#343C4C">
+              <Ellipse x:Name="Knob" Width="20" Height="20" Fill="#C9CED8" HorizontalAlignment="Left" Margin="3,0,0,0"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Track" Property="Background" Value="#22D37A"/>
+                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/>
+                <Setter TargetName="Knob" Property="Margin" Value="0,0,3,0"/>
+                <Setter TargetName="Knob" Property="Fill" Value="White"/>
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Track" Property="Opacity" Value="0.85"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ProgressBar">
       <Setter Property="Height" Value="8"/>
       <Setter Property="Maximum" Value="100"/>
       <Setter Property="Foreground" Value="#22D37A"/>
@@ -1182,68 +1225,22 @@ if ($Uninstall) {
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
           <DockPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
               <Button x:Name="BtnRefreshStartup" Style="{StaticResource BtnSecondary}" Content="Actualiser" Margin="0,0,10,0"/>
-              <Button x:Name="BtnEnableStartup" Style="{StaticResource BtnSecondary}" Content="Réactiver" Margin="0,0,10,0"/>
-              <Button x:Name="BtnDisableStartup" Style="{StaticResource BtnPrimary}" Content="Désactiver"/>
+              <Button x:Name="BtnDisableStartup" Style="{StaticResource BtnPrimary}" Content="Désactiver ce qui est conseillé"/>
             </StackPanel>
             <StackPanel>
               <TextBlock Style="{StaticResource H1}" Text="Programmes au démarrage"/>
               <TextBlock x:Name="StartupCount" Style="{StaticResource Sub}"/>
             </StackPanel>
           </DockPanel>
-          <ListView x:Name="StartupList" Grid.Row="1" Margin="0,16,0,12" SelectionMode="Extended" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                    Background="#181C24" Foreground="#E6E8EE" BorderBrush="#232937" BorderThickness="1">
-            <ListView.ItemContainerStyle>
-              <Style TargetType="ListViewItem">
-                <Setter Property="Foreground" Value="#E6E8EE"/>
-                <Setter Property="Template">
-                  <Setter.Value>
-                    <ControlTemplate TargetType="ListViewItem">
-                      <Border x:Name="Bd" Background="Transparent" Padding="0,6">
-                        <GridViewRowPresenter Content="{TemplateBinding Content}" Columns="{TemplateBinding GridView.ColumnCollection}"/>
-                      </Border>
-                      <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="#202633"/></Trigger>
-                        <Trigger Property="IsSelected" Value="True"><Setter TargetName="Bd" Property="Background" Value="#1E3A2C"/></Trigger>
-                      </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                  </Setter.Value>
-                </Setter>
-              </Style>
-            </ListView.ItemContainerStyle>
-            <ListView.View>
-              <GridView>
-                <GridViewColumn Header="Programme" Width="220" DisplayMemberBinding="{Binding Nom}"/>
-                <GridViewColumn Header="État" Width="90" DisplayMemberBinding="{Binding Etat}"/>
-                <GridViewColumn Header="Source" Width="190" DisplayMemberBinding="{Binding Source}"/>
-                <GridViewColumn Header="Commande" Width="320">
-                  <GridViewColumn.CellTemplate>
-                    <DataTemplate>
-                      <TextBlock Text="{Binding Commande}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Commande}"/>
-                    </DataTemplate>
-                  </GridViewColumn.CellTemplate>
-                </GridViewColumn>
-              </GridView>
-            </ListView.View>
-          </ListView>
-          <Border Grid.Row="2" Style="{StaticResource Card}" Padding="14">
-            <TextBlock Style="{StaticResource Sub}" Margin="0" FontSize="12">
-              <Run Text="Sélectionne un ou plusieurs programmes (Ctrl + clic) puis clique sur Désactiver. Rien n'est supprimé, tu peux les réactiver quand tu veux." Foreground="#E6E8EE"/>
-              <LineBreak/><LineBreak/>
-              <Run Text="Sans risque à désactiver: " FontWeight="SemiBold" Foreground="#22D37A"/>
-              <Run Text="Discord, Steam, Epic Games, Spotify, OneDrive, Teams, les launchers de jeux (ils se lancent quand tu les ouvres)."/>
-              <LineBreak/>
-              <Run Text="À garder: " FontWeight="SemiBold" Foreground="#F5A524"/>
-              <Run Text="l'antivirus, les pilotes audio (Realtek...), les logiciels de ta carte graphique, de ta souris et de ton clavier si tu utilises leurs réglages."/>
-            </TextBlock>
-          </Border>
+          <ScrollViewer Grid.Row="1" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="StartupPanel" Margin="0,0,8,0"/>
+          </ScrollViewer>
         </Grid>
       </TabItem>
-
       <!-- Réseau -->
       <TabItem>
         <TabItem.Header>
@@ -1426,7 +1423,7 @@ foreach ($node in $Xaml.SelectNodes('//*[@*[local-name()="Name"]]')) {
 $ui.Tabs = $Window.FindName('Tabs')
 
 $Colors = @{ ok = '#22D37A'; warn = '#F5A524'; bad = '#F04438'; info = '#4EA8FF' }
-$BusyButtons = 'BtnAnalyze', 'BtnSelectAll', 'BtnApply', 'BtnRefreshStartup', 'BtnEnableStartup', 'BtnDisableStartup',
+$BusyButtons = 'BtnAnalyze', 'BtnSelectAll', 'BtnApply', 'BtnRefreshStartup', 'BtnDisableStartup',
                'BtnPing', 'BtnDnsApply', 'BtnDnsFlush', 'BtnCleanScan', 'BtnClean', 'BtnUndo', 'BtnRestorePoint', 'BtnExport'
 
 # ---------------------------------------------------------------------------
@@ -3002,21 +2999,157 @@ function Invoke-ApplyTweaks {
 # ---------------------------------------------------------------------------
 # Onglet démarrage
 # ---------------------------------------------------------------------------
-function Update-StartupList {
-    $items = @(Get-StartupItems | Sort-Object @{ Expression = { -not $_.Enabled } }, Nom)
-    $ui.StartupList.ItemsSource = $items
-    $on = @($items | Where-Object { $_.Enabled }).Count
-    $ui.StartupCount.Text = "$on programme$(if ($on -gt 1) {'s'}) activé$(if ($on -gt 1) {'s'}) sur $($items.Count). Moins il y en a, plus le PC démarre vite et plus il reste de mémoire pour tes jeux."
+$KeepStartup = '\b(Realtek|RtkAud|NVIDIA|AMD|Radeon|Intel|SecurityHealth|Sécurité Windows|Windows Security|Defender|Avast|AVG|Kaspersky|Bitdefender|Norton|McAfee|ESET|Malwarebytes|Synaptics|ELAN|Dolby|Nahimic|Waves|MaxxAudio|Wacom|Bluetooth)\b'
+$DeviceStartup = '\b(Logitech|LGHUB|Razer|Corsair|iCUE|SteelSeries|HyperX|NGENUITY|Roccat|Glorious|Armoury|Aura|MSI Center|Mystic Light|Alienware|Stream Deck|Elgato)\b'
+$HostExes = '^(rundll32|cmd|powershell|pwsh|wscript|cscript|conhost|explorer|mshta)\.exe$'
+
+# Icône d'un programme, prête pour l'interface.
+function Get-ExeIcon([string]$Exe) {
+    try {
+        $ic = [System.Drawing.Icon]::ExtractAssociatedIcon($Exe)
+        if (-not $ic) { return $null }
+        $src = [System.Windows.Interop.Imaging]::CreateBitmapSourceFromHIcon($ic.Handle, [System.Windows.Int32Rect]::Empty,
+            [System.Windows.Media.Imaging.BitmapSizeOptions]::FromEmptyOptions())
+        $src.Freeze()
+        $ic.Dispose()
+        $src
+    } catch { $null }
 }
 
-function Set-SelectedStartup([bool]$Enable) {
-    $sel = @($ui.StartupList.SelectedItems)
-    if (-not $sel.Count) { Show-Message "Sélectionne d'abord un ou plusieurs programmes dans la liste."; return }
-    foreach ($i in $sel) { Set-StartupState $i $Enable }
+# Nom lisible, éditeur et conseil pour une entrée de démarrage.
+function Get-StartupInfo($Item) {
+    $name = $Item.Nom; $company = ''
+    $isHost = [IO.Path]::GetFileName($Item.Exe) -match $HostExes
+    try {
+        $vi = [Diagnostics.FileVersionInfo]::GetVersionInfo($Item.Exe)
+        $company = ([string]$vi.CompanyName).Trim()
+        if (-not $isHost) {
+            $prod = ([string]$vi.ProductName).Trim(); $desc = ([string]$vi.FileDescription).Trim()
+            if ($prod -and $prod.Length -le 40 -and $prod -notmatch 'Windows.*(Operating System|Système)') { $name = $prod }
+            elseif ($desc -and $desc.Length -le 50) { $name = $desc }
+        }
+    } catch {}
+    $file = [IO.Path]::GetFileName($Item.Exe)
+    # Noms trop vagues (« Update », « Launcher »...) : le nom de l'entrée est plus parlant.
+    if ($name -match '^(Update|Updater|Launcher|Helper|Service|Tray|App|Client|Setup)$' -and $Item.Nom -match '[A-Za-z]{3}') { $name = $Item.Nom }
+    if ($file -match '^EpicGamesLauncher') { $name = 'Epic Games Launcher' }
+    # Nom, éditeur, entrée et nom du fichier (pas le dossier complet : un programme rangé
+    # dans le dossier de Steam n'est pas Steam).
+    $text = "$name $company $($Item.Nom) $file"
+    if ($text -match $SafeStartup) {
+        $adv = @{ Kind = 'safe'; Label = 'Tu peux le désactiver'; Color = $Colors.ok; Why = 'Il se lance quand tu l''ouvres, pas besoin qu''il démarre avec Windows.' }
+    } elseif ($text -match $KeepStartup) {
+        $adv = @{ Kind = 'keep'; Label = 'À garder'; Color = $Colors.warn; Why = 'Pilote ou protection de ton PC : laisse le activé.' }
+    } elseif ($text -match $DeviceStartup) {
+        $adv = @{ Kind = 'choice'; Label = 'À toi de voir'; Color = '#9AA3B2'; Why = 'Garde le si tu utilises les réglages de ta souris, ton clavier ou tes lumières.' }
+    } else {
+        $adv = @{ Kind = 'choice'; Label = 'À toi de voir'; Color = '#9AA3B2'; Why = 'Désactive le si tu ne t''en sers pas dès que tu allumes ton PC.' }
+    }
+    # Applis lancées par un petit programme de mise à jour (Discord...) : on prend l'icône de la vraie appli.
+    $iconExe = $Item.Exe
+    if ($Item.Commande -match '--processStart\s+"?([^"\s]+\.exe)') {
+        $real = Get-ChildItem -LiteralPath (Split-Path $Item.Exe -Parent) -Filter $matches[1] -Recurse -Depth 2 -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($real) { $iconExe = $real.FullName }
+    }
+    @{ Item = $Item; Name = $name; Company = $company; Advice = $adv; IconExe = $iconExe }
+}
+
+function Update-StartupCount {
+    $on = @($script:StartupEntries | Where-Object { $_.Item.Enabled }).Count
+    $ui.StartupCount.Text = if ($on) {
+        "$on programme$(if ($on -gt 1) {'s se lancent'} else {' se lance'}) quand tu allumes ton PC. Moins il y en a, plus il démarre vite et plus il reste de mémoire pour tes jeux. Rien n'est supprimé : tu peux changer d'avis quand tu veux."
+    } else { 'Aucun programme ne se lance quand tu allumes ton PC.' }
+    $safe = @($script:StartupEntries | Where-Object { $_.Advice.Kind -eq 'safe' -and $_.Item.Enabled }).Count
+    $ui.BtnDisableStartup.Content = "Désactiver ce qui est conseillé ($safe)"
+    $ui.BtnDisableStartup.Visibility = if ($safe) { 'Visible' } else { 'Collapsed' }
+}
+
+function Update-StartupList {
+    $order = @{ safe = 0; choice = 1; keep = 2 }
+    $script:StartupEntries = @(Get-StartupItems | ForEach-Object { Get-StartupInfo $_ } |
+        Sort-Object @{ Expression = { -not $_.Item.Enabled } }, @{ Expression = { $order[$_.Advice.Kind] } }, @{ Expression = { $_.Name } })
+    $panel = $ui.StartupPanel
+    $panel.Children.Clear()
+    foreach ($s in $script:StartupEntries) {
+        $card = New-Card
+        $card.Padding = New-Thickness 14 12 16 12
+        $g = New-Grid @('Auto', '*', 'Auto')
+
+        $icon = Get-ExeIcon $s.IconExe
+        if ($icon) {
+            $img = New-Object System.Windows.Controls.Image
+            $img.Source = $icon; $img.Width = 32; $img.Height = 32
+            [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'HighQuality')
+            $iconEl = $img
+        } else {
+            $iconEl = New-Object System.Windows.Controls.Border
+            $iconEl.Width = 32; $iconEl.Height = 32
+            $iconEl.CornerRadius = [System.Windows.CornerRadius]::new(8)
+            $iconEl.Background = Get-Brush '#262C38'
+        }
+        $iconEl.Margin = New-Thickness 0 0 14 0
+        $iconEl.VerticalAlignment = 'Center'
+        Add-ToGrid $g $iconEl 0
+
+        $sp = New-Object System.Windows.Controls.StackPanel
+        $sp.VerticalAlignment = 'Center'
+        $head = New-Object System.Windows.Controls.WrapPanel
+        [void]$head.Children.Add((New-Text $s.Name 14.5 '#FFFFFF' -Semi))
+        [void]$head.Children.Add((New-Badge $s.Advice.Label $s.Advice.Color))
+        [void]$sp.Children.Add($head)
+        $sub = New-Text $s.Advice.Why 12.5 '#9AA3B2'
+        $sub.Margin = New-Thickness 0 3 0 0
+        [void]$sp.Children.Add($sub)
+        Add-ToGrid $g $sp 1
+
+        $sw = New-Object System.Windows.Controls.CheckBox
+        $sw.Style = $Window.FindResource('Switch')
+        $sw.IsChecked = [bool]$s.Item.Enabled
+        $sw.VerticalAlignment = 'Center'
+        $sw.Margin = New-Thickness 16 0 0 0
+        $sw.ToolTip = 'Activé = se lance quand tu allumes ton PC'
+        $s.Card = $card
+        $sw.Tag = $s
+        $sw.Add_Click({ param($sender, $e) Invoke-Safe { Set-StartupToggle $sender } })
+        Add-ToGrid $g $sw 2
+
+        $card.Child = $g
+        if (-not $s.Item.Enabled) { $card.Opacity = 0.6 }
+        [void]$panel.Children.Add($card)
+    }
+    if (-not $script:StartupEntries.Count) {
+        [void]$panel.Children.Add((New-Text 'Aucun programme ne se lance avec Windows.' 14 '#9AA3B2'))
+    }
+    Update-StartupCount
+}
+
+function Set-StartupToggle($Switch) {
+    $s = $Switch.Tag
+    $on = [bool]$Switch.IsChecked
+    Set-StartupState $s.Item $on
+    $s.Item.Enabled = $on
+    $s.Card.Opacity = if ($on) { 1 } else { 0.6 }
+    Update-StartupCount
+    Update-BackupSummary
+    Set-Status $(if ($on) { "« $($s.Name) » se lancera de nouveau quand tu allumes ton PC." } else { "« $($s.Name) » ne se lancera plus quand tu allumes ton PC." })
+}
+
+function Disable-RecommendedStartup {
+    $todo = @($script:StartupEntries | Where-Object { $_.Advice.Kind -eq 'safe' -and $_.Item.Enabled })
+    if (-not $todo.Count) { return }
+    $names = ($todo | ForEach-Object { $_.Name }) -join ', '
+    if (-not (Confirm-Action "Ces programmes ne se lanceront plus quand tu allumes ton PC :`n`n$names`n`nIls restent installés et s'ouvrent normalement quand tu cliques dessus. Continuer ?")) { return }
+    Set-Busy $true
+    $script:RunLog = New-Object System.Collections.ArrayList
+    try { foreach ($s in $todo) { Set-StartupState $s.Item $false } }
+    finally { $log = $script:RunLog; $script:RunLog = $null }
     Update-StartupList
     Update-BackupSummary
-    $verb = if ($Enable) { 'réactivé' } else { 'désactivé' }
-    Set-Status "$($sel.Count) programme$(if ($sel.Count -gt 1) {'s'}) $verb$(if ($sel.Count -gt 1) {'s'}). Effet au prochain démarrage."
+    $lines = @("$($todo.Count) programme$(if ($todo.Count -gt 1) {'s'}) ne se lancer$(if ($todo.Count -gt 1) {'ont'} else {'a'}) plus au démarrage :")
+    foreach ($s in $todo) { $lines += "•  $($s.Name)" }
+    Set-Status 'Programmes désactivés au démarrage.'
+    Show-ResultSheet "C'est fait !" $lines $log $null
 }
 
 # ---------------------------------------------------------------------------
@@ -3438,8 +3571,7 @@ $ui.BtnSelectAll.Add_Click({
 })
 $ui.BtnApply.Add_Click({ Invoke-Safe { Invoke-ApplyTweaks } })
 $ui.BtnRefreshStartup.Add_Click({ Invoke-Safe { Update-StartupList } })
-$ui.BtnDisableStartup.Add_Click({ Invoke-Safe { Set-SelectedStartup $false } })
-$ui.BtnEnableStartup.Add_Click({ Invoke-Safe { Set-SelectedStartup $true } })
+$ui.BtnDisableStartup.Add_Click({ Invoke-Safe { Disable-RecommendedStartup } })
 $ui.BtnPing.Add_Click({ Invoke-Safe { Invoke-NetTest } })
 $ui.BtnDnsApply.Add_Click({ Invoke-Safe { Set-Dns $ui.DnsCombo.SelectedIndex } })
 $ui.BtnDnsFlush.Add_Click({ Invoke-Safe { Clear-DnsClientCache; Set-Status 'Cache DNS vidé.' } })
