@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.6
+    OptiGame 1.0.7
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,7 +10,7 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.6'
+$AppVersion = '1.0.7'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -936,11 +936,14 @@ $Tweaks = @(
 
 # Portable ou PC fixe ? Le type de boîtier déclaré par le PC passe avant la batterie:
 # un PC fixe branché sur un onduleur USB a une « batterie » mais reste un PC fixe.
-function Test-IsLaptop($Battery) {
+function Test-IsLaptop($Battery, $Data) {
     $mobileChassis  = 8, 9, 10, 11, 12, 14, 18, 21, 30, 31, 32
     $desktopChassis = 3, 4, 5, 6, 7, 13, 15, 16, 17, 23, 24, 35, 36
-    $chassis = @((Get-CimInstance Win32_SystemEnclosure -ErrorAction SilentlyContinue).ChassisTypes | ForEach-Object { [int]$_ })
-    $pcType = [int](Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).PCSystemType
+    if ($Data) { $chassis = @($Data.Chassis); $pcType = [int]$Data.PCType }
+    else {
+        $chassis = @((Get-CimInstance Win32_SystemEnclosure -ErrorAction SilentlyContinue).ChassisTypes | ForEach-Object { [int]$_ })
+        $pcType = [int](Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).PCSystemType
+    }
     if ($pcType -eq 2 -or ($chassis | Where-Object { $mobileChassis -contains $_ })) { return $true }
     if ($chassis | Where-Object { $desktopChassis -contains $_ }) { return $false }
     @($Battery).Count -gt 0
@@ -1093,12 +1096,8 @@ function Set-StartupState($Item, [bool]$Enable) {
 # Réseau
 # ---------------------------------------------------------------------------
 function Get-ActiveNet {
-    try {
-        $route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop | Sort-Object RouteMetric | Select-Object -First 1
-        $ad = Get-NetAdapter -InterfaceIndex $route.ifIndex -ErrorAction Stop
-        $wifi = ([string]$ad.PhysicalMediaType -match '802\.11') -or ($ad.InterfaceDescription -match 'Wi-?Fi|Wireless|WLAN')
-        return @{ IfIndex = $route.ifIndex; Gateway = $route.NextHop; Name = $ad.Name; Desc = $ad.InterfaceDescription; Speed = $ad.LinkSpeed; Wifi = $wifi; Guid = $ad.InterfaceGuid }
-    } catch { return $null }
+    $n = Invoke-Async $ActiveNetWork | Select-Object -First 1
+    if ($n) { $n } else { $null }
 }
 
 $DnsChoices = @(
@@ -2109,15 +2108,160 @@ function Invoke-Safe([scriptblock]$Action) {
     finally { Set-Busy $false }
 }
 
-# Lance un script dans un fil séparé pour que la fenêtre reste réactive.
+# Attend la fin d'un travail en arrière plan sans jamais figer la fenêtre:
+# la fenêtre continue de tout traiter normalement (clics, animations) pendant l'attente.
+$script:WaitFrames = New-Object System.Collections.ArrayList
+$script:WaitTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:WaitTimer.Interval = [TimeSpan]::FromMilliseconds(20)
+$script:WaitTimer.Add_Tick({
+    foreach ($w in @($script:WaitFrames)) {
+        if ($w.H.IsCompleted) { $w.F.Continue = $false; $script:WaitFrames.Remove($w) }
+    }
+    if (-not $script:WaitFrames.Count) { $script:WaitTimer.Stop() }
+})
+
+function Wait-Handle($Handle) {
+    if ($Handle.IsCompleted) { return }
+    $frame = New-Object System.Windows.Threading.DispatcherFrame
+    [void]$script:WaitFrames.Add(@{ H = $Handle; F = $frame })
+    if (-not $script:WaitTimer.IsEnabled) { $script:WaitTimer.Start() }
+    [System.Windows.Threading.Dispatcher]::PushFrame($frame)
+}
+
+# Lance un script dans un fil séparé (réutilisé d'un appel à l'autre) pour que la fenêtre reste fluide.
 function Invoke-Async([scriptblock]$Script, $Argument) {
     $ps = [PowerShell]::Create()
+    if ($script:Pool) { $ps.RunspacePool = $script:Pool }
     [void]$ps.AddScript($Script.ToString())
     if ($null -ne $Argument) { [void]$ps.AddArgument($Argument) }
     $handle = $ps.BeginInvoke()
-    while (-not $handle.IsCompleted) { Update-UI; Start-Sleep -Milliseconds 60 }
+    Wait-Handle $handle
     try { $out = $ps.EndInvoke($handle) } finally { $ps.Dispose() }
     foreach ($o in $out) { $o }
+}
+
+# Volume d'un lecteur sans charger de module (instantané).
+function Get-VolInfo([string]$Letter) {
+    try {
+        $di = [IO.DriveInfo]::new($Letter)
+        if ($di.IsReady) { [pscustomobject]@{ Size = $di.TotalSize; SizeRemaining = $di.AvailableFreeSpace; FileSystemLabel = $di.VolumeLabel } }
+    } catch {}
+}
+
+# Toutes les informations lentes à lire, rassemblées en arrière plan.
+$AnalysisDataWork = {
+    param($sysDrive)
+    $r = @{}
+    $r.OS = Get-CimInstance Win32_OperatingSystem
+    $r.Battery = @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue)
+    $r.Chassis = @((Get-CimInstance Win32_SystemEnclosure -ErrorAction SilentlyContinue).ChassisTypes | ForEach-Object { [int]$_ })
+    $r.PCType = [int](Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).PCSystemType
+    $r.CPU = Get-CimInstance Win32_Processor | Select-Object -First 1
+    $r.GPUs = @(Get-CimInstance Win32_VideoController)
+    $r.Mem = @(Get-CimInstance Win32_PhysicalMemory)
+    $r.MemDiag = Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-MemoryDiagnostics-Results' } -MaxEvents 1 -ErrorAction SilentlyContinue
+    try { $r.SysDisk = [string](Get-Partition -DriveLetter $sysDrive.TrimEnd(':') -ErrorAction Stop).DiskNumber } catch {}
+    $r.Disks = @(foreach ($d in @(Get-PhysicalDisk -ErrorAction SilentlyContinue | Sort-Object { [int]$_.DeviceId })) {
+        $vols = @()
+        try {
+            foreach ($pt in @(Get-Partition -DiskNumber ([int]$d.DeviceId) -ErrorAction Stop | Where-Object { [int][char]$_.DriveLetter -ne 0 })) {
+                $vols += @{ DriveLetter = [string]$pt.DriveLetter; Vol = (Get-Volume -DriveLetter $pt.DriveLetter -ErrorAction SilentlyContinue) }
+            }
+        } catch {}
+        $rel = $null
+        try { $rel = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}
+        # Copie en texte: hors de ce fil, les types (SSD, NVMe...) arriveraient sous forme de codes.
+        $disk = [pscustomobject]@{ DeviceId = [string]$d.DeviceId; FriendlyName = [string]$d.FriendlyName; MediaType = [string]$d.MediaType; BusType = [string]$d.BusType
+            HealthStatus = [string]$d.HealthStatus; Size = [uint64]$d.Size; SerialNumber = [string]$d.SerialNumber; FirmwareVersion = [string]$d.FirmwareVersion }
+        @{ Disk = $disk; Vols = $vols; Rel = $rel; Letters = @($vols | ForEach-Object { $_.DriveLetter }) }
+    })
+    $r.LogicalC = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$sysDrive'"
+    $r.BaseBoard = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
+    $r.BIOS = Get-CimInstance Win32_BIOS -ErrorAction SilentlyContinue
+    try { $r.SecureBoot = [bool](Confirm-SecureBootUEFI -ErrorAction Stop) } catch { $r.SecureBoot = $null }
+    try { $r.Tpm = Get-CimInstance -Namespace 'root\cimv2\security\microsofttpm' -ClassName Win32_Tpm -OperationTimeoutSec 3 -ErrorAction Stop; $r.TpmOk = $true } catch { $r.TpmOk = $false }
+    $since = (Get-Date).AddDays(-30)
+    $count = { param($f) try { @(Get-WinEvent -FilterHashtable $f -ErrorAction Stop).Count } catch { 0 } }
+    $r.Bsod = & $count @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-WER-SystemErrorReporting'; Id = 1001; StartTime = $since }
+    $r.Crash = & $count @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-Kernel-Power'; Id = 41; StartTime = $since }
+    $r.WheaErr = & $count @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-WHEA-Logger'; Level = @(1, 2); StartTime = $since }
+    $r.WheaWarn = & $count @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-WHEA-Logger'; Level = 3; StartTime = $since }
+    $r.Net = & {
+        try {
+            $route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop | Sort-Object RouteMetric | Select-Object -First 1
+            $ad = Get-NetAdapter -InterfaceIndex $route.ifIndex -ErrorAction Stop
+            $wifi = ([string]$ad.PhysicalMediaType -match '802\.11') -or ($ad.InterfaceDescription -match 'Wi-?Fi|Wireless|WLAN')
+            $ip = Get-NetIPAddress -InterfaceIndex $route.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
+            $dns = try { (Get-DnsClientServerAddress -InterfaceIndex $route.ifIndex -AddressFamily IPv4 -ErrorAction Stop).ServerAddresses -join ', ' } catch { '' }
+            @{ IfIndex = $route.ifIndex; Gateway = $route.NextHop; Name = $ad.Name; Desc = $ad.InterfaceDescription; Speed = $ad.LinkSpeed; Wifi = $wifi; Guid = $ad.InterfaceGuid
+               Mac = $ad.MacAddress; Ip = $(if ($ip) { $ip.IPAddress } else { $null }); Prefix = $(if ($ip) { [int]$ip.PrefixLength } else { 24 }); Dns = $dns }
+        } catch { $null }
+    }
+    $r
+}
+
+# Connexion réseau active (dans un fil séparé: les modules réseau sont lents à charger).
+$ActiveNetWork = {
+    try {
+        $route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop | Sort-Object RouteMetric | Select-Object -First 1
+        $ad = Get-NetAdapter -InterfaceIndex $route.ifIndex -ErrorAction Stop
+        $wifi = ([string]$ad.PhysicalMediaType -match '802\.11') -or ($ad.InterfaceDescription -match 'Wi-?Fi|Wireless|WLAN')
+        $ip = Get-NetIPAddress -InterfaceIndex $route.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
+        $dns = try { (Get-DnsClientServerAddress -InterfaceIndex $route.ifIndex -AddressFamily IPv4 -ErrorAction Stop).ServerAddresses -join ', ' } catch { '' }
+        @{ IfIndex = $route.ifIndex; Gateway = $route.NextHop; Name = $ad.Name; Desc = $ad.InterfaceDescription; Speed = $ad.LinkSpeed; Wifi = $wifi; Guid = $ad.InterfaceGuid
+           Mac = $ad.MacAddress; Ip = $(if ($ip) { $ip.IPAddress } else { $null }); Prefix = $(if ($ip) { [int]$ip.PrefixLength } else { 24 }); Dns = $dns }
+    } catch { $null }
+}
+
+# Données lentes de l'onglet Sécurité (antivirus, fichiers, signatures, tâches), en arrière plan.
+$SecDataWork = {
+    param($a)
+    $r = @{ OtherAv = @(); FirewallOff = @(); Exclusions = @(); Active = @(); Threats = @(); Detections = @(); Double = @(); Scripts = @(); Hidden = @(); SusStart = @(); Tasks = @() }
+    try { $r.Mp = Get-MpComputerStatus -ErrorAction Stop } catch {}
+    try { $r.OtherAv = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct -ErrorAction Stop | Where-Object { $_.displayName -notmatch 'Windows Defender|Microsoft Defender' } | ForEach-Object { $_.displayName }) } catch {}
+    try { $r.FirewallOff = @(Get-NetFirewallProfile -ErrorAction Stop | Where-Object { -not $_.Enabled } | ForEach-Object { $_.Name }) } catch {}
+    try { $pref = Get-MpPreference -ErrorAction Stop; $r.Exclusions = @(@($pref.ExclusionPath) + @($pref.ExclusionProcess) + @($pref.ExclusionExtension) | Where-Object { $_ -and $_ -notmatch '^N/A' }) } catch {}
+    try { $r.Threats = @(Get-MpThreat -ErrorAction Stop); $r.Active = @($r.Threats | Where-Object { $_.IsActive }) } catch {}
+    try { $r.Detections = @(Get-MpThreatDetection -ErrorAction Stop | Sort-Object InitialDetectionTime -Descending | Select-Object -First 15) } catch {}
+    $signed = { param($f) try { (Get-AuthenticodeSignature -FilePath $f -ErrorAction Stop).Status -eq 'Valid' } catch { $false } }
+    foreach ($d in $a.UserDirs) {
+        if (-not (Test-Path -LiteralPath $d)) { continue }
+        foreach ($f in @(Get-ChildItem -LiteralPath $d -File -Recurse -Depth 2 -Force -ErrorAction SilentlyContinue)) {
+            if ($f.Name -match '\.(pdf|docx?|xlsx?|jpe?g|png|gif|txt|mp4|mp3|zip|rar)\s*\.(exe|scr|bat|cmd|com|pif|vbs|js|jse|hta|lnk)$') { $r.Double += $f.FullName }
+            elseif ($d -like '*Downloads' -and $f.Extension -match '^\.(scr|pif|vbs|vbe|js|jse|hta|wsf)$') { $r.Scripts += $f.FullName }
+        }
+    }
+    foreach ($sf in $a.Folders) {
+        $files = if ($sf.Depth) { Get-ChildItem -LiteralPath $sf.Path -File -Recurse -Depth $sf.Depth -Force -ErrorAction SilentlyContinue } else { Get-ChildItem -LiteralPath $sf.Path -File -Force -ErrorAction SilentlyContinue }
+        foreach ($f in @($files | Where-Object { $_.Extension -match '^\.(exe|scr|com|pif)$' })) { if (-not (& $signed $f.FullName)) { $r.Hidden += $f.FullName } }
+    }
+    foreach ($exe in $a.StartupExes) {
+        $dir = Split-Path $exe -Parent
+        $inRisk = ($a.RiskDirs | Where-Object { $_ -and $dir -eq $_ }) -or $dir -like "$($a.Temp)*"
+        if ($inRisk -or -not (& $signed $exe)) { $r.SusStart += $exe }
+    }
+    foreach ($t2 in @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Microsoft\*' -and $_.State -ne 'Disabled' })) {
+        foreach ($act in @($t2.Actions)) {
+            $exe = [Environment]::ExpandEnvironmentVariables([string]$act.Execute).Trim('"')
+            $argsTxt = [string]$act.Arguments
+            $hiddenCmd = $exe -match '(powershell|pwsh|cmd|wscript|cscript|mshta)(\.exe)?$' -and $argsTxt -match '(-enc|-encodedcommand|frombase64|downloadstring|downloadfile|invoke-expression|\biex\b|-w(indowstyle)?\s+h(idden)?|http)'
+            $riskPath = $exe -like "$($a.Temp)*" -or $exe -like "$($a.Public)*"
+            if ($hiddenCmd -or $riskPath) { $r.Tasks += @{ Name = $t2.TaskName; Path = $t2.TaskPath; Cmd = "$exe $argsTxt".Trim(); Bad = $hiddenCmd } }
+        }
+    }
+    $r
+}
+
+$DiskInfoWork = {
+    param($id)
+    $d = Get-PhysicalDisk -ErrorAction SilentlyContinue | Where-Object { [string]$_.DeviceId -eq $id } | Select-Object -First 1
+    $rel = $null
+    if ($d) { try { $rel = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch {} }
+    if ($d) {
+        $d = [pscustomobject]@{ DeviceId = [string]$d.DeviceId; FriendlyName = [string]$d.FriendlyName; MediaType = [string]$d.MediaType; BusType = [string]$d.BusType
+            HealthStatus = [string]$d.HealthStatus; Size = [uint64]$d.Size; SerialNumber = [string]$d.SerialNumber; FirmwareVersion = [string]$d.FirmwareVersion }
+    }
+    @{ D = $d; Rel = $rel }
 }
 
 function Get-Brush([string]$Hex) { [System.Windows.Media.BrushConverter]::new().ConvertFromString($Hex) }
@@ -2947,11 +3091,20 @@ function Invoke-Analysis {
     $info = [ordered]@{}
     $since = (Get-Date).AddDays(-30)
 
-    # Système
-    $os = Get-CimInstance Win32_OperatingSystem
+    # Système (lecture en arrière plan, lancée dès l'ouverture de l'app)
+    Set-Status 'Lecture des informations du PC...'
+    if ($script:Prefetch) {
+        $pf = $script:Prefetch; $script:Prefetch = $null
+        Wait-Handle $pf.Handle
+        try { $data = @($pf.PS.EndInvoke($pf.Handle))[0] } finally { $pf.PS.Dispose() }
+    } else {
+        $data = Invoke-Async $AnalysisDataWork $env:SystemDrive | Select-Object -First 1
+    }
+    $script:AnalysisData = $data
+    $os = $data.OS
     $script:Build = [int]$os.BuildNumber
-    $battery = @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue)
-    $script:IsLaptop = Test-IsLaptop $battery
+    $battery = @($data.Battery)
+    $script:IsLaptop = Test-IsLaptop $battery $data
     if ($script:IsLaptop -and ($battery | Where-Object { $_.BatteryStatus -eq 1 })) {
         Add-Finding $F 'warn' 'Portable sur batterie' 'Sur batterie, Windows bride le processeur et la carte graphique. Branche le chargeur pour jouer.' 2 -Id 'laptop-battery' -Fix (New-Fix `
             -Why 'Sur batterie, le processeur et la carte graphique tournent au ralenti pour économiser l''énergie: tu peux perdre la moitié de tes FPS.' `
@@ -2961,7 +3114,7 @@ function Invoke-Analysis {
 
     # --- Processeur
     Set-Status 'Analyse du processeur...'
-    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+    $cpu = $script:AnalysisData.CPU
     $cpuName = ($cpu.Name -replace '\s+', ' ').Trim()
     $Live.BaseMHz = [int]$cpu.MaxClockSpeed
     $info['Processeur'] = "$cpuName ($($cpu.NumberOfCores) cœurs, $($cpu.NumberOfLogicalProcessors) threads)"
@@ -2975,7 +3128,7 @@ function Invoke-Analysis {
 
     # --- Carte graphique
     Set-Status 'Analyse de la carte graphique...'
-    $gpus = @(Get-CimInstance Win32_VideoController | Where-Object { $_.Name -notmatch 'Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta' })
+    $gpus = @($data.GPUs | Where-Object { $_.Name -notmatch 'Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta' })
     $info['Carte graphique'] = ($gpus | ForEach-Object { $_.Name }) -join ' + '
     $dedicatedPattern = 'NVIDIA|GeForce|Radeon RX|Radeon Pro|Arc'
     $hasDedicated = [bool]($gpus | Where-Object { $_.Name -match $dedicatedPattern })
@@ -3048,7 +3201,7 @@ function Invoke-Analysis {
     if ($script:IsLaptop -and $dedicated.Count -and $integrated.Count) {
         Set-Status 'Recherche de tes jeux (Steam, Epic)...'
         $dgpu = $dedicated[0].Name
-        $games = @(Get-InstalledGames)
+        $games = @(Invoke-Async ([scriptblock]::Create("function Get-InstalledGames {${function:Get-InstalledGames}}; Get-InstalledGames")))
         $todo = @($games | Where-Object { $g = $_; @($g.Exes | Where-Object { (Get-GpuPreference $_) -notmatch 'GpuPreference=2' }).Count })
         if (-not $games.Count) {
             Add-Finding $F 'info' 'Jeux sur la carte graphique dédiée' "Aucun jeu Steam ou Epic trouvé. Pour tes autres jeux, choisis « Hautes performances » dans Paramètres > Écran > Graphiques." 0 -Id 'hybrid-gpu' -Fix (New-Fix `
@@ -3117,7 +3270,7 @@ function Invoke-Analysis {
 
     # --- Mémoire vive
     Set-Status 'Analyse de la mémoire...'
-    $mem = @(Get-CimInstance Win32_PhysicalMemory)
+    $mem = @($script:AnalysisData.Mem)
     if ($mem.Count) {
         $first = $mem[0]
         $totalGB = [math]::Round((($mem | Measure-Object Capacity -Sum).Sum) / 1GB)
@@ -3139,7 +3292,7 @@ function Invoke-Analysis {
             if ($brand -match '^(Unknown|Undefined|0+)$') { $brand = '' }
             $c.Lines["Barrette $n"] = (@("$([math]::Round($m.Capacity / 1GB)) Go", $brand, ([string]$m.PartNumber).Trim()) | Where-Object { $_ }) -join ' '
         }
-        $md = Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-MemoryDiagnostics-Results' } -MaxEvents 1 -ErrorAction SilentlyContinue
+        $md = $data.MemDiag
         if ($md) {
             $when = $md.TimeCreated.ToString('dd/MM/yyyy')
             if ($md.Id -in 1101, 1201) { $c.Lines['Test mémoire Windows'] = @("Aucune erreur ($when)", $Colors.ok) }
@@ -3196,8 +3349,9 @@ function Invoke-Analysis {
     # --- Disques
     Set-Status 'Analyse des disques...'
     $sysDisk = $null
-    try { $sysDisk = [string](Get-Partition -DriveLetter $env:SystemDrive.TrimEnd(':') -ErrorAction Stop).DiskNumber } catch {}
-    foreach ($d in @(Get-PhysicalDisk -ErrorAction SilentlyContinue | Sort-Object { [int]$_.DeviceId })) {
+    $sysDisk = [string]$data.SysDisk
+    foreach ($dd in @($data.Disks)) {
+        $d = $dd.Disk
         $media = [string]$d.MediaType; $bus = [string]$d.BusType
         $kind = if ($bus -eq 'NVMe') { 'SSD NVMe' } elseif ($media -eq 'SSD') { 'SSD' } elseif ($media -eq 'HDD') { 'Disque dur' } else { 'Disque' }
         $tag = if ($bus -eq 'USB') { 'USB' } elseif ($media -eq 'HDD') { 'HDD' } else { 'SSD' }
@@ -3206,9 +3360,9 @@ function Invoke-Analysis {
         $c = New-Component $tag (([string]$d.FriendlyName).Trim()) $sous
 
         $parts = @()
-        try { $parts = @(Get-Partition -DiskNumber ([int]$d.DeviceId) -ErrorAction Stop | Where-Object { [int][char]$_.DriveLetter -ne 0 }) } catch {}
+        $parts = @($dd.Vols)
         foreach ($pt in $parts) {
-            $v = Get-Volume -DriveLetter $pt.DriveLetter -ErrorAction SilentlyContinue
+            $v = $pt.Vol
             if (-not $v -or -not $v.Size) { continue }
             $pct = 100 * ($v.Size - $v.SizeRemaining) / $v.Size
             $label = "Lecteur $($pt.DriveLetter):" + $(if ($v.FileSystemLabel) { " $($v.FileSystemLabel)" } else { '' })
@@ -3223,7 +3377,7 @@ function Invoke-Analysis {
             default     { $c.Lines['État SMART'] = @('Inconnu', $Muted) }
         }
         $rel = $null
-        try { $rel = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}
+        $rel = $dd.Rel
         if ($rel) {
             if ($null -ne $rel.Wear -and $tag -ne 'HDD') {
                 $wear = [int]$rel.Wear
@@ -3267,7 +3421,7 @@ function Invoke-Analysis {
         }
         [void]$cards.Add($c)
     }
-    $ld = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$($env:SystemDrive)'"
+    $ld = $data.LogicalC
     if ($ld -and $ld.Size) {
         $freeGB = [math]::Round($ld.FreeSpace / 1GB)
         $pct = [math]::Round(100 * $ld.FreeSpace / $ld.Size)
@@ -3283,8 +3437,8 @@ function Invoke-Analysis {
 
     # --- Carte mère et BIOS
     Set-Status 'Analyse de la carte mère...'
-    $bb = Get-CimInstance Win32_BaseBoard -ErrorAction SilentlyContinue
-    $bios = Get-CimInstance Win32_BIOS -ErrorAction SilentlyContinue
+    $bb = $data.BaseBoard
+    $bios = $data.BIOS
     $c = New-Component 'BIOS' 'Carte mère et BIOS' ("$($bb.Manufacturer) $($bb.Product)".Trim())
     if ($bios) {
         $c.Lines['Version du BIOS'] = [string]$bios.SMBIOSBIOSVersion
@@ -3299,7 +3453,8 @@ function Invoke-Analysis {
     }
     $c.Lines['Démarrage'] = if ($env:firmware_type -eq 'UEFI') { 'UEFI' } else { @('Legacy (ancien BIOS)', $Colors.warn) }
     try {
-        $sb = Confirm-SecureBootUEFI -ErrorAction Stop
+        if ($null -eq $data.SecureBoot) { throw 'indisponible' }
+        $sb = [bool]$data.SecureBoot
         if ($sb) { $c.Lines['Secure Boot'] = @('Activé', $Colors.ok) }
         else {
             $c.Lines['Secure Boot'] = @('Désactivé', $Colors.warn)
@@ -3312,7 +3467,8 @@ function Invoke-Analysis {
         }
     } catch { $c.Lines['Secure Boot'] = @('Non disponible', $Muted) }
     try {
-        $tpm = Get-CimInstance -Namespace 'root\cimv2\security\microsofttpm' -ClassName Win32_Tpm -ErrorAction Stop
+        if (-not $data.TpmOk) { throw 'indisponible' }
+        $tpm = $data.Tpm
         if ($tpm) { $c.Lines['Puce TPM'] = @("Version $(([string]$tpm.SpecVersion -split ',')[0].Trim())", $Colors.ok) }
         else { $c.Lines['Puce TPM'] = @('Non détectée', $Colors.warn) }
     } catch {}
@@ -3320,10 +3476,10 @@ function Invoke-Analysis {
 
     # --- Stabilité
     Set-Status 'Lecture du journal des erreurs...'
-    $bsod = Get-EventCount @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-WER-SystemErrorReporting'; Id = 1001; StartTime = $since }
-    $crash = Get-EventCount @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-Kernel-Power'; Id = 41; StartTime = $since }
-    $wheaErr = Get-EventCount @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-WHEA-Logger'; Level = @(1, 2); StartTime = $since }
-    $wheaWarn = Get-EventCount @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-WHEA-Logger'; Level = 3; StartTime = $since }
+    $bsod = [int]$data.Bsod
+    $crash = [int]$data.Crash
+    $wheaErr = [int]$data.WheaErr
+    $wheaWarn = [int]$data.WheaWarn
     $uptime = (Get-Date) - $os.LastBootUpTime
     $c = New-Component 'SYS' 'Stabilité du système' 'Sur les 30 derniers jours'
     $c.Lines['Écrans bleus'] = @("$bsod", $(if ($bsod -ge 2) { $Colors.bad } elseif ($bsod) { $Colors.warn } else { $Colors.ok }))
@@ -3379,7 +3535,8 @@ function Invoke-Analysis {
 
     # --- Réseau
     Set-Status 'Analyse du réseau...'
-    $script:Net = Get-ActiveNet
+    $script:Net = $data.Net
+    if (-not $script:Net) { $script:Net = Get-ActiveNet }
     if ($script:Net) {
         $info['Réseau'] = "$(if ($script:Net.Wifi) { 'Wi-Fi' } else { 'Ethernet (câble)' }), $($script:Net.Speed)"
         $c = New-Component 'NET' 'Réseau' $script:Net.Desc
@@ -3827,7 +3984,8 @@ function Update-NetInfo {
         [void]$panel.Children.Add($g)
     }
     try {
-        $dns = (Get-DnsClientServerAddress -InterfaceIndex $n.IfIndex -AddressFamily IPv4 -ErrorAction Stop).ServerAddresses -join ', '
+        $dns = [string]$n.Dns
+        if (-not $dns) { throw 'DNS inconnu' }
         $ui.DnsCurrent.Text = "DNS actuel: $dns"
     } catch { $ui.DnsCurrent.Text = '' }
 }
@@ -3921,6 +4079,7 @@ function Set-Dns([int]$Choice) {
     if ($servers.Count) { Set-DnsClientServerAddress -InterfaceIndex $idx -ServerAddresses $servers -ErrorAction Stop }
     else { Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop }
     Clear-DnsClientCache
+    $script:Net = Get-ActiveNet
     Update-NetInfo
     Update-BackupSummary
     Set-Status 'DNS modifié.'
@@ -4140,7 +4299,7 @@ $RepairWork = {
 # ---------------------------------------------------------------------------
 $script:Anims = New-Object System.Collections.ArrayList
 $script:AnimTimer = New-Object System.Windows.Threading.DispatcherTimer
-$script:AnimTimer.Interval = [TimeSpan]::FromMilliseconds(16)
+$script:AnimTimer.Interval = [TimeSpan]::FromMilliseconds(20)
 $script:AnimTimer.Add_Tick({
     $now = [DateTime]::Now
     foreach ($a in @($script:Anims)) {
@@ -4172,6 +4331,7 @@ function Start-WpfAnim($Element, $Property, [double]$To, [int]$Ms = 900, [int]$D
 }
 
 function Start-Pulse($Element) {
+    if (-not $Element.CacheMode) { $Element.CacheMode = New-Object System.Windows.Media.BitmapCache }
     $a = New-Object System.Windows.Media.Animation.DoubleAnimation
     $a.From = 1; $a.To = 0.25
     $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(700))
@@ -4766,7 +4926,7 @@ function Get-GHz($Samples, [switch]$Max) {
 # Disques
 # ---------------------------------------------------------------------------
 function Test-DiskSpeed($Tile, $Ctx) {
-    $vol = Get-Volume -DriveLetter $Ctx.Letter -ErrorAction SilentlyContinue
+    $vol = Get-VolInfo $Ctx.Letter
     if (-not $vol -or $vol.SizeRemaining -lt 1GB) { Show-Message "Il faut au moins 1 Go de libre sur le lecteur $($Ctx.Letter): pour faire ce test."; return }
     $size = if ($vol.SizeRemaining -gt 40GB) { 8GB } elseif ($vol.SizeRemaining -gt 10GB) { 2GB } else { 256MB }
     $file = if ("$($Ctx.Letter):" -eq $env:SystemDrive) { Join-Path $env:TEMP 'OptiGame-test-disque.tmp' } else { "$($Ctx.Letter):\OptiGame-test-disque.tmp" }
@@ -4809,7 +4969,8 @@ function Test-DiskSpeed($Tile, $Ctx) {
 }
 
 function Show-DiskHealth($Tile, $Ctx) {
-    $d = Get-PhysicalDisk -ErrorAction SilentlyContinue | Where-Object { [string]$_.DeviceId -eq $Ctx.Id } | Select-Object -First 1
+    $pd = Invoke-Async $DiskInfoWork $Ctx.Id | Select-Object -First 1
+    $d = $pd.D
     if (-not $d) { Show-Message 'Disque introuvable.'; return }
     $script:LastRun = @{ Fn = 'Show-DiskHealth'; Tile = $Tile; Ctx = $Ctx }
     Show-TestPanel $Tile
@@ -4817,7 +4978,7 @@ function Show-DiskHealth($Tile, $Ctx) {
     $ui.BtnTestAgain.Visibility = 'Collapsed'
     $body = $ui.TestBody
     $rel = $null
-    try { $rel = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}
+    $rel = $pd.Rel
     $status = 'ok'; $notes = @()
     switch ([string]$d.HealthStatus) {
         'Warning'   { $status = 'warn'; $notes += 'Le disque signale lui même un problème.' }
@@ -4840,7 +5001,7 @@ function Show-DiskHealth($Tile, $Ctx) {
     }
     $fillPct = $null
     foreach ($l in $Ctx.Letters) {
-        $v = Get-Volume -DriveLetter $l -ErrorAction SilentlyContinue
+        $v = Get-VolInfo $l
         if ($v -and $v.Size) { $fillPct = 100 * ($v.Size - $v.SizeRemaining) / $v.Size; break }
     }
     if ($null -ne $fillPct) {
@@ -4878,7 +5039,7 @@ function Show-DiskHealth($Tile, $Ctx) {
         $rows += , @('Détails SMART', 'Non fournis par ce disque', '#9AA3B2')
     }
     foreach ($l in $Ctx.Letters) {
-        $v = Get-Volume -DriveLetter $l -ErrorAction SilentlyContinue
+        $v = Get-VolInfo $l
         if ($v -and $v.Size) { $rows += , @("Lecteur $($l):", "$(Format-Size $v.SizeRemaining) libres sur $(Format-Size $v.Size)") }
     }
     [void]$body.Children.Add((New-Details $rows))
@@ -4975,8 +5136,7 @@ function Test-Cpu($Tile, $Ctx) {
 # Mémoire vive
 # ---------------------------------------------------------------------------
 function Test-Memory($Tile, $Ctx) {
-    $os = Get-CimInstance Win32_OperatingSystem
-    $free = [double]$os.FreePhysicalMemory * 1KB
+    $free = if ($Live.RamTotal) { [double]$Live.RamTotal - [double]$Live.RamUsed } else { [double]2GB }
     $bytes = [long][math]::Min([double]2GB, [math]::Max([double]256MB, $free * 0.5))
     $def = @{
         Steps = [ordered]@{ alloc = 'Réservation'; write = 'Écriture'; read = 'Vérification'; pattern = '2e passage'; copy = 'Copie' }
@@ -5175,16 +5335,27 @@ function Start-PixelTest([int]$Index) {
 # ---------------------------------------------------------------------------
 # Construction de l'onglet
 # ---------------------------------------------------------------------------
+function Test-3DMark {
+    $steam = [string](Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
+    if (-not $steam) { return $false }
+    $libs = @($steam -replace '/', '\')
+    $vdf = Join-Path $libs[0] 'steamapps\libraryfolders.vdf'
+    if (Test-Path -LiteralPath $vdf) { foreach ($m in [regex]::Matches((Get-Content -LiteralPath $vdf -Raw), '"path"\s+"([^"]+)"')) { $libs += ($m.Groups[1].Value -replace '\\\\', '\') } }
+    [bool]($libs | Where-Object { Test-Path -LiteralPath (Join-Path $_ 'steamapps\common\3DMark') })
+}
+
 function Build-TestsTab {
     $ui.TestsPanel.Children.Clear()
     $script:TestButtons.Clear()
+    if (-not $script:AnalysisData) { $script:AnalysisData = Invoke-Async $AnalysisDataWork $env:SystemDrive | Select-Object -First 1 }
 
-    foreach ($d in @(Get-PhysicalDisk -ErrorAction SilentlyContinue | Sort-Object { [int]$_.DeviceId })) {
+    foreach ($dd in @($script:AnalysisData.Disks)) {
+        $d = $dd.Disk
         $media = [string]$d.MediaType; $bus = [string]$d.BusType
         $kind = if ($bus -eq 'NVMe') { 'NVMe' } elseif ($media -eq 'SSD') { 'SSD' } elseif ($media -eq 'HDD') { 'HDD' } elseif ($bus -eq 'USB') { 'USB' } else { 'SSD' }
         $kindLabel = switch ($kind) { 'NVMe' { 'SSD NVMe' } 'SSD' { 'SSD' } 'HDD' { 'Disque dur' } default { 'Disque externe' } }
         $letters = @()
-        try { $letters = @(Get-Partition -DiskNumber ([int]$d.DeviceId) -ErrorAction Stop | Where-Object { [int][char]$_.DriveLetter -ne 0 } | ForEach-Object { [string]$_.DriveLetter }) } catch {}
+        $letters = @($dd.Letters)
         $sub = "$kindLabel, $(Format-Size $d.Size)" + $(if ($letters) { "  /  $(($letters | ForEach-Object { "$($_):" }) -join ' ')" } else { '' })
         $tag = switch ($kind) { 'HDD' { 'HDD' } 'USB' { 'USB' } default { 'SSD' } }
         $tile = New-TestTile $tag (([string]$d.FriendlyName).Trim()) $sub 'Vitesse réelle et santé du disque (usure, température, erreurs).'
@@ -5194,21 +5365,21 @@ function Build-TestsTab {
         if ($ctx.Letter) { Add-TestButton $tile 'Erreurs' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-DiskErrors $x.T $x.Ctx } } $ctx }
     }
 
-    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+    $cpu = $script:AnalysisData.CPU
     $tile = New-TestTile 'CPU' (($cpu.Name -replace '\s+', ' ').Trim()) "$($cpu.NumberOfCores) cœurs, $($cpu.NumberOfLogicalProcessors) threads" 'Puissance, vitesse tenue quand il chauffe et stabilité. Ferme tes jeux avant.'
     Add-TestButton $tile 'Test rapide (30 s)' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Cpu $x.T $x.Ctx } } @{ Single = 8; Multi = 22 } -Primary
     Add-TestButton $tile 'Stabilité (5 min)' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Cpu $x.T $x.Ctx } } @{ Single = 5; Multi = 295 }
 
-    $mem = @(Get-CimInstance Win32_PhysicalMemory)
+    $mem = @($script:AnalysisData.Mem)
     $totalGB = [math]::Round((($mem | Measure-Object Capacity -Sum).Sum) / 1GB)
     $tile = New-TestTile 'RAM' 'Mémoire vive' "$totalGB Go, $($mem.Count) barrette$(if ($mem.Count -gt 1) {'s'})" 'Vitesse et recherche d''erreurs en quelques secondes.'
     Add-TestButton $tile 'Tester la mémoire' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Memory $x.T $x.Ctx } } @{} -Primary
     Add-TestButton $tile 'Test complet Windows' { param($s, $e) Start-Process 'mdsched.exe' } @{}
 
-    foreach ($g in @(Get-CimInstance Win32_VideoController | Where-Object { $_.Name -notmatch 'Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta|Microsoft Basic' })) {
+    foreach ($g in @($script:AnalysisData.GPUs | Where-Object { $_.Name -notmatch 'Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta|Microsoft Basic' })) {
         $tile = New-TestTile 'GPU' $g.Name 'Carte graphique' 'Température, utilisation et consommation en direct, et ralentissements éventuels.'
         Add-TestButton $tile 'Surveiller en direct' { param($s, $e) $x = $s.Tag; Invoke-Safe { Show-GpuMonitor $x.T $x.Ctx } } @{ Gpu = $g } -Primary
-        if (Get-InstalledGames | Where-Object { $_.Name -eq '3DMark' }) {
+        if (Test-3DMark) {
             Add-TestButton $tile '3DMark' { param($s, $e) Start-Process 'steam://rungameid/223850' } @{}
         }
     }
@@ -5222,7 +5393,7 @@ function Build-TestsTab {
         Add-TestButton $tile "Écran $($i + 1)$(if ($screens[$i].Primary -and $screens.Count -gt 1) { ' (principal)' })" { param($s, $e) $x = $s.Tag; Start-PixelTest $x.Ctx.Index } @{ Index = $i } -Primary:($i -eq 0)
     }
 
-    if ($script:IsLaptop -and @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue).Count) {
+    if ($script:IsLaptop -and @($script:AnalysisData.Battery).Count) {
         $tile = New-TestTile 'BAT' 'Batterie' 'Rapport de Windows' 'Capacité d''origine, capacité actuelle et autonomie estimée.'
         Add-TestButton $tile 'Voir le rapport' {
             param($s, $e)
@@ -5241,25 +5412,21 @@ $script:SecButtons = New-Object System.Collections.ArrayList
 
 # État de l'antivirus et des protections de Windows.
 function Get-ProtectionStatus {
-    $s = @{ Mp = $null; OtherAv = @(); Firewall = $true; FirewallOff = @(); Uac = $true; Exclusions = @(); Active = @() }
-    try { $s.Mp = Get-MpComputerStatus -ErrorAction Stop } catch {}
-    try {
-        $s.OtherAv = @(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct -ErrorAction Stop |
-            Where-Object { $_.displayName -notmatch 'Windows Defender|Microsoft Defender' } | ForEach-Object { $_.displayName })
-    } catch {}
-    try {
-        $off = @(Get-NetFirewallProfile -ErrorAction Stop | Where-Object { -not $_.Enabled } | ForEach-Object { $_.Name })
-        $s.FirewallOff = $off; $s.Firewall = -not $off.Count
-    } catch {}
-    $s.Uac = (Get-RegValue 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'EnableLUA') -ne 0
-    try {
-        $pref = Get-MpPreference -ErrorAction Stop
-        $s.Exclusions = @(@($pref.ExclusionPath) + @($pref.ExclusionProcess) + @($pref.ExclusionExtension) | Where-Object { $_ -and $_ -notmatch '^N/A' })
-    } catch {}
-    try { $s.Active = @(Get-MpThreat -ErrorAction Stop | Where-Object { $_.IsActive }) } catch {}
-    $s
+    $riskDirs = @($env:TEMP, "$env:SystemDrive\Users\Public", $env:ProgramData, $env:APPDATA, $env:LOCALAPPDATA)
+    $arg = @{
+        UserDirs = @((Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'), [Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('MyDocuments'))
+        Folders = @(Get-SuspectFolders); StartupExes = @(Get-StartupItems | Where-Object { $_.Enabled } | ForEach-Object { $_.Exe })
+        RiskDirs = $riskDirs; Temp = $env:TEMP; Public = "$env:SystemDrive\Users\Public"
+    }
+    $d = Invoke-Async $SecDataWork $arg | Select-Object -First 1
+    $off = @($d.FirewallOff)
+    @{
+        Mp = $d.Mp; OtherAv = @($d.OtherAv); FirewallOff = $off; Firewall = -not $off.Count
+        Uac = (Get-RegValue 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'EnableLUA') -ne 0
+        Exclusions = @($d.Exclusions); Active = @($d.Active); Threats = @($d.Threats); Detections = @($d.Detections)
+        Double = @($d.Double); Scripts = @($d.Scripts); Hidden = @($d.Hidden); SusStart = @($d.SusStart); Tasks = @($d.Tasks)
+    }
 }
-
 # Note de protection sur 100.
 function Get-ProtectionScore($S, [array]$Checks) {
     $score = 0
@@ -5354,15 +5521,7 @@ function Get-SecurityChecks($S) {
     Update-UI
 
     # Fichiers piégés (double extension, scripts) dans les dossiers de l'utilisateur
-    Set-Status 'Recherche de fichiers piégés...'
-    $userDirs = @((Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'), [Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('MyDocuments')) | Where-Object { Test-Path -LiteralPath $_ }
-    $double = @(); $scripts = @()
-    foreach ($d in $userDirs) {
-        foreach ($f in @(Get-ChildItem -LiteralPath $d -File -Recurse -Depth 2 -Force -ErrorAction SilentlyContinue)) {
-            if ($f.Name -match '\.(pdf|docx?|xlsx?|jpe?g|png|gif|txt|mp4|mp3|zip|rar)\s*\.(exe|scr|bat|cmd|com|pif|vbs|js|jse|hta|lnk)$') { $double += $f.FullName }
-            elseif ($d -like '*Downloads' -and $f.Extension -match '^\.(scr|pif|vbs|vbe|js|jse|hta|wsf)$') { $scripts += $f.FullName }
-        }
-    }
+    $double = @($S.Double); $scripts = @($S.Scripts)
     if ($double.Count) {
         [void]$list.Add(@{ Status = 'bad'; Title = "$($double.Count) fichier$(if ($double.Count -gt 1) {'s'}) déguisé$(if ($double.Count -gt 1) {'s'})"
             Detail = 'Un nom comme « facture.pdf.exe » fait croire à un document, mais c''est un programme. C''est la ruse la plus courante des virus : ne l''ouvre surtout pas.'
@@ -5380,15 +5539,7 @@ function Get-SecurityChecks($S) {
     Update-UI
 
     # Programmes non signés cachés dans des dossiers à risque
-    Set-Status 'Recherche de programmes cachés...'
-    $hidden = @()
-    foreach ($sf in Get-SuspectFolders) {
-        $files = if ($sf.Depth) { Get-ChildItem -LiteralPath $sf.Path -File -Recurse -Depth $sf.Depth -Force -ErrorAction SilentlyContinue } else { Get-ChildItem -LiteralPath $sf.Path -File -Force -ErrorAction SilentlyContinue }
-        foreach ($f in @($files | Where-Object { $_.Extension -match '^\.(exe|scr|com|pif)$' })) {
-            if (-not (Test-Signed $f.FullName)) { $hidden += $f.FullName }
-        }
-        Update-UI
-    }
+    $hidden = @($S.Hidden)
     if ($hidden.Count) {
         [void]$list.Add(@{ Status = 'warn'; Title = "$($hidden.Count) programme$(if ($hidden.Count -gt 1) {'s'}) non signé$(if ($hidden.Count -gt 1) {'s'}) dans des dossiers à risque"
             Detail = 'Ces programmes sont posés directement dans des dossiers où les virus aiment se cacher, et aucun éditeur ne les a signés. Ce n''est pas forcément grave (vieux installeurs...), mais ça vaut une analyse.'
@@ -5398,14 +5549,7 @@ function Get-SecurityChecks($S) {
     }
 
     # Programmes au démarrage placés dans des dossiers à risque ou non signés
-    Set-Status 'Vérification des programmes au démarrage...'
-    $riskDirs = @($env:TEMP, "$env:SystemDrive\Users\Public", $env:ProgramData) + @($env:APPDATA, $env:LOCALAPPDATA)
-    $susStart = @()
-    foreach ($it in @(Get-StartupItems | Where-Object { $_.Enabled })) {
-        $dir = Split-Path $it.Exe -Parent
-        $inRisk = ($riskDirs | Where-Object { $_ -and $dir -eq $_ }) -or $dir -like "$env:TEMP*"
-        if ($inRisk -or -not (Test-Signed $it.Exe)) { $susStart += $it }
-    }
+    $susStart = @(Get-StartupItems | Where-Object { $_.Enabled -and ($S.SusStart -contains $_.Exe) })
     if ($susStart.Count) {
         [void]$list.Add(@{ Status = 'warn'; Title = "$($susStart.Count) programme$(if ($susStart.Count -gt 1) {'s'}) au démarrage à vérifier"
             Detail = 'Ils se lancent avec Windows et ne sont pas signés par un éditeur, ou sont rangés dans un dossier inhabituel. Si tu ne les reconnais pas, analyse les et désactive les.'
@@ -5416,17 +5560,7 @@ function Get-SecurityChecks($S) {
     Update-UI
 
     # Tâches planifiées suspectes
-    Set-Status 'Vérification des tâches planifiées...'
-    $susTasks = @()
-    foreach ($t2 in @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Microsoft\*' -and $_.State -ne 'Disabled' })) {
-        foreach ($act in @($t2.Actions)) {
-            $exe = [Environment]::ExpandEnvironmentVariables([string]$act.Execute).Trim('"')
-            $argsTxt = [string]$act.Arguments
-            $hiddenCmd = $exe -match '(powershell|pwsh|cmd|wscript|cscript|mshta)(\.exe)?$' -and $argsTxt -match '(-enc|-encodedcommand|frombase64|downloadstring|downloadfile|invoke-expression|\biex\b|-w(indowstyle)?\s+h(idden)?|http)'
-            $riskPath = $exe -like "$env:TEMP*" -or $exe -like "$env:SystemDrive\Users\Public*"
-            if ($hiddenCmd -or $riskPath) { $susTasks += @{ Name = $t2.TaskName; Path = $t2.TaskPath; Cmd = "$exe $argsTxt".Trim(); Bad = $hiddenCmd } }
-        }
-    }
+    $susTasks = @($S.Tasks)
     if ($susTasks.Count) {
         $bad = [bool]($susTasks | Where-Object { $_.Bad })
         [void]$list.Add(@{ Status = $(if ($bad) { 'bad' } else { 'warn' }); Title = "$($susTasks.Count) tâche$(if ($susTasks.Count -gt 1) {'s'}) planifiée$(if ($susTasks.Count -gt 1) {'s'}) suspecte$(if ($susTasks.Count -gt 1) {'s'})"
@@ -5515,12 +5649,12 @@ function New-SecurityCard($Check) {
     $card
 }
 
-function Get-ThreatHistory {
+function Get-ThreatHistory($S) {
     $out = @()
     try {
         $threats = @{}
-        foreach ($t2 in @(Get-MpThreat -ErrorAction Stop)) { $threats[[string]$t2.ThreatID] = $t2 }
-        foreach ($d in @(Get-MpThreatDetection -ErrorAction Stop | Sort-Object InitialDetectionTime -Descending | Select-Object -First 15)) {
+        foreach ($t2 in @($S.Threats)) { $threats[[string]$t2.ThreatID] = $t2 }
+        foreach ($d in @($S.Detections)) {
             $t2 = $threats[[string]$d.ThreatID]
             $state = switch ([int]$d.ThreatStatusID) { 1 { 'Détectée' } 2 { 'Nettoyée' } 3 { 'En quarantaine' } 4 { 'Supprimée' } 5 { 'Autorisée' } 6 { 'Bloquée' } default { 'Traitée' } }
             $active = $t2 -and $t2.IsActive
@@ -5593,7 +5727,7 @@ function Update-SecurityTab {
 
     # Historique
     $ui.SecHistory.Children.Clear()
-    $hist = @(Get-ThreatHistory)
+    $hist = @(Get-ThreatHistory $S)
     if (-not $hist.Count) {
         [void]$ui.SecHistory.Children.Add((New-Text 'Aucune menace trouvée sur ce PC récemment.' 13 '#9AA3B2'))
     }
@@ -5650,6 +5784,7 @@ function New-Radar {
     $sweep.Stroke = Get-Brush $Colors.ok; $sweep.StrokeThickness = 5
     $sweep.StrokeStartLineCap = 'Round'; $sweep.StrokeEndLineCap = 'Round'
     $sweep.Effect = New-Glow $Colors.ok 18 0.9
+    $sweep.CacheMode = New-Object System.Windows.Media.BitmapCache
     $sweep.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5)
     $rot = New-Object System.Windows.Media.RotateTransform
     $sweep.RenderTransform = $rot
@@ -5973,8 +6108,13 @@ $NetScanWork = {
                 Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue
             } catch {}
         }
+        $ouiMap = $null
+        if ($a.LoadOui -and (Test-Path -LiteralPath $a.Oui)) {
+            $ouiMap = @{}
+            foreach ($l in [IO.File]::ReadLines($a.Oui)) { $i = $l.IndexOf('|'); if ($i -gt 0) { $ouiMap[$l.Substring(0, $i).Trim([char]0xFEFF)] = $l.Substring($i + 1) } }
+        }
         [OGNative]::Progress = 100
-        @{ Alive = $alive; Arp = $arp; Names = $names }
+        @{ Alive = $alive; Arp = $arp; Names = $names; OuiMap = $ouiMap }
     } catch { @{ Error = $_.Exception.GetBaseException().Message } }
 }
 
@@ -6041,6 +6181,7 @@ function New-NetRadar([switch]$Spin) {
     $sweep.Stroke = Get-Brush $Colors.info; $sweep.StrokeThickness = 5
     $sweep.StrokeStartLineCap = 'Round'; $sweep.StrokeEndLineCap = 'Round'
     $sweep.Effect = New-Glow $Colors.info 18 0.9
+    $sweep.CacheMode = New-Object System.Windows.Media.BitmapCache
     $sweep.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5)
     $rot = New-Object System.Windows.Media.RotateTransform
     $sweep.RenderTransform = $rot
@@ -6096,7 +6237,7 @@ function Update-NetScanInfo {
     $ui.NetScanInfo.Children.Clear()
     $net = Get-ActiveNet
     if (-not $net) { [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Connexion' 'Aucune' 'bad')); return }
-    $ipInfo = Get-NetIPAddress -InterfaceIndex $net.IfIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
+    $ipInfo = if ($net.Ip) { @{ IPAddress = $net.Ip; PrefixLength = [int]$net.Prefix } } else { $null }
     if ($net.Wifi) {
         $w = netsh wlan show interfaces 2>$null
         $ssid = ($w | Where-Object { $_ -match '^\s+SSID\s+:\s+(.+)$' } | Select-Object -First 1) -replace '^\s+SSID\s+:\s+', ''
@@ -6184,7 +6325,7 @@ function Invoke-NetworkScan {
     if ($script:NetScanning) { return }
     $net = Get-ActiveNet
     if (-not $net) { Show-Message 'Aucune connexion réseau détectée.'; return }
-    $ipInfo = Get-NetIPAddress -InterfaceIndex $net.IfIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
+    $ipInfo = if ($net.Ip) { @{ IPAddress = $net.Ip; PrefixLength = [int]$net.Prefix } } else { $null }
     if (-not $ipInfo) { Show-Message 'Impossible de lire l''adresse de ce PC.'; return }
     $ips = @(Get-SubnetIps $ipInfo.IPAddress $ipInfo.PrefixLength)
     $script:NetScanning = $true
@@ -6217,7 +6358,8 @@ function Invoke-NetworkScan {
     })
     $script:NetTimer.Start()
     try {
-        $r = Invoke-Async $NetScanWork @{ Ips = $ips; If = $net.IfIndex; Oui = $OuiFile } | Select-Object -First 1
+        $r = Invoke-Async $NetScanWork @{ Ips = $ips; If = $net.IfIndex; Oui = $OuiFile; LoadOui = (-not $script:Oui) } | Select-Object -First 1
+        if ($r -and $r.OuiMap) { $script:Oui = $r.OuiMap }
     } finally {
         $script:NetTimer.Stop()
         $script:NetScanning = $false
@@ -6240,7 +6382,7 @@ function Invoke-NetworkScan {
         elseif ($p[2] -in 'Reachable', 'Stale', 'Delay', 'Probe') { $devs[$p[0]] = @{ Ip = $p[0]; Ms = $null; Mac = $p[1] } }
     }
     $self = $ipInfo.IPAddress
-    $selfMac = (Get-NetAdapter -InterfaceIndex $net.IfIndex -ErrorAction SilentlyContinue).MacAddress
+    $selfMac = $net.Mac
     if (-not $devs.ContainsKey($self)) { $devs[$self] = @{ Ip = $self; Ms = 0; Mac = $null } }
     $devs[$self].Mac = $selfMac
     $names = @{}
@@ -6539,7 +6681,13 @@ $Window.Add_ContentRendered({
 Import-Backup
 Import-Ignored
 $script:RestoreDone = $false
-$script:Build = [int](Get-CimInstance Win32_OperatingSystem).BuildNumber
+$script:Build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue).CurrentBuildNumber
+$script:Pool = [RunspaceFactory]::CreateRunspacePool(1, 4)
+$script:Pool.Open()
+$pfPs = [PowerShell]::Create()
+$pfPs.RunspacePool = $script:Pool
+[void]$pfPs.AddScript($AnalysisDataWork.ToString()).AddArgument($env:SystemDrive)
+$script:Prefetch = @{ PS = $pfPs; Handle = $pfPs.BeginInvoke() }
 $script:TweakRows = @()
 $script:CleanRows = @()
 $script:PingResults = @()
