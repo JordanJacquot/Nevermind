@@ -372,6 +372,76 @@ public static class OGNative
         }
     }
 
+    // Quand vrai, NetSpeed ne touche ni à Progress ni à LiveValue (utilisé pendant la mesure de latence en charge).
+    public static volatile bool QuietSpeed;
+
+    // Latence en charge (« bufferbloat ») : ping au repos, puis pendant un téléchargement, puis pendant un envoi.
+    // Retourne { ping repos, ping téléchargement, ping envoi, pertes repos %, pertes téléch. %, pertes envoi %,
+    //            débit téléch. Mb/s, débit envoi Mb/s, gigue repos } ou null si annulé.
+    public static double[] LoadedLatency(string[] down, string[] up, string host, double idleSec, double loadSec)
+    {
+        var res = new double[9];
+        var ping = new System.Net.NetworkInformation.Ping();
+        Func<double, double, double, double[]> measure = (seconds, p0, p1) =>
+        {
+            var times = new List<double>();
+            int sent = 0, lost = 0;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.Elapsed.TotalSeconds < seconds && !Cancel)
+            {
+                var t0 = sw.Elapsed.TotalMilliseconds;
+                sent++;
+                try
+                {
+                    var r = ping.Send(host, 1500);
+                    if (r.Status == System.Net.NetworkInformation.IPStatus.Success) { times.Add(r.RoundtripTime); LiveValue = r.RoundtripTime; }
+                    else lost++;
+                }
+                catch { lost++; }
+                Progress = p0 + (p1 - p0) * Math.Min(1, sw.Elapsed.TotalSeconds / seconds);
+                var wait = 150 - (int)(sw.Elapsed.TotalMilliseconds - t0);
+                if (wait > 0) System.Threading.Thread.Sleep(wait);
+            }
+            double avg = -1, jit = 0;
+            if (times.Count > 0)
+            {
+                times.Sort();
+                avg = times[times.Count / 2];   // médiane : un ping isolé très lent ne fausse pas la note
+                for (int i = 1; i < times.Count; i++) jit += Math.Abs(times[i] - times[i - 1]);
+                if (times.Count > 1) jit /= times.Count - 1;
+            }
+            return new double[] { avg, sent > 0 ? 100.0 * lost / sent : 0, jit };
+        };
+        Func<string[], bool, double, double, double[]> loaded = (urls, upload, p0, p1) =>
+        {
+            double mbps = -1;
+            QuietSpeed = true;
+            var job = System.Threading.Tasks.Task.Run(() => { mbps = NetSpeed(urls, upload, loadSec, 8, 0, 0); });
+            System.Threading.Thread.Sleep(1500);   // le temps que la connexion se remplisse
+            var m = measure(loadSec - 2.0, p0, p1);
+            try { job.Wait(); } catch { }
+            QuietSpeed = false;
+            return new double[] { m[0], m[1], mbps };
+        };
+        try
+        {
+            Phase = "idle";
+            var idle = measure(idleSec, 0, 25);
+            if (Cancel) return null;
+            Phase = "down";
+            var d = loaded(down, false, 25, 62);
+            if (Cancel) return null;
+            Phase = "up";
+            var u = loaded(up, true, 62, 100);
+            if (Cancel) return null;
+            res[0] = idle[0]; res[1] = d[0]; res[2] = u[0];
+            res[3] = idle[1]; res[4] = d[1]; res[5] = u[1];
+            res[6] = d[2]; res[7] = u[2]; res[8] = idle[2];
+            return res;
+        }
+        finally { QuietSpeed = false; ping.Dispose(); }
+    }
+
     // Débit Internet en Mb/s (téléchargement ou envoi), plusieurs connexions en parallèle.
     // Si un serveur refuse (trop de tests, panne), on passe au suivant. Retourne -1 si aucun n'a répondu.
     public static double NetSpeed(string[] urls, bool upload, double seconds, int streams, double p0, double p1)
@@ -442,11 +512,12 @@ public static class OGNative
             ths[t].IsBackground = true;
             ths[t].Start();
         }
-        long lastBytes = 0; double lastTime = 0; LiveValue = 0;
+        long lastBytes = 0; double lastTime = 0; if (!QuietSpeed) LiveValue = 0;
         foreach (var th in ths)
         {
             while (!th.Join(100))
             {
+                if (QuietSpeed) continue;
                 Progress = p0 + (p1 - p0) * Math.Min(1, sw.Elapsed.TotalSeconds / seconds);
                 double now = sw.Elapsed.TotalSeconds;
                 if (now - lastTime >= 0.3)
@@ -458,7 +529,7 @@ public static class OGNative
             }
         }
         double elapsed = Math.Min(sw.Elapsed.TotalSeconds, seconds + 0.5);
-        Progress = p1;
+        if (!QuietSpeed) Progress = p1;
         if (total == 0) return -1;
         return total * 8 / 1e6 / elapsed;
     }

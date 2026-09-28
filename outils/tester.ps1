@@ -47,6 +47,7 @@ $code = $code.Replace('__TEST__', $test).Replace('$__COMPLET__', $(if ($Complet)
 Edit-File $main "[void]`$Window.ShowDialog()`r`n" "$code`r`n"
 
 Write-Host "Test d'OptiGame$(if ($Complet) { ' (complet)' }) en cours, patiente..."
+$env:OPTIGAME_TEST = '1'   # pas d'écran de chargement pendant le test
 $err = Join-Path $test 'erreurs.txt'
 $p = Start-Process powershell.exe -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$main`"" -PassThru -WindowStyle Hidden -RedirectStandardError $err
 if (-not $p.WaitForExit($Delai * 1000)) { $p.Kill(); Write-Host "ÉCHEC : l'app ne s'est pas terminée en $Delai s." -ForegroundColor Red; exit 1 }

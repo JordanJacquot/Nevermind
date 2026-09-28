@@ -382,6 +382,58 @@ function Invoke-NetworkScan {
 }
 
 # ---------------------------------------------------------------------------
+# Surveillance : un scan discret toutes les 10 minutes, notification si un nouvel appareil arrive
+# ---------------------------------------------------------------------------
+function Set-NetWatch([bool]$On) {
+    Set-Setting 'NetWatch' $On
+    if (-not $script:NetWatchTimer) {
+        $script:NetWatchTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $script:NetWatchTimer.Interval = [TimeSpan]::FromMinutes(10)
+        $script:NetWatchTimer.Add_Tick({ try { Invoke-NetWatch } catch { Write-Log "Surveillance réseau: $_" } })
+    }
+    if ($On) { $script:NetWatchTimer.Start() } else { $script:NetWatchTimer.Stop() }
+}
+
+function Invoke-NetWatch {
+    if ($script:NetScanning -or $script:TestRunning) { return }
+    $net = Get-ActiveNet
+    if (-not $net -or -not $net.Ip) { return }
+    $ips = @(Get-SubnetIps $net.Ip ([int]$net.Prefix))
+    $script:NetScanning = $true
+    try {
+        [OGNative]::Cancel = $false; [OGNative]::Found = 0; [OGNative]::Progress = 0
+        $r = Invoke-Async $NetScanWork @{ Ips = $ips; If = $net.IfIndex; Oui = $OuiFile; LoadOui = (-not $script:Oui) } | Select-Object -First 1
+    } finally { $script:NetScanning = $false }
+    if (-not $r -or $r.Error) { return }
+    if ($r.OuiMap) { $script:Oui = $r.OuiMap }
+    $known = @{}
+    if (Test-Path -LiteralPath $KnownFile) {
+        try {
+            $j = ConvertFrom-Json (Get-Content -LiteralPath $KnownFile -Raw -Encoding UTF8)
+            if ($j -is [string]) { $known[$j] = '' } elseif ($j -is [array]) { foreach ($x in $j) { $known[[string]$x] = '' } } elseif ($j) { foreach ($pp in $j.PSObject.Properties) { $known[$pp.Name] = [string]$pp.Value } }
+        } catch {}
+    }
+    if (-not $known.Count) { return }   # jamais scanné : rien à comparer
+    $inNet = @{}; foreach ($x in $ips) { $inNet[$x] = $true }
+    $today = (Get-Date).ToString('yyyy-MM-dd')
+    $new = @()
+    foreach ($l in @($r.Arp)) {
+        $p = ([string]$l) -split '\|'
+        if (-not $inNet.ContainsKey($p[0]) -or -not $p[1] -or $p[0] -eq $net.Ip) { continue }
+        if ($p[2] -notin 'Reachable', 'Stale', 'Delay', 'Probe') { continue }
+        if ($known.ContainsKey($p[1])) { continue }
+        $known[$p[1]] = $today
+        $v = Get-Vendor $p[1]
+        $new += "$(if ($v -and $v -ne 'Adresse privée') { $v } else { 'Appareil inconnu' }) ($($p[0]))"
+    }
+    if (-not $new.Count) { return }
+    $script:KnownDevices = $known
+    try { ConvertTo-Json -InputObject $known | Set-Content -LiteralPath $KnownFile -Encoding UTF8 } catch {}
+    Write-Log "Nouvel appareil sur le réseau: $($new -join ', ')"
+    Show-Notify $(if ($new.Count -gt 1) { "$($new.Count) nouveaux appareils sur ton réseau" } else { 'Nouvel appareil sur ton réseau' }) "$($new -join ', '). Si tu ne le reconnais pas, ouvre la section Réseau d'OptiGame."
+}
+
+# ---------------------------------------------------------------------------
 # Fiche détaillée d'un appareil du réseau
 # ---------------------------------------------------------------------------
 $DevTags = @{

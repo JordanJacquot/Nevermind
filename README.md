@@ -1,4 +1,4 @@
-# OptiGame
+﻿# OptiGame
 
 Analyse et optimisation gaming pour Windows 10 et 11.
 
@@ -20,8 +20,8 @@ Deux sections : **Ordinateur** (accueil avec une carte par fonction) et **Résea
 
 - **Tableau de bord** : mesures en direct, santé de chaque composant, score et liste de ce qui peut être amélioré.
 - **Fiches de correction** : ce qui a été trouvé, ce que l'app va faire, bouton Exécuter, puis « Revenir en arrière » si besoin.
-- **Optimisation gaming** : plan d'alimentation, mode jeu, Game Bar, planification GPU, accélération de la souris...
-- **Tests des composants** : vitesse et santé de chaque disque, processeur (puissance, stabilité), mémoire, capteurs de la carte graphique, débit Internet, pixels morts.
+- **Optimisation gaming** : plan d'alimentation, mode jeu, Game Bar, planification GPU, accélération de la souris... Mode jeu automatique (ferme des applis pendant que tu joues) et profils par jeu (priorité haute, carte graphique).
+- **Tests des composants** : vitesse et santé de chaque disque, processeur (puissance, stabilité), mémoire, capteurs de la carte graphique, débit Internet, lag en charge (bufferbloat), pixels morts.
 - **Sécurité** : niveau de protection, analyses Microsoft Defender, recherche de fichiers déguisés, programmes cachés, tâches planifiées suspectes, exclusions d'antivirus, hosts et proxy.
 - **Démarrage**, **Connexion** (ping, gigue, DNS), **Nettoyage**, **Sauvegarde** (tout annuler, point de restauration, rapport HTML).
 - **PC portables** : mode « Meilleures performances », jeux forcés sur la carte graphique dédiée, santé de la batterie.
@@ -50,6 +50,8 @@ OptiGame/            l'application telle qu'elle est distribuée
     reseau.ps1            section Réseau : scan et fiche appareil
     audit-reseau.ps1      audit de sécurité du réseau
     mises-a-jour.ps1      mises à jour depuis GitHub
+    assistance.ps1        historique, signaler un problème, notifications, visite guidée
+    jeu.ps1               mode jeu automatique, profils par jeu, alerte de température
     evenements.ps1        branchement des boutons
 outils/
   construire.ps1     génère l'icône, compile OptiGame.exe et le désinstalleur, crée OptiGame.zip
@@ -58,8 +60,16 @@ outils/
   lanceur.cs         code du lanceur OptiGame.exe
 ```
 
-Publier une mise à jour :
+Tester (copie isolée de l'app, hors écran, rien n'est modifié sur le PC) :
+
+```
+.\outils\tester.ps1              # toutes les pages
+.\outils\tester.ps1 -Complet     # + réseau, audit, lag en charge
+```
+
+Publier une mise à jour (vérifie la syntaxe, les tirets et lance le test avant) :
 
 ```
 .\outils\publier.ps1 -Version 1.1 -Notes "Ce qui change"
+.\outils\publier.ps1 -Version 1.2 -Notes "..." -Beta   # seulement pour ceux qui ont activé les bêtas
 ```

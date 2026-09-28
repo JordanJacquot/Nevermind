@@ -8,6 +8,7 @@ $script:T = @{
 function Invoke-UpdateCheck { }
 function Show-Message([string]$Text, [string]$Icon = 'Information') { [void]$script:T.Msgs.Add("[$Icon] $Text") }
 function Confirm-Action([string]$Text) { [void]$script:T.Msgs.Add("[Question] $Text"); $false }
+function Show-Notify([string]$Title, [string]$Text) { [void]$script:T.Msgs.Add("[Notify] $Title : $Text") }
 
 function Add-TestResult([string]$Name, [bool]$Ok, [string]$Detail = '') {
     [void]$script:T.Res.Add([pscustomobject]@{ Test = $Name; Ok = $Ok; Detail = $Detail })
@@ -94,6 +95,47 @@ $script:T.Run.Add_Tick({
                     $ui.StatusText.Text
                 }
             }
+            Test-Step 'Pilote graphique' {
+                $f = @($script:LastAnalysis.Findings | Where-Object { $_.Id -like 'gpu-driver:*' })
+                Assert-Test ($f.Count -ge 1) 'aucun point sur le pilote'
+                ($f | ForEach-Object { "$($_.Titre) : $($_.Detail)" }) -join ' | '
+            }
+            Test-Step 'Mode jeu et profils par jeu' {
+                $ui.Tabs.SelectedIndex = 1
+                # Au démarrage, la liste est calculée juste après « Prêt. » : le test passe avant, on la calcule ici.
+                if ($null -eq $script:Games) { Update-GameCache }
+                Wait-TestMs 500; $ui.GameModePanel.BringIntoView(); Wait-TestMs 400; Save-TestShot 'gaming-mode-jeu'
+                Assert-Test ($null -ne $script:Games) 'liste des jeux jamais calculée'
+                Assert-Test ($ui.GameModePanel.Children.Count -ge 1) 'carte du mode jeu absente'
+                # Session de jeu simulée : aucune appli cochée, donc rien n'est fermé sur ce PC
+                Set-Setting 'GameModeApps' @()
+                Start-GameSession 'Jeu d''essai' (Get-Process -Id $PID)
+                Assert-Test ($null -ne $script:GameSession) 'session non démarrée'
+                Stop-GameSession
+                Assert-Test ($null -eq $script:GameSession) 'session non terminée'
+                $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+                $detail = "$(@($script:Games).Count) jeux, $($ui.GameProfilesPanel.Children.Count) lignes de profils"
+                # Profil « carte puissante » sur un faux jeu (clé de l'utilisateur, pas besoin d'être administrateur)
+                $fake = @{ Name = 'Jeu d''essai'; Exes = @('C:\OptiGameTest\OptiGameTestJeu.exe') }
+                Set-GameProfile $fake 'gpu' $true
+                $gOn = (Get-GpuPreference $fake.Exes[0]) -match 'GpuPreference=2'
+                Set-GameProfile $fake 'gpu' $false
+                $gOff = -not (Get-GpuPreference $fake.Exes[0])
+                Assert-Test ($gOn -and $gOff) "carte puissante : activée=$gOn, retirée=$gOff"
+                $detail += ', profil carte puissante activé puis retiré'
+                if ($admin) {
+                    $g = @{ Name = 'Jeu d''essai'; Exes = @('C:\OptiGameTest\OptiGameTestJeu.exe') }
+                    $key = "$IfeoPath\OptiGameTestJeu.exe"
+                    Set-GameProfile $g 'priority' $true
+                    $on = Test-GamePriority $g
+                    Set-GameProfile $g 'priority' $false
+                    $off = Test-GamePriority $g
+                    Remove-Item -LiteralPath $key -Recurse -Force -ErrorAction SilentlyContinue
+                    Assert-Test ($on -and -not $off) "priorité : activée=$on, désactivée=$(-not $off)"
+                    $detail += ', priorité haute activée puis retirée'
+                } else { $detail += ' (profil non testé : pas administrateur)' }
+                $detail
+            }
             Test-Step 'Page Tests' {
                 $ui.Tabs.SelectedIndex = 5; Wait-TestMs 1500; Save-TestShot 'tests'
                 Assert-Test ($ui.TestsPanel.Children.Count -ge 4) "seulement $($ui.TestsPanel.Children.Count) tuiles"
@@ -147,6 +189,17 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($ui.Tabs.SelectedIndex -eq $HubIndex) 'accueil non affiché'
             }
             if ($script:T.Complet) {
+                Test-Step 'Lag en charge (bufferbloat)' {
+                    $ui.Tabs.SelectedIndex = 5; Wait-TestMs 300
+                    $b = @($script:TestButtons | Where-Object { $_.Content -eq 'Lag en charge' })[0]
+                    Assert-Test ($null -ne $b) 'bouton absent'
+                    Test-Bufferbloat $b.Tag.T $b.Tag.Ctx
+                    Wait-TestMs 1500; Save-TestShot 'lag-en-charge'
+                    Hide-TestPanel
+                    $r = $b.Tag.T.Last.Res.R
+                    Assert-Test ($r -and $r[0] -ge 0) 'pas de résultat'
+                    '{0:N0} ms au repos, {1:N0} ms en téléchargement, {2:N0} ms en envoi' -f $r[0], $r[1], $r[2]
+                }
                 $ui.Tabs.SelectedIndex = $NetIndex; Wait-TestMs 300
                 Test-Step 'Scan du réseau' {
                     Invoke-NetworkScan
@@ -156,6 +209,12 @@ $script:T.Run.Add_Tick({
                     Assert-Test ([bool]($l | Where-Object { $_.Gateway })) 'box absente de la liste'
                     Save-TestShot 'reseau-scan'
                     "$($l.Count) appareils"
+                }
+                Test-Step 'Surveillance des nouveaux appareils' {
+                    $before = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`]*' }).Count
+                    Invoke-NetWatch
+                    $n = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`]*' }).Count - $before
+                    "scan discret fait, $n notification(s)"
                 }
                 Test-Step 'Fiche d''un appareil' {
                     $gw = @($script:NetList | Where-Object { $_.Gateway })[0]

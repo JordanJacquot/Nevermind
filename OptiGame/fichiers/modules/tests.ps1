@@ -46,6 +46,13 @@ $NetWork = {
         @{ R = @($avg, $down, $up, (10 - $times.Count)) }
     } catch { @{ Error = $_.Exception.GetBaseException().Message } }
 }
+$BloatWork = {
+    param($a)
+    try {
+        $r = [OGNative]::LoadedLatency([string[]]$a.Down, [string[]]$a.Up, '1.1.1.1', 6.0, 11.0)
+        if ($null -eq $r) { @{ Cancelled = $true } } else { @{ R = $r } }
+    } catch { @{ Error = $_.Exception.GetBaseException().Message } }
+}
 $RepairWork = {
     param($a)
     $out = @()
@@ -683,6 +690,93 @@ function Test-NetSpeed($Tile, $Ctx) {
     Invoke-ComponentTest $Tile $def $Ctx 'Test-NetSpeed'
 }
 
+# Latence en charge (« bufferbloat ») : le ping monte-t-il quand la connexion est pleine ?
+# Barème proche des tests en ligne connus : écart entre le ping chargé et le ping au repos.
+function Get-BloatGrade([double]$Extra) {
+    if ($Extra -lt 5) { @{ Grade = 'A+'; Status = 'ok' } }
+    elseif ($Extra -lt 30) { @{ Grade = 'A'; Status = 'ok' } }
+    elseif ($Extra -lt 60) { @{ Grade = 'B'; Status = 'ok' } }
+    elseif ($Extra -lt 200) { @{ Grade = 'C'; Status = 'warn' } }
+    elseif ($Extra -lt 400) { @{ Grade = 'D'; Status = 'bad' } }
+    else { @{ Grade = 'F'; Status = 'bad' } }
+}
+
+function New-GradeTile([string]$Grade, [string]$Status, [string]$Label) {
+    $b = New-Object System.Windows.Controls.Border
+    $bg = Get-Brush $Colors[$Status]; $bg.Opacity = 0.12
+    $b.Background = $bg
+    $b.CornerRadius = [System.Windows.CornerRadius]::new(14)
+    $b.Padding = New-Thickness 22 10 22 12
+    $b.Margin = New-Thickness 0 0 16 0
+    $b.VerticalAlignment = 'Center'
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $g = New-Text $Grade 46 $Colors[$Status] -Bold
+    $g.HorizontalAlignment = 'Center'
+    [void]$sp.Children.Add($g)
+    $l = New-Text $Label 12 '#9AA3B2' -Semi
+    $l.HorizontalAlignment = 'Center'
+    [void]$sp.Children.Add($l)
+    $b.Child = $sp
+    $b.Opacity = 0
+    Start-WpfAnim $b ([System.Windows.UIElement]::OpacityProperty) 1 600 200
+    $b
+}
+
+function Test-Bufferbloat($Tile, $Ctx) {
+    $def = @{
+        Steps = [ordered]@{ idle = 'Au repos'; down = 'Pendant un téléchargement'; up = 'Pendant un envoi' }
+        Work = $BloatWork
+        Arg = @{ Down = @('https://speed.cloudflare.com/__down?bytes=25000000', 'https://proof.ovh.net/files/1Gb.dat', 'https://nbg1-speed.hetzner.com/1GB.bin', 'https://fsn1-speed.hetzner.com/1GB.bin'); Up = @('https://speed.cloudflare.com/__up') }
+        Chart = @{ Unit = 'ms'; Fmt = '{0:N0}'; Color = $Colors.info; Source = 'engine'; Phases = @('idle', 'down', 'up') }
+        Render = {
+            param($res, $ctx, $body)
+            $r = $res.R
+            [void]$body.Children.Add((New-SectionTitle 'RÉSULTAT'))
+            if ($r[0] -lt 0) {
+                [void]$body.Children.Add((New-Verdict 'info' 'Le ping ne répond pas (pas de connexion, ou pare-feu qui bloque le ping). Réessaie plus tard.'))
+                return @{ Status = 'info'; Chips = @(, @('Note', '?')) }
+            }
+            $loadedPing = [math]::Max($r[1], $r[2])
+            $extra = [math]::Max(0.0, $loadedPing - $r[0])
+            $gr = Get-BloatGrade $extra
+            $row = New-Grid @('Auto', '*')
+            Add-ToGrid $row (New-GradeTile $gr.Grade $gr.Status 'Note') 0
+            $max = [math]::Max(100.0, [math]::Ceiling($loadedPing / 50) * 50)
+            $g = @(
+                (New-Gauge 'Au repos' $r[0] $max '{0:N0}' 'ms' $Colors.ok 0),
+                (New-Gauge 'Téléchargement' $r[1] $max '{0:N0}' 'ms' $(if ($r[1] - $r[0] -ge 60) { $Colors.warn } else { $Colors.ok }) 150),
+                (New-Gauge 'Envoi' $r[2] $max '{0:N0}' 'ms' $(if ($r[2] - $r[0] -ge 60) { $Colors.warn } else { $Colors.ok }) 300)
+            )
+            Add-ToGrid $row (New-GaugeRow $g) 1
+            [void]$body.Children.Add($row)
+            [void]$body.Children.Add((New-StatRow @(
+                (New-StatTile 'ms de plus quand la connexion est chargée' $extra '{0:N0}' '#FFFFFF' 300),
+                (New-StatTile 'Mb/s en téléchargement pendant le test' ([math]::Max(0.0, $r[6])) '{0:N0}' '#FFFFFF' 400)
+            )))
+            $txt = switch ($gr.Grade) {
+                'A+' { 'Parfait : ton ping ne bouge pas, même quand quelqu''un télécharge ou regarde une vidéo. Idéal pour jouer.' }
+                'A'  { "Très bien : ton ping ne monte que de $([int]$extra) ms quand la connexion est pleine. Pas de lag à craindre." }
+                'B'  { "Correct : ton ping monte de $([int]$extra) ms quand la connexion est pleine. Un petit lag est possible si quelqu'un télécharge pendant que tu joues." }
+                default { "Ton ping monte de $([int]$extra) ms dès que quelqu'un télécharge ou regarde une vidéo : c'est ce qui fait laguer en jeu. Solutions : active la « QoS » ou la priorité jeux dans ta box (ou un routeur avec SQM), limite la vitesse de téléchargement de Steam pendant que tu joues, et préfère le câble au Wi-Fi." }
+            }
+            [void]$body.Children.Add((New-Verdict $gr.Status $txt))
+            if ($r[4] -ge 10 -or $r[5] -ge 10) {
+                [void]$body.Children.Add((New-Verdict 'warn' "Des pings se perdent quand la connexion est chargée ($([int][math]::Max($r[4], $r[5])) %) : en jeu, ça se traduit par des téléportations."))
+            }
+            [void]$body.Children.Add((New-Details @(
+                @('Ping au repos', ('{0:N0} ms (gigue {1:N1} ms)' -f $r[0], $r[8])),
+                @('Ping pendant un téléchargement', ('{0:N0} ms, {1:N0} % de pertes' -f $r[1], $r[4])),
+                @('Ping pendant un envoi', ('{0:N0} ms, {1:N0} % de pertes' -f $r[2], $r[5])),
+                @('Débit pendant le test', ('{0:N0} Mb/s en téléchargement, {1:N0} Mb/s en envoi' -f [math]::Max(0.0, $r[6]), [math]::Max(0.0, $r[7]))),
+                @('Serveur de ping', '1.1.1.1 (Cloudflare)')
+            )))
+            @{ Status = $gr.Status; Chips = @(@('Note', $gr.Grade), @('En charge', ('+{0:N0} ms' -f $extra))) }
+        }
+    }
+    Set-Status 'Mesure du lag en charge...'
+    Invoke-ComponentTest $Tile $def $Ctx 'Test-Bufferbloat'
+}
+
 # ---------------------------------------------------------------------------
 # Écrans: pixels morts
 # ---------------------------------------------------------------------------
@@ -778,8 +872,9 @@ function Build-TestsTab {
         }
     }
 
-    $tile = New-TestTile 'NET' 'Connexion Internet' 'Ping, téléchargement, envoi' 'Réactivité et vitesse de ta connexion, en 20 secondes.'
+    $tile = New-TestTile 'NET' 'Connexion Internet' 'Ping, téléchargement, envoi' 'Réactivité et vitesse de ta connexion en 20 secondes, et « lag en charge » : ton ping monte-t-il quand quelqu''un télécharge ?'
     Add-TestButton $tile 'Tester ma connexion' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-NetSpeed $x.T $x.Ctx } } @{} -Primary
+    Add-TestButton $tile 'Lag en charge' { param($s, $e) $x = $s.Tag; Invoke-Safe { Test-Bufferbloat $x.T $x.Ctx } } @{}
 
     $screens = [System.Windows.Forms.Screen]::AllScreens
     $tile = New-TestTile 'HZ' 'Écrans' "$($screens.Count) écran$(if ($screens.Count -gt 1) {'s'})" 'Couleurs unies en plein écran pour repérer les pixels morts. Échap pour quitter.'

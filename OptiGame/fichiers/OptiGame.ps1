@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.12
+    OptiGame 1.0.13
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,7 +10,7 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.12'
+$AppVersion = '1.0.13'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -41,11 +41,44 @@ try {
 } catch {}
 
 # ---------------------------------------------------------------------------
+# Écran de chargement, affiché pendant que l'app se prépare
+# ---------------------------------------------------------------------------
+$Splash = $null
+if (-not $env:OPTIGAME_TEST -and -not $Uninstall) {
+    try {
+        $Splash = New-Object System.Windows.Window
+        $Splash.WindowStyle = 'None'; $Splash.ResizeMode = 'NoResize'; $Splash.WindowStartupLocation = 'CenterScreen'
+        $Splash.Width = 360; $Splash.Height = 190; $Splash.Title = 'OptiGame'
+        $Splash.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#12151B')
+        $Splash.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#2C3342'); $Splash.BorderThickness = 1
+        $sp = New-Object System.Windows.Controls.StackPanel
+        $sp.VerticalAlignment = 'Center'; $sp.HorizontalAlignment = 'Center'
+        $ico = Join-Path $PSScriptRoot 'OptiGame.ico'
+        if (Test-Path -LiteralPath $ico) {
+            $frames = [System.Windows.Media.Imaging.BitmapDecoder]::Create((New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))), 'None', 'OnLoad').Frames
+            $img = New-Object System.Windows.Controls.Image
+            $img.Source = $frames | Sort-Object PixelWidth | Where-Object { $_.PixelWidth -ge 64 } | Select-Object -First 1
+            $img.Width = 56; $img.Height = 56; $img.Margin = '0,0,0,12'
+            [void]$sp.Children.Add($img)
+        }
+        foreach ($t in @(@('OptiGame', 22, '#FFFFFF', 'Bold'), @('Préparation de ton tableau de bord...', 13, '#9AA3B2', 'Normal'))) {
+            $tb = New-Object System.Windows.Controls.TextBlock
+            $tb.Text = $t[0]; $tb.FontSize = $t[1]; $tb.FontWeight = $t[3]; $tb.HorizontalAlignment = 'Center'
+            $tb.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($t[2])
+            [void]$sp.Children.Add($tb)
+        }
+        $Splash.Content = $sp
+        $Splash.Show()
+        [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke([action]{}, 'Background')
+    } catch { $Splash = $null }
+}
+
+# ---------------------------------------------------------------------------
 # Chargement des modules (dossier « modules » à côté de ce fichier)
 # ---------------------------------------------------------------------------
 $AppDir = $PSScriptRoot
 $ModulesDir = Join-Path $AppDir 'modules'
-$missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'optimisations.ps1', 'systeme.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'assistance.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
+$missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'optimisations.ps1', 'systeme.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'assistance.ps1', 'jeu.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
 if ($missing) {
     [System.Windows.MessageBox]::Show("Des fichiers d'OptiGame sont manquants :`n`n$($missing -join ', ')`n`nRetélécharge OptiGame et remplace tout le dossier.", 'OptiGame', 'OK', 'Error') | Out-Null
     exit
@@ -61,7 +94,7 @@ if ($Uninstall) {
     exit
 }
 
-foreach ($ogModule in 'interface', 'tableau-de-bord', 'analyse', 'onglets', 'visuels', 'tests', 'securite', 'navigation', 'reseau', 'audit-reseau', 'mises-a-jour', 'assistance', 'evenements') { . (Join-Path $ModulesDir "$ogModule.ps1") }
+foreach ($ogModule in 'interface', 'tableau-de-bord', 'analyse', 'onglets', 'visuels', 'tests', 'securite', 'navigation', 'reseau', 'audit-reseau', 'mises-a-jour', 'assistance', 'jeu', 'evenements') { . (Join-Path $ModulesDir "$ogModule.ps1") }
 
 # ---------------------------------------------------------------------------
 # Lancement

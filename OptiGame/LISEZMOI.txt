@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.12
+﻿OptiGame 1.0.13
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -49,6 +49,8 @@ L'application a deux grandes sections, dans le menu à gauche :
     L'audit de sécurité vérifie ton Wi-Fi, ta box (WPS, UPnP), le DNS, tes
     appareils et ce PC, donne une note sur 100, corrige ce qui peut l'être sur
     ce PC et exporte un rapport.
+    Option : être prévenu quand un nouvel appareil se connecte (vérifié toutes
+    les 10 minutes tant qu'OptiGame est ouvert).
 
 Tableau de bord
   Mesures en direct : processeur, mémoire, carte graphique (et sa température
@@ -65,11 +67,18 @@ Tableau de bord
   écran bridé à 60 Hz alors qu'il peut faire plus, mémoire en simple canal,
   profil XMP / EXPO désactivé, pilote graphique ancien, Windows sur disque dur,
   disque plein, Wi-Fi, trop de programmes au démarrage...
+  Pour les cartes NVIDIA, l'app compare ton pilote au dernier pilote « Game
+  Ready » publié par NVIDIA.
 
 Optimisation gaming
   Plan d'alimentation Performances élevées, mode jeu, enregistrement en arrière
   plan de la Game Bar, planification GPU matérielle, optimisations des jeux en
   fenêtré, accélération de la souris, raccourci Maj x5, partage des mises à jour.
+  Mode jeu automatique : quand un jeu Steam ou Epic démarre, ferme les applis
+  que tu as cochées (OneDrive, Teams...) et les relance quand tu quittes le jeu
+  (tant qu'OptiGame est ouvert, même réduit).
+  Profils par jeu : « Priorité haute » pour chaque jeu (et « Carte puissante »
+  sur les PC à deux cartes graphiques), appliqués même quand OptiGame est fermé.
 
 Spécial PC portable
   L'app reconnaît un portable d'après le type de boîtier déclaré par le PC (un PC
@@ -96,6 +105,9 @@ Tests
   processeur (puissance, fréquence en charge, stabilité), mémoire vive,
   capteurs de la carte graphique, débit Internet, pixels morts des écrans,
   et rapport de batterie sur les portables.
+  « Lag en charge » : mesure si ton ping monte quand quelqu'un télécharge ou
+  regarde une vidéo (note de A+ à F, avec des conseils).
+  Alerte si la carte graphique NVIDIA dépasse 87 °C pendant un moment.
 
 Sécurité
   Niveau de protection sur 100, analyses antivirus avec Microsoft Defender
@@ -126,9 +138,9 @@ SÉCURITÉ
 - Un point de restauration Windows est créé avant les optimisations
   (case cochée par défaut).
 - L'application ne se connecte à Internet que pour : vérifier les mises à jour
-  (GitHub), les tests de ping et de débit, afficher ton adresse Internet, et
-  télécharger la liste des fabricants d'appareils réseau (IEEE). Elle n'envoie
-  aucune donnée te concernant.
+  (GitHub), les tests de ping et de débit, afficher ton adresse Internet,
+  connaître le dernier pilote NVIDIA, et télécharger la liste des fabricants
+  d'appareils réseau (IEEE). Elle n'envoie aucune donnée te concernant.
 - Le code est lisible : ouvre les fichiers du dossier fichiers\modules avec le
   Bloc-notes pour vérifier.
 

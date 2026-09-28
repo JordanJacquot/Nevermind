@@ -141,6 +141,26 @@ function Undo-HistoryEntry([string]$Id) {
 }
 
 # ---------------------------------------------------------------------------
+# Notifications Windows (bulle près de l'horloge)
+# ---------------------------------------------------------------------------
+function Show-Notify([string]$Title, [string]$Text) {
+    try {
+        if (-not $script:NotifyIcon) {
+            $ni = New-Object System.Windows.Forms.NotifyIcon
+            $ico = Join-Path $AppDir 'OptiGame.ico'
+            $ni.Icon = if (Test-Path -LiteralPath $ico) { New-Object System.Drawing.Icon (New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))) } else { [System.Drawing.SystemIcons]::Information }
+            $ni.Text = 'OptiGame'
+            $ni.Add_BalloonTipClicked({ try { $Window.WindowState = 'Normal'; [void]$Window.Activate() } catch {} })
+            $ni.Add_Click({ try { $Window.WindowState = 'Normal'; [void]$Window.Activate() } catch {} })
+            $script:NotifyIcon = $ni
+        }
+        $script:NotifyIcon.Visible = $true
+        $script:NotifyIcon.ShowBalloonTip(8000, $Title, $Text, [System.Windows.Forms.ToolTipIcon]::Info)
+    } catch { Write-Log "Notification impossible: $_" }
+    Set-Status "$Title : $Text"
+}
+
+# ---------------------------------------------------------------------------
 # Signaler un problème : un zip sur le bureau, sans données personnelles
 # ---------------------------------------------------------------------------
 function Export-ProblemReport([string]$Dest) {

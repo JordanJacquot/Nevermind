@@ -76,6 +76,7 @@ function Update-LiveUI {
         $ui.LiveTempBox.Visibility = 'Collapsed'; $ui.LiveGrid.Columns = 3
     }
     $ui.LiveStamp.Text = "Actualisé à $($Live.Updated.ToString('HH:mm:ss'))"
+    Test-TempAlert
 }
 
 function Start-Live {
@@ -130,6 +131,7 @@ function Build-GamingTab {
         [void]$panel.Children.Add($card)
         $script:TweakRows += @{ Tweak = $t; CheckBox = $cb }
     }
+    Build-GameSections
 }
 
 function New-RestorePoint {

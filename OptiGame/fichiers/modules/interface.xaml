@@ -406,7 +406,13 @@
           <CheckBox x:Name="ChkRestore" Grid.Row="1" IsChecked="True" Margin="0,16,0,12" Foreground="#9AA3B2"
                     Content="Créer un point de restauration Windows avant d'appliquer (recommandé)"/>
           <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-            <StackPanel x:Name="GamingPanel"/>
+            <StackPanel Margin="0,0,8,0">
+              <StackPanel x:Name="GamingPanel"/>
+              <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Mode jeu automatique" Margin="0,26,0,10"/>
+              <StackPanel x:Name="GameModePanel"/>
+              <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Profils par jeu" Margin="0,16,0,10"/>
+              <StackPanel x:Name="GameProfilesPanel"/>
+            </StackPanel>
           </ScrollViewer>
           <TextBlock Grid.Row="3" Style="{StaticResource Sub}" FontSize="12" Margin="0,12,0,0"
                      Text="Pourquoi si peu de réglages ? Les « tweaks miracles » d'Internet (réglages réseau secrets, services désactivés, nettoyeurs de RAM...) n'apportent rien ou cassent Windows. OptiGame n'applique que des réglages dont l'effet est reconnu."/>
@@ -770,6 +776,10 @@
                 <TextBlock x:Name="NetDevSummary" DockPanel.Dock="Right" Foreground="#9AA3B2" FontSize="12" VerticalAlignment="Bottom"/>
                 <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Appareils connectés"/>
               </DockPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                <CheckBox x:Name="ChkNetWatch" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
+                <TextBlock Text="Me prévenir quand un nouvel appareil se connecte (vérifié toutes les 10 minutes, tant qu'OptiGame est ouvert)" Foreground="#9AA3B2" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+              </StackPanel>
               <UniformGrid x:Name="NetDevices" Columns="3"/>
               <TextBlock x:Name="NetDevHint" Style="{StaticResource Sub}" FontSize="12" Margin="0,8,0,0" Text="Clique sur « Scanner le réseau » pour voir les appareils connectés."/>
             </StackPanel>

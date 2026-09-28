@@ -104,6 +104,15 @@ $AnalysisDataWork = {
     $r.PCType = [int](Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).PCSystemType
     $r.CPU = Get-CimInstance Win32_Processor | Select-Object -First 1
     $r.GPUs = @(Get-CimInstance Win32_VideoController)
+    # Dernier pilote NVIDIA « Game Ready » (le même pour toutes les GeForce récentes).
+    if ($r.GPUs | Where-Object { $_.Name -match 'NVIDIA|GeForce' }) {
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            $u = 'https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php?func=DriverManualLookup&psid=127&pfid=995&osID=57&languageCode=1033&beta=0&isWHQL=1&dltype=-1&dch=1&upCRD=0&qnf=0&sort1=0&numberOfResults=1'
+            $nv = (Invoke-RestMethod -Uri $u -TimeoutSec 6 -UseBasicParsing).IDS[0].downloadInfo
+            if ($nv.Version) { $r.NvLatest = @{ Version = [string]$nv.Version; Date = [string]$nv.ReleaseDateTime; Url = [string]$nv.DetailsURL } }
+        } catch {}
+    }
     $r.Mem = @(Get-CimInstance Win32_PhysicalMemory)
     $r.MemDiag = Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-MemoryDiagnostics-Results' } -MaxEvents 1 -ErrorAction SilentlyContinue
     try { $r.SysDisk = [string](Get-Partition -DriveLetter $sysDrive.TrimEnd(':') -ErrorAction Stop).DiskNumber } catch {}

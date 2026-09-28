@@ -21,6 +21,9 @@ $Window.Add_SourceInitialized({
 $Window.Add_Closed({
     $Live.Run = $false
     if ($script:LiveTimer) { $script:LiveTimer.Stop() }
+    try { if ($script:GameSession) { Stop-GameSession } } catch {}
+    try { if ($script:NotifyIcon) { $script:NotifyIcon.Visible = $false; $script:NotifyIcon.Dispose() } } catch {}
+    if ($Splash) { try { $Splash.Close() } catch {} }
 })
 
 $ui.BtnFixAll.Add_Click({ Open-FixAll })
@@ -102,6 +105,8 @@ $ui.BtnRestorePoint.Add_Click({
 $ui.BtnOpenRestore.Add_Click({ Start-Process 'rstrui.exe' })
 $ui.BtnExport.Add_Click({ Invoke-Safe { Export-Report } })
 $ui.BtnReportProblem.Add_Click({ Invoke-Safe { Export-ProblemReport } })
+$ui.ChkNetWatch.IsChecked = [bool](Get-Setting 'NetWatch' $false)
+$ui.ChkNetWatch.Add_Click({ Invoke-Safe { Set-NetWatch ([bool]$ui.ChkNetWatch.IsChecked); Set-Status $(if ($ui.ChkNetWatch.IsChecked) { 'Surveillance du réseau activée.' } else { 'Surveillance du réseau désactivée.' }) } })
 $ui.ChkBeta.IsChecked = [bool](Get-Setting 'Beta' $false)
 $ui.ChkBeta.Add_Click({ Invoke-Safe { Set-BetaChannel ([bool]$ui.ChkBeta.IsChecked) } })
 $Window.Dispatcher.Add_UnhandledException({
@@ -139,6 +144,7 @@ $ui.BtnCheckUpdate.Add_Click({
 })
 
 $Window.Add_ContentRendered({
+    if ($Splash) { try { $Splash.Close() } catch {}; $script:Splash = $null }
     $v = $ui.Tabs.Template.FindName('VersionText', $ui.Tabs)
     if ($v) { $v.Text = "Version $AppVersion" }
     $logo = $ui.Tabs.Template.FindName('LogoImg', $ui.Tabs)
@@ -166,6 +172,11 @@ $Window.Add_ContentRendered({
         Update-Hub
         Set-Status 'Prêt.'
         Invoke-WelcomeChecks
+    }
+    Invoke-Safe {
+        Update-GameCache
+        if (Get-Setting 'GameMode' $false) { Start-GameWatch }
+        if (Get-Setting 'NetWatch' $false) { Set-NetWatch $true }
     }
     try { Invoke-UpdateCheck } catch { Write-Log "Vérification de mise à jour: $_" }
 })

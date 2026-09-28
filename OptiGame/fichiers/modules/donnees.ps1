@@ -144,6 +144,14 @@ function Remove-RegValue([string]$Path, [string]$Name) {
     if ($k) { try { $k.DeleteValue($Name, $false) } finally { $k.Close() } }
 }
 
+function Clear-Reg([string]$Path, [string]$Name) {
+    $st = Get-RegState $Path $Name
+    if (-not $st.Existed) { return }
+    Save-Original $Path $Name
+    if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'reg'; Path = $Path; Name = $Name; Existed = $true; Value = $st.Value; Kind = $st.Kind }) }
+    Remove-RegValue $Path $Name
+}
+
 function Set-Reg([string]$Path, [string]$Name, $Value, [string]$Kind = 'DWord') {
     Save-Original $Path $Name
     if ($null -ne $script:RunLog) {

@@ -4,6 +4,13 @@
 # ---------------------------------------------------------------------------
 # Santé des composants
 # ---------------------------------------------------------------------------
+# Numéro de pilote NVIDIA à partir de celui de Windows : 32.0.16.1714 donne 617.14.
+function ConvertTo-NvidiaVersion([string]$WinVersion) {
+    $digits = $WinVersion -replace '\D', ''
+    if ($digits.Length -lt 5) { return $null }
+    $d = $digits.Substring($digits.Length - 5)
+    "$([int]$d.Substring(0, 3)).$($d.Substring(3))"
+}
 $StatusLabels = @{ ok = 'Bon état'; warn = 'À surveiller'; bad = 'Problème'; info = 'Info' }
 $Muted = '#5B6475'
 
@@ -244,7 +251,23 @@ function Invoke-Analysis {
         $vram = Get-GpuVram $g.Name
         if ($vram) { $c.Lines['Mémoire vidéo'] = Format-Size $vram }
         $w = if ($hasDedicated -and $g.Name -notmatch $dedicatedPattern) { 1 } else { 2 }
-        if ($g.DriverDate) {
+        $nvInstalled = if ($g.Name -match 'NVIDIA|GeForce') { ConvertTo-NvidiaVersion $g.DriverVersion } else { $null }
+        $nvLatest = $data.NvLatest
+        if ($nvInstalled -and $nvLatest) {
+            $isOld = $false
+            try { $isOld = [version]$nvInstalled -lt [version]$nvLatest.Version } catch {}
+            $c.Lines['Pilote'] = @("$nvInstalled$(if ($isOld) { " (la $($nvLatest.Version) est sortie)" } else { ' (le plus récent)' })", $(if ($isOld) { $Colors.warn } else { '#E6E8EE' }))
+            if ($isOld) {
+                Add-Note $c 'warn' "Nouveau pilote NVIDIA disponible : $($nvLatest.Version)."
+                $c.Action = $nvLatest.Url; $c.ActionLabel = 'Télécharger le pilote'
+                Add-Finding $F 'warn' "Nouveau pilote NVIDIA disponible ($($nvLatest.Version))" "Tu as la version $nvInstalled. La dernière version « Game Ready » est la $($nvLatest.Version)." $w -Id "gpu-driver:$($g.Name)" -Fix (New-Fix `
+                    -Why 'Chaque pilote « Game Ready » apporte des optimisations pour les jeux récents et corrige des bugs (plantages, textures qui clignotent...).' `
+                    -Steps @('Ouvre l''application NVIDIA si tu l''as (onglet Pilotes) et clique sur Télécharger, ou clique sur « Page du pilote ».', 'Lance l''installation (installation rapide). L''écran peut clignoter, c''est normal.', 'Relance l''analyse d''OptiGame.') `
+                    -Open $nvLatest.Url -OpenLabel 'Page du pilote')
+            } else {
+                Add-Finding $F 'ok' "Pilote graphique à jour ($($g.Name))" "Tu as le dernier pilote NVIDIA « Game Ready » ($nvInstalled)." $w -Id "gpu-driver:$($g.Name)"
+            }
+        } elseif ($g.DriverDate) {
             $age = ((Get-Date) - $g.DriverDate).Days
             $c.Lines['Pilote'] = @("$($g.DriverVersion) du $($g.DriverDate.ToString('dd/MM/yyyy'))", $(if ($age -gt 180) { $Colors.warn } else { '#E6E8EE' }))
             if ($age -gt 180) {
