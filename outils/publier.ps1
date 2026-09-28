@@ -87,7 +87,10 @@ try {
 # 4. Mise à jour de la copie installée sur ce PC (celle du raccourci du bureau)
 foreach ($f in Get-ChildItem -LiteralPath $app -Recurse -File) {
     $dest = Join-Path $racine $f.FullName.Substring($app.Length + 1)
+    # Fichier identique : rien à copier (et il peut être en cours d'utilisation, comme PresentMon pendant une partie).
+    if ((Test-Path -LiteralPath $dest) -and (Get-FileHash -LiteralPath $dest).Hash -eq (Get-FileHash -LiteralPath $f.FullName).Hash) { continue }
     New-Item -ItemType Directory -Force -Path (Split-Path $dest -Parent) | Out-Null
-    Copy-Item -LiteralPath $f.FullName -Destination $dest -Force
+    try { Copy-Item -LiteralPath $f.FullName -Destination $dest -Force -ErrorAction Stop }
+    catch { Write-Host "Copie impossible (fichier utilisé ?) : $dest" -ForegroundColor Yellow }
 }
 "Version $Version publiée."
