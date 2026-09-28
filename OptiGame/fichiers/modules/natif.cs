@@ -738,8 +738,11 @@ public static class FrameMon
     static readonly List<double> all = new List<double>();
     static readonly Queue<double> last1 = new Queue<double>();
     static readonly Queue<double> last10 = new Queue<double>();
-    static double sum1, sum10;
-    static int ftIndex = -1;
+    static double sum1, sum10, sampleSum;
+    static int sampleCount;
+    static int ftIndex = -1, modeIndex = -1;
+    // Mode d'affichage vu par PresentMon (« Hardware: Legacy Flip » = vrai plein écran, rien ne peut s'afficher par dessus).
+    public static string LastMode = "";
     public static string LastError = "";
     // Vrai quand le jeu n'est pas au premier plan : ces images ne comptent pas (le jeu tourne au ralenti en fond).
     public static volatile bool Paused;
@@ -749,8 +752,9 @@ public static class FrameMon
 
     public static void Reset()
     {
-        lock (sync) { all.Clear(); last1.Clear(); last10.Clear(); sum1 = 0; sum10 = 0; ftIndex = -1; }
+        lock (sync) { all.Clear(); last1.Clear(); last10.Clear(); sum1 = 0; sum10 = 0; sampleSum = 0; sampleCount = 0; ftIndex = -1; modeIndex = -1; }
         LastError = "";
+        LastMode = "";
     }
 
     public static bool Start(string exe, int pid)
@@ -798,10 +802,12 @@ public static class FrameMon
                 for (int i = 0; i < cols.Length; i++)
                 {
                     var c = cols[i].Trim();
-                    if (c == "FrameTime" || c == "MsBetweenAppStart" || c == "msBetweenPresents" || c == "MsBetweenPresents") { ftIndex = i; break; }
+                    if (ftIndex < 0 && (c == "FrameTime" || c == "MsBetweenAppStart" || c == "msBetweenPresents" || c == "MsBetweenPresents")) ftIndex = i;
+                    if (c == "PresentMode") modeIndex = i;
                 }
                 return;
             }
+            if (modeIndex >= 0 && modeIndex < cols.Length) LastMode = cols[modeIndex];
             if (ftIndex >= cols.Length || Paused) return;
             double ft;
             if (!double.TryParse(cols[ftIndex], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out ft)) return;
@@ -811,6 +817,18 @@ public static class FrameMon
             while (sum1 > 1000 && last1.Count > 1) sum1 -= last1.Dequeue();
             last10.Enqueue(ft); sum10 += ft;
             while (sum10 > 10000 && last10.Count > 1) sum10 -= last10.Dequeue();
+            sampleSum += ft; sampleCount++;
+        }
+    }
+
+    // FPS moyen depuis le dernier appel (pour la courbe de la partie). -1 si aucune image entre temps.
+    public static double Sample()
+    {
+        lock (sync)
+        {
+            double r = sampleSum > 0 ? sampleCount * 1000.0 / sampleSum : -1;
+            sampleSum = 0; sampleCount = 0;
+            return r;
         }
     }
 

@@ -84,7 +84,7 @@ function Start-GameSession([string]$Game, $Proc) {
     }
     $script:GameSession = @{ Game = $Game; Pid = $Proc.Id; Closed = $closed; Start = Get-Date }
     Write-Log "Mode jeu: $Game lancé, applis fermées: $(($closed | ForEach-Object { $_.Name }) -join ', ')"
-    if ((Get-Setting 'FpsOverlay' $false) -and -not $script:FpsTarget) { Start-FpsTarget $Proc.Id $Game $Proc.ProcessName }
+    if ((Test-FpsMeasure) -and -not $script:FpsTarget) { Start-FpsTarget $Proc.Id $Game $Proc.ProcessName }
     Update-GameModeStatus
     if ($closed.Count) { Show-Notify 'Mode jeu activé' "$Game : $(($closed | ForEach-Object { $_.Name }) -join ', ') fermé$(if ($closed.Count -gt 1) {'s'}) pendant que tu joues." }
 }
@@ -132,33 +132,21 @@ function Build-GameModeCard {
     $panel.Children.Clear()
     $card = New-Card
     $sp = New-Object System.Windows.Controls.StackPanel
-    $head = New-Grid @('*', 'Auto')
-    $left = New-Object System.Windows.Controls.StackPanel
-    [void]$left.Children.Add((New-Text 'Ferme les applis inutiles quand tu lances un jeu' 14.5 '#FFFFFF' -Semi))
-    $d = New-Text 'Quand un jeu Steam ou Epic démarre, OptiGame ferme les applis cochées ci dessous, puis les relance quand tu quittes le jeu. Ça marche tant qu''OptiGame est ouvert (tu peux le réduire).' 12.5 '#9AA3B2'
-    $d.Margin = New-Thickness 0 4 0 0
-    [void]$left.Children.Add($d)
-    $script:GameModeStatus = New-Text '' 12.5 '#5B6475' -Semi
-    $script:GameModeStatus.Margin = New-Thickness 0 8 0 0
-    [void]$left.Children.Add($script:GameModeStatus)
-    Add-ToGrid $head $left 0
-    $sw = New-Object System.Windows.Controls.CheckBox
-    $sw.Style = $Window.FindResource('Switch')
-    $sw.IsChecked = [bool](Get-Setting 'GameMode' $false)
-    $sw.VerticalAlignment = 'Top'
-    $sw.Margin = New-Thickness 16 2 0 0
-    $sw.Add_Click({
+    $row = New-SwitchRow 'Fermer des applis pendant que je joue' 'Quand un jeu Steam ou Epic démarre, les applis cochées sont fermées, puis relancées quand tu quittes le jeu.' ([bool](Get-Setting 'GameMode' $false)) {
         param($s, $e)
         $on = [bool]$s.IsChecked
         Set-Setting 'GameMode' $on
         Update-GameWatch
         Update-GameModeStatus
         Set-Status $(if ($on) { 'Mode jeu automatique activé.' } else { 'Mode jeu automatique désactivé.' })
-    })
-    Add-ToGrid $head $sw 1
-    [void]$sp.Children.Add($head)
+    }
+    $row.Margin = New-Thickness 0
+    [void]$sp.Children.Add($row)
+    $script:GameModeStatus = New-Text '' 12.5 '#5B6475' -Semi
+    $script:GameModeStatus.Margin = New-Thickness 0 6 0 0
+    [void]$sp.Children.Add($script:GameModeStatus)
     $wrap = New-Object System.Windows.Controls.WrapPanel
-    $wrap.Margin = New-Thickness 0 12 0 0
+    $wrap.Margin = New-Thickness 0 14 0 0
     $sel = Get-GameModeSelection
     foreach ($a in $GameModeApps) {
         $cb = New-Object System.Windows.Controls.CheckBox
@@ -176,11 +164,10 @@ function Build-GameModeCard {
         [void]$wrap.Children.Add($cb)
     }
     [void]$sp.Children.Add($wrap)
-    $n = New-Text 'Ne coche pas le launcher d''un jeu auquel tu joues (Epic, EA, Ubisoft) : certains jeux en ont besoin pour fonctionner.' 12 '#5B6475'
+    $n = New-Text 'Ne coche pas le launcher du jeu auquel tu joues (Epic, EA, Ubisoft). Marche tant qu''OptiGame est ouvert, même réduit.' 12 '#5B6475'
     $n.Margin = New-Thickness 0 4 0 0
     [void]$sp.Children.Add($n)
     $card.Child = $sp
-    $card.Margin = New-Thickness 0 0 0 10
     [void]$panel.Children.Add($card)
     Update-GameModeStatus
 }
@@ -225,7 +212,7 @@ function Build-GameProfiles {
     if ($null -eq $script:Games) { [void]$panel.Children.Add((New-Text 'Recherche des jeux installés...' 13 '#5B6475')); return }
     $games = @($script:Games | Where-Object { (Get-GameExeNames $_).Count } | Sort-Object { $_.Name })
     if (-not $games.Count) { [void]$panel.Children.Add((New-Text 'Aucun jeu Steam ou Epic trouvé sur ce PC.' 13 '#5B6475')); return }
-    $intro = New-Text 'Réglages appliqués par Windows à chaque lancement du jeu, même quand OptiGame est fermé. « Priorité haute » fait passer le jeu avant les autres programmes quand le processeur est très occupé (Discord, navigateur, enregistrement...).' 12.5 '#9AA3B2'
+    $intro = New-Text 'Appliqués à chaque lancement du jeu, même OptiGame fermé. « Priorité haute » : le jeu passe avant les autres programmes.' 12.5 '#9AA3B2'
     $intro.Margin = New-Thickness 0 0 0 10
     [void]$panel.Children.Add($intro)
     $gpuNames = @($script:AnalysisData.GPUs | ForEach-Object { [string]$_.Name } | Where-Object { $_ -notmatch 'Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta|Microsoft Basic' })
@@ -292,13 +279,17 @@ function Test-TempAlert {
 }
 
 # ---------------------------------------------------------------------------
-# Compteur de FPS (PresentMon, outil gratuit d'Intel) : overlay par dessus le jeu et avant / après
+# Mesure des FPS (PresentMon, outil gratuit d'Intel) : stats de chaque partie et overlay optionnel
 # ---------------------------------------------------------------------------
 $PresentMonExe = Join-Path $AppDir 'outils-tiers\PresentMon.exe'
 $FpsFile = Join-Path $DataDir 'fps.json'
 $FpsHotkeyId = 7001
 
-function Test-GameWatchNeeded { ([bool](Get-Setting 'GameMode' $false)) -or ([bool](Get-Setting 'FpsOverlay' $false)) }
+# « Mesurer mes FPS » (les versions 1.0.14 et 1.0.15 n'avaient qu'un réglage, celui de l'overlay).
+function Test-FpsMeasure { [bool](Get-Setting 'FpsMeasure' ([bool](Get-Setting 'FpsOverlay' $false))) }
+function Test-FpsOverlay { [bool](Get-Setting 'FpsOverlay' $false) }
+
+function Test-GameWatchNeeded { ([bool](Get-Setting 'GameMode' $false)) -or (Test-FpsMeasure) }
 
 function Update-GameWatch {
     if (Test-GameWatchNeeded) { Start-GameWatch } else { Stop-GameWatch }
@@ -311,6 +302,11 @@ function Format-PlayTime([double]$Seconds) {
     "$([int]($m / 60)) h $('{0:D2}' -f ($m % 60))"
 }
 
+function Get-FpsColor([double]$Fps) { if ($Fps -ge 60) { $Colors.ok } elseif ($Fps -ge 30) { $Colors.warn } else { $Colors.bad } }
+
+# ---------------------------------------------------------------------------
+# Overlay (visible en fenêtré ou en plein écran fenêtré)
+# ---------------------------------------------------------------------------
 function Show-FpsOverlay {
     if ($script:Overlay) { return }
     $w = New-Object System.Windows.Window
@@ -337,9 +333,6 @@ function Show-FpsOverlay {
     $sub = New-Text 'Mesure en cours...' 11.5 '#C9CED8'
     $sub.TextWrapping = 'NoWrap'
     [void]$sp.Children.Add($sub)
-    $brand = New-Text 'OptiGame   Ctrl+Maj+F pour arrêter' 9.5 '#5B6475'
-    $brand.TextWrapping = 'NoWrap'; $brand.Margin = New-Thickness 0 2 0 0
-    [void]$sp.Children.Add($brand)
     $b.Child = $sp
     $w.Content = $b
     $w.Add_SourceInitialized({ param($s, $e) try { [OGNative]::MakeOverlay((New-Object System.Windows.Interop.WindowInteropHelper $s).Handle) } catch {} })
@@ -366,19 +359,22 @@ function Set-OverlayPosition([int]$ProcId) {
     $o.Win.Top = ($scr.Bounds.Y + 16) / $k
 }
 
+# ---------------------------------------------------------------------------
+# Mesure d'une partie
+# ---------------------------------------------------------------------------
 function Start-FpsTarget([int]$ProcId, [string]$Name, [string]$Exe) {
-    if (-not (Test-Path -LiteralPath $PresentMonExe)) { Set-Status 'Compteur de FPS indisponible : PresentMon est absent du dossier de l''app.'; return }
+    if (-not (Test-Path -LiteralPath $PresentMonExe)) { Set-Status 'Mesure des FPS indisponible : PresentMon est absent du dossier de l''app.'; return }
     if ($script:FpsTarget) { Stop-FpsTarget }
-    if (-not [FrameMon]::Start($PresentMonExe, $ProcId)) { Write-Log "Compteur de FPS: $([FrameMon]::LastError)"; return }
-    $script:FpsTarget = @{ Pid = $ProcId; Name = $Name; Key = $Exe.ToLower(); Start = Get-Date }
-    Show-FpsOverlay
+    if (-not [FrameMon]::Start($PresentMonExe, $ProcId)) { Write-Log "Mesure des FPS: $([FrameMon]::LastError)"; return }
+    $script:FpsTarget = @{ Pid = $ProcId; Name = $Name; Key = $Exe.ToLower(); Start = Get-Date; Series = (New-Object System.Collections.ArrayList); Ticks = 0; Exclusive = $false; Warned = $false }
+    if (Test-FpsOverlay) { Show-FpsOverlay }
     if (-not $script:FpsTimer) {
         $script:FpsTimer = New-Object System.Windows.Threading.DispatcherTimer
         $script:FpsTimer.Interval = [TimeSpan]::FromMilliseconds(500)
-        $script:FpsTimer.Add_Tick({ try { Update-FpsOverlay } catch { Write-Log "Compteur de FPS: $_" } })
+        $script:FpsTimer.Add_Tick({ try { Update-FpsTarget } catch { Write-Log "Mesure des FPS: $_" } })
     }
     $script:FpsTimer.Start()
-    Write-Log "Compteur de FPS: mesure de $Name"
+    Write-Log "Mesure des FPS: $Name"
 }
 
 function Stop-FpsTarget {
@@ -391,45 +387,59 @@ function Stop-FpsTarget {
     $err = [FrameMon]::LastError
     [FrameMon]::Stop()
     [FrameMon]::Paused = $false
-    if ($s[3] -eq 0) { Write-Log "Compteur de FPS: aucune image reçue pour $($t.Name). $err"; return }
+    if ($s[3] -eq 0) { Write-Log "Mesure des FPS: aucune image reçue pour $($t.Name). $err"; return }
     if ($s[4] -lt 30 -or $s[3] -lt 300) { return }
     Save-FpsSession $t $s
-    Show-Notify "Partie terminée : $($t.Name)" ('{0:N0} FPS en moyenne, 1 % bas {1:N0} ({2} mesurées)' -f $s[0], $s[1], (Format-PlayTime $s[4]))
+    Show-Notify "Partie terminée : $($t.Name)" ('{0} de jeu, {1:N0} FPS en moyenne (1 % bas {2:N0}). Détails dans OptiGame > Optimisation gaming > Mes parties.' -f (Format-PlayTime $s[4]), $s[0], $s[1])
     Build-FpsPanel
 }
 
-function Update-FpsOverlay {
+# Toutes les 500 ms : jeu au premier plan ou non, overlay, un point de courbe toutes les 5 s.
+function Update-FpsTarget {
     $t = $script:FpsTarget
     if (-not $t) { return }
     if (-not (Get-Process -Id $t.Pid -ErrorAction SilentlyContinue)) { Stop-FpsTarget; return }
     $front = [OGNative]::GetForegroundPid() -eq $t.Pid
     [FrameMon]::Paused = -not $front
+    $t.Ticks++
+    if ($t.Ticks % 10 -eq 0) {
+        $v = [FrameMon]::Sample()
+        if ($v -gt 0) { [void]$t.Series.Add([math]::Round($v, 1)) }
+    }
+    if ([FrameMon]::LastMode -match 'Legacy') { $t.Exclusive = $true }
     $o = $script:Overlay
     if (-not $o) { return }
+    if ($t.Exclusive -and -not $t.Warned) {
+        $t.Warned = $true
+        Write-Log "Mesure des FPS: $($t.Name) est en plein écran exclusif, l'overlay ne peut pas s'afficher."
+        Set-Status "$($t.Name) est en plein écran : le compteur ne peut pas s'afficher par dessus, mais la mesure continue."
+    }
     if (-not $front) { if ($o.Win.IsVisible) { $o.Win.Hide() }; return }
     if (-not $o.Win.IsVisible) { Set-OverlayPosition $t.Pid; $o.Win.Show() }
     $l = [FrameMon]::Live()
     if ([FrameMon]::Frames -eq 0) {
-        if (((Get-Date) - $t.Start).TotalSeconds -gt 8) {
-            $o.Fps.Text = '?'
-            $o.Sub.Text = 'Aucune image reçue : mets le jeu en « plein écran fenêtré ».'
-        }
+        if (((Get-Date) - $t.Start).TotalSeconds -gt 8) { $o.Fps.Text = '?'; $o.Sub.Text = 'Aucune image reçue pour le moment.' }
         return
     }
     $o.Fps.Text = '{0:N0}' -f $l[0]
-    $o.Fps.Foreground = Get-Brush $(if ($l[0] -ge 60) { $Colors.ok } elseif ($l[0] -ge 30) { $Colors.warn } else { $Colors.bad })
+    $o.Fps.Foreground = Get-Brush (Get-FpsColor $l[0])
     $o.Sub.Text = '1 % bas {0:N0}    moyenne {1:N0}' -f $l[1], $l[2]
     $script:OverlayTicks++
     if ($script:OverlayTicks % 6 -eq 0) { $o.Win.Topmost = $false; $o.Win.Topmost = $true }
 }
 
-# Ctrl+Maj+F : lance ou arrête le compteur sur le jeu au premier plan, quel que soit son launcher.
+# Ctrl+Maj+F : lance ou arrête la mesure sur le jeu au premier plan, quel que soit son launcher.
 function Switch-FpsManual {
-    if (-not (Get-Setting 'FpsOverlay' $false)) {
-        Show-Notify 'Compteur de FPS désactivé' 'Active le dans OptiGame, page Optimisation gaming.'
+    if (-not (Test-FpsMeasure)) {
+        Show-Notify 'Mesure des FPS désactivée' 'Active la dans OptiGame, page Optimisation gaming, onglet Mes parties.'
         return
     }
-    if ($script:FpsTarget) { Stop-FpsTarget; return }
+    if ($script:FpsTarget) {
+        $n = $script:FpsTarget.Name
+        Stop-FpsTarget
+        Set-Status "Mesure des FPS arrêtée ($n)."
+        return
+    }
     $fg = [OGNative]::GetForegroundPid()
     if ($fg -eq 0 -or $fg -eq $PID) { return }
     $p = Get-Process -Id $fg -ErrorAction SilentlyContinue
@@ -437,6 +447,7 @@ function Switch-FpsManual {
     $known = if ($script:GameIndex) { $script:GameIndex[$p.ProcessName.ToLower()] } else { $null }
     $name = if ($known) { $known.Game } elseif ($p.MainWindowTitle) { $p.MainWindowTitle } else { $p.ProcessName }
     Start-FpsTarget $fg $name $p.ProcessName
+    Show-Notify 'Mesure des FPS lancée' "$name : appuie de nouveau sur Ctrl + Maj + F pour arrêter."
 }
 
 function Register-FpsHotkey {
@@ -461,18 +472,36 @@ function Unregister-FpsHotkey {
 }
 
 # ---------------------------------------------------------------------------
-# Parties mesurées et comparaison avant / après les derniers réglages
+# Parties enregistrées
 # ---------------------------------------------------------------------------
 function Get-FpsSessions {
     if (-not (Test-Path -LiteralPath $FpsFile)) { return @() }
-    try { $a = ConvertFrom-Json (Get-Content -LiteralPath $FpsFile -Raw -Encoding UTF8); @(@($a) | Where-Object { $_ }) } catch { @() }
+    try {
+        $a = ConvertFrom-Json (Get-Content -LiteralPath $FpsFile -Raw -Encoding UTF8)
+        @(@($a) | Where-Object { $_ } | ForEach-Object { if (-not $_.Id) { $_ | Add-Member -NotePropertyName Id -NotePropertyValue ([string]$_.Date) -Force }; $_ })
+    } catch { @() }
+}
+
+# Courbe ramenée à 160 points au plus (largeur du graphique).
+function Compress-Series($Values) {
+    $v = @($Values)
+    if ($v.Count -le 160) { return $v }
+    $out = @()
+    for ($i = 0; $i -lt 160; $i++) {
+        $a = [int][math]::Floor($i * $v.Count / 160); $b = [int][math]::Floor(($i + 1) * $v.Count / 160) - 1
+        $out += [math]::Round((($v[$a..$b] | Measure-Object -Average).Average), 1)
+    }
+    $out
 }
 
 function Save-FpsSession($T, $S) {
-    $new = [pscustomobject]@{ Date = (Get-Date).ToString('s'); Game = $T.Name; Key = $T.Key
-        Avg = [math]::Round($S[0], 1); Low1 = [math]::Round($S[1], 1); Low01 = [math]::Round($S[2], 1); Seconds = [int]$S[4]; Frames = [int]$S[3] }
-    $list = @(@(Get-FpsSessions) + $new | Select-Object -Last 300)
-    try { ConvertTo-Json -InputObject $list -Depth 3 | Set-Content -LiteralPath $FpsFile -Encoding UTF8 } catch { Write-Log "Écriture des FPS impossible: $_" }
+    $new = [pscustomobject]@{
+        Id = [guid]::NewGuid().ToString('N').Substring(0, 10); Date = $T.Start.ToString('s'); Game = $T.Name; Key = $T.Key
+        Avg = [math]::Round($S[0], 1); Low1 = [math]::Round($S[1], 1); Low01 = [math]::Round($S[2], 1); Seconds = [int]$S[4]; Frames = [int]$S[3]
+        Exclusive = [bool]$T.Exclusive; Series = @(Compress-Series $T.Series)
+    }
+    $list = @(@(Get-FpsSessions) + $new | Select-Object -Last 200)
+    try { ConvertTo-Json -InputObject $list -Depth 4 -Compress | Set-Content -LiteralPath $FpsFile -Encoding UTF8 } catch { Write-Log "Écriture des FPS impossible: $_" }
 }
 
 # Date du dernier changement fait par OptiGame (non annulé).
@@ -494,96 +523,183 @@ function Measure-FpsGroup($Sessions) {
     @(($avg / $sec), ($low / $sec), $sec)
 }
 
+function Get-FpsVerdict($S) {
+    $ratio = if ($S.Avg -gt 0) { $S.Low1 / $S.Avg } else { 0 }
+    if ($S.Avg -lt 30) { return @('bad', 'Moins de 30 FPS en moyenne : le jeu saccade. Baisse la qualité graphique ou la résolution.') }
+    if ($ratio -lt 0.5) { return @('warn', 'Moyenne correcte, mais des chutes fréquentes : ce sont elles que tu ressens comme des saccades. Souvent des programmes en arrière plan, un disque plein ou une surchauffe.') }
+    if ($S.Avg -lt 60) { return @('warn', 'Jouable, mais en dessous de 60 FPS la fluidité se ressent dans les jeux rapides.') }
+    if ($ratio -lt 0.7) { return @('ok', 'Bonne moyenne, avec quelques petites chutes par moments.') }
+    @('ok', 'Fluide et régulier : très bonne partie.')
+}
+
+# Bloc « avant / après les derniers réglages » pour un jeu (ou $null s'il manque des parties).
+function New-FpsCompare($Sessions) {
+    $lc = Get-LastChangeDate
+    if (-not $lc) { return $null }
+    $ss = @($Sessions | Sort-Object { [datetime]$_.Date })
+    $before = @($ss | Where-Object { [datetime]$_.Date -lt $lc } | Select-Object -Last 3)
+    $after = @($ss | Where-Object { [datetime]$_.Date -ge $lc } | Select-Object -Last 3)
+    if (-not $before.Count -or -not $after.Count) { return $null }
+    $b = Measure-FpsGroup $before; $a = Measure-FpsGroup $after
+    $pct = if ($b[0] -gt 0) { 100 * ($a[0] - $b[0]) / $b[0] } else { 0 }
+    $row = New-Grid @('*', '*', 'Auto')
+    foreach ($x in @(@(0, "Avant le $($lc.ToString('dd/MM'))", $b, $before.Count), @(1, 'Après', $a, $after.Count))) {
+        $sp = New-Object System.Windows.Controls.StackPanel
+        [void]$sp.Children.Add((New-Text $x[1] 11.5 '#9AA3B2'))
+        [void]$sp.Children.Add((New-Text ('{0:N0} FPS' -f $x[2][0]) 18 '#FFFFFF' -Bold))
+        [void]$sp.Children.Add((New-Text ('1 % bas {0:N0}, {1} partie{2}' -f $x[2][1], $x[3], $(if ($x[3] -gt 1) { 's' })) 11.5 '#9AA3B2'))
+        Add-ToGrid $row $sp $x[0]
+    }
+    $col = if ([math]::Abs($pct) -lt 3) { '#9AA3B2' } elseif ($pct -gt 0) { $Colors.ok } else { $Colors.warn }
+    $delta = New-Text $(if ([math]::Abs($pct) -lt 3) { 'Pareil' } else { '{0}{1:N0} %' -f $(if ($pct -gt 0) { '+' } else { '' }), $pct }) 20 $col -Bold
+    $delta.VerticalAlignment = 'Center'
+    Add-ToGrid $row $delta 2
+    $row
+}
+
+# Fiche d'une partie : jauges, courbe, verdict, comparaison.
+function Show-FpsSession([string]$Id) {
+    if ($script:TestRunning) { return }
+    $all = @(Get-FpsSessions)
+    $s = @($all | Where-Object { $_.Id -eq $Id })[0]
+    if (-not $s) { return }
+    $d = [datetime]$s.Date
+    Show-TestPanel @{ Tag = 'FPS'; Title = $s.Game; Sub = "Partie du $($d.ToString('dd/MM')) à $($d.ToString('HH:mm')), $(Format-PlayTime $s.Seconds) mesurées" }
+    Set-TestButtons 'done'
+    $ui.BtnTestAgain.Visibility = 'Collapsed'
+    $ui.TestProgress.Value = 100; $ui.TestPct.Text = ''
+    $v = Get-FpsVerdict $s
+    Set-TestState $v[0] $(if ($v[0] -eq 'ok') { 'Bonne partie' } elseif ($v[0] -eq 'warn') { 'À surveiller' } else { 'Saccades' })
+    $body = $ui.TestBody
+    [void]$body.Children.Add((New-SectionTitle 'RÉSULTAT'))
+    $max = [math]::Max(60.0, [math]::Ceiling($s.Avg * 1.25 / 30) * 30)
+    [void]$body.Children.Add((New-GaugeRow @(
+        (New-Gauge 'FPS moyen' $s.Avg $max '{0:N0}' 'FPS' (Get-FpsColor $s.Avg) 0),
+        (New-Gauge '1 % bas' $s.Low1 $max '{0:N0}' 'FPS' (Get-FpsColor $s.Low1) 150),
+        (New-Gauge '0,1 % bas' $s.Low01 $max '{0:N0}' 'FPS' (Get-FpsColor $s.Low01) 300)
+    )))
+    [void]$body.Children.Add((New-Verdict $v[0] $v[1]))
+    $series = @($s.Series | Where-Object { $null -ne $_ })
+    if ($series.Count -ge 2) {
+        [void]$body.Children.Add((New-SectionTitle 'FPS PENDANT LA PARTIE'))
+        $ch = New-LiveChart $Colors.info 'FPS' '{0:N0}'
+        $ch.RefValue = $s.Avg; $ch.RefText.Text = ('moyenne {0:N0}' -f $s.Avg)
+        # Étirée sur toute la largeur du graphique (160 points), même pour une partie courte.
+        for ($k = 0; $k -lt 160; $k++) { [void]$ch.Values.Add([double]$series[[int][math]::Floor($k * $series.Count / 160)]) }
+        [void]$body.Children.Add($ch.El)
+        Update-Chart $ch
+    }
+    $cmp = New-FpsCompare @($all | Where-Object { $_.Key -eq $s.Key })
+    if ($cmp) {
+        [void]$body.Children.Add((New-SectionTitle 'AVANT / APRÈS TES DERNIERS RÉGLAGES'))
+        [void]$body.Children.Add($cmp)
+    }
+    [void]$body.Children.Add((New-Details @(
+        @('Durée mesurée', (Format-PlayTime $s.Seconds)),
+        @('Images affichées', ('{0:N0}' -f $s.Frames)),
+        @('Mode d''affichage', $(if ($s.Exclusive) { 'Plein écran (le compteur ne peut pas s''afficher par dessus)' } else { 'Fenêtré ou plein écran fenêtré' })),
+        @('Mesure', 'PresentMon (Intel). Les moments où le jeu n''était pas au premier plan ne comptent pas.')
+    )))
+}
+
+function New-FpsRow($S) {
+    $card = New-Card
+    $card.Padding = New-Thickness 16 10 16 10
+    $card.Margin = New-Thickness 0 0 0 6
+    $card.Cursor = [System.Windows.Input.Cursors]::Hand
+    $row = New-Grid @('*', 'Auto', 'Auto')
+    $left = New-Object System.Windows.Controls.StackPanel
+    $left.VerticalAlignment = 'Center'
+    $nm = New-Text $S.Game 14 '#FFFFFF' -Semi
+    $nm.TextTrimming = 'CharacterEllipsis'; $nm.TextWrapping = 'NoWrap'
+    [void]$left.Children.Add($nm)
+    $d = [datetime]$S.Date
+    [void]$left.Children.Add((New-Text "$($d.ToString('dd/MM')) à $($d.ToString('HH:mm')), $(Format-PlayTime $S.Seconds)" 11.5 '#9AA3B2'))
+    Add-ToGrid $row $left 0
+    $mid = New-Object System.Windows.Controls.StackPanel
+    $mid.HorizontalAlignment = 'Right'; $mid.VerticalAlignment = 'Center'; $mid.Margin = New-Thickness 12 0 12 0
+    $big = New-Text ('{0:N0} FPS' -f $S.Avg) 16 (Get-FpsColor $S.Avg) -Bold
+    $big.HorizontalAlignment = 'Right'
+    [void]$mid.Children.Add($big)
+    $sm = New-Text ('1 % bas {0:N0}' -f $S.Low1) 11.5 '#9AA3B2'
+    $sm.HorizontalAlignment = 'Right'
+    [void]$mid.Children.Add($sm)
+    Add-ToGrid $row $mid 1
+    $chev = New-Text '›' 22 '#5B6475'
+    $chev.VerticalAlignment = 'Center'
+    Add-ToGrid $row $chev 2
+    $card.Child = $row
+    $card.Tag = $S.Id
+    $card.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush '#1C212B' })
+    $card.Add_MouseLeave({ param($s, $e) $s.Background = Get-Brush '#181C24' })
+    $card.Add_MouseLeftButtonUp({ param($s, $e) Invoke-Safe { Show-FpsSession $s.Tag } })
+    $card
+}
+
+# Une ligne « interrupteur + titre + une phrase ».
+function New-SwitchRow([string]$Title, [string]$Text, [bool]$On, [scriptblock]$OnClick) {
+    $row = New-Grid @('*', 'Auto')
+    $row.Margin = New-Thickness 0 0 0 10
+    $sp = New-Object System.Windows.Controls.StackPanel
+    [void]$sp.Children.Add((New-Text $Title 14 '#FFFFFF' -Semi))
+    $t = New-Text $Text 12 '#9AA3B2'
+    $t.Margin = New-Thickness 0 2 0 0
+    [void]$sp.Children.Add($t)
+    Add-ToGrid $row $sp 0
+    $sw = New-Object System.Windows.Controls.CheckBox
+    $sw.Style = $Window.FindResource('Switch')
+    $sw.IsChecked = $On
+    $sw.VerticalAlignment = 'Center'
+    $sw.Margin = New-Thickness 16 0 0 0
+    $sw.Add_Click($OnClick)
+    Add-ToGrid $row $sw 1
+    $row
+}
+
+# Onglet « Mes parties »
 function Build-FpsPanel {
     $panel = $ui.FpsPanel
     if (-not $panel) { return }
     $panel.Children.Clear()
     $card = New-Card
-    $card.Margin = New-Thickness 0 0 0 10
+    $card.Margin = New-Thickness 0 0 0 16
     $sp = New-Object System.Windows.Controls.StackPanel
-    $head = New-Grid @('*', 'Auto')
-    $left = New-Object System.Windows.Controls.StackPanel
-    [void]$left.Children.Add((New-Text 'Compteur de FPS par dessus le jeu' 14.5 '#FFFFFF' -Semi))
-    $d = New-Text 'Affiche tes FPS en haut à gauche pendant que tu joues (sans gêner le jeu) et enregistre chaque partie pour comparer avant / après tes réglages. Il se lance tout seul avec les jeux Steam et Epic. Pour un autre jeu, appuie sur Ctrl + Maj + F pendant que tu joues.' 12.5 '#9AA3B2'
-    $d.Margin = New-Thickness 0 4 0 0
-    [void]$left.Children.Add($d)
-    $n = New-Text 'Si le compteur n''apparaît pas, mets le jeu en « plein écran fenêtré » (ou « sans bordure ») dans ses options graphiques. Mesure faite par PresentMon, l''outil gratuit d''Intel.' 12 '#5B6475'
-    $n.Margin = New-Thickness 0 6 0 0
-    [void]$left.Children.Add($n)
-    if (-not (Test-Path -LiteralPath $PresentMonExe)) {
-        [void]$left.Children.Add((New-Text 'PresentMon est absent du dossier de l''app : réinstalle OptiGame.' 12.5 $Colors.warn -Semi))
-    }
-    Add-ToGrid $head $left 0
-    $sw = New-Object System.Windows.Controls.CheckBox
-    $sw.Style = $Window.FindResource('Switch')
-    $sw.IsChecked = [bool](Get-Setting 'FpsOverlay' $false)
-    $sw.VerticalAlignment = 'Top'
-    $sw.Margin = New-Thickness 16 2 0 0
-    $sw.Add_Click({
+    [void]$sp.Children.Add((New-SwitchRow 'Mesurer mes FPS quand je joue' 'Automatique pour les jeux Steam et Epic. Pour un autre jeu : Ctrl + Maj + F pendant la partie.' (Test-FpsMeasure) {
         param($s, $e)
         $on = [bool]$s.IsChecked
-        Set-Setting 'FpsOverlay' $on
+        Set-Setting 'FpsMeasure' $on
         if (-not $on -and $script:FpsTarget) { Stop-FpsTarget }
         Update-GameWatch
-        Set-Status $(if ($on) { 'Compteur de FPS activé : lance un jeu (ou Ctrl+Maj+F dans le jeu).' } else { 'Compteur de FPS désactivé.' })
-    })
-    Add-ToGrid $head $sw 1
-    [void]$sp.Children.Add($head)
+        Set-Status $(if ($on) { 'Mesure des FPS activée : lance un jeu.' } else { 'Mesure des FPS désactivée.' })
+    }))
+    $last = New-SwitchRow 'Afficher le compteur pendant la partie' 'En haut à gauche. Visible en fenêtré ou en plein écran fenêtré, pas en plein écran.' (Test-FpsOverlay) {
+        param($s, $e)
+        Set-Setting 'FpsOverlay' ([bool]$s.IsChecked)
+        if (-not $s.IsChecked) { Hide-FpsOverlay } elseif ($script:FpsTarget) { Show-FpsOverlay }
+    }
+    $last.Margin = New-Thickness 0
+    [void]$sp.Children.Add($last)
+    if (-not (Test-Path -LiteralPath $PresentMonExe)) { [void]$sp.Children.Add((New-Text 'PresentMon est absent du dossier de l''app : réinstalle OptiGame.' 12.5 $Colors.warn -Semi)) }
     $card.Child = $sp
     [void]$panel.Children.Add($card)
 
     $all = @(Get-FpsSessions)
     if (-not $all.Count) {
-        [void]$panel.Children.Add((New-Text 'Aucune partie mesurée pour l''instant. Active le compteur et joue au moins 30 secondes.' 13 '#5B6475'))
+        $e = New-Text 'Aucune partie mesurée pour l''instant. Joue au moins 30 secondes : tes FPS moyens, tes chutes et la courbe de la partie apparaîtront ici.' 13 '#5B6475'
+        [void]$panel.Children.Add($e)
         return
     }
-    $lc = Get-LastChangeDate
-    $groups = @($all | Group-Object Key | Sort-Object { ($_.Group | ForEach-Object { [datetime]$_.Date } | Measure-Object -Maximum).Maximum } -Descending | Select-Object -First 6)
-    foreach ($g in $groups) {
-        $ss = @($g.Group | Sort-Object { [datetime]$_.Date })
-        $last = $ss[-1]
-        $c2 = New-Card
-        $c2.Padding = New-Thickness 16 12 16 12
-        $c2.Margin = New-Thickness 0 0 0 6
-        $st = New-Object System.Windows.Controls.StackPanel
-        $title = New-Text "$($last.Game)" 14 '#FFFFFF' -Semi
-        $title.TextTrimming = 'CharacterEllipsis'; $title.TextWrapping = 'NoWrap'
-        [void]$st.Children.Add($title)
-        $before = if ($lc) { @($ss | Where-Object { [datetime]$_.Date -lt $lc } | Select-Object -Last 3) } else { @() }
-        $after = if ($lc) { @($ss | Where-Object { [datetime]$_.Date -ge $lc } | Select-Object -Last 3) } else { @() }
-        if ($before.Count -and $after.Count) {
-            $b = Measure-FpsGroup $before; $a = Measure-FpsGroup $after
-            $pct = if ($b[0] -gt 0) { 100 * ($a[0] - $b[0]) / $b[0] } else { 0 }
-            $row = New-Grid @('*', '*', 'Auto')
-            $row.Margin = New-Thickness 0 8 0 0
-            $bx = New-Object System.Windows.Controls.StackPanel
-            [void]$bx.Children.Add((New-Text "Avant tes réglages du $($lc.ToString('dd/MM'))" 11.5 '#9AA3B2'))
-            [void]$bx.Children.Add((New-Text ('{0:N0} FPS' -f $b[0]) 18 '#FFFFFF' -Bold))
-            [void]$bx.Children.Add((New-Text ('1 % bas {0:N0}   ({1} parties, {2})' -f $b[1], $before.Count, (Format-PlayTime $b[2])) 11.5 '#9AA3B2'))
-            Add-ToGrid $row $bx 0
-            $ax = New-Object System.Windows.Controls.StackPanel
-            [void]$ax.Children.Add((New-Text 'Après' 11.5 '#9AA3B2'))
-            [void]$ax.Children.Add((New-Text ('{0:N0} FPS' -f $a[0]) 18 '#FFFFFF' -Bold))
-            [void]$ax.Children.Add((New-Text ('1 % bas {0:N0}   ({1} parties, {2})' -f $a[1], $after.Count, (Format-PlayTime $a[2])) 11.5 '#9AA3B2'))
-            Add-ToGrid $row $ax 1
-            $col = if ([math]::Abs($pct) -lt 3) { '#9AA3B2' } elseif ($pct -gt 0) { $Colors.ok } else { $Colors.warn }
-            $delta = New-Text $(if ([math]::Abs($pct) -lt 3) { 'Pareil' } else { '{0}{1:N0} %' -f $(if ($pct -gt 0) { '+' } else { '' }), $pct }) 20 $col -Bold
-            $delta.VerticalAlignment = 'Center'
-            Add-ToGrid $row $delta 2
-            [void]$st.Children.Add($row)
-        } else {
-            $l = New-Text ('Dernière partie ({0}, {1}) : {2:N0} FPS en moyenne, 1 % bas {3:N0}' -f ([datetime]$last.Date).ToString('dd/MM à HH:mm'), (Format-PlayTime $last.Seconds), $last.Avg, $last.Low1) 12.5 '#E6E8EE'
-            $l.Margin = New-Thickness 0 4 0 0
-            [void]$st.Children.Add($l)
-            $hint = if (-not $lc) { 'Fais une optimisation dans OptiGame puis rejoue : l''app comparera avant / après.' }
-                    elseif (-not $after.Count) { "Rejoue pour voir l'effet de tes réglages du $($lc.ToString('dd/MM'))." }
-                    else { 'Pas encore de partie mesurée avant tes derniers réglages : la comparaison arrivera au prochain changement.' }
-            [void]$st.Children.Add((New-Text $hint 11.5 '#5B6475'))
-        }
-        $c2.Child = $st
-        [void]$panel.Children.Add($c2)
+    $recent = @($all | Sort-Object { [datetime]$_.Date } -Descending)
+    $cmp = New-FpsCompare @($all | Where-Object { $_.Key -eq $recent[0].Key })
+    if ($cmp) {
+        [void]$panel.Children.Add((New-Text "$($recent[0].Game) : avant / après tes derniers réglages" 13 '#9AA3B2' -Semi))
+        $cc = New-Card
+        $cc.Margin = New-Thickness 0 6 0 16
+        $cc.Child = $cmp
+        [void]$panel.Children.Add($cc)
     }
-    $foot = New-Text 'Les FPS changent selon la scène (effets, nombre de joueurs, carte). La comparaison fait la moyenne de tes 3 dernières parties de chaque côté : plus tu joues, plus elle est fiable.' 11.5 '#5B6475'
-    $foot.Margin = New-Thickness 0 4 0 0
-    [void]$panel.Children.Add($foot)
+    $h = New-Text 'Dernières parties (clique pour le détail)' 13 '#9AA3B2' -Semi
+    $h.Margin = New-Thickness 0 0 0 6
+    [void]$panel.Children.Add($h)
+    foreach ($s in @($recent | Select-Object -First 12)) { [void]$panel.Children.Add((New-FpsRow $s)) }
 }

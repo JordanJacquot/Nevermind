@@ -92,45 +92,102 @@ function Start-Live {
 # ---------------------------------------------------------------------------
 # Onglet gaming
 # ---------------------------------------------------------------------------
+function Set-GamingSubPage([int]$Index) {
+    $pages = @($ui.GPageTweaks, $ui.GPageFps, $ui.GPageMode, $ui.GPageProfiles)
+    for ($i = 0; $i -lt $pages.Count; $i++) {
+        $pages[$i].Visibility = if ($i -eq $Index) { 'Visible' } else { 'Collapsed' }
+        $b = $script:GTabs[$i]
+        if ($b) {
+            $b.Background = Get-Brush $(if ($i -eq $Index) { '#22D37A' } else { '#1A1F29' })
+            $b.Child.Foreground = Get-Brush $(if ($i -eq $Index) { '#0B0D10' } else { '#C9CED8' })
+        }
+    }
+    $script:GamingSubPage = $Index
+}
+
+function Build-GamingTabs {
+    if ($script:GTabs) { return }
+    $script:GTabs = @()
+    $i = 0
+    foreach ($label in 'Réglages Windows', 'Mes parties', 'Mode jeu', 'Profils par jeu') {
+        $b = New-Object System.Windows.Controls.Border
+        $b.CornerRadius = [System.Windows.CornerRadius]::new(16)
+        $b.Padding = New-Thickness 16 7 16 7
+        $b.Margin = New-Thickness 0 0 8 0
+        $b.Cursor = [System.Windows.Input.Cursors]::Hand
+        $t = New-Text $label 13 '#C9CED8' -Semi
+        $t.TextWrapping = 'NoWrap'
+        $b.Child = $t
+        $b.Tag = $i
+        $b.Add_MouseLeftButtonUp({ param($s, $e) Set-GamingSubPage ([int]$s.Tag) })
+        [void]$ui.GamingTabs.Children.Add($b)
+        $script:GTabs += $b
+        $i++
+    }
+    Set-GamingSubPage 0
+}
+
 function Build-GamingTab {
+    Build-GamingTabs
     $panel = $ui.GamingPanel
     $panel.Children.Clear()
     $script:TweakRows = @()
-    foreach ($t in (Get-AvailableTweaks)) {
+    $tweaks = @(Get-AvailableTweaks)
+    $done = 0
+    foreach ($t in $tweaks) {
         $ok = Test-Tweak $t
+        if ($ok) { $done++ }
         $card = New-Card
-        $g = New-Grid @('Auto', '*')
-
+        $card.Padding = New-Thickness 14 10 14 10
+        $card.Margin = New-Thickness 0 0 0 6
+        $g = New-Grid @('Auto', '*', 'Auto')
         $cb = New-Object System.Windows.Controls.CheckBox
-        $cb.VerticalAlignment = 'Top'
-        $cb.Margin = New-Thickness 0 3 14 0
-        $cb.LayoutTransform = [System.Windows.Media.ScaleTransform]::new(1.25, 1.25)
+        $cb.VerticalAlignment = 'Center'
+        $cb.Margin = New-Thickness 0 0 12 0
+        $cb.LayoutTransform = [System.Windows.Media.ScaleTransform]::new(1.2, 1.2)
         if ($ok) { $cb.IsChecked = $false; $cb.IsEnabled = $false }
         else { $cb.IsChecked = ($t.Recommended -ne $false) }
         Add-ToGrid $g $cb 0
-
         $sp = New-Object System.Windows.Controls.StackPanel
-        $head = New-Object System.Windows.Controls.WrapPanel
-        [void]$head.Children.Add((New-Text $t.Titre 14.5 '#FFFFFF' -Semi))
-        if ($ok) {
-            [void]$head.Children.Add((New-Badge 'Déjà optimisé' $Colors.ok))
-        } else {
-            $impactColor = switch ($t.Impact) { 'Important' { $Colors.bad } 'Moyen' { $Colors.warn } default { $Colors.info } }
-            [void]$head.Children.Add((New-Badge "Impact $($t.Impact.ToLower())" $impactColor))
-            if ($t.Recommended -eq $false) { [void]$head.Children.Add((New-Badge 'Optionnel' '#9AA3B2')) }
-        }
-        if ($t.Reboot) { [void]$head.Children.Add((New-Badge 'Redémarrage requis' '#9AA3B2')) }
-        [void]$sp.Children.Add($head)
-        $desc = New-Text $t.Description 12.5 '#9AA3B2'
-        $desc.Margin = New-Thickness 0 5 0 0
+        $sp.VerticalAlignment = 'Center'
+        $title = New-Text $t.Titre 14 $(if ($ok) { '#9AA3B2' } else { '#FFFFFF' }) -Semi
+        [void]$sp.Children.Add($title)
+        $desc = New-Text $t.Description 12 '#9AA3B2'
+        $desc.Margin = New-Thickness 0 4 0 0
+        $desc.Visibility = 'Collapsed'
         [void]$sp.Children.Add($desc)
         Add-ToGrid $g $sp 1
-
+        $right = New-Object System.Windows.Controls.StackPanel
+        $right.Orientation = 'Horizontal'; $right.VerticalAlignment = 'Center'
+        if ($ok) {
+            [void]$right.Children.Add((New-Badge 'Optimisé' $Colors.ok))
+        } else {
+            $impactColor = switch ($t.Impact) { 'Important' { $Colors.bad } 'Moyen' { $Colors.warn } default { $Colors.info } }
+            [void]$right.Children.Add((New-Badge "Impact $($t.Impact.ToLower())" $impactColor))
+            if ($t.Recommended -eq $false) { [void]$right.Children.Add((New-Badge 'Optionnel' '#9AA3B2')) }
+        }
+        if ($t.Reboot) { [void]$right.Children.Add((New-Badge 'Redémarrage' '#9AA3B2')) }
+        $chev = New-Text '▾' 14 '#5B6475'
+        $chev.Margin = New-Thickness 10 0 0 0; $chev.VerticalAlignment = 'Center'
+        [void]$right.Children.Add($chev)
+        Add-ToGrid $g $right 2
         $card.Child = $g
-        if ($ok) { $card.Opacity = 0.7 }
+        $card.Cursor = [System.Windows.Input.Cursors]::Hand
+        $card.ToolTip = 'Clique pour voir l''explication'
+        $card.Tag = @{ Desc = $desc; Chev = $chev }
+        $card.Add_MouseLeftButtonUp({
+            param($s, $e)
+            if ($e.OriginalSource -is [System.Windows.Controls.CheckBox] -or $e.OriginalSource.TemplatedParent -is [System.Windows.Controls.CheckBox]) { return }
+            $open = $s.Tag.Desc.Visibility -ne 'Visible'
+            $s.Tag.Desc.Visibility = if ($open) { 'Visible' } else { 'Collapsed' }
+            $s.Tag.Chev.Text = if ($open) { '▴' } else { '▾' }
+        })
         [void]$panel.Children.Add($card)
         $script:TweakRows += @{ Tweak = $t; CheckBox = $cb }
     }
+    $left = $tweaks.Count - $done
+    $ui.TweakSummary.Text = if ($left) { "$left réglage$(if ($left -gt 1) {'s'}) à optimiser sur $($tweaks.Count)" } else { "Tout est optimisé ($($tweaks.Count) réglages)" }
+    $ui.TweakSummary.Foreground = Get-Brush $(if ($left) { '#FFFFFF' } else { $Colors.ok })
     Build-GameSections
 }
 

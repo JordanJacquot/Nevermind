@@ -56,7 +56,8 @@ $script:T.Beat.Start()
 $script:T.Run = New-Object System.Windows.Threading.DispatcherTimer
 $script:T.Run.Interval = [TimeSpan]::FromSeconds(1)
 $script:T.Run.Add_Tick({
-    $ready = $script:LastAnalysis -and $ui.StatusText.Text -eq 'Prêt.'
+    # Prête = analyse faite, statut « Prêt. » et vérifications d'accueil passées (elles notent la version vue).
+    $ready = $script:LastAnalysis -and $ui.StatusText.Text -eq 'Prêt.' -and (Get-Setting 'LastVersion' '')
     if (-not $ready -and $script:T.Clock.Elapsed.TotalSeconds -lt 120) { return }
     $script:T.Run.Stop()
     try {
@@ -104,7 +105,7 @@ $script:T.Run.Add_Tick({
                 $ui.Tabs.SelectedIndex = 1
                 # Au démarrage, la liste est calculée juste après « Prêt. » : le test passe avant, on la calcule ici.
                 if ($null -eq $script:Games) { Update-GameCache }
-                Wait-TestMs 500; $ui.GameModePanel.BringIntoView(); Wait-TestMs 400; Save-TestShot 'gaming-mode-jeu'
+                Wait-TestMs 500; Save-TestShot 'gaming-reglages'; Set-GamingSubPage 2; Wait-TestMs 300; Save-TestShot 'gaming-mode-jeu'; Set-GamingSubPage 3; Wait-TestMs 300; Save-TestShot 'gaming-profils'
                 Assert-Test ($null -ne $script:Games) 'liste des jeux jamais calculée'
                 Assert-Test ($ui.GameModePanel.Children.Count -ge 1) 'carte du mode jeu absente'
                 # Session de jeu simulée : aucune appli cochée, donc rien n'est fermé sur ce PC
@@ -139,13 +140,13 @@ $script:T.Run.Add_Tick({
             Test-Step 'Compteur de FPS (overlay, raccourci, avant / après)' {
                 Assert-Test (Test-Path -LiteralPath $PresentMonExe) 'PresentMon absent'
                 # Raccourci Ctrl+Maj+F : message simulé, compteur désactivé donc une notification l'explique
-                Set-Setting 'FpsOverlay' $false
-                $before = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`] Compteur de FPS*' }).Count
+                Set-Setting 'FpsMeasure' $false
+                $before = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`] Mesure des FPS*' }).Count
                 if (-not $script:HotkeyHandle) { Register-FpsHotkey }
                 # Si OptiGame est déjà ouvert sur le PC, il garde le raccourci : on appelle alors l'action directement.
                 if ($script:HotkeyHandle) { [void][OGNative]::SendMessage($script:HotkeyHandle, 0x0312, [IntPtr]$FpsHotkeyId, [IntPtr]::Zero); $hk = 'raccourci' }
                 else { Switch-FpsManual; $hk = 'raccourci pris par l''app déjà ouverte, action testée directement' }
-                $after = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`] Compteur de FPS*' }).Count
+                $after = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`] Mesure des FPS*' }).Count
                 Assert-Test ($after -gt $before) 'le raccourci ne réagit pas'
                 # Overlay affiché puis fermé
                 Show-FpsOverlay
@@ -160,18 +161,30 @@ $script:T.Run.Add_Tick({
                 Hide-FpsOverlay
                 # Mesure lancée puis arrêtée sur un programme (sans droits admin, PresentMon refuse : l'app ne doit pas planter)
                 Start-FpsTarget $PID 'Programme d''essai' 'powershell'
-                Update-FpsOverlay
+                Update-FpsTarget
                 Stop-FpsTarget
                 Assert-Test ($null -eq $script:FpsTarget -and $null -eq $script:Overlay) 'mesure non arrêtée'
                 # Avant / après sur des parties simulées autour d'un changement
                 [void](Add-History 'Réglage d''essai FPS' @() @(@{ Type = 'reg'; Path = 'HKCU:\Software\OptiGameTest'; Name = 'X'; Existed = $false }))
                 $lc = Get-LastChangeDate
-                $mk = { param($d, $avg, $low) [pscustomobject]@{ Date = $d.ToString('s'); Game = 'Jeu d''essai'; Key = 'jeuessai'; Avg = $avg; Low1 = $low; Low01 = $low - 10; Seconds = 600; Frames = 60000 } }
+                $mk = { param($d, $avg, $low) [pscustomobject]@{ Id = [guid]::NewGuid().ToString('N').Substring(0, 10); Date = $d.ToString('s'); Game = 'Jeu d''essai'; Key = 'jeuessai'; Avg = $avg; Low1 = $low; Low01 = $low - 10; Seconds = 600; Frames = 60000; Exclusive = $false
+                    Series = @(1..120 | ForEach-Object { [math]::Round($avg + 15 * [math]::Sin($_ / 7) - $(if ($_ % 29 -eq 0) { 40 } else { 0 }), 1) }) } }
                 $sess = @((& $mk $lc.AddDays(-2) 110 70), (& $mk $lc.AddDays(-1) 114 74), (& $mk $lc.AddMinutes(5) 121 88), (& $mk $lc.AddMinutes(50) 125 90))
                 ConvertTo-Json -InputObject $sess | Set-Content -LiteralPath $FpsFile -Encoding UTF8
                 Build-FpsPanel
-                $ui.Tabs.SelectedIndex = 1; Wait-TestMs 400; $ui.FpsPanel.BringIntoView(); Wait-TestMs 400; Save-TestShot 'fps-avant-apres'
-                Assert-Test ($ui.FpsPanel.Children.Count -ge 3) "panneau incomplet ($($ui.FpsPanel.Children.Count) éléments)"
+                $ui.Tabs.SelectedIndex = 1; Set-GamingSubPage 1; Wait-TestMs 500; Save-TestShot 'mes-parties'
+                Assert-Test ($ui.FpsPanel.Children.Count -ge 5) "panneau incomplet ($($ui.FpsPanel.Children.Count) éléments)"
+                # Fiche d'une partie (clic sur la ligne la plus récente)
+                $rowCard = @($ui.FpsPanel.Children | Where-Object { $_.Tag -is [string] })[0]
+                Assert-Test ($null -ne $rowCard) 'aucune ligne de partie cliquable'
+                $ev = New-Object System.Windows.Input.MouseButtonEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0, [System.Windows.Input.MouseButton]::Left)
+                $ev.RoutedEvent = [System.Windows.UIElement]::MouseLeftButtonUpEvent
+                $rowCard.RaiseEvent($ev)
+                Wait-TestMs 1500; Save-TestShot 'fiche-partie'
+                Assert-Test ($ui.TestOverlay.Visibility -eq 'Visible') 'la fiche de la partie ne s''ouvre pas'
+                $ui.TestScroll.ScrollToEnd(); Wait-TestMs 300; Save-TestShot 'fiche-partie-bas'
+                Hide-TestPanel
+                Set-GamingSubPage 0
                 "$hk, overlay, arrêt propre et comparaison OK"
             }
             Test-Step 'Page Tests' {

@@ -391,33 +391,49 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
           </Grid.RowDefinitions>
-          <DockPanel>
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-              <Button x:Name="BtnSelectAll" Style="{StaticResource BtnSecondary}" Content="Tout le recommandé" Margin="0,0,10,0"/>
-              <Button x:Name="BtnApply" Style="{StaticResource BtnPrimary}" Content="Appliquer la sélection"/>
-            </StackPanel>
-            <StackPanel>
-              <TextBlock Style="{StaticResource H1}" Text="Optimisation gaming"/>
-              <TextBlock Style="{StaticResource Sub}" Text="Coche ce que tu veux appliquer. Tout est réversible depuis l'onglet Sauvegarde."/>
-            </StackPanel>
-          </DockPanel>
-          <CheckBox x:Name="ChkRestore" Grid.Row="1" IsChecked="True" Margin="0,16,0,12" Foreground="#9AA3B2"
-                    Content="Créer un point de restauration Windows avant d'appliquer (recommandé)"/>
-          <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="0,0,8,0">
-              <StackPanel x:Name="GamingPanel"/>
-              <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Mode jeu automatique" Margin="0,26,0,10"/>
-              <StackPanel x:Name="GameModePanel"/>
-              <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Compteur de FPS et avant / après" Margin="0,16,0,10"/>
-              <StackPanel x:Name="FpsPanel"/>
-              <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Profils par jeu" Margin="0,16,0,10"/>
-              <StackPanel x:Name="GameProfilesPanel"/>
-            </StackPanel>
-          </ScrollViewer>
-          <TextBlock Grid.Row="3" Style="{StaticResource Sub}" FontSize="12" Margin="0,12,0,0"
-                     Text="Pourquoi si peu de réglages ? Les « tweaks miracles » d'Internet (réglages réseau secrets, services désactivés, nettoyeurs de RAM...) n'apportent rien ou cassent Windows. OptiGame n'applique que des réglages dont l'effet est reconnu."/>
+          <StackPanel>
+            <TextBlock Style="{StaticResource H1}" Text="Optimisation gaming"/>
+            <TextBlock Style="{StaticResource Sub}" Text="Règle Windows pour tes jeux et suis tes FPS partie après partie."/>
+          </StackPanel>
+          <StackPanel x:Name="GamingTabs" Grid.Row="1" Orientation="Horizontal" Margin="0,16,0,14"/>
+          <Grid Grid.Row="2">
+            <Grid x:Name="GPageTweaks">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+              </Grid.RowDefinitions>
+              <Border Style="{StaticResource Card}" Margin="0,0,8,12">
+                <DockPanel>
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnSelectAll" Style="{StaticResource BtnSecondary}" Content="Cocher le recommandé" Margin="0,0,10,0"/>
+                    <Button x:Name="BtnApply" Style="{StaticResource BtnPrimary}" Content="Appliquer"/>
+                  </StackPanel>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="TweakSummary" Style="{StaticResource H2}"/>
+                    <CheckBox x:Name="ChkRestore" IsChecked="True" Margin="0,8,0,0" Foreground="#9AA3B2" FontSize="12"
+                              Content="Point de restauration avant (recommandé)"/>
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+              <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,0,8,0">
+                  <StackPanel x:Name="GamingPanel"/>
+                  <TextBlock Style="{StaticResource Sub}" FontSize="11.5" Margin="0,8,0,0" Foreground="#5B6475"
+                             Text="Seulement des réglages à l'effet reconnu : pas de « tweaks miracles ». Tout est annulable (page Sauvegarde)."/>
+                </StackPanel>
+              </ScrollViewer>
+            </Grid>
+            <ScrollViewer x:Name="GPageFps" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+              <StackPanel x:Name="FpsPanel" Margin="0,0,8,0"/>
+            </ScrollViewer>
+            <ScrollViewer x:Name="GPageMode" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+              <StackPanel x:Name="GameModePanel" Margin="0,0,8,0"/>
+            </ScrollViewer>
+            <ScrollViewer x:Name="GPageProfiles" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+              <StackPanel x:Name="GameProfilesPanel" Margin="0,0,8,0"/>
+            </ScrollViewer>
+          </Grid>
         </Grid>
       </TabItem>
 
