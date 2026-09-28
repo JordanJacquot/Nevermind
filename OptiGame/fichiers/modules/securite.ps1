@@ -209,14 +209,14 @@ function New-SecurityCard($Check) {
         $box.Padding = New-Thickness 12 8 12 8
         $box.Margin = New-Thickness 24 10 0 0
         $items = New-Object System.Windows.Controls.StackPanel
-        $shown = @($Check.Items | Select-Object -First 5)
+        $shown = if ($Check.ShowAll) { @($Check.Items) } else { @($Check.Items | Select-Object -First 5) }
         foreach ($i in $shown) {
             $t2 = New-Text ([string]$i) 12 '#C9CED8'
-            $t2.TextTrimming = 'CharacterEllipsis'; $t2.TextWrapping = 'NoWrap'; $t2.ToolTip = [string]$i
+            if ($Check.ShowAll) { $t2.TextWrapping = 'Wrap' } else { $t2.TextTrimming = 'CharacterEllipsis'; $t2.TextWrapping = 'NoWrap'; $t2.ToolTip = [string]$i }
             $t2.Margin = New-Thickness 0 2 0 2
             [void]$items.Children.Add($t2)
         }
-        if (@($Check.Items).Count -gt 5) { [void]$items.Children.Add((New-Text "et $(@($Check.Items).Count - 5) autre(s)..." 12 '#5B6475')) }
+        if (-not $Check.ShowAll -and @($Check.Items).Count -gt 5) { [void]$items.Children.Add((New-Text "et $(@($Check.Items).Count - 5) autre(s)..." 12 '#5B6475')) }
         $box.Child = $items
         [void]$sp.Children.Add($box)
     }

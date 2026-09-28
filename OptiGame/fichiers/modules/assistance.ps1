@@ -143,14 +143,19 @@ function Undo-HistoryEntry([string]$Id) {
 # ---------------------------------------------------------------------------
 # Notifications Windows (bulle près de l'horloge)
 # ---------------------------------------------------------------------------
-function Show-Notify([string]$Title, [string]$Text) {
+function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) {
+    $script:NotifyAction = $OnClick
     try {
         if (-not $script:NotifyIcon) {
             $ni = New-Object System.Windows.Forms.NotifyIcon
             $ico = Join-Path $AppDir 'OptiGame.ico'
             $ni.Icon = if (Test-Path -LiteralPath $ico) { New-Object System.Drawing.Icon (New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))) } else { [System.Drawing.SystemIcons]::Information }
             $ni.Text = 'OptiGame'
-            $ni.Add_BalloonTipClicked({ try { $Window.WindowState = 'Normal'; [void]$Window.Activate() } catch {} })
+            $ni.Add_BalloonTipClicked({
+                try { $Window.WindowState = 'Normal'; [void]$Window.Activate() } catch {}
+                $a = $script:NotifyAction; $script:NotifyAction = $null
+                if ($a) { Invoke-Safe { & $a } }
+            })
             $ni.Add_Click({ try { $Window.WindowState = 'Normal'; [void]$Window.Activate() } catch {} })
             $script:NotifyIcon = $ni
         }

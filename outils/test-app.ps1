@@ -8,7 +8,7 @@ $script:T = @{
 function Invoke-UpdateCheck { }
 function Show-Message([string]$Text, [string]$Icon = 'Information') { [void]$script:T.Msgs.Add("[$Icon] $Text") }
 function Confirm-Action([string]$Text) { [void]$script:T.Msgs.Add("[Question] $Text"); $false }
-function Show-Notify([string]$Title, [string]$Text) { [void]$script:T.Msgs.Add("[Notify] $Title : $Text") }
+function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) { [void]$script:T.Msgs.Add("[Notify] $Title : $Text") }
 
 function Add-TestResult([string]$Name, [bool]$Ok, [string]$Detail = '') {
     [void]$script:T.Res.Add([pscustomobject]@{ Test = $Name; Ok = $Ok; Detail = $Detail })
@@ -186,6 +186,41 @@ $script:T.Run.Add_Tick({
                 Hide-TestPanel
                 Set-GamingSubPage 0
                 "$hk, overlay, arrêt propre et comparaison OK"
+            }
+            Test-Step 'Diagnostic des FPS (5 situations)' {
+                $base = @{ CpuRatio = 0.5; GpuRatio = 0.6; Stutters = 0; Cpu = 30; CpuMax = 50; Perf = 105; Ram = 55; Gpu = 60; Temp = 65; Vram = 50; Power = 60; Disk = 10; DiskAvg = 3
+                    OnBattery = $false; Top = @(); TopMem = @(); Path = 'C:\Jeux\Essai.exe'; Drive = 'C'; Media = 'SSD'; Hz = 144; HzMax = 144; Laptop = $false; Dual = $false; Nvidia = $true; Rtx = $true; Amd = $false; GameMode = $false }
+                $mkS = {
+                    param($avg, $low, [hashtable]$over)
+                    $amp = if ($over.ContainsKey('Amp')) { $over.Amp } else { 8 }; $dd = $base.Clone(); foreach ($k in $over.Keys) { if ($k -ne 'Amp') { $dd[$k] = $over[$k] } }
+                    [pscustomobject]@{ Id = [guid]::NewGuid().ToString('N').Substring(0, 10); Date = (Get-Date).ToString('s'); Game = 'Jeu d''essai'; Key = 'essai'; Avg = $avg; Low1 = $low; Low01 = $low * 0.7
+                        Seconds = 900; Frames = 50000; Exclusive = $false; Series = @(1..60 | ForEach-Object { $avg + $amp * [math]::Sin($_ / 5) }); Diag = [pscustomobject]$dd }
+                }
+                $cases = @(
+                    @('gpu', (& $mkS 45 35 @{ GpuRatio = 0.97; CpuRatio = 0.4; Gpu = 99; Vram = 97 }), 'Les réglages du jeu qui font gagner'),
+                    @('cpu', (& $mkS 50 22 @{ GpuRatio = 0.45; CpuRatio = 0.93; Gpu = 50; Cpu = 85; Stutters = 200; Top = @([pscustomobject]@{ Name = 'chrome'; Pct = 18 }, [pscustomobject]@{ Name = 'MsMpEng'; Pct = 9 }) }), 'Des programmes en arrière plan'),
+                    @('cap', (& $mkS 60 57 @{ GpuRatio = 0.4; CpuRatio = 0.3; Gpu = 40; Hz = 60; HzMax = 144; Amp = 0.4 }), 'Une limite bloque le jeu'),
+                    @('igpu', (& $mkS 35 25 @{ GpuRatio = -1; CpuRatio = -1; Gpu = 3; Dual = $true; Laptop = $true }), 'Forcer la grosse carte'),
+                    @('cpu', (& $mkS 200 150 @{}), 'Aucun problème')
+                )
+                $out = @()
+                foreach ($cs in $cases) {
+                    $dg = Get-FpsDiagnosis $cs[1]
+                    $titles = @($dg.Items | ForEach-Object { $_.Title }) -join ' | '
+                    Assert-Test ($dg.Limit -eq $cs[0]) "attendu $($cs[0]), obtenu $($dg.Limit) ($($dg.Headline))"
+                    Assert-Test ($titles -like "*$($cs[2])*") "$($cs[0]) : conseil « $($cs[2]) » absent ($titles)"
+                    $out += "$($cs[0]) : $($dg.Items.Count) conseil(s)"
+                }
+                # Fiche complète d'une partie qui rame (limitée par la carte graphique)
+                ConvertTo-Json -InputObject @($cases[1][1], $cases[0][1]) -Depth 6 | Set-Content -LiteralPath $FpsFile -Encoding UTF8
+                Show-FpsSession $cases[0][1].Id
+                Wait-TestMs 1500; Save-TestShot 'diagnostic-gpu'
+                $ui.TestScroll.ScrollToVerticalOffset(520); Wait-TestMs 300; Save-TestShot 'diagnostic-gpu-conseils'
+                Hide-TestPanel
+                Show-FpsSession $cases[1][1].Id
+                Wait-TestMs 1200; $ui.TestScroll.ScrollToVerticalOffset(420); Wait-TestMs 300; Save-TestShot 'diagnostic-cpu'
+                Hide-TestPanel
+                $out -join ', '
             }
             Test-Step 'Page Tests' {
                 $ui.Tabs.SelectedIndex = 5; Wait-TestMs 1500; Save-TestShot 'tests'

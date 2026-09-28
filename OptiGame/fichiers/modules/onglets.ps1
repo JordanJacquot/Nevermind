@@ -26,11 +26,11 @@ $LiveScript = {
         $gpuDone = $false
         if ($sync.Smi) {
             try {
-                $o = & $sync.Smi '--query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total,power.draw' '--format=csv,noheader,nounits' 2>$null | Select-Object -First 1
+                $o = & $sync.Smi '--query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total,power.draw,power.limit' '--format=csv,noheader,nounits' 2>$null | Select-Object -First 1
                 if ($o) {
                     $v = $o -split ','
                     $sync.Gpu = Num $v[0]; $sync.GpuTemp = Num $v[1]
-                    $sync.VramUsed = Num $v[2]; $sync.VramTotal = Num $v[3]; $sync.GpuPower = Num $v[4]
+                    $sync.VramUsed = Num $v[2]; $sync.VramTotal = Num $v[3]; $sync.GpuPower = Num $v[4]; $sync.GpuPowerLimit = Num $v[5]
                     $gpuDone = $true
                 }
             } catch {}
@@ -41,6 +41,10 @@ $LiveScript = {
                 $sync.Gpu = [math]::Min(100.0, [double](($eng | Measure-Object UtilizationPercentage -Sum).Sum))
             } catch {}
         }
+        try {
+            $dk = Get-CimInstance Win32_PerfFormattedData_PerfDisk_PhysicalDisk -Filter "Name='_Total'" -ErrorAction Stop
+            $sync.DiskBusy = [math]::Max(0.0, [math]::Min(100.0, 100 - [double]$dk.PercentIdleTime))
+        } catch {}
         $sync.Updated = Get-Date
         Start-Sleep -Milliseconds $(if ($sync.Fast) { 400 } else { 1500 })
     }

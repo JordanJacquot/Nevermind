@@ -740,7 +740,10 @@ public static class FrameMon
     static readonly Queue<double> last10 = new Queue<double>();
     static double sum1, sum10, sampleSum;
     static int sampleCount;
-    static int ftIndex = -1, modeIndex = -1;
+    static int ftIndex = -1, modeIndex = -1, cpuIndex = -1, gpuIndex = -1;
+    // Temps de travail du processeur et de la carte graphique pour chaque image (qui des deux freine ?).
+    static double busyFt, cpuBusy, gpuBusy;
+    static int busyCount;
     // Mode d'affichage vu par PresentMon (« Hardware: Legacy Flip » = vrai plein écran, rien ne peut s'afficher par dessus).
     public static string LastMode = "";
     public static string LastError = "";
@@ -752,7 +755,11 @@ public static class FrameMon
 
     public static void Reset()
     {
-        lock (sync) { all.Clear(); last1.Clear(); last10.Clear(); sum1 = 0; sum10 = 0; sampleSum = 0; sampleCount = 0; ftIndex = -1; modeIndex = -1; }
+        lock (sync)
+        {
+            all.Clear(); last1.Clear(); last10.Clear(); sum1 = 0; sum10 = 0; sampleSum = 0; sampleCount = 0;
+            ftIndex = -1; modeIndex = -1; cpuIndex = -1; gpuIndex = -1; busyFt = 0; cpuBusy = 0; gpuBusy = 0; busyCount = 0;
+        }
         LastError = "";
         LastMode = "";
     }
@@ -804,6 +811,8 @@ public static class FrameMon
                     var c = cols[i].Trim();
                     if (ftIndex < 0 && (c == "FrameTime" || c == "MsBetweenAppStart" || c == "msBetweenPresents" || c == "MsBetweenPresents")) ftIndex = i;
                     if (c == "PresentMode") modeIndex = i;
+                    if (c == "CPUBusy" || c == "MsCPUBusy") cpuIndex = i;
+                    if (c == "GPUBusy" || c == "MsGPUBusy") gpuIndex = i;
                 }
                 return;
             }
@@ -818,6 +827,35 @@ public static class FrameMon
             last10.Enqueue(ft); sum10 += ft;
             while (sum10 > 10000 && last10.Count > 1) sum10 -= last10.Dequeue();
             sampleSum += ft; sampleCount++;
+            double cb, gb;
+            if (cpuIndex >= 0 && gpuIndex >= 0 && cpuIndex < cols.Length && gpuIndex < cols.Length
+                && double.TryParse(cols[cpuIndex], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out cb)
+                && double.TryParse(cols[gpuIndex], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out gb))
+            {
+                busyFt += ft; cpuBusy += Math.Min(cb, ft); gpuBusy += Math.Min(gb, ft); busyCount++;
+            }
+        }
+    }
+
+    // Diagnostic de la partie : { part du temps où le processeur travaille, part où la carte graphique travaille
+    // (0 à 1, -1 si inconnu), nombre de saccades (images au moins 2,5 fois plus longues que la normale et > 25 ms) }
+    public static double[] Busy()
+    {
+        lock (sync)
+        {
+            var r = new double[] { -1, -1, 0 };
+            if (busyCount > 100 && busyFt > 0) { r[0] = cpuBusy / busyFt; r[1] = gpuBusy / busyFt; }
+            if (all.Count > 0)
+            {
+                var arr = all.ToArray();
+                Array.Sort(arr);
+                double median = arr[arr.Length / 2];
+                double limit = Math.Max(25.0, median * 2.5);
+                int n = 0;
+                foreach (var f in all) if (f > limit) n++;
+                r[2] = n;
+            }
+            return r;
         }
     }
 

@@ -372,7 +372,9 @@ function Start-FpsTarget([int]$ProcId, [string]$Name, [string]$Exe) {
     if (-not (Test-Path -LiteralPath $PresentMonExe)) { Set-Status 'Mesure des FPS indisponible : PresentMon est absent du dossier de l''app.'; return }
     if ($script:FpsTarget) { Stop-FpsTarget }
     if (-not [FrameMon]::Start($PresentMonExe, $ProcId)) { Write-Log "Mesure des FPS: $([FrameMon]::LastError)"; return }
-    $script:FpsTarget = @{ Pid = $ProcId; Name = $Name; Key = $Exe.ToLower(); Start = Get-Date; Series = (New-Object System.Collections.ArrayList); Ticks = 0; Exclusive = $false; Warned = $false }
+    $path = try { [string](Get-Process -Id $ProcId -ErrorAction Stop).Path } catch { '' }
+    $script:FpsTarget = @{ Pid = $ProcId; Name = $Name; Key = $Exe.ToLower(); Start = Get-Date; Series = (New-Object System.Collections.ArrayList); Ticks = 0; Exclusive = $false; Warned = $false
+        Path = $path; Sys = (New-Object System.Collections.ArrayList); ProcCpu = @{}; ProcMem = @{}; ProcSeconds = 0.0; PrevProc = $null; PrevProcTime = $null; OnBattery = $false }
     if (Test-FpsOverlay) { Show-FpsOverlay }
     if (-not $script:FpsTimer) {
         $script:FpsTimer = New-Object System.Windows.Threading.DispatcherTimer
@@ -390,14 +392,22 @@ function Stop-FpsTarget {
     Hide-FpsOverlay
     if (-not $t) { return }
     $s = [FrameMon]::Summary()
+    $busy = [FrameMon]::Busy()
     $err = [FrameMon]::LastError
     [FrameMon]::Stop()
     [FrameMon]::Paused = $false
     if ($s[3] -eq 0) { Write-Log "Mesure des FPS: aucune image reçue pour $($t.Name). $err"; return }
     if ($s[4] -lt 30 -or $s[3] -lt 300) { return }
-    Save-FpsSession $t $s
-    Show-Notify "Partie terminée : $($t.Name)" ('{0} de jeu, {1:N0} FPS en moyenne (1 % bas {2:N0}). Détails dans OptiGame > Optimisation gaming > Mes parties.' -f (Format-PlayTime $s[4]), $s[0], $s[1])
+    $diag = $null
+    try { $diag = Get-FpsDiagData $t $busy } catch { Write-Log "Diagnostic FPS: $_" }
+    $saved = Save-FpsSession $t $s $diag
     Build-FpsPanel
+    $open = { Show-Page 1; Set-GamingSubPage 1; Show-FpsSession $saved.Id }.GetNewClosure()
+    if ($saved -and (Test-FpsProblem $saved)) {
+        Show-Notify "Partie terminée : $($t.Name)" ('{0:N0} FPS en moyenne, avec des chutes. OptiGame a regardé d''où ça vient : clique ici pour voir et corriger.' -f $s[0]) $open
+    } else {
+        Show-Notify "Partie terminée : $($t.Name)" ('{0} de jeu, {1:N0} FPS en moyenne (1 % bas {2:N0}). Tout était fluide.' -f (Format-PlayTime $s[4]), $s[0], $s[1]) $open
+    }
 }
 
 # Toutes les 500 ms : jeu au premier plan ou non, overlay, un point de courbe toutes les 5 s.
@@ -411,7 +421,9 @@ function Update-FpsTarget {
     if ($t.Ticks % 10 -eq 0) {
         $v = [FrameMon]::Sample()
         if ($v -gt 0) { [void]$t.Series.Add([math]::Round($v, 1)) }
+        if ($front) { Add-FpsSysSample $t }
     }
+    if ($t.Ticks % 20 -eq 0) { Add-FpsProcSample $t }
     if ([FrameMon]::LastMode -match 'Legacy') { $t.Exclusive = $true }
     $o = $script:Overlay
     if (-not $o) { return }
@@ -500,14 +512,21 @@ function Compress-Series($Values) {
     $out
 }
 
-function Save-FpsSession($T, $S) {
+function Save-FpsSession($T, $S, $Diag) {
     $new = [pscustomobject]@{
         Id = [guid]::NewGuid().ToString('N').Substring(0, 10); Date = $T.Start.ToString('s'); Game = $T.Name; Key = $T.Key
         Avg = [math]::Round($S[0], 1); Low1 = [math]::Round($S[1], 1); Low01 = [math]::Round($S[2], 1); Seconds = [int]$S[4]; Frames = [int]$S[3]
-        Exclusive = [bool]$T.Exclusive; Series = @(Compress-Series $T.Series)
+        Exclusive = [bool]$T.Exclusive; Series = @(Compress-Series $T.Series); Diag = $Diag
     }
     $list = @(@(Get-FpsSessions) + $new | Select-Object -Last 200)
-    try { ConvertTo-Json -InputObject $list -Depth 4 -Compress | Set-Content -LiteralPath $FpsFile -Encoding UTF8 } catch { Write-Log "Écriture des FPS impossible: $_" }
+    try { ConvertTo-Json -InputObject $list -Depth 6 -Compress | Set-Content -LiteralPath $FpsFile -Encoding UTF8 } catch { Write-Log "Écriture des FPS impossible: $_" }
+    $new
+}
+
+# Partie avec un souci de FPS : moins de 60 en moyenne, ou des chutes fortes et fréquentes.
+function Test-FpsProblem($S) {
+    $perMin = if ($S.Diag) { $S.Diag.Stutters / [math]::Max(1.0, $S.Seconds / 60) } else { 0 }
+    ($S.Avg -lt 60) -or ($S.Low1 -lt 0.5 * $S.Avg) -or ($perMin -gt 6)
 }
 
 # Date du dernier changement fait par OptiGame (non annulé).
@@ -585,6 +604,8 @@ function Show-FpsSession([string]$Id) {
         (New-Gauge '0,1 % bas' $s.Low01 $max '{0:N0}' 'FPS' (Get-FpsColor $s.Low01) 300)
     )))
     [void]$body.Children.Add((New-Verdict $v[0] $v[1]))
+    $dg = Add-FpsDiagnosisView $s $body
+    if ($dg.Problem) { Set-TestState $dg.Status $(if ($dg.Status -eq 'bad') { 'Problème trouvé' } else { 'À améliorer' }) }
     $series = @($s.Series | Where-Object { $null -ne $_ })
     if ($series.Count -ge 2) {
         [void]$body.Children.Add((New-SectionTitle 'FPS PENDANT LA PARTIE'))
@@ -627,7 +648,7 @@ function New-FpsRow($S) {
     $big = New-Text ('{0:N0} FPS' -f $S.Avg) 16 (Get-FpsColor $S.Avg) -Bold
     $big.HorizontalAlignment = 'Right'
     [void]$mid.Children.Add($big)
-    $sm = New-Text ('1 % bas {0:N0}' -f $S.Low1) 11.5 '#9AA3B2'
+    $sm = New-Text $(if (Test-FpsProblem $S) { '1 % bas {0:N0}, à vérifier' -f $S.Low1 } else { '1 % bas {0:N0}' -f $S.Low1 }) 11.5 $(if (Test-FpsProblem $S) { $Colors.warn } else { '#9AA3B2' })
     $sm.HorizontalAlignment = 'Right'
     [void]$mid.Children.Add($sm)
     Add-ToGrid $row $mid 1
@@ -660,6 +681,18 @@ function New-SwitchRow([string]$Title, [string]$Text, [bool]$On, [scriptblock]$O
     $sw.Add_Click($OnClick)
     Add-ToGrid $row $sw 1
     $row
+}
+
+# « Mes FPS ne sont pas normaux » : ouvre le diagnostic de la dernière partie, ou explique comment en mesurer une.
+function Invoke-FpsHelp {
+    $last = @(Get-FpsSessions | Sort-Object { [datetime]$_.Date } -Descending)[0]
+    if ($last -and $last.Diag) { Show-FpsSession $last.Id; return }
+    if (-not (Test-FpsMeasure)) { Set-Setting 'FpsMeasure' $true; Update-GameWatch; Build-FpsPanel }
+    Show-ResultSheet 'Trouvons d''où viennent tes problèmes de FPS' @(
+        '1.  La mesure des FPS est activée.',
+        '2.  Lance ton jeu et joue au moins 5 minutes, de préférence là où ça rame.',
+        '3.  Si ce n''est pas un jeu Steam ou Epic, appuie sur Ctrl + Maj + F en jeu pour lancer la mesure.',
+        '4.  Quitte le jeu : OptiGame t''explique d''où vient le problème et ce qu''il peut régler pour toi.') $null 'OptiGame regarde qui freine (carte graphique ou processeur), la température, la mémoire, le disque et les programmes en arrière plan.'
 }
 
 # Onglet « Mes parties »
@@ -704,6 +737,11 @@ function Build-FpsPanel {
         $cc.Child = $cmp
         [void]$panel.Children.Add($cc)
     }
+    $help = New-Button 'Mes FPS ne sont pas normaux : trouver pourquoi' 'BtnPrimary'
+    $help.HorizontalAlignment = 'Left'
+    $help.Margin = New-Thickness 0 0 0 16
+    $help.Add_Click({ Invoke-Safe { Invoke-FpsHelp } })
+    [void]$panel.Children.Add($help)
     $h = New-Text 'Dernières parties (clique pour le détail)' 13 '#9AA3B2' -Semi
     $h.Margin = New-Thickness 0 0 0 6
     [void]$panel.Children.Add($h)
