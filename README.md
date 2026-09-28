@@ -48,6 +48,8 @@ OptiGame/            l'application telle qu'elle est distribuée
     securite.ps1          onglet Sécurité
     navigation.ps1        accueil « Ordinateur » et navigation
     reseau.ps1            section Réseau : scan et fiche appareil
+    reseau-avance.ps1     recherche approfondie : appareils discrets, noms et modèles annoncés, caméras
+    diagnostic-fps.ps1    d'où viennent les problèmes de FPS et comment les régler
     audit-reseau.ps1      audit de sécurité du réseau
     mises-a-jour.ps1      mises à jour depuis GitHub
     assistance.ps1        historique, signaler un problème, notifications, visite guidée

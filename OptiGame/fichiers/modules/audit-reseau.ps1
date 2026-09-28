@@ -256,6 +256,10 @@ function Get-NetAuditChecks($R, $Devs, $Net) {
     if ($cams.Count) { Add-AuditCheck $list 'info' 'devices' "Flux vidéo sur $(& $plural $cams.Count 'appareil' 'appareils')" 'Souvent une caméra ou un décodeur TV. Vérifie que tes caméras sont protégées par un mot de passe que tu as choisi toi même.' $cams }
     if (-not ($telnet.Count + $ftp.Count + $remote.Count)) { Add-AuditCheck $list 'ok' 'devices' "Aucun service dangereux sur tes $(& $plural $checked 'appareil' 'appareils')" 'Pas de Telnet, de FTP ni de prise de contrôle à distance ouverts.' }
     $devText = { param($d) "$($d.Title) ($($d.Ip))$(if ($d.Vendor -eq 'Adresse privée') { ', adresse masquée' } elseif ($d.Vendor) { ', ' + $d.Vendor })" }
+    $camDevs = @($Devs | Where-Object { $_.Camera })
+    if ($camDevs.Count) {
+        Add-AuditCheck $list 'warn' 'devices' "$(& $plural $camDevs.Count 'caméra possible' 'caméras possibles') sur ton réseau" 'Vérifie que tu sais à qui elles sont et où elles filment (utile aussi en location ou en colocation). Une caméra doit avoir un mot de passe que tu as choisi toi même.' @($camDevs | ForEach-Object { "$(& $devText $_) : $(@($_.CameraWhy) -join ', ')" }) $null
+    }
     $new = @($Devs | Where-Object { $_.New })
     $unk = @($Devs | Where-Object { $_.Title -eq 'Appareil inconnu' -and -not $_.New })
     if ($new.Count) { Add-AuditCheck $list 'warn' 'devices' "$(& $plural $new.Count 'nouvel appareil' 'nouveaux appareils') depuis le dernier scan" 'Si tu ne les reconnais pas, regarde la liste des appareils dans la page de ta box et change le mot de passe du Wi-Fi.' @($new | ForEach-Object { & $devText $_ }) @($boxAct) }

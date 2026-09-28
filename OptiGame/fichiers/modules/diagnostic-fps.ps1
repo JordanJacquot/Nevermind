@@ -107,7 +107,7 @@ function Get-FpsDiagData($T, $Busy) {
         Power = (& $stat 'Power' 'avg'); Disk = (& $stat 'Disk' 'max'); DiskAvg = (& $stat 'Disk' 'avg')
         OnBattery = [bool]$T.OnBattery; Top = $top; TopMem = $topMem; Path = [string]$T.Path; Drive = $drive; Media = $media
         Hz = $hz; HzMax = $hzMax; Display = $display; Laptop = [bool]$script:IsLaptop; Dual = ($gpuNames.Count -ge 2); Nvidia = [bool]($gpuNames -match 'NVIDIA|GeForce')
-        Rtx = [bool]($gpuNames -match 'RTX'); Amd = [bool]($gpuNames -match 'Radeon|AMD'); GameMode = [bool](Get-Setting 'GameMode' $false)
+        Rtx = [bool]($gpuNames -match 'RTX'); Amd = [bool]($gpuNames -match 'Radeon|AMD'); GameMode = [bool](Get-Setting 'GameMode' $false); Ups = [bool]$script:HasUps
     }
 }
 
@@ -174,7 +174,9 @@ function Get-FpsDiagnosis($S) {
     if (-not $problem -and $limit -ne 'cap') { $txt = 'Ta partie était fluide. ' + $txt }
 
     # Causes et corrections, de la plus probable à la moins probable
-    if ($d.OnBattery) {
+    if ($d.OnBattery -and $d.Ups -and -not $d.Laptop) {
+        Add-DiagItem $items 'bad' 'Coupure de courant pendant la partie' 'Ton PC tournait sur l''onduleur : Windows peut alors brider le PC, et l''onduleur ne tient que quelques minutes.' @('Quand le courant est coupé, enregistre et quitte ta partie.') $null
+    } elseif ($d.OnBattery) {
         Add-DiagItem $items 'bad' 'Le PC était sur batterie' 'Sur batterie, Windows bride le processeur et la carte graphique pour tenir plus longtemps : les FPS chutent.' @('Branche le chargeur quand tu joues.') $null
     }
     if ($limit -eq 'igpu' -and $game) {

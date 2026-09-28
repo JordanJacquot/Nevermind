@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.20
+﻿OptiGame 1.0.21
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -46,6 +46,12 @@ L'application a deux grandes sections, dans le menu à gauche :
     consoles, TV, box...), avec leur fabricant. Les nouveaux appareils sont
     signalés d'un scan à l'autre : pratique pour repérer un intrus sur ton Wi-Fi.
     Clique sur un appareil pour voir sa fiche (ping en direct, services ouverts).
+    Après le scan, une recherche approfondie trouve les appareils discrets (qui
+    ne répondent pas au ping, ou visibles seulement en IPv6) et lit ce que
+    chaque appareil annonce : son vrai nom, sa marque, son modèle, ce qu'il
+    propose (AirPlay, Chromecast, impression...), son système probable et sa
+    page de réglages. Les caméras possibles sont signalées (utile en location).
+    Les numéros de série annoncés par les appareils ne sont jamais gardés.
     L'audit de sécurité vérifie ton Wi-Fi, ta box (WPS, UPnP), le DNS, tes
     appareils et ce PC, donne une note sur 100, corrige ce qui peut l'être sur
     ce PC et exporte un rapport.
@@ -58,7 +64,8 @@ Tableau de bord
   Santé de chaque composant : processeur, carte graphique, écrans, mémoire vive,
   chaque disque (état SMART, usure, température, remplissage), carte mère et
   BIOS (Secure Boot, TPM), stabilité du système (écrans bleus, erreurs
-  matérielles), réseau, et batterie sur les portables.
+  matérielles), réseau, batterie sur les portables, et onduleur s'il y en a un
+  (charge, autonomie, alerte en cas de coupure de courant).
   Puis un score sur 100 et « Pour gagner des points » : clique sur un point pour
   ouvrir sa fiche (ce qui a été trouvé, ce que l'app va faire). Le bouton
   Exécuter corrige tout seul quand c'est possible. « Ignorer (c'est voulu) »

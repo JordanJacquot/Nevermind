@@ -207,7 +207,9 @@ function Invoke-Analysis {
     $script:AnalysisData = $data
     $os = $data.OS
     $script:Build = [int]$os.BuildNumber
-    $battery = @($data.Battery)
+    $ups = @($data.Battery | Where-Object { Test-IsUps $_ })
+    $battery = @($data.Battery | Where-Object { -not (Test-IsUps $_) })
+    $script:HasUps = [bool]$ups.Count
     $script:IsLaptop = Test-IsLaptop $battery $data
     if ($script:IsLaptop -and ($battery | Where-Object { $_.BatteryStatus -eq 1 })) {
         Add-Finding $F 'warn' 'Portable sur batterie' 'Sur batterie, Windows bride le processeur et la carte graphique. Branche le chargeur pour jouer.' 2 -Id 'laptop-battery' -Fix (New-Fix `
@@ -650,6 +652,29 @@ function Invoke-Analysis {
         $cycles = (Get-CimInstance -Namespace root\wmi -ClassName BatteryCycleCount -ErrorAction SilentlyContinue | Select-Object -First 1).CycleCount
         if ($cycles) { $c.Lines['Cycles de charge'] = "$cycles" }
         if ($null -ne $b.EstimatedChargeRemaining) { $c.Lines['Charge'] = "$($b.EstimatedChargeRemaining) %$(if ($b.BatteryStatus -eq 2) { ', sur secteur' } else { ', sur batterie' })" }
+        [void]$cards.Add($c)
+    }
+
+    # --- Onduleur
+    foreach ($u in $ups) {
+        $name = ([string]$u.Name).Trim()
+        $c = New-Component 'UPS' 'Onduleur' $(if ($name) { $name } else { 'Onduleur' })
+        $onBattery = [int]$u.BatteryStatus -eq 1
+        $c.Lines['Alimentation'] = if ($onBattery) { @('Sur batterie (coupure de courant)', $Colors.bad) } else { @('Sur secteur', '#E6E8EE') }
+        if ($null -ne $u.EstimatedChargeRemaining) {
+            $charge = [int]$u.EstimatedChargeRemaining
+            [void]$c.Bars.Add(@{ Label = 'Charge de la batterie'; Value = $charge; Text = "$charge %"; Color = $(if ($charge -lt 30) { $Colors.bad } elseif ($charge -lt 70) { $Colors.warn } else { $Colors.ok }) })
+        }
+        $run = [long]$u.EstimatedRunTime
+        if ($run -gt 0 -and $run -lt 10000) { $c.Lines['Autonomie estimée'] = "$run min" }
+        if ($onBattery) {
+            Add-Note $c 'bad' 'Coupure de courant : ton PC tourne sur l''onduleur. Enregistre ton travail et quitte ta partie.'
+            Add-Finding $F 'bad' 'Coupure de courant' "Ton PC tourne sur l'onduleur ($name)$(if ($run -gt 0 -and $run -lt 10000) { ", environ $run minutes d'autonomie" })." 1 -Id 'ups-battery' -Fix (New-Fix `
+                -Why 'Quand la batterie de l''onduleur sera vide, le PC s''éteindra d''un coup : les parties et documents non enregistrés seront perdus.' `
+                -Steps @('Enregistre ce qui est ouvert et quitte ta partie.', 'Éteins le PC proprement si le courant ne revient pas vite.'))
+        } else {
+            Add-Note $c 'ok' 'Il protège ton PC des coupures et des surtensions.'
+        }
         [void]$cards.Add($c)
     }
 

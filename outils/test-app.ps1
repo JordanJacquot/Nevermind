@@ -250,6 +250,51 @@ $script:T.Run.Add_Tick({
                 [IO.File]::Delete($lnk)
                 "raccourci libre, $($t.ProcMem.Count) programmes relevés en arrière plan, DNS protégé"
             }
+            Test-Step 'Réseau approfondi (situation simulée)' {
+                $script:NetList = @(
+                    @{ Ip = '10.0.0.1'; Ms = 1; Mac = 'AA-BB-CC-00-00-01'; Ttl = 64; Self = $false; Gateway = $true; Host = ''; Vendor = ''; Title = 'Box Internet'; New = $false },
+                    @{ Ip = '10.0.0.20'; Ms = 3; Mac = 'AA-BB-CC-00-00-20'; Ttl = 64; Self = $false; Gateway = $false; Host = ''; Vendor = 'LG Innotek'; Title = 'LG Innotek'; New = $false }
+                )
+                $fake = @{
+                    Arp = @('10.0.0.1|AA-BB-CC-00-00-01', '10.0.0.30|AA-BB-CC-00-00-30')
+                    Mdns = @('10.0.0.20|ptr|_airplay._tcp.local|[LG] webOS TV OLED65._airplay._tcp.local', '10.0.0.20|txt|[LG] webOS TV OLED65._airplay._tcp.local|model=OLED65C54LA',
+                             '10.0.0.20|txt|[LG] webOS TV OLED65._airplay._tcp.local|manufacturer=LG', '10.0.0.20|txt|[LG] webOS TV OLED65._airplay._tcp.local|serialNumber=SECRET123',
+                             '10.0.0.20|a|LGwebOSTV.local|10.0.0.20')
+                    Wsd = @('10.0.0.30|dn:NetworkVideoTransmitter tds:Device|onvif://www.onvif.org/type/video_encoder onvif://www.onvif.org/name/Cam%20Salon onvif://www.onvif.org/hardware/DS-2CD2143|http://10.0.0.30/onvif/device_service')
+                    Upnp = @(); NetBios = @(); Ports = @('10.0.0.30|554', '10.0.0.30|80'); Titles = @('http://10.0.0.30:80|Web Viewer|App-webs/')
+                    V6 = @('fe80::1234%12|AA-BB-CC-00-00-20', '2a01::99|AA-BB-CC-00-00-99')
+                }
+                $added = @(Merge-NetDeep $fake @{ Ip = '10.0.0.5' } @(1..254 | ForEach-Object { "10.0.0.$_" }))
+                $tv = @($script:NetList | Where-Object { $_.Ip -eq '10.0.0.20' })[0]
+                $cam = @($script:NetList | Where-Object { $_.Ip -eq '10.0.0.30' })[0]
+                $v6 = @($script:NetList | Where-Object { $_.Only6 })[0]
+                Assert-Test ($added.Count -eq 2) "appareils ajoutés : $($added.Count) (attendu 2)"
+                Assert-Test ($tv.Title -eq '[LG] webOS TV OLED65' -and $tv.Model -eq 'OLED65C54LA' -and $tv.KindInfo.Kind -eq 'TV ou multimédia') "TV : $($tv.Title) / $($tv.Model) / $($tv.KindInfo.Kind)"
+                Assert-Test (-not $tv.Txt.ContainsKey('serialNumber')) 'le numéro de série a été gardé'
+                Assert-Test (@($tv.Ipv6) -contains 'fe80::1234%12') 'adresse IPv6 de la TV absente'
+                Assert-Test ($cam.Camera -and $cam.Hidden -and $cam.KindInfo.Kind -eq 'Caméra' -and $cam.Title -eq 'Cam Salon') "caméra : $($cam.Title) / $($cam.KindInfo.Kind) / caméra=$($cam.Camera) discret=$($cam.Hidden)"
+                Assert-Test ($null -ne $v6 -and $v6.Hidden) 'appareil visible seulement en IPv6 absent'
+                # Une box ou un décodeur avec seulement un flux vidéo n'est pas une caméra
+                $dec = @{ Ip = '10.0.0.40'; Ms = 2; Mac = ''; Self = $false; Gateway = $false; Host = ''; Vendor = 'Sagemcom'; Services = @(); Ports = @(554); Ipv6 = @(); FoundBy = @(); Txt = @{} }
+                Update-DeviceIdentity $dec
+                Assert-Test (-not $dec.Camera) 'un décodeur TV est pris pour une caméra'
+                $script:NetFirstScan = $false
+                $ui.Tabs.SelectedIndex = $NetIndex; Show-NetDevices; Wait-TestMs 1200; Save-TestShot 'reseau-approfondi'
+                Show-DeviceDetail $cam; Wait-TestMs 1200; Save-TestShot 'fiche-camera'; Hide-TestPanel
+                $script:NetList = $null
+                $ui.NetDevices.Children.Clear()
+                'TV nommée et typée, caméra ONVIF cachée repérée, appareil IPv6 trouvé, série non gardée'
+            }
+            Test-Step 'Onduleur' {
+                $upsA = [pscustomobject]@{ Name = 'Back-UPS ES 700G FW:871.O2'; DeviceID = 'APCBack-UPS'; Chemistry = 3; BatteryStatus = 2; EstimatedChargeRemaining = 100; EstimatedRunTime = 25 }
+                $upsB = [pscustomobject]@{ Name = 'Eaton 3S'; DeviceID = 'EATON'; Chemistry = 2; BatteryStatus = 1 }
+                $lap = [pscustomobject]@{ Name = 'DELL 1VX1H'; DeviceID = '1VX1H'; Chemistry = 6; BatteryStatus = 2 }
+                Assert-Test ((Test-IsUps $upsA) -and (Test-IsUps $upsB) -and -not (Test-IsUps $lap)) 'reconnaissance des onduleurs'
+                # PC fixe dont le boîtier se déclare « inconnu », avec un onduleur : pas un portable
+                Assert-Test (-not (Test-IsLaptop @($upsA) @{ Chassis = @(2); PCType = 1 })) 'onduleur pris pour une batterie de portable'
+                Assert-Test (Test-IsLaptop @($lap) @{ Chassis = @(2); PCType = 1 }) 'vrai portable non reconnu'
+                'onduleurs reconnus (plomb ou marque), portable toujours reconnu'
+            }
             Test-Step 'Page Tests' {
                 $ui.Tabs.SelectedIndex = 5; Wait-TestMs 1500; Save-TestShot 'tests'
                 Assert-Test ($ui.TestsPanel.Children.Count -ge 4) "seulement $($ui.TestsPanel.Children.Count) tuiles"
@@ -337,7 +382,8 @@ $script:T.Run.Add_Tick({
                     Assert-Test ([bool]($l | Where-Object { $_.Self })) 'ce PC absent de la liste'
                     Assert-Test ([bool]($l | Where-Object { $_.Gateway })) 'box absente de la liste'
                     Save-TestShot 'reseau-scan'
-                    "$($l.Count) appareils"
+                    $info = @($l | Where-Object { -not $_.Self } | ForEach-Object { "$($_.Title) [$($_.KindInfo.Kind)$(if ($_.Model) { ', ' + $_.Model })$(if ($_.Hidden) { ', discret' })$(if ($_.Camera) { ', CAMÉRA' })]" })
+                    "$($l.Count) appareils : $($info -join ' ; ')"
                 }
                 Test-Step 'Surveillance des nouveaux appareils' {
                     $before = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`]*' }).Count

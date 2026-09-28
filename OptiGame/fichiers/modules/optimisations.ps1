@@ -197,7 +197,15 @@ $Tweaks = @(
 
 # Portable ou PC fixe ? Le type de boîtier déclaré par le PC passe avant la batterie:
 # un PC fixe branché sur un onduleur USB a une « batterie » mais reste un PC fixe.
+# Onduleur : batterie au plomb (celles des portables sont au lithium), ou nom et marque d'onduleur.
+function Test-IsUps($B) {
+    if (-not $B) { return $false }
+    if ([int]$B.Chemistry -eq 3) { return $true }
+    "$($B.Name) $($B.DeviceID) $($B.Description)" -match '(?i)\bups\b|onduleur|back-?ups|smart-?ups|\bapc\b|eaton|cyberpower|powerwalker|bluewalker|salicru|riello|infosec|tripp.?lite|vertiv|liebert|ablerex'
+}
+
 function Test-IsLaptop($Battery, $Data) {
+    $Battery = @($Battery | Where-Object { -not (Test-IsUps $_) })
     $mobileChassis  = 8, 9, 10, 11, 12, 14, 18, 21, 30, 31, 32
     $desktopChassis = 3, 4, 5, 6, 7, 13, 15, 16, 17, 23, 24, 35, 36
     if ($Data) { $chassis = @($Data.Chassis); $pcType = [int]$Data.PCType }

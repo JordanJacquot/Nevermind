@@ -560,7 +560,8 @@ public static class OGNative
                 {
                     if (t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion && t.Result.Status == System.Net.NetworkInformation.IPStatus.Success)
                     {
-                        lock (sync) { results.Add(addr + "|" + t.Result.RoundtripTime); }
+                        int ttl = t.Result.Options != null ? t.Result.Options.Ttl : 0;
+                        lock (sync) { results.Add(addr + "|" + t.Result.RoundtripTime + "|" + ttl); }
                         System.Threading.Interlocked.Increment(ref Found);
                     }
                 }
@@ -929,5 +930,315 @@ public static class FrameMon
             r[4] = total / 1000.0;
             return r;
         }
+    }
+}
+
+// Découverte avancée des appareils du réseau : chaque appareil est interrogé avec les méthodes
+// qu'il utilise lui même pour se présenter (rien n'est modifié sur les appareils).
+public static class NetProbe
+{
+    [DllImport("iphlpapi.dll", ExactSpelling = true)]
+    static extern int SendARP(uint destIp, uint srcIp, byte[] macAddr, ref uint macLen);
+
+    static uint ToUint(string ip) { return BitConverter.ToUInt32(System.Net.IPAddress.Parse(ip).GetAddressBytes(), 0); }
+
+    // La même chose en tâche de fond (les adresses vides mettent plusieurs secondes à répondre « personne »).
+    public static System.Threading.Tasks.Task<string[]> ArpSweepAsync(string[] ips, int threads)
+    {
+        return System.Threading.Tasks.Task.Run(() => ArpSweep(ips, threads));
+    }
+    static string Clean(string s) { return (s ?? "").Replace("|", "/").Replace("\r", " ").Replace("\n", " ").Trim(); }
+
+    // Demande directe de l'adresse physique : un appareil allumé répond toujours, même s'il bloque le ping.
+    // Retourne "ip|MAC".
+    public static string[] ArpSweep(string[] ips, int threads)
+    {
+        var results = new List<string>();
+        var sync = new object();
+        int[] next = new int[] { -1 };
+        var ths = new List<System.Threading.Thread>();
+        for (int t = 0; t < Math.Min(threads, ips.Length); t++)
+        {
+            var th = new System.Threading.Thread(() =>
+            {
+                while (true)
+                {
+                    int i = System.Threading.Interlocked.Increment(ref next[0]);
+                    if (i >= ips.Length || OGNative.Cancel) break;
+                    try
+                    {
+                        byte[] mac = new byte[6];
+                        uint len = 6;
+                        if (SendARP(ToUint(ips[i]), 0, mac, ref len) == 0 && len == 6)
+                        {
+                            string m = BitConverter.ToString(mac, 0, 6);
+                            if (m != "00-00-00-00-00-00") lock (sync) { results.Add(ips[i] + "|" + m); }
+                        }
+                    }
+                    catch { }
+                }
+            });
+            th.IsBackground = true;
+            th.Start();
+            ths.Add(th);
+        }
+        foreach (var th in ths) th.Join();
+        return results.ToArray();
+    }
+
+    // ---------------------------------------------------------------------
+    // mDNS / Bonjour : les appareils annoncent leur nom, leur modèle et leurs services.
+    // ---------------------------------------------------------------------
+    static readonly string[] MdnsServices = {
+        "_services._dns-sd._udp.local", "_googlecast._tcp.local", "_airplay._tcp.local", "_raop._tcp.local",
+        "_companion-link._tcp.local", "_ipp._tcp.local", "_ipps._tcp.local", "_printer._tcp.local",
+        "_pdl-datastream._tcp.local", "_hap._tcp.local", "_spotify-connect._tcp.local", "_sonos._tcp.local",
+        "_amzn-wplay._tcp.local", "_smb._tcp.local", "_workstation._tcp.local", "_device-info._tcp.local",
+        "_http._tcp.local", "_matter._tcp.local", "_matterc._udp.local", "_hue._tcp.local",
+        "_androidtvremote2._tcp.local", "_nvstream._tcp.local", "_rtsp._tcp.local", "_scanner._tcp.local",
+        "_uscan._tcp.local", "_mediaremotetv._tcp.local", "_sleep-proxy._udp.local", "_homekit._tcp.local" };
+
+    static byte[] BuildQuery(IList<string> names)
+    {
+        var b = new List<byte> { 0, 0, 0, 0, 0, (byte)names.Count, 0, 0, 0, 0, 0, 0 };
+        foreach (var n in names)
+        {
+            foreach (var part in n.Split('.'))
+            {
+                var bytes = System.Text.Encoding.UTF8.GetBytes(part);
+                b.Add((byte)bytes.Length);
+                b.AddRange(bytes);
+            }
+            b.Add(0);
+            b.Add(0); b.Add(12);          // PTR
+            b.Add(0x80); b.Add(1);        // réponse directe demandée (QU), classe IN
+        }
+        return b.ToArray();
+    }
+
+    static string ReadName(byte[] d, ref int pos)
+    {
+        var sb = new System.Text.StringBuilder();
+        int p = pos;
+        bool jumped = false;
+        int guard = 0;
+        while (p < d.Length && guard++ < 128)
+        {
+            int len = d[p];
+            if (len == 0) { p++; break; }
+            if ((len & 0xC0) == 0xC0)
+            {
+                if (p + 1 >= d.Length) { p = d.Length; break; }
+                int ptr = ((len & 0x3F) << 8) | d[p + 1];
+                if (!jumped) pos = p + 2;
+                jumped = true;
+                p = ptr;
+                continue;
+            }
+            p++;
+            if (p + len > d.Length) { p = d.Length; break; }
+            if (sb.Length > 0) sb.Append('.');
+            sb.Append(System.Text.Encoding.UTF8.GetString(d, p, len));
+            p += len;
+        }
+        if (!jumped) pos = p;
+        return sb.ToString();
+    }
+
+    // Lignes "ip|ptr|nom|cible", "ip|srv|nom|hôte:port", "ip|txt|nom|clé=valeur", "ip|a|nom|adresse".
+    public static void ParseMdns(byte[] d, string src, List<string> outp)
+    {
+        if (d.Length < 12) return;
+        int qd = (d[4] << 8) | d[5], an = (d[6] << 8) | d[7], ns = (d[8] << 8) | d[9], ar = (d[10] << 8) | d[11];
+        int pos = 12;
+        for (int i = 0; i < qd && pos < d.Length; i++) { ReadName(d, ref pos); pos += 4; }
+        int total = an + ns + ar;
+        for (int i = 0; i < total && pos < d.Length; i++)
+        {
+            string name = ReadName(d, ref pos);
+            if (pos + 10 > d.Length) return;
+            int type = (d[pos] << 8) | d[pos + 1];
+            int rdlen = (d[pos + 8] << 8) | d[pos + 9];
+            pos += 10;
+            int start = pos;
+            if (start + rdlen > d.Length) return;
+            try
+            {
+                if (type == 12) { int p2 = start; outp.Add(src + "|ptr|" + Clean(name) + "|" + Clean(ReadName(d, ref p2))); }
+                else if (type == 33 && rdlen > 6) { int p2 = start + 6; int port = (d[start + 4] << 8) | d[start + 5]; outp.Add(src + "|srv|" + Clean(name) + "|" + Clean(ReadName(d, ref p2)) + ":" + port); }
+                else if (type == 16)
+                {
+                    int p2 = start;
+                    while (p2 < start + rdlen)
+                    {
+                        int l = d[p2]; p2++;
+                        if (l > 0 && p2 + l <= start + rdlen) outp.Add(src + "|txt|" + Clean(name) + "|" + Clean(System.Text.Encoding.UTF8.GetString(d, p2, l)));
+                        p2 += l;
+                    }
+                }
+                else if (type == 1 && rdlen == 4) outp.Add(src + "|a|" + Clean(name) + "|" + d[start] + "." + d[start + 1] + "." + d[start + 2] + "." + d[start + 3]);
+            }
+            catch { }
+            pos = start + rdlen;
+        }
+    }
+
+    public static string[] Mdns(string localIp, int timeoutMs)
+    {
+        var outp = new List<string>();
+        var dest = new System.Net.IPEndPoint(System.Net.IPAddress.Parse("224.0.0.251"), 5353);
+        using (var u = new System.Net.Sockets.UdpClient(new System.Net.IPEndPoint(System.Net.IPAddress.Parse(localIp), 0)))
+        {
+            u.Client.ReceiveTimeout = 250;
+            var asked = new HashSet<string>(MdnsServices);
+            for (int i = 0; i < MdnsServices.Length; i += 6)
+            {
+                var chunk = new List<string>();
+                for (int k = i; k < Math.Min(MdnsServices.Length, i + 6); k++) chunk.Add(MdnsServices[k]);
+                var pkt = BuildQuery(chunk);
+                u.Send(pkt, pkt.Length, dest);
+            }
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0);
+            bool second = false;
+            while (sw.ElapsedMilliseconds < timeoutMs && !OGNative.Cancel)
+            {
+                try { var r = u.Receive(ref ep); ParseMdns(r, ep.Address.ToString(), outp); } catch (System.Net.Sockets.SocketException) { }
+                // Deuxième vague : les types de services annoncés qu'on n'avait pas demandés.
+                if (!second && sw.ElapsedMilliseconds > timeoutMs / 2)
+                {
+                    second = true;
+                    var more = new List<string>();
+                    foreach (var l in outp.ToArray())
+                    {
+                        var x = l.Split('|');
+                        if (x.Length > 3 && x[1] == "ptr" && x[2] == "_services._dns-sd._udp.local" && asked.Add(x[3])) more.Add(x[3]);
+                    }
+                    for (int i = 0; i < more.Count; i += 6)
+                    {
+                        var pkt = BuildQuery(more.GetRange(i, Math.Min(6, more.Count - i)));
+                        try { u.Send(pkt, pkt.Length, dest); } catch { }
+                    }
+                }
+            }
+        }
+        return outp.ToArray();
+    }
+
+    // ---------------------------------------------------------------------
+    // NetBIOS : nom et groupe de travail des PC Windows (et de certains NAS). Retourne "ip|nom|groupe|MAC".
+    // ---------------------------------------------------------------------
+    public static string[] NetBios(string[] ips, int timeoutMs)
+    {
+        var outp = new List<string>();
+        var q = new List<byte> { 0x4F, 0x47, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0x20, (byte)'C', (byte)'K' };
+        for (int i = 0; i < 30; i++) q.Add((byte)'A');
+        q.AddRange(new byte[] { 0, 0, 0x21, 0, 1 });
+        var pkt = q.ToArray();
+        using (var u = new System.Net.Sockets.UdpClient(0))
+        {
+            u.Client.ReceiveTimeout = 250;
+            foreach (var ip in ips) { try { u.Send(pkt, pkt.Length, new System.Net.IPEndPoint(System.Net.IPAddress.Parse(ip), 137)); } catch { } }
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0);
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                byte[] r;
+                try { r = u.Receive(ref ep); } catch (System.Net.Sockets.SocketException) { continue; }
+                if (r.Length < 57) continue;
+                int count = r[56];
+                string name = "", group = "";
+                int p = 57;
+                for (int k = 0; k < count && p + 18 <= r.Length; k++, p += 18)
+                {
+                    string n = System.Text.Encoding.ASCII.GetString(r, p, 15).Trim();
+                    int suffix = r[p + 15];
+                    bool isGroup = (r[p + 16] & 0x80) != 0;
+                    if (suffix == 0 && !isGroup && name == "") name = n;
+                    if (suffix == 0 && isGroup && group == "") group = n;
+                }
+                string mac = p + 6 <= r.Length ? BitConverter.ToString(r, p, 6) : "";
+                if (name != "") outp.Add(ep.Address + "|" + Clean(name) + "|" + Clean(group) + "|" + mac);
+            }
+        }
+        return outp.ToArray();
+    }
+
+    // ---------------------------------------------------------------------
+    // WS-Discovery : caméras (ONVIF), imprimantes et PC Windows se déclarent. Retourne "ip|types|scopes|adresses".
+    // ---------------------------------------------------------------------
+    public static string[] WsDiscovery(string localIp, int timeoutMs)
+    {
+        var outp = new List<string>();
+        string probe = "<?xml version=\"1.0\" encoding=\"utf-8\"?><soap:Envelope xmlns:soap=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:wsa=\"http://schemas.xmlsoap.org/ws/2004/08/addressing\" xmlns:wsd=\"http://schemas.xmlsoap.org/ws/2005/04/discovery\"><soap:Header><wsa:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</wsa:To><wsa:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</wsa:Action><wsa:MessageID>urn:uuid:" + Guid.NewGuid() + "</wsa:MessageID></soap:Header><soap:Body><wsd:Probe/></soap:Body></soap:Envelope>";
+        var pkt = System.Text.Encoding.UTF8.GetBytes(probe);
+        var rxTypes = new System.Text.RegularExpressions.Regex(@"<(?:\w+:)?Types[^>]*>([^<]*)<", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var rxScopes = new System.Text.RegularExpressions.Regex(@"<(?:\w+:)?Scopes[^>]*>([^<]*)<", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var rxAddr = new System.Text.RegularExpressions.Regex(@"<(?:\w+:)?XAddrs[^>]*>([^<]*)<", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var seen = new HashSet<string>();
+        using (var u = new System.Net.Sockets.UdpClient(new System.Net.IPEndPoint(System.Net.IPAddress.Parse(localIp), 0)))
+        {
+            u.Client.ReceiveTimeout = 250;
+            u.Send(pkt, pkt.Length, new System.Net.IPEndPoint(System.Net.IPAddress.Parse("239.255.255.250"), 3702));
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0);
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                byte[] r;
+                try { r = u.Receive(ref ep); } catch (System.Net.Sockets.SocketException) { continue; }
+                string x = System.Text.Encoding.UTF8.GetString(r);
+                var mt = rxTypes.Match(x); var ms = rxScopes.Match(x); var ma = rxAddr.Match(x);
+                string line = ep.Address + "|" + Clean(mt.Success ? mt.Groups[1].Value : "") + "|" + Clean(ms.Success ? ms.Groups[1].Value : "") + "|" + Clean(ma.Success ? ma.Groups[1].Value : "");
+                if (seen.Add(line)) outp.Add(line);
+            }
+        }
+        return outp.ToArray();
+    }
+
+    // ---------------------------------------------------------------------
+    // Titre des pages web des appareils (« TP-Link Archer AX58 », « Livebox »...). Retourne "url|titre|serveur".
+    // Les certificats des appareils ne sont pas vérifiés, seulement pour cette lecture de titre.
+    // ---------------------------------------------------------------------
+    public static string[] HttpTitles(string[] urls, int timeoutMs)
+    {
+        var outp = new List<string>();
+        var sync = new object();
+        var rx = new System.Text.RegularExpressions.Regex(@"<title[^>]*>\s*([^<]{1,120}?)\s*</title>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var tasks = new List<System.Threading.Tasks.Task>();
+        foreach (var url in urls)
+        {
+            string u0 = url;
+            tasks.Add(System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(u0);
+                    req.Timeout = timeoutMs;
+                    req.ReadWriteTimeout = timeoutMs;
+                    req.UserAgent = "Mozilla/5.0 OptiGame";
+                    req.AllowAutoRedirect = true;
+                    req.ServerCertificateValidationCallback = delegate { return true; };
+                    System.Net.HttpWebResponse resp;
+                    try { resp = (System.Net.HttpWebResponse)req.GetResponse(); }
+                    catch (System.Net.WebException we) { resp = we.Response as System.Net.HttpWebResponse; }
+                    if (resp == null) return;
+                    using (resp)
+                    using (var s = resp.GetResponseStream())
+                    {
+                        var buf = new byte[65536];
+                        int total = 0, n;
+                        while (total < buf.Length && (n = s.Read(buf, total, buf.Length - total)) > 0) total += n;
+                        var html = System.Text.Encoding.UTF8.GetString(buf, 0, total);
+                        var m = rx.Match(html);
+                        string title = m.Success ? System.Net.WebUtility.HtmlDecode(m.Groups[1].Value) : "";
+                        string server = resp.Headers["Server"] ?? "";
+                        if (title != "" || server != "") lock (sync) { outp.Add(u0 + "|" + Clean(title) + "|" + Clean(server)); }
+                    }
+                }
+                catch { }
+            }));
+        }
+        try { System.Threading.Tasks.Task.WaitAll(tasks.ToArray(), timeoutMs + 2000); } catch { }
+        lock (sync) { return outp.ToArray(); }
     }
 }

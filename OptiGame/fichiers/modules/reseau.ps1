@@ -76,9 +76,18 @@ function Get-Vendor([string]$Mac) {
 }
 
 function Get-DeviceKind($D) {
-    $t = "$($D.Host) $($D.Vendor)"
+    $t = "$($D.Host) $($D.Vendor) $($D.MdnsHost) $($D.Announced) $($D.Maker) $($D.Model) $($D.UpnpName) $($D.WebTitle)"
+    $svc = [string]$D.SvcText
     if ($D.Self) { return @{ Kind = 'Ce PC'; Glyph = 0xE7F4; Color = $Colors.info } }
     if ($D.Gateway) { return @{ Kind = 'Box Internet'; Glyph = 0xE80F; Color = $Colors.ok } }
+    if ($D.Camera) { return @{ Kind = 'Caméra'; Glyph = 0xE714; Color = $Colors.warn } }
+    if ($svc -match '(?i)_ipp|_printer|_pdl-datastream|PrintDevice|\bPrinter\b') { return @{ Kind = 'Imprimante'; Glyph = 0xE749; Color = '#9AA3B2' } }
+    if ($t -match '(?i)\brt-|router|routeur|archer|\bdeco\b|orbi|mesh|access.?point|repeater|répéteur|ubiquiti|unifi') { return @{ Kind = 'Routeur ou répéteur Wi-Fi'; Glyph = 0xE774; Color = $Colors.ok } }
+    if ($D.NbName -or $svc -match '(?i)pub:Computer|_workstation|_smb\b') { return @{ Kind = 'Ordinateur'; Glyph = 0xE7F4; Color = $Colors.info } }
+    if ($svc -match '(?i)_companion-link') { return @{ Kind = 'Appareil Apple'; Glyph = 0xE8EA; Color = '#B18CFF' } }
+    if ($svc -match '(?i)_googlecast|_amzn-wplay|_androidtvremote2|MediaRenderer|_mediaremotetv|_airplay') { return @{ Kind = 'TV ou multimédia'; Glyph = 0xE7F4; Color = $Colors.warn } }
+    if ($svc -match '(?i)_sonos|_raop') { return @{ Kind = 'Enceinte ou audio'; Glyph = 0xE7F5; Color = '#FF7AB6' } }
+    if ($svc -match '(?i)_hap|_homekit|_matter|_hue|_alexa') { return @{ Kind = 'Objet connecté'; Glyph = 0xE80F; Color = '#4EA8FF' } }
     if ($t -match '(?i)\brt-|router|routeur|archer|\bdeco\b|orbi|mesh|access.?point|repeater|répéteur|ubiquiti|unifi') { return @{ Kind = 'Routeur ou répéteur Wi-Fi'; Glyph = 0xE774; Color = $Colors.ok } }
     if ($t -match '(?i)iphone|ipad|android|galaxy|pixel|redmi|oneplus|oppo|honor|phone|motorola|poco') { return @{ Kind = 'Téléphone ou tablette'; Glyph = 0xE8EA; Color = '#B18CFF' } }
     if ($t -match '(?i)playstation|\bps[345]\b|sony interactive|nintendo|xbox|switch') { return @{ Kind = 'Console de jeu'; Glyph = 0xE7FC; Color = '#FF7AB6' } }
@@ -227,9 +236,11 @@ function New-DeviceTile($D, [int]$Index) {
     if ($D.Self) { [void]$badges.Children.Add((New-Badge 'Ce PC' $Colors.info)) }
     if ($D.Gateway) { [void]$badges.Children.Add((New-Badge 'Ta box' $Colors.ok)) }
     if ($D.New) { [void]$badges.Children.Add((New-Badge 'Nouveau' $Colors.warn)) }
+    if ($D.Camera) { $cb = New-Badge 'Caméra ?' $Colors.warn; $cb.ToolTip = "Indices : $(@($D.CameraWhy) -join ', ')"; [void]$badges.Children.Add($cb) }
+    if ($D.Hidden) { $hb = New-Badge 'Discret' '#9AA3B2'; $hb.ToolTip = 'Ne répond pas au ping : trouvé autrement. C''est normal pour beaucoup de téléphones et de PC protégés.'; [void]$badges.Children.Add($hb) }
     if ($null -ne $D.Ms) { [void]$badges.Children.Add((New-Badge $(if ($D.Ms -lt 1) { '< 1 ms' } else { "$($D.Ms) ms" }) '#9AA3B2')) }
     if ($badges.Children.Count) { [void]$sp.Children.Add($badges) }
-    $det = New-Text "$($D.Ip)$(if ($D.Vendor) { '   ' + $D.Vendor })" 11.5 '#5B6475'
+    $det = New-Text "$($D.Ip)$(if ($D.Model) { '   ' + $D.Model } elseif ($D.Vendor) { '   ' + $D.Vendor })" 11.5 '#5B6475'
     $det.Margin = New-Thickness 0 8 0 0
     $det.TextTrimming = 'CharacterEllipsis'; $det.TextWrapping = 'NoWrap'
     $det.ToolTip = "Adresse : $($D.Ip)`nAdresse physique : $($D.Mac)`nFabricant : $($D.Vendor)"
@@ -311,7 +322,7 @@ function Invoke-NetworkScan {
     # Assemblage des appareils
     $inNet = @{}; foreach ($x in $ips) { $inNet[$x] = $true }
     $devs = @{}
-    foreach ($l in @($r.Alive)) { $p = ([string]$l) -split '\|'; $devs[$p[0]] = @{ Ip = $p[0]; Ms = [int]$p[1]; Mac = $null } }
+    foreach ($l in @($r.Alive)) { $p = ([string]$l) -split '\|'; $devs[$p[0]] = @{ Ip = $p[0]; Ms = [int]$p[1]; Mac = $null; Ttl = $(if ($p.Count -gt 2) { [int]$p[2] } else { 0 }) } }
     foreach ($l in @($r.Arp)) {
         $p = ([string]$l) -split '\|'
         if (-not $inNet.ContainsKey($p[0])) { continue }
@@ -367,10 +378,20 @@ function Invoke-NetworkScan {
         $nw.HorizontalAlignment = 'Center'
         [void]$ui.NetHero.Children.Add($nw)
     }
+    $script:NetFirstScan = $first
+    Show-NetDevices
+    Invoke-NetDeepScan $net $ips $radar
+}
+
+function Show-NetDevices {
+    $list = @($script:NetList)
+    $first = $script:NetFirstScan
+    $newCount = @($list | Where-Object { $_.New }).Count
+    $hidden = @($list | Where-Object { $_.Hidden }).Count
     $ui.NetDevices.Children.Clear()
     $i = 0
     foreach ($d in $list) { [void]$ui.NetDevices.Children.Add((New-DeviceTile $d $i)); $i++ }
-    $ui.NetDevSummary.Text = "$($list.Count) appareil$(if ($list.Count -gt 1) {'s'})" + $(if ($newCount) { ", $newCount nouveau$(if ($newCount -gt 1) {'x'})" } else { '' })
+    $ui.NetDevSummary.Text = "$($list.Count) appareil$(if ($list.Count -gt 1) {'s'})" + $(if ($newCount) { ", $newCount nouveau$(if ($newCount -gt 1) {'x'})" } else { '' }) + $(if ($hidden) { ", $hidden discret$(if ($hidden -gt 1) {'s'})" } else { '' })
     $ui.NetDevHint.Text = if ($first) {
         'Premier scan : ces appareils sont mémorisés, OptiGame te signalera tout nouvel appareil au prochain scan. Clique sur un appareil pour voir ses détails.'
     } elseif ($newCount) {
@@ -440,7 +461,7 @@ function Invoke-NetWatch {
 $DevTags = @{
     'Ce PC' = 'PC'; 'Box Internet' = 'BOX'; 'Routeur ou répéteur Wi-Fi' = 'WIFI'; 'Téléphone ou tablette' = 'TEL'
     'Console de jeu' = 'JEU'; 'TV ou multimédia' = 'TV'; 'Imprimante' = 'IMP'; 'Box ou décodeur TV' = 'BOX'
-    'Objet connecté' = 'IOT'; 'Appareil Apple' = 'APP'; 'Ordinateur' = 'PC'; 'Téléphone probable' = 'TEL'; 'Appareil' = 'NET'
+    'Objet connecté' = 'IOT'; 'Appareil Apple' = 'APP'; 'Ordinateur' = 'PC'; 'Téléphone probable' = 'TEL'; 'Appareil' = 'NET'; 'Caméra' = 'CAM'; 'Enceinte ou audio' = 'AUD'
 }
 
 # Port : nom, niveau (info, warn, bad), explication, adresse web éventuelle
@@ -567,6 +588,16 @@ function Show-DeviceDetail($D) {
         @('Type', $D.KindInfo.Kind)
     )
     if ($D.Host) { $rows += , @('Nom sur le réseau', $D.Host) }
+    if ($D.Announced -and $D.Announced -ne $D.Host) { $rows += , @('Nom annoncé par l''appareil', $D.Announced) }
+    if ($D.Model) { $rows += , @('Modèle', "$(if ($D.Maker) { $D.Maker + ' ' })$($D.Model)") }
+    if ($D.NbName) { $rows += , @('Nom Windows', "$($D.NbName)$(if ($D.NbGroup) { " (groupe $($D.NbGroup))" })") }
+    if ($D.OsGuess) { $rows += , @('Système probable', $D.OsGuess) }
+    if (@($D.ServiceLabels).Count) { $rows += , @('Ce qu''il propose', (@($D.ServiceLabels) -join ', ')) }
+    if ($D.WebTitle) { $rows += , @('Sa page de réglages', $D.WebTitle) }
+    if (@($D.Ipv6).Count) { $rows += , @('Adresse IPv6', (@($D.Ipv6) | Select-Object -First 2) -join ', ') }
+    if (@($D.FoundBy).Count) { $rows += , @('Trouvé grâce à', (@($D.FoundBy) -join ', '), '#9AA3B2') }
+    if ($D.Hidden) { $rows += , @('Appareil discret', 'Il ne répond pas au ping. C''est normal pour beaucoup de téléphones et de PC protégés par un pare-feu.', '#9AA3B2') }
+    if ($D.Camera) { $rows += , @('Caméra possible', "Indices : $(@($D.CameraWhy) -join ', '). Vérifie que tu sais à qui elle est et où elle filme.", $Colors.warn) }
     $rows += , @('Vu pour la première fois', $firstTxt)
     if ($D.New) { $rows += , @('Statut', 'Nouvel appareil depuis le dernier scan', $Colors.warn) }
     if ($D.Vendor -eq 'Adresse privée') { $rows += , @('Bon à savoir', 'Les téléphones récents cachent leur vraie adresse physique : le fabricant ne peut pas être connu.', '#9AA3B2') }
