@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.9
+    OptiGame 1.0.10
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,7 +10,7 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.9'
+$AppVersion = '1.0.10'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -2062,7 +2062,7 @@ if ($Uninstall) {
                 <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Appareils connectés"/>
               </DockPanel>
               <UniformGrid x:Name="NetDevices" Columns="3"/>
-              <TextBlock x:Name="NetDevHint" Style="{StaticResource Sub}" FontSize="12" Margin="0,8,0,0" Text="Lance un scan pour voir les appareils."/>
+              <TextBlock x:Name="NetDevHint" Style="{StaticResource Sub}" FontSize="12" Margin="0,8,0,0" Text="Clique sur « Scanner le réseau » pour voir les appareils connectés."/>
             </StackPanel>
           </ScrollViewer>
         </Grid>
@@ -6347,9 +6347,12 @@ function Show-NetHeroIdle {
     $ui.NetHero.Children.Clear()
     $r = New-NetRadar
     [void]$ui.NetHero.Children.Add($r.El)
-    $t = New-Text 'Prêt à scanner ton réseau' 14 '#9AA3B2' -Semi
+    $t = New-Text 'Prêt à scanner ton réseau' 14 '#FFFFFF' -Semi
     $t.HorizontalAlignment = 'Center'; $t.Margin = New-Thickness 0 12 0 0
     [void]$ui.NetHero.Children.Add($t)
+    $h = New-Text 'Clique sur « Scanner le réseau » en haut à droite.' 12.5 '#9AA3B2'
+    $h.HorizontalAlignment = 'Center'; $h.Margin = New-Thickness 0 4 0 0
+    [void]$ui.NetHero.Children.Add($h)
 }
 
 function New-DeviceTile($D, [int]$Index) {
@@ -7524,7 +7527,7 @@ $ui.Tabs.Add_SelectionChanged({
     if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubStats) { Invoke-Safe { Update-Hub }; return }
     if ($ui.Tabs.SelectedIndex -eq $NetIndex -and -not $script:NetBuilt) {
         $script:NetBuilt = $true
-        Invoke-Safe { Show-NetHeroIdle; Update-NetAuditCard; Update-NetScanInfo; Invoke-NetworkScan }
+        Invoke-Safe { Show-NetHeroIdle; Update-NetAuditCard; Update-NetScanInfo }
         return
     }
     if ($ui.Tabs.SelectedIndex -eq 6 -and -not $script:SecurityBuilt) {
