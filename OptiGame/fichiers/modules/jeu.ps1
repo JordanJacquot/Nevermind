@@ -302,6 +302,12 @@ function Format-PlayTime([double]$Seconds) {
     "$([int]($m / 60)) h $('{0:D2}' -f ($m % 60))"
 }
 
+# Nom affiché d'une partie : le vrai nom du jeu s'il est connu (les anciennes parties gardaient le nom du dossier).
+function Get-SessionName($S) {
+    if ($script:GameIndex -and $S.Key -and $script:GameIndex[[string]$S.Key]) { return $script:GameIndex[[string]$S.Key].Game }
+    [string]$S.Game
+}
+
 function Get-FpsColor([double]$Fps) { if ($Fps -ge 60) { $Colors.ok } elseif ($Fps -ge 30) { $Colors.warn } else { $Colors.bad } }
 
 # ---------------------------------------------------------------------------
@@ -564,7 +570,7 @@ function Show-FpsSession([string]$Id) {
     $s = @($all | Where-Object { $_.Id -eq $Id })[0]
     if (-not $s) { return }
     $d = [datetime]$s.Date
-    Show-TestPanel @{ Tag = 'FPS'; Title = $s.Game; Sub = "Partie du $($d.ToString('dd/MM')) à $($d.ToString('HH:mm')), $(Format-PlayTime $s.Seconds) mesurées" }
+    Show-TestPanel @{ Tag = 'FPS'; Title = (Get-SessionName $s); Sub = "Partie du $($d.ToString('dd/MM')) à $($d.ToString('HH:mm')), $(Format-PlayTime $s.Seconds) mesurées" }
     Set-TestButtons 'done'
     $ui.BtnTestAgain.Visibility = 'Collapsed'
     $ui.TestProgress.Value = 100; $ui.TestPct.Text = ''
@@ -610,7 +616,7 @@ function New-FpsRow($S) {
     $row = New-Grid @('*', 'Auto', 'Auto')
     $left = New-Object System.Windows.Controls.StackPanel
     $left.VerticalAlignment = 'Center'
-    $nm = New-Text $S.Game 14 '#FFFFFF' -Semi
+    $nm = New-Text (Get-SessionName $S) 14 '#FFFFFF' -Semi
     $nm.TextTrimming = 'CharacterEllipsis'; $nm.TextWrapping = 'NoWrap'
     [void]$left.Children.Add($nm)
     $d = [datetime]$S.Date
@@ -692,7 +698,7 @@ function Build-FpsPanel {
     $recent = @($all | Sort-Object { [datetime]$_.Date } -Descending)
     $cmp = New-FpsCompare @($all | Where-Object { $_.Key -eq $recent[0].Key })
     if ($cmp) {
-        [void]$panel.Children.Add((New-Text "$($recent[0].Game) : avant / après tes derniers réglages" 13 '#9AA3B2' -Semi))
+        [void]$panel.Children.Add((New-Text "$(Get-SessionName $recent[0]) : avant / après tes derniers réglages" 13 '#9AA3B2' -Semi))
         $cc = New-Card
         $cc.Margin = New-Thickness 0 6 0 16
         $cc.Child = $cmp

@@ -311,11 +311,20 @@ function Get-InstalledGames {
             $key = $lib.TrimEnd('\').ToLower()
             if ($seen.ContainsKey($key)) { continue }
             $seen[$key] = $true
+            # Vrai nom de chaque jeu (« Rocket League » au lieu du dossier « rocketleague »).
+            $names = @{}
+            foreach ($acf in @(Get-ChildItem -LiteralPath (Join-Path $lib 'steamapps') -Filter 'appmanifest_*.acf' -File -ErrorAction SilentlyContinue)) {
+                $txt = Get-Content -LiteralPath $acf.FullName -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+                if ($txt -match '"installdir"\s+"([^"]+)"') {
+                    $installDir = $Matches[1].ToLower()
+                    if ($txt -match '"name"\s+"([^"]+)"') { $names[$installDir] = $Matches[1] }
+                }
+            }
             $common = Join-Path $lib 'steamapps\common'
             if (Test-Path -LiteralPath $common) {
                 $dirs += Get-ChildItem -LiteralPath $common -Directory -ErrorAction SilentlyContinue |
                     Where-Object { $_.Name -notmatch $notGames } |
-                    ForEach-Object { @{ Name = $_.Name; Dir = $_.FullName; Exe = $null } }
+                    ForEach-Object { @{ Name = $(if ($names[$_.Name.ToLower()]) { $names[$_.Name.ToLower()] } else { $_.Name }); Dir = $_.FullName; Exe = $null } }
             }
         }
     }
