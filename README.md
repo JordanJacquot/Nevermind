@@ -20,7 +20,7 @@ Deux sections : **Ordinateur** (accueil avec une carte par fonction) et **Résea
 
 - **Tableau de bord** : mesures en direct, santé de chaque composant, score et liste de ce qui peut être amélioré.
 - **Fiches de correction** : ce qui a été trouvé, ce que l'app va faire, bouton Exécuter, puis « Revenir en arrière » si besoin.
-- **Optimisation gaming** : plan d'alimentation, mode jeu, Game Bar, planification GPU, accélération de la souris... Mode jeu automatique (ferme des applis pendant que tu joues) et profils par jeu (priorité haute, carte graphique).
+- **Optimisation gaming** : plan d'alimentation, mode jeu, Game Bar, planification GPU, accélération de la souris... Mode jeu automatique (ferme des applis pendant que tu joues), profils par jeu (priorité haute, carte graphique) et compteur de FPS en overlay avec comparaison avant / après (via PresentMon d'Intel).
 - **Tests des composants** : vitesse et santé de chaque disque, processeur (puissance, stabilité), mémoire, capteurs de la carte graphique, débit Internet, lag en charge (bufferbloat), pixels morts.
 - **Sécurité** : niveau de protection, analyses Microsoft Defender, recherche de fichiers déguisés, programmes cachés, tâches planifiées suspectes, exclusions d'antivirus, hosts et proxy.
 - **Démarrage**, **Connexion** (ping, gigue, DNS), **Nettoyage**, **Sauvegarde** (tout annuler, point de restauration, rapport HTML).
@@ -51,7 +51,8 @@ OptiGame/            l'application telle qu'elle est distribuée
     audit-reseau.ps1      audit de sécurité du réseau
     mises-a-jour.ps1      mises à jour depuis GitHub
     assistance.ps1        historique, signaler un problème, notifications, visite guidée
-    jeu.ps1               mode jeu automatique, profils par jeu, alerte de température
+    jeu.ps1               mode jeu automatique, profils par jeu, compteur de FPS, alerte de température
+  fichiers/outils-tiers/  PresentMon.exe (Intel, licence MIT) pour mesurer les FPS
     evenements.ps1        branchement des boutons
 outils/
   construire.ps1     génère l'icône, compile OptiGame.exe et le désinstalleur, crée OptiGame.zip

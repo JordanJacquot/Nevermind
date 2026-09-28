@@ -410,6 +410,8 @@
               <StackPanel x:Name="GamingPanel"/>
               <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Mode jeu automatique" Margin="0,26,0,10"/>
               <StackPanel x:Name="GameModePanel"/>
+              <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Compteur de FPS et avant / après" Margin="0,16,0,10"/>
+              <StackPanel x:Name="FpsPanel"/>
               <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Profils par jeu" Margin="0,16,0,10"/>
               <StackPanel x:Name="GameProfilesPanel"/>
             </StackPanel>

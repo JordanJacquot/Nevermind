@@ -136,6 +136,42 @@ $script:T.Run.Add_Tick({
                 } else { $detail += ' (profil non testé : pas administrateur)' }
                 $detail
             }
+            Test-Step 'Compteur de FPS (overlay, raccourci, avant / après)' {
+                Assert-Test (Test-Path -LiteralPath $PresentMonExe) 'PresentMon absent'
+                # Raccourci Ctrl+Maj+F : message simulé, compteur désactivé donc une notification l'explique
+                Set-Setting 'FpsOverlay' $false
+                $before = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`] Compteur de FPS*' }).Count
+                if ($script:HotkeyHandle) { [void][OGNative]::SendMessage($script:HotkeyHandle, 0x0312, [IntPtr]$FpsHotkeyId, [IntPtr]::Zero) }
+                else { Register-FpsHotkey; [void][OGNative]::SendMessage($script:HotkeyHandle, 0x0312, [IntPtr]$FpsHotkeyId, [IntPtr]::Zero) }
+                $after = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`] Compteur de FPS*' }).Count
+                Assert-Test ($after -gt $before) 'le raccourci ne réagit pas'
+                # Overlay affiché puis fermé
+                Show-FpsOverlay
+                $script:Overlay.Fps.Text = '144'; $script:Overlay.Sub.Text = '1 % bas 98    moyenne 131'
+                $script:Overlay.Win.Show(); Wait-TestMs 300
+                $ov = $script:Overlay.Win
+                $ov.UpdateLayout()
+                $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap([int]$ov.ActualWidth, [int]$ov.ActualHeight, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32)
+                $rtb.Render($ov.Content)
+                $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder; $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
+                $fs = [IO.File]::Create((Join-Path $script:T.Dir 'captures\overlay.png')); $enc.Save($fs); $fs.Close()
+                Hide-FpsOverlay
+                # Mesure lancée puis arrêtée sur un programme (sans droits admin, PresentMon refuse : l'app ne doit pas planter)
+                Start-FpsTarget $PID 'Programme d''essai' 'powershell'
+                Update-FpsOverlay
+                Stop-FpsTarget
+                Assert-Test ($null -eq $script:FpsTarget -and $null -eq $script:Overlay) 'mesure non arrêtée'
+                # Avant / après sur des parties simulées autour d'un changement
+                [void](Add-History 'Réglage d''essai FPS' @() @(@{ Type = 'reg'; Path = 'HKCU:\Software\OptiGameTest'; Name = 'X'; Existed = $false }))
+                $lc = Get-LastChangeDate
+                $mk = { param($d, $avg, $low) [pscustomobject]@{ Date = $d.ToString('s'); Game = 'Jeu d''essai'; Key = 'jeuessai'; Avg = $avg; Low1 = $low; Low01 = $low - 10; Seconds = 600; Frames = 60000 } }
+                $sess = @((& $mk $lc.AddDays(-2) 110 70), (& $mk $lc.AddDays(-1) 114 74), (& $mk $lc.AddMinutes(5) 121 88), (& $mk $lc.AddMinutes(50) 125 90))
+                ConvertTo-Json -InputObject $sess | Set-Content -LiteralPath $FpsFile -Encoding UTF8
+                Build-FpsPanel
+                $ui.Tabs.SelectedIndex = 1; Wait-TestMs 400; $ui.FpsPanel.BringIntoView(); Wait-TestMs 400; Save-TestShot 'fps-avant-apres'
+                Assert-Test ($ui.FpsPanel.Children.Count -ge 3) "panneau incomplet ($($ui.FpsPanel.Children.Count) éléments)"
+                'raccourci, overlay, arrêt propre et comparaison OK'
+            }
             Test-Step 'Page Tests' {
                 $ui.Tabs.SelectedIndex = 5; Wait-TestMs 1500; Save-TestShot 'tests'
                 Assert-Test ($ui.TestsPanel.Children.Count -ge 4) "seulement $($ui.TestsPanel.Children.Count) tuiles"

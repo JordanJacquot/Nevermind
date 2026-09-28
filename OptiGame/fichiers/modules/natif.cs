@@ -701,4 +701,162 @@ public static class OGNative
         }
         return result.ToArray();
     }
+
+    // Overlay : la souris traverse la fenêtre, elle ne prend jamais le focus et n'apparaît pas dans Alt+Tab.
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hwnd, int index);
+    [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr hwnd, int index, int value);
+    public static void MakeOverlay(IntPtr hwnd)
+    {
+        const int GWL_EXSTYLE = -20, WS_EX_TRANSPARENT = 0x20, WS_EX_TOOLWINDOW = 0x80, WS_EX_LAYERED = 0x80000, WS_EX_NOACTIVATE = 0x08000000;
+        SetWindowLong(hwnd, GWL_EXSTYLE, GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_NOACTIVATE);
+    }
+
+    // Programme de la fenêtre au premier plan (le jeu auquel on joue).
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    public static int GetForegroundPid()
+    {
+        uint pid;
+        GetWindowThreadProcessId(GetForegroundWindow(), out pid);
+        return (int)pid;
+    }
+
+    // Raccourci clavier global (Ctrl+Maj+F pour le compteur de FPS).
+    [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hwnd, int id, uint mods, uint vk);
+    [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hwnd, int id);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hwnd, int msg, IntPtr wp, IntPtr lp);
+    public static bool AddHotKey(IntPtr hwnd, int id, uint mods, uint vk) { return RegisterHotKey(hwnd, id, mods | 0x4000, vk); }
+    public static void RemoveHotKey(IntPtr hwnd, int id) { UnregisterHotKey(hwnd, id); }
+}
+
+// Mesure des FPS d'un jeu avec PresentMon (outil gratuit d'Intel), lancé en arrière plan.
+// PresentMon écrit une ligne CSV par image affichée ; on garde la durée de chaque image.
+public static class FrameMon
+{
+    static System.Diagnostics.Process proc;
+    static readonly object sync = new object();
+    static readonly List<double> all = new List<double>();
+    static readonly Queue<double> last1 = new Queue<double>();
+    static readonly Queue<double> last10 = new Queue<double>();
+    static double sum1, sum10;
+    static int ftIndex = -1;
+    public static string LastError = "";
+    // Vrai quand le jeu n'est pas au premier plan : ces images ne comptent pas (le jeu tourne au ralenti en fond).
+    public static volatile bool Paused;
+
+    public static bool Running { get { var p = proc; return p != null && !p.HasExited; } }
+    public static int Frames { get { lock (sync) { return all.Count; } } }
+
+    public static void Reset()
+    {
+        lock (sync) { all.Clear(); last1.Clear(); last10.Clear(); sum1 = 0; sum10 = 0; ftIndex = -1; }
+        LastError = "";
+    }
+
+    public static bool Start(string exe, int pid)
+    {
+        Stop();
+        Reset();
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(exe,
+                "--process_id " + pid + " --output_stdout --no_console_stats --stop_existing_session --session_name OptiGame --terminate_on_proc_exit");
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            var p = new System.Diagnostics.Process();
+            p.StartInfo = psi;
+            p.OutputDataReceived += (s, e) => { if (e.Data != null) Feed(e.Data); };
+            p.ErrorDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) LastError = e.Data; };
+            p.Start();
+            p.BeginOutputReadLine();
+            p.BeginErrorReadLine();
+            proc = p;
+            return true;
+        }
+        catch (Exception ex) { LastError = ex.Message; proc = null; return false; }
+    }
+
+    public static void Stop()
+    {
+        var p = proc;
+        proc = null;
+        if (p == null) return;
+        try { if (!p.HasExited) p.Kill(); } catch { }
+        try { p.Dispose(); } catch { }
+    }
+
+    // Une ligne de PresentMon. La première donne le nom des colonnes.
+    public static void Feed(string line)
+    {
+        var cols = line.Split(',');
+        lock (sync)
+        {
+            if (ftIndex < 0)
+            {
+                for (int i = 0; i < cols.Length; i++)
+                {
+                    var c = cols[i].Trim();
+                    if (c == "FrameTime" || c == "MsBetweenAppStart" || c == "msBetweenPresents" || c == "MsBetweenPresents") { ftIndex = i; break; }
+                }
+                return;
+            }
+            if (ftIndex >= cols.Length || Paused) return;
+            double ft;
+            if (!double.TryParse(cols[ftIndex], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out ft)) return;
+            if (ft <= 0 || ft > 5000) return;
+            if (all.Count < 3000000) all.Add(ft);
+            last1.Enqueue(ft); sum1 += ft;
+            while (sum1 > 1000 && last1.Count > 1) sum1 -= last1.Dequeue();
+            last10.Enqueue(ft); sum10 += ft;
+            while (sum10 > 10000 && last10.Count > 1) sum10 -= last10.Dequeue();
+        }
+    }
+
+    // « 1 % bas » : FPS moyen des 1 % d'images les plus lentes (c'est là que se voient les saccades).
+    static double Low(double[] frameTimes, double pct)
+    {
+        if (frameTimes.Length == 0) return 0;
+        Array.Sort(frameTimes);
+        int count = Math.Max(1, (int)Math.Floor(frameTimes.Length * (1 - pct)));
+        double sum = 0;
+        for (int i = frameTimes.Length - count; i < frameTimes.Length; i++) sum += frameTimes[i];
+        return 1000.0 / (sum / count);
+    }
+
+    // Pour l'overlay : { FPS de la dernière seconde, 1 % bas des 10 dernières secondes, FPS moyen de la session }
+    public static double[] Live()
+    {
+        lock (sync)
+        {
+            var r = new double[3];
+            if (last1.Count > 0 && sum1 > 0) r[0] = last1.Count * 1000.0 / sum1;
+            r[1] = Low(last10.ToArray(), 0.99);
+            double total = 0;
+            foreach (var f in all) total += f;
+            if (total > 0) r[2] = all.Count * 1000.0 / total;
+            return r;
+        }
+    }
+
+    // Bilan de la session : { FPS moyen, 1 % bas, 0,1 % bas, nombre d'images, secondes mesurées }
+    public static double[] Summary()
+    {
+        lock (sync)
+        {
+            var r = new double[5];
+            int n = all.Count;
+            if (n == 0) return r;
+            double total = 0;
+            foreach (var f in all) total += f;
+            var arr = all.ToArray();
+            r[0] = n * 1000.0 / total;
+            r[1] = Low(arr, 0.99);
+            r[2] = Low(arr, 0.999);
+            r[3] = n;
+            r[4] = total / 1000.0;
+            return r;
+        }
+    }
 }

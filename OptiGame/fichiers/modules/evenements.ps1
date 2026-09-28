@@ -22,6 +22,8 @@ $Window.Add_Closed({
     $Live.Run = $false
     if ($script:LiveTimer) { $script:LiveTimer.Stop() }
     try { if ($script:GameSession) { Stop-GameSession } } catch {}
+    try { Stop-FpsTarget; Unregister-FpsHotkey } catch {}
+    try { [FrameMon]::Stop() } catch {}
     try { if ($script:NotifyIcon) { $script:NotifyIcon.Visible = $false; $script:NotifyIcon.Dispose() } } catch {}
     if ($Splash) { try { $Splash.Close() } catch {} }
 })
@@ -175,7 +177,8 @@ $Window.Add_ContentRendered({
     }
     Invoke-Safe {
         Update-GameCache
-        if (Get-Setting 'GameMode' $false) { Start-GameWatch }
+        Update-GameWatch
+        Register-FpsHotkey
         if (Get-Setting 'NetWatch' $false) { Set-NetWatch $true }
     }
     try { Invoke-UpdateCheck } catch { Write-Log "Vérification de mise à jour: $_" }

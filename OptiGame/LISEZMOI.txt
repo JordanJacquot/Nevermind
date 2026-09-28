@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.13
+﻿OptiGame 1.0.14
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -79,6 +79,12 @@ Optimisation gaming
   (tant qu'OptiGame est ouvert, même réduit).
   Profils par jeu : « Priorité haute » pour chaque jeu (et « Carte puissante »
   sur les PC à deux cartes graphiques), appliqués même quand OptiGame est fermé.
+  Compteur de FPS : s'affiche en haut à gauche par dessus le jeu (sans le
+  gêner), tout seul pour les jeux Steam et Epic, avec Ctrl + Maj + F pour les
+  autres. Chaque partie est enregistrée : l'app compare tes FPS avant et après
+  tes réglages. Le jeu doit être en « plein écran fenêtré » ou en fenêtre.
+  La mesure utilise PresentMon, l'outil gratuit d'Intel, inclus dans le dossier
+  fichiers\outils-tiers (licence dans PresentMon-LICENCE.txt).
 
 Spécial PC portable
   L'app reconnaît un portable d'après le type de boîtier déclaré par le PC (un PC
