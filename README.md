@@ -32,7 +32,25 @@ Aucune modification n'est faite sans clic de l'utilisateur, et chaque réglage m
 
 ```
 OptiGame/            l'application telle qu'elle est distribuée
-  fichiers/OptiGame.ps1   le code de l'application (PowerShell + WPF)
+  fichiers/OptiGame.ps1   point d'entrée : droits admin, version, chargement des modules, lancement
+  fichiers/modules/       le code, découpé par partie (chargé dans cet ordre)
+    natif.cs              fonctions natives C# (écrans, tests, scan réseau...)
+    interface.xaml        la fenêtre et tous les onglets
+    donnees.ps1           sauvegarde, journal, accès au registre
+    optimisations.ps1     réglages gaming, programmes au démarrage, jeux installés
+    systeme.ps1           connexion active, nettoyage, restauration, désinstallation
+    interface.ps1         chargement de la fenêtre, aides, travail en arrière plan
+    tableau-de-bord.ps1   constats, score, fiches de correction, retour en arrière
+    analyse.ps1           santé des composants et analyse complète
+    onglets.ps1           mesures en direct, Gaming, Démarrage, Connexion, Nettoyage, Sauvegarde
+    visuels.ps1           animations, jauges, courbes
+    tests.ps1             onglet Tests
+    securite.ps1          onglet Sécurité
+    navigation.ps1        accueil « Ordinateur » et navigation
+    reseau.ps1            section Réseau : scan et fiche appareil
+    audit-reseau.ps1      audit de sécurité du réseau
+    mises-a-jour.ps1      mises à jour depuis GitHub
+    evenements.ps1        branchement des boutons
 outils/
   construire.ps1     génère l'icône, compile OptiGame.exe et le désinstalleur, crée OptiGame.zip
   publier.ps1        publie une nouvelle version sur GitHub

@@ -1,0 +1,832 @@
+﻿<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="OptiGame" Width="1120" Height="740" MinWidth="920" MinHeight="600"
+        WindowStartupLocation="CenterScreen" Background="#0E1014"
+        FontFamily="Segoe UI" Foreground="#E6E8EE">
+  <Window.Resources>
+    <Style x:Key="BtnPrimary" TargetType="Button">
+      <Setter Property="Background" Value="#22D37A"/>
+      <Setter Property="Foreground" Value="#0B0D10"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Padding" Value="16,9"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="B" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="B" Property="Opacity" Value="0.85"/></Trigger>
+              <Trigger Property="IsEnabled" Value="False"><Setter TargetName="B" Property="Opacity" Value="0.4"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="BtnSecondary" TargetType="Button" BasedOn="{StaticResource BtnPrimary}">
+      <Setter Property="Background" Value="#262C38"/>
+      <Setter Property="Foreground" Value="#E6E8EE"/>
+    </Style>
+    <Style x:Key="Card" TargetType="Border">
+      <Setter Property="Background" Value="#181C24"/>
+      <Setter Property="BorderBrush" Value="#232937"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="18"/>
+    </Style>
+    <Style x:Key="H1" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="24"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style x:Key="H2" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style x:Key="Sub" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Foreground" Value="#9AA3B2"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="Margin" Value="0,4,0,0"/>
+    </Style>
+    <Style TargetType="CheckBox">
+      <Setter Property="Foreground" Value="#E6E8EE"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style TargetType="TabItem">
+      <Setter Property="Foreground" Value="#9AA3B2"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TabItem">
+            <Border x:Name="Bd" Background="Transparent" BorderBrush="Transparent" BorderThickness="3,0,0,0" CornerRadius="6" Padding="14,10" Margin="0,2">
+              <ContentPresenter ContentSource="Header"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="White"/>
+              </Trigger>
+              <Trigger Property="Tag" Value="parent">
+                <Setter TargetName="Bd" Property="Background" Value="#1C212B"/>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#22D37A"/>
+                <Setter Property="Foreground" Value="White"/>
+              </Trigger>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="#1C212B"/>
+                <Setter TargetName="Bd" Property="BorderBrush" Value="#22D37A"/>
+                <Setter Property="Foreground" Value="White"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <!-- Barres de défilement sombres -->
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#181C24"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightBrushKey}" Color="#181C24"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightLightBrushKey}" Color="#181C24"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkBrushKey}" Color="#181C24"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkDarkBrushKey}" Color="#181C24"/>
+    <Style x:Key="ScrollThumb" TargetType="Thumb">
+      <Setter Property="OverridesDefaultStyle" Value="True"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Thumb">
+            <Border x:Name="T" Background="#343C4C" CornerRadius="4"/>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="T" Property="Background" Value="#4A5468"/></Trigger>
+              <Trigger Property="IsDragging" Value="True"><Setter TargetName="T" Property="Background" Value="#22D37A"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="ScrollPage" TargetType="RepeatButton">
+      <Setter Property="OverridesDefaultStyle" Value="True"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="IsTabStop" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ScrollBar">
+      <Setter Property="OverridesDefaultStyle" Value="True"/>
+      <Setter Property="Width" Value="10"/>
+      <Setter Property="MinWidth" Value="10"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ScrollBar">
+            <Border Background="Transparent" Padding="2,2,2,2">
+              <Track x:Name="PART_Track" Orientation="Vertical" IsDirectionReversed="True">
+                <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource ScrollPage}" Command="ScrollBar.PageUpCommand"/></Track.DecreaseRepeatButton>
+                <Track.Thumb><Thumb Style="{StaticResource ScrollThumb}" MinHeight="30"/></Track.Thumb>
+                <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource ScrollPage}" Command="ScrollBar.PageDownCommand"/></Track.IncreaseRepeatButton>
+              </Track>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style.Triggers>
+        <Trigger Property="Orientation" Value="Horizontal">
+          <Setter Property="Width" Value="Auto"/>
+          <Setter Property="MinWidth" Value="0"/>
+          <Setter Property="Height" Value="10"/>
+          <Setter Property="MinHeight" Value="10"/>
+          <Setter Property="Template">
+            <Setter.Value>
+              <ControlTemplate TargetType="ScrollBar">
+                <Border Background="Transparent" Padding="2,2,2,2">
+                  <Track x:Name="PART_Track" Orientation="Horizontal" IsDirectionReversed="False">
+                    <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource ScrollPage}" Command="ScrollBar.PageLeftCommand"/></Track.DecreaseRepeatButton>
+                    <Track.Thumb><Thumb Style="{StaticResource ScrollThumb}" MinWidth="30"/></Track.Thumb>
+                    <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource ScrollPage}" Command="ScrollBar.PageRightCommand"/></Track.IncreaseRepeatButton>
+                  </Track>
+                </Border>
+              </ControlTemplate>
+            </Setter.Value>
+          </Setter>
+        </Trigger>
+      </Style.Triggers>
+    </Style>    <Style x:Key="Switch" TargetType="CheckBox">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Focusable" Value="False"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Border x:Name="Track" Width="46" Height="26" CornerRadius="13" Background="#343C4C">
+              <Ellipse x:Name="Knob" Width="20" Height="20" Fill="#C9CED8" HorizontalAlignment="Left" Margin="3,0,0,0"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Track" Property="Background" Value="#22D37A"/>
+                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/>
+                <Setter TargetName="Knob" Property="Margin" Value="0,0,3,0"/>
+                <Setter TargetName="Knob" Property="Fill" Value="White"/>
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Track" Property="Opacity" Value="0.85"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ProgressBar">
+      <Setter Property="Height" Value="8"/>
+      <Setter Property="Maximum" Value="100"/>
+      <Setter Property="Foreground" Value="#22D37A"/>
+      <Setter Property="Background" Value="#232937"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ProgressBar">
+            <Grid>
+              <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="4"/>
+              <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="4" HorizontalAlignment="Left"/>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="GridViewColumnHeader">
+      <Setter Property="Foreground" Value="#9AA3B2"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="GridViewColumnHeader">
+            <Border Background="#12151B" BorderBrush="#232937" BorderThickness="0,0,1,1" Padding="8,7">
+              <ContentPresenter HorizontalAlignment="Left"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <!-- Bandeau « nouvelle version disponible » -->
+    <Border x:Name="UpdateBanner" Visibility="Collapsed" Background="#12281F" BorderBrush="#22D37A" BorderThickness="0,0,0,1" Padding="18,10">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="BtnUpdateLater" Style="{StaticResource BtnSecondary}" Content="Plus tard" Margin="0,0,10,0"/>
+          <Button x:Name="BtnUpdate" Style="{StaticResource BtnPrimary}" Content="Mettre à jour"/>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <Ellipse Width="9" Height="9" Fill="#22D37A" Margin="0,0,10,0" VerticalAlignment="Center"/>
+          <TextBlock x:Name="UpdateText" Foreground="White" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <TabControl x:Name="Tabs" Grid.Row="1" TabStripPlacement="Left" Background="Transparent" BorderThickness="0">
+      <TabControl.Template>
+        <ControlTemplate TargetType="TabControl">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="230"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Border Background="#12151B" BorderBrush="#232937" BorderThickness="0,0,1,0">
+              <DockPanel Margin="14,22,14,16">
+                <DockPanel DockPanel.Dock="Top" Margin="6,0,0,26">
+                  <Image x:Name="LogoImg" Width="42" Height="42" Margin="0,0,10,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock FontSize="22" FontWeight="Bold"><Run Text="Opti" Foreground="White"/><Run Text="Game" Foreground="#22D37A"/></TextBlock>
+                    <TextBlock Text="Optimisation gaming" Foreground="#9AA3B2" FontSize="12"/>
+                  </StackPanel>
+                </DockPanel>
+                <TextBlock x:Name="VersionText" DockPanel.Dock="Bottom" Foreground="#5B6475" FontSize="11" Margin="8,0,0,0"/>
+                <StackPanel IsItemsHost="True"/>
+              </DockPanel>
+            </Border>
+            <Grid Grid.Column="1">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+              </Grid.RowDefinitions>
+              <DockPanel x:Name="NavBar" Margin="28,14,28,0" Visibility="Collapsed" LastChildFill="False">
+                <Button x:Name="NavBack" Style="{StaticResource BtnSecondary}" Content="←  Ordinateur" Padding="12,6" FontSize="12.5"/>
+                <TextBlock Text="›" Foreground="#5B6475" FontSize="16" Margin="12,0,10,2" VerticalAlignment="Center"/>
+                <TextBlock x:Name="NavCrumb" Foreground="#9AA3B2" FontSize="13" VerticalAlignment="Center"/>
+              </DockPanel>
+              <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Margin="28,18,28,16"/>
+            </Grid>
+          </Grid>
+        </ControlTemplate>
+      </TabControl.Template>
+
+      <!-- Tableau de bord -->
+      <TabItem Visibility="Collapsed">
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE80F;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Tableau de bord"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="0,0,8,0">
+            <DockPanel>
+              <Button x:Name="BtnAnalyze" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Relancer l'analyse" VerticalAlignment="Center"/>
+              <StackPanel>
+                <TextBlock Style="{StaticResource H1}" Text="Tableau de bord"/>
+                <TextBlock Style="{StaticResource Sub}" Text="La santé de chaque composant de ton PC et ce qui freine tes jeux."/>
+              </StackPanel>
+            </DockPanel>
+
+            <Grid Margin="0,18,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="230"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border Style="{StaticResource Card}" Margin="0,0,12,0">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <Grid Width="130" Height="130">
+                    <Ellipse Stroke="#232937" StrokeThickness="10"/>
+                    <Ellipse x:Name="ScoreRing" Stroke="#4EA8FF" StrokeThickness="10" StrokeDashArray="0 1000" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
+                      <Ellipse.RenderTransform><RotateTransform Angle="-90"/></Ellipse.RenderTransform>
+                    </Ellipse>
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                      <TextBlock x:Name="ScoreText" Text="..." FontSize="38" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
+                      <TextBlock Text="sur 100" Foreground="#9AA3B2" FontSize="12" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                  </Grid>
+                  <TextBlock x:Name="ScoreLabel" Text="Analyse en cours" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,12,0,0"/>
+                  <TextBlock x:Name="ScoreCounts" Foreground="#9AA3B2" FontSize="12" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                  <TextBlock x:Name="ScorePotential" Foreground="#22D37A" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                </StackPanel>
+              </Border>
+              <Border Grid.Column="1" Style="{StaticResource Card}">
+                <DockPanel>
+                  <DockPanel DockPanel.Dock="Top" Margin="0,0,0,18">
+                    <TextBlock x:Name="LiveStamp" DockPanel.Dock="Right" Foreground="#5B6475" FontSize="11" VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal">
+                      <Ellipse Width="8" Height="8" Fill="#22D37A" VerticalAlignment="Center" Margin="0,2,8,0"/>
+                      <TextBlock Style="{StaticResource H2}" Text="En direct"/>
+                    </StackPanel>
+                  </DockPanel>
+                  <UniformGrid x:Name="LiveGrid" Rows="1" Columns="4" VerticalAlignment="Center">
+                    <StackPanel Margin="0,0,18,0">
+                      <TextBlock Text="Processeur" Foreground="#9AA3B2" FontSize="12"/>
+                      <TextBlock x:Name="LiveCpuVal" Text="..." FontSize="28" FontWeight="Bold" Foreground="White" Margin="0,2,0,8"/>
+                      <ProgressBar x:Name="LiveCpuBar"/>
+                      <TextBlock x:Name="LiveCpuSub" Foreground="#9AA3B2" FontSize="11.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,18,0">
+                      <TextBlock Text="Mémoire vive" Foreground="#9AA3B2" FontSize="12"/>
+                      <TextBlock x:Name="LiveRamVal" Text="..." FontSize="28" FontWeight="Bold" Foreground="White" Margin="0,2,0,8"/>
+                      <ProgressBar x:Name="LiveRamBar"/>
+                      <TextBlock x:Name="LiveRamSub" Foreground="#9AA3B2" FontSize="11.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel Margin="0,0,18,0">
+                      <TextBlock Text="Carte graphique" Foreground="#9AA3B2" FontSize="12"/>
+                      <TextBlock x:Name="LiveGpuVal" Text="..." FontSize="28" FontWeight="Bold" Foreground="White" Margin="0,2,0,8"/>
+                      <ProgressBar x:Name="LiveGpuBar"/>
+                      <TextBlock x:Name="LiveGpuSub" Foreground="#9AA3B2" FontSize="11.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <StackPanel x:Name="LiveTempBox">
+                      <TextBlock Text="Température GPU" Foreground="#9AA3B2" FontSize="12"/>
+                      <TextBlock x:Name="LiveTempVal" Text="..." FontSize="28" FontWeight="Bold" Foreground="White" Margin="0,2,0,8"/>
+                      <ProgressBar x:Name="LiveTempBar"/>
+                      <TextBlock x:Name="LiveTempSub" Foreground="#9AA3B2" FontSize="11.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </UniformGrid>
+                </DockPanel>
+              </Border>
+            </Grid>
+
+            <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+              <StackPanel>
+                <DockPanel>
+                  <Button x:Name="BtnFixAll" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Tout corriger" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                  <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="Pour gagner des points"/>
+                    <TextBlock x:Name="ImproveSub" Style="{StaticResource Sub}" Text="Clique sur un point pour voir ce qu'il faut faire."/>
+                  </StackPanel>
+                </DockPanel>
+                <StackPanel x:Name="ImprovePanel" Margin="0,14,0,0"/>
+              </StackPanel>
+            </Border>
+
+            <DockPanel Margin="0,28,0,12">
+              <TextBlock x:Name="HealthSummary" DockPanel.Dock="Right" Foreground="#9AA3B2" FontSize="12" VerticalAlignment="Bottom"/>
+              <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Santé des composants"/>
+            </DockPanel>
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel x:Name="HealthLeft"/>
+              <StackPanel x:Name="HealthRight" Grid.Column="2"/>
+            </Grid>
+
+            <DockPanel Margin="0,20,0,12">
+              <TextBlock x:Name="FindingsSummary" DockPanel.Dock="Right" Foreground="#9AA3B2" FontSize="12" VerticalAlignment="Bottom"/>
+              <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Recommandations"/>
+            </DockPanel>
+            <StackPanel x:Name="FindingsPanel"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Optimisation gaming -->
+      <TabItem Visibility="Collapsed">
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE7FC;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Optimisation gaming"/>
+          </StackPanel>
+        </TabItem.Header>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+              <Button x:Name="BtnSelectAll" Style="{StaticResource BtnSecondary}" Content="Tout le recommandé" Margin="0,0,10,0"/>
+              <Button x:Name="BtnApply" Style="{StaticResource BtnPrimary}" Content="Appliquer la sélection"/>
+            </StackPanel>
+            <StackPanel>
+              <TextBlock Style="{StaticResource H1}" Text="Optimisation gaming"/>
+              <TextBlock Style="{StaticResource Sub}" Text="Coche ce que tu veux appliquer. Tout est réversible depuis l'onglet Sauvegarde."/>
+            </StackPanel>
+          </DockPanel>
+          <CheckBox x:Name="ChkRestore" Grid.Row="1" IsChecked="True" Margin="0,16,0,12" Foreground="#9AA3B2"
+                    Content="Créer un point de restauration Windows avant d'appliquer (recommandé)"/>
+          <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="GamingPanel"/>
+          </ScrollViewer>
+          <TextBlock Grid.Row="3" Style="{StaticResource Sub}" FontSize="12" Margin="0,12,0,0"
+                     Text="Pourquoi si peu de réglages ? Les « tweaks miracles » d'Internet (réglages réseau secrets, services désactivés, nettoyeurs de RAM...) n'apportent rien ou cassent Windows. OptiGame n'applique que des réglages dont l'effet est reconnu."/>
+        </Grid>
+      </TabItem>
+
+      <!-- Démarrage -->
+      <TabItem Visibility="Collapsed">
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE7E8;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Démarrage"/>
+          </StackPanel>
+        </TabItem.Header>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+              <Button x:Name="BtnRefreshStartup" Style="{StaticResource BtnSecondary}" Content="Actualiser" Margin="0,0,10,0"/>
+              <Button x:Name="BtnDisableStartup" Style="{StaticResource BtnPrimary}" Content="Désactiver ce qui est conseillé"/>
+            </StackPanel>
+            <StackPanel>
+              <TextBlock Style="{StaticResource H1}" Text="Programmes au démarrage"/>
+              <TextBlock x:Name="StartupCount" Style="{StaticResource Sub}"/>
+            </StackPanel>
+          </DockPanel>
+          <ScrollViewer Grid.Row="1" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="StartupPanel" Margin="0,0,8,0"/>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+      <!-- Réseau -->
+      <TabItem Visibility="Collapsed">
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE774;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Connexion"/>
+          </StackPanel>
+        </TabItem.Header>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <DockPanel>
+            <Button x:Name="BtnPing" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Tester ma connexion" VerticalAlignment="Center"/>
+            <StackPanel>
+              <TextBlock Style="{StaticResource H1}" Text="Connexion"/>
+              <TextBlock Style="{StaticResource Sub}" Text="Mesure ton ping, sa stabilité (gigue) et les pertes de paquets."/>
+            </StackPanel>
+          </DockPanel>
+          <ScrollViewer Grid.Row="1" Margin="0,18,0,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+              <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+                <StackPanel x:Name="NetInfoPanel"/>
+              </Border>
+              <StackPanel x:Name="PingPanel"/>
+              <Border Style="{StaticResource Card}" Margin="0,2,0,0">
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Text="Serveur DNS"/>
+                  <TextBlock x:Name="DnsCurrent" Style="{StaticResource Sub}" Margin="0,4,0,12"/>
+                  <StackPanel Orientation="Horizontal">
+                    <ComboBox x:Name="DnsCombo" Width="270" SelectedIndex="0" Padding="8,7" VerticalContentAlignment="Center">
+                      <ComboBoxItem Content="Automatique (celui de ta box)"/>
+                      <ComboBoxItem Content="Cloudflare (1.1.1.1)"/>
+                      <ComboBoxItem Content="Google (8.8.8.8)"/>
+                      <ComboBoxItem Content="Quad9 (9.9.9.9)"/>
+                    </ComboBox>
+                    <Button x:Name="BtnDnsApply" Style="{StaticResource BtnPrimary}" Content="Appliquer" Margin="10,0,0,0"/>
+                    <Button x:Name="BtnDnsFlush" Style="{StaticResource BtnSecondary}" Content="Vider le cache DNS" Margin="10,0,0,0"/>
+                  </StackPanel>
+                  <TextBlock Style="{StaticResource Sub}" FontSize="12" Margin="0,12,0,0"
+                             Text="Bon à savoir: le DNS ne change pas ton ping en jeu, il sert seulement à trouver l'adresse des serveurs. Un DNS rapide accélère un peu la navigation et la connexion des launchers."/>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+
+      <!-- Nettoyage -->
+      <TabItem Visibility="Collapsed">
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE74D;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Nettoyage"/>
+          </StackPanel>
+        </TabItem.Header>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+              <Button x:Name="BtnCleanScan" Style="{StaticResource BtnSecondary}" Content="Analyser" Margin="0,0,10,0"/>
+              <Button x:Name="BtnClean" Style="{StaticResource BtnPrimary}" Content="Nettoyer la sélection"/>
+            </StackPanel>
+            <StackPanel>
+              <TextBlock Style="{StaticResource H1}" Text="Nettoyage"/>
+              <TextBlock Style="{StaticResource Sub}" Text="Libère de la place en supprimant les fichiers inutiles."/>
+            </StackPanel>
+          </DockPanel>
+          <TextBlock x:Name="CleanTotal" Grid.Row="1" Style="{StaticResource H2}" Margin="0,18,0,12" Text="Clique sur Analyser pour voir ce qui peut être libéré."/>
+          <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="CleanPanel"/>
+          </ScrollViewer>
+          <TextBlock Grid.Row="3" Style="{StaticResource Sub}" FontSize="12" Margin="0,12,0,0"
+                     Text="OptiGame ne touche jamais à tes documents, à la corbeille ni aux caches de shaders des jeux: les vider provoquerait des saccades le temps qu'ils se reconstruisent."/>
+        </Grid>
+      </TabItem>
+
+      <!-- Tests -->
+      <TabItem Visibility="Collapsed">
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE9D9;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Tests"/>
+          </StackPanel>
+        </TabItem.Header>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <StackPanel>
+            <TextBlock Style="{StaticResource H1}" Text="Tests des composants"/>
+            <TextBlock Style="{StaticResource Sub}" Text="Vérifie que chaque pièce de ton PC fonctionne bien et à la bonne vitesse. Ferme tes jeux avant de lancer un test."/>
+          </StackPanel>
+          <ScrollViewer Grid.Row="1" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
+            <UniformGrid x:Name="TestsPanel" Columns="2" VerticalAlignment="Top"/>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+
+      <!-- Sécurité -->
+      <TabItem Visibility="Collapsed">
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE72E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Sécurité"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="0,0,8,0">
+            <DockPanel>
+              <Button x:Name="BtnSecRefresh" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Revérifier" VerticalAlignment="Center"/>
+              <StackPanel>
+                <TextBlock Style="{StaticResource H1}" Text="Sécurité"/>
+                <TextBlock Style="{StaticResource Sub}" Text="Recherche des virus et de tout ce qui pourrait être dangereux sur ton PC."/>
+              </StackPanel>
+            </DockPanel>
+            <Grid Margin="0,18,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="230"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border Style="{StaticResource Card}" Margin="0,0,12,0">
+                <StackPanel x:Name="SecGaugeHost" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <Border Grid.Column="1" Style="{StaticResource Card}">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <StackPanel x:Name="SecLines" VerticalAlignment="Center"/>
+                  <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" Width="220">
+                    <Button x:Name="BtnScanQuick" Style="{StaticResource BtnPrimary}" Content="Analyse rapide" Margin="0,0,0,8"/>
+                    <Button x:Name="BtnScanFull" Style="{StaticResource BtnSecondary}" Content="Analyse complète" Margin="0,0,0,8"/>
+                    <Button x:Name="BtnScanFolder" Style="{StaticResource BtnSecondary}" Content="Analyser un dossier" Margin="0,0,0,8"/>
+                    <Button x:Name="BtnScanUpdate" Style="{StaticResource BtnSecondary}" Content="Mettre à jour la base"/>
+                  </StackPanel>
+                </Grid>
+              </Border>
+            </Grid>
+            <TextBlock x:Name="SecScanNote" Style="{StaticResource Sub}" FontSize="12" Margin="0,10,0,0"/>
+            <DockPanel Margin="0,24,0,12">
+              <TextBlock x:Name="SecChecksSummary" DockPanel.Dock="Right" Foreground="#9AA3B2" FontSize="12" VerticalAlignment="Bottom"/>
+              <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Points à vérifier"/>
+            </DockPanel>
+            <StackPanel x:Name="SecChecks">
+              <TextBlock Text="Vérification en cours..." Foreground="#9AA3B2" FontSize="13"/>
+            </StackPanel>
+            <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Menaces trouvées récemment" Margin="0,24,0,12"/>
+            <StackPanel x:Name="SecHistory"/>
+            <TextBlock Style="{StaticResource Sub}" FontSize="12" Margin="0,16,0,0"
+                       Text="Les points à vérifier sont des indices, pas des preuves : un programme non signé n'est pas forcément un virus. En cas de doute, lance une analyse."/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Sauvegarde -->
+      <TabItem Visibility="Collapsed">
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE777;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Sauvegarde"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <TextBlock Style="{StaticResource H1}" Text="Sauvegarde et rapport"/>
+            <TextBlock Style="{StaticResource Sub}" Text="Reviens en arrière à tout moment, ou partage l'état de ton PC."/>
+
+            <Border Style="{StaticResource Card}" Margin="0,18,0,10">
+              <DockPanel>
+                <Button x:Name="BtnUndo" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Tout annuler" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Text="Annuler les changements d'OptiGame"/>
+                  <TextBlock x:Name="BackupSummary" Style="{StaticResource Sub}"/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+              <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                  <Button x:Name="BtnOpenRestore" Style="{StaticResource BtnSecondary}" Content="Ouvrir la restauration" Margin="0,0,10,0"/>
+                  <Button x:Name="BtnRestorePoint" Style="{StaticResource BtnPrimary}" Content="Créer"/>
+                </StackPanel>
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Text="Point de restauration Windows"/>
+                  <TextBlock Style="{StaticResource Sub}" Text="Une photo complète des réglages de Windows. En cas de souci, la restauration du système te ramène à cet état."/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+              <DockPanel>
+                <Button x:Name="BtnExport" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Exporter" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Text="Rapport de ton PC"/>
+                  <TextBlock Style="{StaticResource Sub}" Text="Une page web avec ta configuration, ton score et les points à améliorer. Pratique pour comparer avec tes potes ou demander de l'aide."/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+              <DockPanel>
+                <Button x:Name="BtnCheckUpdate" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Vérifier" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Text="Mises à jour"/>
+                  <TextBlock x:Name="UpdateStatus" Style="{StaticResource Sub}"/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Ordinateur (accueil) -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE7F4;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Ordinateur"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel Margin="0,0,8,0">
+            <TextBlock Style="{StaticResource H1}" Text="Ordinateur"/>
+            <TextBlock x:Name="HubSub" Style="{StaticResource Sub}"/>
+            <Border Style="{StaticResource Card}" Margin="0,18,0,0" Padding="18,14">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel x:Name="HubGaugeOpt" VerticalAlignment="Center"/>
+                <StackPanel x:Name="HubGaugeSec" Grid.Column="1" VerticalAlignment="Center"/>
+                <StackPanel x:Name="HubSummary" Grid.Column="2" VerticalAlignment="Center" Margin="24,0,0,0"/>
+              </Grid>
+            </Border>
+            <UniformGrid x:Name="HubCards" Columns="3" Margin="0,16,0,0"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- Réseau (scan des appareils) -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE701;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Réseau"/>
+          </StackPanel>
+        </TabItem.Header>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <DockPanel>
+            <Button x:Name="BtnNetScan" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Scanner le réseau" VerticalAlignment="Center"/>
+            <StackPanel>
+              <TextBlock Style="{StaticResource H1}" Text="Réseau"/>
+              <TextBlock Style="{StaticResource Sub}" Text="Découvre tous les appareils connectés à ton réseau : téléphones, consoles, TV, box, objets connectés..."/>
+            </StackPanel>
+          </DockPanel>
+          <ScrollViewer Grid.Row="1" Margin="0,18,0,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="0,0,8,0">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="300"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource Card}" Margin="0,0,12,0">
+                  <StackPanel x:Name="NetHero" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <Border Grid.Column="1" Style="{StaticResource Card}">
+                  <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="Ton réseau"/>
+                    <StackPanel x:Name="NetScanInfo" Margin="0,10,0,0"/>
+                  </StackPanel>
+                </Border>
+              </Grid>
+              <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                <DockPanel>
+                  <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                    <Button x:Name="BtnNetAuditView" Style="{StaticResource BtnSecondary}" Content="Voir le rapport" Margin="0,0,8,0" Visibility="Collapsed"/>
+                    <Button x:Name="BtnNetAudit" Style="{StaticResource BtnPrimary}" Content="Lancer l'audit"/>
+                  </StackPanel>
+                  <Border x:Name="NetAuditScoreBox" Width="56" Height="56" CornerRadius="28" BorderThickness="3" BorderBrush="#343C4C" Margin="0,0,16,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="NetAuditScore" Text="?" Foreground="#9AA3B2" FontSize="19" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  </Border>
+                  <StackPanel VerticalAlignment="Center">
+                    <TextBlock Style="{StaticResource H2}" Text="Audit de sécurité"/>
+                    <TextBlock x:Name="NetAuditText" Foreground="#9AA3B2" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+              <DockPanel Margin="0,24,0,12">
+                <TextBlock x:Name="NetDevSummary" DockPanel.Dock="Right" Foreground="#9AA3B2" FontSize="12" VerticalAlignment="Bottom"/>
+                <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Appareils connectés"/>
+              </DockPanel>
+              <UniformGrid x:Name="NetDevices" Columns="3"/>
+              <TextBlock x:Name="NetDevHint" Style="{StaticResource Sub}" FontSize="12" Margin="0,8,0,0" Text="Clique sur « Scanner le réseau » pour voir les appareils connectés."/>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+    </TabControl>
+
+    <Border Grid.Row="2" Background="#12151B" BorderBrush="#232937" BorderThickness="0,1,0,0" Padding="16,8">
+      <TextBlock x:Name="StatusText" Text="Prêt." Foreground="#9AA3B2" FontSize="12"/>
+    </Border>
+
+    <!-- Fiche détaillée d'un point à corriger -->
+    <Grid x:Name="Overlay" Grid.RowSpan="3" Visibility="Collapsed">
+      <Border x:Name="OverlayBackdrop" Background="#D0080A0D"/>
+      <Border Background="#161A21" BorderBrush="#2C3342" BorderThickness="1" CornerRadius="14"
+              Width="640" Margin="24" VerticalAlignment="Center" HorizontalAlignment="Center">
+        <Grid Margin="28,24,28,22">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="520">
+            <StackPanel x:Name="SheetBody"/>
+          </ScrollViewer>
+          <DockPanel Grid.Row="1" Margin="0,22,0,0" LastChildFill="False">
+            <Button x:Name="SheetIgnore" DockPanel.Dock="Left" Style="{StaticResource BtnSecondary}" Content="Ignorer ce point"/>
+            <Button x:Name="SheetRun" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Exécuter" Margin="10,0,0,0"/>
+            <Button x:Name="SheetOpen" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Ouvrir" Margin="10,0,0,0"/>
+            <Button x:Name="SheetClose" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Fermer"/>
+          </DockPanel>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- Panneau des tests -->
+    <Grid x:Name="TestOverlay" Grid.RowSpan="3" Visibility="Collapsed">
+      <Border x:Name="TestBackdrop" Background="#D0080A0D"/>
+      <Border x:Name="TestCard" Background="#141820" BorderBrush="#2C3342" BorderThickness="1" CornerRadius="16"
+              Width="760" Margin="24,16" VerticalAlignment="Center" HorizontalAlignment="Center">
+        <Grid Margin="26,22,26,20">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <DockPanel>
+            <Button x:Name="BtnTestX" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="✕" Padding="12,6" VerticalAlignment="Top"/>
+            <Border DockPanel.Dock="Left" Width="48" Height="48" CornerRadius="12" Background="#1A2A40" Margin="0,0,14,0">
+              <TextBlock x:Name="TestTag" Foreground="#4EA8FF" FontWeight="Bold" FontSize="12.5" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <StackPanel VerticalAlignment="Center">
+              <TextBlock x:Name="TestTitle" Foreground="White" FontSize="19" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+              <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                <TextBlock x:Name="TestSub" Foreground="#9AA3B2" FontSize="12.5" VerticalAlignment="Center"/>
+                <Ellipse x:Name="TestStateDot" Width="8" Height="8" Margin="14,0,6,0" VerticalAlignment="Center" Fill="#4EA8FF"/>
+                <TextBlock x:Name="TestStateText" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              </StackPanel>
+            </StackPanel>
+          </DockPanel>
+          <Grid Grid.Row="1" Margin="0,16,0,12">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <ProgressBar x:Name="TestProgress" Height="5" VerticalAlignment="Center"/>
+            <TextBlock x:Name="TestPct" Grid.Column="1" Foreground="#9AA3B2" FontSize="12" Margin="12,0,0,0" MinWidth="36" TextAlignment="Right"/>
+          </Grid>
+          <ScrollViewer x:Name="TestScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" MaxHeight="450">
+            <StackPanel x:Name="TestBody" Margin="0,0,12,0"/>
+          </ScrollViewer>
+          <DockPanel Grid.Row="3" Margin="0,16,0,0" LastChildFill="False">
+            <Button x:Name="BtnTestStop" DockPanel.Dock="Left" Style="{StaticResource BtnSecondary}" Content="Arrêter le test"/>
+            <Button x:Name="BtnTestClose" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Fermer"/>
+            <Button x:Name="BtnTestAgain" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Refaire le test" Margin="0,0,10,0"/>
+          </DockPanel>
+        </Grid>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

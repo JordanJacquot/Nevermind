@@ -5,6 +5,7 @@
 #     Désinstaller OptiGame.exe            <- désinstallation propre
 #     LISEZMOI.txt
 #     fichiers\OptiGame.ps1, OptiGame.ico, lanceurs de secours (.bat)
+#     fichiers\modules\                    <- le code découpé par partie
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
