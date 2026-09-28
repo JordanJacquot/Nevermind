@@ -502,6 +502,12 @@ function Undo-RunLog($Log) {
                     $r = [OGNative]::SetRefreshRate($e.Device, $e.Hz)
                     if ($r -ne 0) { throw "Écran $($e.Device): fréquence non restaurée (code $r)" }
                 }
+                'dns' {
+                    if (@($e.Servers).Count) { Set-DnsClientServerAddress -InterfaceIndex $e.IfIndex -ServerAddresses @($e.Servers) -ErrorAction Stop }
+                    else { Set-DnsClientServerAddress -InterfaceIndex $e.IfIndex -ResetServerAddresses -ErrorAction Stop }
+                    Clear-DnsClientCache
+                    $script:Net = Get-ActiveNet
+                }
             }
         } catch { $errors += $_.Exception.Message }
     }
@@ -513,6 +519,7 @@ function Undo-RunLog($Log) {
 function Show-ResultSheet([string]$Title, [string[]]$Lines, $Log, [string]$Note) {
     $script:SheetMode = 'result'
     $script:ResultLog = $Log
+    $script:ResultHistoryId = if ($Log -and $Log.Count) { Add-History (Get-HistoryTitle $Title $Lines) (Get-HistoryItems $Lines) $Log } else { $null }
     $body = $ui.SheetBody
     $body.Children.Clear()
     $head = New-Grid @('Auto', '*')
@@ -550,6 +557,8 @@ function Invoke-UndoLastRun {
     $before = if ($script:LastAnalysis) { $script:LastAnalysis.Score } else { $null }
     $errors = Undo-RunLog $log
     $script:ResultLog = $null
+    Set-HistoryUndone $script:ResultHistoryId
+    Update-NetInfo
     Build-GamingTab
     Update-StartupList
     Update-BackupSummary

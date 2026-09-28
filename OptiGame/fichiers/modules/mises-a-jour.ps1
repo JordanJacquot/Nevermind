@@ -5,15 +5,32 @@
 # Mises à jour (GitHub)
 # ---------------------------------------------------------------------------
 # Script autonome: il tourne dans un fil séparé pour ne pas figer la fenêtre.
+# Avec Beta, la version la plus récente est prise même si elle est marquée « préversion » sur GitHub.
 $GetReleaseScript = {
-    param($repo)
+    param($a)
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $r = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'OptiGame' } -TimeoutSec 10
+        $h = @{ 'User-Agent' = 'OptiGame' }
+        if ($a.Beta) {
+            $list = Invoke-RestMethod -Uri "https://api.github.com/repos/$($a.Repo)/releases?per_page=10" -Headers $h -TimeoutSec 10
+            $r = @($list) | Where-Object { -not $_.draft } | Select-Object -First 1
+        } else {
+            $r = Invoke-RestMethod -Uri "https://api.github.com/repos/$($a.Repo)/releases/latest" -Headers $h -TimeoutSec 10
+        }
+        if (-not $r) { return @{ Error = 'Aucune version publiée.' } }
         $asset = @($r.assets | Where-Object { $_.name -eq 'OptiGame.zip' }) | Select-Object -First 1
         if (-not $asset) { return @{ Error = 'Aucun fichier OptiGame.zip dans la dernière version publiée.' } }
-        @{ Version = ([string]$r.tag_name -replace '^[vV]', ''); Url = [string]$asset.browser_download_url }
+        @{ Version = ([string]$r.tag_name -replace '^[vV]', ''); Url = [string]$asset.browser_download_url; Beta = [bool]$r.prerelease; Notes = [string]$r.body }
     } catch { @{ Error = $_.Exception.Message } }
+}
+
+# Notes d'une version précise (pour « Quoi de neuf » après une mise à jour).
+$GetNotesScript = {
+    param($a)
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        [string](Invoke-RestMethod -Uri "https://api.github.com/repos/$($a.Repo)/releases/tags/v$($a.Version)" -Headers @{ 'User-Agent' = 'OptiGame' } -TimeoutSec 10).body
+    } catch { '' }
 }
 
 function Test-NewerVersion([string]$Remote, [string]$Local) {
@@ -22,7 +39,7 @@ function Test-NewerVersion([string]$Remote, [string]$Local) {
 
 function Invoke-UpdateCheck([switch]$Manual) {
     $ui.UpdateStatus.Text = 'Recherche d''une nouvelle version...'
-    $r = Invoke-Async $GetReleaseScript $UpdateRepo | Select-Object -First 1
+    $r = Invoke-Async $GetReleaseScript @{ Repo = $UpdateRepo; Beta = [bool](Get-Setting 'Beta' $false) } | Select-Object -First 1
     if (-not $r -or $r.Error) {
         $ui.UpdateStatus.Text = "Version $AppVersion. Impossible de vérifier les mises à jour (pas de connexion ?)."
         if ($r.Error) { Write-Log "Mise à jour: $($r.Error)" }
@@ -31,7 +48,7 @@ function Invoke-UpdateCheck([switch]$Manual) {
     }
     if (Test-NewerVersion $r.Version $AppVersion) {
         $script:PendingUpdate = $r
-        $ui.UpdateText.Text = "Nouvelle version $($r.Version) disponible (tu as la $AppVersion)."
+        $ui.UpdateText.Text = "Nouvelle version $(if ($r.Beta) { 'bêta ' })$($r.Version) disponible (tu as la $AppVersion)."
         $ui.UpdateBanner.Visibility = 'Visible'
         $ui.UpdateStatus.Text = "Version $AppVersion. La version $($r.Version) est disponible."
         $ui.BtnCheckUpdate.Content = 'Mettre à jour'
@@ -78,6 +95,15 @@ function Install-Update {
             Unblock-File -LiteralPath $dest -ErrorAction SilentlyContinue
         } catch { $errors += "$($f.Name): $($_.Exception.Message)" }
     }
+    # Fichiers de l'ancienne version qui n'existent plus dans la nouvelle (seulement dans « fichiers »).
+    $newFiles = @{}
+    foreach ($f in Get-ChildItem -LiteralPath (Join-Path $src 'fichiers') -Recurse -File) { $newFiles[$f.FullName.Substring($src.Length + 1).ToLower()] = $true }
+    foreach ($f in @(Get-ChildItem -LiteralPath (Join-Path $appRoot 'fichiers') -Recurse -File -ErrorAction SilentlyContinue)) {
+        $rel2 = $f.FullName.Substring($appRoot.Length + 1).ToLower()
+        if (-not $newFiles.ContainsKey($rel2)) {
+            try { [IO.File]::Delete($f.FullName); Write-Log "Fichier obsolète supprimé: $rel2" } catch {}
+        }
+    }
     [IO.Directory]::Delete($tmp, $true)
     if ($errors) {
         Write-Log "Mise à jour incomplète: $($errors -join ' | ')"
@@ -87,4 +113,20 @@ function Install-Update {
     Write-Log "Mise à jour installée: $AppVersion -> $($rel.Version)"
     $script:Relaunch = Join-Path $appRoot 'fichiers\OptiGame.ps1'
     $Window.Close()
+}
+
+# Après une mise à jour : affiche les nouveautés de la version installée.
+function Show-WhatsNew([string]$Last) {
+    Set-Setting 'LastVersion' $AppVersion
+    if (-not $Last -or $Last -eq $AppVersion) { return }
+    $notes = [string](Invoke-Async $GetNotesScript @{ Repo = $UpdateRepo; Version = $AppVersion } | Select-Object -First 1)
+    $lines = @($notes -split "`r?`n" | ForEach-Object { $_.Trim() -replace '^[-*]\s+', '•  ' } | Where-Object { $_ })
+    if (-not $lines.Count) { $lines = @('Corrections et améliorations.') }
+    Show-ResultSheet "Quoi de neuf dans la version $AppVersion" $lines $null $(if ($Last -eq 'précédente') { 'OptiGame vient d''être mis à jour.' } else { "Tu avais la version $Last." })
+}
+
+function Set-BetaChannel([bool]$On) {
+    Set-Setting 'Beta' $On
+    Set-Status $(if ($On) { 'Versions bêta activées.' } else { 'Versions bêta désactivées.' })
+    Invoke-UpdateCheck -Manual
 }

@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.11
+﻿OptiGame 1.0.12
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -17,8 +17,15 @@ Store. OptiGame se débloque ensuite tout seul : plus d'avertissement après.
 Rien à installer : l'application utilise PowerShell, déjà présent dans Windows.
 Le dossier « fichiers » contient l'application elle même : ne le supprime pas.
 
-Si ton antivirus bloque OptiGame.exe, utilise le lanceur de secours :
-fichiers\Lancer OptiGame (secours).bat
+POURQUOI WINDOWS OU L'ANTIVIRUS PEUVENT RÂLER
+OptiGame.exe n'est pas « signé » (un certificat payant chez Microsoft), et il
+lance PowerShell avec les droits administrateur pour modifier les réglages de
+Windows. C'est exactement ce que surveillent les antivirus, donc certains
+peuvent le signaler par prudence, même si le programme est sain. Tout le code
+est lisible dans le dossier « fichiers » (voir SÉCURITÉ plus bas).
+Si ton antivirus bloque OptiGame.exe :
+  - ajoute le dossier OptiGame dans les exclusions de ton antivirus, ou
+  - utilise le lanceur de secours : fichiers\Lancer OptiGame (secours).bat
 
 
 DÉSINSTALLATION
@@ -97,8 +104,13 @@ Sécurité
   douteuses, exclusions de l'antivirus, fichier hosts, proxy, pare-feu.
 
 Sauvegarde
-  Annule TOUS les changements d'OptiGame en un clic, crée un point de
-  restauration Windows, exporte un rapport HTML pour comparer vos PC.
+  Annule TOUS les changements d'OptiGame en un clic, ou un seul changement
+  grâce à l'historique. Crée un point de restauration Windows, exporte un
+  rapport HTML pour comparer vos PC.
+  « Signaler un problème » crée un fichier sur ton bureau (journal de l'app et
+  configuration du PC, sans tes fichiers ni ton nom) à envoyer à la personne
+  qui t'a donné OptiGame.
+  « Recevoir les versions bêta » : pour tester les nouveautés avant tout le monde.
 
 
 SÉCURITÉ
@@ -113,7 +125,11 @@ SÉCURITÉ
   (dans %LOCALAPPDATA%\OptiGame\sauvegarde.json).
 - Un point de restauration Windows est créé avant les optimisations
   (case cochée par défaut).
-- L'application ne se connecte à rien, sauf pour le test de ping.
-- Le code est lisible : ouvre fichiers\OptiGame.ps1 avec le Bloc-notes pour vérifier.
+- L'application ne se connecte à Internet que pour : vérifier les mises à jour
+  (GitHub), les tests de ping et de débit, afficher ton adresse Internet, et
+  télécharger la liste des fabricants d'appareils réseau (IEEE). Elle n'envoie
+  aucune donnée te concernant.
+- Le code est lisible : ouvre les fichiers du dossier fichiers\modules avec le
+  Bloc-notes pour vérifier.
 
 En cas de problème, le journal est dans %LOCALAPPDATA%\OptiGame\journal.txt

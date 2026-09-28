@@ -29,6 +29,7 @@ $ui.SheetClose.Add_Click({ Close-Sheet })
 $ui.OverlayBackdrop.Add_MouseLeftButtonUp({ if ($script:SheetMode -ne 'display') { Close-Sheet } })
 $ui.SheetRun.Add_Click({
     if ($script:SheetMode -eq 'display') { $script:DisplayChoice = 'keep'; return }
+    if ($script:SheetMode -eq 'tour') { Show-TourStep ($script:TourStep + 1); return }
     Invoke-Safe { Invoke-SheetRun }
 })
 $ui.SheetOpen.Add_Click({ if ($ui.SheetOpen.Tag) { Close-Sheet; Invoke-FindingAction $ui.SheetOpen.Tag } })
@@ -100,6 +101,15 @@ $ui.BtnRestorePoint.Add_Click({
 })
 $ui.BtnOpenRestore.Add_Click({ Start-Process 'rstrui.exe' })
 $ui.BtnExport.Add_Click({ Invoke-Safe { Export-Report } })
+$ui.BtnReportProblem.Add_Click({ Invoke-Safe { Export-ProblemReport } })
+$ui.ChkBeta.IsChecked = [bool](Get-Setting 'Beta' $false)
+$ui.ChkBeta.Add_Click({ Invoke-Safe { Set-BetaChannel ([bool]$ui.ChkBeta.IsChecked) } })
+$Window.Dispatcher.Add_UnhandledException({
+    param($s, $e)
+    Write-Log "ERREUR non gérée: $($e.Exception.Message)"
+    $e.Handled = $true
+    try { Set-Status 'Une erreur est survenue (elle est notée dans le journal).' } catch {}
+})
 $ui.Tabs.Add_SelectionChanged({
     param($s, $e)
     if ($e.OriginalSource -ne $ui.Tabs) { return }
@@ -149,11 +159,13 @@ $Window.Add_ContentRendered({
         Update-StartupList
         Update-NetInfo
         Update-BackupSummary
+        Update-HistoryList
     }
     Invoke-Safe {
         if (-not $script:SecurityBuilt) { $script:SecurityBuilt = $true; Update-SecurityTab }
         Update-Hub
         Set-Status 'Prêt.'
+        Invoke-WelcomeChecks
     }
     try { Invoke-UpdateCheck } catch { Write-Log "Vérification de mise à jour: $_" }
 })

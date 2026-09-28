@@ -318,7 +318,9 @@ function Update-StartupList {
 function Set-StartupToggle($Switch) {
     $s = $Switch.Tag
     $on = [bool]$Switch.IsChecked
-    Set-StartupState $s.Item $on
+    $script:RunLog = New-Object System.Collections.ArrayList
+    try { Set-StartupState $s.Item $on } finally { $log = $script:RunLog; $script:RunLog = $null }
+    [void](Add-History $(if ($on) { "Démarrage : « $($s.Name) » réactivé" } else { "Démarrage : « $($s.Name) » ne se lance plus" }) @() $log)
     $s.Item.Enabled = $on
     $s.Card.Opacity = if ($on) { 1 } else { 0.6 }
     Update-StartupCount
@@ -462,6 +464,8 @@ function Set-Dns([int]$Choice) {
         $script:Backup.Dns[$key] = [string]$static
         Save-Backup
     }
+    $prev = [string](Get-RegValue "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($script:Net.Guid)" 'NameServer')
+    $dnsLog = @(@{ Type = 'dns'; IfIndex = $idx; Servers = @($prev -split '[,\s]+' | Where-Object { $_ }) })
     $servers = $DnsChoices[$Choice]
     if ($servers.Count) { Set-DnsClientServerAddress -InterfaceIndex $idx -ServerAddresses $servers -ErrorAction Stop }
     else { Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop }
@@ -469,6 +473,7 @@ function Set-Dns([int]$Choice) {
     $script:Net = Get-ActiveNet
     Update-NetInfo
     Update-BackupSummary
+    [void](Add-History "Serveur DNS : $(if ($servers.Count) { $servers -join ', ' } else { 'automatique' })" @() $dnsLog)
     Set-Status 'DNS modifié.'
 }
 
@@ -541,6 +546,7 @@ function Invoke-UndoAll {
     Set-Busy $true
     Set-Status 'Restauration des réglages...'
     $errors = Restore-AllSettings
+    Set-HistoryAllUndone
     Update-BackupSummary
     Build-GamingTab
     Update-StartupList

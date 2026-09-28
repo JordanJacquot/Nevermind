@@ -46,6 +46,25 @@ function Save-Ignored {
     ConvertTo-Json -InputObject @($script:Ignored) | Set-Content -Path $IgnoreFile -Encoding UTF8
 }
 
+# Préférences de l'utilisateur (versions bêta, dernière version vue, visite guidée...).
+$SettingsFile = Join-Path $DataDir 'parametres.json'
+
+function Get-Setting([string]$Name, $Default = $null) {
+    if ($null -eq $script:Settings) {
+        $script:Settings = @{}
+        if (Test-Path -LiteralPath $SettingsFile) {
+            try { $j = ConvertFrom-Json (Get-Content -LiteralPath $SettingsFile -Raw -Encoding UTF8); foreach ($p in $j.PSObject.Properties) { $script:Settings[$p.Name] = $p.Value } } catch { Write-Log "Lecture des préférences impossible: $_" }
+        }
+    }
+    if ($script:Settings.ContainsKey($Name)) { $script:Settings[$Name] } else { $Default }
+}
+
+function Set-Setting([string]$Name, $Value) {
+    [void](Get-Setting $Name)
+    $script:Settings[$Name] = $Value
+    try { ConvertTo-Json -InputObject $script:Settings | Set-Content -LiteralPath $SettingsFile -Encoding UTF8 } catch { Write-Log "Écriture des préférences impossible: $_" }
+}
+
 function Set-DisplayRate([string]$Device, [int]$Hz) {
     $current = @([OGNative]::GetDisplays()) | Where-Object { ($_ -split '\|')[0] -eq $Device } | Select-Object -First 1
     if ($current -and -not $script:Backup.Displays.ContainsKey($Device)) {

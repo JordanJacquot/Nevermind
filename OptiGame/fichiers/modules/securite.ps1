@@ -227,13 +227,16 @@ function New-SecurityCard($Check) {
         foreach ($a in $Check.Actions) {
             $b = New-Button $a.Label $(if ($first) { 'BtnPrimary' } else { 'BtnSecondary' })
             $b.Margin = New-Thickness 0 0 8 0
-            $b.Tag = $a
+            $b.Tag = @{ A = $a; T = $Check.Title }
             $b.Add_Click({
                 param($s, $e)
-                $act = $s.Tag
+                $act = $s.Tag.A
+                $ttl = $s.Tag.T
                 if ($act.Confirm -and -not (Confirm-Action $act.Confirm)) { return }
                 Invoke-Safe {
-                    & $act.Script $act.Arg
+                    $script:RunLog = New-Object System.Collections.ArrayList
+                    try { & $act.Script $act.Arg } finally { $log = $script:RunLog; $script:RunLog = $null }
+                    [void](Add-History "$($act.Label) ($ttl)" @() $log)
                     if ($act.After) { & $act.After } elseif (-not $act.NoRefresh -and -not $script:ScanRunning) { Update-SecurityTab }
                 }
             })

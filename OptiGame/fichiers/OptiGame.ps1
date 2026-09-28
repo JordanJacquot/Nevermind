@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.11
+    OptiGame 1.0.12
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,7 +10,7 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.11'
+$AppVersion = '1.0.12'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ try {
 # ---------------------------------------------------------------------------
 $AppDir = $PSScriptRoot
 $ModulesDir = Join-Path $AppDir 'modules'
-$missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'optimisations.ps1', 'systeme.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
+$missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'optimisations.ps1', 'systeme.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'assistance.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
 if ($missing) {
     [System.Windows.MessageBox]::Show("Des fichiers d'OptiGame sont manquants :`n`n$($missing -join ', ')`n`nRetélécharge OptiGame et remplace tout le dossier.", 'OptiGame', 'OK', 'Error') | Out-Null
     exit
@@ -61,7 +61,7 @@ if ($Uninstall) {
     exit
 }
 
-foreach ($ogModule in 'interface', 'tableau-de-bord', 'analyse', 'onglets', 'visuels', 'tests', 'securite', 'navigation', 'reseau', 'audit-reseau', 'mises-a-jour', 'evenements') { . (Join-Path $ModulesDir "$ogModule.ps1") }
+foreach ($ogModule in 'interface', 'tableau-de-bord', 'analyse', 'onglets', 'visuels', 'tests', 'securite', 'navigation', 'reseau', 'audit-reseau', 'mises-a-jour', 'assistance', 'evenements') { . (Join-Path $ModulesDir "$ogModule.ps1") }
 
 # ---------------------------------------------------------------------------
 # Lancement
@@ -80,7 +80,7 @@ $script:Prefetch = @{ PS = $pfPs; Handle = $pfPs.BeginInvoke() }
 $script:TweakRows = @()
 $script:CleanRows = @()
 $script:PingResults = @()
-Write-Log "Démarrage OptiGame $AppVersion"
+Write-Log "Démarrage OptiGame $AppVersion (Windows build $($script:Build), langue $((Get-UICulture).Name), PowerShell $($PSVersionTable.PSVersion))"
 [void]$Window.ShowDialog()
 if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
     Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"")

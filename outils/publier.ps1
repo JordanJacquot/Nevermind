@@ -2,10 +2,17 @@
 # Les apps déjà installées la proposent ensuite au lancement (bandeau « Nouvelle version disponible »).
 #
 #   .\outils\publier.ps1 -Version 1.1 -Notes "Ce qui change dans cette version"
+#   .\outils\publier.ps1 -Version 1.2 -Notes "..." -Beta    version bêta : seuls ceux qui ont activé
+#                                                         « Recevoir les versions bêta » la reçoivent
+#
+# Avant de publier, le script vérifie la syntaxe de tous les fichiers, l'absence de tirets
+# cadratins et lance le test automatique (outils\tester.ps1). -SansTest saute le test (urgence).
 
 param(
     [Parameter(Mandatory = $true)][string]$Version,
-    [string]$Notes = ''
+    [string]$Notes = '',
+    [switch]$Beta,
+    [switch]$SansTest
 )
 $ErrorActionPreference = 'Stop'
 $racine = Split-Path $PSScriptRoot -Parent
@@ -26,6 +33,26 @@ try {
     $releaseExiste = ($LASTEXITCODE -eq 0)
 } finally { Pop-Location; $ErrorActionPreference = 'Stop' }
 if ($tagExiste -or $releaseExiste) { throw "La version $Version existe déjà. Choisis un numéro plus grand (exemple : 1.0.2 ou 1.1)." }
+
+# Vérifications : syntaxe, fenêtre, tirets cadratins, puis test automatique de l'app
+$problemes = @()
+foreach ($f in Get-ChildItem -LiteralPath (Join-Path $app 'fichiers') -Recurse -Filter '*.ps1') {
+    $err = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$err)
+    foreach ($e in $err) { $problemes += "Syntaxe : $($f.Name) ligne $($e.Extent.StartLineNumber) : $($e.Message)" }
+}
+try { [void][xml][IO.File]::ReadAllText((Join-Path $app 'fichiers\modules\interface.xaml'), [Text.Encoding]::UTF8) } catch { $problemes += "interface.xaml : $($_.Exception.Message)" }
+$tirets = Get-ChildItem -LiteralPath $racine -Recurse -File -Include '*.ps1', '*.cs', '*.xaml', '*.txt', '*.md', '*.bat' |
+    Where-Object { $_.FullName -notmatch '\\(\.git|_test)\\' } | Select-String -Pattern '[\u2013\u2014]'
+foreach ($t in $tirets) { $problemes += "Tiret cadratin : $($t.Path) ligne $($t.LineNumber)" }
+if ($problemes) {
+    $problemes | ForEach-Object { Write-Host $_ -ForegroundColor Red }
+    throw 'Publication annulée : corrige les points ci dessus.'
+}
+if (-not $SansTest) {
+    & (Join-Path $PSScriptRoot 'tester.ps1')
+    if ($LASTEXITCODE) { throw 'Publication annulée : le test automatique a échoué.' }
+}
 
 function Invoke-Native([string]$Exe, [string[]]$Arguments) {
     & $Exe @Arguments
@@ -52,7 +79,9 @@ try {
     Invoke-Native git @('tag', "v$Version")
     Invoke-Native git @('push', 'origin', 'HEAD', '--tags')
     if (-not $Notes) { $Notes = "OptiGame $Version" }
-    Invoke-Native gh @('release', 'create', "v$Version", (Join-Path $racine 'OptiGame.zip'), '--title', "OptiGame $Version", '--notes', $Notes)
+    $ghArgs = @('release', 'create', "v$Version", (Join-Path $racine 'OptiGame.zip'), '--title', "OptiGame $Version$(if ($Beta) { ' (bêta)' })", '--notes', $Notes)
+    if ($Beta) { $ghArgs += '--prerelease' }
+    Invoke-Native gh $ghArgs
 } finally { Pop-Location }
 
 # 4. Mise à jour de la copie installée sur ce PC (celle du raccourci du bureau)
