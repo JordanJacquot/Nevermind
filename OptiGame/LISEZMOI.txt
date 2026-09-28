@@ -84,6 +84,13 @@ Optimisation gaming
   FPS moyens, chutes (1 % bas), courbe de la partie, et comparaison avant /
   après tes réglages. En option, un compteur en haut à gauche pendant la
   partie (visible en fenêtré ou plein écran fenêtré, pas en plein écran).
+  Quand une partie rame, OptiGame cherche d'où ça vient : carte graphique ou
+  processeur à fond, surchauffe, mémoire pleine, disque lent, programmes en
+  arrière plan, PC sur batterie, écran bridé, jeu sur la mauvaise carte
+  graphique... Il corrige ce qu'il peut en un clic (mode performances,
+  priorité du jeu, carte puissante, fermer un programme) et te guide pour
+  le reste, en commençant par les réglages du jeu qui coûtent le moins en
+  qualité d'image (DLSS / FSR, ombres...).
   La mesure utilise PresentMon, l'outil gratuit d'Intel, inclus dans le dossier
   fichiers\outils-tiers (licence dans PresentMon-LICENCE.txt).
 
