@@ -100,7 +100,7 @@ function Stop-GameSession {
         $name = [IO.Path]::GetFileNameWithoutExtension($c.Path)
         if (Get-Process -Name $name -ErrorAction SilentlyContinue) { continue }
         try {
-            if ($c.Args) { Start-Process -FilePath $c.Path -ArgumentList $c.Args -ErrorAction Stop } else { Start-Process -FilePath $c.Path -ErrorAction Stop }
+            Start-Unelevated $c.Path $c.Args
         } catch { $failed += $c.Name }
     }
     $mins = [int]((Get-Date) - $s.Start).TotalMinutes
@@ -468,10 +468,19 @@ function Switch-FpsManual {
     Show-Notify 'Mesure des FPS lancée' "$name : appuie de nouveau sur Ctrl + Maj + F pour arrêter."
 }
 
+# Le raccourci n'est pris à Windows que si la mesure est activée (sinon Ctrl+Maj+F reste libre pour les autres logiciels).
+function Update-FpsHotkey {
+    if (Test-FpsMeasure) { Register-FpsHotkey } else { Unregister-FpsHotkey }
+}
+
 function Register-FpsHotkey {
+    if ($script:HotkeyRegistered) { return }
     try {
         $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
         if (-not [OGNative]::AddHotKey($h, $FpsHotkeyId, 0x0006, 0x46)) { Write-Log 'Raccourci Ctrl+Maj+F déjà pris par un autre programme.'; return }
+        $script:HotkeyRegistered = $true
+        $script:HotkeyHandle = $h
+        if ($script:HotkeyHook) { return }
         $script:HotkeyHook = [System.Windows.Interop.HwndSourceHook] {
             param([IntPtr]$hwnd, [int]$msg, [IntPtr]$wParam, [IntPtr]$lParam, [ref]$handled)
             if ($msg -eq 0x0312 -and $wParam.ToInt32() -eq $FpsHotkeyId) {
@@ -486,7 +495,8 @@ function Register-FpsHotkey {
 }
 
 function Unregister-FpsHotkey {
-    if ($script:HotkeyHandle) { try { [OGNative]::RemoveHotKey($script:HotkeyHandle, $FpsHotkeyId) } catch {} }
+    if ($script:HotkeyHandle -and $script:HotkeyRegistered) { try { [OGNative]::RemoveHotKey($script:HotkeyHandle, $FpsHotkeyId) } catch {} }
+    $script:HotkeyRegistered = $false
 }
 
 # ---------------------------------------------------------------------------
@@ -687,7 +697,7 @@ function New-SwitchRow([string]$Title, [string]$Text, [bool]$On, [scriptblock]$O
 function Invoke-FpsHelp {
     $last = @(Get-FpsSessions | Sort-Object { [datetime]$_.Date } -Descending)[0]
     if ($last -and $last.Diag) { Show-FpsSession $last.Id; return }
-    if (-not (Test-FpsMeasure)) { Set-Setting 'FpsMeasure' $true; Update-GameWatch; Build-FpsPanel }
+    if (-not (Test-FpsMeasure)) { Set-Setting 'FpsMeasure' $true; Update-GameWatch; Update-FpsHotkey; Build-FpsPanel }
     Show-ResultSheet 'Trouvons d''où viennent tes problèmes de FPS' @(
         '1.  La mesure des FPS est activée.',
         '2.  Lance ton jeu et joue au moins 5 minutes, de préférence là où ça rame.',
@@ -709,6 +719,7 @@ function Build-FpsPanel {
         Set-Setting 'FpsMeasure' $on
         if (-not $on -and $script:FpsTarget) { Stop-FpsTarget }
         Update-GameWatch
+        Update-FpsHotkey
         Set-Status $(if ($on) { 'Mesure des FPS activée : lance un jeu.' } else { 'Mesure des FPS désactivée.' })
     }))
     $last = New-SwitchRow 'Afficher le compteur pendant la partie' 'En haut à gauche. Visible en fenêtré ou en plein écran fenêtré, pas en plein écran.' (Test-FpsOverlay) {

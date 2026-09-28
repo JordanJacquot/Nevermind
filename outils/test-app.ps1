@@ -224,6 +224,32 @@ $script:T.Run.Add_Tick({
                 Hide-TestPanel
                 $out -join ', '
             }
+            Test-Step 'Correctifs de la revue de code' {
+                # Ctrl+Maj+F n'est pas pris quand la mesure est désactivée
+                Set-Setting 'FpsMeasure' $false; Update-FpsHotkey
+                Assert-Test (-not $script:HotkeyRegistered) 'raccourci pris alors que la mesure est désactivée'
+                # Relevé des programmes en arrière plan : deux relevés, le second complète le premier
+                $t = @{ Pid = 0; ProcCpu = @{}; ProcMem = @{}; ProcSeconds = 0.0; PrevProc = $null; PrevProcTime = $null; ProcJob = $null }
+                Add-FpsProcSample $t
+                $end = (Get-Date).AddSeconds(15); while (-not $t.ProcJob.Handle.IsCompleted -and (Get-Date) -lt $end) { Wait-TestMs 100 }
+                Add-FpsProcSample $t
+                $end = (Get-Date).AddSeconds(15); while (-not $t.ProcJob.Handle.IsCompleted -and (Get-Date) -lt $end) { Wait-TestMs 100 }
+                Wait-TestMs 1500
+                Add-FpsProcSample $t
+                Assert-Test ($t.ProcMem.Count -ge 10) "relevé mémoire incomplet ($($t.ProcMem.Count) programmes)"
+                Assert-Test ($t.ProcSeconds -gt 0) 'aucune durée entre deux relevés'
+                if ($t.ProcJob) { try { $t.ProcJob.PS.Dispose() } catch {} }
+                # Annulation d'un DNS dont la carte réseau n'existe plus : message clair, rien n'est modifié
+                $errs = Undo-RunLog @(@{ Type = 'dns'; IfIndex = 9999; Guid = '{00000000-0000-0000-0000-000000000000}'; Servers = @('1.1.1.1') })
+                Assert-Test ([bool](@($errs) -match 'carte réseau')) "annulation DNS : $($errs -join ' ')"
+                # Lien ouvert sans droits admin : raccourci temporaire correct (sans le lancer)
+                $lnk = Join-Path $env:TEMP 'OptiGame-test-raccourci.lnk'
+                $sh = New-Object -ComObject WScript.Shell; $sc = $sh.CreateShortcut($lnk); $sc.TargetPath = "$env:windir\notepad.exe"; $sc.Arguments = '/background'; $sc.Save()
+                $chk = $sh.CreateShortcut($lnk)
+                Assert-Test ($chk.Arguments -eq '/background') 'raccourci temporaire incorrect'
+                [IO.File]::Delete($lnk)
+                "raccourci libre, $($t.ProcMem.Count) programmes relevés en arrière plan, DNS protégé"
+            }
             Test-Step 'Page Tests' {
                 $ui.Tabs.SelectedIndex = 5; Wait-TestMs 1500; Save-TestShot 'tests'
                 Assert-Test ($ui.TestsPanel.Children.Count -ge 4) "seulement $($ui.TestsPanel.Children.Count) tuiles"
@@ -278,7 +304,14 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($script:FakeTray.Visible) 'pas d''icône près de l''horloge'
                 Show-MainWindow; Wait-TestMs 500
                 Assert-Test ($Window.IsVisible -and $Window.WindowState -eq 'Normal') 'la fenêtre ne revient pas'
-                'réduite près de l''horloge puis rouverte'
+                # Agrandie avant d'être réduite : elle doit revenir agrandie
+                $Window.WindowState = 'Maximized'; Wait-TestMs 300
+                $Window.WindowState = 'Minimized'; Wait-TestMs 400
+                Show-MainWindow; Wait-TestMs 400
+                $maxOk = $Window.WindowState -eq 'Maximized'
+                $Window.WindowState = 'Normal'; Wait-TestMs 300
+                Assert-Test $maxOk 'agrandie avant, mais revenue en taille normale'
+                'réduite près de l''horloge puis rouverte (agrandie comme avant)'
             }
             Test-Step 'Retour à l''accueil' {
                 Show-Page $HubIndex; Wait-TestMs 500

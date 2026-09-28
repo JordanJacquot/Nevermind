@@ -22,15 +22,37 @@ function Add-FpsSysSample($T) {
     try { if ([string][System.Windows.Forms.SystemInformation]::PowerStatus.PowerLineStatus -eq 'Offline') { $T.OnBattery = $true } } catch {}
 }
 
-# Toutes les 10 s : temps processeur de chaque programme (hors jeu), et sa mémoire.
+# Lecture des programmes, dans un fil séparé (ouvrir chaque programme prend du temps).
+$ProcSampleWork = {
+    param($skip)
+    @(foreach ($p in @(Get-Process -ErrorAction SilentlyContinue)) {
+        if ($skip -contains $p.Id -or $p.Id -le 4) { continue }
+        try { '{0}|{1}|{2}|{3}' -f $p.Id, $p.ProcessName, $p.TotalProcessorTime.TotalSeconds.ToString([Globalization.CultureInfo]::InvariantCulture), $p.WorkingSet64 } catch {}
+    })
+}
+
+# Toutes les 10 s : récupère le relevé précédent et en lance un nouveau, sans attendre.
 function Add-FpsProcSample($T) {
-    $now = Get-Date
+    if ($T.ProcJob) {
+        if (-not $T.ProcJob.Handle.IsCompleted) { return }
+        $lines = @()
+        try { $lines = @($T.ProcJob.PS.EndInvoke($T.ProcJob.Handle)) } catch {} finally { $T.ProcJob.PS.Dispose(); $T.ProcJob = $null }
+        Merge-FpsProcSample $T $lines $T.ProcJobTime
+    }
+    $ps = [PowerShell]::Create()
+    $ps.RunspacePool = $script:Pool
+    [void]$ps.AddScript($ProcSampleWork.ToString()).AddArgument(@($T.Pid, $PID))
+    $T.ProcJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
+    $T.ProcJobTime = Get-Date
+}
+
+function Merge-FpsProcSample($T, $Lines, [datetime]$When) {
+    $now = $When
     $cur = @{}
-    foreach ($p in @(Get-Process -ErrorAction SilentlyContinue)) {
-        if ($p.Id -eq $T.Pid -or $p.Id -eq $PID -or $p.Id -le 4) { continue }
-        $cpu = try { $p.TotalProcessorTime.TotalSeconds } catch { $null }
-        if ($null -eq $cpu) { continue }
-        $cur[$p.Id] = @($p.ProcessName, $cpu, $p.WorkingSet64)
+    foreach ($l in $Lines) {
+        $x = ([string]$l) -split '\|'
+        if ($x.Count -lt 4) { continue }
+        $cur[[int]$x[0]] = @($x[1], [double]::Parse($x[2], [Globalization.CultureInfo]::InvariantCulture), [double]$x[3])
     }
     if ($T.PrevProc) {
         foreach ($id in @($cur.Keys)) {
@@ -251,7 +273,7 @@ function Get-FpsDiagnosis($S) {
         $old = $false; try { $old = $inst -and [version]$inst -lt [version]$nv.Version } catch {}
         if ($old) {
             Add-DiagItem $items 'warn' "Pilote NVIDIA pas à jour ($inst, le dernier est le $($nv.Version))" 'Les nouveaux pilotes corrigent souvent des chutes de FPS dans les jeux récents.' $null @(
-                @{ Label = 'Page du pilote'; NoRefresh = $true; Arg = $nv.Url; Script = { param($u) Start-Process $u } })
+                @{ Label = 'Page du pilote'; NoRefresh = $true; Arg = $nv.Url; Script = { param($u) Open-Url $u } })
         }
     }
     if (-not $problem) {

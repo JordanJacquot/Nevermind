@@ -64,7 +64,7 @@ function Get-SecurityChecks($S) {
     if ($mp -and $mp.AMRunningMode -eq 'Normal') {
         if (-not $mp.RealTimeProtectionEnabled) {
             [void]$list.Add(@{ Status = 'bad'; Title = 'Protection en temps réel désactivée'; Detail = 'Les virus ne sont plus bloqués au moment où ils arrivent. Réactive la protection.'
-                Actions = @(@{ Label = 'Ouvrir la protection'; Script = { Start-Process 'windowsdefender://threatsettings' } }) })
+                Actions = @(@{ Label = 'Ouvrir la protection'; Script = { Open-Url 'windowsdefender://threatsettings' } }) })
         }
         if ($mp.AntivirusSignatureAge -gt 3) {
             [void]$list.Add(@{ Status = 'warn'; Title = "Base de virus vieille de $($mp.AntivirusSignatureAge) jours"; Detail = 'Les nouveaux virus ne sont pas encore connus de ton antivirus. Mets la base à jour.'
@@ -72,7 +72,7 @@ function Get-SecurityChecks($S) {
         }
     } elseif (-not $S.OtherAv.Count) {
         [void]$list.Add(@{ Status = 'bad'; Title = 'Aucun antivirus actif détecté'; Detail = 'Ton PC n''est pas protégé. Active Microsoft Defender dans Sécurité Windows.'
-            Actions = @(@{ Label = 'Ouvrir Sécurité Windows'; Script = { Start-Process 'windowsdefender://threat' } }) })
+            Actions = @(@{ Label = 'Ouvrir Sécurité Windows'; Script = { Open-Url 'windowsdefender://threat' } }) })
     }
 
     # Exclusions de l'antivirus
@@ -113,7 +113,7 @@ function Get-SecurityChecks($S) {
     if ($proxyOn -or $pac) {
         $what = if ($pac) { "script $pac" } else { [string](Get-RegValue $inet 'ProxyServer') }
         [void]$list.Add(@{ Status = 'warn'; Title = 'Un proxy détourne ta navigation'; Detail = "Tout ton trafic web passe par : $what. Si tu ne l'as pas configuré toi même (VPN, travail), c'est suspect."
-            Actions = @(@{ Label = 'Paramètres du proxy'; Script = { Start-Process 'ms-settings:network-proxy' } }) })
+            Actions = @(@{ Label = 'Paramètres du proxy'; Script = { Open-Url 'ms-settings:network-proxy' } }) })
     }
     Update-UI
 

@@ -152,7 +152,7 @@ function Add-AuditCheck($List, [string]$Status, [string]$Cat, [string]$Title, [s
 function Get-NetAuditChecks($R, $Devs, $Net) {
     $list = New-Object System.Collections.ArrayList
     $gw = [string]$Net.Gateway
-    $boxAct = @{ Label = 'Ouvrir la box'; Arg = "http://$gw"; Script = { param($u) Start-Process $u }; NoRefresh = $true }
+    $boxAct = @{ Label = 'Ouvrir la box'; Arg = "http://$gw"; Script = { param($u) Open-Url $u }; NoRefresh = $true }
     $dnsAct = @{ Label = 'Changer de DNS'; NoRefresh = $true; Script = { Hide-TestPanel; Show-Page 3 } }
     $rerun = { Invoke-NetAudit }
     $openRe = '(?i)^(ouvrir|ouvert|open)'
@@ -556,6 +556,6 @@ $($sections -join "`n")
 </main></body></html>
 "@
     Set-Content -Path $dlg.FileName -Value $html -Encoding UTF8
-    Start-Process $dlg.FileName
+    Open-Url $dlg.FileName
     Set-Status 'Rapport d''audit exporté.'
 }

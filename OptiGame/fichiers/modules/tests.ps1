@@ -868,7 +868,7 @@ function Build-TestsTab {
         $tile = New-TestTile 'GPU' $g.Name 'Carte graphique' 'Température, utilisation et consommation en direct, et ralentissements éventuels.'
         Add-TestButton $tile 'Surveiller en direct' { param($s, $e) $x = $s.Tag; Invoke-Safe { Show-GpuMonitor $x.T $x.Ctx } } @{ Gpu = $g } -Primary
         if (Test-3DMark) {
-            Add-TestButton $tile '3DMark' { param($s, $e) Start-Process 'steam://rungameid/223850' } @{}
+            Add-TestButton $tile '3DMark' { param($s, $e) Open-Url 'steam://rungameid/223850' } @{}
         }
     }
 
@@ -888,7 +888,7 @@ function Build-TestsTab {
             param($s, $e)
             $out = Join-Path $env:TEMP 'rapport-batterie.html'
             Start-Process -FilePath 'powercfg.exe' -ArgumentList '/batteryreport', '/output', "`"$out`"" -Wait -WindowStyle Hidden
-            if (Test-Path $out) { Start-Process $out }
+            if (Test-Path $out) { Open-Url $out }
         } @{} -Primary
     }
 }

@@ -18,16 +18,22 @@ $Window.Add_SourceInitialized({
     try { [OGNative]::SetDarkTitleBar((New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle) } catch {}
 })
 
-$Window.Add_StateChanged({ if ($Window.WindowState -eq 'Minimized') { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } } })
+$Window.Add_StateChanged({
+    if ($Window.WindowState -eq 'Minimized') { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } }
+    else { $script:StateBeforeTray = [string]$Window.WindowState }
+})
 $Window.Add_Closed({
-    [System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeShutdown()
+    $script:Closing = $true
     $Live.Run = $false
     if ($script:LiveTimer) { $script:LiveTimer.Stop() }
-    try { if ($script:GameSession) { Stop-GameSession } } catch {}
-    try { Stop-FpsTarget; Unregister-FpsHotkey } catch {}
+    try { Stop-FpsTarget } catch { Write-Log "Fermeture, mesure des FPS: $_" }
+    try { if ($script:GameSession) { Stop-GameSession } } catch { Write-Log "Fermeture, mode jeu: $_" }
+    try { Unregister-FpsHotkey } catch {}
     try { [FrameMon]::Stop() } catch {}
     try { if ($script:NotifyIcon) { $script:NotifyIcon.Visible = $false; $script:NotifyIcon.Dispose() } } catch {}
     if ($Splash) { try { $Splash.Close() } catch {} }
+    # En dernier : fin de la boucle de l'app.
+    [System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeShutdown()
 })
 
 $ui.BtnFixAll.Add_Click({ Open-FixAll })
@@ -180,7 +186,7 @@ $Window.Add_ContentRendered({
     Invoke-Safe {
         Update-GameCache
         Update-GameWatch
-        Register-FpsHotkey
+        Update-FpsHotkey
         if (Get-Setting 'NetWatch' $false) { Set-NetWatch $true }
     }
     try { Invoke-UpdateCheck } catch { Write-Log "Vérification de mise à jour: $_" }

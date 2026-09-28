@@ -503,8 +503,15 @@ function Undo-RunLog($Log) {
                     if ($r -ne 0) { throw "Écran $($e.Device): fréquence non restaurée (code $r)" }
                 }
                 'dns' {
-                    if (@($e.Servers).Count) { Set-DnsClientServerAddress -InterfaceIndex $e.IfIndex -ServerAddresses @($e.Servers) -ErrorAction Stop }
-                    else { Set-DnsClientServerAddress -InterfaceIndex $e.IfIndex -ResetServerAddresses -ErrorAction Stop }
+                    # Le numéro de la carte réseau peut changer (redémarrage, câble changé de port) : on la retrouve par son identifiant.
+                    $idx = $e.IfIndex
+                    if ($e.Guid) {
+                        $ad = @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue | Where-Object { [string]$_.InterfaceGuid -eq [string]$e.Guid })[0]
+                        if (-not $ad) { throw 'La carte réseau de ce réglage n''existe plus sur ce PC.' }
+                        $idx = $ad.ifIndex
+                    }
+                    if (@($e.Servers).Count) { Set-DnsClientServerAddress -InterfaceIndex $idx -ServerAddresses @($e.Servers) -ErrorAction Stop }
+                    else { Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop }
                     Clear-DnsClientCache
                     $script:Net = Get-ActiveNet
                 }

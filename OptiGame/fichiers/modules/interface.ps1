@@ -287,5 +287,5 @@ function Invoke-FindingAction([string]$Target) {
         $parts = $Target.Substring(4) -split ' ', 2
         if ($parts.Count -gt 1) { Start-Process $parts[0] -ArgumentList $parts[1] } else { Start-Process $parts[0] }
     }
-    else { Start-Process $Target }
+    else { Open-Url $Target }
 }

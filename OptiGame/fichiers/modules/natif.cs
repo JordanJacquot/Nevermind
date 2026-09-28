@@ -764,10 +764,13 @@ public static class FrameMon
         LastMode = "";
     }
 
+    static string pmExe = "";
+
     public static bool Start(string exe, int pid)
     {
         Stop();
         Reset();
+        pmExe = exe;
         try
         {
             var psi = new System.Diagnostics.ProcessStartInfo(exe,
@@ -796,6 +799,18 @@ public static class FrameMon
         if (p == null) return;
         try { if (!p.HasExited) p.Kill(); } catch { }
         try { p.Dispose(); } catch { }
+        // PresentMon arrêté de force laisse sa session de mesure ouverte dans Windows : on la ferme.
+        if (!string.IsNullOrEmpty(pmExe))
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo(pmExe, "--terminate_existing_session --session_name OptiGame");
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                using (var t = System.Diagnostics.Process.Start(psi)) { t.WaitForExit(3000); }
+            }
+            catch { }
+        }
     }
 
     // Une ligne de PresentMon. La première donne le nom des colonnes.

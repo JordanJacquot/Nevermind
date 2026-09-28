@@ -239,7 +239,7 @@ function New-DeviceTile($D, [int]$Index) {
         $b.HorizontalAlignment = 'Left'
         $b.Margin = New-Thickness 0 10 0 0
         $b.Tag = "http://$($D.Ip)"
-        $b.Add_Click({ param($s, $e) Start-Process $s.Tag })
+        $b.Add_Click({ param($s, $e) Open-Url $s.Tag })
         [void]$sp.Children.Add($b)
     }
     Add-ToGrid $g $sp 1
@@ -394,6 +394,7 @@ function Set-NetWatch([bool]$On) {
     if ($On) { $script:NetWatchTimer.Start() } else { $script:NetWatchTimer.Stop() }
 }
 
+$script:NetWatchSeen = @{}
 function Invoke-NetWatch {
     if ($script:NetScanning -or $script:TestRunning) { return }
     $net = Get-ActiveNet
@@ -421,14 +422,14 @@ function Invoke-NetWatch {
         $p = ([string]$l) -split '\|'
         if (-not $inNet.ContainsKey($p[0]) -or -not $p[1] -or $p[0] -eq $net.Ip) { continue }
         if ($p[2] -notin 'Reachable', 'Stale', 'Delay', 'Probe') { continue }
-        if ($known.ContainsKey($p[1])) { continue }
-        $known[$p[1]] = $today
+        # Déjà signalé pendant cette session : pas de nouvelle notification. L'appareil n'est PAS ajouté aux
+        # appareils connus : le prochain scan et l'audit le montreront toujours comme « Nouveau ».
+        if ($known.ContainsKey($p[1]) -or $script:NetWatchSeen.ContainsKey($p[1])) { continue }
+        $script:NetWatchSeen[$p[1]] = $today
         $v = Get-Vendor $p[1]
         $new += "$(if ($v -and $v -ne 'Adresse privée') { $v } else { 'Appareil inconnu' }) ($($p[0]))"
     }
     if (-not $new.Count) { return }
-    $script:KnownDevices = $known
-    try { ConvertTo-Json -InputObject $known | Set-Content -LiteralPath $KnownFile -Encoding UTF8 } catch {}
     Write-Log "Nouvel appareil sur le réseau: $($new -join ', ')"
     Show-Notify $(if ($new.Count -gt 1) { "$($new.Count) nouveaux appareils sur ton réseau" } else { 'Nouvel appareil sur ton réseau' }) "$($new -join ', '). Si tu ne le reconnais pas, ouvre la section Réseau d'OptiGame."
 }
@@ -648,7 +649,7 @@ function Show-DeviceDetail($D) {
         if ($pi[3]) {
             $b = New-Button 'Ouvrir'
             $b.Tag = $pi[3] -f $D.Ip
-            $b.Add_Click({ param($s, $e) Start-Process $s.Tag })
+            $b.Add_Click({ param($s, $e) Open-Url $s.Tag })
             Add-ToGrid $g $b 2
         }
         $card.Child = $g

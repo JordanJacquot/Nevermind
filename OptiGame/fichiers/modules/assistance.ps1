@@ -143,11 +143,29 @@ function Undo-HistoryEntry([string]$Id) {
 # ---------------------------------------------------------------------------
 # Notifications Windows (bulle près de l'horloge)
 # ---------------------------------------------------------------------------
+# OptiGame tourne en administrateur : tout ce qu'il lance hériterait de ces droits. En passant
+# par l'Explorateur Windows (déjà ouvert en utilisateur normal), le programme démarre sans eux.
+function Open-Url([string]$Target) {
+    try { Start-Process -FilePath (Join-Path $env:windir 'explorer.exe') -ArgumentList "`"$Target`"" -ErrorAction Stop }
+    catch { Start-Process $Target }
+}
+
+# Même chose pour un programme avec des arguments : via un raccourci temporaire.
+function Start-Unelevated([string]$Path, [string]$Arguments) {
+    if (-not $Arguments) { Open-Url $Path; return }
+    $lnk = Join-Path $env:TEMP "OptiGame-$([IO.Path]::GetFileNameWithoutExtension($Path)).lnk"
+    $sh = New-Object -ComObject WScript.Shell
+    $sc = $sh.CreateShortcut($lnk)
+    $sc.TargetPath = $Path; $sc.Arguments = $Arguments; $sc.WorkingDirectory = Split-Path $Path -Parent
+    $sc.Save()
+    Open-Url $lnk
+}
+
 # Réaffiche la fenêtre (cachée quand elle a été réduite).
 function Show-MainWindow {
     try {
         if (-not $Window.IsVisible) { $Window.Show() }
-        $Window.WindowState = 'Normal'
+        $Window.WindowState = if ($script:StateBeforeTray -eq 'Maximized') { 'Maximized' } else { 'Normal' }
         [void]$Window.Activate()
     } catch {}
 }
@@ -185,6 +203,7 @@ function Hide-ToTray {
 }
 
 function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) {
+    if ($script:Closing) { Write-Log "$Title : $Text"; return }   # l'app se ferme : la bulle disparaîtrait aussitôt
     $script:NotifyAction = $OnClick
     try {
         [void](Get-TrayIcon)

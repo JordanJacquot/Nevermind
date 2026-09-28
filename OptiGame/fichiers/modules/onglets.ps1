@@ -528,7 +528,7 @@ function Set-Dns([int]$Choice) {
         Save-Backup
     }
     $prev = [string](Get-RegValue "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($script:Net.Guid)" 'NameServer')
-    $dnsLog = @(@{ Type = 'dns'; IfIndex = $idx; Servers = @($prev -split '[,\s]+' | Where-Object { $_ }) })
+    $dnsLog = @(@{ Type = 'dns'; IfIndex = $idx; Guid = [string]$script:Net.Guid; Servers = @($prev -split '[,\s]+' | Where-Object { $_ }) })
     $servers = $DnsChoices[$Choice]
     if ($servers.Count) { Set-DnsClientServerAddress -InterfaceIndex $idx -ServerAddresses $servers -ErrorAction Stop }
     else { Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop }
@@ -688,6 +688,6 @@ $findRows
 </main></body></html>
 "@
     Set-Content -Path $dlg.FileName -Value $html -Encoding UTF8
-    Start-Process $dlg.FileName
+    Open-Url $dlg.FileName
     Set-Status 'Rapport exporté.'
 }
