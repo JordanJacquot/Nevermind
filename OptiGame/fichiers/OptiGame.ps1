@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.18
+    OptiGame 1.0.19
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,7 +10,7 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.18'
+$AppVersion = '1.0.19'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,8 @@ $script:TweakRows = @()
 $script:CleanRows = @()
 $script:PingResults = @()
 Write-Log "Démarrage OptiGame $AppVersion (Windows build $($script:Build), langue $((Get-UICulture).Name), PowerShell $($PSVersionTable.PSVersion))"
-[void]$Window.ShowDialog()
+$Window.Show()
+[System.Windows.Threading.Dispatcher]::Run()
 if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
     Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"")
 }

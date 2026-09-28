@@ -44,7 +44,7 @@ Edit-File (Join-Path $app 'fichiers\modules\donnees.ps1') "`$DataDir    = Join-P
 # Code de test à la place de l'ouverture normale de la fenêtre
 $code = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-app.ps1'), [Text.Encoding]::UTF8) -replace "`r?`n", "`r`n"
 $code = $code.Replace('__TEST__', $test).Replace('$__COMPLET__', $(if ($Complet) { '$true' } else { '$false' })).Replace('$__CAPTURES__', $(if ($Captures) { '$true' } else { '$false' }))
-Edit-File $main "[void]`$Window.ShowDialog()`r`n" "$code`r`n"
+Edit-File $main "`$Window.Show()`r`n[System.Windows.Threading.Dispatcher]::Run()`r`n" "$code`r`n"
 
 Write-Host "Test d'OptiGame$(if ($Complet) { ' (complet)' }) en cours, patiente..."
 $env:OPTIGAME_TEST = '1'   # pas d'écran de chargement pendant le test

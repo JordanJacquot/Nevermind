@@ -18,7 +18,9 @@ $Window.Add_SourceInitialized({
     try { [OGNative]::SetDarkTitleBar((New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle) } catch {}
 })
 
+$Window.Add_StateChanged({ if ($Window.WindowState -eq 'Minimized') { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } } })
 $Window.Add_Closed({
+    [System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeShutdown()
     $Live.Run = $false
     if ($script:LiveTimer) { $script:LiveTimer.Stop() }
     try { if ($script:GameSession) { Stop-GameSession } } catch {}

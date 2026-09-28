@@ -9,6 +9,8 @@ function Invoke-UpdateCheck { }
 function Show-Message([string]$Text, [string]$Icon = 'Information') { [void]$script:T.Msgs.Add("[$Icon] $Text") }
 function Confirm-Action([string]$Text) { [void]$script:T.Msgs.Add("[Question] $Text"); $false }
 function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) { [void]$script:T.Msgs.Add("[Notify] $Title : $Text") }
+# Fausse icône près de l'horloge : rien n'apparaît sur le PC pendant le test.
+function Get-TrayIcon { if (-not $script:FakeTray) { $script:FakeTray = [pscustomobject]@{ Visible = $false } }; $script:FakeTray }
 
 function Add-TestResult([string]$Name, [bool]$Ok, [string]$Detail = '') {
     [void]$script:T.Res.Add([pscustomobject]@{ Test = $Name; Ok = $Ok; Detail = $Detail })
@@ -270,6 +272,14 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($txt -notmatch [regex]::Escape($env:USERNAME)) 'le nom d''utilisateur apparaît'
                 "$($names.Count) fichiers"
             }
+            Test-Step 'Réduire dans la zone de notification' {
+                $Window.WindowState = 'Minimized'; Wait-TestMs 500
+                Assert-Test (-not $Window.IsVisible) 'la fenêtre reste dans la barre des tâches'
+                Assert-Test ($script:FakeTray.Visible) 'pas d''icône près de l''horloge'
+                Show-MainWindow; Wait-TestMs 500
+                Assert-Test ($Window.IsVisible -and $Window.WindowState -eq 'Normal') 'la fenêtre ne revient pas'
+                'réduite près de l''horloge puis rouverte'
+            }
             Test-Step 'Retour à l''accueil' {
                 Show-Page $HubIndex; Wait-TestMs 500
                 Assert-Test ($ui.Tabs.SelectedIndex -eq $HubIndex) 'accueil non affiché'
@@ -336,5 +346,6 @@ $script:T.Run.Add_Tick({
     $Window.Close()
 })
 $script:T.Run.Start()
-[void]$Window.ShowDialog()
+$Window.Show()
+[System.Windows.Threading.Dispatcher]::Run()
 [Environment]::Exit(0)

@@ -143,22 +143,51 @@ function Undo-HistoryEntry([string]$Id) {
 # ---------------------------------------------------------------------------
 # Notifications Windows (bulle près de l'horloge)
 # ---------------------------------------------------------------------------
+# Réaffiche la fenêtre (cachée quand elle a été réduite).
+function Show-MainWindow {
+    try {
+        if (-not $Window.IsVisible) { $Window.Show() }
+        $Window.WindowState = 'Normal'
+        [void]$Window.Activate()
+    } catch {}
+}
+
+function Get-TrayIcon {
+    if (-not $script:NotifyIcon) {
+        $ni = New-Object System.Windows.Forms.NotifyIcon
+        $ico = Join-Path $AppDir 'OptiGame.ico'
+        $ni.Icon = if (Test-Path -LiteralPath $ico) { New-Object System.Drawing.Icon (New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))) } else { [System.Drawing.SystemIcons]::Information }
+        $ni.Text = 'OptiGame'
+        $menu = New-Object System.Windows.Forms.ContextMenuStrip
+        [void]$menu.Items.Add('Ouvrir OptiGame', $null, { Show-MainWindow })
+        [void]$menu.Items.Add('Quitter', $null, { $Window.Close() })
+        $ni.ContextMenuStrip = $menu
+        $ni.Add_MouseClick({ param($s, $e) if ([string]$e.Button -eq 'Left') { Show-MainWindow } })
+        $ni.Add_BalloonTipClicked({
+            Show-MainWindow
+            $a = $script:NotifyAction; $script:NotifyAction = $null
+            if ($a) { Invoke-Safe { & $a } }
+        })
+        $script:NotifyIcon = $ni
+    }
+    $script:NotifyIcon
+}
+
+# Fenêtre réduite : elle quitte la barre des tâches et reste près de l'horloge.
+function Hide-ToTray {
+    $ni = Get-TrayIcon
+    $ni.Visible = $true
+    $Window.Hide()
+    if (-not (Get-Setting 'TrayHintShown' $false)) {
+        Set-Setting 'TrayHintShown' $true
+        Show-Notify 'OptiGame reste ouvert' 'Il continue en arrière plan (mode jeu, mesure des FPS). Clique sur son icône près de l''horloge pour le rouvrir.'
+    }
+}
+
 function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) {
     $script:NotifyAction = $OnClick
     try {
-        if (-not $script:NotifyIcon) {
-            $ni = New-Object System.Windows.Forms.NotifyIcon
-            $ico = Join-Path $AppDir 'OptiGame.ico'
-            $ni.Icon = if (Test-Path -LiteralPath $ico) { New-Object System.Drawing.Icon (New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))) } else { [System.Drawing.SystemIcons]::Information }
-            $ni.Text = 'OptiGame'
-            $ni.Add_BalloonTipClicked({
-                try { $Window.WindowState = 'Normal'; [void]$Window.Activate() } catch {}
-                $a = $script:NotifyAction; $script:NotifyAction = $null
-                if ($a) { Invoke-Safe { & $a } }
-            })
-            $ni.Add_Click({ try { $Window.WindowState = 'Normal'; [void]$Window.Activate() } catch {} })
-            $script:NotifyIcon = $ni
-        }
+        [void](Get-TrayIcon)
         $script:NotifyIcon.Visible = $true
         $script:NotifyIcon.ShowBalloonTip(8000, $Title, $Text, [System.Windows.Forms.ToolTipIcon]::Info)
     } catch { Write-Log "Notification impossible: $_" }
