@@ -10,7 +10,15 @@ $LogFile    = Join-Path $DataDir 'journal.txt'
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
 function Write-Log([string]$Message) {
-    try { Add-Content -Path $LogFile -Value "$(Get-Date -Format s) $Message" -Encoding UTF8 } catch {}
+    $line = "$(Get-Date -Format s) $Message`r`n"
+    try { [IO.File]::AppendAllText($LogFile, $line, (New-Object Text.UTF8Encoding($false))) }
+    catch {
+        # Journal inaccessible : on garde la cause (une seule fois) dans les préférences, qui elles s'écrivent.
+        if (-not $script:LogError) {
+            $script:LogError = "$(Get-Date -Format s) $($_.Exception.GetType().Name): $($_.Exception.Message)"
+            try { Set-Setting 'LogError' $script:LogError } catch {}
+        }
+    }
 }
 
 function Import-Backup {

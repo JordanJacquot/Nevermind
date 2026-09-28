@@ -141,8 +141,10 @@ $script:T.Run.Add_Tick({
                 # Raccourci Ctrl+Maj+F : message simulé, compteur désactivé donc une notification l'explique
                 Set-Setting 'FpsOverlay' $false
                 $before = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`] Compteur de FPS*' }).Count
-                if ($script:HotkeyHandle) { [void][OGNative]::SendMessage($script:HotkeyHandle, 0x0312, [IntPtr]$FpsHotkeyId, [IntPtr]::Zero) }
-                else { Register-FpsHotkey; [void][OGNative]::SendMessage($script:HotkeyHandle, 0x0312, [IntPtr]$FpsHotkeyId, [IntPtr]::Zero) }
+                if (-not $script:HotkeyHandle) { Register-FpsHotkey }
+                # Si OptiGame est déjà ouvert sur le PC, il garde le raccourci : on appelle alors l'action directement.
+                if ($script:HotkeyHandle) { [void][OGNative]::SendMessage($script:HotkeyHandle, 0x0312, [IntPtr]$FpsHotkeyId, [IntPtr]::Zero); $hk = 'raccourci' }
+                else { Switch-FpsManual; $hk = 'raccourci pris par l''app déjà ouverte, action testée directement' }
                 $after = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`] Compteur de FPS*' }).Count
                 Assert-Test ($after -gt $before) 'le raccourci ne réagit pas'
                 # Overlay affiché puis fermé
@@ -170,7 +172,7 @@ $script:T.Run.Add_Tick({
                 Build-FpsPanel
                 $ui.Tabs.SelectedIndex = 1; Wait-TestMs 400; $ui.FpsPanel.BringIntoView(); Wait-TestMs 400; Save-TestShot 'fps-avant-apres'
                 Assert-Test ($ui.FpsPanel.Children.Count -ge 3) "panneau incomplet ($($ui.FpsPanel.Children.Count) éléments)"
-                'raccourci, overlay, arrêt propre et comparaison OK'
+                "$hk, overlay, arrêt propre et comparaison OK"
             }
             Test-Step 'Page Tests' {
                 $ui.Tabs.SelectedIndex = 5; Wait-TestMs 1500; Save-TestShot 'tests'
