@@ -121,6 +121,18 @@ $AnalysisDataWork = {
     $r = @{}
     $r.OS = Get-CimInstance Win32_OperatingSystem
     $r.Battery = @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue)
+    $r.UpsHints = @()
+    try {
+        foreach ($p in @(Get-CimInstance Win32_PnPEntity -Filter "DeviceID LIKE 'USB%' OR DeviceID LIKE 'HID%'" -ErrorAction Stop | Where-Object { [string]$_.DeviceID -match '^(USB|HID)\\VID_(051D|0463|0764|09AE|10AF|06DA|0D9F|0665|0925)&' -or [string]$_.Name -match '(?i)\bups\b|onduleur|uninterruptible|back-?ups|smart-?ups' })) {
+            $vid = if ([string]$p.DeviceID -match 'VID_([0-9A-F]{4})') { $Matches[1] } else { '' }
+            $r.UpsHints += @{ Kind = 'usb'; Name = [string]$p.Name; Vid = $vid; Ok = ([string]$p.Status -eq 'OK') }
+        }
+    } catch {}
+    $upsSoft = '(?i)powerchute|powerpanel|viewpower|winpower|upsilon|intelligent power protector|power ?shield|upsmon|power ?master|apc data service|pbeagent|eaton ipp|cyberpower|smartpower|upsmart'
+    try { foreach ($s in @(Get-CimInstance Win32_Service -ErrorAction Stop | Where-Object { "$($_.Name) $($_.DisplayName)" -match $upsSoft })) { $r.UpsHints += @{ Kind = 'soft'; Name = [string]$s.DisplayName; Ok = ([string]$s.State -eq 'Running') } } } catch {}
+    foreach ($k in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*') {
+        try { foreach ($a in @(Get-ItemProperty $k -ErrorAction SilentlyContinue | Where-Object { [string]$_.DisplayName -match $upsSoft })) { $r.UpsHints += @{ Kind = 'app'; Name = [string]$a.DisplayName; Ok = $true } } } catch {}
+    }
     $r.Chassis = @((Get-CimInstance Win32_SystemEnclosure -ErrorAction SilentlyContinue).ChassisTypes | ForEach-Object { [int]$_ })
     $r.PCType = [int](Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).PCSystemType
     $r.CPU = Get-CimInstance Win32_Processor | Select-Object -First 1

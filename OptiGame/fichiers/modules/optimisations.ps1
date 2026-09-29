@@ -201,8 +201,19 @@ $Tweaks = @(
 function Test-IsUps($B) {
     if (-not $B) { return $false }
     if ([int]$B.Chemistry -eq 3) { return $true }
-    "$($B.Name) $($B.DeviceID) $($B.Description)" -match '(?i)\bups\b|onduleur|back-?ups|smart-?ups|\bapc\b|eaton|cyberpower|powerwalker|bluewalker|salicru|riello|infosec|tripp.?lite|vertiv|liebert|ablerex'
+    "$($B.Name) $($B.DeviceID) $($B.Description)" -match '(?i)\bups\b|onduleur|back-?ups|smart-?ups|\bapc\b|eaton|cyberpower|powerwalker|bluewalker|salicru|riello|infosec|tripp.?lite|vertiv|liebert|ablerex|powercom|mustek|legrand|socomec|\bcp\d{3,4}|\bbr\d{3,4}|\bbx\d{3,4}|\bbe\d{3,4}|\bvi ?\d{3,4}'
 }
+
+# PC fixe certain (boîtier de bureau, tour, mini PC) : une « batterie » y est forcément un onduleur.
+function Test-IsDesktop($Data) {
+    $chassis = @($Data.Chassis); $pcType = [int]$Data.PCType
+    if ($pcType -eq 2) { return $false }
+    if ($chassis | Where-Object { 8, 9, 10, 11, 12, 14, 18, 21, 30, 31, 32 -contains $_ }) { return $false }
+    [bool]($chassis | Where-Object { 3, 4, 5, 6, 7, 13, 15, 16, 17, 23, 24, 35, 36 -contains $_ })
+}
+
+# Marques d'onduleurs d'après l'identifiant USB du fabricant
+$UpsVendors = @{ '051D' = 'APC'; '0463' = 'Eaton'; '0764' = 'CyberPower'; '09AE' = 'Tripp Lite'; '10AF' = 'Liebert (Vertiv)'; '06DA' = 'PowerWalker, Salicru ou Riello'; '0D9F' = 'Powercom'; '0665' = 'onduleur générique'; '0925' = 'onduleur générique' }
 
 function Test-IsLaptop($Battery, $Data) {
     $Battery = @($Battery | Where-Object { -not (Test-IsUps $_) })

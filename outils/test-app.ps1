@@ -371,7 +371,14 @@ $script:T.Run.Add_Tick({
                 # PC fixe dont le boîtier se déclare « inconnu », avec un onduleur : pas un portable
                 Assert-Test (-not (Test-IsLaptop @($upsA) @{ Chassis = @(2); PCType = 1 })) 'onduleur pris pour une batterie de portable'
                 Assert-Test (Test-IsLaptop @($lap) @{ Chassis = @(2); PCType = 1 }) 'vrai portable non reconnu'
-                'onduleurs reconnus (plomb ou marque), portable toujours reconnu'
+                # Modèle nommé par sa seule référence sur un PC fixe : onduleur quand même
+                $upsC = [pscustomobject]@{ Name = 'CP1500EPFCLCD'; DeviceID = 'CPS'; Chemistry = 2; BatteryStatus = 2 }
+                Assert-Test (Test-IsUps $upsC) 'référence CyberPower non reconnue'
+                Assert-Test (Test-IsDesktop @{ Chassis = @(3); PCType = 1 }) 'tour non reconnue comme PC fixe'
+                Assert-Test (-not (Test-IsDesktop @{ Chassis = @(10); PCType = 2 })) 'portable pris pour un PC fixe'
+                Assert-Test ($UpsVendors['051D'] -eq 'APC') 'marques USB'
+                $h = @($script:AnalysisData.UpsHints | Where-Object { $_ })
+                "onduleurs reconnus (plomb, marque, référence, PC fixe), portable toujours reconnu ; indices sur ce PC : $($h.Count)"
             }
             Test-Step 'Ce que Windows envoie à Microsoft' {
                 $items = @(Get-PrivacyItems)

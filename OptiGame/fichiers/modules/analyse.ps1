@@ -207,9 +207,12 @@ function Invoke-Analysis {
     $script:AnalysisData = $data
     $os = $data.OS
     $script:Build = [int]$os.BuildNumber
-    $ups = @($data.Battery | Where-Object { Test-IsUps $_ })
-    $battery = @($data.Battery | Where-Object { -not (Test-IsUps $_) })
-    $script:HasUps = [bool]$ups.Count
+    # Sur un PC fixe, toute « batterie » est un onduleur, même si son nom ne dit rien (ex : CP1500EPFCLCD)
+    $desk = Test-IsDesktop $data
+    $ups = @($data.Battery | Where-Object { $desk -or (Test-IsUps $_) })
+    $battery = @($data.Battery | Where-Object { -not ($desk -or (Test-IsUps $_)) })
+    $hints = @($data.UpsHints | Where-Object { $_ })
+    $script:HasUps = [bool]($ups.Count -or $hints.Count)
     $script:IsLaptop = Test-IsLaptop $battery $data
     if ($script:IsLaptop -and ($battery | Where-Object { $_.BatteryStatus -eq 1 })) {
         Add-Finding $F 'warn' 'Portable sur batterie' 'Sur batterie, Windows bride le processeur et la carte graphique. Branche le chargeur pour jouer.' 2 -Id 'laptop-battery' -Fix (New-Fix `
@@ -675,6 +678,21 @@ function Invoke-Analysis {
         } else {
             Add-Note $c 'ok' 'Il protège ton PC des coupures et des surtensions.'
         }
+        [void]$cards.Add($c)
+    }
+    # Onduleur repéré (prise USB du fabricant, logiciel) mais que Windows ne lit pas comme une batterie
+    if (-not $ups.Count -and $hints.Count) {
+        $usb = @($hints | Where-Object { $_.Kind -eq 'usb' })
+        $soft = @($hints | Where-Object { $_.Kind -ne 'usb' } | ForEach-Object { $_.Name } | Select-Object -Unique)
+        $brand = @($usb | ForEach-Object { if ($UpsVendors[$_.Vid]) { $UpsVendors[$_.Vid] } } | Select-Object -First 1)[0]
+        $title = if ($brand -and $brand -notmatch 'générique') { "Onduleur $brand" } elseif (@($usb | Where-Object { $_.Name -match '(?i)ups|onduleur' }).Count) { @($usb | Where-Object { $_.Name -match '(?i)ups|onduleur' })[0].Name } else { 'Onduleur' }
+        $c = New-Component 'UPS' 'Onduleur' $title
+        $found = @()
+        if ($usb.Count) { $found += "câble USB$(if ($brand) { " ($brand)" })" }
+        if ($soft.Count) { $found += "logiciel $(($soft | Select-Object -First 2) -join ', ')" }
+        $c.Lines['Repéré grâce à'] = $found -join ', '
+        $c.Lines['État de la batterie'] = @('Non transmis à Windows', '#9AA3B2')
+        Add-Note $c 'ok' "$(if ($usb.Count) { 'Il est branché au PC, mais il ne donne pas son état à Windows' } else { "$($soft[0]) est installé : un onduleur est sûrement relié à ce PC, mais il ne donne pas son état à Windows" }) (charge, coupure de courant). $(if ($soft.Count) { "Regarde-le dans $($soft[0])." } else { 'Le logiciel de son fabricant permet de le voir.' })"
         [void]$cards.Add($c)
     }
 
