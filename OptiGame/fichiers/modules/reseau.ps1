@@ -191,7 +191,7 @@ function Update-NetScanInfo {
     }
     [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Box' $net.Gateway 'ok'))
     $pub = Invoke-Async { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; [string](Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5) } catch { '' } } | Select-Object -First 1
-    if ("$pub") { [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Adresse Internet' "$pub" 'info')) }
+    if ("$pub") { $script:PublicIp = "$pub"; [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Adresse Internet' "$pub" 'info')) }
 }
 
 function Show-NetHeroIdle {
@@ -373,6 +373,16 @@ function Invoke-NetworkScan {
     Start-Anim { param($e, $s) $s.T.Text = '{0:N0}' -f ($s.V * $e) } @{ T = $radar.Num; V = [double]$list.Count } 900
     $phase.Text = "appareil$(if ($list.Count -gt 1) {'s'}) connecté$(if ($list.Count -gt 1) {'s'})"
     $phase.Foreground = Get-Brush '#FFFFFF'
+    $script:NetScanAt = Get-Date
+    # Clic sur le radar : la carte du réseau en grand
+    $radar.El.Cursor = [System.Windows.Input.Cursors]::Hand
+    $radar.El.ToolTip = 'Voir la carte de ton réseau'
+    $radar.El.Background = [System.Windows.Media.Brushes]::Transparent
+    $radar.El.Add_MouseLeftButtonUp({ Invoke-Safe { Show-NetMap } })
+    $mb = New-Button 'Voir la carte'
+    $mb.HorizontalAlignment = 'Center'; $mb.Margin = New-Thickness 0 12 0 0
+    $mb.Add_Click({ Invoke-Safe { Show-NetMap } })
+    [void]$ui.NetHero.Children.Add($mb)
     if ($newCount) {
         $nw = New-Text "dont $newCount nouveau$(if ($newCount -gt 1) {'x'}) depuis le dernier scan" 12.5 $Colors.warn -Semi
         $nw.HorizontalAlignment = 'Center'
@@ -400,6 +410,7 @@ function Show-NetDevices {
         'Aucun nouvel appareil depuis le dernier scan. Clique sur un appareil pour voir ses détails, son ping en direct et ses services ouverts.'
     }
     Set-Status "Scan terminé : $($list.Count) appareils trouvés."
+    if ($ui.NetMapOverlay.Visibility -eq 'Visible') { Show-NetMap }
 }
 
 # ---------------------------------------------------------------------------

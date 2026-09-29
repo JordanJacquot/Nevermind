@@ -862,6 +862,32 @@
       </Border>
     </Grid>
 
+    <!-- Carte du réseau (sous le panneau des tests : la fiche d'un appareil s'ouvre par dessus) -->
+    <Grid x:Name="NetMapOverlay" Grid.RowSpan="3" Visibility="Collapsed">
+      <Border Background="#E6080A0D"/>
+      <Border Background="#11151C" BorderBrush="#2C3342" BorderThickness="1" CornerRadius="16" Margin="24">
+        <Grid Margin="26,20,26,18">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <DockPanel>
+            <Button x:Name="BtnNetMapClose" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Fermer" VerticalAlignment="Center"/>
+            <Button x:Name="BtnNetMapScan" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Rescanner" Margin="0,0,10,0" VerticalAlignment="Center"/>
+            <StackPanel>
+              <TextBlock Text="Carte de ton réseau" FontSize="21" FontWeight="Bold" Foreground="#FFFFFF"/>
+              <TextBlock x:Name="NetMapSub" FontSize="12.5" Foreground="#9AA3B2" Margin="0,4,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+          </DockPanel>
+          <Viewbox Grid.Row="1" Stretch="Uniform" Margin="0,8,0,8">
+            <Canvas x:Name="NetMapCanvas" Width="1200" Height="780"/>
+          </Viewbox>
+          <WrapPanel x:Name="NetMapLegend" Grid.Row="2" HorizontalAlignment="Center"/>
+        </Grid>
+      </Border>
+    </Grid>
+
     <!-- Panneau des tests -->
     <Grid x:Name="TestOverlay" Grid.RowSpan="3" Visibility="Collapsed">
       <Border x:Name="TestBackdrop" Background="#D0080A0D"/>

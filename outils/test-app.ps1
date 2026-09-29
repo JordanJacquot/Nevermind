@@ -250,6 +250,25 @@ $script:T.Run.Add_Tick({
                 [IO.File]::Delete($lnk)
                 "raccourci libre, $($t.ProcMem.Count) programmes relevés en arrière plan, DNS protégé"
             }
+            Test-Step 'Carte du réseau' {
+                $saved = $script:NetList
+                $kinds = @('Ce PC', 'Ordinateur', 'Routeur ou répéteur Wi-Fi', 'TV ou multimédia', 'Téléphone ou tablette', 'Imprimante', 'Caméra', 'Objet connecté', 'Console de jeu', 'Box ou décodeur TV', 'Enceinte ou audio', 'Appareil')
+                $script:NetList = @(@{ Ip = '192.168.1.1'; Ms = 1; Mac = 'AA-00'; Gateway = $true; Self = $false; Title = 'Livebox'; Vendor = 'Sagemcom'; KindInfo = @{ Kind = 'Box Internet'; Glyph = 0xE80F; Color = $Colors.ok } })
+                for ($i = 0; $i -lt 13; $i++) {
+                    $k = $kinds[$i % $kinds.Count]
+                    $script:NetList += @{ Ip = "192.168.1.$(10 + $i)"; Ms = $(if ($i % 4 -eq 3) { $null } else { $i }); Mac = "AA-$i"; Gateway = $false; Self = ($i -eq 0); Hidden = ($i % 4 -eq 3); New = ($i -eq 5); Camera = ($k -eq 'Caméra')
+                        Title = "Appareil $i"; Vendor = 'Test'; KindInfo = @{ Kind = $k; Glyph = 0xE774; Color = '#4EA8FF' } }
+                }
+                Show-NetMap; Wait-TestMs 600
+                $nodes = @($ui.NetMapCanvas.Children | Where-Object { $_ -is [System.Windows.Controls.StackPanel] }).Count
+                Assert-Test ($ui.NetMapOverlay.Visibility -eq 'Visible' -and $nodes -eq 15) "carte : $nodes éléments (attendu 15 : Internet, la box et 13 appareils)"
+                Save-TestShot 'carte-reseau'
+                for ($i = 14; $i -lt 34; $i++) { $script:NetList += @{ Ip = "192.168.1.$(10 + $i)"; Ms = 2; Mac = "AA-$i"; Gateway = $false; Self = $false; Title = "Objet $i"; KindInfo = @{ Kind = 'Objet connecté'; Glyph = 0xE80F; Color = '#4EA8FF' } } }
+                Show-NetMap; Wait-TestMs 400; Save-TestShot 'carte-reseau-33'
+                Hide-NetMap
+                $script:NetList = $saved
+                "$nodes éléments, deux anneaux au delà de 14 appareils"
+            }
             Test-Step 'Réseau approfondi (situation simulée)' {
                 $script:NetList = @(
                     @{ Ip = '10.0.0.1'; Ms = 1; Mac = 'AA-BB-CC-00-00-01'; Ttl = 64; Self = $false; Gateway = $true; Host = ''; Vendor = ''; Title = 'Box Internet'; New = $false },

@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.29
+﻿OptiGame 1.0.30
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -71,6 +71,9 @@ L'application a deux grandes sections, dans le menu à gauche :
     Microsoft en direct. Les services cachés derrière « svchost » sont
     maintenant affichés par leur vrai nom.
     Le contenu des échanges, chiffré, n'est jamais lu.
+  - Carte du réseau : après un scan, clique sur le radar (ou « Voir la carte »)
+    pour voir tous tes appareils en grand autour de ta box, avec leur type,
+    leur adresse et leur ping. Un clic sur un appareil ouvre sa fiche.
   - Réseau : scan de tous les appareils connectés à ton réseau (téléphones,
     consoles, TV, box...), avec leur fabricant. Les nouveaux appareils sont
     signalés d'un scan à l'autre : pratique pour repérer un intrus sur ton Wi-Fi.

@@ -40,6 +40,8 @@ $Window.Add_Closed({
 })
 
 $ui.BtnFixAll.Add_Click({ Open-FixAll })
+$ui.BtnNetMapClose.Add_Click({ Hide-NetMap })
+$ui.BtnNetMapScan.Add_Click({ Invoke-Safe { Hide-NetMap; Invoke-NetworkScan; if (@($script:NetList).Count) { Show-NetMap } } })
 $script:SheetMode = 'fix'
 $ui.SheetClose.Add_Click({ Close-Sheet })
 $ui.OverlayBackdrop.Add_MouseLeftButtonUp({ if ($script:SheetMode -ne 'display') { Close-Sheet } })
