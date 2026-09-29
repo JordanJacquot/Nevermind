@@ -303,6 +303,13 @@ function Invoke-NetDeepScan($Net, [string[]]$Subnet, $Hero) {
     if ($cams) { $parts += "$cams caméra$(if ($cams -gt 1) {'s'}) possible$(if ($cams -gt 1) {'s'})" }
     $line.Text = "Recherche approfondie terminée$(if ($parts) { ' : ' + ($parts -join ', ') })."
     $line.Foreground = Get-Brush $(if ($cams) { $Colors.warn } else { '#9AA3B2' })
+    if ($hidden -or $cams) {
+        $line.Text += '  Voir lesquels'
+        $line.TextDecorations = [System.Windows.TextDecorations]::Underline
+        $line.Cursor = [System.Windows.Input.Cursors]::Hand
+        $line.Tag = $(if ($cams) { 'cam' } else { 'hidden' })
+        $line.Add_MouseLeftButtonUp({ param($s, $e) Invoke-Safe { Set-NetFilter ([string]$s.Tag) } })
+    }
     Show-NetDevices
     if ($Hero -and $Hero.Num) { $Hero.Num.Text = "$(@($script:NetList).Count)" }
     Set-Status "Scan terminé : $(@($script:NetList).Count) appareils$(if ($parts) { ', dont ' + ($parts -join ', ') })."

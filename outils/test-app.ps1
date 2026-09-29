@@ -260,6 +260,10 @@ $script:T.Run.Add_Tick({
                         Title = "Appareil $i"; Vendor = 'Test'; KindInfo = @{ Kind = $k; Glyph = 0xE774; Color = '#4EA8FF' } }
                 }
                 Show-NetMap; Wait-TestMs 600
+                Assert-Test ($ui.NetMapSub.Text -match 'Appareil 3 \(192\.168\.1\.13\)') "appareils discrets non nommés en haut de la carte : $($ui.NetMapSub.Text)"
+                Set-NetFilter 'hidden'
+                Assert-Test ($ui.NetDevices.Children.Count -eq 3) "filtre Discrets : $($ui.NetDevices.Children.Count) appareils (attendu 3)"
+                Set-NetFilter 'all'
                 $nodes = @($ui.NetMapCanvas.Children | Where-Object { $_ -is [System.Windows.Controls.StackPanel] }).Count
                 Assert-Test ($ui.NetMapOverlay.Visibility -eq 'Visible' -and $nodes -eq 15) "carte : $nodes éléments (attendu 15 : Internet, la box et 13 appareils)"
                 Save-TestShot 'carte-reseau'
@@ -363,6 +367,8 @@ $script:T.Run.Add_Tick({
                 }
                 # Vraie mesure de 8 secondes
                 $n0 = @(Get-LagSessions).Count
+                # Un vrai jeu lancé pendant le test a déjà démarré une mesure : on l'arrête d'abord
+                if ($script:LagSession) { Stop-LagSession }
                 Start-LagSession 'Test rapide' 0 8
                 for ($i = 0; $i -lt 150 -and $script:LagSession; $i++) { Wait-TestMs 200 }
                 Assert-Test (-not $script:LagSession) 'la mesure ne s''arrête pas'

@@ -801,6 +801,7 @@
                 <CheckBox x:Name="ChkNetWatch" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
                 <TextBlock Text="Me prévenir quand un nouvel appareil se connecte (vérifié toutes les 10 minutes, tant qu'OptiGame est ouvert)" Foreground="#9AA3B2" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
               </StackPanel>
+              <WrapPanel x:Name="NetDevFilters" Margin="0,0,0,12"/>
               <UniformGrid x:Name="NetDevices" Columns="3"/>
               <TextBlock x:Name="NetDevHint" Style="{StaticResource Sub}" FontSize="12" Margin="0,8,0,0" Text="Clique sur « Scanner le réseau » pour voir les appareils connectés."/>
             </StackPanel>

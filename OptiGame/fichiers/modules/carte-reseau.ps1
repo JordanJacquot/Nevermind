@@ -15,7 +15,7 @@ function New-MapGlyph([int]$Code, [double]$Size, [string]$Color) {
 }
 
 # Un appareil : rond avec son icône, son nom et son adresse dessous
-function New-MapNode($Canvas, [string]$Title, [string]$Sub, [int]$Glyph, [string]$Color, [double]$X, [double]$Y, [double]$Size, [string]$Ring, $Device, [double]$Width) {
+function New-MapNode($Canvas, [string]$Title, [string]$Sub, [int]$Glyph, [string]$Color, [double]$X, [double]$Y, [double]$Size, [string]$Ring, $Device, [double]$Width, [array]$Tags) {
     $sp = New-Object System.Windows.Controls.StackPanel
     $sp.Width = $Width
     $c = New-Object System.Windows.Controls.Border
@@ -42,6 +42,12 @@ function New-MapNode($Canvas, [string]$Title, [string]$Sub, [int]$Glyph, [string
         $s.TextAlignment = 'Center'; $s.TextTrimming = 'CharacterEllipsis'; $s.TextWrapping = 'NoWrap'
         $s.HorizontalAlignment = 'Center'; $s.MaxWidth = $Width; $s.Background = Get-Brush '#11151C'; $s.Padding = New-Thickness 4 0 4 1
         [void]$sp.Children.Add($s)
+    }
+    if ($Tags.Count) {
+        $wp = New-Object System.Windows.Controls.WrapPanel
+        $wp.HorizontalAlignment = 'Center'; $wp.Margin = New-Thickness 0 2 0 0
+        foreach ($tg in $Tags) { $bd = New-Badge $tg[0] $tg[1]; $bd.Margin = New-Thickness 2 0 2 0; $bd.Background = Get-Brush '#1E2230'; [void]$wp.Children.Add($bd) }
+        [void]$sp.Children.Add($wp)
     }
     [System.Windows.Controls.Canvas]::SetLeft($sp, $X - $Width / 2)
     [System.Windows.Controls.Canvas]::SetTop($sp, $Y - $Size / 2)
@@ -126,7 +132,11 @@ function Show-NetMap {
         Add-MapLink $cv $bx $by $x $y $k.Color ([bool]$d.Hidden) $ms
         $ring = if ($d.New -or $d.Camera) { $Colors.warn } elseif ($d.Self) { $Colors.info } else { '' }
         $sub = if ($d.Self) { "Ce PC, $($d.Ip)" } else { $d.Ip }
-        New-MapNode $cv $d.Title $sub $k.Glyph $k.Color $x $y $size $ring $d $width
+        $tags = @()
+        if ($d.Hidden) { $tags += , @('Discret', '#B18CFF') }
+        if ($d.New) { $tags += , @('Nouveau', $Colors.warn) }
+        if ($d.Camera) { $tags += , @('Caméra ?', $Colors.warn) }
+        New-MapNode $cv $d.Title $sub $k.Glyph $k.Color $x $y $size $ring $d $width $tags
     }
     New-MapNode $cv $gTitle $gSub 0xE80F $Colors.ok $bx $by 82 $Colors.ok $gw 190
 
@@ -141,7 +151,8 @@ function Show-NetMap {
     $hid = @($list | Where-Object { $_.Hidden }).Count
     $new = @($list | Where-Object { $_.New }).Count
     $when = if ($script:NetScanAt) { " à $($script:NetScanAt.ToString('HH:mm'))" } else { '' }
-    $ui.NetMapSub.Text = "$($list.Count) appareils trouvés au dernier scan$when$(if ($new) { ", $new nouveau$(if ($new -gt 1) {'x'})" })$(if ($hid) { ", $hid discret$(if ($hid -gt 1) {'s'}) (liaison en pointillés)" }). Clique sur un appareil pour voir tout ce qu'OptiGame sait de lui."
+    $hidNames = @($list | Where-Object { $_.Hidden } | Select-Object -First 4 | ForEach-Object { "$($_.Title) ($($_.Ip))" })
+    $ui.NetMapSub.Text = "$($list.Count) appareils trouvés au dernier scan$when$(if ($new) { ", $new nouveau$(if ($new -gt 1) {'x'})" }). $(if ($hid) { "Discret$(if ($hid -gt 1) {'s'}) (ne répond$(if ($hid -gt 1) {'ent'}) pas au ping, liaison en pointillés) : $($hidNames -join ', ')$(if ($hid -gt 4) { '...' }). " })Clique sur un appareil pour voir tout ce qu'OptiGame sait de lui."
     if ($ui.NetMapOverlay.Visibility -ne 'Visible') {
         $ui.NetMapOverlay.Visibility = 'Visible'
         $ui.NetMapOverlay.Opacity = 0

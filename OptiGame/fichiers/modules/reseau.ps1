@@ -237,7 +237,7 @@ function New-DeviceTile($D, [int]$Index) {
     if ($D.Gateway) { [void]$badges.Children.Add((New-Badge 'Ta box' $Colors.ok)) }
     if ($D.New) { [void]$badges.Children.Add((New-Badge 'Nouveau' $Colors.warn)) }
     if ($D.Camera) { $cb = New-Badge 'Caméra ?' $Colors.warn; $cb.ToolTip = "Indices : $(@($D.CameraWhy) -join ', ')"; [void]$badges.Children.Add($cb) }
-    if ($D.Hidden) { $hb = New-Badge 'Discret' '#9AA3B2'; $hb.ToolTip = 'Ne répond pas au ping : trouvé autrement. C''est normal pour beaucoup de téléphones et de PC protégés.'; [void]$badges.Children.Add($hb) }
+    if ($D.Hidden) { $hb = New-Badge 'Discret' '#B18CFF'; $hb.ToolTip = 'Ne répond pas au ping : trouvé autrement. C''est normal pour beaucoup de téléphones et de PC protégés.'; [void]$badges.Children.Add($hb) }
     if ($null -ne $D.Ms) { [void]$badges.Children.Add((New-Badge $(if ($D.Ms -lt 1) { '< 1 ms' } else { "$($D.Ms) ms" }) '#9AA3B2')) }
     if ($badges.Children.Count) { [void]$sp.Children.Add($badges) }
     $det = New-Text "$($D.Ip)$(if ($D.Model) { '   ' + $D.Model } elseif ($D.Vendor) { '   ' + $D.Vendor })" 11.5 '#5B6475'
@@ -393,16 +393,52 @@ function Invoke-NetworkScan {
     Invoke-NetDeepScan $net $ips $radar
 }
 
+# Filtres de la liste : tous, discrets, nouveaux, caméras
+$NetFilters = @(
+    @{ Id = 'all'; Label = 'Tous'; Test = { $true } },
+    @{ Id = 'hidden'; Label = 'Discrets'; Test = { $_.Hidden } },
+    @{ Id = 'new'; Label = 'Nouveaux'; Test = { $_.New } },
+    @{ Id = 'cam'; Label = 'Caméras possibles'; Test = { $_.Camera } }
+)
+function Set-NetFilter([string]$Id) {
+    $script:NetFilter = $Id
+    Show-NetDevices
+    try { $ui.NetDevFilters.BringIntoView() } catch {}
+}
+
 function Show-NetDevices {
     $list = @($script:NetList)
     $first = $script:NetFirstScan
     $newCount = @($list | Where-Object { $_.New }).Count
     $hidden = @($list | Where-Object { $_.Hidden }).Count
+    $cur = if ($script:NetFilter) { $script:NetFilter } else { 'all' }
+    $ui.NetDevFilters.Children.Clear()
+    foreach ($f in $NetFilters) {
+        $cnt = @($list | Where-Object $f.Test).Count
+        if ($f.Id -ne 'all' -and -not $cnt) { if ($cur -eq $f.Id) { $cur = 'all' }; continue }
+        $on = $f.Id -eq $cur
+        $b = New-Object System.Windows.Controls.Border
+        $b.CornerRadius = [System.Windows.CornerRadius]::new(14)
+        $b.Padding = New-Thickness 14 6 14 6
+        $b.Margin = New-Thickness 0 0 8 0
+        $b.Cursor = [System.Windows.Input.Cursors]::Hand
+        $b.Background = Get-Brush $(if ($on) { '#22D37A' } else { '#1A1F29' })
+        $t = New-Text "$($f.Label) ($cnt)" 12.5 $(if ($on) { '#0B0D10' } else { '#C9CED8' }) -Semi
+        $t.TextWrapping = 'NoWrap'
+        $b.Child = $t
+        $b.Tag = $f.Id
+        $b.Add_MouseLeftButtonUp({ param($s, $e) Invoke-Safe { Set-NetFilter ([string]$s.Tag) } })
+        [void]$ui.NetDevFilters.Children.Add($b)
+    }
+    $script:NetFilter = $cur
+    $test = @($NetFilters | Where-Object { $_.Id -eq $cur })[0].Test
     $ui.NetDevices.Children.Clear()
     $i = 0
-    foreach ($d in $list) { [void]$ui.NetDevices.Children.Add((New-DeviceTile $d $i)); $i++ }
+    foreach ($d in @($list | Where-Object $test)) { [void]$ui.NetDevices.Children.Add((New-DeviceTile $d $i)); $i++ }
     $ui.NetDevSummary.Text = "$($list.Count) appareil$(if ($list.Count -gt 1) {'s'})" + $(if ($newCount) { ", $newCount nouveau$(if ($newCount -gt 1) {'x'})" } else { '' }) + $(if ($hidden) { ", $hidden discret$(if ($hidden -gt 1) {'s'})" } else { '' })
-    $ui.NetDevHint.Text = if ($first) {
+    $ui.NetDevHint.Text = if ($cur -eq 'hidden') {
+        'Les appareils discrets ne répondent pas au ping : OptiGame les a trouvés autrement (la table de ta box, leurs annonces sur le réseau). C''est normal pour beaucoup de téléphones, de PC protégés par un pare-feu et d''objets connectés en veille. Clique dessus pour voir ce qui a été trouvé.'
+    } elseif ($first) {
         'Premier scan : ces appareils sont mémorisés, OptiGame te signalera tout nouvel appareil au prochain scan. Clique sur un appareil pour voir ses détails.'
     } elseif ($newCount) {
         'Un appareil « Nouveau » n''était pas là au scan précédent. Si tu ne le reconnais pas, change le mot de passe de ton Wi-Fi depuis la page de ta box. Attention : les téléphones récents changent parfois d''adresse et peuvent apparaître comme nouveaux.'
