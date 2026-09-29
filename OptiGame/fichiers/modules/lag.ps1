@@ -46,7 +46,7 @@ function Start-LagSession([string]$Game, [int]$ProcId, [int]$Seconds = 0) {
         Etw = $etw; T = $t; Isp = ''; IspOwner = $null; Server = $null; Ticks = 0; Prev = @{}; Names = @{}; Bg = (New-Object System.Collections.ArrayList)
         Signal = @(); Band = ''; Channel = ''; TraceJob = $null; SrvJob = $null; OwnerJob = $null; Gaps = 0; MaxGap = 0; GapBase = $null }
     # Chemin vers Internet en arrière plan : le premier routeur public est celui du fournisseur
-    $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:Pool
+    $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
     [void]$ps.AddScript('param($h) [LagMon]::TraceRoute($h, 10, 800)').AddArgument('1.1.1.1')
     $s.TraceJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
     $script:LagSession = $s
@@ -134,7 +134,7 @@ function Update-LagSession {
             $ok = 0; for ($i = 1; $i -lt $a.Count; $i += 2) { if ($a[$i] -ge 0) { $ok++ } }
             $s.Server.Ping = $ok -gt 0
             if (-not $s.Server.Ping) {
-                $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:Pool
+                $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
                 [void]$ps.AddScript('param($h) [LagMon]::TraceRoute($h, 20, 800)').AddArgument($s.Server.Ip)
                 $s.SrvJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
             }
@@ -154,14 +154,22 @@ function Update-LagSession {
     $bgName = if ($top -and $top.Rate -gt 200KB) { Get-LagProcName $top.Pid } else { '' }
     [void]$s.Bg.Add(@{ T = [math]::Round($elapsed, 1); Rate = [math]::Round($total); Name = $bgName; NameRate = $(if ($top) { [math]::Round($top.Rate) } else { 0 }) })
     # Wi-Fi : force du signal et bande
-    if ($s.Wifi -and $s.Ticks % 5 -eq 1) {
-        try {
-            foreach ($ln in @(netsh wlan show interfaces 2>$null)) {
+    # Wi-Fi : force du signal et bande, lues en arrière plan (netsh figeait la fenêtre)
+    if ($s.WifiJob) {
+        $r = Get-JobResult $s.WifiJob
+        if ($null -ne $r) {
+            $s.WifiJob = $null
+            foreach ($ln in @($r)) {
                 if ($ln -match '^\s+Signal\s+:\s+(\d+)') { $s.Signal += [int]$Matches[1] }
                 elseif ($ln -match '^\s+(Canal|Channel)\s+:\s+(\d+)') { $s.Channel = $Matches[2] }
                 elseif ($ln -match '^\s+(Bande|Band)\s+:\s+(.+?)\s*$') { $s.Band = $Matches[2] }
             }
-        } catch {}
+        }
+    }
+    if ($s.Wifi -and $s.Ticks % 5 -eq 1 -and -not $s.WifiJob) {
+        $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
+        [void]$ps.AddScript('@(netsh wlan show interfaces 2>$null)')
+        $s.WifiJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
     }
     if ($s.Seconds -gt 0 -and $elapsed -ge $s.Seconds) { Stop-LagSession; return }
     Update-LagLive
@@ -170,7 +178,7 @@ function Update-LagSession {
 function Start-LagOwnerLookup([string]$Ip) {
     if (Get-ServerOwner $Ip) { return }
     if (-not (Get-Setting 'TrafficLookup' $true)) { return }
-    $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:Pool
+    $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
     [void]$ps.AddScript($ServerLookupWork.ToString()).AddArgument(@($Ip))
     if (-not $script:LagOwnerJobs) { $script:LagOwnerJobs = New-Object System.Collections.ArrayList }
     [void]$script:LagOwnerJobs.Add(@{ PS = $ps; Handle = $ps.BeginInvoke() })
@@ -229,7 +237,7 @@ function Stop-LagSession {
     if (-not $s) { return }
     [LagMon]::Stop()
     if ($s.Etw) { try { [NetFlow]::Stop() } catch {} }
-    foreach ($j in @($s.TraceJob, $s.SrvJob)) { if ($j) { try { $j.PS.Stop(); $j.PS.Dispose() } catch {} } }
+    foreach ($j in @($s.TraceJob, $s.SrvJob)) { if ($j) { try { [void]$j.PS.BeginStop($null, $null) } catch {} } }
     Receive-LagOwners
     $dur = ((Get-Date) - $s.Start).TotalSeconds
     if ($dur -lt $(if ($s.Seconds -gt 0) { 6 } else { 60 })) { Update-LagLive; return }
@@ -271,6 +279,11 @@ function Stop-LagSession {
     # Diagnostic gardé sans les blocs de code des actions (recréés à l'affichage)
     $d = Get-LagDiagnosis $rec
     $rec.Diag = @{ Level = $d.Level; Title = $d.Title; Findings = @($d.Findings | ForEach-Object { @{ Status = $_.Status; Title = $_.Title; Detail = $_.Detail; Tips = @($_.Tips); Actions = @(@($_.Actions) | Where-Object { $_ } | ForEach-Object { @{ Label = $_.Label } }) } }) }
+    if (-not $rec.Quick -and -not $rec.Server -and $rec.Diag.Level -eq 'ok') {
+        Write-Log "Lag: $($s.Game) sans serveur en ligne repéré et connexion stable, mesure non gardée"
+        Update-LagLive
+        return
+    }
     $obj = $rec | ConvertTo-Json -Depth 8 | ConvertFrom-Json
     $null = Get-LagSessions
     [void]$script:LagSessions.Add($obj)
@@ -522,6 +535,7 @@ function New-LagChart($S) {
 }
 
 function Show-LagSession([string]$Id) {
+    if ($script:TestRunning) { return }
     $s = @(Get-LagSessions | Where-Object { $_.Id -eq $Id })[0]
     if (-not $s) { return }
     Show-TestPanel @{ Tag = 'LAG'; Title = "Connexion : $($s.Game)"; Sub = "$(([datetime]$s.Date).ToString('dd/MM/yyyy à HH:mm')), $(Format-PlayTime $s.Seconds) de mesure" }

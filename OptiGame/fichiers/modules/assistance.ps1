@@ -270,7 +270,14 @@ function Export-ProblemReport([string]$Dest, [string]$Description) {
         }
         $folder = if ($Dest) { $Dest } else { [Environment]::GetFolderPath('Desktop') }
         $zip = Join-Path $folder "OptiGame problème $(Get-Date -Format 'yyyy-MM-dd HH.mm').zip"
-        Compress-Archive -Path (Join-Path $tmp '*') -DestinationPath $zip -Force
+        # Archive créée en arrière plan : la fenêtre ne se fige pas
+        [void](Invoke-Async {
+            param($a)
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            if (Test-Path -LiteralPath $a.Zip) { [IO.File]::Delete($a.Zip) }
+            [IO.Compression.ZipFile]::CreateFromDirectory($a.Dir, $a.Zip)
+        } @{ Dir = $tmp; Zip = $zip })
+        if (-not (Test-Path -LiteralPath $zip)) { throw 'Le fichier n''a pas pu être créé.' }
     } finally {
         try { [IO.Directory]::Delete($tmp, $true) } catch {}
     }
@@ -281,6 +288,7 @@ function Export-ProblemReport([string]$Dest, [string]$Description) {
 }
 
 function Show-ReportPanel {
+    if ($script:TestRunning) { return }
     $script:ReportPage = $ui.Tabs.SelectedIndex
     Show-TestPanel @{ Tag = '!'; Title = 'Signaler un problème'; Sub = 'Un fichier à envoyer, sans données personnelles' }
     Set-TestButtons 'done'

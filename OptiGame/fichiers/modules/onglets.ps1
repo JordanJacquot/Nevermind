@@ -606,6 +606,7 @@ function Add-LastCleanInfo {
 
 # Les plus gros fichiers d'une catégorie, avant de nettoyer
 function Show-CleanFiles($Target, $Info) {
+    if ($script:TestRunning) { return }
     Show-TestPanel @{ Tag = 'TMP'; Title = $Target.Titre; Sub = "$($Info.Count) fichier$(if ($Info.Count -gt 1) {'s'}), $(Format-Size ([double]$Info.Size))" }
     Set-TestButtons 'done'
     $ui.BtnTestAgain.Visibility = 'Collapsed'
@@ -665,7 +666,8 @@ function Invoke-Clean {
 # Onglet sauvegarde
 # ---------------------------------------------------------------------------
 function Get-BackupCount {
-    $script:Backup.Registry.Count + $script:Backup.Dns.Count + $script:Backup.Displays.Count + $(if ($script:Backup.PowerScheme) { 1 } else { 0 }) + $(if ($script:Backup.Overlay) { 1 } else { 0 })
+    $script:Backup.Registry.Count + $script:Backup.Dns.Count + $script:Backup.Displays.Count + $(if ($script:Backup.PowerScheme) { 1 } else { 0 }) + $(if ($script:Backup.Overlay) { 1 } else { 0 }) +
+        @(Get-Setting 'SvcOriginal' @()).Count + @(Get-Setting 'PcfgOriginal' @()).Count
 }
 
 function Update-BackupSummary {

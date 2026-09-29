@@ -196,6 +196,7 @@ function New-PrivacyRow($It) {
 }
 
 function Show-WindowsPrivacy {
+    if ($script:TestRunning) { return }
     Show-TestPanel @{ Tag = 'WIN'; Title = 'Ce que Windows envoie à Microsoft'; Sub = 'Identifiants, réglages et envois vus en direct' }
     Set-TestButtons 'done'
     $ui.BtnTestAgain.Visibility = 'Collapsed'

@@ -40,7 +40,7 @@ function Add-FpsProcSample($T) {
         Merge-FpsProcSample $T $lines $T.ProcJobTime
     }
     $ps = [PowerShell]::Create()
-    $ps.RunspacePool = $script:Pool
+    $ps.RunspacePool = $script:BgPool
     [void]$ps.AddScript($ProcSampleWork.ToString()).AddArgument(@($T.Pid, $PID))
     $T.ProcJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
     $T.ProcJobTime = Get-Date

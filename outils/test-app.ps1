@@ -6,6 +6,13 @@ $script:T = @{
     Clock = [Diagnostics.Stopwatch]::StartNew(); Last = 0.0; MaxGap = 0.0; Watch = $false
 }
 function Invoke-UpdateCheck { }
+# Chronométrage des tâches répétées de l'app (qui tournent sur la fenêtre)
+$script:T.Slow = @{}
+foreach ($fn in 'Test-GameRunning', 'Update-LiveUI', 'Update-Traffic', 'Update-LagSession', 'Update-FpsTarget', 'Update-DevPing') {
+    if (-not (Get-Command $fn -ErrorAction SilentlyContinue)) { continue }
+    Set-Item -Path "function:$fn-Chrono" -Value (Get-Item "function:$fn").ScriptBlock
+    Set-Item -Path "function:$fn" -Value ([scriptblock]::Create("`$sw = [Diagnostics.Stopwatch]::StartNew(); try { $fn-Chrono @args } finally { `$ms = `$sw.ElapsedMilliseconds; if (`$ms -gt [int]`$script:T.Slow['$fn']) { `$script:T.Slow['$fn'] = `$ms } }"))
+}
 function Show-Message([string]$Text, [string]$Icon = 'Information') { [void]$script:T.Msgs.Add("[$Icon] $Text") }
 function Confirm-Action([string]$Text) { [void]$script:T.Msgs.Add("[Question] $Text"); $false }
 function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) { [void]$script:T.Msgs.Add("[Notify] $Title : $Text") }
@@ -34,6 +41,7 @@ function Save-TestShot([string]$Name) {
 }
 # Exécute une étape : échoue si elle lève une erreur ou affiche un message d'avertissement.
 function Test-Step([string]$Name, [scriptblock]$Body) {
+    $script:T.Step = $Name
     $before = $script:T.Msgs.Count
     try {
         $detail = & $Body
@@ -50,7 +58,7 @@ $script:T.Beat = New-Object System.Windows.Threading.DispatcherTimer
 $script:T.Beat.Interval = [TimeSpan]::FromMilliseconds(50)
 $script:T.Beat.Add_Tick({
     $now = $script:T.Clock.Elapsed.TotalMilliseconds
-    if ($script:T.Watch -and $script:T.Last) { $script:T.MaxGap = [math]::Max($script:T.MaxGap, $now - $script:T.Last) }
+    if ($script:T.Watch -and $script:T.Last -and ($now - $script:T.Last) -gt $script:T.MaxGap) { $script:T.MaxGap = $now - $script:T.Last; $script:T.GapStep = $script:T.Step }
     $script:T.Last = $now
 })
 $script:T.Beat.Start()
@@ -268,6 +276,7 @@ $script:T.Run.Add_Tick({
                 "$($switches.Count) interrupteurs, libellés complets"
             }
             Test-Step 'Nettoyage : fichiers et journal (issue 1)' {
+                Wait-TestMs 100
                 $d = Join-Path $DataDir 'essai-nettoyage'
                 $out = Join-Path $DataDir 'essai-hors-nettoyage'
                 foreach ($x in $d, $out) { New-Item -ItemType Directory -Force -Path $x | Out-Null }
@@ -279,11 +288,12 @@ $script:T.Run.Add_Tick({
                 # Un lien dans le dossier vers un autre dossier : il ne doit pas être suivi
                 New-Item -ItemType Junction -Path "$d\lien" -Target $out | Out-Null
                 $target = @{ Titre = 'Dossier d''essai'; Paths = @($d) }
+                $script:T.Step = 'nettoyage : liste'
                 $info = Invoke-Async $CleanListScript @{ Paths = $target.Paths; Top = 300 } | Select-Object -First 1
-                Assert-Test ($info.Count -eq 3 -and [string]$info.Top[0][0] -like '*gros.tmp') "analyse : $($info.Count) fichiers (attendu 3, le lien ignoré)"
-                Show-CleanFiles $target $info; Wait-TestMs 500; Save-TestShot 'nettoyage-fichiers'; Hide-TestPanel
+                Assert-Test ($info.Count -eq 3 -and [string]$info.Top[0][0] -like '*gros.tmp') "analyse : $($info.Count) fichiers (attendu 3, le lien ignoré) ; sur le disque : $(@(Get-ChildItem -LiteralPath $d -Recurse -Force -File -ErrorAction SilentlyContinue).Count) ; résultat : $(if ($info) { ($info.Keys -join '/') + ' taille ' + $info.Size } else { 'aucun' })"
+                $script:T.Step = 'nettoyage : fenêtre fichiers'; Show-CleanFiles $target $info; Wait-TestMs 500; Save-TestShot 'nettoyage-fichiers'; Hide-TestPanel
                 $lock = [IO.File]::Open("$d\utilise.tmp", 'Open', 'Read', 'None')
-                try { $r = Invoke-CleanTargets @($target) } finally { $lock.Dispose() }
+                $script:T.Step = 'nettoyage : suppression'; try { $r = Invoke-CleanTargets @($target) } finally { $lock.Dispose() }
                 Assert-Test ($r.Deleted -eq 2 -and $r.Skipped -eq 1) "nettoyage : $($r.Deleted) supprimés, $($r.Skipped) laissés (attendu 2 et 1)"
                 Assert-Test (Test-Path "$out\a-garder.txt") 'un fichier hors du dossier a été supprimé en suivant un lien'
                 Assert-Test (-not (Test-Path "$d\sous")) 'dossier vide non supprimé'
@@ -291,7 +301,7 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($log -match '\[SUPPRIMÉ\].*gros\.tmp' -and $log -match '\[LAISSÉ\].*utilise\.tmp') 'journal incomplet'
                 [IO.Directory]::Delete("$d\lien")
                 # Vraie analyse de la page (lecture seule)
-                Show-Page 4; Invoke-CleanScan; Set-Busy $false; Wait-TestMs 500; Save-TestShot 'nettoyage-analyse'
+                $script:T.Step = 'nettoyage : page'; Show-Page 4; $script:T.Step = 'nettoyage : analyse page'; Invoke-CleanScan; Set-Busy $false; Wait-TestMs 500; Save-TestShot 'nettoyage-analyse'
                 "3 fichiers vus (lien ignoré), 2 supprimés, 1 laissé car utilisé, journal $(Split-Path $r.File -Leaf)"
             }
             Test-Step 'Signaler un problème (bouton en haut)' {
@@ -459,6 +469,11 @@ $script:T.Run.Add_Tick({
                     $titles = @($k[1].Findings | ForEach-Object { $_.Title })
                     Assert-Test ($titles -contains $k[2] -and $k[1].Level -eq $k[3]) "$($k[0]) : trouvé « $($titles -join ' / ') » ($($k[1].Level))"
                 }
+                # Jeu hors ligne (aucun serveur) avec une connexion stable : rien n'est gardé
+                $nOff = @(Get-LagSessions).Count
+                Start-LagSession 'Jeu solo' 0 0; Wait-TestMs 1500
+                $script:LagSession.Start = (Get-Date).AddMinutes(-2); Stop-LagSession
+                Assert-Test (@(Get-LagSessions).Count -eq $nOff -or @(Get-LagSessions)[-1].Diag.Level -ne 'ok') 'mesure d''un jeu hors ligne gardée'
                 # Vraie mesure de 8 secondes
                 $n0 = @(Get-LagSessions).Count
                 # Un vrai jeu lancé pendant le test a déjà démarré une mesure : on l'arrête d'abord
@@ -687,7 +702,7 @@ $script:T.Run.Add_Tick({
             }
             $script:T.Watch = $false
             $gap = [int]$script:T.MaxGap
-            Add-TestResult 'Fluidité' ($gap -lt 3000) "plus long blocage de la fenêtre : $gap ms"
+            Add-TestResult 'Fluidité' ($gap -lt 3000) "plus long blocage de la fenêtre : $gap ms (étape « $($script:T.GapStep) ») ; tâches répétées les plus lentes : $(($script:T.Slow.GetEnumerator() | Sort-Object Value -Descending | ForEach-Object { "$($_.Key) $($_.Value) ms" }) -join ', ')"
         }
         $errs = @()
         if (Test-Path -LiteralPath $LogFile) { $errs = @(Get-Content -LiteralPath $LogFile -Encoding UTF8 | Where-Object { $_ -match 'ERREUR|Échec' }) }

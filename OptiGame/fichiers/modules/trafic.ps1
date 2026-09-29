@@ -62,7 +62,7 @@ function Update-TrafficDns {
     }
     $st.DnsAt = Get-Date
     $ps = [PowerShell]::Create()
-    $ps.RunspacePool = $script:Pool
+    $ps.RunspacePool = $script:BgPool
     [void]$ps.AddScript('try { Get-DnsClientCache -ErrorAction Stop | Where-Object { $_.Type -in 1, 28 -and $_.Data } | ForEach-Object { "$($_.Data)|$(([string]$_.Entry).TrimEnd(''.''))" } } catch {}')
     $st.DnsJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
 }
@@ -200,7 +200,7 @@ function Update-TrafficSignatures {
     }
     if (-not $items.Count) { return }
     $ps = [PowerShell]::Create()
-    $ps.RunspacePool = $script:Pool
+    $ps.RunspacePool = $script:BgPool
     [void]$ps.AddScript($TrafficInspectWork.ToString()).AddArgument($items)
     $st.SigJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
 }
@@ -300,12 +300,22 @@ function Block-TrafficApp($App) {
     if (-not $App.Path) { Show-Message 'Impossible de bloquer ce programme : son emplacement est inconnu.'; return }
     if (-not (Confirm-Action "Bloquer l'accès à Internet pour « $($App.Title) » ?`n`n$($App.Path)`n`nLe programme ne pourra plus rien envoyer ni recevoir. Tu pourras annuler depuis la page Sauvegarde (historique).")) { return }
     $name = "OptiGame : bloque $($App.Title)"
-    New-NetFirewallRule -DisplayName $name -Direction Outbound -Program $App.Path -Action Block -Profile Any -ErrorAction Stop | Out-Null
-    New-NetFirewallRule -DisplayName $name -Direction Inbound -Program $App.Path -Action Block -Profile Any -ErrorAction Stop | Out-Null
+    $svc = @($App.Services | Where-Object { $_ })
+    # Un service Windows partage svchost.exe avec d'autres (DNS, réseau...) : la règle vise ce service seulement
+    $targets = if ($svc.Count) { @($svc | ForEach-Object { @{ Service = $_.Name } }) } else { @(@{}) }
+    foreach ($t in $targets) {
+        foreach ($dir in 'Outbound', 'Inbound') {
+            $p = @{ DisplayName = $name; Direction = $dir; Program = $App.Path; Action = 'Block'; Profile = 'Any'; ErrorAction = 'Stop' }
+            if ($t.Service) { $p.Service = $t.Service }
+            New-NetFirewallRule @p | Out-Null
+        }
+    }
     [void](Add-History "Internet bloqué pour $($App.Title)" @($App.Path) @(@{ Type = 'fw'; Name = $name }))
-    Get-Process -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -eq $App.Path } catch { $false } } | ForEach-Object { try { $_.Kill() } catch {} }
+    # Les programmes de Windows ne sont pas fermés (ils font tourner d'autres choses)
+    $sys = $svc.Count -or $App.Path -like "$env:windir\*"
+    if (-not $sys) { Get-Process -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -eq $App.Path } catch { $false } } | ForEach-Object { try { $_.Kill() } catch {} } }
     Set-Status "$($App.Title) ne peut plus accéder à Internet."
-    Show-Message "« $($App.Title) » est bloqué et a été fermé.`n`nPour annuler : page Sauvegarde, historique, « Annuler »."
+    Show-Message "« $($App.Title) » est bloqué$(if (-not $sys) { ' et a été fermé' }).`n`nPour annuler : page Sauvegarde, historique, « Annuler »."
 }
 
 # ---------------------------------------------------------------------------
@@ -474,7 +484,7 @@ function Update-ServerLookups {
     if (-not $ips.Count) { return }
     foreach ($ip in $ips) { $st.LookupDone[$ip] = $true }
     $ps = [PowerShell]::Create()
-    $ps.RunspacePool = $script:Pool
+    $ps.RunspacePool = $script:BgPool
     [void]$ps.AddScript($ServerLookupWork.ToString()).AddArgument(@($ips))
     $st.LookupJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
 }

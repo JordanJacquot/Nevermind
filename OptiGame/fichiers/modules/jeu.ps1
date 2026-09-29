@@ -64,7 +64,9 @@ function Test-GameRunning {
         return
     }
     if (-not $script:GameIndex -or -not $script:GameIndex.Count) { return }
-    foreach ($p in @(Get-Process -Name @($script:GameIndex.Keys) -ErrorAction SilentlyContinue)) {
+    # Une seule lecture des programmes ouverts (demander chaque jeu par son nom coûtait jusqu'à 0,8 s toutes les 5 s)
+    $procs = @([Diagnostics.Process]::GetProcesses() | Where-Object { $script:GameIndex.ContainsKey($_.ProcessName.ToLower()) })
+    foreach ($p in $procs) {
         $path = try { [string]$p.Path } catch { '' }
         $info = $script:GameIndex[$p.ProcessName.ToLower()]
         if ($path -and $info -and $info.Exes -contains $path.ToLower()) { Start-GameSession $info.Game $p; return }
@@ -480,7 +482,7 @@ function Update-FpsHotkey {
 function Register-FpsHotkey {
     if ($script:HotkeyRegistered) { return }
     try {
-        $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
+        $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).EnsureHandle()
         if (-not [OGNative]::AddHotKey($h, $FpsHotkeyId, 0x0006, 0x46)) { Write-Log 'Raccourci Ctrl+Maj+F déjà pris par un autre programme.'; return }
         $script:HotkeyRegistered = $true
         $script:HotkeyHandle = $h

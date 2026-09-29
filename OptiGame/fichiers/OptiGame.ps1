@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.36
+    OptiGame 1.0.37
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,7 +10,7 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.36'
+$AppVersion = '1.0.37'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -106,6 +106,9 @@ $script:RestoreDone = $false
 $script:Build = [int](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue).CurrentBuildNumber
 $script:Pool = [RunspaceFactory]::CreateRunspacePool(1, 4)
 $script:Pool.Open()
+# Tâches de fond longues (annuaire des serveurs, tracé du chemin, signatures) : à part, pour ne pas faire attendre la fenêtre
+$script:BgPool = [RunspaceFactory]::CreateRunspacePool(1, 8)
+$script:BgPool.Open()
 $pfPs = [PowerShell]::Create()
 $pfPs.RunspacePool = $script:Pool
 [void]$pfPs.AddScript($AnalysisDataWork.ToString()).AddArgument($env:SystemDrive)

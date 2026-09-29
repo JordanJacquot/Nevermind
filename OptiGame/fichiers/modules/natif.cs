@@ -1655,9 +1655,13 @@ public static class NetFlow
                     if (f.LastIn != 0)
                     {
                         double gap = (ts - f.LastIn) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
-                        if (gap > 100) f.Gaps100++;
-                        if (gap > 250) f.Gaps250++;
-                        if (gap > f.MaxGap && gap < 10000) f.MaxGap = gap;
+                        // Au delà de 3 s, c'est une pause (menu, chargement), pas un à-coup en pleine partie
+                        if (gap < 3000)
+                        {
+                            if (gap > 100) f.Gaps100++;
+                            if (gap > 250) f.Gaps250++;
+                            if (gap > f.MaxGap) f.MaxGap = gap;
+                        }
                     }
                     f.PktIn++; f.BytesIn += size; f.LastIn = ts;
                 }

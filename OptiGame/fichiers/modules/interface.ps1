@@ -131,7 +131,7 @@ $AnalysisDataWork = {
     }
     $r.UpsHints = @()
     try {
-        foreach ($p in @(Get-CimInstance Win32_PnPEntity -Filter "DeviceID LIKE 'USB%' OR DeviceID LIKE 'HID%'" -ErrorAction Stop | Where-Object { [string]$_.DeviceID -match '^(USB|HID)\\VID_(051D|0463|0764|09AE|10AF|06DA|0D9F|0665|0925)&' -or [string]$_.Name -match '(?i)\bups\b|onduleur|uninterruptible|back-?ups|smart-?ups' })) {
+        foreach ($p in @(Get-CimInstance Win32_PnPEntity -Filter "DeviceID LIKE 'USB%' OR DeviceID LIKE 'HID%'" -ErrorAction Stop | Where-Object { [string]$_.DeviceID -match '^(USB|HID)\\VID_(051D|0463|0764|10AF|06DA|0D9F)&|^(USB|HID)\\VID_0665&PID_5161|^(USB|HID)\\VID_0925&PID_1234' -or ([string]$_.DeviceID -match '^(USB|HID)\\VID_09AE&' -and [string]$_.Name -match '(?i)ups|battery|batterie|power') -or [string]$_.Name -match '(?i)\bups\b|onduleur|uninterruptible|back-?ups|smart-?ups' })) {
             $vid = if ([string]$p.DeviceID -match 'VID_([0-9A-F]{4})') { $Matches[1] } else { '' }
             $r.UpsHints += @{ Kind = 'usb'; Name = [string]$p.Name; Vid = $vid; Ok = ([string]$p.Status -eq 'OK') }
         }
