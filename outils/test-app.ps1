@@ -335,6 +335,20 @@ $script:T.Run.Add_Tick({
                 Set-TrafficMark 'TrafficTrusted' 'test:remote' $false
                 Assert-Test (@(Get-TrafficAlerts | Where-Object { $_.App.Key -eq 'test:remote' }).Count -eq 1) 'retirer la confiance ne remet pas l''alerte'
                 Set-TrafficMark 'TrafficScanned' 'test:nonsigne' $false
+                # PowerShell lancé par un programme signé (Claude Code) : information ; lancé par un inconnu : à vérifier
+                & $mk 'test:ps1' 'powershell' 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' 'Valid' 443 1MB 1MB $false
+                $st.Apps['test:ps1'].Parent = 'claude.exe'; $st.Apps['test:ps1'].ParentSig = 'Valid'; $st.Apps['test:ps1'].ParentPub = 'Anthropic, PBC'
+                $lv = @(Get-TrafficAlerts | Where-Object { $_.App.Key -eq 'test:ps1' })[0].Level
+                Assert-Test ($lv -eq 'info') "PowerShell lancé par Claude Code : niveau $lv (attendu info)"
+                $st.Apps['test:ps1'].Parent = 'bizarre.exe'; $st.Apps['test:ps1'].ParentSig = 'NotSigned'
+                $lv = @(Get-TrafficAlerts | Where-Object { $_.App.Key -eq 'test:ps1' })[0].Level
+                Assert-Test ($lv -eq 'warn') "PowerShell lancé par un inconnu : niveau $lv (attendu warn)"
+                # Vérification ratée : pas « non signé »
+                & $mk 'test:err' 'gros' 'C:\Program Files\Gros\gros.exe' 'Unknown' 443 1MB 1MB $false
+                Assert-Test (-not @(Get-TrafficAlerts | Where-Object { $_.App.Key -eq 'test:err' }).Count) 'vérification ratée prise pour « non signé »'
+                $st.Apps.Remove('test:ps1'); $st.Apps.Remove('test:err')
+                $signedReal = @($st.Apps.Values | Where-Object { $_.Sig -eq 'Valid' }).Count
+                Assert-Test ($signedReal -ge 1) 'aucune signature lue en arrière plan'
                 foreach ($k in 'test:jeu', 'test:jeu2', 'test:remote', 'test:nonsigne') { $st.Apps.Remove($k) }
                 $alerts = @(Get-TrafficAlerts)
                 $st.Alerts = $alerts

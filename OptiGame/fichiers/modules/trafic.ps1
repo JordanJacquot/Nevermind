@@ -110,17 +110,7 @@ function Update-Traffic {
     if ($st.Ticks % 5 -eq 1) {
         foreach ($l in @([TrafficMon]::Udp())) { $procId = [int](($l -split '\|')[0]); if ($procId -gt 4) { $st.Apps[(Get-TrafficApp $procId)].Udp = $true } }
     }
-    # Signatures : deux programmes par relevé pour ne pas figer la fenêtre
-    for ($k = 0; $k -lt 2 -and $st.SigQueue.Count; $k++) {
-        $key = $st.SigQueue.Dequeue()
-        $a = $st.Apps[$key]
-        try {
-            $sg = Get-AuthenticodeSignature -FilePath $a.Path -ErrorAction Stop
-            $a.Sig = [string]$sg.Status
-            $a.Publisher = if ($sg.SignerCertificate) { ($sg.SignerCertificate.Subject -replace '^.*?CN="?([^",]+).*$', '$1') } else { '' }
-        } catch { $a.Sig = 'Unknown' }
-        $st.Sig[$key] = $a.Sig
-    }
+    Update-TrafficSignatures
     Test-TrafficAlerts
     if ($ui.Tabs.SelectedIndex -eq $TrafficIndex -and $Window.IsVisible) { Update-TrafficView }
 }
@@ -142,6 +132,70 @@ function Stop-TrafficWatch {
     if ($script:TrafficTimer) { $script:TrafficTimer.Stop() }
     $ui.BtnTraffic.Content = 'Reprendre la surveillance'
     Set-Status 'Surveillance arrêtée (les chiffres affichés sont gardés).'
+}
+
+# Signature de chaque programme, et pour les outils de Windows (PowerShell, cmd...) : qui les a lancés.
+$TrafficInspectWork = {
+    param($items)
+    $sigOf = {
+        param($path)
+        try {
+            $sg = Get-AuthenticodeSignature -FilePath $path -ErrorAction Stop
+            @([string]$sg.Status, $(if ($sg.SignerCertificate) { $sg.SignerCertificate.Subject -replace '^.*?CN="?([^",]+).*$', '$1' } else { '' }))
+        } catch { @('Error', '') }
+    }
+    foreach ($it in $items) {
+        $s = & $sigOf $it.Path
+        $parent = ''; $parentSig = ''; $parentPub = ''
+        if ($it.Lol) {
+            foreach ($procId in $it.Pids) {
+                try {
+                    $pp = (Get-CimInstance Win32_Process -Filter "ProcessId=$procId" -ErrorAction Stop).ParentProcessId
+                    $par = Get-CimInstance Win32_Process -Filter "ProcessId=$pp" -ErrorAction Stop
+                    if ($par -and $par.ExecutablePath) {
+                        $ps = & $sigOf $par.ExecutablePath
+                        $parent = [string]$par.Name; $parentSig = $ps[0]; $parentPub = $ps[1]
+                        if ($parentSig -ne 'Valid') { break }   # un parent inconnu suffit à garder l'alerte
+                    }
+                } catch {}
+            }
+        }
+        @{ Key = $it.Key; Sig = $s[0]; Publisher = $s[1]; Parent = $parent; ParentSig = $parentSig; ParentPub = $parentPub }
+    }
+}
+
+function Update-TrafficSignatures {
+    $st = $script:Traffic
+    $job = $st.SigJob
+    if ($job) {
+        if (-not $job.Handle.IsCompleted) { return }
+        $res = @()
+        try { $res = @($job.PS.EndInvoke($job.Handle)) } catch {} finally { $job.PS.Dispose(); $st.SigJob = $null }
+        foreach ($r in $res) {
+            $a = $st.Apps[$r.Key]
+            if (-not $a) { continue }
+            # Vérification ratée (fichier en cours de mise à jour, disque occupé...) : on réessaie, ce n'est pas « non signé »
+            if ($r.Sig -in 'Error', 'UnknownError') {
+                $a.SigTries = [int]$a.SigTries + 1
+                if ($a.SigTries -lt 3) { $st.SigQueue.Enqueue($r.Key) } else { $a.Sig = 'Unknown' }
+                continue
+            }
+            $a.Sig = $r.Sig; $a.Publisher = $r.Publisher
+            $a.Parent = $r.Parent; $a.ParentSig = $r.ParentSig; $a.ParentPub = $r.ParentPub
+            $st.Sig[$r.Key] = $a.Sig
+        }
+    }
+    if (-not $st.SigQueue.Count) { return }
+    $items = @()
+    while ($st.SigQueue.Count -and $items.Count -lt 6) {
+        $a = $st.Apps[$st.SigQueue.Dequeue()]
+        if ($a -and $a.Path) { $items += @{ Key = $a.Key; Path = $a.Path; Lol = [bool]($a.Name -match $LolBins); Pids = @($a.Pids.Keys) } }
+    }
+    if (-not $items.Count) { return }
+    $ps = [PowerShell]::Create()
+    $ps.RunspacePool = $script:Pool
+    [void]$ps.AddScript($TrafficInspectWork.ToString()).AddArgument($items)
+    $st.SigJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
 }
 
 # ---------------------------------------------------------------------------
@@ -193,12 +247,16 @@ function Get-TrafficAlerts {
         if (-not $net.Count) { continue }
         $why = @(); $level = 'info'
         # Analysé sans rien trouver, ou jeu installé : « non signé » n'est plus un indice
-        $unsigned = $a.Sig -and $a.Sig -notin 'Valid', 'NoPath' -and -not $scanned.ContainsKey($a.Key) -and -not (Test-GamePath $a.Path)
+        $unsigned = $a.Sig -in 'NotSigned', 'NotTrusted' -and -not $scanned.ContainsKey($a.Key) -and -not (Test-GamePath $a.Path)
         $risky = $a.Path -match '(?i)\\(AppData\\Local\\Temp|Temp|Downloads|Téléchargements|Users\\Public)\\' -or $a.Path -match '(?i)^[a-z]:\\ProgramData\\[^\\]+\.exe$' -or $a.Path -match '(?i)\\AppData\\Roaming\\[^\\]+\.exe$'
         if ($a.Sig -eq 'HashMismatch') { $why += 'sa signature numérique est invalide (le fichier a été modifié)'; $level = 'bad' }
         if ($unsigned -and $risky) { $why += 'il n''est signé par aucun éditeur et il est rangé dans un dossier où les virus aiment se cacher'; $level = 'bad' }
         elseif ($unsigned -and $a.Sig -ne 'HashMismatch') { $why += 'il n''est signé par aucun éditeur connu'; if ($level -ne 'bad') { $level = 'warn' } }
-        if ($a.Name -match $LolBins) { $why += 'c''est un outil de Windows que les virus détournent souvent pour télécharger ou envoyer des données'; if ($level -ne 'bad') { $level = 'warn' } }
+        if ($a.Name -match $LolBins) {
+            # Lancé par un programme signé (Claude Code, VS Code, Git...) : normal, simple information
+            if ($a.ParentSig -eq 'Valid') { $why += "outil de Windows lancé par $($a.Parent)$(if ($a.ParentPub) { " (signé : $($a.ParentPub))" }), c'est normal" }
+            elseif ($a.Parent -or $a.Sig) { $why += "c'est un outil de Windows que les virus détournent souvent pour télécharger ou envoyer des données$(if ($a.Parent) { " (lancé par $($a.Parent), non signé)" })"; if ($level -ne 'bad') { $level = 'warn' } }
+        }
         # Un programme signé par son éditeur (un jeu, par exemple) peut utiliser ces ports pour ses serveurs :
         # pour lui, seuls les ports du réseau Tor restent signalés.
         $signedOk = $a.Sig -eq 'Valid'
@@ -251,6 +309,8 @@ function Get-AppSigLabel($A) {
         'Valid' { @($(if ($A.Publisher) { "Signé : $($A.Publisher)" } else { 'Signé' }), $Colors.ok) }
         'HashMismatch' { @('Signature invalide', $Colors.bad) }
         $null { @('Vérification...', '#9AA3B2') }
+        'Unknown' { @('Signature non vérifiable', '#9AA3B2') }
+        'NotTrusted' { @('Certificat non reconnu', $Colors.warn) }
         default { @($(if ($A.Path) { 'Non signé' } else { 'Programme système' }), $(if ($A.Path) { $Colors.warn } else { '#9AA3B2' })) }
     }
 }
@@ -372,8 +432,9 @@ function Update-TrafficView {
     $script:TrafficStats.Out.Text = Format-Bytes $sumOut
     $script:TrafficStats.In.Text = Format-Bytes $sumIn
     $script:TrafficStats.Apps.Text = "$($apps.Count)"
-    $alerts = @($st.Alerts)
-    $serious = @($alerts | Where-Object { $_.Level -ne 'info' }).Count
+    # « Bon à savoir » (ex : PowerShell lancé par Claude Code) : visible dans la fiche du programme, pas dans la liste à vérifier
+    $alerts = @($st.Alerts | Where-Object { $_.Level -ne 'info' })
+    $serious = $alerts.Count
     $script:TrafficStats.Alerts.Text = "$serious"
     $script:TrafficStats.Alerts.Foreground = Get-Brush $(if ($serious) { $Colors.warn } else { $Colors.ok })
     $mins = [int]((Get-Date) - $st.Started).TotalMinutes
