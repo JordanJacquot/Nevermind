@@ -295,6 +295,27 @@ $script:T.Run.Add_Tick({
                 Assert-Test (Test-IsLaptop @($lap) @{ Chassis = @(2); PCType = 1 }) 'vrai portable non reconnu'
                 'onduleurs reconnus (plomb ou marque), portable toujours reconnu'
             }
+            Test-Step 'Ce que Windows envoie à Microsoft' {
+                $items = @(Get-PrivacyItems)
+                Assert-Test ($items.Count -ge 8) "réglages lus : $($items.Count)"
+                Assert-Test (@(Get-PcIdentifiers).Count -eq 5) 'identifiants non lus'
+                Assert-Test ((Get-MsService 'v10.events.data.microsoft.com').Label -eq 'Télémétrie de Windows') 'serveur de télémétrie non reconnu'
+                Assert-Test ((Get-MsService 'arc.msn.com').Label -eq 'Pubs et suggestions de Windows') 'serveur de pubs non reconnu'
+                $dtPid = (Get-CimInstance Win32_Service -Filter "Name='DiagTrack'").ProcessId
+                if ($dtPid) { Assert-Test (@(Get-SvcNames $dtPid | Where-Object { $_.Name -eq 'DiagTrack' }).Count -eq 1) 'service DiagTrack non retrouvé dans son svchost' }
+                # Couper puis annuler un réglage : il revient exactement comme avant
+                $k = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy'
+                $before = Get-RegState $k 'TailoredExperiencesWithDiagnosticDataEnabled'
+                $script:RunLog = New-Object System.Collections.ArrayList
+                & (@($items | Where-Object { $_.Id -eq 'tailored' })[0].Off)
+                $log = $script:RunLog; $script:RunLog = $null
+                Assert-Test ((Get-RegNum $k 'TailoredExperiencesWithDiagnosticDataEnabled') -eq 0) 'réglage non coupé'
+                $errs = Undo-RunLog $log
+                $after = Get-RegState $k 'TailoredExperiencesWithDiagnosticDataEnabled'
+                Assert-Test (-not $errs.Count -and $after.Existed -eq $before.Existed -and "$($after.Value)" -eq "$($before.Value)") 'annulation incomplète'
+                Show-WindowsPrivacy; Wait-TestMs 800; Save-TestShot 'microsoft'; Hide-TestPanel
+                "$(@($items | Where-Object { $_.On }).Count) réglage(s) sur $($items.Count) envoient plus que le minimum"
+            }
             Test-Step 'Trafic : ce qui sort du PC' {
                 $ui.Tabs.SelectedIndex = $TrafficIndex
                 Wait-TestMs 6000

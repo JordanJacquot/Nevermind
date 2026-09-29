@@ -36,11 +36,13 @@ function Get-TrafficApp([int]$ProcId) {
     $name = if ($ProcId -eq 4) { 'System' } elseif ($p) { $p.ProcessName } else { "Programme $ProcId" }
     $path = if ($p) { try { [string]$p.Path } catch { '' } } else { '' }
     if (-not $path -and $ProcId -gt 4) { try { $path = [TrafficMon]::GetProcessPath($ProcId) } catch {} }
-    $key = if ($ProcId -eq $PID) { 'optigame' } elseif ($path) { $path.ToLower() } else { "nom:$($name.ToLower())" }
+    $svc = if ($name -eq 'svchost') { @(Get-SvcNames $ProcId) } else { @() }
+    $key = if ($ProcId -eq $PID) { 'optigame' } elseif ($svc.Count) { 'svc:' + (($svc | ForEach-Object { $_.Name.ToLower() }) -join ',') } elseif ($path) { $path.ToLower() } else { "nom:$($name.ToLower())" }
     if (-not $st.Apps.ContainsKey($key)) {
         $desc = ''
         if ($path) { try { $desc = [string][Diagnostics.FileVersionInfo]::GetVersionInfo($path).FileDescription } catch {} }
-        $st.Apps[$key] = @{ Key = $key; Name = $name; Path = $path; Title = $(if ($ProcId -eq $PID) { 'OptiGame (cette app)' } elseif ($desc -and $desc.Length -lt 60) { $desc } else { $name })
+        if ($svc.Count) { $desc = "Windows : $($svc[0].Title)$(if ($svc.Count -gt 1) { " (+$($svc.Count - 1))" })" }
+        $st.Apps[$key] = @{ Key = $key; Name = $name; Path = $path; Services = $svc; Title = $(if ($ProcId -eq $PID) { 'OptiGame (cette app)' } elseif ($desc -and $desc.Length -lt 90) { $desc } else { $name })
             OutClosed = [double]0; InClosed = [double]0; Out = [double]0; In = [double]0; Rate = [double]0; LastOut = [double]0
             Dest = @{}; Ports = @{}; Udp = $false; Pids = @{}; Sig = $null; Publisher = ''; First = Get-Date; Icon = $null; IsSelf = ($ProcId -eq $PID) }
         if ($path -and -not $st.Sig.ContainsKey($key)) { $st.SigQueue.Enqueue($key) } elseif (-not $path) { $st.Apps[$key].Sig = 'NoPath' }
@@ -578,6 +580,12 @@ function New-TrafficTypeBlock($St, $G) {
             $ot.TextTrimming = 'CharacterEllipsis'; $ot.TextWrapping = 'NoWrap'
             [void]$left.Children.Add($ot)
         }
+        $ms = Get-MsService $nm
+        if ($ms) {
+            $mt = New-Text "Microsoft, $($ms.Label) : $($ms.Text)" 11.5 '#C9CED8'
+            $mt.TextTrimming = 'CharacterEllipsis'; $mt.TextWrapping = 'NoWrap'; $mt.ToolTip = $mt.Text
+            [void]$left.Children.Add($mt)
+        }
         $pn = $PortNames[[int]$d.Port]
         $warnPort = $SusPorts.ContainsKey([int]$d.Port)
         $info = New-Text "$(if ($nm) { $d.Remote + ', ' })port $($d.Port)$(if ($pn) { ' (' + $pn + ')' } elseif ($warnPort) { ' (' + $SusPorts[[int]$d.Port] + ')' })" 11 $(if ($warnPort) { $Colors.warn } else { '#5B6475' })
@@ -655,6 +663,20 @@ function Build-TrafficPage {
     $sw.Add_Click({ param($sender, $e) Set-Setting 'TrafficLookup' ([bool]$sender.IsChecked) })
     Add-ToGrid $lk $sw 1
     [void]$p.Children.Add($lk)
+    $mc = New-Card
+    $mc.Margin = New-Thickness 0 12 0 0
+    $mc.Padding = New-Thickness 16 12 16 12
+    $mg = New-Grid @('*', 'Auto')
+    $mt = New-Object System.Windows.Controls.StackPanel
+    [void]$mt.Children.Add((New-Text 'Ce que Windows envoie à Microsoft' 14 '#FFFFFF' -Semi))
+    [void]$mt.Children.Add((New-Text 'Les identifiants de ton PC (appareil, pub, compte), les réglages qui en envoient plus que le minimum, et les envois vus en direct.' 12 '#9AA3B2'))
+    Add-ToGrid $mg $mt 0
+    $mb = New-Button 'Voir'
+    $mb.VerticalAlignment = 'Center'; $mb.Margin = New-Thickness 16 0 0 0
+    $mb.Add_Click({ Invoke-Safe { Show-WindowsPrivacy } })
+    Add-ToGrid $mg $mb 1
+    $mc.Child = $mg
+    [void]$p.Children.Add($mc)
     $script:TrafficAlertBox = New-Object System.Windows.Controls.StackPanel
     $script:TrafficAlertBox.Margin = New-Thickness 0 14 0 0
     [void]$p.Children.Add($script:TrafficAlertBox)
@@ -806,7 +828,8 @@ function Show-TrafficApp([string]$Key) {
         @('Emplacement', $(if ($a.Path) { $a.Path } else { 'Programme de Windows' })),
         @('Envoyé', (Format-Bytes $a.Out)),
         @('Reçu', (Format-Bytes $a.In)),
-        @('Utilise aussi l''UDP', $(if ($a.Udp) { 'Oui (jeux, appels, vidéo : destinations non visibles)' } else { 'Non' }))
+        @('Utilise aussi l''UDP', $(if ($a.Udp) { 'Oui (jeux, appels, vidéo : destinations non visibles)' } else { 'Non' })),
+        @('Services Windows', $(if (@($a.Services).Count) { (@($a.Services) | ForEach-Object { "$($_.Title) ($($_.Name))" }) -join ', ' } else { 'Aucun' }))
     )))
     $trustDate = (Get-TrafficMarks 'TrafficTrusted')[$Key]
     if ($null -ne $trustDate) {

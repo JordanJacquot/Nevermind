@@ -77,6 +77,15 @@ function Restore-AllSettings {
             }
         } catch { $errors += "$($e.Path)\$($e.Name): $($_.Exception.Message)" }
     }
+    # Services arrêtés par OptiGame (télémétrie) : état d'origine
+    foreach ($l in @(Get-Setting 'SvcOriginal' @())) {
+        $x = ([string]$l) -split '\|'
+        try {
+            Set-Service -Name $x[0] -StartupType $x[1] -ErrorAction Stop
+            if ($x[2] -eq 'True') { Start-Service -Name $x[0] -ErrorAction Stop }
+        } catch { $errors += "Service $($x[0]): $($_.Exception.Message)" }
+    }
+    Set-Setting 'SvcOriginal' @()
     if ($script:Backup.PowerScheme) { powercfg /setactive $script:Backup.PowerScheme | Out-Null }
     if ($script:Backup.Overlay) { try { [void][OGNative]::SetOverlay($script:Backup.Overlay) } catch { $errors += "Mode d'alimentation: $($_.Exception.Message)" } }
     if ($script:Backup.CreatedScheme -and $script:Backup.CreatedScheme -ne $script:Backup.PowerScheme) {

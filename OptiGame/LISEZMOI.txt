@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.27
+﻿OptiGame 1.0.28
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -57,6 +57,12 @@ L'application a deux grandes sections, dans le menu à gauche :
     l'adresse et entreprise propriétaire (Valve, Riot, Amazon...) avec son
     pays, trouvés dans l'annuaire public des adresses Internet (rdap.org).
     Seule l'adresse du serveur est envoyée, et l'option se coupe sur la page.
+    « Ce que Windows envoie à Microsoft » montre les identifiants du PC
+    (appareil, publicité, compte Microsoft), les réglages qui envoient plus
+    que le minimum (télémétrie, pubs, recherche Bing, saisie, voix...) avec
+    un bouton « Couper » annulable, et quels services Windows parlent à
+    Microsoft en direct. Les services cachés derrière « svchost » sont
+    maintenant affichés par leur vrai nom.
     Le contenu des échanges, chiffré, n'est jamais lu.
   - Réseau : scan de tous les appareils connectés à ton réseau (téléphones,
     consoles, TV, box...), avec leur fabricant. Les nouveaux appareils sont
