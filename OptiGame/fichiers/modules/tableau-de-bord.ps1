@@ -500,6 +500,11 @@ function Undo-RunLog($Log) {
                     if ($r -ne 0) { throw "Écran $($e.Device): fréquence non restaurée (code $r)" }
                 }
                 'fw' { Remove-NetFirewallRule -DisplayName $e.Name -ErrorAction Stop }
+                'pcfg' {
+                    if ($null -ne $e.Ac) { powercfg /setacvalueindex SCHEME_CURRENT $SubBattery $e.Guid ([int]$e.Ac) | Out-Null }
+                    if ($null -ne $e.Dc) { powercfg /setdcvalueindex SCHEME_CURRENT $SubBattery $e.Guid ([int]$e.Dc) | Out-Null }
+                    powercfg /setactive SCHEME_CURRENT | Out-Null
+                }
                 'svc' {
                     Set-Service -Name $e.Name -StartupType $e.StartType -ErrorAction Stop
                     if ($e.Running) { Start-Service -Name $e.Name -ErrorAction Stop }

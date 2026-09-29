@@ -659,42 +659,7 @@ function Invoke-Analysis {
     }
 
     # --- Onduleur
-    foreach ($u in $ups) {
-        $name = ([string]$u.Name).Trim()
-        $c = New-Component 'UPS' 'Onduleur' $(if ($name) { $name } else { 'Onduleur' })
-        $onBattery = [int]$u.BatteryStatus -eq 1
-        $c.Lines['Alimentation'] = if ($onBattery) { @('Sur batterie (coupure de courant)', $Colors.bad) } else { @('Sur secteur', '#E6E8EE') }
-        if ($null -ne $u.EstimatedChargeRemaining) {
-            $charge = [int]$u.EstimatedChargeRemaining
-            [void]$c.Bars.Add(@{ Label = 'Charge de la batterie'; Value = $charge; Text = "$charge %"; Color = $(if ($charge -lt 30) { $Colors.bad } elseif ($charge -lt 70) { $Colors.warn } else { $Colors.ok }) })
-        }
-        $run = [long]$u.EstimatedRunTime
-        if ($run -gt 0 -and $run -lt 10000) { $c.Lines['Autonomie estimée'] = "$run min" }
-        if ($onBattery) {
-            Add-Note $c 'bad' 'Coupure de courant : ton PC tourne sur l''onduleur. Enregistre ton travail et quitte ta partie.'
-            Add-Finding $F 'bad' 'Coupure de courant' "Ton PC tourne sur l'onduleur ($name)$(if ($run -gt 0 -and $run -lt 10000) { ", environ $run minutes d'autonomie" })." 1 -Id 'ups-battery' -Fix (New-Fix `
-                -Why 'Quand la batterie de l''onduleur sera vide, le PC s''éteindra d''un coup : les parties et documents non enregistrés seront perdus.' `
-                -Steps @('Enregistre ce qui est ouvert et quitte ta partie.', 'Éteins le PC proprement si le courant ne revient pas vite.'))
-        } else {
-            Add-Note $c 'ok' 'Il protège ton PC des coupures et des surtensions.'
-        }
-        [void]$cards.Add($c)
-    }
-    # Onduleur repéré (prise USB du fabricant, logiciel) mais que Windows ne lit pas comme une batterie
-    if (-not $ups.Count -and $hints.Count) {
-        $usb = @($hints | Where-Object { $_.Kind -eq 'usb' })
-        $soft = @($hints | Where-Object { $_.Kind -ne 'usb' } | ForEach-Object { $_.Name } | Select-Object -Unique)
-        $brand = @($usb | ForEach-Object { if ($UpsVendors[$_.Vid]) { $UpsVendors[$_.Vid] } } | Select-Object -First 1)[0]
-        $title = if ($brand -and $brand -notmatch 'générique') { "Onduleur $brand" } elseif (@($usb | Where-Object { $_.Name -match '(?i)ups|onduleur' }).Count) { @($usb | Where-Object { $_.Name -match '(?i)ups|onduleur' })[0].Name } else { 'Onduleur' }
-        $c = New-Component 'UPS' 'Onduleur' $title
-        $found = @()
-        if ($usb.Count) { $found += "câble USB$(if ($brand) { " ($brand)" })" }
-        if ($soft.Count) { $found += "logiciel $(($soft | Select-Object -First 2) -join ', ')" }
-        $c.Lines['Repéré grâce à'] = $found -join ', '
-        $c.Lines['État de la batterie'] = @('Non transmis à Windows', '#9AA3B2')
-        Add-Note $c 'ok' "$(if ($usb.Count) { 'Il est branché au PC, mais il ne donne pas son état à Windows' } else { "$($soft[0]) est installé : un onduleur est sûrement relié à ce PC, mais il ne donne pas son état à Windows" }) (charge, coupure de courant). $(if ($soft.Count) { "Regarde-le dans $($soft[0])." } else { 'Le logiciel de son fabricant permet de le voir.' })"
-        [void]$cards.Add($c)
-    }
+    Add-UpsCards $ups $hints $data $cards $F
 
     # --- Réseau
     Set-Status 'Analyse du réseau...'
@@ -775,4 +740,181 @@ function Invoke-Analysis {
     $s = Show-Score $score $nbBad $nbWarn $m.Potential
     $script:LastAnalysis = @{ Info = $info; Cards = $cards; Findings = $active; Active = $active; Score = $score; Potential = $m.Potential; Label = $s.Label; Color = $s.Color; Date = Get-Date }
     Set-Status "Analyse terminée: score de $score sur 100."
+}
+
+# ---------------------------------------------------------------------------
+# Onduleur : infos, réglages de Windows (batterie faible / critique) et conseils
+# ---------------------------------------------------------------------------
+$SubBattery = 'e73a048d-bf27-4f12-9731-8b2076e8891f'
+$BatSettings = [ordered]@{
+    CritAction = '637ea02f-bbcb-4015-8e2c-a1c7b9c0b546'; CritLevel = '9a66d8d7-4ff7-4ef9-b5a2-5a326ca2a469'
+    LowLevel = '8183ba9a-e910-48da-8769-14ae6dc1170a'; LowNotify = 'bcded951-187b-4d05-bccc-f7e51960c258'; LowAction = 'd8742dcb-3e6a-4b3c-b3fe-374623cdcf06'
+}
+$BatActions = @('ne rien faire', 'mise en veille', 'mise en veille prolongée', 'arrêt du PC')
+
+# Réglages « batterie » du mode d'alimentation actif : @{ CritAction = @(secteur, batterie) ... }
+function Get-BatteryPowerSettings {
+    $r = @{}; $cur = $null
+    foreach ($l in @(powercfg /q SCHEME_CURRENT $SubBattery 2>$null)) {
+        if ($l -match '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})') {
+            $g = $Matches[1]; $cur = $null
+            foreach ($k in $BatSettings.Keys) { if ($BatSettings[$k] -eq $g) { $cur = $k; $r[$k] = @($null, $null) } }
+            continue
+        }
+        if (-not $cur) { continue }
+        if ($l -match '(alternatif|\bAC\b).*:\s*0x([0-9a-fA-F]+)') { $r[$cur][0] = [Convert]::ToInt32($Matches[2], 16) }
+        elseif ($l -match '(continu|\bDC\b).*:\s*0x([0-9a-fA-F]+)') { $r[$cur][1] = [Convert]::ToInt32($Matches[2], 16) }
+    }
+    $r
+}
+
+function Test-HibernateOn {
+    $v = Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Control\Power' 'HibernateEnabled'
+    if ($null -ne $v -and $v -isnot [array]) { return [int]$v -eq 1 }
+    Test-Path -LiteralPath "$env:SystemDrive\hiberfil.sys"
+}
+
+# Réglage « batterie » changé sur secteur et sur batterie, noté pour « Revenir en arrière » et « Tout restaurer »
+function Set-BatterySetting([string]$Key, [int]$Value) {
+    $g = $BatSettings[$Key]
+    $cur = (Get-BatteryPowerSettings)[$Key]
+    if ($cur) {
+        if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'pcfg'; Guid = $g; Ac = $cur[0]; Dc = $cur[1] }) }
+        $orig = @(Get-Setting 'PcfgOriginal' @())
+        if (-not @($orig | Where-Object { ([string]$_ -split '\|')[0] -eq $g }).Count) { Set-Setting 'PcfgOriginal' @($orig + "$g|$($cur[0])|$($cur[1])") }
+    }
+    powercfg /setacvalueindex SCHEME_CURRENT $SubBattery $g $Value | Out-Null
+    powercfg /setdcvalueindex SCHEME_CURRENT $SubBattery $g $Value | Out-Null
+    if ($LASTEXITCODE) { throw "Windows a refusé le réglage (code $LASTEXITCODE)." }
+    powercfg /setactive SCHEME_CURRENT | Out-Null
+}
+
+# Ce qui ne va pas dans les réglages de l'onduleur : @{ Problems = @(...); Fix = @{ réglage = valeur } }
+function Get-UpsConfigAdvice($P, [bool]$Hibernate) {
+    $pr = @(); $fix = [ordered]@{}
+    $act = if ($P.CritAction) { $P.CritAction[1] } else { $null }
+    $crit = if ($P.CritLevel) { $P.CritLevel[1] } else { $null }
+    $low = if ($P.LowLevel) { $P.LowLevel[1] } else { $null }
+    $notify = if ($P.LowNotify) { $P.LowNotify[1] } else { $null }
+    $okAct = $act -eq 3 -or ($act -eq 2 -and $Hibernate)
+    if ($null -ne $act -and -not $okAct) {
+        $pr += $(switch ($act) {
+            0 { 'quand la batterie de l''onduleur sera presque vide, Windows ne fera rien : le PC s''éteindra d''un coup' }
+            1 { 'quand la batterie sera presque vide, Windows mettra le PC en veille : la veille a besoin de courant, le PC s''éteindra d''un coup' }
+            2 { 'Windows doit passer en veille prolongée, mais elle est désactivée sur ce PC : rien ne se passera' }
+            default { 'l''action sur batterie critique est inconnue' }
+        })
+        $fix.CritAction = 3
+    }
+    if ($null -ne $crit -and $crit -lt 20) {
+        $pr += "l'arrêt est prévu à $crit % : sur un onduleur, ça ne laisse que quelques secondes$(if ($act -eq 2) { ', trop peu pour écrire la mémoire sur le disque' })"
+        $fix.CritLevel = 25
+    }
+    if ($null -ne $low -and $low -lt 40) { $pr += "l'alerte « batterie faible » arrive à $low %, trop tard pour enregistrer ta partie"; $fix.LowLevel = 50 }
+    if ($null -ne $notify -and $notify -eq 0) { $pr += 'aucune alerte ne prévient quand la batterie baisse'; $fix.LowNotify = 1 }
+    if ($fix.Count -and $null -ne $P.LowAction -and $P.LowAction[1] -ne 0) { $fix.LowAction = 0 }
+    @{ Problems = $pr; Fix = $fix }
+}
+
+function Format-BatSetting($P, [string]$Level, [string]$Action, [string]$Notify) {
+    $l = if ($P[$Level]) { "$($P[$Level][1]) %" } else { '?' }
+    $a = if ($P[$Action] -and $null -ne $P[$Action][1]) { $BatActions[[int]$P[$Action][1]] } else { '?' }
+    $n = if ($Notify -and $P[$Notify]) { if ($P[$Notify][1] -eq 1) { ', avec une alerte' } else { ', sans alerte' } } else { '' }
+    "à $l : $a$n"
+}
+
+# Chimie de la batterie (code sur 4 lettres du pilote, ex : « PbAc »)
+function Get-BatChemistry($Code, $Win32) {
+    $t = ''
+    if ($Code) { try { $t = [Text.Encoding]::ASCII.GetString([BitConverter]::GetBytes([uint32]$Code)).Trim([char]0).Trim() } catch {} }
+    if ($t -match '(?i)^pb' -or [int]$Win32 -eq 3) { return 'Plomb (durée de vie 3 à 5 ans)' }
+    if ($t -match '(?i)li') { return 'Lithium' }
+    if ($t -match '(?i)ni') { return 'Nickel' }
+    $t
+}
+
+function Add-UpsCards($Ups, $Hints, $Data, $Cards, $F) {
+    $P = if ($null -ne $Data.BatPower) { $Data.BatPower } elseif (@($Ups).Count) { Get-BatteryPowerSettings } else { $null }
+    $hib = if ($null -ne $Data.Hibernate) { [bool]$Data.Hibernate } else { Test-HibernateOn }
+    $adv = if ($P -and $P.Count) { Get-UpsConfigAdvice $P $hib } else { $null }
+    foreach ($u in $Ups) {
+        $name = ([string]$u.Name).Trim()
+        $w = $Data.BatWmi
+        $c = New-Component 'UPS' 'Onduleur' $(if ($name) { $name } else { 'Onduleur' })
+        $onBattery = [int]$u.BatteryStatus -eq 1
+        $c.Lines['Alimentation'] = if ($onBattery) { @('Sur batterie (coupure de courant)', $Colors.bad) } else { @('Sur secteur', '#E6E8EE') }
+        if ($w -and $w.Maker) { $c.Lines['Fabricant'] = $w.Maker }
+        if ($w -and $w.Serial) { $c.Lines['Numéro de série'] = $w.Serial }
+        $chem = Get-BatChemistry $(if ($w) { $w.Chem } else { $null }) $u.Chemistry
+        if ($chem) { $c.Lines['Batterie'] = $chem }
+        if ($null -ne $u.EstimatedChargeRemaining) {
+            $charge = [int]$u.EstimatedChargeRemaining
+            [void]$c.Bars.Add(@{ Label = 'Charge de la batterie'; Value = $charge; Text = "$charge %"; Color = $(if ($charge -lt 30) { $Colors.bad } elseif ($charge -lt 70) { $Colors.warn } else { $Colors.ok }) })
+        }
+        # Usure : capacité actuelle comparée à celle d'origine
+        $health = $null
+        if ($w -and $w.Design -gt 0 -and $w.Full -gt 0) {
+            $health = [math]::Min(100, [math]::Round(100.0 * $w.Full / $w.Design))
+            [void]$c.Bars.Add(@{ Label = 'Santé de la batterie'; Value = $health; Text = "$health %"; Color = $(if ($health -lt 40) { $Colors.bad } elseif ($health -lt 60) { $Colors.warn } else { $Colors.ok }) })
+        }
+        $run = if ($w -and $w.Runtime -gt 0 -and $w.Runtime -lt 360000) { [math]::Round($w.Runtime / 60) } else { [long]$u.EstimatedRunTime }
+        if ($run -gt 0 -and $run -lt 10000) { $c.Lines['Autonomie estimée'] = "$run min" }
+        if ($w -and $w.Volt -gt 0) { $c.Lines['Tension'] = '{0:N1} V' -f ($w.Volt / 1000) }
+        if ($P -and $P.Count) {
+            $c.Lines['Batterie faible'] = Format-BatSetting $P 'LowLevel' 'LowAction' 'LowNotify'
+            $c.Lines['Batterie critique'] = @((Format-BatSetting $P 'CritLevel' 'CritAction' ''), $(if ($adv -and $adv.Fix.Contains('CritAction')) { $Colors.bad } else { '#E6E8EE' }))
+        }
+        if ($onBattery) {
+            Add-Note $c 'bad' 'Coupure de courant : ton PC tourne sur l''onduleur. Enregistre ton travail et quitte ta partie.'
+            Add-Finding $F 'bad' 'Coupure de courant' "Ton PC tourne sur l'onduleur ($name)$(if ($run -gt 0 -and $run -lt 10000) { ", environ $run minutes d'autonomie" })." 1 -Id 'ups-battery' -Fix (New-Fix `
+                -Why 'Quand la batterie de l''onduleur sera vide, le PC s''éteindra d''un coup : les parties et documents non enregistrés seront perdus.' `
+                -Steps @('Enregistre ce qui est ouvert et quitte ta partie.', 'Éteins le PC proprement si le courant ne revient pas vite.'))
+        }
+        # Réglages : arrêt propre avant que la batterie soit vide
+        if ($adv -and $adv.Problems.Count) {
+            $bad = $adv.Fix.Contains('CritAction')
+            Add-Note $c $(if ($bad) { 'bad' } else { 'warn' }) "Réglages à revoir : $($adv.Problems[0])."
+            $what = @()
+            if ($adv.Fix.Contains('CritAction')) { $what += 'À batterie critique : arrêt propre du PC (tes fichiers sont enregistrés par Windows, rien n''est corrompu).' }
+            if ($adv.Fix.Contains('CritLevel')) { $what += 'Arrêt à 25 % de batterie, pour qu''il ait le temps de se faire.' }
+            if ($adv.Fix.Contains('LowLevel') -or $adv.Fix.Contains('LowNotify')) { $what += 'Alerte à 50 % de batterie, pour que tu aies le temps d''enregistrer et de quitter ta partie.' }
+            Add-Finding $F $(if ($bad) { 'bad' } else { 'warn' }) 'Onduleur : arrêt automatique mal réglé' "$(($adv.Problems | ForEach-Object { $_.Substring(0, 1).ToUpper() + $_.Substring(1) }) -join '. ')." $(if ($bad) { 2 } else { 1 }) -Id 'ups-config' -Fix (New-Fix -Auto `
+                -What $what `
+                -Why 'Pendant une coupure, l''onduleur ne tient que quelques minutes. Si Windows ne s''éteint pas proprement avant, le PC se coupe d''un coup : partie perdue, fichiers en cours d''écriture abîmés.' `
+                -Run { param($x) foreach ($k in $x.Keys) { Set-BatterySetting $k $x[$k] } } -RunArgs $adv.Fix `
+                -Done 'L''onduleur éteindra le PC proprement avant d''être vide.')
+        }
+        # Usure et autonomie
+        if ($null -ne $health -and $health -lt 60) {
+            Add-Note $c $(if ($health -lt 40) { 'bad' } else { 'warn' }) "Batterie usée ($health % de sa capacité d'origine) : pense à la remplacer."
+            Add-Finding $F $(if ($health -lt 40) { 'bad' } else { 'warn' }) 'Batterie de l''onduleur usée' "Elle ne garde plus que $health % de sa capacité d'origine : l'autonomie pendant une coupure est bien plus courte." 1 -Id 'ups-health' -Fix (New-Fix `
+                -Why 'Les batteries au plomb des onduleurs s''usent en 3 à 5 ans, même sans coupure. Une batterie usée peut lâcher dès le début d''une coupure.' `
+                -Steps @('Regarde la référence de la batterie sur l''étiquette de l''onduleur ou dans sa notice (chez APC par exemple : « RBC » suivi d''un numéro).', 'Une batterie de remplacement coûte bien moins cher qu''un onduleur neuf, et se change souvent sans outil.', 'Rapporte l''ancienne dans un point de collecte (magasin de bricolage, déchetterie).'))
+        } elseif ($run -gt 0 -and $run -lt 5 -and -not $onBattery) {
+            Add-Note $c 'warn' "Autonomie courte ($run min) : l'onduleur est très chargé ou sa batterie fatigue."
+            Add-Finding $F 'warn' 'Onduleur : autonomie très courte' "Pendant une coupure, il ne tiendrait qu'environ $run minutes." 1 -Id 'ups-runtime' -Fix (New-Fix `
+                -Why 'Plus on branche d''appareils sur l''onduleur, moins il tient. Un PC de jeu avec une grosse carte graphique consomme beaucoup.' `
+                -Steps @('Ne branche sur les prises « batterie » de l''onduleur que le PC, l''écran et la box : pas l''imprimante, les enceintes ou un radiateur.', 'Si ça ne change rien, sa batterie est peut-être usée : regarde sa date d''achat (3 à 5 ans de vie).'))
+        }
+        if (-not $onBattery -and -not ($adv -and $adv.Problems.Count) -and -not ($null -ne $health -and $health -lt 60)) {
+            Add-Note $c 'ok' 'Il protège ton PC des coupures et des surtensions, et Windows l''éteindra proprement avant qu''il soit vide.'
+        }
+        [void]$Cards.Add($c)
+    }
+    # Onduleur repéré (prise USB du fabricant, logiciel) mais que Windows ne lit pas comme une batterie
+    if (-not @($Ups).Count -and @($Hints).Count) {
+        $usb = @($Hints | Where-Object { $_.Kind -eq 'usb' })
+        $soft = @($Hints | Where-Object { $_.Kind -ne 'usb' } | ForEach-Object { $_.Name } | Select-Object -Unique)
+        $brand = @($usb | ForEach-Object { if ($UpsVendors[$_.Vid]) { $UpsVendors[$_.Vid] } } | Select-Object -First 1)[0]
+        $title = if ($brand -and $brand -notmatch 'générique') { "Onduleur $brand" } elseif (@($usb | Where-Object { $_.Name -match '(?i)ups|onduleur' }).Count) { @($usb | Where-Object { $_.Name -match '(?i)ups|onduleur' })[0].Name } else { 'Onduleur' }
+        $c = New-Component 'UPS' 'Onduleur' $title
+        $found = @()
+        if ($usb.Count) { $found += "câble USB$(if ($brand) { " ($brand)" })" }
+        if ($soft.Count) { $found += "logiciel $(($soft | Select-Object -First 2) -join ', ')" }
+        $c.Lines['Repéré grâce à'] = $found -join ', '
+        $c.Lines['État de la batterie'] = @('Non transmis à Windows', '#9AA3B2')
+        Add-Note $c 'ok' "$(if ($usb.Count) { 'Il est branché au PC, mais il ne donne pas son état à Windows' } else { "$($soft[0]) est installé : un onduleur est sûrement relié à ce PC, mais il ne donne pas son état à Windows" }) (charge, coupure de courant)."
+        Add-Note $c 'warn' "$(if ($soft.Count) { "C'est $($soft[0]) qui doit éteindre le PC pendant une coupure : ouvre-le et vérifie que l'arrêt automatique est activé (vers 25 % de batterie)." } else { 'Pour que le PC s''éteigne proprement pendant une coupure, installe le logiciel de la marque de l''onduleur et active son arrêt automatique.' })"
+        [void]$Cards.Add($c)
+    }
 }

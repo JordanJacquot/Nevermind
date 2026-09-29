@@ -121,6 +121,14 @@ $AnalysisDataWork = {
     $r = @{}
     $r.OS = Get-CimInstance Win32_OperatingSystem
     $r.Battery = @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue)
+    if ($r.Battery.Count) {
+        $w = @{}
+        try { $s = Get-CimInstance -Namespace root\wmi -ClassName BatteryStaticData -ErrorAction Stop | Select-Object -First 1; $w.Maker = ([string]$s.ManufactureName).Trim(); $w.Serial = ([string]$s.SerialNumber).Trim(); $w.Chem = $s.Chemistry; $w.Design = [double]$s.DesignedCapacity } catch {}
+        try { $w.Full = [double](Get-CimInstance -Namespace root\wmi -ClassName BatteryFullChargedCapacity -ErrorAction Stop | Select-Object -First 1).FullChargedCapacity } catch {}
+        try { $w.Volt = [double](Get-CimInstance -Namespace root\wmi -ClassName BatteryStatus -ErrorAction Stop | Select-Object -First 1).Voltage } catch {}
+        try { $w.Runtime = [double](Get-CimInstance -Namespace root\wmi -ClassName BatteryRuntime -ErrorAction Stop | Select-Object -First 1).EstimatedRuntime } catch {}
+        $r.BatWmi = $w
+    }
     $r.UpsHints = @()
     try {
         foreach ($p in @(Get-CimInstance Win32_PnPEntity -Filter "DeviceID LIKE 'USB%' OR DeviceID LIKE 'HID%'" -ErrorAction Stop | Where-Object { [string]$_.DeviceID -match '^(USB|HID)\\VID_(051D|0463|0764|09AE|10AF|06DA|0D9F|0665|0925)&' -or [string]$_.Name -match '(?i)\bups\b|onduleur|uninterruptible|back-?ups|smart-?ups' })) {

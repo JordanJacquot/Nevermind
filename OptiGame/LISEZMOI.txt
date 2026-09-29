@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.35
+﻿OptiGame 1.0.36
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -97,7 +97,11 @@ Tableau de bord
   chaque disque (état SMART, usure, température, remplissage), carte mère et
   BIOS (Secure Boot, TPM), stabilité du système (écrans bleus, erreurs
   matérielles), réseau, batterie sur les portables, et onduleur s'il y en a un
-  (charge, autonomie, alerte en cas de coupure de courant).
+  (fabricant, modèle, série, charge, autonomie, tension, usure de la batterie,
+  alerte en cas de coupure de courant, et ce que fait Windows quand sa batterie
+  baisse : OptiGame règle en un clic un arrêt propre à 25 % et une alerte à
+  50 %, annulable). Un onduleur branché en USB mais invisible pour Windows est
+  repéré par sa marque ou par son logiciel.
   Puis un score sur 100 et « Pour gagner des points » : clique sur un point pour
   ouvrir sa fiche (ce qui a été trouvé, ce que l'app va faire). Le bouton
   Exécuter corrige tout seul quand c'est possible. « Ignorer (c'est voulu) »

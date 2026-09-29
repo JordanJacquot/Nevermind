@@ -167,6 +167,15 @@ function Restore-AllSettings {
         } catch { $errors += "Service $($x[0]): $($_.Exception.Message)" }
     }
     Set-Setting 'SvcOriginal' @()
+    # Réglages « batterie » changés pour l'onduleur
+    foreach ($l in @(Get-Setting 'PcfgOriginal' @())) {
+        $x = ([string]$l) -split '\|'
+        try {
+            if ($x[1] -ne '') { powercfg /setacvalueindex SCHEME_CURRENT e73a048d-bf27-4f12-9731-8b2076e8891f $x[0] ([int]$x[1]) | Out-Null }
+            if ($x[2] -ne '') { powercfg /setdcvalueindex SCHEME_CURRENT e73a048d-bf27-4f12-9731-8b2076e8891f $x[0] ([int]$x[2]) | Out-Null }
+        } catch { $errors += "Onduleur: $($_.Exception.Message)" }
+    }
+    if (@(Get-Setting 'PcfgOriginal' @()).Count) { powercfg /setactive SCHEME_CURRENT | Out-Null; Set-Setting 'PcfgOriginal' @() }
     if ($script:Backup.PowerScheme) { powercfg /setactive $script:Backup.PowerScheme | Out-Null }
     if ($script:Backup.Overlay) { try { [void][OGNative]::SetOverlay($script:Backup.Overlay) } catch { $errors += "Mode d'alimentation: $($_.Exception.Message)" } }
     if ($script:Backup.CreatedScheme -and $script:Backup.CreatedScheme -ne $script:Backup.PowerScheme) {

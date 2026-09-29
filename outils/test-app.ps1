@@ -391,6 +391,24 @@ $script:T.Run.Add_Tick({
                 Assert-Test (Test-IsDesktop @{ Chassis = @(3); PCType = 1 }) 'tour non reconnue comme PC fixe'
                 Assert-Test (-not (Test-IsDesktop @{ Chassis = @(10); PCType = 2 })) 'portable pris pour un PC fixe'
                 Assert-Test ($UpsVendors['051D'] -eq 'APC') 'marques USB'
+                # Réglages de Windows pour la batterie, lus sur ce PC
+                $pw = Get-BatteryPowerSettings
+                Assert-Test ($null -ne $pw.CritAction -and $null -ne $pw.CritLevel[1]) 'réglages batterie non lus'
+                # Réglages par défaut (veille prolongée à 5 %, veille prolongée coupée) : à corriger
+                $bad = @{ CritAction = @(2, 2); CritLevel = @(5, 5); LowLevel = @(10, 10); LowNotify = @(1, 1); LowAction = @(0, 0) }
+                $adv = Get-UpsConfigAdvice $bad $false
+                Assert-Test ($adv.Fix.CritAction -eq 3 -and $adv.Fix.CritLevel -eq 25 -and $adv.Fix.LowLevel -eq 50) "conseils : $($adv.Fix.Keys -join ', ')"
+                $good = @{ CritAction = @(3, 3); CritLevel = @(25, 25); LowLevel = @(50, 50); LowNotify = @(1, 1); LowAction = @(0, 0) }
+                Assert-Test (-not (Get-UpsConfigAdvice $good $true).Problems.Count) 'bons réglages signalés à tort'
+                # Carte complète d'un onduleur simulé : infos, réglages, usure
+                $fd = New-Object System.Collections.ArrayList; $cd = New-Object System.Collections.ArrayList
+                $wmi = @{ Maker = 'American Power Conversion'; Serial = '3B2212X12345'; Chem = [uint32]0x63416250; Design = 100; Full = 45; Volt = 13600; Runtime = 1260 }
+                Add-UpsCards @($upsA) @() @{ BatPower = $bad; Hibernate = $false; BatWmi = $wmi } $cd $fd
+                $card = $cd[0]
+                Assert-Test ($card.Lines['Fabricant'] -eq 'American Power Conversion' -and $card.Lines['Batterie'] -like 'Plomb*' -and $card.Lines['Autonomie estimée'] -eq '21 min') "infos de la carte : $(($card.Lines.Keys) -join ', ')"
+                Assert-Test (@($fd | Where-Object { $_.Id -in 'ups-config', 'ups-health' }).Count -eq 2) "conseils : $(($fd | ForEach-Object { $_.Id }) -join ', ')"
+                Show-TestPanel @{ Tag = 'UPS'; Title = 'Onduleur simulé'; Sub = 'Carte du tableau de bord' }
+                [void]$ui.TestBody.Children.Add((New-HealthCard $card)); Wait-TestMs 500; Save-TestShot 'onduleur'; Hide-TestPanel
                 $h = @($script:AnalysisData.UpsHints | Where-Object { $_ })
                 "onduleurs reconnus (plomb, marque, référence, PC fixe), portable toujours reconnu ; indices sur ce PC : $($h.Count)"
             }
