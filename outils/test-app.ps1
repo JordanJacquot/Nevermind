@@ -374,10 +374,24 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($sum.Count -eq 2 -and $sum[0].Type.Id -eq 'chat' -and $sum[1].Type.Id -eq 'telemetry') "résumé des types faux ($(($sum | ForEach-Object { $_.Type.Id }) -join ','))"
                 Show-TrafficApp 'test:types'; Wait-TestMs 800; Save-TestShot 'trafic-types'; Hide-TestPanel
                 $st.Apps.Remove('test:types')
+                # Serveurs sans nom : propriétaire trouvé dans l'annuaire, puis mémorisé par plage d'adresses
+                $lp = [PowerShell]::Create(); $lp.RunspacePool = $script:Pool; [void]$lp.AddScript($ServerLookupWork.ToString()).AddArgument(@('155.133.248.34')); $lh = $lp.BeginInvoke()
+                for ($i = 0; $i -lt 75 -and -not $lh.IsCompleted; $i++) { Wait-TestMs 200 }
+                $one = if ($lh.IsCompleted) { @($lp.EndInvoke($lh))[0] } else { @{ Ok = $false } }; $lp.Dispose()
+                if ($one.Ok) { Assert-Test ($one.O -match 'Valve' -and $one.S -and $one.E) "annuaire : propriétaire lu « $($one.O) »" }
+                [void](Get-ServerCache).Add(@{ S = (ConvertTo-IpHex '198.51.100.0'); E = (ConvertTo-IpHex '198.51.100.255'); O = 'Valve Corporation'; C = 'US'; N = 'VALVE'; D = (Get-Date).ToString('yyyy-MM-dd') })
+                $ow = Get-ServerOwner '198.51.100.42'
+                Assert-Test ($ow -and (Get-OwnerLabel $ow) -eq 'Valve Corporation (États-Unis)') "propriétaire mal retrouvé ($(if ($ow) { Get-OwnerLabel $ow }))"
+                Assert-Test ((Get-DestType '' 27015 1KB 1KB $null $ow).Id -eq 'game') 'serveur Valve non classé en jeu'
+                Assert-Test ((Get-DestType '' 443 1KB 1KB $null @{ O = 'Google LLC'; N = 'GOOGLE' }).Id -eq 'owned') 'serveur Google sans nom mal classé'
+                Assert-Test (-not (Get-ServerOwner '203.0.113.200')) 'propriétaire inventé'
+                Save-ServerCache; $script:ServerCache = $null
+                Assert-Test ([bool](Get-ServerOwner '198.51.100.9')) 'annuaire non gardé sur le disque'
+                $lookup = "annuaire : $(if ($one.Ok) { $one.O } else { 'injoignable' })"
                 foreach ($k in 'test:virus', 'test:onedrive', 'test:self', 'test:upload') { $st.Apps.Remove($k) }
                 $errs = Undo-RunLog @(@{ Type = 'fw'; Name = 'OptiGame : bloque règle inexistante (test)' })
                 Stop-TrafficWatch
-                "$($real.Count) programmes connectés vus en vrai, alertes simulées correctes, comptage des octets : $(if ([TrafficMon]::CountersOk) { 'actif' } else { 'indisponible sans droits admin' })"
+                "$($real.Count) programmes connectés vus en vrai, alertes simulées correctes, $lookup, comptage des octets : $(if ([TrafficMon]::CountersOk) { 'actif' } else { 'indisponible sans droits admin' })"
             }
             Test-Step 'Page Tests' {
                 $ui.Tabs.SelectedIndex = 5; Wait-TestMs 1500; Save-TestShot 'tests'

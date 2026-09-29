@@ -25,7 +25,7 @@ function Test-PrivateIp([string]$Ip) {
 # ---------------------------------------------------------------------------
 function New-TrafficState {
     @{ Conns = @{}; Pids = @{}; Apps = @{}; Dns = @{}; DnsAt = [datetime]::MinValue; Sig = @{}; SigQueue = (New-Object System.Collections.Queue)
-       Started = Get-Date; Ticks = 0; Notified = @{}; AlertKeys = '' }
+       Started = Get-Date; Ticks = 0; Notified = @{}; AlertKeys = ''; Owner = @{}; OwnerMiss = @{}; LookupDone = @{}; LookupTries = @{}; LookupJob = $null }
 }
 
 # Programme d'un processus (plusieurs processus du même programme, comme Chrome, sont regroupés).
@@ -111,6 +111,7 @@ function Update-Traffic {
         foreach ($l in @([TrafficMon]::Udp())) { $procId = [int](($l -split '\|')[0]); if ($procId -gt 4) { $st.Apps[(Get-TrafficApp $procId)].Udp = $true } }
     }
     Update-TrafficSignatures
+    try { Update-ServerLookups } catch { Write-Log "Serveurs: $_" }
     Test-TrafficAlerts
     if ($ui.Tabs.SelectedIndex -eq $TrafficIndex -and $Window.IsVisible) { Update-TrafficView }
 }
@@ -302,6 +303,167 @@ function Block-TrafficApp($App) {
 }
 
 # ---------------------------------------------------------------------------
+# Serveurs sans nom : à qui ils appartiennent. Recherche inverse (DNS), puis annuaire public
+# des adresses Internet (RDAP, via rdap.org). Seule l'adresse du serveur est envoyée.
+# ---------------------------------------------------------------------------
+$ServerFile = Join-Path $DataDir 'serveurs.json'
+$CountryNames = @{ US = 'États-Unis'; FR = 'France'; IE = 'Irlande'; DE = 'Allemagne'; NL = 'Pays-Bas'; GB = 'Royaume-Uni'; BE = 'Belgique'; CH = 'Suisse'; ES = 'Espagne'; IT = 'Italie'; SE = 'Suède'; FI = 'Finlande'; PL = 'Pologne'; LU = 'Luxembourg'; AT = 'Autriche'; CA = 'Canada'; JP = 'Japon'; KR = 'Corée du Sud'; CN = 'Chine'; HK = 'Hong Kong'; TW = 'Taïwan'; SG = 'Singapour'; IN = 'Inde'; AU = 'Australie'; BR = 'Brésil'; RU = 'Russie'; UA = 'Ukraine'; IL = 'Israël'; AE = 'Émirats arabes unis'; ZA = 'Afrique du Sud'; EU = 'Europe' }
+# Propriétaire connu : type de données le plus probable
+$OwnerTypes = @(
+    @('game', 'valve|riot games|epic games|blizzard|activision|electronic arts|ubisoft|netmarble|nexon|krafton|tencent|bandai|square enix|nintendo|sony interactive|take-two|rockstar|psyonix|mihoyo|cognosphere|garena|ncsoft|wargaming|bungie|faceit|embark|i3d\.net|multiplay'),
+    @('chat', 'discord|telegram|whatsapp|zoom video|slack'),
+    @('ai', 'anthropic|openai'),
+    @('remote', 'teamviewer|anydesk|philandro'),
+    @('stream', 'netflix|spotify|twitch|deezer'),
+    @('ads', 'criteo|taboola|outbrain|pubmatic|rubicon|the trade desk|xandr|appnexus')
+)
+
+function ConvertTo-IpHex([string]$Ip) {
+    try { -join ([Net.IPAddress]::Parse($Ip).GetAddressBytes() | ForEach-Object { $_.ToString('x2') }) } catch { '' }
+}
+
+function Get-ServerCache {
+    if ($null -eq $script:ServerCache) {
+        $script:ServerCache = New-Object System.Collections.ArrayList
+        try {
+            if (Test-Path $ServerFile) {
+                $arr = Get-Content $ServerFile -Raw -Encoding UTF8 | ConvertFrom-Json
+                foreach ($e in $arr) {
+                    $age = try { ((Get-Date) - [datetime]::ParseExact([string]$e.D, 'yyyy-MM-dd', $null)).TotalDays } catch { 999 }
+                    if ($e.S -and $age -lt 60) { [void]$script:ServerCache.Add(@{ S = [string]$e.S; E = [string]$e.E; O = [string]$e.O; C = [string]$e.C; N = [string]$e.N; D = [string]$e.D }) }
+                }
+            }
+        } catch {}
+    }
+    , $script:ServerCache
+}
+
+function Save-ServerCache {
+    $c = Get-ServerCache
+    while ($c.Count -gt 3000) { $c.RemoveAt(0) }
+    try { [IO.File]::WriteAllText($ServerFile, (ConvertTo-Json -InputObject @($c) -Depth 3 -Compress), (New-Object Text.UTF8Encoding($false))) } catch {}
+}
+
+# Propriétaire d'une adresse ($null si inconnu). Les échecs sont mémorisés tant que le cache ne change pas.
+function Get-ServerOwner([string]$Ip) {
+    $st = $script:Traffic
+    if ($st -and $st.Owner.ContainsKey($Ip)) { return $st.Owner[$Ip] }
+    $cache = Get-ServerCache
+    if ($st -and $st.OwnerMiss[$Ip] -eq $cache.Count) { return $null }
+    $h = ConvertTo-IpHex $Ip
+    if ($h) {
+        foreach ($e in $cache) {
+            if ($e.S.Length -eq $h.Length -and [string]::CompareOrdinal($e.S, $h) -le 0 -and [string]::CompareOrdinal($h, $e.E) -le 0) {
+                if ($st) { $st.Owner[$Ip] = $e }
+                return $e
+            }
+        }
+    }
+    if ($st) { $st.OwnerMiss[$Ip] = $cache.Count }
+    $null
+}
+
+function Format-Country([string]$C) {
+    if (-not $C) { return '' }
+    if ($C.Length -eq 2) { $n = $CountryNames[$C.ToUpper()]; return $(if ($n) { $n } else { $C.ToUpper() }) }
+    if ($C -match '(?i)united states|^usa$') { return 'États-Unis' }
+    (Get-Culture).TextInfo.ToTitleCase($C.ToLower())
+}
+
+# « Valve Corporation (États-Unis) »
+function Get-OwnerLabel($E) {
+    $n = if ($E.O) { $E.O } else { $E.N }
+    $c = Format-Country $E.C
+    "$n$(if ($c) { " ($c)" })"
+}
+
+$ServerLookupWork = {
+    param($ips)
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $toHex = { param($a) try { -join ([Net.IPAddress]::Parse([string]$a).GetAddressBytes() | ForEach-Object { $_.ToString('x2') }) } catch { '' } }
+    foreach ($ip in $ips) {
+        $r = @{ Ip = $ip; Ptr = ''; Ok = $false; S = ''; E = ''; O = ''; C = ''; N = '' }
+        # Nom officiel de l'adresse (recherche inverse)
+        try {
+            $ar = [Net.Dns]::BeginGetHostEntry($ip, $null, $null)
+            if ($ar.AsyncWaitHandle.WaitOne(2500)) { $hn = [Net.Dns]::EndGetHostEntry($ar).HostName; if ($hn -and $hn -ne $ip) { $r.Ptr = $hn.TrimEnd('.') } }
+        } catch {}
+        # Propriétaire de l'adresse (annuaire public RDAP)
+        try {
+            $req = [Net.HttpWebRequest]::Create("https://rdap.org/ip/$ip")
+            $req.Timeout = 8000; $req.ReadWriteTimeout = 8000; $req.UserAgent = 'OptiGame'; $req.Accept = 'application/rdap+json, application/json'
+            $resp = $req.GetResponse()
+            try { $sr = New-Object IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8); $o = $sr.ReadToEnd() | ConvertFrom-Json } finally { $resp.Close() }
+            $r.N = [string]$o.name
+            $r.C = ([string]$o.country).ToUpper()
+            $r.S = & $toHex $o.startAddress; $r.E = & $toHex $o.endAddress
+            $best = ''; $addr = ''
+            foreach ($en in @($o.entities)) {
+                if (@($en.roles) -notcontains 'registrant') { continue }
+                $fn = ''; $kind = ''; $lab = ''
+                foreach ($p in @($en.vcardArray[1])) {
+                    if ($p[0] -eq 'fn') { $fn = [string]$p[3] }
+                    elseif ($p[0] -eq 'kind') { $kind = [string]$p[3] }
+                    elseif ($p[0] -eq 'adr' -and $p[1].label) { $lab = [string]$p[1].label }
+                }
+                # Identifiants techniques du registre (MN9099-MNT, ORG-VC43-RIPE...) : pas un nom
+                if (-not $fn -or $fn -match '-MNT$|^ORG-' -or $fn -cmatch '^[A-Z0-9]+(-[A-Z0-9]+)+$') { continue }
+                if ($kind -eq 'org' -or -not $best) { $best = $fn; $addr = $lab }
+                if ($kind -eq 'org') { break }
+            }
+            $r.O = $best
+            if (-not $r.C -and $addr) { $r.C = (($addr -split "`n")[-1]).Trim() }
+            $r.Ok = $true
+        } catch {}
+        $r
+        Start-Sleep -Milliseconds 400
+    }
+}
+
+function Update-ServerLookups {
+    $st = $script:Traffic
+    $job = $st.LookupJob
+    if ($job) {
+        if (-not $job.Handle.IsCompleted) { return }
+        $res = @()
+        try { $res = @($job.PS.EndInvoke($job.Handle)) } catch {} finally { $job.PS.Dispose(); $st.LookupJob = $null }
+        $changed = $false
+        foreach ($r in $res) {
+            if ($r.Ptr -and -not $st.Dns[$r.Ip]) { $st.Dns[$r.Ip] = $r.Ptr }
+            if ($r.Ok -and ($r.O -or $r.N) -and $r.S -and $r.E) {
+                $e = @{ S = $r.S; E = $r.E; O = $r.O; C = $r.C; N = $r.N; D = (Get-Date).ToString('yyyy-MM-dd') }
+                [void](Get-ServerCache).Add($e)
+                $st.Owner[$r.Ip] = $e
+                $changed = $true
+            } elseif (-not $r.Ok) {
+                # Annuaire injoignable ou trop sollicité : un seul nouvel essai
+                $st.LookupTries[$r.Ip] = [int]$st.LookupTries[$r.Ip] + 1
+                if ($st.LookupTries[$r.Ip] -lt 2) { $st.LookupDone.Remove($r.Ip) }
+            }
+        }
+        if ($changed) { Save-ServerCache }
+    }
+    if (-not (Get-Setting 'TrafficLookup' $true)) { return }
+    $ips = New-Object System.Collections.ArrayList
+    foreach ($a in @($st.Apps.Values)) {
+        foreach ($d in @($a.Dest.Values)) {
+            $ip = [string]$d.Remote
+            if ($d.Private -or $st.Dns[$ip] -or $st.LookupDone.ContainsKey($ip) -or $ips.Contains($ip)) { continue }
+            if (Get-ServerOwner $ip) { continue }
+            [void]$ips.Add($ip)
+            if ($ips.Count -ge 5) { break }
+        }
+        if ($ips.Count -ge 5) { break }
+    }
+    if (-not $ips.Count) { return }
+    foreach ($ip in $ips) { $st.LookupDone[$ip] = $true }
+    $ps = [PowerShell]::Create()
+    $ps.RunspacePool = $script:Pool
+    [void]$ps.AddScript($ServerLookupWork.ToString()).AddArgument(@($ips))
+    $st.LookupJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
+}
+
+# ---------------------------------------------------------------------------
 # Type de données échangées, déduit du serveur contacté (le contenu, chiffré, n'est jamais lu)
 # ---------------------------------------------------------------------------
 $DataTypes = @(
@@ -329,19 +491,23 @@ $DataTypes = @(
        Label = 'Jeu en ligne'; Color = '#22D37A'; Text = 'Tes actions en jeu, le chat, ton compte et parfois les vérifications de l''anti-triche.' },
     @{ Id = 'update'; Rx = 'windowsupdate|delivery\.mp\.microsoft|\bdl\.|download|update|steamcontent|epicgames-download|akamaized|akamai|cloudfront|fastly|cdn|edgesuite|edgekey|content'
        Label = 'Mise à jour ou téléchargement'; Color = '#9AA3B2'; Text = 'Le programme récupère des fichiers : mises à jour, jeux, images, pages.' },
-    @{ Id = 'cloud'; Rx = 'amazonaws|azure|cloudapp|googleapis|gstatic|cloudflare|herokuapp|digitalocean|ovh\.|hetzner|linode|vultr'
+    @{ Id = 'cloud'; Rx = '1e100\.net|amazonaws|azure|cloudapp|googleapis|gstatic|cloudflare|herokuapp|digitalocean|ovh\.|hetzner|linode|vultr'
        Label = 'Serveur de l''éditeur'; Color = '#9AA3B2'; Text = 'Échanges avec les serveurs du programme (hébergés dans un grand centre de données). Le contenu dépend du programme.' }
 )
 
 # Type d'une destination : d'après le nom du serveur, sinon d'après le port et le sens des échanges.
-function Get-DestType($Name, [int]$Port, [double]$Out, [double]$In, $App) {
+function Get-DestType($Name, [int]$Port, [double]$Out, [double]$In, $App, $Owner) {
     $n = ([string]$Name).ToLower()
     if ($Port -in 53, 853) { return @{ Id = 'dns'; Label = 'Recherche d''adresses'; Color = '#9AA3B2'; Text = 'Traduit les noms de sites en adresses. Très peu de données.' } }
     if ($n) { foreach ($t in $DataTypes) { if ($n -match $t.Rx) { return $t } } }
+    # Propriétaire trouvé dans l'annuaire : Valve, Riot, Discord...
+    $own = if ($Owner) { "$($Owner.O) $($Owner.N)".ToLower() } else { '' }
+    if ($own.Trim()) { foreach ($x in $OwnerTypes) { if ($own -match $x[1]) { return @($DataTypes | Where-Object { $_.Id -eq $x[0] })[0] } } }
     if ($App -and $App.Name -match $RemoteTools) { return @($DataTypes | Where-Object { $_.Id -eq 'remote' })[0] }
     if ($Out -gt 10MB -and $Out -gt 3 * $In) { return @{ Id = 'upload'; Label = 'Envoi important'; Color = '#F5A524'; Text = 'Le programme envoie bien plus qu''il ne reçoit : fichiers, vidéo ou sauvegarde. À vérifier si tu ne sais pas pourquoi.' } }
     if ($In -gt 3 * [math]::Max(1.0, $Out) -and $In -gt 1MB) { return @{ Id = 'download'; Label = 'Téléchargement'; Color = '#9AA3B2'; Text = 'Le programme reçoit surtout des données (fichiers, contenus).' } }
-    if (-not $n) { return @{ Id = 'unknown'; Label = 'Serveur non identifié'; Color = '#5B6475'; Text = 'Adresse sans nom connu : impossible de savoir à quoi elle sert d''après son nom.' } }
+    if (-not $n -and $own.Trim()) { return @{ Id = 'owned'; Label = 'Serveur d''une entreprise connue'; Color = '#9AA3B2'; Text = 'On sait à qui appartient le serveur (indiqué sous son adresse), mais pas précisément ce qui est échangé.' } }
+    if (-not $n) { return @{ Id = 'unknown'; Label = 'Serveur non identifié'; Color = '#5B6475'; Text = 'Adresse sans nom ni propriétaire connu : impossible de savoir à quoi elle sert.' } }
     @{ Id = 'other'; Label = 'Échanges avec le serveur'; Color = '#5B6475'; Text = 'Le nom du serveur ne dit pas précisément ce qui est échangé.' }
 }
 
@@ -351,7 +517,7 @@ $LocalType = @{ Id = 'local'; Label = 'Appareils de ton réseau'; Color = '#9AA3
 function Get-AppDestGroups($St, $A) {
     $sum = @{}
     foreach ($d in @($A.Dest.Values)) {
-        $t = if ($d.Private) { $LocalType } else { Get-DestType (Get-DestName $St $d) $d.Port $d.Out $d.In $A }
+        $t = if ($d.Private) { $LocalType } else { Get-DestType (Get-DestName $St $d) $d.Port $d.Out $d.In $A (Get-ServerOwner $d.Remote) }
         if (-not $sum.ContainsKey($t.Id)) { $sum[$t.Id] = @{ Type = $t; Out = [double]0; In = [double]0; Count = 0; Dests = (New-Object System.Collections.ArrayList) } }
         $sum[$t.Id].Out += $d.Out; $sum[$t.Id].In += $d.In; $sum[$t.Id].Count++
         [void]$sum[$t.Id].Dests.Add($d)
@@ -406,6 +572,12 @@ function New-TrafficTypeBlock($St, $G) {
         $t = New-Text $(if ($nm) { $nm } else { $d.Remote }) 12.5 '#E6E8EE'
         $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'
         [void]$left.Children.Add($t)
+        $ow = if (-not $d.Private) { Get-ServerOwner $d.Remote }
+        if ($ow) {
+            $ot = New-Text "Appartient à $(Get-OwnerLabel $ow)" 11.5 '#C9CED8'
+            $ot.TextTrimming = 'CharacterEllipsis'; $ot.TextWrapping = 'NoWrap'
+            [void]$left.Children.Add($ot)
+        }
         $pn = $PortNames[[int]$d.Port]
         $warnPort = $SusPorts.ContainsKey([int]$d.Port)
         $info = New-Text "$(if ($nm) { $d.Remote + ', ' })port $($d.Port)$(if ($pn) { ' (' + $pn + ')' } elseif ($warnPort) { ' (' + $SusPorts[[int]$d.Port] + ')' })" 11 $(if ($warnPort) { $Colors.warn } else { '#5B6475' })
@@ -470,6 +642,19 @@ function Build-TrafficPage {
     $script:TrafficCounters.Margin = New-Thickness 0 8 0 0
     $script:TrafficCounters.Visibility = 'Collapsed'
     [void]$p.Children.Add($script:TrafficCounters)
+    $lk = New-Grid @('*', 'Auto')
+    $lk.Margin = New-Thickness 0 12 0 0
+    $lkt = New-Object System.Windows.Controls.StackPanel
+    [void]$lkt.Children.Add((New-Text 'Identifier les serveurs sans nom' 13 '#FFFFFF' -Semi))
+    [void]$lkt.Children.Add((New-Text 'Cherche à qui appartient chaque adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public des adresses Internet (rdap.org). Seule l''adresse du serveur est envoyée.' 11.5 '#9AA3B2'))
+    Add-ToGrid $lk $lkt 0
+    $sw = New-Object System.Windows.Controls.CheckBox
+    $sw.Style = $Window.FindResource('Switch')
+    $sw.IsChecked = [bool](Get-Setting 'TrafficLookup' $true)
+    $sw.VerticalAlignment = 'Center'; $sw.Margin = New-Thickness 16 0 0 0
+    $sw.Add_Click({ param($sender, $e) Set-Setting 'TrafficLookup' ([bool]$sender.IsChecked) })
+    Add-ToGrid $lk $sw 1
+    [void]$p.Children.Add($lk)
     $script:TrafficAlertBox = New-Object System.Windows.Controls.StackPanel
     $script:TrafficAlertBox.Margin = New-Thickness 0 14 0 0
     [void]$p.Children.Add($script:TrafficAlertBox)
@@ -670,8 +855,8 @@ function Add-TrafficSummary($body, $a, $ids) {
     elseif ($a.Out -gt 3 * $a.In) { $lines += , @('warn', "Envoie bien plus qu'il ne reçoit : $(Format-Bytes $a.Out) contre $(Format-Bytes $a.In)") }
     else { $lines += , @('info', "Envoi moyen ($(Format-Bytes $a.Out)) : normal pour discuter, jouer ou naviguer") }
     # Aucun serveur reconnu : on ne peut rien affirmer sur le reste
-    if (-not @($ids | Where-Object { $_ -notin 'unknown', 'other', 'upload', 'download' }).Count) {
-        $lines += , @('warn', 'Serveurs non reconnus : impossible de dire quel type de données part')
+    if (-not @($ids | Where-Object { $_ -notin 'unknown', 'other', 'upload', 'download', 'owned' }).Count) {
+        $lines += , @('warn', 'Les serveurs ne disent pas à quoi ils servent : impossible de deviner quel type de données part')
     } else {
         $lines += , $(if ('ads' -in $ids) { @('warn', 'Publicité et suivi : ce que tu fais est mesuré') } else { @('ok', 'Aucune publicité ni pistage repéré') })
         $lines += , $(if ('telemetry' -in $ids) { @('info', 'Envoie des statistiques d''utilisation (pas tes fichiers)') } else { @('ok', 'Aucune statistique d''utilisation repérée') })
