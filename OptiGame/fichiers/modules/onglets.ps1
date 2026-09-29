@@ -551,39 +551,113 @@ function Invoke-CleanScan {
     $total = 0
     foreach ($c in $CleanTargets) {
         Set-Status "Calcul: $($c.Titre)..."
-        $size = [double](Invoke-Async $SizeScript $c.Paths)
+        $info = Invoke-Async $CleanListScript @{ Paths = $c.Paths; Top = 300 } | Select-Object -First 1
+        $size = if ($info) { [double]$info.Size } else { 0.0 }
+        $count = if ($info) { [int]$info.Count } else { 0 }
         $total += $size
         $card = New-Card
-        $g = New-Grid @('*', 'Auto')
+        $g = New-Grid @('*', 'Auto', 'Auto', 'Auto')
         $cb = New-Object System.Windows.Controls.CheckBox
         $cb.Content = $c.Titre
         $cb.FontSize = 14
         $cb.IsChecked = $size -gt 0
         $cb.VerticalContentAlignment = 'Center'
         Add-ToGrid $g $cb 0
-        Add-ToGrid $g (New-Text (Format-Size $size) 14 $(if ($size -gt 500MB) { $Colors.warn } else { '#9AA3B2' }) -Semi) 1
+        $nb = New-Text "$count fichier$(if ($count -gt 1) {'s'})" 12.5 '#5B6475'
+        $nb.VerticalAlignment = 'Center'; $nb.Margin = New-Thickness 12 0 16 0
+        Add-ToGrid $g $nb 1
+        $sz = New-Text (Format-Size $size) 14 $(if ($size -gt 500MB) { $Colors.warn } else { '#9AA3B2' }) -Semi
+        $sz.VerticalAlignment = 'Center'
+        Add-ToGrid $g $sz 2
+        if ($count) {
+            $vb = New-Button 'Voir les fichiers'
+            $vb.Margin = New-Thickness 16 0 0 0; $vb.VerticalAlignment = 'Center'
+            $vb.Tag = @{ Target = $c; Info = $info }
+            $vb.Add_Click({ param($s, $e) $x = $s.Tag; Invoke-Safe { Show-CleanFiles $x.Target $x.Info } })
+            Add-ToGrid $g $vb 3
+        }
         $card.Child = $g
         [void]$panel.Children.Add($card)
         $script:CleanRows += @{ Target = $c; CheckBox = $cb; Size = $size }
     }
+    Add-LastCleanInfo
     $ui.CleanTotal.Text = "$(Format-Size $total) peuvent être libérés."
     Set-Status 'Analyse du nettoyage terminée.'
+}
+
+# Dernier nettoyage : résumé et bouton pour ouvrir son journal
+function Add-LastCleanInfo {
+    $l = Get-Setting 'LastClean' $null
+    if (-not $l -or -not $l.Date) { return }
+    $g = New-Grid @('*', 'Auto')
+    $g.Margin = New-Thickness 4 10 0 0
+    $t = New-Text "Dernier nettoyage le $(([datetime]$l.Date).ToString('dd/MM à HH:mm')) : $(Format-Size ([double]$l.Freed)) libérés, $($l.Deleted) fichier(s) supprimé(s), $($l.Skipped) laissé(s) car utilisé(s), $($l.Errors) refusé(s)." 12.5 '#9AA3B2'
+    $t.VerticalAlignment = 'Center'
+    Add-ToGrid $g $t 0
+    if ($l.File -and (Test-Path -LiteralPath ([string]$l.File))) {
+        $b = New-Button 'Ouvrir le journal'
+        $b.Margin = New-Thickness 16 0 0 0
+        $b.Tag = [string]$l.File
+        $b.Add_Click({ param($s, $e) $f = [string]$s.Tag; Invoke-Safe { Start-Process -FilePath 'notepad.exe' -ArgumentList "`"$f`"" } })
+        Add-ToGrid $g $b 1
+    }
+    [void]$ui.CleanPanel.Children.Add($g)
+}
+
+# Les plus gros fichiers d'une catégorie, avant de nettoyer
+function Show-CleanFiles($Target, $Info) {
+    Show-TestPanel @{ Tag = 'TMP'; Title = $Target.Titre; Sub = "$($Info.Count) fichier$(if ($Info.Count -gt 1) {'s'}), $(Format-Size ([double]$Info.Size))" }
+    Set-TestButtons 'done'
+    $ui.BtnTestAgain.Visibility = 'Collapsed'
+    $ui.TestProgress.Value = 100; $ui.TestPct.Text = ''
+    Set-TestState 'info' 'Avant nettoyage'
+    $body = $ui.TestBody
+    $top = @($Info.Top)
+    $intro = New-Text "$(if ($Info.Count -gt $top.Count) { "Les $($top.Count) plus gros fichiers sur $($Info.Count)." } else { 'Tous les fichiers, du plus gros au plus petit.' }) Tout ce qui est dans ce$(if ($Target.Paths.Count -gt 1) {'s'}) dossier$(if ($Target.Paths.Count -gt 1) {'s'}) sera supprimé ; un fichier utilisé par un programme est laissé en place. Après le nettoyage, un journal liste chaque fichier." 12.5 '#9AA3B2'
+    $intro.Margin = New-Thickness 0 0 0 8
+    [void]$body.Children.Add($intro)
+    $wp = New-Object System.Windows.Controls.WrapPanel
+    $wp.Margin = New-Thickness 0 0 0 10
+    foreach ($p in $Target.Paths) {
+        if (-not (Test-Path -LiteralPath $p)) { continue }
+        $b = New-Button "Ouvrir $(Split-Path $p -Leaf)"
+        $b.Margin = New-Thickness 0 0 8 0
+        $b.ToolTip = $p; $b.Tag = $p
+        $b.Add_Click({ param($s, $e) $x = [string]$s.Tag; Invoke-Safe { Start-Process 'explorer.exe' -ArgumentList "`"$x`"" } })
+        [void]$wp.Children.Add($b)
+    }
+    [void]$body.Children.Add($wp)
+    $hd = New-Grid @('*', '110', '80')
+    Add-ToGrid $hd (New-Text 'FICHIER' 11 '#5B6475' -Semi) 0
+    Add-ToGrid $hd (New-Text 'MODIFIÉ LE' 11 '#5B6475' -Semi) 1
+    $hs = New-Text 'TAILLE' 11 '#5B6475' -Semi; $hs.HorizontalAlignment = 'Right'
+    Add-ToGrid $hd $hs 2
+    [void]$body.Children.Add($hd)
+    foreach ($f in $top) {
+        $row = New-Grid @('*', '110', '80')
+        $row.Margin = New-Thickness 0 3 0 3
+        $path = [string]$f[0]
+        $short = $path
+        foreach ($p in $Target.Paths) { if ($path.StartsWith($p, [StringComparison]::OrdinalIgnoreCase)) { $short = $path.Substring($p.Length).TrimStart('\') } }
+        $t = New-Text $short 12 '#E6E8EE'
+        $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'; $t.ToolTip = $path
+        Add-ToGrid $row $t 0
+        Add-ToGrid $row (New-Text $(try { ([datetime]$f[2]).ToString('dd/MM/yyyy') } catch { '' }) 12 '#9AA3B2') 1
+        $s = New-Text (Format-Size ([double]$f[1])) 12 '#C9CED8'
+        $s.HorizontalAlignment = 'Right'
+        Add-ToGrid $row $s 2
+        [void]$body.Children.Add($row)
+    }
 }
 
 function Invoke-Clean {
     $sel = @($script:CleanRows | Where-Object { $_.CheckBox.IsChecked })
     if (-not $sel.Count) { Show-Message "Clique d'abord sur Analyser, puis coche ce que tu veux nettoyer."; return }
     Set-Busy $true
-    $freed = 0
-    foreach ($r in $sel) {
-        Set-Status "Nettoyage: $($r.Target.Titre)..."
-        [void](Invoke-Async $CleanScript $r.Target.Paths)
-        $after = [double](Invoke-Async $SizeScript $r.Target.Paths)
-        $freed += [math]::Max(0.0, $r.Size - $after)
-    }
+    $r = Invoke-CleanTargets @($sel | ForEach-Object { $_.Target })
     Invoke-CleanScan
-    $msg = "$(Format-Size $freed) libérés. Certains fichiers en cours d'utilisation ont pu être laissés en place, c'est normal."
-    Set-Status $msg
+    $msg = "$(Format-Size $r.Freed) libérés : $($r.Deleted) fichier$(if ($r.Deleted -gt 1) {'s'}) supprimé$(if ($r.Deleted -gt 1) {'s'})$(if ($r.Skipped) { ", $($r.Skipped) laissé$(if ($r.Skipped -gt 1) {'s'}) car utilisé$(if ($r.Skipped -gt 1) {'s'}) par un programme (c'est normal)" })$(if ($r.Errors) { ", $($r.Errors) refusé$(if ($r.Errors -gt 1) {'s'}) par Windows" }).`n`nLe détail fichier par fichier est dans le journal (bouton « Ouvrir le journal » sous la liste)."
+    Set-Status "$(Format-Size $r.Freed) libérés."
     Show-Message $msg
 }
 

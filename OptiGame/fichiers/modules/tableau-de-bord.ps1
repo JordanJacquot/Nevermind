@@ -47,10 +47,7 @@ $BiosConfirm = "Le PC va redémarrer directement dans le BIOS dans 10 secondes.`
 $BiosDone = 'Redémarrage dans le BIOS dans 10 secondes...'
 
 function Invoke-CleanAll {
-    foreach ($t in $CleanTargets) {
-        Set-Status "Nettoyage: $($t.Titre)..."
-        [void](Invoke-Async $CleanScript $t.Paths)
-    }
+    [void](Invoke-CleanTargets $CleanTargets)
 }
 
 function Get-DriverLink([string]$Name) {

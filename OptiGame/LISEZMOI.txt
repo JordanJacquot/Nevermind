@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.31
+﻿OptiGame 1.0.32
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -152,6 +152,10 @@ Connexion
 Nettoyage
   Supprime les fichiers temporaires et les restes de mises à jour.
   Ne touche jamais à tes documents, à la corbeille ni aux caches des jeux.
+  Avant de nettoyer, « Voir les fichiers » montre les plus gros fichiers de
+  chaque catégorie. Après, un journal liste chaque fichier : supprimé, laissé
+  car utilisé par un programme, ou refusé par Windows (bouton « Ouvrir le
+  journal »). Les liens vers d'autres dossiers ne sont jamais suivis.
 
 Tests
   Teste chaque composant : vitesse et santé détaillée de chaque disque,

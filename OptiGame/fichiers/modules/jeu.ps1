@@ -234,7 +234,8 @@ function Build-GameProfiles {
         $sub.TextTrimming = 'CharacterEllipsis'; $sub.TextWrapping = 'NoWrap'; $sub.ToolTip = (@($g.Exes) -join "`n")
         [void]$sp.Children.Add($sub)
         Add-ToGrid $row $sp 0
-        $opts = @(@('priority', 'Priorité haute', (Test-GamePriority $g)))
+        # La virgule garde une liste de listes même avec une seule option (sinon PowerShell l'aplatit en lettres)
+        $opts = @(, @('priority', 'Priorité haute', (Test-GamePriority $g)))
         if ($dual) { $opts += , @('gpu', 'Carte puissante', ((Get-GpuPreference $g.Exes[0]) -match 'GpuPreference=2')) }
         $col = 1
         foreach ($o in $opts) {

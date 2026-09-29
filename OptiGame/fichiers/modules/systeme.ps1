@@ -40,13 +40,94 @@ $SizeScript = {
     [double]$sum
 }
 
-$CleanScript = {
-    param($paths)
-    foreach ($p in $paths) {
-        if (Test-Path -LiteralPath $p) {
-            Get-ChildItem -LiteralPath $p -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+# Parcours d'un dossier sans suivre les liens (jonctions, liens symboliques) : on ne sort jamais du dossier prévu.
+$CleanWalk = @'
+function Get-CleanFiles([string]$Root, $Dirs) {
+    foreach ($e in @(Get-ChildItem -LiteralPath $Root -Force -ErrorAction SilentlyContinue)) {
+        if ($e.PSIsContainer) {
+            if ($e.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+            if ($null -ne $Dirs) { [void]$Dirs.Add($e.FullName) }
+            Get-CleanFiles $e.FullName $Dirs
+        } else { $e }
+    }
+}
+'@
+
+# Analyse d'une catégorie : nombre de fichiers, taille totale et les plus gros (pour « Voir les fichiers »)
+$CleanListScript = [scriptblock]::Create($CleanWalk + @'
+
+$a = $args[0]
+$sum = 0.0; $n = 0
+$list = New-Object System.Collections.Generic.List[object]
+foreach ($p in $a.Paths) {
+    if (-not (Test-Path -LiteralPath $p)) { continue }
+    foreach ($f in (Get-CleanFiles $p $null)) { $sum += $f.Length; $n++; $list.Add(@($f.FullName, [double]$f.Length, $f.LastWriteTime)) }
+}
+$top = @($list | Sort-Object { $_[1] } -Descending | Select-Object -First $a.Top)
+@{ Size = $sum; Count = $n; Top = $top }
+'@)
+
+# Nettoyage d'une catégorie, fichier par fichier, avec une ligne de journal pour chacun
+$CleanScript = [scriptblock]::Create($CleanWalk + @'
+
+$paths = $args[0]
+$log = New-Object System.Collections.Generic.List[string]
+$freed = 0.0; $del = 0; $skip = 0; $err = 0
+$fmt = { param($b) if ($b -ge 1GB) { '{0:N1} Go' -f ($b / 1GB) } elseif ($b -ge 1MB) { '{0:N1} Mo' -f ($b / 1MB) } else { '{0:N0} Ko' -f [math]::Max(1, [math]::Ceiling($b / 1KB)) } }
+foreach ($p in $paths) {
+    if (-not (Test-Path -LiteralPath $p)) { continue }
+    $dirs = New-Object System.Collections.Generic.List[string]
+    foreach ($f in @(Get-CleanFiles $p $dirs)) {
+        $len = [double]$f.Length
+        try {
+            if ($f.Attributes -band [IO.FileAttributes]::ReadOnly) { $f.Attributes = [IO.FileAttributes]::Normal }
+            [IO.File]::Delete($f.FullName)
+            $freed += $len; $del++
+            $log.Add("[SUPPRIMÉ] $($f.FullName) - $(& $fmt $len)")
+        } catch [System.UnauthorizedAccessException] {
+            $err++; $log.Add("[REFUSÉ]   $($f.FullName) - $(& $fmt $len) - Accès refusé")
+        } catch [System.IO.IOException] {
+            $skip++; $log.Add("[LAISSÉ]   $($f.FullName) - $(& $fmt $len) - Fichier utilisé par un programme")
+        } catch {
+            $err++; $log.Add("[REFUSÉ]   $($f.FullName) - $(& $fmt $len) - $($_.Exception.Message)")
         }
     }
+    # Dossiers restés vides : du plus profond au moins profond (le dossier de départ reste)
+    foreach ($d in @($dirs | Sort-Object { $_.Length } -Descending)) {
+        try { if (-not [IO.Directory]::EnumerateFileSystemEntries($d).GetEnumerator().MoveNext()) { [IO.Directory]::Delete($d) } } catch {}
+    }
+}
+@{ Freed = $freed; Deleted = $del; Skipped = $skip; Errors = $err; Log = $log.ToArray() }
+'@)
+
+# Nettoie les catégories et écrit le journal (dossier « nettoyage » des données d'OptiGame, 10 derniers gardés)
+function Invoke-CleanTargets([array]$Targets) {
+    $now = Get-Date
+    $dir = Join-Path $DataDir 'nettoyage'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add("Nettoyage OptiGame du $($now.ToString('dd/MM/yyyy à HH:mm:ss'))")
+    $lines.Add('SUPPRIMÉ : effacé.  LAISSÉ : utilisé par un programme, il sera effacé une prochaine fois.  REFUSÉ : Windows n''autorise pas à l''effacer.')
+    $tot = @{ Freed = 0.0; Deleted = 0; Skipped = 0; Errors = 0 }
+    foreach ($t in $Targets) {
+        Set-Status "Nettoyage: $($t.Titre)..."
+        $r = Invoke-Async $CleanScript $t.Paths | Select-Object -First 1
+        $lines.Add('')
+        $lines.Add("== $($t.Titre) ($($t.Paths -join ', ')) ==")
+        if (-not $r) { $lines.Add('(rien à nettoyer)'); continue }
+        foreach ($l in @($r.Log)) { $lines.Add($l) }
+        if (-not @($r.Log).Count) { $lines.Add('(dossier déjà vide)') }
+        $tot.Freed += $r.Freed; $tot.Deleted += $r.Deleted; $tot.Skipped += $r.Skipped; $tot.Errors += $r.Errors
+    }
+    $lines.Add('')
+    $lines.Add("Total : $(Format-Size $tot.Freed) libérés, $($tot.Deleted) fichier(s) supprimé(s), $($tot.Skipped) laissé(s), $($tot.Errors) refusé(s).")
+    $file = Join-Path $dir "nettoyage-$($now.ToString('yyyy-MM-dd_HH-mm-ss')).log"
+    try { [IO.File]::WriteAllLines($file, $lines, (New-Object Text.UTF8Encoding($true))) } catch { Write-Log "Nettoyage: journal non écrit ($_)"; $file = '' }
+    foreach ($old in @(Get-ChildItem -LiteralPath $dir -Filter 'nettoyage-*.log' -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -Skip 10)) { try { [IO.File]::Delete($old.FullName) } catch {} }
+    Set-Setting 'LastClean' @{ Date = $now.ToString('o'); Freed = $tot.Freed; Deleted = $tot.Deleted; Skipped = $tot.Skipped; Errors = $tot.Errors; File = $file }
+    Write-Log "Nettoyage: $(Format-Size $tot.Freed) libérés, $($tot.Deleted) supprimés, $($tot.Skipped) laissés, $($tot.Errors) refusés"
+    $tot.File = $file
+    $tot
 }
 
 function Format-Size([double]$Bytes) {

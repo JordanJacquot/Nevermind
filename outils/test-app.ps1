@@ -107,7 +107,7 @@ $script:T.Run.Add_Tick({
                 $ui.Tabs.SelectedIndex = 1
                 # Au démarrage, la liste est calculée juste après « Prêt. » : le test passe avant, on la calcule ici.
                 if ($null -eq $script:Games) { Update-GameCache }
-                Wait-TestMs 500; Save-TestShot 'gaming-reglages'; Set-GamingSubPage 2; Wait-TestMs 300; Save-TestShot 'gaming-mode-jeu'; Set-GamingSubPage 3; Wait-TestMs 300; Save-TestShot 'gaming-profils'
+                Wait-TestMs 500; Save-TestShot 'gaming-reglages'; Set-GamingSubPage 3; Wait-TestMs 300; Save-TestShot 'gaming-mode-jeu'; Set-GamingSubPage 4; Wait-TestMs 300; Save-TestShot 'gaming-profils'
                 Assert-Test ($null -ne $script:Games) 'liste des jeux jamais calculée'
                 Assert-Test ($ui.GameModePanel.Children.Count -ge 1) 'carte du mode jeu absente'
                 # Session de jeu simulée : aucune appli cochée, donc rien n'est fermé sur ce PC
@@ -249,6 +249,50 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($chk.Arguments -eq '/background') 'raccourci temporaire incorrect'
                 [IO.File]::Delete($lnk)
                 "raccourci libre, $($t.ProcMem.Count) programmes relevés en arrière plan, DNS protégé"
+            }
+            Test-Step 'Profils par jeu : libellés (issue 2)' {
+                if ($null -eq $script:Games) { Update-GameCache }
+                Build-GameProfiles
+                $texts = @(); $switches = @()
+                $stack = New-Object System.Collections.Stack; $stack.Push($ui.GameProfilesPanel)
+                while ($stack.Count) {
+                    $x = $stack.Pop()
+                    if ($x -is [System.Windows.Controls.TextBlock]) { $texts += $x.Text }
+                    if ($x -is [System.Windows.Controls.CheckBox] -and $x.Tag) { $switches += $x.Tag.What }
+                    foreach ($ch in [System.Windows.LogicalTreeHelper]::GetChildren($x)) { if ($ch -is [System.Windows.DependencyObject]) { $stack.Push($ch) } }
+                }
+                if (-not $switches.Count) { return 'aucun jeu installé : rien à vérifier' }
+                Assert-Test (-not @($texts | Where-Object { $_.Length -eq 1 }).Count) "libellés d'une lettre : $((@($texts | Where-Object { $_.Length -eq 1 }) | Select-Object -Unique) -join ', ')"
+                Assert-Test (@($texts | Where-Object { $_ -eq 'Priorité haute' }).Count -ge 1) 'libellé « Priorité haute » absent'
+                Assert-Test (-not @($switches | Where-Object { $_ -notin 'priority', 'gpu' }).Count) "réglage inconnu derrière un interrupteur : $(($switches | Select-Object -Unique) -join ', ')"
+                "$($switches.Count) interrupteurs, libellés complets"
+            }
+            Test-Step 'Nettoyage : fichiers et journal (issue 1)' {
+                $d = Join-Path $DataDir 'essai-nettoyage'
+                $out = Join-Path $DataDir 'essai-hors-nettoyage'
+                foreach ($x in $d, $out) { New-Item -ItemType Directory -Force -Path $x | Out-Null }
+                New-Item -ItemType Directory -Force -Path "$d\sous" | Out-Null
+                [IO.File]::WriteAllBytes("$d\gros.tmp", (New-Object byte[] 300000))
+                [IO.File]::WriteAllBytes("$d\sous\petit.tmp", (New-Object byte[] 2000))
+                [IO.File]::WriteAllBytes("$d\utilise.tmp", (New-Object byte[] 5000))
+                [IO.File]::WriteAllBytes("$out\a-garder.txt", (New-Object byte[] 100))
+                # Un lien dans le dossier vers un autre dossier : il ne doit pas être suivi
+                New-Item -ItemType Junction -Path "$d\lien" -Target $out | Out-Null
+                $target = @{ Titre = 'Dossier d''essai'; Paths = @($d) }
+                $info = Invoke-Async $CleanListScript @{ Paths = $target.Paths; Top = 300 } | Select-Object -First 1
+                Assert-Test ($info.Count -eq 3 -and [string]$info.Top[0][0] -like '*gros.tmp') "analyse : $($info.Count) fichiers (attendu 3, le lien ignoré)"
+                Show-CleanFiles $target $info; Wait-TestMs 500; Save-TestShot 'nettoyage-fichiers'; Hide-TestPanel
+                $lock = [IO.File]::Open("$d\utilise.tmp", 'Open', 'Read', 'None')
+                try { $r = Invoke-CleanTargets @($target) } finally { $lock.Dispose() }
+                Assert-Test ($r.Deleted -eq 2 -and $r.Skipped -eq 1) "nettoyage : $($r.Deleted) supprimés, $($r.Skipped) laissés (attendu 2 et 1)"
+                Assert-Test (Test-Path "$out\a-garder.txt") 'un fichier hors du dossier a été supprimé en suivant un lien'
+                Assert-Test (-not (Test-Path "$d\sous")) 'dossier vide non supprimé'
+                $log = Get-Content -LiteralPath $r.File -Raw -Encoding UTF8
+                Assert-Test ($log -match '\[SUPPRIMÉ\].*gros\.tmp' -and $log -match '\[LAISSÉ\].*utilise\.tmp') 'journal incomplet'
+                [IO.Directory]::Delete("$d\lien")
+                # Vraie analyse de la page (lecture seule)
+                Show-Page 4; Invoke-CleanScan; Set-Busy $false; Wait-TestMs 500; Save-TestShot 'nettoyage-analyse'
+                "3 fichiers vus (lien ignoré), 2 supprimés, 1 laissé car utilisé, journal $(Split-Path $r.File -Leaf)"
             }
             Test-Step 'Carte du réseau' {
                 $saved = $script:NetList
