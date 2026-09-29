@@ -1242,3 +1242,203 @@ public static class NetProbe
         lock (sync) { return outp.ToArray(); }
     }
 }
+
+// Connexions de chaque programme et données échangées (compteurs de Windows, rien n'est intercepté ni lu).
+public static class TrafficMon
+{
+    [StructLayout(LayoutKind.Sequential)]
+    struct TcpRowPid { public uint State, LocalAddr, LocalPort, RemoteAddr, RemotePort, Pid; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct TcpRow { public uint State, LocalAddr, LocalPort, RemoteAddr, RemotePort; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct Tcp6RowPid
+    {
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)] public byte[] LocalAddr;
+        public uint LocalScope, LocalPort;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)] public byte[] RemoteAddr;
+        public uint RemoteScope, RemotePort, State, Pid;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct Tcp6Row
+    {
+        public uint State;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)] public byte[] LocalAddr;
+        public uint LocalScope, LocalPort;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)] public byte[] RemoteAddr;
+        public uint RemoteScope, RemotePort;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct DataRod
+    {
+        public ulong DataBytesOut, DataSegsOut, DataBytesIn, DataSegsIn, SegsOut, SegsIn;
+        public uint SoftErrors, SoftErrorReason, SndUna, SndNxt, SndMax;
+        public ulong ThruBytesAcked;
+        public uint RcvNxt;
+        public ulong ThruBytesReceived;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    struct UdpRowPid { public uint LocalAddr, LocalPort, Pid; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct Udp6RowPid
+    {
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)] public byte[] LocalAddr;
+        public uint LocalScope, LocalPort, Pid;
+    }
+
+    [DllImport("iphlpapi.dll")] static extern uint GetExtendedTcpTable(IntPtr table, ref int size, bool order, int af, int tableClass, uint reserved);
+    [DllImport("iphlpapi.dll")] static extern uint GetExtendedUdpTable(IntPtr table, ref int size, bool order, int af, int tableClass, uint reserved);
+    [DllImport("iphlpapi.dll")] static extern uint SetPerTcpConnectionEStats(ref TcpRow row, int type, IntPtr rw, uint rwVersion, uint rwSize, uint offset);
+    [DllImport("iphlpapi.dll")] static extern uint GetPerTcpConnectionEStats(ref TcpRow row, int type, IntPtr rw, uint rwVersion, uint rwSize, IntPtr ros, uint rosVersion, uint rosSize, IntPtr rod, uint rodVersion, uint rodSize);
+    [DllImport("iphlpapi.dll")] static extern uint SetPerTcp6ConnectionEStats(ref Tcp6Row row, int type, IntPtr rw, uint rwVersion, uint rwSize, uint offset);
+    [DllImport("iphlpapi.dll")] static extern uint GetPerTcp6ConnectionEStats(ref Tcp6Row row, int type, IntPtr rw, uint rwVersion, uint rwSize, IntPtr ros, uint rosVersion, uint rosSize, IntPtr rod, uint rodVersion, uint rodSize);
+
+    const int EstatsData = 1;
+    static readonly HashSet<string> enabled = new HashSet<string>();
+    public static bool CountersOk;   // faux si Windows refuse d'activer le comptage (pas administrateur)
+
+    static int Port(uint p) { return (int)(((p & 0xFF) << 8) | ((p >> 8) & 0xFF)); }
+
+    static IntPtr GetTable(bool tcp, int af)
+    {
+        int size = 0;
+        int cls = tcp ? 5 : 1;   // TCP_TABLE_OWNER_PID_ALL / UDP_TABLE_OWNER_PID
+        if (tcp) GetExtendedTcpTable(IntPtr.Zero, ref size, false, af, cls, 0); else GetExtendedUdpTable(IntPtr.Zero, ref size, false, af, cls, 0);
+        for (int tries = 0; tries < 3; tries++)
+        {
+            IntPtr buf = Marshal.AllocHGlobal(size + 4096);
+            size += 4096;
+            uint r = tcp ? GetExtendedTcpTable(buf, ref size, false, af, cls, 0) : GetExtendedUdpTable(buf, ref size, false, af, cls, 0);
+            if (r == 0) return buf;
+            Marshal.FreeHGlobal(buf);
+        }
+        return IntPtr.Zero;
+    }
+
+    // Octets envoyés / reçus d'une connexion, depuis que le comptage a été activé pour elle.
+    static void ReadBytes(string key, TcpRow row, out ulong outB, out ulong inB)
+    {
+        outB = 0; inB = 0;
+        IntPtr rw = Marshal.AllocHGlobal(1);
+        IntPtr rod = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(DataRod)));
+        try
+        {
+            if (!enabled.Contains(key))
+            {
+                Marshal.WriteByte(rw, 1);
+                if (SetPerTcpConnectionEStats(ref row, EstatsData, rw, 0, 1, 0) == 0) { enabled.Add(key); CountersOk = true; }
+            }
+            for (int z = 0; z < Marshal.SizeOf(typeof(DataRod)); z++) Marshal.WriteByte(rod, z, 0);
+            if (enabled.Contains(key) && GetPerTcpConnectionEStats(ref row, EstatsData, IntPtr.Zero, 0, 0, IntPtr.Zero, 0, 0, rod, 0, (uint)Marshal.SizeOf(typeof(DataRod))) == 0)
+            {
+                var d = (DataRod)Marshal.PtrToStructure(rod, typeof(DataRod));
+                outB = d.DataBytesOut; inB = d.DataBytesIn;
+            }
+        }
+        catch { }
+        finally { Marshal.FreeHGlobal(rw); Marshal.FreeHGlobal(rod); }
+    }
+
+    static void ReadBytes6(string key, Tcp6Row row, out ulong outB, out ulong inB)
+    {
+        outB = 0; inB = 0;
+        IntPtr rw = Marshal.AllocHGlobal(1);
+        IntPtr rod = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(DataRod)));
+        try
+        {
+            if (!enabled.Contains(key))
+            {
+                Marshal.WriteByte(rw, 1);
+                if (SetPerTcp6ConnectionEStats(ref row, EstatsData, rw, 0, 1, 0) == 0) { enabled.Add(key); CountersOk = true; }
+            }
+            for (int z = 0; z < Marshal.SizeOf(typeof(DataRod)); z++) Marshal.WriteByte(rod, z, 0);
+            if (enabled.Contains(key) && GetPerTcp6ConnectionEStats(ref row, EstatsData, IntPtr.Zero, 0, 0, IntPtr.Zero, 0, 0, rod, 0, (uint)Marshal.SizeOf(typeof(DataRod))) == 0)
+            {
+                var d = (DataRod)Marshal.PtrToStructure(rod, typeof(DataRod));
+                outB = d.DataBytesOut; inB = d.DataBytesIn;
+            }
+        }
+        catch { }
+        finally { Marshal.FreeHGlobal(rw); Marshal.FreeHGlobal(rod); }
+    }
+
+    // Connexions TCP ouvertes : "pid|adresse distante|port distant|port local|état|octets envoyés|octets reçus".
+    public static string[] Tcp()
+    {
+        var outp = new List<string>();
+        var alive = new HashSet<string>();
+        IntPtr t4 = GetTable(true, 2);
+        if (t4 != IntPtr.Zero)
+        {
+            try
+            {
+                int n = Marshal.ReadInt32(t4);
+                int sz = Marshal.SizeOf(typeof(TcpRowPid));
+                for (int i = 0; i < n; i++)
+                {
+                    var r = (TcpRowPid)Marshal.PtrToStructure(new IntPtr(t4.ToInt64() + 4 + i * sz), typeof(TcpRowPid));
+                    if (r.State == 2 || r.RemoteAddr == 0) continue;   // en écoute, ou sans destination
+                    string remote = new System.Net.IPAddress(r.RemoteAddr).ToString();
+                    string key = "4|" + r.LocalAddr + ":" + r.LocalPort + "|" + r.RemoteAddr + ":" + r.RemotePort;
+                    alive.Add(key);
+                    ulong o = 0, inb = 0;
+                    if (r.State == 5) ReadBytes(key, new TcpRow { State = r.State, LocalAddr = r.LocalAddr, LocalPort = r.LocalPort, RemoteAddr = r.RemoteAddr, RemotePort = r.RemotePort }, out o, out inb);
+                    outp.Add(r.Pid + "|" + remote + "|" + Port(r.RemotePort) + "|" + Port(r.LocalPort) + "|" + r.State + "|" + o + "|" + inb);
+                }
+            }
+            finally { Marshal.FreeHGlobal(t4); }
+        }
+        IntPtr t6 = GetTable(true, 23);
+        if (t6 != IntPtr.Zero)
+        {
+            try
+            {
+                int n = Marshal.ReadInt32(t6);
+                int sz = Marshal.SizeOf(typeof(Tcp6RowPid));
+                for (int i = 0; i < n; i++)
+                {
+                    var r = (Tcp6RowPid)Marshal.PtrToStructure(new IntPtr(t6.ToInt64() + 4 + i * sz), typeof(Tcp6RowPid));
+                    bool empty = true;
+                    foreach (var b in r.RemoteAddr) if (b != 0) { empty = false; break; }
+                    if (r.State == 2 || empty) continue;
+                    var ip = new System.Net.IPAddress(r.RemoteAddr);
+                    string remote = ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4().ToString() : ip.ToString();
+                    string key = "6|" + BitConverter.ToString(r.LocalAddr) + ":" + r.LocalPort + "|" + BitConverter.ToString(r.RemoteAddr) + ":" + r.RemotePort;
+                    alive.Add(key);
+                    ulong o = 0, inb = 0;
+                    if (r.State == 5) ReadBytes6(key, new Tcp6Row { State = r.State, LocalAddr = r.LocalAddr, LocalScope = r.LocalScope, LocalPort = r.LocalPort, RemoteAddr = r.RemoteAddr, RemoteScope = r.RemoteScope, RemotePort = r.RemotePort }, out o, out inb);
+                    outp.Add(r.Pid + "|" + remote + "|" + Port(r.RemotePort) + "|" + Port(r.LocalPort) + "|" + r.State + "|" + o + "|" + inb);
+                }
+            }
+            finally { Marshal.FreeHGlobal(t6); }
+        }
+        enabled.IntersectWith(alive);   // oublie les connexions fermées
+        return outp.ToArray();
+    }
+
+    // Programmes qui utilisent aussi l'UDP (jeux, appels vidéo, QUIC) : "pid|port local".
+    public static string[] Udp()
+    {
+        var outp = new List<string>();
+        foreach (int af in new[] { 2, 23 })
+        {
+            IntPtr t = GetTable(false, af);
+            if (t == IntPtr.Zero) continue;
+            try
+            {
+                int n = Marshal.ReadInt32(t);
+                if (af == 2)
+                {
+                    int sz = Marshal.SizeOf(typeof(UdpRowPid));
+                    for (int i = 0; i < n; i++) { var r = (UdpRowPid)Marshal.PtrToStructure(new IntPtr(t.ToInt64() + 4 + i * sz), typeof(UdpRowPid)); outp.Add(r.Pid + "|" + Port(r.LocalPort)); }
+                }
+                else
+                {
+                    int sz = Marshal.SizeOf(typeof(Udp6RowPid));
+                    for (int i = 0; i < n; i++) { var r = (Udp6RowPid)Marshal.PtrToStructure(new IntPtr(t.ToInt64() + 4 + i * sz), typeof(Udp6RowPid)); outp.Add(r.Pid + "|" + Port(r.LocalPort)); }
+                }
+            }
+            finally { Marshal.FreeHGlobal(t); }
+        }
+        return outp.ToArray();
+    }
+}

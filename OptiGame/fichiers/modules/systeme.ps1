@@ -61,6 +61,7 @@ function Format-Size([double]$Bytes) {
 # ---------------------------------------------------------------------------
 function Restore-AllSettings {
     $errors = @()
+    try { Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction Stop } catch { $errors += "Pare-feu: $($_.Exception.Message)" }
     foreach ($e in @($script:Backup.Registry.Values)) {
         try {
             if ($e.Existed) {

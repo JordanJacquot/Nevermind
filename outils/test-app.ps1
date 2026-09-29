@@ -295,6 +295,40 @@ $script:T.Run.Add_Tick({
                 Assert-Test (Test-IsLaptop @($lap) @{ Chassis = @(2); PCType = 1 }) 'vrai portable non reconnu'
                 'onduleurs reconnus (plomb ou marque), portable toujours reconnu'
             }
+            Test-Step 'Trafic : ce qui sort du PC' {
+                $ui.Tabs.SelectedIndex = $TrafficIndex
+                Wait-TestMs 6000
+                $st = $script:Traffic
+                Assert-Test ($null -ne $st -and $script:TrafficTimer.IsEnabled) 'surveillance non démarrée'
+                $real = @($st.Apps.Values | Where-Object { @($_.Dest.Values | Where-Object { -not $_.Private }).Count })
+                Assert-Test ($real.Count -ge 1) 'aucun programme connecté à Internet trouvé'
+                Save-TestShot 'trafic'
+                # Programmes simulés : un suspect, un légitime qui envoie beaucoup, et OptiGame lui même
+                $mk = {
+                    param($key, $name, $path, $sig, $port, $out, $in, $self)
+                    $st.Apps[$key] = @{ Key = $key; Name = $name; Path = $path; Title = $name; OutClosed = 0; InClosed = 0; Out = [double]$out; In = [double]$in; Rate = 0; LastOut = 0
+                        Dest = @{ "203.0.113.9|$port" = @{ Remote = '203.0.113.9'; Port = $port; Out = [double]$out; In = [double]$in; OutClosed = 0; InClosed = 0; Live = $true; Private = $false } }
+                        Ports = @{}; Udp = $false; Pids = @{}; Sig = $sig; Publisher = ''; Icon = $null; IsSelf = $self; Live = 1 }
+                }
+                & $mk 'test:virus' 'svch0st' 'C:\Users\x\AppData\Local\Temp\svch0st.exe' 'NotSigned' 4444 5MB 1KB $false
+                & $mk 'test:onedrive' 'OneDrive' 'C:\Program Files\Microsoft OneDrive\OneDrive.exe' 'Valid' 443 900MB 10MB $false
+                & $mk 'test:self' 'powershell' 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' 'Valid' 443 1MB 1MB $true
+                & $mk 'test:upload' 'inconnu' 'C:\Program Files\Inconnu\inconnu.exe' 'Valid' 443 600MB 5MB $false
+                $alerts = @(Get-TrafficAlerts)
+                $v = @($alerts | Where-Object { $_.App.Key -eq 'test:virus' })[0]
+                $u = @($alerts | Where-Object { $_.App.Key -eq 'test:upload' })[0]
+                Assert-Test ($v -and $v.Level -eq 'bad') "programme suspect non signalé ($($v.Level))"
+                Assert-Test ($u -and $u.Level -eq 'warn') 'gros envoi d''un programme inconnu non signalé'
+                Assert-Test (-not @($alerts | Where-Object { $_.App.Key -in 'test:onedrive', 'test:self' }).Count) 'OneDrive ou OptiGame signalé à tort'
+                $st.Alerts = $alerts
+                $script:TrafficAlertKeys = $null
+                Update-TrafficView; Wait-TestMs 400; Save-TestShot 'trafic-alertes'
+                Show-TrafficApp 'test:virus'; Wait-TestMs 800; Save-TestShot 'trafic-fiche'; Hide-TestPanel
+                foreach ($k in 'test:virus', 'test:onedrive', 'test:self', 'test:upload') { $st.Apps.Remove($k) }
+                $errs = Undo-RunLog @(@{ Type = 'fw'; Name = 'OptiGame : bloque règle inexistante (test)' })
+                Stop-TrafficWatch
+                "$($real.Count) programmes connectés vus en vrai, alertes simulées correctes, comptage des octets : $(if ([TrafficMon]::CountersOk) { 'actif' } else { 'indisponible sans droits admin' })"
+            }
             Test-Step 'Page Tests' {
                 $ui.Tabs.SelectedIndex = 5; Wait-TestMs 1500; Save-TestShot 'tests'
                 Assert-Test ($ui.TestsPanel.Children.Count -ge 4) "seulement $($ui.TestsPanel.Children.Count) tuiles"

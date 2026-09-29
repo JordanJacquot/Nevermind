@@ -29,6 +29,7 @@ $Window.Add_Closed({
     try { Stop-FpsTarget } catch { Write-Log "Fermeture, mesure des FPS: $_" }
     try { if ($script:GameSession) { Stop-GameSession } } catch { Write-Log "Fermeture, mode jeu: $_" }
     try { Unregister-FpsHotkey } catch {}
+    try { if ($script:TrafficTimer) { $script:TrafficTimer.Stop() } } catch {}
     try { [FrameMon]::Stop() } catch {}
     try { if ($script:NotifyIcon) { $script:NotifyIcon.Visible = $false; $script:NotifyIcon.Dispose() } } catch {}
     if ($Splash) { try { $Splash.Close() } catch {} }
@@ -71,6 +72,12 @@ $ui.BtnScanFull.Add_Click({
 $ui.BtnScanFolder.Add_Click({ Invoke-Safe { Invoke-FolderScan } })
 $ui.BtnScanUpdate.Add_Click({ Invoke-Safe { Update-Definitions } })
 $ui.BtnNetScan.Add_Click({ Invoke-Safe { Invoke-NetworkScan } })
+$ui.BtnTraffic.Add_Click({
+    Invoke-Safe {
+        if (-not $script:TrafficBuilt) { Build-TrafficPage }
+        if ($script:TrafficTimer -and $script:TrafficTimer.IsEnabled) { Stop-TrafficWatch } else { Start-TrafficWatch }
+    }
+})
 $ui.BtnNetAudit.Add_Click({ Invoke-Safe { Invoke-NetAudit } })
 $ui.BtnNetAuditView.Add_Click({ Invoke-Safe { Show-NetAuditReport } })
 $ui.BtnSecRefresh.Add_Click({ Invoke-Safe { Update-SecurityTab } })
@@ -130,6 +137,12 @@ $ui.Tabs.Add_SelectionChanged({
     if ($e.OriginalSource -ne $ui.Tabs) { return }
     Update-NavBar
     if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubStats) { Invoke-Safe { Update-Hub }; return }
+    if ($ui.Tabs.SelectedIndex -eq $TrafficIndex) {
+        Invoke-Safe {
+            if (-not $script:TrafficBuilt) { Build-TrafficPage; Start-TrafficWatch } else { Update-TrafficView }
+        }
+        return
+    }
     if ($ui.Tabs.SelectedIndex -eq $NetIndex -and -not $script:NetBuilt) {
         $script:NetBuilt = $true
         Invoke-Safe { Show-NetHeroIdle; Update-NetAuditCard; Update-NetScanInfo }

@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.21
+﻿OptiGame 1.0.22
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -42,6 +42,13 @@ CE QUE FAIT L'APPLICATION
 -------------------------
 L'application a deux grandes sections, dans le menu à gauche :
   - Ordinateur : l'accueil, avec une carte pour chaque fonction ci dessous.
+  - Trafic : ce qui sort de ton PC. Quels programmes communiquent avec
+    Internet, avec quels sites, combien ils envoient et reçoivent, en direct.
+    OptiGame signale ce qui est anormal (programme non signé caché dans un
+    dossier à risque, outil de Windows détourné, port utilisé par les virus
+    ou Tor, gros envois inhabituels, prise en main à distance) et permet
+    d'analyser le programme avec l'antivirus ou de lui bloquer Internet
+    (annulable). Le contenu des échanges, chiffré, n'est jamais lu.
   - Réseau : scan de tous les appareils connectés à ton réseau (téléphones,
     consoles, TV, box...), avec leur fabricant. Les nouveaux appareils sont
     signalés d'un scan à l'autre : pratique pour repérer un intrus sur ton Wi-Fi.

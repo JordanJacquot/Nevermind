@@ -502,6 +502,7 @@ function Undo-RunLog($Log) {
                     $r = [OGNative]::SetRefreshRate($e.Device, $e.Hz)
                     if ($r -ne 0) { throw "Écran $($e.Device): fréquence non restaurée (code $r)" }
                 }
+                'fw' { Remove-NetFirewallRule -DisplayName $e.Name -ErrorAction Stop }
                 'dns' {
                     # Le numéro de la carte réseau peut changer (redémarrage, câble changé de port) : on la retrouve par son identifiant.
                     $idx = $e.IfIndex
