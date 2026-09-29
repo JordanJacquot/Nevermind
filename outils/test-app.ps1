@@ -355,6 +355,25 @@ $script:T.Run.Add_Tick({
                 $script:TrafficAlertKeys = $null
                 Update-TrafficView; Wait-TestMs 400; Save-TestShot 'trafic-alertes'
                 Show-TrafficApp 'test:virus'; Wait-TestMs 800; Save-TestShot 'trafic-fiche'; Hide-TestPanel
+                # Type de données d'après le serveur
+                foreach ($cas in @(@('vortex.data.microsoft.com', 'telemetry'), @('securepubads.g.doubleclick.net', 'ads'), @('gateway.discord.gg', 'chat'), @('ocsp.digicert.com', 'cert'),
+                                   @('api.anthropic.com', 'ai'), @('login.live.com', 'auth'), @('rr3---sn-25ge7nsd.googlevideo.com', 'stream'), @('api.steampowered.com', 'game'),
+                                   @('my.microsoftpersonalcontent.com', 'update'), @('onedrive.live.com', 'sync'), @('ec2-3-1-2-3.compute.amazonaws.com', 'cloud'))) {
+                    $got = (Get-DestType $cas[0] 443 1KB 1KB $null).Id
+                    Assert-Test ($got -eq $cas[1]) "$($cas[0]) classé $got (attendu $($cas[1]))"
+                }
+                Assert-Test ((Get-DestType '' 443 900MB 1MB $null).Id -eq 'upload') 'gros envoi sans nom non repéré'
+                Assert-Test ((Get-DestType '' 53 1KB 1KB $null).Id -eq 'dns') 'DNS non repéré'
+                Assert-Test ((Get-DestType '' 443 1KB 1KB @{ Name = 'AnyDesk' }).Id -eq 'remote') 'AnyDesk sans nom de serveur non reconnu'
+                $st.Dns['198.51.100.7'] = 'vortex.data.microsoft.com'
+                $st.Dns['198.51.100.8'] = 'gateway.discord.gg'
+                $st.Apps['test:types'] = @{ Key = 'test:types'; Name = 'Discord'; Path = 'C:\x\Discord.exe'; Title = 'Discord'; Out = [double]3MB; In = [double]20MB; Rate = 0; Sig = 'Valid'; Publisher = 'Discord Inc.'; Icon = $null; IsSelf = $false; Live = 2; Udp = $true; Ports = @{}; Pids = @{}
+                    Dest = @{ a = @{ Remote = '198.51.100.7'; Port = 443; Out = [double]1MB; In = [double]1KB; Live = $true; Private = $false }; b = @{ Remote = '198.51.100.8'; Port = 443; Out = [double]2MB; In = [double]20MB; Live = $true; Private = $false }
+                              c = @{ Remote = '192.168.1.1'; Port = 80; Out = [double]1KB; In = [double]1KB; Live = $false; Private = $true } } }
+                $sum = @(Get-AppDataTypes $st $st.Apps['test:types'])
+                Assert-Test ($sum.Count -eq 2 -and $sum[0].Type.Id -eq 'chat' -and $sum[1].Type.Id -eq 'telemetry') "résumé des types faux ($(($sum | ForEach-Object { $_.Type.Id }) -join ','))"
+                Show-TrafficApp 'test:types'; Wait-TestMs 800; Save-TestShot 'trafic-types'; Hide-TestPanel
+                $st.Apps.Remove('test:types')
                 foreach ($k in 'test:virus', 'test:onedrive', 'test:self', 'test:upload') { $st.Apps.Remove($k) }
                 $errs = Undo-RunLog @(@{ Type = 'fw'; Name = 'OptiGame : bloque règle inexistante (test)' })
                 Stop-TrafficWatch

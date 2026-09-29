@@ -302,6 +302,61 @@ function Block-TrafficApp($App) {
 }
 
 # ---------------------------------------------------------------------------
+# Type de données échangées, déduit du serveur contacté (le contenu, chiffré, n'est jamais lu)
+# ---------------------------------------------------------------------------
+$DataTypes = @(
+    @{ Id = 'ads'; Rx = 'doubleclick|googlesyndication|googleadservices|adservice|\bads?\.|adnxs|criteo|taboola|outbrain|scorecardresearch|connect\.facebook|facebook\.net|google-analytics|googletagmanager|analytics|segment\.(io|com)|mixpanel|amplitude|hotjar|appsflyer|adjust\.com|branch\.io|doubleverify|moatads|adsrvr|pubmatic|rubiconproject|quantserve'
+       Label = 'Publicité et suivi'; Color = '#F5A524'; Text = 'Ce que tu regardes et où tu cliques, pour afficher de la publicité et mesurer l''audience.' },
+    @{ Id = 'telemetry'; Rx = 'telemetry|vortex|watson\.|events\.data|browser\.events|self\.events|settings-win|sentry\.io|bugsnag|crashlytics|datadoghq|newrelic|nr-data|app-measurement|firebaselogging|clientlogging|metrics|diagnostic|\.events\.|beacons?\.|stats\.|feedback'
+       Label = 'Statistiques d''utilisation'; Color = '#B18CFF'; Text = 'Rapports sur le fonctionnement du programme : plantages, performances, fonctions utilisées. Pas tes fichiers.' },
+    @{ Id = 'security'; Rx = 'smartscreen|wdcp\.|wd\.microsoft|defender|safebrowsing|malwarebytes|avast|avg\.com|kaspersky|bitdefender|eset\.|norton|mcafee'
+       Label = 'Protection'; Color = '#22D37A'; Text = 'Vérifie des fichiers ou des adresses de sites auprès de l''éditeur de sécurité.' },
+    @{ Id = 'cert'; Rx = 'ocsp|\bcrl|pki\.|digicert|sectigo|letsencrypt|lencr\.org|globalsign|verisign|usertrust|comodoca|entrust|godaddy\.com/repository|ctldl\.windowsupdate'
+       Label = 'Vérification de certificats'; Color = '#9AA3B2'; Text = 'Vérifie que les sites et les programmes sont authentiques. Très peu de données.' },
+    @{ Id = 'auth'; Rx = '(^|\.)login\.|\bauth|oauth|accounts\.|identity|\bsso\.|signin|msauth|passport'
+       Label = 'Connexion à ton compte'; Color = '#4EA8FF'; Text = 'Identifiants chiffrés pour ouvrir ou garder ta session.' },
+    @{ Id = 'remote'; Rx = 'anydesk|teamviewer|rustdesk|screenconnect|splashtop|logmein'
+       Label = 'Prise en main à distance'; Color = '#F04438'; Text = 'Images de ton écran, clavier et souris quand une session à distance est ouverte.' },
+    @{ Id = 'ai'; Rx = 'anthropic|claude\.ai|openai|chatgpt|oaiusercontent|gemini|bard\.google|copilot|perplexity|mistral\.ai'
+       Label = 'Assistant IA'; Color = '#FF7AB6'; Text = 'Tes questions et le contexte que tu envoies à l''assistant (textes, fichiers ouverts).' },
+    @{ Id = 'sync'; Rx = 'onedrive|sharepoint|dropbox|drive\.google|docs\.google|googleusercontent|icloud|box\.com|\bmega\.(nz|io)|backblaze|pcloud|nextcloud'
+       Label = 'Synchronisation de fichiers'; Color = '#4EA8FF'; Text = 'Tes fichiers envoyés vers (ou récupérés depuis) ton espace de stockage en ligne.' },
+    @{ Id = 'chat'; Rx = 'discord|whatsapp|telegram|signal\.org|teams|skype|slack|zoom\.us|messenger|trouter|\.gateway\.'
+       Label = 'Messagerie et appels'; Color = '#4EA8FF'; Text = 'Tes messages, ta voix ou ta vidéo pendant les appels, et ta présence en ligne.' },
+    @{ Id = 'stream'; Rx = 'googlevideo|youtube|ytimg|nflxvideo|netflix|twitch|ttvnw|jtvnw|primevideo|aiv-cdn|disney|dssott|spotify|scdn\.co|deezer|dzcdn|soundcloud|crunchyroll'
+       Label = 'Vidéo ou musique'; Color = '#9AA3B2'; Text = 'Tu reçois surtout de la vidéo ou du son. Ce qui part est minime (ce que tu regardes, ta position dans la vidéo).' },
+    @{ Id = 'game'; Rx = 'steamcommunity|steampowered|steamserver|valve\.net|riotgames|leagueoflegends|pvp\.net|epicgames|unrealengine|battle\.net|blizzard|ea\.com|origin\.com|ubisoft|ubi\.com|xboxlive|playstation|nintendo|netmarble|playfab|gamesparks|photonengine|faceit|easyanticheat|battleye'
+       Label = 'Jeu en ligne'; Color = '#22D37A'; Text = 'Tes actions en jeu, le chat, ton compte et parfois les vérifications de l''anti-triche.' },
+    @{ Id = 'update'; Rx = 'windowsupdate|delivery\.mp\.microsoft|\bdl\.|download|update|steamcontent|epicgames-download|akamaized|akamai|cloudfront|fastly|cdn|edgesuite|edgekey|content'
+       Label = 'Mise à jour ou téléchargement'; Color = '#9AA3B2'; Text = 'Le programme récupère des fichiers : mises à jour, jeux, images, pages.' },
+    @{ Id = 'cloud'; Rx = 'amazonaws|azure|cloudapp|googleapis|gstatic|cloudflare|herokuapp|digitalocean|ovh\.|hetzner|linode|vultr'
+       Label = 'Serveur de l''éditeur'; Color = '#9AA3B2'; Text = 'Échanges avec les serveurs du programme (hébergés dans un grand centre de données). Le contenu dépend du programme.' }
+)
+
+# Type d'une destination : d'après le nom du serveur, sinon d'après le port et le sens des échanges.
+function Get-DestType($Name, [int]$Port, [double]$Out, [double]$In, $App) {
+    $n = ([string]$Name).ToLower()
+    if ($Port -in 53, 853) { return @{ Id = 'dns'; Label = 'Recherche d''adresses'; Color = '#9AA3B2'; Text = 'Traduit les noms de sites en adresses. Très peu de données.' } }
+    if ($n) { foreach ($t in $DataTypes) { if ($n -match $t.Rx) { return $t } } }
+    if ($App -and $App.Name -match $RemoteTools) { return @($DataTypes | Where-Object { $_.Id -eq 'remote' })[0] }
+    if ($Out -gt 10MB -and $Out -gt 3 * $In) { return @{ Id = 'upload'; Label = 'Envoi important'; Color = '#F5A524'; Text = 'Le programme envoie bien plus qu''il ne reçoit : fichiers, vidéo ou sauvegarde. À vérifier si tu ne sais pas pourquoi.' } }
+    if ($In -gt 3 * [math]::Max(1.0, $Out) -and $In -gt 1MB) { return @{ Id = 'download'; Label = 'Téléchargement'; Color = '#9AA3B2'; Text = 'Le programme reçoit surtout des données (fichiers, contenus).' } }
+    if (-not $n) { return @{ Id = 'unknown'; Label = 'Serveur non identifié'; Color = '#5B6475'; Text = 'Adresse sans nom connu : impossible de savoir à quoi elle sert d''après son nom.' } }
+    @{ Id = 'other'; Label = 'Échanges avec le serveur'; Color = '#5B6475'; Text = 'Le nom du serveur ne dit pas précisément ce qui est échangé.' }
+}
+
+# Résumé par type pour un programme : { Type, Out, In, Count } du plus gros envoi au plus petit.
+function Get-AppDataTypes($St, $A) {
+    $sum = @{}
+    foreach ($d in @($A.Dest.Values | Where-Object { -not $_.Private })) {
+        $t = Get-DestType (Get-DestName $St $d) $d.Port $d.Out $d.In $A
+        if (-not $sum.ContainsKey($t.Id)) { $sum[$t.Id] = @{ Type = $t; Out = [double]0; In = [double]0; Count = 0 } }
+        $sum[$t.Id].Out += $d.Out; $sum[$t.Id].In += $d.In; $sum[$t.Id].Count++
+    }
+    @($sum.Values | Sort-Object @{ Expression = { $_.Out } } -Descending)
+}
+
+# ---------------------------------------------------------------------------
 # Affichage
 # ---------------------------------------------------------------------------
 function Get-AppSigLabel($A) {
@@ -390,6 +445,13 @@ function New-TrafficRow($A) {
     $r2 = New-Object System.Windows.Documents.Run "   $dests destination$(if ($dests -gt 1) {'s'})$(if ($A.Udp) { ', UDP' })$(if ($A.Live) { "   $($A.Live) connexion$(if ($A.Live -gt 1) {'s'}) ouverte$(if ($A.Live -gt 1) {'s'})" })"
     $r2.Foreground = Get-Brush '#9AA3B2'
     [void]$sub.Inlines.Add($r1); [void]$sub.Inlines.Add($r2)
+    # Type principal : le plus gros volume, un type identifié passe avant « non identifié »
+    $main = @(Get-AppDataTypes $script:Traffic $A | Sort-Object @{ Expression = { $_.Type.Id -notin 'unknown', 'other' } }, @{ Expression = { $_.Out + $_.In } }, @{ Expression = { $_.Count } } -Descending)[0]
+    if ($main) {
+        $r3 = New-Object System.Windows.Documents.Run "   $($main.Type.Label)"
+        $r3.Foreground = Get-Brush $main.Type.Color
+        [void]$sub.Inlines.Add($r3)
+    }
     [void]$sp.Children.Add($sub)
     Add-ToGrid $g $sp 1
     $vol = New-Object System.Windows.Controls.StackPanel
@@ -518,6 +580,47 @@ function Show-TrafficApp([string]$Key) {
         }
         [void]$body.Children.Add($row)
     }
+    [void]$body.Children.Add((New-SectionTitle 'CE QU''IL ENVOIE (PROBABLEMENT)'))
+    $types = @(Get-AppDataTypes $st $a)
+    if (-not $types.Count) { [void]$body.Children.Add((New-Text 'Rien vers Internet pour l''instant.' 13 '#5B6475')) }
+    foreach ($x in $types) {
+        $row = New-Grid @('*', 'Auto')
+        $row.Margin = New-Thickness 0 4 0 4
+        $left = New-Object System.Windows.Controls.StackPanel
+        $tb = New-Object System.Windows.Controls.TextBlock
+        $tb.FontSize = 13.5
+        $r1 = New-Object System.Windows.Documents.Run $x.Type.Label
+        $r1.Foreground = Get-Brush $x.Type.Color; $r1.FontWeight = 'SemiBold'
+        $r2 = New-Object System.Windows.Documents.Run "   $($x.Count) serveur$(if ($x.Count -gt 1) {'s'})"
+        $r2.Foreground = Get-Brush '#5B6475'; $r2.FontSize = 11.5
+        [void]$tb.Inlines.Add($r1); [void]$tb.Inlines.Add($r2)
+        [void]$left.Children.Add($tb)
+        [void]$left.Children.Add((New-Text $x.Type.Text 12 '#9AA3B2'))
+        Add-ToGrid $row $left 0
+        $v = New-Text "↑ $(Format-Bytes $x.Out)   ↓ $(Format-Bytes $x.In)" 12 '#C9CED8'
+        $v.VerticalAlignment = 'Center'; $v.Margin = New-Thickness 12 0 0 0
+        Add-ToGrid $row $v 1
+        [void]$body.Children.Add($row)
+    }
+    # Ce qu'il n'envoie pas : ce qui se mesure (volumes) et ce qui n'a pas été repéré (serveurs)
+    $ids = @($types | ForEach-Object { $_.Type.Id })
+    $not = @()
+    if ($a.Out -lt 5MB) { $not += "Pas de gros envoi : $(Format-Bytes $a.Out) en tout, trop peu pour des fichiers, des photos ou de la vidéo en quantité." }
+    elseif ($a.Out -gt 3 * $a.In -and $a.Out -gt 50MB) { $not += "Attention, gros envoi : $(Format-Bytes $a.Out) envoyés contre $(Format-Bytes $a.In) reçus. Ça ressemble à des fichiers, de la vidéo ou une sauvegarde." }
+    else { $not += "Envoi moyen ($(Format-Bytes $a.Out)) : normal pour un programme qui discute, joue ou navigue." }
+    if ($types.Count) {
+        if ('ads' -notin $ids) { $not += 'Pas de publicité ni de pistage repéré.' }
+        if ('telemetry' -notin $ids) { $not += 'Pas de statistiques d''utilisation repérées.' }
+        if ('remote' -notin $ids) { $not += 'Pas de prise en main à distance (image de ton écran).' }
+    }
+    foreach ($l in $not) {
+        $t = New-Text $l 12.5 $(if ($l -like 'Attention*') { $Colors.warn } else { '#C9CED8' })
+        $t.Margin = New-Thickness 0 4 0 0
+        [void]$body.Children.Add($t)
+    }
+    $n = New-Text "Déduit du nom des serveurs contactés et des volumes : le contenu, chiffré, n'est jamais lu.$(if ($a.Udp) { ' Les échanges UDP (jeu, voix) ne sont pas comptés ici.' })" 11.5 '#5B6475'
+    $n.Margin = New-Thickness 0 8 0 0
+    [void]$body.Children.Add($n)
     [void]$body.Children.Add((New-SectionTitle 'AVEC QUI IL COMMUNIQUE'))
     $dests = @($a.Dest.Values | Sort-Object @{ Expression = { $_.Out + $_.In } } -Descending | Select-Object -First 40)
     if (-not $dests.Count) { [void]$body.Children.Add((New-Text 'Aucune connexion vue pour l''instant.' 13 '#5B6475')) }
@@ -531,7 +634,15 @@ function Show-TrafficApp([string]$Key) {
         [void]$left.Children.Add($t)
         $pn = $PortNames[[int]$d.Port]
         $warnPort = $SusPorts.ContainsKey([int]$d.Port)
-        [void]$left.Children.Add((New-Text "$(if ($nm) { $d.Remote + ', ' })port $($d.Port)$(if ($pn) { ' : ' + $pn } elseif ($warnPort) { ' : ' + $SusPorts[[int]$d.Port] })$(if ($d.Live) { ', connexion ouverte' })" 11.5 $(if ($warnPort) { $Colors.warn } else { '#5B6475' })))
+        $dt = if ($d.Private) { @{ Label = 'Appareil de ton réseau'; Color = '#9AA3B2'; Text = 'Échange avec un appareil de chez toi (box, imprimante, TV...), rien ne sort sur Internet.' } } else { Get-DestType $nm $d.Port $d.Out $d.In $a }
+        $info = New-Object System.Windows.Controls.TextBlock
+        $info.FontSize = 11.5; $info.TextTrimming = 'CharacterEllipsis'; $info.ToolTip = $dt.Text
+        $ri = New-Object System.Windows.Documents.Run $dt.Label
+        $ri.Foreground = Get-Brush $dt.Color
+        $rp = New-Object System.Windows.Documents.Run "   $(if ($nm) { $d.Remote + ', ' })port $($d.Port)$(if ($pn) { ' : ' + $pn } elseif ($warnPort) { ' : ' + $SusPorts[[int]$d.Port] })$(if ($d.Live) { ', connexion ouverte' })"
+        $rp.Foreground = Get-Brush $(if ($warnPort) { $Colors.warn } else { '#5B6475' })
+        [void]$info.Inlines.Add($ri); [void]$info.Inlines.Add($rp)
+        [void]$left.Children.Add($info)
         Add-ToGrid $row $left 0
         $v = New-Text "↑ $(Format-Bytes $d.Out)   ↓ $(Format-Bytes $d.In)" 12 '#C9CED8'
         $v.VerticalAlignment = 'Center'

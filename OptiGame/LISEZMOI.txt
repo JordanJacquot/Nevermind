@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.24
+﻿OptiGame 1.0.25
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -48,7 +48,12 @@ L'application a deux grandes sections, dans le menu à gauche :
     dossier à risque, outil de Windows détourné, port utilisé par les virus
     ou Tor, gros envois inhabituels, prise en main à distance) et permet
     d'analyser le programme avec l'antivirus ou de lui bloquer Internet
-    (annulable). Le contenu des échanges, chiffré, n'est jamais lu.
+    (annulable). La fiche de chaque programme dit quel type de données il
+    envoie probablement (messages et appels, jeu en ligne, statistiques
+    d'utilisation, publicité et suivi, fichiers synchronisés, assistant IA,
+    mises à jour...) et ce qu'il n'envoie pas (pas de gros envoi, pas de
+    pistage repéré...), d'après le nom des serveurs contactés et les volumes.
+    Le contenu des échanges, chiffré, n'est jamais lu.
   - Réseau : scan de tous les appareils connectés à ton réseau (téléphones,
     consoles, TV, box...), avec leur fabricant. Les nouveaux appareils sont
     signalés d'un scan à l'autre : pratique pour repérer un intrus sur ton Wi-Fi.
