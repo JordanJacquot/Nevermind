@@ -85,6 +85,7 @@ function Start-GameSession([string]$Game, $Proc) {
     $script:GameSession = @{ Game = $Game; Pid = $Proc.Id; Closed = $closed; Start = Get-Date }
     Write-Log "Mode jeu: $Game lancé, applis fermées: $(($closed | ForEach-Object { $_.Name }) -join ', ')"
     if ((Test-FpsMeasure) -and -not $script:FpsTarget) { Start-FpsTarget $Proc.Id $Game $Proc.ProcessName }
+    if ((Test-LagMeasure) -and -not $script:LagSession) { try { Start-LagSession $Game $Proc.Id } catch { Write-Log "Lag: $_" } }
     Update-GameModeStatus
     if ($closed.Count) { Show-Notify 'Mode jeu activé' "$Game : $(($closed | ForEach-Object { $_.Name }) -join ', ') fermé$(if ($closed.Count -gt 1) {'s'}) pendant que tu joues." }
 }
@@ -94,6 +95,7 @@ function Stop-GameSession {
     $script:GameSession = $null
     if (-not $s) { return }
     if ($script:FpsTarget -and $script:FpsTarget.Pid -eq $s.Pid) { Stop-FpsTarget }
+    if ($script:LagSession -and $script:LagSession.Pid -eq $s.Pid) { try { Stop-LagSession } catch { Write-Log "Lag: $_" } }
     $failed = @()
     foreach ($c in $s.Closed) {
         if (-not $c.Path) { $failed += $c.Name; continue }
@@ -261,6 +263,7 @@ function Build-GameSections {
     Build-GameModeCard
     Build-FpsPanel
     Build-GameProfiles
+    Build-LagPanel
 }
 
 # ---------------------------------------------------------------------------
@@ -289,7 +292,7 @@ $FpsHotkeyId = 7001
 function Test-FpsMeasure { [bool](Get-Setting 'FpsMeasure' ([bool](Get-Setting 'FpsOverlay' $false))) }
 function Test-FpsOverlay { [bool](Get-Setting 'FpsOverlay' $false) }
 
-function Test-GameWatchNeeded { ([bool](Get-Setting 'GameMode' $false)) -or (Test-FpsMeasure) }
+function Test-GameWatchNeeded { ([bool](Get-Setting 'GameMode' $false)) -or (Test-FpsMeasure) -or (Test-LagMeasure) }
 
 function Update-GameWatch {
     if (Test-GameWatchNeeded) { Start-GameWatch } else { Stop-GameWatch }

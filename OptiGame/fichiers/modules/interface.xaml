@@ -394,7 +394,7 @@
           </Grid.RowDefinitions>
           <StackPanel>
             <TextBlock Style="{StaticResource H1}" Text="Optimisation gaming"/>
-            <TextBlock Style="{StaticResource Sub}" Text="Règle Windows pour tes jeux et suis tes FPS partie après partie."/>
+            <TextBlock Style="{StaticResource Sub}" Text="Règle Windows pour tes jeux, suis tes FPS et trouve d'où vient le lag."/>
           </StackPanel>
           <StackPanel x:Name="GamingTabs" Grid.Row="1" Orientation="Horizontal" Margin="0,16,0,14"/>
           <Grid Grid.Row="2">
@@ -426,6 +426,9 @@
             </Grid>
             <ScrollViewer x:Name="GPageFps" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
               <StackPanel x:Name="FpsPanel" Margin="0,0,8,0"/>
+            </ScrollViewer>
+            <ScrollViewer x:Name="GPageLag" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+              <StackPanel x:Name="LagPanel" Margin="0,0,8,0"/>
             </ScrollViewer>
             <ScrollViewer x:Name="GPageMode" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
               <StackPanel x:Name="GameModePanel" Margin="0,0,8,0"/>

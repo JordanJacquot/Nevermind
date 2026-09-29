@@ -55,12 +55,16 @@ function Get-TrafficApp([int]$ProcId) {
 function Update-TrafficDns {
     $st = $script:Traffic
     if (((Get-Date) - $st.DnsAt).TotalSeconds -lt 10) { return }
+    $job = $st.DnsJob
+    if ($job) {
+        if (-not $job.Handle.IsCompleted) { return }
+        try { foreach ($p in @($job.PS.EndInvoke($job.Handle))) { $x = ([string]$p) -split '\|', 2; if ($x.Count -eq 2) { $st.Dns[$x[0]] = $x[1] } } } catch {} finally { $job.PS.Dispose(); $st.DnsJob = $null }
+    }
     $st.DnsAt = Get-Date
-    try {
-        foreach ($e in @(Get-DnsClientCache -ErrorAction Stop | Where-Object { $_.Type -in 1, 28 -and $_.Data })) {
-            $st.Dns[[string]$e.Data] = ([string]$e.Entry).TrimEnd('.')
-        }
-    } catch {}
+    $ps = [PowerShell]::Create()
+    $ps.RunspacePool = $script:Pool
+    [void]$ps.AddScript('try { Get-DnsClientCache -ErrorAction Stop | Where-Object { $_.Type -in 1, 28 -and $_.Data } | ForEach-Object { "$($_.Data)|$(([string]$_.Entry).TrimEnd(''.''))" } } catch {}')
+    $st.DnsJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
 }
 
 function Update-Traffic {
@@ -332,7 +336,7 @@ function Get-ServerCache {
                 $arr = Get-Content $ServerFile -Raw -Encoding UTF8 | ConvertFrom-Json
                 foreach ($e in $arr) {
                     $age = try { ((Get-Date) - [datetime]::ParseExact([string]$e.D, 'yyyy-MM-dd', $null)).TotalDays } catch { 999 }
-                    if ($e.S -and $age -lt 60) { [void]$script:ServerCache.Add(@{ S = [string]$e.S; E = [string]$e.E; O = [string]$e.O; C = [string]$e.C; N = [string]$e.N; D = [string]$e.D }) }
+                    if ($e.S -and $e.O -and $age -lt 60) { [void]$script:ServerCache.Add(@{ S = [string]$e.S; E = [string]$e.E; O = [string]$e.O; C = [string]$e.C; N = [string]$e.N; D = [string]$e.D }) }
                 }
             }
         } catch {}
@@ -412,6 +416,16 @@ $ServerLookupWork = {
                 if (-not $fn -or $fn -match '-MNT$|^ORG-' -or $fn -cmatch '^[A-Z0-9]+(-[A-Z0-9]+)+$') { continue }
                 if ($kind -eq 'org' -or -not $best) { $best = $fn; $addr = $lab }
                 if ($kind -eq 'org') { break }
+            }
+            # Pas d'entreprise déclarée comme titulaire (fréquent chez les fournisseurs) : le nom du service qui gère l'adresse
+            if (-not $best) {
+                foreach ($en in @($o.entities)) {
+                    $fn = ''; $kind = ''
+                    foreach ($p in @($en.vcardArray[1])) { if ($p[0] -eq 'fn') { $fn = [string]$p[3] } elseif ($p[0] -eq 'kind') { $kind = [string]$p[3] } }
+                    if ($kind -notin 'org', 'group' -or -not $fn -or $fn -cmatch '^[A-Z0-9]+(-[A-Z0-9]+)+$') { continue }
+                    $fn = ($fn -replace '(?i)^local internet registry\s+', '' -replace '(?i)\s+(abuse|noc|contact|team|role)\b.*$', '').Trim()
+                    if ($fn.Length -ge 3) { $best = $fn; break }
+                }
             }
             $r.O = $best
             if (-not $r.C -and $addr) { $r.C = (($addr -split "`n")[-1]).Trim() }

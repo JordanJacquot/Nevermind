@@ -316,6 +316,43 @@ $script:T.Run.Add_Tick({
                 Show-WindowsPrivacy; Wait-TestMs 800; Save-TestShot 'microsoft'; Hide-TestPanel
                 "$(@($items | Where-Object { $_.On }).Count) réglage(s) sur $($items.Count) envoient plus que le minimum"
             }
+            Test-Step 'Lag en ligne (5 situations et vraie mesure)' {
+                $a = @(); for ($i = 0; $i -lt 60; $i++) { $a += $i * 0.5; $a += $(if ($i % 20 -eq 5) { -1 } else { 10 + ($i % 3) }) }
+                $ps = Get-PingStats ([double[]]$a)
+                Assert-Test ($ps.Loss -eq 5 -and $ps.Med -ge 10 -and $ps.Med -le 12 -and $ps.Spikes.Count -eq 3) "statistiques de ping fausses (perte $($ps.Loss), médiane $($ps.Med), pics $($ps.Spikes.Count))"
+                $good = @{ Med = 2; P95 = 4; Jit = 0.5; Loss = 0; Dead = $false }
+                $ref = @{ Med = 12; P95 = 20; Jit = 2; Loss = 0; Dead = $false }
+                $badRef = @{ Med = 15; P95 = 180; Jit = 25; Loss = 2; Dead = $false }
+                $mk = {
+                    param($gw, $rf, $srv, $extra)
+                    $r = @{ Game = 'Test'; Quick = $false; Seconds = 600; Wifi = $true; Vpn = $false; Signal = 45; SignalAvg = 55; Band = '2,4 GHz'; Channel = '6'; Etw = $true
+                        Server = @{ Ip = '1.2.3.4'; Port = 7000; Proto = 'udp'; Owner = 'Valve Corporation (États-Unis)' }; Isp = 'Orange (France)'
+                        Stats = @{ gw = $gw; ref = $rf; srv = $srv }; Spikes = 10; LocalSpikes = 0; BgSpikes = 0; BgApps = @(); Gaps = 0; MaxGap = 0 }
+                    if ($extra) { foreach ($k in $extra.Keys) { $r[$k] = $extra[$k] } }
+                    Get-LagDiagnosis $r
+                }
+                $cases = @(
+                    @('Wi-Fi', (& $mk @{ Med = 4; P95 = 80; Jit = 15; Loss = 3; Dead = $false } $ref $null), 'Le Wi-Fi fait laguer', 'bad'),
+                    @('téléchargement', (& $mk $good $badRef $null @{ BgSpikes = 8; BgApps = @(@{ Name = 'Steam'; Rate = 5MB }) }), 'Un téléchargement sature ta connexion', 'bad'),
+                    @('box', (& $mk $good $badRef $null), 'Ta connexion Internet sature ou décroche', 'bad'),
+                    @('serveur loin', (& $mk $good $ref @{ Med = 140; P95 = 150; Jit = 2; Loss = 0; Dead = $false }), 'Le serveur du jeu est loin', 'warn'),
+                    @('stable', (& $mk $good $ref @{ Med = 25; P95 = 30; Jit = 1; Loss = 0; Dead = $false }), 'Ta connexion était stable', 'ok')
+                )
+                foreach ($k in $cases) {
+                    $titles = @($k[1].Findings | ForEach-Object { $_.Title })
+                    Assert-Test ($titles -contains $k[2] -and $k[1].Level -eq $k[3]) "$($k[0]) : trouvé « $($titles -join ' / ') » ($($k[1].Level))"
+                }
+                # Vraie mesure de 8 secondes
+                $n0 = @(Get-LagSessions).Count
+                Start-LagSession 'Test rapide' 0 8
+                for ($i = 0; $i -lt 150 -and $script:LagSession; $i++) { Wait-TestMs 200 }
+                Assert-Test (-not $script:LagSession) 'la mesure ne s''arrête pas'
+                $last = @(Get-LagSessions)[-1]
+                Assert-Test (@(Get-LagSessions).Count -eq $n0 + 1 -and $last.Stats.ref.Med -gt 0) 'mesure réelle non enregistrée'
+                Wait-TestMs 800; Save-TestShot 'lag-mesure'; Hide-TestPanel
+                Show-Page 1; Set-GamingSubPage 2; Wait-TestMs 500; Save-TestShot 'lag'
+                "5 situations reconnues ; vraie mesure : box $(Format-Ms $last.Stats.gw.Med), fournisseur $(if ($last.Isp) { $last.Isp } elseif ($last.Stats.isp) { Format-Ms $last.Stats.isp.Med } else { 'non trouvé' }), Internet $(Format-Ms $last.Stats.ref.Med)"
+            }
             Test-Step 'Trafic : ce qui sort du PC' {
                 $ui.Tabs.SelectedIndex = $TrafficIndex
                 Wait-TestMs 6000

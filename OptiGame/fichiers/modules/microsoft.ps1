@@ -38,8 +38,15 @@ function Get-MsService([string]$Name) {
 function Get-SvcNames([int]$ProcId) {
     if (-not $script:SvcByPid) { $script:SvcByPid = @{} }
     if ($script:SvcByPid.ContainsKey($ProcId)) { return , $script:SvcByPid[$ProcId] }
-    $r = @(try { Get-CimInstance Win32_Service -Filter "ProcessId=$ProcId" -ErrorAction Stop | Sort-Object Name | ForEach-Object { @{ Name = [string]$_.Name; Title = [string]$_.DisplayName } } } catch {})
-    $script:SvcByPid[$ProcId] = $r
+    # Liste de tous les services relue au plus toutes les 5 secondes (instantané, sans WMI)
+    if (-not $script:SvcMapAt -or ((Get-Date) - $script:SvcMapAt).TotalSeconds -gt 5) {
+        $script:SvcMapAt = Get-Date
+        $map = @{}
+        try { foreach ($l in @([SvcMap]::Pids())) { $x = ([string]$l) -split '\|', 3; $k = [int]$x[0]; if (-not $map.ContainsKey($k)) { $map[$k] = @() }; $map[$k] += @{ Name = $x[1]; Title = $x[2] } } } catch {}
+        $script:SvcMapAll = $map
+    }
+    $r = @($script:SvcMapAll[$ProcId] | Where-Object { $_ } | Sort-Object { $_.Name })
+    if ($r.Count) { $script:SvcByPid[$ProcId] = $r }
     , $r
 }
 

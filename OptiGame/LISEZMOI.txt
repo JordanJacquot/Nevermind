@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.28
+﻿OptiGame 1.0.29
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -42,6 +42,13 @@ CE QUE FAIT L'APPLICATION
 -------------------------
 L'application a deux grandes sections, dans le menu à gauche :
   - Ordinateur : l'accueil, avec une carte pour chaque fonction ci dessous.
+  - Lag en ligne (page Gaming) : pendant tes parties Steam et Epic, ou en
+    test rapide de 30 secondes, OptiGame mesure chaque étape du chemin (ton
+    PC vers ta box, ta box vers ton fournisseur, Internet, le serveur du jeu)
+    et t'explique d'où vient le lag : Wi-Fi, téléchargement en arrière plan,
+    box ou fournisseur, serveur trop loin ou qui a des soucis, VPN. Avec des
+    conseils concrets et des corrections annulables. En administrateur, il
+    repère le vrai serveur du jeu (même en UDP).
   - Trafic : ce qui sort de ton PC. Quels programmes communiquent avec
     Internet, avec quels sites, combien ils envoient et reçoivent, en direct.
     OptiGame signale ce qui est anormal (programme non signé caché dans un

@@ -97,7 +97,7 @@ function Start-Live {
 # Onglet gaming
 # ---------------------------------------------------------------------------
 function Set-GamingSubPage([int]$Index) {
-    $pages = @($ui.GPageTweaks, $ui.GPageFps, $ui.GPageMode, $ui.GPageProfiles)
+    $pages = @($ui.GPageTweaks, $ui.GPageFps, $ui.GPageLag, $ui.GPageMode, $ui.GPageProfiles)
     for ($i = 0; $i -lt $pages.Count; $i++) {
         $pages[$i].Visibility = if ($i -eq $Index) { 'Visible' } else { 'Collapsed' }
         $b = $script:GTabs[$i]
@@ -113,7 +113,7 @@ function Build-GamingTabs {
     if ($script:GTabs) { return }
     $script:GTabs = @()
     $i = 0
-    foreach ($label in 'Réglages Windows', 'Mes parties', 'Mode jeu', 'Profils par jeu') {
+    foreach ($label in 'Réglages Windows', 'Mes parties', 'Lag en ligne', 'Mode jeu', 'Profils par jeu') {
         $b = New-Object System.Windows.Controls.Border
         $b.CornerRadius = [System.Windows.CornerRadius]::new(16)
         $b.Padding = New-Thickness 16 7 16 7

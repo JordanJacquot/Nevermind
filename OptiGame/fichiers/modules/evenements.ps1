@@ -31,6 +31,8 @@ $Window.Add_Closed({
     try { Unregister-FpsHotkey } catch {}
     try { if ($script:TrafficTimer) { $script:TrafficTimer.Stop() } } catch {}
     try { [FrameMon]::Stop() } catch {}
+    try { if ($script:LagSession) { $script:LagSession = $null; if ($script:LagTimer) { $script:LagTimer.Stop() }; [LagMon]::Stop() } } catch {}
+    try { if ([NetFlow]::Running) { [NetFlow]::Stop() } } catch {}
     try { if ($script:NotifyIcon) { $script:NotifyIcon.Visible = $false; $script:NotifyIcon.Dispose() } } catch {}
     if ($Splash) { try { $Splash.Close() } catch {} }
     # En dernier : fin de la boucle de l'app.

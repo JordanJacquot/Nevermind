@@ -1459,3 +1459,332 @@ public static class TrafficMon
         return outp.ToArray();
     }
 }
+
+
+// Services Windows et processus qui les héberge (svchost), sans WMI : instantané.
+public static class SvcMap
+{
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern IntPtr OpenSCManager(string machine, string db, uint access);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool EnumServicesStatusEx(IntPtr scm, int infoLevel, uint type, uint state, IntPtr buf, uint bufSize, out uint needed, out uint count, ref uint resume, string group);
+    [DllImport("advapi32.dll")]
+    static extern bool CloseServiceHandle(IntPtr h);
+
+    // « pid|nom|nom affiché » pour chaque service en marche
+    public static string[] Pids()
+    {
+        var outp = new List<string>();
+        IntPtr scm = OpenSCManager(null, null, 0x0004);
+        if (scm == IntPtr.Zero) return outp.ToArray();
+        IntPtr buf = IntPtr.Zero;
+        try
+        {
+            uint needed, count, resume = 0;
+            EnumServicesStatusEx(scm, 0, 0x30, 1, IntPtr.Zero, 0, out needed, out count, ref resume, null);
+            if (needed == 0) return outp.ToArray();
+            buf = Marshal.AllocHGlobal((int)needed + 4096);
+            resume = 0;
+            if (!EnumServicesStatusEx(scm, 0, 0x30, 1, buf, needed + 4096, out needed, out count, ref resume, null)) return outp.ToArray();
+            int ps = IntPtr.Size;
+            int size = ps * 2 + 36;
+            if (size % ps != 0) size += ps - size % ps;
+            for (int i = 0; i < count; i++)
+            {
+                IntPtr e = new IntPtr(buf.ToInt64() + (long)i * size);
+                string name = Marshal.PtrToStringUni(Marshal.ReadIntPtr(e));
+                string disp = Marshal.PtrToStringUni(Marshal.ReadIntPtr(e, ps));
+                int pid = Marshal.ReadInt32(e, ps * 2 + 28);
+                if (pid > 0) outp.Add(pid + "|" + name + "|" + (disp ?? "").Replace("|", " "));
+            }
+        }
+        finally { if (buf != IntPtr.Zero) Marshal.FreeHGlobal(buf); CloseServiceHandle(scm); }
+        return outp.ToArray();
+    }
+}
+
+// Échanges réseau par programme en temps réel (fournisseur Windows « Kernel-Network », UDP et TCP).
+// Donne les vraies destinations UDP, que Windows ne liste nulle part ailleurs. Demande les droits admin.
+public static class NetFlow
+{
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+    static extern uint StartTraceW(out ulong handle, string name, IntPtr props);
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode)]
+    static extern uint ControlTraceW(ulong handle, string name, IntPtr props, uint code);
+    [DllImport("advapi32.dll")]
+    static extern uint EnableTraceEx2(ulong handle, ref Guid provider, uint code, byte level, ulong anyKw, ulong allKw, uint timeout, IntPtr param);
+    [DllImport("advapi32.dll")]
+    static extern ulong OpenTraceW(IntPtr logfile);
+    [DllImport("advapi32.dll")]
+    static extern uint ProcessTrace(ulong[] handles, uint count, IntPtr start, IntPtr end);
+    [DllImport("advapi32.dll")]
+    static extern uint CloseTrace(ulong handle);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    delegate void RecordCallback(IntPtr rec);
+
+    const string Session = "OptiGame-Reseau";
+    static Guid Provider = new Guid("7DD42A49-5329-4832-8DFD-43D979153A88");
+    static RecordCallback cb;
+    static IntPtr logfile = IntPtr.Zero;
+    static ulong traceHandle, sessionHandle;
+    static System.Threading.Thread worker;
+    static readonly object sync = new object();
+    static Dictionary<string, Flow> flows = new Dictionary<string, Flow>();
+    static HashSet<string> local = new HashSet<string>();
+    public static string LastError = "";
+    public static volatile bool Running;
+
+    class Flow { public int Pid; public string Proto, Ip; public int Port; public long PktOut, PktIn, BytesOut, BytesIn, LastIn, LastAny; public int Gaps100, Gaps250; public double MaxGap; }
+
+    static IntPtr NewProps()
+    {
+        int size = 120 + 1024;
+        IntPtr p = Marshal.AllocHGlobal(size);
+        for (int i = 0; i < size; i++) Marshal.WriteByte(p, i, 0);
+        Marshal.WriteInt32(p, 0, size);          // Wnode.BufferSize
+        Marshal.WriteInt32(p, 40, 1);            // Wnode.ClientContext : horloge QPC
+        Marshal.WriteInt32(p, 44, 0x00020000);   // WNODE_FLAG_TRACED_GUID
+        Marshal.WriteInt32(p, 48, 64);           // BufferSize (Ko)
+        Marshal.WriteInt32(p, 64, 0x100);        // EVENT_TRACE_REAL_TIME_MODE
+        Marshal.WriteInt32(p, 68, 1);            // FlushTimer : 1 s
+        Marshal.WriteInt32(p, 116, 120);         // LoggerNameOffset
+        return p;
+    }
+
+    public static bool Start()
+    {
+        if (Running) return true;
+        LastError = "";
+        if (IntPtr.Size != 8) { LastError = "Windows 32 bits non pris en charge"; return false; }
+        lock (sync) flows.Clear();
+        local.Clear();
+        try
+        {
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                foreach (var ua in ni.GetIPProperties().UnicastAddresses) local.Add(ua.Address.ToString().Split('%')[0]);
+        }
+        catch { }
+        IntPtr props = NewProps();
+        try
+        {
+            uint r = StartTraceW(out sessionHandle, Session, props);
+            if (r == 183)   // une session restée ouverte (app fermée brutalement) : on la remplace
+            {
+                ControlTraceW(0, Session, props, 1);
+                Marshal.FreeHGlobal(props); props = NewProps();
+                r = StartTraceW(out sessionHandle, Session, props);
+            }
+            if (r != 0) { LastError = r == 5 ? "droits administrateur nécessaires" : "StartTrace " + r; return false; }
+            r = EnableTraceEx2(sessionHandle, ref Provider, 1, 5, 0x30, 0, 0, IntPtr.Zero);
+            if (r != 0) { LastError = "EnableTrace " + r; Stop(); return false; }
+        }
+        finally { Marshal.FreeHGlobal(props); }
+
+        cb = OnRecord;
+        logfile = Marshal.AllocHGlobal(448);
+        for (int i = 0; i < 448; i++) Marshal.WriteByte(logfile, i, 0);
+        Marshal.WriteIntPtr(logfile, 8, Marshal.StringToHGlobalUni(Session));   // LoggerName
+        Marshal.WriteInt32(logfile, 28, 0x100 | 0x10000000);                    // temps réel, EVENT_RECORD
+        Marshal.WriteIntPtr(logfile, 424, Marshal.GetFunctionPointerForDelegate(cb));
+        traceHandle = OpenTraceW(logfile);
+        if (traceHandle == ulong.MaxValue) { LastError = "OpenTrace " + Marshal.GetLastWin32Error(); Stop(); return false; }
+        Running = true;
+        worker = new System.Threading.Thread(() => { try { ProcessTrace(new[] { traceHandle }, 1, IntPtr.Zero, IntPtr.Zero); } catch (Exception ex) { LastError = ex.Message; } Running = false; });
+        worker.IsBackground = true;
+        worker.Start();
+        return true;
+    }
+
+    public static void Stop()
+    {
+        IntPtr props = NewProps();
+        try { ControlTraceW(0, Session, props, 1); } finally { Marshal.FreeHGlobal(props); }
+        if (traceHandle != 0 && traceHandle != ulong.MaxValue) { CloseTrace(traceHandle); traceHandle = 0; }
+        if (worker != null) { worker.Join(2000); worker = null; }
+        if (logfile != IntPtr.Zero) { Marshal.FreeHGlobal(Marshal.ReadIntPtr(logfile, 8)); Marshal.FreeHGlobal(logfile); logfile = IntPtr.Zero; }
+        Running = false;
+    }
+
+    static string Ip4(IntPtr p, int off) { return Marshal.ReadByte(p, off) + "." + Marshal.ReadByte(p, off + 1) + "." + Marshal.ReadByte(p, off + 2) + "." + Marshal.ReadByte(p, off + 3); }
+    static string Ip6(IntPtr p, int off) { var b = new byte[16]; Marshal.Copy(new IntPtr(p.ToInt64() + off), b, 0, 16); return new System.Net.IPAddress(b).ToString(); }
+    static int Port(IntPtr p, int off) { return (Marshal.ReadByte(p, off) << 8) | Marshal.ReadByte(p, off + 1); }
+
+    static void OnRecord(IntPtr rec)
+    {
+        try
+        {
+            int id = (ushort)Marshal.ReadInt16(rec, 40);
+            bool v6, send, udp;
+            switch (id)
+            {
+                case 10: v6 = false; send = true; udp = false; break;
+                case 11: v6 = false; send = false; udp = false; break;
+                case 26: v6 = true; send = true; udp = false; break;
+                case 27: v6 = true; send = false; udp = false; break;
+                case 42: v6 = false; send = true; udp = true; break;
+                case 43: v6 = false; send = false; udp = true; break;
+                case 58: v6 = true; send = true; udp = true; break;
+                case 59: v6 = true; send = false; udp = true; break;
+                default: return;
+            }
+            int len = (ushort)Marshal.ReadInt16(rec, 86);
+            IntPtr d = Marshal.ReadIntPtr(rec, 96);
+            if (d == IntPtr.Zero || len < (v6 ? 44 : 20)) return;
+            long ts = Marshal.ReadInt64(rec, 16);
+            int pid = Marshal.ReadInt32(d, 0);
+            int size = Marshal.ReadInt32(d, 4);
+            // daddr, saddr, dport, sport : l'autre machine est celle dont l'adresse n'est pas à ce PC
+            string da = v6 ? Ip6(d, 8) : Ip4(d, 8), sa = v6 ? Ip6(d, 24) : Ip4(d, 12);
+            int dp = v6 ? Port(d, 40) : Port(d, 16), sp = v6 ? Port(d, 42) : Port(d, 18);
+            bool dLocal = local.Contains(da);
+            string ip = dLocal ? sa : da; int port = dLocal ? sp : dp;
+            string key = pid + "|" + (udp ? "udp" : "tcp") + "|" + ip + "|" + port;
+            lock (sync)
+            {
+                Flow f;
+                if (!flows.TryGetValue(key, out f))
+                {
+                    if (flows.Count > 20000) return;
+                    f = new Flow { Pid = pid, Proto = udp ? "udp" : "tcp", Ip = ip, Port = port };
+                    flows[key] = f;
+                }
+                if (send) { f.PktOut++; f.BytesOut += size; }
+                else
+                {
+                    if (f.LastIn != 0)
+                    {
+                        double gap = (ts - f.LastIn) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                        if (gap > 100) f.Gaps100++;
+                        if (gap > 250) f.Gaps250++;
+                        if (gap > f.MaxGap && gap < 10000) f.MaxGap = gap;
+                    }
+                    f.PktIn++; f.BytesIn += size; f.LastIn = ts;
+                }
+                f.LastAny = ts;
+            }
+        }
+        catch { }
+    }
+
+    // « pid|proto|ip|port|paquets envoyés|paquets reçus|octets envoyés|octets reçus|trous>100ms|trous>250ms|plus long trou ms|ms depuis le dernier paquet »
+    public static string[] Snapshot()
+    {
+        var outp = new List<string>();
+        long now = System.Diagnostics.Stopwatch.GetTimestamp();
+        double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        lock (sync)
+        {
+            foreach (var x in flows.Values)
+                outp.Add(x.Pid + "|" + x.Proto + "|" + x.Ip + "|" + x.Port + "|" + x.PktOut + "|" + x.PktIn + "|" + x.BytesOut + "|" + x.BytesIn + "|" + x.Gaps100 + "|" + x.Gaps250 + "|" + (int)x.MaxGap + "|" + (long)((now - x.LastAny) * f));
+        }
+        return outp.ToArray();
+    }
+}
+
+// Pings continus vers plusieurs cibles (box, fournisseur, Internet, serveur du jeu) et tracé du chemin.
+public static class LagMon
+{
+    class Target { public string Host; public List<double> T = new List<double>(); public List<double> R = new List<double>(); public System.Threading.Thread Th; }
+    static readonly object sync = new object();
+    static List<Target> targets = new List<Target>();
+    static System.Diagnostics.Stopwatch clock = new System.Diagnostics.Stopwatch();
+    static volatile bool running;
+    static int interval = 500;
+
+    public static void Start(int intervalMs)
+    {
+        Stop();
+        lock (sync) targets.Clear();
+        interval = intervalMs;
+        clock.Restart();
+        running = true;
+    }
+
+    public static int Add(string host)
+    {
+        var t = new Target { Host = host };
+        int idx;
+        lock (sync) { targets.Add(t); idx = targets.Count - 1; }
+        t.Th = new System.Threading.Thread(() =>
+        {
+            using (var ping = new System.Net.NetworkInformation.Ping())
+            {
+                byte[] payload = new byte[32];
+                while (running)
+                {
+                    double t0 = clock.Elapsed.TotalMilliseconds;
+                    double rtt = -1;
+                    try
+                    {
+                        var r = ping.Send(host, 1000, payload);
+                        if (r.Status == System.Net.NetworkInformation.IPStatus.Success) rtt = Math.Max(0.5, (double)r.RoundtripTime);
+                    }
+                    catch { }
+                    lock (sync) { t.T.Add(t0 / 1000.0); t.R.Add(rtt); }
+                    int wait = interval - (int)(clock.Elapsed.TotalMilliseconds - t0);
+                    if (wait > 0) System.Threading.Thread.Sleep(wait);
+                }
+            }
+        });
+        t.Th.IsBackground = true;
+        t.Th.Start();
+        return idx;
+    }
+
+    public static void Stop()
+    {
+        running = false;
+        List<Target> copy;
+        lock (sync) copy = new List<Target>(targets);
+        foreach (var t in copy) if (t.Th != null) t.Th.Join(1500);
+    }
+
+    public static double Elapsed { get { return clock.Elapsed.TotalSeconds; } }
+
+    // Mesures d'une cible : [t0, ping0, t1, ping1, ...], ping -1 = perdu
+    public static double[] Series(int idx)
+    {
+        lock (sync)
+        {
+            if (idx < 0 || idx >= targets.Count) return new double[0];
+            var t = targets[idx];
+            var a = new double[t.T.Count * 2];
+            for (int i = 0; i < t.T.Count; i++) { a[i * 2] = t.T[i]; a[i * 2 + 1] = t.R[i]; }
+            return a;
+        }
+    }
+
+    // Tracé du chemin : « étape|adresse|ms » (adresse vide si le routeur ne répond pas)
+    public static string[] TraceRoute(string host, int maxHops, int timeoutMs)
+    {
+        var outp = new List<string>();
+        using (var ping = new System.Net.NetworkInformation.Ping())
+        {
+            byte[] payload = new byte[32];
+            for (int ttl = 1; ttl <= maxHops; ttl++)
+            {
+                string addr = ""; double ms = -1; bool done = false;
+                for (int k = 0; k < 2; k++)
+                {
+                    try
+                    {
+                        var sw = System.Diagnostics.Stopwatch.StartNew();
+                        var r = ping.Send(host, timeoutMs, payload, new System.Net.NetworkInformation.PingOptions(ttl, true));
+                        if (r.Status == System.Net.NetworkInformation.IPStatus.TtlExpired || r.Status == System.Net.NetworkInformation.IPStatus.Success)
+                        {
+                            addr = r.Address.ToString();
+                            ms = r.Status == System.Net.NetworkInformation.IPStatus.Success ? r.RoundtripTime : sw.Elapsed.TotalMilliseconds;
+                            done = r.Status == System.Net.NetworkInformation.IPStatus.Success;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+                outp.Add(ttl + "|" + addr + "|" + (int)ms);
+                if (done) break;
+            }
+        }
+        return outp.ToArray();
+    }
+}
