@@ -1293,6 +1293,23 @@ public static class TrafficMon
     [DllImport("iphlpapi.dll")] static extern uint GetPerTcp6ConnectionEStats(ref Tcp6Row row, int type, IntPtr rw, uint rwVersion, uint rwSize, IntPtr ros, uint rosVersion, uint rosSize, IntPtr rod, uint rodVersion, uint rodSize);
 
     const int EstatsData = 1;
+
+    // Emplacement d'un programme, même protégé par un anti-triche (droit de lecture minimal).
+    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int flags, System.Text.StringBuilder name, ref int size);
+    public static string GetProcessPath(int pid)
+    {
+        IntPtr h = OpenProcess(0x1000, false, pid);
+        if (h == IntPtr.Zero) return "";
+        try
+        {
+            var sb = new System.Text.StringBuilder(1024);
+            int size = sb.Capacity;
+            return QueryFullProcessImageName(h, 0, sb, ref size) ? sb.ToString() : "";
+        }
+        finally { CloseHandle(h); }
+    }
     static readonly HashSet<string> enabled = new HashSet<string>();
     public static bool CountersOk;   // faux si Windows refuse d'activer le comptage (pas administrateur)
 

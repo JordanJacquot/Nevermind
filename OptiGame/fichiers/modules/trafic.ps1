@@ -35,6 +35,7 @@ function Get-TrafficApp([int]$ProcId) {
     $p = Get-Process -Id $ProcId -ErrorAction SilentlyContinue
     $name = if ($ProcId -eq 4) { 'System' } elseif ($p) { $p.ProcessName } else { "Programme $ProcId" }
     $path = if ($p) { try { [string]$p.Path } catch { '' } } else { '' }
+    if (-not $path -and $ProcId -gt 4) { try { $path = [TrafficMon]::GetProcessPath($ProcId) } catch {} }
     $key = if ($ProcId -eq $PID) { 'optigame' } elseif ($path) { $path.ToLower() } else { "nom:$($name.ToLower())" }
     if (-not $st.Apps.ContainsKey($key)) {
         $desc = ''
@@ -146,28 +147,71 @@ function Stop-TrafficWatch {
 # ---------------------------------------------------------------------------
 # Ce qui est anormal
 # ---------------------------------------------------------------------------
+# « C'est normal » (approuvé par l'utilisateur) et « analysé sans rien trouver » : mémorisés.
+function Get-TrafficMarks([string]$Name) {
+    $h = @{}
+    foreach ($l in @(Get-Setting $Name @())) { $x = ([string]$l) -split '\|', 2; if ($x[0]) { $h[$x[0]] = $(if ($x.Count -gt 1) { $x[1] } else { '' }) } }
+    $h
+}
+function Set-TrafficMark([string]$Name, [string]$Key, [bool]$On) {
+    $h = Get-TrafficMarks $Name
+    if ($On) { $h[$Key] = (Get-Date).ToString('dd/MM/yyyy') } else { $h.Remove($Key) }
+    Set-Setting $Name @($h.GetEnumerator() | ForEach-Object { "$($_.Key)|$($_.Value)" })
+}
+function Refresh-TrafficAlerts {
+    Test-TrafficAlerts
+    $script:TrafficAlertKeys = $null
+    Update-TrafficView
+}
+function Set-TrafficTrust($App, [bool]$On) {
+    if ($On -and -not (Confirm-Action "Faire confiance à « $($App.Title) » ?`n`nIl ne sera plus signalé. Tu pourras revenir sur ce choix depuis sa fiche.")) { return }
+    Set-TrafficMark 'TrafficTrusted' $App.Key $On
+    Refresh-TrafficAlerts
+    Set-Status $(if ($On) { "« $($App.Title) » est approuvé." } else { "« $($App.Title) » sera de nouveau surveillé." })
+}
+function Invoke-TrafficScan($App) {
+    Invoke-DefenderScan 'CustomScan' @($App.Path) "Analyse de $($App.Title)"
+    if ($script:LastScanResult -eq 'clean') { Set-TrafficMark 'TrafficScanned' $App.Key $true; Refresh-TrafficAlerts }
+}
+# Dossiers des jeux installés : les jeux sont souvent non signés, ce n'est pas suspect.
+function Test-GamePath([string]$Path) {
+    if (-not $Path) { return $false }
+    if ($Path -match '(?i)\\steamapps\\common\\|\\Epic Games\\|\\Riot Games\\|\\Battle\.net\\|\\Ubisoft Game Launcher\\games\\|\\EA Games\\|\\GOG Galaxy\\Games\\|\\XboxGames\\|\\Netmarble Game\\|-Win64-Shipping\.exe$|\\Binaries\\Win64\\') { return $true }
+    if ($script:GameIndex) { foreach ($g in $script:GameIndex.Values) { foreach ($e in $g.Exes) { if ($Path.ToLower() -eq $e) { return $true } } } }
+    $false
+}
+
 function Get-TrafficAlerts {
     $st = $script:Traffic
     $alerts = @()
     if (-not $st) { return $alerts }
+    $trusted = Get-TrafficMarks 'TrafficTrusted'
+    $scanned = Get-TrafficMarks 'TrafficScanned'
     foreach ($a in $st.Apps.Values) {
-        if ($a.IsSelf) { continue }
+        if ($a.IsSelf -or $trusted.ContainsKey($a.Key)) { continue }
         $net = @($a.Dest.Values | Where-Object { -not $_.Private })
         if (-not $net.Count) { continue }
         $why = @(); $level = 'info'
-        $unsigned = $a.Sig -and $a.Sig -ne 'Valid'
+        # Analysé sans rien trouver, ou jeu installé : « non signé » n'est plus un indice
+        $unsigned = $a.Sig -and $a.Sig -notin 'Valid', 'NoPath' -and -not $scanned.ContainsKey($a.Key) -and -not (Test-GamePath $a.Path)
         $risky = $a.Path -match '(?i)\\(AppData\\Local\\Temp|Temp|Downloads|Téléchargements|Users\\Public)\\' -or $a.Path -match '(?i)^[a-z]:\\ProgramData\\[^\\]+\.exe$' -or $a.Path -match '(?i)\\AppData\\Roaming\\[^\\]+\.exe$'
         if ($a.Sig -eq 'HashMismatch') { $why += 'sa signature numérique est invalide (le fichier a été modifié)'; $level = 'bad' }
         if ($unsigned -and $risky) { $why += 'il n''est signé par aucun éditeur et il est rangé dans un dossier où les virus aiment se cacher'; $level = 'bad' }
         elseif ($unsigned -and $a.Sig -ne 'HashMismatch') { $why += 'il n''est signé par aucun éditeur connu'; if ($level -ne 'bad') { $level = 'warn' } }
         if ($a.Name -match $LolBins) { $why += 'c''est un outil de Windows que les virus détournent souvent pour télécharger ou envoyer des données'; if ($level -ne 'bad') { $level = 'warn' } }
-        $ports = @($net | Where-Object { $SusPorts.ContainsKey([int]$_.Port) } | ForEach-Object { "port $($_.Port) : $($SusPorts[[int]$_.Port])" } | Select-Object -Unique)
+        # Un programme signé par son éditeur (un jeu, par exemple) peut utiliser ces ports pour ses serveurs :
+        # pour lui, seuls les ports du réseau Tor restent signalés.
+        $signedOk = $a.Sig -eq 'Valid'
+        $ports = @($net | Where-Object { $SusPorts.ContainsKey([int]$_.Port) -and (-not $signedOk -or [int]$_.Port -in 9001, 9030, 9050, 9150) } | ForEach-Object { "port $($_.Port) : $($SusPorts[[int]$_.Port])" } | Select-Object -Unique)
         if ($ports.Count) { $why += "il utilise un port inhabituel ($($ports -join ', '))"; if ($level -ne 'bad') { $level = 'warn' } }
         if ($a.Out -gt 200MB -and $a.Out -gt 3 * $a.In -and $a.Name -notmatch $UploadOk) { $why += "il envoie beaucoup plus qu'il ne reçoit ($(Format-Bytes $a.Out) envoyés)"; if ($level -ne 'bad') { $level = 'warn' } }
         $ips = @($net | ForEach-Object { $_.Remote } | Select-Object -Unique)
         if ($ips.Count -gt 150 -and $a.Name -notmatch $UploadOk) { $why += "il contacte énormément d'adresses différentes ($($ips.Count))"; if ($level -ne 'bad') { $level = 'warn' } }
         if ($a.Name -match $RemoteTools) { $why += 'c''est un logiciel de prise en main à distance : quelqu''un peut voir et contrôler ton écran'; if ($level -eq 'info') { $level = 'warn' } }
-        if ($why.Count) { $alerts += @{ App = $a; Level = $level; Why = $why } }
+        if ($why.Count) {
+            if ($scanned.ContainsKey($a.Key)) { $why += "analysé par l'antivirus le $($scanned[$a.Key]) : aucun virus trouvé" }
+            $alerts += @{ App = $a; Level = $level; Why = $why }
+        }
     }
     @($alerts | Sort-Object @{ Expression = { if ($_.Level -eq 'bad') { 0 } elseif ($_.Level -eq 'warn') { 1 } else { 2 } } })
 }
@@ -278,6 +322,7 @@ function New-TrafficRow($A) {
     $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'
     [void]$sp.Children.Add($t)
     $sig = Get-AppSigLabel $A
+    if ((Get-TrafficMarks 'TrafficTrusted').ContainsKey($A.Key)) { $sig = @("Approuvé par toi   $($sig[0])", '#9AA3B2') }
     $dests = @($A.Dest.Values | Where-Object { -not $_.Private }).Count
     $sub = New-Object System.Windows.Controls.TextBlock
     $sub.FontSize = 11.5; $sub.TextTrimming = 'CharacterEllipsis'
@@ -309,8 +354,9 @@ function New-TrafficRow($A) {
 
 function Get-TrafficAlertActions($A) {
     $acts = @()
+    $acts += @{ Label = 'C''est normal, je lui fais confiance'; NoRefresh = $true; Arg = $A; Script = { param($x) Hide-TestPanel; Set-TrafficTrust $x $true } }
     if ($A.Path) {
-        $acts += @{ Label = 'Analyser avec l''antivirus'; NoRefresh = $true; Arg = $A; Script = { param($x) Invoke-DefenderScan 'CustomScan' @($x.Path) "Analyse de $($x.Title)" } }
+        $acts += @{ Label = 'Analyser avec l''antivirus'; NoRefresh = $true; Arg = $A; Script = { param($x) Invoke-TrafficScan $x } }
         $acts += @{ Label = 'Bloquer l''accès à Internet'; NoRefresh = $true; Arg = $A; Script = { param($x) Block-TrafficApp $x } }
         $acts += @{ Label = 'Ouvrir l''emplacement'; NoRefresh = $true; Arg = $A.Path; Script = { param($x) Start-Process 'explorer.exe' -ArgumentList "/select,`"$x`"" } }
     }
@@ -384,6 +430,17 @@ function Show-TrafficApp([string]$Key) {
         @('Reçu', (Format-Bytes $a.In)),
         @('Utilise aussi l''UDP', $(if ($a.Udp) { 'Oui (jeux, appels, vidéo : destinations non visibles)' } else { 'Non' }))
     )))
+    $trustDate = (Get-TrafficMarks 'TrafficTrusted')[$Key]
+    if ($null -ne $trustDate) {
+        $tr = New-Grid @('*', 'Auto')
+        $tr.Margin = New-Thickness 0 10 0 0
+        Add-ToGrid $tr (New-Text "Tu as approuvé ce programme$(if ($trustDate) { " le $trustDate" }) : il n'est plus signalé." 12.5 '#9AA3B2') 0
+        $ub = New-Button 'Ne plus lui faire confiance'
+        $ub.Tag = $a
+        $ub.Add_Click({ param($s, $e) $x = $s.Tag; Invoke-Safe { Hide-TestPanel; Set-TrafficTrust $x $false } })
+        Add-ToGrid $tr $ub 1
+        [void]$body.Children.Add($tr)
+    }
     if ($al) {
         [void]$body.Children.Add((New-SectionTitle 'POURQUOI IL EST SIGNALÉ'))
         $c = New-SecurityCard @{ Status = $al.Level; Title = $(if ($al.Level -eq 'bad') { 'Comportement suspect' } else { 'À vérifier' }); Detail = ($al.Why -join ' ; ') + '.'; Actions = (Get-TrafficAlertActions $a) }
@@ -391,7 +448,7 @@ function Show-TrafficApp([string]$Key) {
     } elseif ($a.Path) {
         $row = New-Object System.Windows.Controls.WrapPanel
         $row.Margin = New-Thickness 0 10 0 0
-        foreach ($act in (Get-TrafficAlertActions $a)) {
+        foreach ($act in @(Get-TrafficAlertActions $a | Select-Object -Skip 1)) {
             $b = New-Button $act.Label
             $b.Margin = New-Thickness 0 0 8 0
             $b.Tag = $act

@@ -320,6 +320,23 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($v -and $v.Level -eq 'bad') "programme suspect non signalé ($($v.Level))"
                 Assert-Test ($u -and $u.Level -eq 'warn') 'gros envoi d''un programme inconnu non signalé'
                 Assert-Test (-not @($alerts | Where-Object { $_.App.Key -in 'test:onedrive', 'test:self' }).Count) 'OneDrive ou OptiGame signalé à tort'
+                # Jeu signé qui parle à un serveur sur le port 5555, jeu non signé dans Steam : rien à signaler
+                & $mk 'test:jeu' 'Jeu' 'D:\Jeux\Jeu\Binaries\Win64\Jeu-Win64-Shipping.exe' 'Valid' 5555 1MB 50MB $false
+                & $mk 'test:jeu2' 'Jeu2' 'D:\steam\steamapps\common\Jeu2\jeu2.exe' 'NotSigned' 443 1MB 50MB $false
+                $alerts = @(Get-TrafficAlerts)
+                Assert-Test (-not @($alerts | Where-Object { $_.App.Key -in 'test:jeu', 'test:jeu2' }).Count) 'un jeu est signalé à tort'
+                # « C'est normal » : l'alerte disparaît ; analysé sans virus : « non signé » ne compte plus
+                & $mk 'test:remote' 'AnyDesk' 'C:\Program Files\AnyDesk\AnyDesk.exe' 'Valid' 443 1MB 1MB $false
+                & $mk 'test:nonsigne' 'outil' 'C:\Outils\outil.exe' 'NotSigned' 443 1MB 1MB $false
+                Assert-Test (@(Get-TrafficAlerts | Where-Object { $_.App.Key -in 'test:remote', 'test:nonsigne' }).Count -eq 2) 'alertes de départ absentes'
+                Set-TrafficMark 'TrafficTrusted' 'test:remote' $true
+                Set-TrafficMark 'TrafficScanned' 'test:nonsigne' $true
+                Assert-Test (-not @(Get-TrafficAlerts | Where-Object { $_.App.Key -in 'test:remote', 'test:nonsigne' }).Count) 'les alertes restent après « C''est normal » ou une analyse propre'
+                Set-TrafficMark 'TrafficTrusted' 'test:remote' $false
+                Assert-Test (@(Get-TrafficAlerts | Where-Object { $_.App.Key -eq 'test:remote' }).Count -eq 1) 'retirer la confiance ne remet pas l''alerte'
+                Set-TrafficMark 'TrafficScanned' 'test:nonsigne' $false
+                foreach ($k in 'test:jeu', 'test:jeu2', 'test:remote', 'test:nonsigne') { $st.Apps.Remove($k) }
+                $alerts = @(Get-TrafficAlerts)
                 $st.Alerts = $alerts
                 $script:TrafficAlertKeys = $null
                 Update-TrafficView; Wait-TestMs 400; Save-TestShot 'trafic-alertes'

@@ -411,6 +411,7 @@ function Invoke-DefenderScan([string]$Type, [string[]]$Paths, [string]$Title) {
     if (-not $Title) { $Title = $names[$Type] }
     $script:ScanRunning = $true
     $script:TestRunning = $true
+    $script:LastScanResult = ''
     Show-TestPanel @{ Tag = 'AV'; Title = $Title; Sub = 'Microsoft Defender' }
     Set-TestState 'run' 'Analyse en cours'
     Set-TestButtons 'run'
@@ -459,12 +460,14 @@ function Invoke-DefenderScan([string]$Type, [string[]]$Paths, [string]$Title) {
     $ui.TestProgress.Value = 100
     $body.Children.Remove($hint)
     if ([OGNative]::Cancel) {
+        $script:LastScanResult = 'cancel'
         Set-TestState 'info' 'Arrêtée'
         [void]$body.Children.Add((New-Verdict 'info' 'Analyse arrêtée avant la fin.'))
         Update-SecurityTab
         return
     }
     if ($r.Error) {
+        $script:LastScanResult = 'error'
         Set-TestState 'bad' 'Échec'
         [void]$body.Children.Add((New-Verdict 'bad' "L'analyse n'a pas pu se faire : $($r.Error)"))
         return
@@ -474,6 +477,7 @@ function Invoke-DefenderScan([string]$Type, [string[]]$Paths, [string]$Title) {
     $threatNames = @{}
     try { foreach ($t2 in @(Get-MpThreat -ErrorAction Stop)) { $threatNames[[string]$t2.ThreatID] = $t2.ThreatName } } catch {}
     $time.Text = '{0:00}:{1:00}' -f [math]::Floor($dur.TotalMinutes), $dur.Seconds
+    $script:LastScanResult = if ($found.Count) { 'threats' } else { 'clean' }
     if (-not $found.Count) {
         $radar.Shield.Fill = Get-Brush $Colors.ok
         $check = New-Text '✓' 30 '#0B0D10' -Bold
