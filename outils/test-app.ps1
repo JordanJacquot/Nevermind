@@ -294,6 +294,20 @@ $script:T.Run.Add_Tick({
                 Show-Page 4; Invoke-CleanScan; Set-Busy $false; Wait-TestMs 500; Save-TestShot 'nettoyage-analyse'
                 "3 fichiers vus (lien ignoré), 2 supprimés, 1 laissé car utilisé, journal $(Split-Path $r.File -Leaf)"
             }
+            Test-Step 'Signaler un problème (bouton en haut)' {
+                Assert-Test ($null -ne $script:TopReport -and $script:TopReport.IsVisible) 'bouton « Signaler un problème » absent en haut'
+                Show-Page 6; Wait-TestMs 300
+                Assert-Test $script:TopReport.IsVisible 'bouton absent sur une page intérieure'
+                Show-ReportPanel; $script:ReportBox.Text = 'Le jeu rame depuis la mise à jour'; Wait-TestMs 400; Save-TestShot 'signaler'; Hide-TestPanel
+                $dir = Join-Path $DataDir 'essai-rapport'; New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                $zip = Export-ProblemReport $dir 'Le jeu rame depuis la mise à jour'
+                Add-Type -AssemblyName System.IO.Compression.FileSystem
+                $z = [IO.Compression.ZipFile]::OpenRead($zip)
+                try { $names = @($z.Entries | ForEach-Object { $_.Name }) } finally { $z.Dispose() }
+                Assert-Test ($names -contains 'description.txt' -and $names -contains 'infos.txt') "contenu du fichier : $($names -join ', ')"
+                Show-Page $HubIndex
+                "bouton visible partout, fichier avec la description ($($names.Count) fichiers)"
+            }
             Test-Step 'Écran de chargement au démarrage' {
                 Wait-TestMs 500
                 Assert-Test ($ui.StartupOverlay.Visibility -eq 'Collapsed') 'l''écran de chargement reste affiché après le démarrage'

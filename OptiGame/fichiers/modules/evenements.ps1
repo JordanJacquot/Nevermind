@@ -125,7 +125,7 @@ $ui.BtnRestorePoint.Add_Click({
 })
 $ui.BtnOpenRestore.Add_Click({ Start-Process 'rstrui.exe' })
 $ui.BtnExport.Add_Click({ Invoke-Safe { Export-Report } })
-$ui.BtnReportProblem.Add_Click({ Invoke-Safe { Export-ProblemReport } })
+$ui.BtnReportProblem.Add_Click({ Invoke-Safe { Show-ReportPanel } })
 $ui.ChkNetWatch.IsChecked = [bool](Get-Setting 'NetWatch' $false)
 $ui.ChkNetWatch.Add_Click({ Invoke-Safe { Set-NetWatch ([bool]$ui.ChkNetWatch.IsChecked); Set-Status $(if ($ui.ChkNetWatch.IsChecked) { 'Surveillance du réseau activée.' } else { 'Surveillance du réseau désactivée.' }) } })
 $ui.ChkBeta.IsChecked = [bool](Get-Setting 'Beta' $false)
@@ -182,6 +182,8 @@ $Window.Add_ContentRendered({
     $script:NavCrumb = $ui.Tabs.Template.FindName('NavCrumb', $ui.Tabs)
     $back = $ui.Tabs.Template.FindName('NavBack', $ui.Tabs)
     if ($back) { $back.Add_Click({ Show-Page $HubIndex }) }
+    $script:TopReport = $ui.Tabs.Template.FindName('TopReport', $ui.Tabs)
+    if ($script:TopReport) { $script:TopReport.Add_Click({ Invoke-Safe { Show-ReportPanel } }) }
     if ($logo) { $ui.StartupLogo.Source = $logo.Source }
     # Premières tâches derrière l'écran de chargement : l'app n'apparaît qu'une fois prête
     $t0 = Get-Date

@@ -252,11 +252,20 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
               </Grid.RowDefinitions>
-              <DockPanel x:Name="NavBar" Margin="28,14,28,0" Visibility="Collapsed" LastChildFill="False">
-                <Button x:Name="NavBack" Style="{StaticResource BtnSecondary}" Content="←  Ordinateur" Padding="12,6" FontSize="12.5"/>
-                <TextBlock Text="›" Foreground="#5B6475" FontSize="16" Margin="12,0,10,2" VerticalAlignment="Center"/>
-                <TextBlock x:Name="NavCrumb" Foreground="#9AA3B2" FontSize="13" VerticalAlignment="Center"/>
-              </DockPanel>
+              <Grid Margin="28,12,28,0">
+                <DockPanel x:Name="NavBar" Visibility="Collapsed" LastChildFill="False" HorizontalAlignment="Left">
+                  <Button x:Name="NavBack" Style="{StaticResource BtnSecondary}" Content="←  Ordinateur" Padding="12,6" FontSize="12.5"/>
+                  <TextBlock Text="›" Foreground="#5B6475" FontSize="16" Margin="12,0,10,2" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="NavCrumb" Foreground="#9AA3B2" FontSize="13" VerticalAlignment="Center"/>
+                </DockPanel>
+                <Button x:Name="TopReport" Style="{StaticResource BtnSecondary}" HorizontalAlignment="Right" VerticalAlignment="Center" Padding="12,6"
+                        ToolTip="Un bug, un souci ? Crée un fichier à envoyer, sans données personnelles.">
+                  <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE7BA;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#F5A524" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Signaler un problème" FontSize="12.5" VerticalAlignment="Center"/>
+                  </StackPanel>
+                </Button>
+              </Grid>
               <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" Margin="28,18,28,16"/>
             </Grid>
           </Grid>

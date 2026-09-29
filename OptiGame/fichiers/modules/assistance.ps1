@@ -216,7 +216,7 @@ function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) {
 # ---------------------------------------------------------------------------
 # Signaler un problème : un zip sur le bureau, sans données personnelles
 # ---------------------------------------------------------------------------
-function Export-ProblemReport([string]$Dest) {
+function Export-ProblemReport([string]$Dest, [string]$Description) {
     Set-Busy $true
     Set-Status 'Préparation du fichier...'
     $mask = {
@@ -250,6 +250,11 @@ function Export-ProblemReport([string]$Dest) {
         }
         if ($null -ne $script:SecurityScore) { $info += ''; $info += "Protection : $($script:SecurityScore) sur 100" }
         Set-Content -LiteralPath (Join-Path $tmp 'infos.txt') -Value (& $mask ($info -join "`r`n")) -Encoding UTF8
+        if ($Description.Trim()) {
+            $page = if ($script:ReportPage -ge 0) { [string]$PageNames[$script:ReportPage] } else { '' }
+            if ($script:ReportPage -eq $HubIndex) { $page = 'Ordinateur' } elseif ($script:ReportPage -eq $NetIndex) { $page = 'Réseau' } elseif ($script:ReportPage -eq $TrafficIndex) { $page = 'Trafic' }
+            Set-Content -LiteralPath (Join-Path $tmp 'description.txt') -Value (& $mask "Ce qui ne va pas :`r`n$($Description.Trim())`r`n`r`nPage ouverte : $page") -Encoding UTF8
+        }
         $errs = @(foreach ($e in @($global:Error | Select-Object -First 80)) {
             $msg = if ($e.Exception) { $e.Exception.Message } else { "$e" }
             $pos = if ($e.InvocationInfo) { (($e.InvocationInfo.PositionMessage -split "`r?`n") | Select-Object -First 1) } else { '' }
@@ -275,6 +280,36 @@ function Export-ProblemReport([string]$Dest) {
     Show-Message "Le fichier « $(Split-Path $zip -Leaf) » est sur ton bureau.`n`nEnvoie-le à la personne qui t'a donné OptiGame (par Discord par exemple), avec une phrase qui explique ce qui ne va pas.`n`nIl ne contient ni tes fichiers, ni ton nom, ni tes mots de passe."
 }
 
+function Show-ReportPanel {
+    $script:ReportPage = $ui.Tabs.SelectedIndex
+    Show-TestPanel @{ Tag = '!'; Title = 'Signaler un problème'; Sub = 'Un fichier à envoyer, sans données personnelles' }
+    Set-TestButtons 'done'
+    $ui.BtnTestAgain.Visibility = 'Collapsed'
+    $ui.TestProgress.Value = 100; $ui.TestPct.Text = ''
+    Set-TestState 'info' 'Rapport'
+    $body = $ui.TestBody
+    [void]$body.Children.Add((New-Text 'Explique en une ou deux phrases ce qui ne va pas (ce que tu faisais, ce qui s''est passé) :' 13 '#E6E8EE'))
+    $tb = New-Object System.Windows.Controls.TextBox
+    $tb.Height = 90; $tb.Margin = New-Thickness 0 8 0 0
+    $tb.AcceptsReturn = $true; $tb.TextWrapping = 'Wrap'; $tb.VerticalScrollBarVisibility = 'Auto'
+    $tb.FontSize = 13; $tb.Padding = New-Thickness 8 6 8 6
+    $tb.Background = Get-Brush '#0E1116'; $tb.Foreground = Get-Brush '#FFFFFF'; $tb.BorderBrush = Get-Brush '#2C3342'; $tb.CaretBrush = Get-Brush '#FFFFFF'
+    [void]$body.Children.Add($tb)
+    $n = New-Text 'OptiGame crée un fichier .zip sur ton bureau avec ta phrase, les infos du PC (Windows, composants, score) et le journal de l''app. Il ne contient ni tes fichiers, ni ton nom, ni tes mots de passe. Envoie-le à la personne qui t''a donné OptiGame (Discord par exemple).' 12 '#9AA3B2'
+    $n.Margin = New-Thickness 0 10 0 0
+    [void]$body.Children.Add($n)
+    $wp = New-Object System.Windows.Controls.WrapPanel
+    $wp.Margin = New-Thickness 0 12 0 0
+    $b = New-Button 'Créer le fichier' 'BtnPrimary'
+    $b.Margin = New-Thickness 0 0 10 0
+    $b.Tag = $tb
+    $b.Add_Click({ param($s, $e) $d = [string]$s.Tag.Text; Invoke-Safe { Hide-TestPanel; Export-ProblemReport '' $d } })
+    [void]$wp.Children.Add($b)
+    [void]$body.Children.Add($wp)
+    $script:ReportBox = $tb
+    [void]$tb.Focus()
+}
+
 # ---------------------------------------------------------------------------
 # Visite guidée (première ouverture) et nouveautés (après une mise à jour)
 # ---------------------------------------------------------------------------
@@ -289,7 +324,7 @@ $TourSteps = @(
     @{ Title = 'Tout est annulable'; Lines = @(
         'Chaque changement est sauvegardé avant d''être fait.',
         'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde garde l''historique : tu peux annuler n''importe quel changement.',
-        'Un souci ? Page Sauvegarde, « Signaler un problème ».') }
+        'Un souci ? Le bouton « Signaler un problème », en haut à droite, crée un fichier à envoyer.') }
 )
 
 function Show-Tour {
