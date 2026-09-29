@@ -27,7 +27,28 @@ function Update-UI {
 
 function Set-Status([string]$Text) {
     $ui.StatusText.Text = $Text
+    # Pendant le chargement, le détail de ce que fait l'app s'affiche sous la barre
+    if ($ui.StartupOverlay -and $ui.StartupOverlay.Visibility -eq 'Visible') { $ui.StartupDetail.Text = $Text }
     Update-UI
+}
+
+# Écran de chargement du démarrage : étape en cours et barre qui avance en douceur
+function Set-StartupStep([string]$Text, [double]$Pct) {
+    $ui.StartupStep.Text = $Text
+    $a = New-Object System.Windows.Media.Animation.DoubleAnimation
+    $a.To = $Pct; $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(500))
+    $ui.StartupBar.BeginAnimation([System.Windows.Controls.Primitives.RangeBase]::ValueProperty, $a)
+    Update-UI
+}
+
+function Hide-StartupOverlay {
+    $o = $ui.StartupOverlay
+    if ($o.Visibility -ne 'Visible') { return }
+    $a = New-Object System.Windows.Media.Animation.DoubleAnimation
+    $a.To = 0; $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(300))
+    # Une fois l'écran parti : « Prêt. », puis visite guidée ou nouveautés
+    $a.Add_Completed({ $ui.StartupOverlay.Visibility = 'Collapsed'; $t = $script:StartupThen; $script:StartupThen = $null; if ($t) { & $t } })
+    $o.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $a)
 }
 
 function Set-Busy([bool]$Busy) {

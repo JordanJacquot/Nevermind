@@ -182,29 +182,48 @@ $Window.Add_ContentRendered({
     $script:NavCrumb = $ui.Tabs.Template.FindName('NavCrumb', $ui.Tabs)
     $back = $ui.Tabs.Template.FindName('NavBack', $ui.Tabs)
     if ($back) { $back.Add_Click({ Show-Page $HubIndex }) }
-    Build-Hub
-    $ui.Tabs.SelectedIndex = $HubIndex
-    Update-Hub
-    Start-Live
-    Invoke-Safe {
-        Invoke-Analysis
-        Build-GamingTab
-        Update-StartupList
-        Update-NetInfo
-        Update-BackupSummary
-        Update-HistoryList
-    }
-    Invoke-Safe {
-        if (-not $script:SecurityBuilt) { $script:SecurityBuilt = $true; Update-SecurityTab }
+    if ($logo) { $ui.StartupLogo.Source = $logo.Source }
+    # Premières tâches derrière l'écran de chargement : l'app n'apparaît qu'une fois prête
+    $t0 = Get-Date
+    try {
+        Set-StartupStep 'Préparation de l''interface...' 5
+        Build-Hub
+        $ui.Tabs.SelectedIndex = $HubIndex
         Update-Hub
-        Set-Status 'Prêt.'
-        Invoke-WelcomeChecks
+        Start-Live
+        Set-StartupStep 'Analyse de ton PC...' 12
+        Invoke-Safe { Invoke-Analysis }
+        Set-StartupStep 'Réglages gaming et programmes au démarrage...' 50
+        Invoke-Safe {
+            Build-GamingTab
+            Update-StartupList
+        }
+        Set-StartupStep 'Connexion et sauvegardes...' 62
+        Invoke-Safe {
+            Update-NetInfo
+            Update-BackupSummary
+            Update-HistoryList
+        }
+        Set-StartupStep 'Protection du PC...' 72
+        Invoke-Safe {
+            if (-not $script:SecurityBuilt) { $script:SecurityBuilt = $true; Update-SecurityTab }
+            Update-Hub
+        }
+        Set-StartupStep 'Recherche de tes jeux...' 86
+        Invoke-Safe {
+            Update-GameCache
+            Update-GameWatch
+            Update-FpsHotkey
+            if (Get-Setting 'NetWatch' $false) { Set-NetWatch $true }
+        }
+        Set-StartupStep 'C''est prêt !' 100
+        Write-Log "Démarrage terminé en $([math]::Round(((Get-Date) - $t0).TotalSeconds, 1)) s"
+    } finally {
+        $script:StartupThen = {
+            Set-Status 'Prêt.'
+            Invoke-Safe { Invoke-WelcomeChecks }
+            try { Invoke-UpdateCheck } catch { Write-Log "Vérification de mise à jour: $_" }
+        }
+        Hide-StartupOverlay
     }
-    Invoke-Safe {
-        Update-GameCache
-        Update-GameWatch
-        Update-FpsHotkey
-        if (Get-Setting 'NetWatch' $false) { Set-NetWatch $true }
-    }
-    try { Invoke-UpdateCheck } catch { Write-Log "Vérification de mise à jour: $_" }
 })

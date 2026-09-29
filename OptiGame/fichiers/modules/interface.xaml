@@ -934,5 +934,16 @@
         </Grid>
       </Border>
     </Grid>
+
+    <!-- Chargement au démarrage : cache l'app tant que les premières tâches ne sont pas finies -->
+    <Grid x:Name="StartupOverlay" Grid.RowSpan="3" Background="#0E1116">
+      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="400">
+        <Image x:Name="StartupLogo" Width="72" Height="72" Margin="0,0,0,16"/>
+        <TextBlock Text="OptiGame" FontSize="28" FontWeight="Bold" Foreground="#FFFFFF" HorizontalAlignment="Center"/>
+        <TextBlock x:Name="StartupStep" Text="Préparation..." FontSize="14" FontWeight="SemiBold" Foreground="#C9CED8" HorizontalAlignment="Center" Margin="0,12,0,14"/>
+        <ProgressBar x:Name="StartupBar" Height="5" Width="300" Maximum="100"/>
+        <TextBlock x:Name="StartupDetail" FontSize="11.5" Foreground="#5B6475" HorizontalAlignment="Center" Margin="0,12,0,0" TextTrimming="CharacterEllipsis"/>
+      </StackPanel>
+    </Grid>
   </Grid>
 </Window>

@@ -294,6 +294,17 @@ $script:T.Run.Add_Tick({
                 Show-Page 4; Invoke-CleanScan; Set-Busy $false; Wait-TestMs 500; Save-TestShot 'nettoyage-analyse'
                 "3 fichiers vus (lien ignoré), 2 supprimés, 1 laissé car utilisé, journal $(Split-Path $r.File -Leaf)"
             }
+            Test-Step 'Écran de chargement au démarrage' {
+                Wait-TestMs 500
+                Assert-Test ($ui.StartupOverlay.Visibility -eq 'Collapsed') 'l''écran de chargement reste affiché après le démarrage'
+                $l = @(Select-String -LiteralPath $LogFile -Pattern 'Démarrage terminé en' -SimpleMatch | Select-Object -Last 1)
+                Assert-Test ($l.Count -eq 1) 'durée du démarrage non notée'
+                # Capture de l'écran de chargement (réaffiché un instant)
+                $ui.StartupOverlay.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null); $ui.StartupOverlay.Opacity = 1; $ui.StartupOverlay.Visibility = 'Visible'
+                Set-StartupStep 'Recherche de tes jeux...' 86; $ui.StartupDetail.Text = 'Calcul: Fichiers temporaires (utilisateur)...'; Wait-TestMs 700; Save-TestShot 'chargement'
+                $ui.StartupOverlay.Visibility = 'Collapsed'
+                ($l[0].Line -replace '^.*Démarrage terminé', 'premières tâches terminées')
+            }
             Test-Step 'Carte du réseau' {
                 $saved = $script:NetList
                 $kinds = @('Ce PC', 'Ordinateur', 'Routeur ou répéteur Wi-Fi', 'TV ou multimédia', 'Téléphone ou tablette', 'Imprimante', 'Caméra', 'Objet connecté', 'Console de jeu', 'Box ou décodeur TV', 'Enceinte ou audio', 'Appareil')
