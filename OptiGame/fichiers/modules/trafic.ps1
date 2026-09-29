@@ -345,15 +345,85 @@ function Get-DestType($Name, [int]$Port, [double]$Out, [double]$In, $App) {
     @{ Id = 'other'; Label = 'Échanges avec le serveur'; Color = '#5B6475'; Text = 'Le nom du serveur ne dit pas précisément ce qui est échangé.' }
 }
 
-# Résumé par type pour un programme : { Type, Out, In, Count } du plus gros envoi au plus petit.
-function Get-AppDataTypes($St, $A) {
+# Échanges groupés par type pour un programme : { Type, Out, In, Count, Dests }.
+# Le réseau local passe en dernier, sinon le plus gros volume d'abord.
+$LocalType = @{ Id = 'local'; Label = 'Appareils de ton réseau'; Color = '#9AA3B2'; Text = 'Échanges avec des appareils de chez toi (box, imprimante, TV...) : rien ne sort sur Internet.' }
+function Get-AppDestGroups($St, $A) {
     $sum = @{}
-    foreach ($d in @($A.Dest.Values | Where-Object { -not $_.Private })) {
-        $t = Get-DestType (Get-DestName $St $d) $d.Port $d.Out $d.In $A
-        if (-not $sum.ContainsKey($t.Id)) { $sum[$t.Id] = @{ Type = $t; Out = [double]0; In = [double]0; Count = 0 } }
+    foreach ($d in @($A.Dest.Values)) {
+        $t = if ($d.Private) { $LocalType } else { Get-DestType (Get-DestName $St $d) $d.Port $d.Out $d.In $A }
+        if (-not $sum.ContainsKey($t.Id)) { $sum[$t.Id] = @{ Type = $t; Out = [double]0; In = [double]0; Count = 0; Dests = (New-Object System.Collections.ArrayList) } }
         $sum[$t.Id].Out += $d.Out; $sum[$t.Id].In += $d.In; $sum[$t.Id].Count++
+        [void]$sum[$t.Id].Dests.Add($d)
     }
-    @($sum.Values | Sort-Object @{ Expression = { $_.Out } } -Descending)
+    @($sum.Values | Sort-Object @{ Expression = { $_.Type.Id -ne 'local' } }, @{ Expression = { $_.Out + $_.In } }, @{ Expression = { $_.Count } } -Descending)
+}
+
+# Résumé par type vers Internet (sans le réseau local), du plus gros envoi au plus petit.
+function Get-AppDataTypes($St, $A) {
+    @(Get-AppDestGroups $St $A | Where-Object { $_.Type.Id -ne 'local' } | Sort-Object @{ Expression = { $_.Out } } -Descending)
+}
+
+# Bloc d'un type de données dans la fiche : titre, explication, volumes, puis ses serveurs.
+function New-TrafficTypeBlock($St, $G) {
+    $b = New-Object System.Windows.Controls.Border
+    $b.Background = Get-Brush '#1E232D'
+    $b.BorderBrush = Get-Brush $G.Type.Color
+    $b.BorderThickness = New-Thickness 3 0 0 0
+    $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
+    $b.Padding = New-Thickness 16 12 16 10
+    $b.Margin = New-Thickness 0 0 0 8
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $hd = New-Grid @('*', 'Auto')
+    $tl = New-Object System.Windows.Controls.StackPanel
+    [void]$tl.Children.Add((New-Text $G.Type.Label 14.5 $G.Type.Color -Semi))
+    $desc = New-Text $G.Type.Text 12 '#9AA3B2'
+    $desc.Margin = New-Thickness 0 3 0 0
+    [void]$tl.Children.Add($desc)
+    Add-ToGrid $hd $tl 0
+    $vol = New-Object System.Windows.Controls.StackPanel
+    $vol.Margin = New-Thickness 20 0 0 0
+    $up = New-Text "↑ $(Format-Bytes $G.Out)" 14 '#FFFFFF' -Semi
+    $up.HorizontalAlignment = 'Right'; $up.ToolTip = 'Envoyé'
+    $dn = New-Text "↓ $(Format-Bytes $G.In)" 12 '#9AA3B2'
+    $dn.HorizontalAlignment = 'Right'; $dn.ToolTip = 'Reçu'
+    [void]$vol.Children.Add($up); [void]$vol.Children.Add($dn)
+    Add-ToGrid $hd $vol 1
+    [void]$sp.Children.Add($hd)
+    $sep = New-Object System.Windows.Controls.Border
+    $sep.Height = 1; $sep.Background = Get-Brush '#2A303B'; $sep.Margin = New-Thickness 0 10 0 4
+    [void]$sp.Children.Add($sep)
+    $dests = @($G.Dests | Sort-Object @{ Expression = { $_.Out + $_.In } } -Descending)
+    foreach ($d in @($dests | Select-Object -First 6)) {
+        $row = New-Grid @('18', '*', 'Auto')
+        $row.Margin = New-Thickness 0 4 0 4
+        $dot = New-Text '●' 9 $(if ($d.Live) { $Colors.ok } else { '#5B6475' })
+        $dot.VerticalAlignment = 'Center'
+        $dot.ToolTip = $(if ($d.Live) { 'Connexion ouverte' } else { 'Connexion terminée' })
+        Add-ToGrid $row $dot 0
+        $nm = $St.Dns[[string]$d.Remote]
+        $left = New-Object System.Windows.Controls.StackPanel
+        $t = New-Text $(if ($nm) { $nm } else { $d.Remote }) 12.5 '#E6E8EE'
+        $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'
+        [void]$left.Children.Add($t)
+        $pn = $PortNames[[int]$d.Port]
+        $warnPort = $SusPorts.ContainsKey([int]$d.Port)
+        $info = New-Text "$(if ($nm) { $d.Remote + ', ' })port $($d.Port)$(if ($pn) { ' (' + $pn + ')' } elseif ($warnPort) { ' (' + $SusPorts[[int]$d.Port] + ')' })" 11 $(if ($warnPort) { $Colors.warn } else { '#5B6475' })
+        $info.TextTrimming = 'CharacterEllipsis'; $info.TextWrapping = 'NoWrap'
+        [void]$left.Children.Add($info)
+        Add-ToGrid $row $left 1
+        $v = New-Text "↑ $(Format-Bytes $d.Out)    ↓ $(Format-Bytes $d.In)" 11.5 '#9AA3B2'
+        $v.VerticalAlignment = 'Center'; $v.Margin = New-Thickness 16 0 0 0
+        Add-ToGrid $row $v 2
+        [void]$sp.Children.Add($row)
+    }
+    if ($dests.Count -gt 6) {
+        $more = New-Text "+ $($dests.Count - 6) autre$(if ($dests.Count -gt 7) {'s'}) serveur$(if ($dests.Count -gt 7) {'s'}) du même type" 11.5 '#5B6475'
+        $more.Margin = New-Thickness 18 2 0 2
+        [void]$sp.Children.Add($more)
+    }
+    $b.Child = $sp
+    $b
 }
 
 # ---------------------------------------------------------------------------
@@ -580,73 +650,48 @@ function Show-TrafficApp([string]$Key) {
         }
         [void]$body.Children.Add($row)
     }
+    $groups = @(Get-AppDestGroups $st $a)
+    # En résumé (en premier) : ce qui se mesure (volumes) et ce qui a été repéré ou non (serveurs)
+    $ids = @($groups | Where-Object { $_.Type.Id -ne 'local' } | ForEach-Object { $_.Type.Id })
+    if ($ids.Count) { Add-TrafficSummary $body $a $ids }
+    # Ce qu'il envoie : un bloc par type de données, avec ses serveurs dedans
     [void]$body.Children.Add((New-SectionTitle 'CE QU''IL ENVOIE (PROBABLEMENT)'))
-    $types = @(Get-AppDataTypes $st $a)
-    if (-not $types.Count) { [void]$body.Children.Add((New-Text 'Rien vers Internet pour l''instant.' 13 '#5B6475')) }
-    foreach ($x in $types) {
-        $row = New-Grid @('*', 'Auto')
+    $cav = New-Text "Deviné d'après le nom des serveurs et les volumes : le contenu, chiffré, n'est jamais lu.$(if ($a.Udp) { ' Les échanges UDP (jeu, voix) ne sont pas comptés.' })" 11.5 '#5B6475'
+    $cav.Margin = New-Thickness 0 0 0 10
+    [void]$body.Children.Add($cav)
+    if (-not $groups.Count) { [void]$body.Children.Add((New-Text 'Aucune connexion vue pour l''instant.' 13 '#5B6475')) }
+    foreach ($g in $groups) { [void]$body.Children.Add((New-TrafficTypeBlock $st $g)) }
+}
+
+function Add-TrafficSummary($body, $a, $ids) {
+    $lines = @()
+    if ($a.Out -lt 5MB) { $lines += , @('ok', "Aucun gros envoi : $(Format-Bytes $a.Out) en tout, pas de fichiers ni de vidéo envoyés en masse") }
+    elseif ($a.Out -gt 3 * $a.In -and $a.Out -gt 50MB) { $lines += , @('warn', "Gros envoi : $(Format-Bytes $a.Out) envoyés contre $(Format-Bytes $a.In) reçus (fichiers, vidéo ou sauvegarde)") }
+    elseif ($a.Out -gt 3 * $a.In) { $lines += , @('warn', "Envoie bien plus qu'il ne reçoit : $(Format-Bytes $a.Out) contre $(Format-Bytes $a.In)") }
+    else { $lines += , @('info', "Envoi moyen ($(Format-Bytes $a.Out)) : normal pour discuter, jouer ou naviguer") }
+    # Aucun serveur reconnu : on ne peut rien affirmer sur le reste
+    if (-not @($ids | Where-Object { $_ -notin 'unknown', 'other', 'upload', 'download' }).Count) {
+        $lines += , @('warn', 'Serveurs non reconnus : impossible de dire quel type de données part')
+    } else {
+        $lines += , $(if ('ads' -in $ids) { @('warn', 'Publicité et suivi : ce que tu fais est mesuré') } else { @('ok', 'Aucune publicité ni pistage repéré') })
+        $lines += , $(if ('telemetry' -in $ids) { @('info', 'Envoie des statistiques d''utilisation (pas tes fichiers)') } else { @('ok', 'Aucune statistique d''utilisation repérée') })
+        $lines += , $(if ('remote' -in $ids) { @('warn', 'Peut transmettre l''image de ton écran (prise en main à distance)') } else { @('ok', 'Aucune prise en main à distance') })
+    }
+    [void]$body.Children.Add((New-SectionTitle 'EN RÉSUMÉ'))
+    $box = New-Object System.Windows.Controls.Border
+    $box.Background = Get-Brush '#1E232D'
+    $box.CornerRadius = [System.Windows.CornerRadius]::new(8)
+    $box.Padding = New-Thickness 14 8 14 8
+    $box.Margin = New-Thickness 0 6 0 0
+    $sp = New-Object System.Windows.Controls.StackPanel
+    foreach ($l in $lines) {
+        $row = New-Grid @('26', '*')
         $row.Margin = New-Thickness 0 4 0 4
-        $left = New-Object System.Windows.Controls.StackPanel
-        $tb = New-Object System.Windows.Controls.TextBlock
-        $tb.FontSize = 13.5
-        $r1 = New-Object System.Windows.Documents.Run $x.Type.Label
-        $r1.Foreground = Get-Brush $x.Type.Color; $r1.FontWeight = 'SemiBold'
-        $r2 = New-Object System.Windows.Documents.Run "   $($x.Count) serveur$(if ($x.Count -gt 1) {'s'})"
-        $r2.Foreground = Get-Brush '#5B6475'; $r2.FontSize = 11.5
-        [void]$tb.Inlines.Add($r1); [void]$tb.Inlines.Add($r2)
-        [void]$left.Children.Add($tb)
-        [void]$left.Children.Add((New-Text $x.Type.Text 12 '#9AA3B2'))
-        Add-ToGrid $row $left 0
-        $v = New-Text "↑ $(Format-Bytes $x.Out)   ↓ $(Format-Bytes $x.In)" 12 '#C9CED8'
-        $v.VerticalAlignment = 'Center'; $v.Margin = New-Thickness 12 0 0 0
-        Add-ToGrid $row $v 1
-        [void]$body.Children.Add($row)
+        $ic = New-Text $(switch ($l[0]) { 'ok' { '✓' } 'warn' { '!' } default { 'i' } }) 13.5 $Colors[$l[0]] -Bold
+        Add-ToGrid $row $ic 0
+        Add-ToGrid $row (New-Text $l[1] 13 $(if ($l[0] -eq 'warn') { $Colors.warn } else { '#E6E8EE' })) 1
+        [void]$sp.Children.Add($row)
     }
-    # Ce qu'il n'envoie pas : ce qui se mesure (volumes) et ce qui n'a pas été repéré (serveurs)
-    $ids = @($types | ForEach-Object { $_.Type.Id })
-    $not = @()
-    if ($a.Out -lt 5MB) { $not += "Pas de gros envoi : $(Format-Bytes $a.Out) en tout, trop peu pour des fichiers, des photos ou de la vidéo en quantité." }
-    elseif ($a.Out -gt 3 * $a.In -and $a.Out -gt 50MB) { $not += "Attention, gros envoi : $(Format-Bytes $a.Out) envoyés contre $(Format-Bytes $a.In) reçus. Ça ressemble à des fichiers, de la vidéo ou une sauvegarde." }
-    else { $not += "Envoi moyen ($(Format-Bytes $a.Out)) : normal pour un programme qui discute, joue ou navigue." }
-    if ($types.Count) {
-        if ('ads' -notin $ids) { $not += 'Pas de publicité ni de pistage repéré.' }
-        if ('telemetry' -notin $ids) { $not += 'Pas de statistiques d''utilisation repérées.' }
-        if ('remote' -notin $ids) { $not += 'Pas de prise en main à distance (image de ton écran).' }
-    }
-    foreach ($l in $not) {
-        $t = New-Text $l 12.5 $(if ($l -like 'Attention*') { $Colors.warn } else { '#C9CED8' })
-        $t.Margin = New-Thickness 0 4 0 0
-        [void]$body.Children.Add($t)
-    }
-    $n = New-Text "Déduit du nom des serveurs contactés et des volumes : le contenu, chiffré, n'est jamais lu.$(if ($a.Udp) { ' Les échanges UDP (jeu, voix) ne sont pas comptés ici.' })" 11.5 '#5B6475'
-    $n.Margin = New-Thickness 0 8 0 0
-    [void]$body.Children.Add($n)
-    [void]$body.Children.Add((New-SectionTitle 'AVEC QUI IL COMMUNIQUE'))
-    $dests = @($a.Dest.Values | Sort-Object @{ Expression = { $_.Out + $_.In } } -Descending | Select-Object -First 40)
-    if (-not $dests.Count) { [void]$body.Children.Add((New-Text 'Aucune connexion vue pour l''instant.' 13 '#5B6475')) }
-    foreach ($d in $dests) {
-        $row = New-Grid @('*', 'Auto')
-        $row.Margin = New-Thickness 0 3 0 3
-        $left = New-Object System.Windows.Controls.StackPanel
-        $nm = Get-DestName $st $d
-        $t = New-Text $(if ($nm) { $nm } else { $d.Remote }) 13 $(if ($d.Live) { '#FFFFFF' } else { '#9AA3B2' }) -Semi
-        $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'
-        [void]$left.Children.Add($t)
-        $pn = $PortNames[[int]$d.Port]
-        $warnPort = $SusPorts.ContainsKey([int]$d.Port)
-        $dt = if ($d.Private) { @{ Label = 'Appareil de ton réseau'; Color = '#9AA3B2'; Text = 'Échange avec un appareil de chez toi (box, imprimante, TV...), rien ne sort sur Internet.' } } else { Get-DestType $nm $d.Port $d.Out $d.In $a }
-        $info = New-Object System.Windows.Controls.TextBlock
-        $info.FontSize = 11.5; $info.TextTrimming = 'CharacterEllipsis'; $info.ToolTip = $dt.Text
-        $ri = New-Object System.Windows.Documents.Run $dt.Label
-        $ri.Foreground = Get-Brush $dt.Color
-        $rp = New-Object System.Windows.Documents.Run "   $(if ($nm) { $d.Remote + ', ' })port $($d.Port)$(if ($pn) { ' : ' + $pn } elseif ($warnPort) { ' : ' + $SusPorts[[int]$d.Port] })$(if ($d.Live) { ', connexion ouverte' })"
-        $rp.Foreground = Get-Brush $(if ($warnPort) { $Colors.warn } else { '#5B6475' })
-        [void]$info.Inlines.Add($ri); [void]$info.Inlines.Add($rp)
-        [void]$left.Children.Add($info)
-        Add-ToGrid $row $left 0
-        $v = New-Text "↑ $(Format-Bytes $d.Out)   ↓ $(Format-Bytes $d.In)" 12 '#C9CED8'
-        $v.VerticalAlignment = 'Center'
-        Add-ToGrid $row $v 1
-        [void]$body.Children.Add($row)
-    }
+    $box.Child = $sp
+    [void]$body.Children.Add($box)
 }
