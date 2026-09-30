@@ -165,7 +165,9 @@ function Start-Unelevated([string]$Path, [string]$Arguments) {
 function Show-MainWindow {
     try {
         if (-not $Window.IsVisible) { $Window.Show() }
-        $Window.WindowState = if ($script:StateBeforeTray -eq 'Maximized') { 'Maximized' } else { 'Normal' }
+        if ($Window.WindowState -eq 'Minimized') { $Window.WindowState = if ($script:StateBeforeTray -eq 'Maximized') { 'Maximized' } else { 'Normal' } }
+        # Passe devant toutes les fenêtres, puis redevient une fenêtre normale
+        $Window.Topmost = $true; $Window.Topmost = $false
         [void]$Window.Activate()
     } catch {}
 }

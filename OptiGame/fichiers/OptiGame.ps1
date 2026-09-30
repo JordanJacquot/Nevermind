@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.41
+    OptiGame 1.0.42
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,13 +10,39 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.41'
+$AppVersion = '1.0.42'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
 # Droits administrateur
 # ---------------------------------------------------------------------------
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Drawing, System.Windows.Forms
+
+# ---------------------------------------------------------------------------
+# Une seule fenêtre : si OptiGame tourne déjà (même caché près de l'horloge), on le ramène devant
+# ---------------------------------------------------------------------------
+# La fenêtre ouverte a les droits administrateur : ce lancement-ci ne peut pas lui envoyer de signal
+# direct, il dépose donc une « demande d'affichage » qu'elle surveille.
+$ShowRequest = Join-Path $env:LOCALAPPDATA 'OptiGame\afficher.demande'
+function Send-ShowRequest {
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path $ShowRequest) | Out-Null
+        [IO.File]::WriteAllText($ShowRequest, [string]$PID)
+        # Autorise la fenêtre ouverte à passer devant (ce lancement vient d'un clic, il en a le droit)
+        Add-Type -Namespace OG -Name Fg -MemberDefinition '[DllImport("user32.dll")] public static extern bool AllowSetForegroundWindow(int pid);'
+        [void][OG.Fg]::AllowSetForegroundWindow(-1)
+    } catch {}
+}
+if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
+    $alreadyRunning = $false
+    try { $probe = [System.Threading.Mutex]::OpenExisting('Local\OptiGame-Instance'); $probe.Dispose(); $alreadyRunning = $true }
+    catch {
+        # Accès refusé = elle existe, mais appartient à la fenêtre lancée en administrateur
+        $inner = $_.Exception; while ($inner.InnerException) { $inner = $inner.InnerException }
+        if ($inner -is [System.UnauthorizedAccessException]) { $alreadyRunning = $true }
+    }
+    if ($alreadyRunning) { Send-ShowRequest; exit }
+}
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -29,6 +55,14 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
             'OptiGame', 'OK', 'Warning') | Out-Null
     }
     exit
+}
+
+# Instance unique (lancement direct en administrateur, ou deux clics très rapprochés)
+if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
+    $mutexNew = $false
+    $script:InstanceMutex = New-Object System.Threading.Mutex($true, 'Local\OptiGame-Instance', [ref]$mutexNew)
+    if (-not $mutexNew) { Send-ShowRequest; exit }
+    try { if (Test-Path -LiteralPath $ShowRequest) { [IO.File]::Delete($ShowRequest) } } catch {}
 }
 
 # Retire la marque « téléchargé depuis Internet » des fichiers d'OptiGame, pour que

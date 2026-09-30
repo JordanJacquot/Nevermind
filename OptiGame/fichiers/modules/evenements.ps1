@@ -34,8 +34,22 @@ $Window.Add_StateChanged({
     if ($Window.WindowState -eq 'Minimized') { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } }
     else { $script:StateBeforeTray = [string]$Window.WindowState }
 })
+# Un nouveau lancement d'OptiGame demande d'afficher cette fenêtre (elle peut être cachée près de l'horloge)
+if (-not $env:OPTIGAME_TEST) {
+    $script:ShowWatch = New-Object System.Windows.Threading.DispatcherTimer
+    $script:ShowWatch.Interval = [TimeSpan]::FromMilliseconds(600)
+    $script:ShowWatch.Add_Tick({
+        if ([IO.File]::Exists($ShowRequest)) {
+            try { [IO.File]::Delete($ShowRequest) } catch {}
+            try { Show-MainWindow } catch { Write-Log "Affichage: $_" }
+        }
+    })
+    $script:ShowWatch.Start()
+}
+
 $Window.Add_Closed({
     $script:Closing = $true
+    try { if ($script:ShowWatch) { $script:ShowWatch.Stop() } } catch {}
     $Live.Run = $false
     if ($script:LiveTimer) { $script:LiveTimer.Stop() }
     try { Stop-FpsTarget } catch { Write-Log "Fermeture, mesure des FPS: $_" }
