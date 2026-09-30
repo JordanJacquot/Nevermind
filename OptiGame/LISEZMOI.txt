@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.43
+﻿OptiGame 1.0.44
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -202,8 +202,11 @@ SÉCURITÉ
   (case cochée par défaut).
 - L'application ne se connecte à Internet que pour : vérifier les mises à jour
   (GitHub), les tests de ping et de débit, afficher ton adresse Internet,
-  connaître le dernier pilote NVIDIA, et télécharger la liste des fabricants
-  d'appareils réseau (IEEE). Elle n'envoie aucune donnée te concernant.
+  connaître le dernier pilote NVIDIA, télécharger la liste des fabricants
+  d'appareils réseau (IEEE), mesurer le lag en ligne (pings vers ta box, ton
+  fournisseur et le serveur du jeu) et identifier les serveurs sans nom dans
+  Trafic (rdap.org, seule l'adresse du serveur est envoyée, option coupable).
+  Elle n'envoie aucune donnée te concernant.
 - Le code est lisible : ouvre les fichiers du dossier fichiers\modules avec le
   Bloc-notes pour vérifier.
 
