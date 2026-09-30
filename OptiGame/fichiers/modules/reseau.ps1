@@ -258,8 +258,8 @@ function New-DeviceTile($D, [int]$Index) {
     if ($D.New) { $card.BorderBrush = Get-Brush $Colors.warn }
     $card.Cursor = [System.Windows.Input.Cursors]::Hand
     $card.Tag = $D
-    $card.Add_MouseEnter({ param($s, $e) $s.BorderBrush = Get-Brush $s.Tag.KindInfo.Color; $s.Background = Get-Brush '#1C212B' })
-    $card.Add_MouseLeave({ param($s, $e) $s.BorderBrush = Get-Brush $(if ($s.Tag.New) { $Colors.warn } else { '#232937' }); $s.Background = Get-Brush '#181C24' })
+    $card.Add_MouseEnter({ param($s, $e) $s.BorderBrush = Get-Brush $s.Tag.KindInfo.Color; $s.Background = Get-Brush 'card-hover' })
+    $card.Add_MouseLeave({ param($s, $e) $s.BorderBrush = Get-Brush $(if ($s.Tag.New) { $Colors.warn } else { 'card-border' }); $s.Background = Get-Brush 'card' })
     $card.Add_MouseLeftButtonUp({ param($s, $e) Invoke-Safe { Show-DeviceDetail $s.Tag } })
     $card.Opacity = 0
     $move = New-Object System.Windows.Media.TranslateTransform 0, 12

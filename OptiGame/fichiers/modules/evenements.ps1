@@ -15,8 +15,20 @@ if (Test-Path $IconPath) {
 }
 
 $Window.Add_SourceInitialized({
-    try { [OGNative]::SetDarkTitleBar((New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle) } catch {}
+    $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
+    try { [OGNative]::SetDarkTitleBar($h) } catch {}
+    # Windows 11 : fond « Mica » (le fond d'écran, flouté et teinté, transparaît derrière l'app)
+    if ($script:Build -ge 22621 -and (Get-Setting 'Mica' $true)) {
+        try {
+            if ([OGNative]::EnableMica($h)) {
+                [System.Windows.Interop.HwndSource]::FromHwnd($h).CompositionTarget.BackgroundColor = [System.Windows.Media.Colors]::Transparent
+                $Window.Background = [System.Windows.Media.Brushes]::Transparent
+                $ui.BackdropBase.Opacity = 0.82
+            }
+        } catch { Write-Log "Mica: $_" }
+    }
 })
+foreach ($ov in $ui.TestOverlay, $ui.Overlay, $ui.NetMapOverlay) { $ov.Add_IsVisibleChanged({ try { Update-BackdropBlur } catch {} }) }
 
 $Window.Add_StateChanged({
     if ($Window.WindowState -eq 'Minimized') { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } }
@@ -140,6 +152,7 @@ $ui.Tabs.Add_SelectionChanged({
     param($s, $e)
     if ($e.OriginalSource -ne $ui.Tabs) { return }
     Update-NavBar
+    try { Start-PageTransition } catch {}
     if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubStats) { Invoke-Safe { Update-Hub }; return }
     if ($ui.Tabs.SelectedIndex -eq $TrafficIndex) {
         Invoke-Safe {
@@ -185,6 +198,13 @@ $Window.Add_ContentRendered({
     $script:TopReport = $ui.Tabs.Template.FindName('TopReport', $ui.Tabs)
     if ($script:TopReport) { $script:TopReport.Add_Click({ Invoke-Safe { Show-ReportPanel } }) }
     if ($logo) { $ui.StartupLogo.Source = $logo.Source }
+    $script:LogoGlow = New-Glow '#22D37A' 30 0.2
+    $ui.StartupLogo.Effect = $script:LogoGlow
+    $pulse = New-Object System.Windows.Media.Animation.DoubleAnimation
+    $pulse.From = 0.15; $pulse.To = 0.85; $pulse.AutoReverse = $true
+    $pulse.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(900))
+    $pulse.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+    $script:LogoGlow.BeginAnimation([System.Windows.Media.Effects.DropShadowEffect]::OpacityProperty, $pulse)
     # Premières tâches derrière l'écran de chargement : l'app n'apparaît qu'une fois prête
     $t0 = Get-Date
     try {

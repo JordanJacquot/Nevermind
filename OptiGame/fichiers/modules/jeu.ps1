@@ -673,8 +673,8 @@ function New-FpsRow($S) {
     Add-ToGrid $row $chev 2
     $card.Child = $row
     $card.Tag = $S.Id
-    $card.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush '#1C212B' })
-    $card.Add_MouseLeave({ param($s, $e) $s.Background = Get-Brush '#181C24' })
+    $card.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush 'card-hover' })
+    $card.Add_MouseLeave({ param($s, $e) $s.Background = Get-Brush 'card' })
     $card.Add_MouseLeftButtonUp({ param($s, $e) Invoke-Safe { Show-FpsSession $s.Tag } })
     $card
 }

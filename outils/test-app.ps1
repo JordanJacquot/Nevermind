@@ -33,7 +33,8 @@ function Save-TestShot([string]$Name) {
         $w = [int]$el.ActualWidth; $h = [int]$el.ActualHeight
         $dv = New-Object System.Windows.Media.DrawingVisual; $dc = $dv.RenderOpen()
         $dc.DrawRectangle((Get-Brush '#0E1014'), $null, [System.Windows.Rect]::new(0, 0, $w, $h))
-        $dc.DrawRectangle((New-Object System.Windows.Media.VisualBrush $el), $null, [System.Windows.Rect]::new(0, 0, $w, $h)); $dc.Close()
+        $vb = New-Object System.Windows.Media.VisualBrush $el; $vb.Stretch = 'None'; $vb.AlignmentX = 'Left'; $vb.AlignmentY = 'Top'; $vb.ViewboxUnits = 'Absolute'; $vb.Viewbox = [System.Windows.Rect]::new(0, 0, $w, $h)
+        $dc.DrawRectangle($vb, $null, [System.Windows.Rect]::new(0, 0, $w, $h)); $dc.Close()
         $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap($w, $h, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32); $rtb.Render($dv)
         $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder; $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
         $fs = [IO.File]::Create((Join-Path $script:T.Dir "captures\$Name.png")); $enc.Save($fs); $fs.Close()

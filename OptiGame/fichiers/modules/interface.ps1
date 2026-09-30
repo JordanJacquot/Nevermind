@@ -47,7 +47,7 @@ function Hide-StartupOverlay {
     $a = New-Object System.Windows.Media.Animation.DoubleAnimation
     $a.To = 0; $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(300))
     # Une fois l'écran parti : « Prêt. », puis visite guidée ou nouveautés
-    $a.Add_Completed({ $ui.StartupOverlay.Visibility = 'Collapsed'; $t = $script:StartupThen; $script:StartupThen = $null; if ($t) { & $t } })
+    $a.Add_Completed({ $ui.StartupOverlay.Visibility = 'Collapsed'; if ($script:LogoGlow) { $script:LogoGlow.BeginAnimation([System.Windows.Media.Effects.DropShadowEffect]::OpacityProperty, $null); $ui.StartupLogo.Effect = $null }; $t = $script:StartupThen; $script:StartupThen = $null; if ($t) { & $t } })
     $o.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $a)
 }
 
@@ -260,7 +260,14 @@ $DiskInfoWork = {
     @{ D = $d; Rel = $rel }
 }
 
-function Get-Brush([string]$Hex) { [System.Windows.Media.BrushConverter]::new().ConvertFromString($Hex) }
+function Get-Brush([string]$Hex) {
+    switch ($Hex) {
+        'card' { return $Window.FindResource('CardBg') }
+        'card-hover' { return $Window.FindResource('CardHoverBg') }
+        'card-border' { return $Window.FindResource('CardBorder') }
+    }
+    [System.Windows.Media.BrushConverter]::new().ConvertFromString($Hex)
+}
 function New-Thickness($l, $t, $r, $b) { [System.Windows.Thickness]::new($l, $t, $r, $b) }
 
 function New-Text([string]$Text, [double]$Size = 13, [string]$Color = '#E6E8EE', [switch]$Bold, [switch]$Semi) {

@@ -476,8 +476,8 @@ function Build-LagPanel {
         Add-ToGrid $g $ch 2
         $c.Child = $g
         $c.Tag = [string]$s.Id
-        $c.Add_MouseEnter({ param($x, $e) $x.Background = Get-Brush '#1C212B' })
-        $c.Add_MouseLeave({ param($x, $e) $x.Background = Get-Brush '#181C24' })
+        $c.Add_MouseEnter({ param($x, $e) $x.Background = Get-Brush 'card-hover' })
+        $c.Add_MouseLeave({ param($x, $e) $x.Background = Get-Brush 'card' })
         $c.Add_MouseLeftButtonUp({ param($x, $e) Invoke-Safe { Show-LagSession $x.Tag } })
         [void]$panel.Children.Add($c)
     }

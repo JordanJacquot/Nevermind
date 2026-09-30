@@ -36,8 +36,8 @@ function Build-Hub {
     $n = 0
     foreach ($pg in $HubPages) {
         $card = New-Object System.Windows.Controls.Border
-        $card.Background = Get-Brush '#181C24'
-        $card.BorderBrush = Get-Brush '#232937'
+        $card.Background = Get-Brush 'card'
+        $card.BorderBrush = Get-Brush 'card-border'
         $card.BorderThickness = New-Thickness 1 1 1 1
         $card.CornerRadius = [System.Windows.CornerRadius]::new(14)
         $card.Padding = New-Thickness 18 16 18 16
@@ -79,15 +79,17 @@ function Build-Hub {
         $card.Add_MouseEnter({
             param($s, $e)
             $s.BorderBrush = Get-Brush $s.Tag.Color
-            $s.Background = Get-Brush '#1C212B'
+            $s.Background = Get-Brush 'card-hover'
             $s.Tag.Chev.Foreground = Get-Brush $s.Tag.Color
+            $s.Effect = New-Glow $s.Tag.Color 28 0.35
             Start-WpfAnim $s.Tag.Move ([System.Windows.Media.TranslateTransform]::YProperty) -3 180
         })
         $card.Add_MouseLeave({
             param($s, $e)
-            $s.BorderBrush = Get-Brush '#232937'
-            $s.Background = Get-Brush '#181C24'
+            $s.BorderBrush = Get-Brush 'card-border'
+            $s.Background = Get-Brush 'card'
             $s.Tag.Chev.Foreground = Get-Brush '#5B6475'
+            $s.Effect = $null
             Start-WpfAnim $s.Tag.Move ([System.Windows.Media.TranslateTransform]::YProperty) 0 180
         })
         $card.Add_MouseLeftButtonUp({ param($s, $e) Show-Page $s.Tag.Index })

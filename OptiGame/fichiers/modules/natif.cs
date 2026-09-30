@@ -666,6 +666,22 @@ public static class OGNative
         return open.ToArray();
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MARGINS { public int Left, Right, Top, Bottom; }
+    [DllImport("dwmapi.dll")]
+    static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
+
+    // Fond Mica de Windows 11 (22H2 et plus). Faux si Windows refuse : l'app garde son fond opaque.
+    public static bool EnableMica(IntPtr hwnd)
+    {
+        int dark = 1;
+        DwmSetWindowAttribute(hwnd, 20, ref dark, 4);
+        int mica = 2;
+        if (DwmSetWindowAttribute(hwnd, 38, ref mica, 4) != 0) return false;
+        var m = new MARGINS { Left = -1, Right = -1, Top = -1, Bottom = -1 };
+        return DwmExtendFrameIntoClientArea(hwnd, ref m) == 0;
+    }
+
     public static void SetDarkTitleBar(IntPtr hwnd)
     {
         int on = 1;

@@ -37,6 +37,36 @@ function Start-WpfAnim($Element, $Property, [double]$To, [int]$Ms = 900, [int]$D
     $Element.BeginAnimation($Property, $a)
 }
 
+# Animation d'une valeur de $From à $To (repart toujours de $From, même si une animation précédente tient la valeur)
+function Start-FromTo($Element, $Property, [double]$From, [double]$To, [int]$Ms = 300) {
+    $a = New-Object System.Windows.Media.Animation.DoubleAnimation
+    $a.From = $From; $a.To = $To
+    $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds($Ms))
+    $ease = New-Object System.Windows.Media.Animation.CubicEase
+    $ease.EasingMode = 'EaseOut'
+    $a.EasingFunction = $ease
+    $Element.BeginAnimation($Property, $a)
+}
+
+# Changement de page : fondu et léger glissement vers le haut
+function Start-PageTransition {
+    $h = $ui.Tabs.Template.FindName('PageHost', $ui.Tabs)
+    if (-not $h) { return }
+    Start-FromTo $h ([System.Windows.UIElement]::OpacityProperty) 0 1 260
+    Start-FromTo $h.RenderTransform ([System.Windows.Media.TranslateTransform]::YProperty) 16 0 340
+}
+
+# Fenêtre ouverte par dessus l'app : le fond se floute
+function Update-BackdropBlur {
+    $on = $ui.TestOverlay.IsVisible -or $ui.Overlay.IsVisible -or $ui.NetMapOverlay.IsVisible
+    if ($on -and -not $ui.Tabs.Effect) {
+        $fx = New-Object System.Windows.Media.Effects.BlurEffect
+        $fx.Radius = 0
+        $ui.Tabs.Effect = $fx
+        Start-FromTo $fx ([System.Windows.Media.Effects.BlurEffect]::RadiusProperty) 0 7 220
+    } elseif (-not $on) { $ui.Tabs.Effect = $null }
+}
+
 function Start-Pulse($Element) {
     if (-not $Element.CacheMode) { $Element.CacheMode = New-Object System.Windows.Media.BitmapCache }
     $a = New-Object System.Windows.Media.Animation.DoubleAnimation

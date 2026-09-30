@@ -168,6 +168,8 @@ function Show-TestPanel($Tile) {
     $ui.TestOverlay.Visibility = 'Visible'
     $ui.TestCard.Opacity = 0
     Start-WpfAnim $ui.TestCard ([System.Windows.UIElement]::OpacityProperty) 1 250
+    Start-FromTo $ui.TestCardScale ([System.Windows.Media.ScaleTransform]::ScaleXProperty) 0.95 1 280
+    Start-FromTo $ui.TestCardScale ([System.Windows.Media.ScaleTransform]::ScaleYProperty) 0.95 1 280
 }
 
 function Hide-TestPanel {
