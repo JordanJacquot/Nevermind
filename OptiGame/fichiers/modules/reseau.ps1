@@ -269,6 +269,40 @@ function New-DeviceTile($D, [int]$Index) {
     $card
 }
 
+# Adresses de ce PC sur toutes ses cartes réseau (câble, Wi-Fi...). Windows ne met jamais ses propres
+# adresses dans sa liste de voisins : sans ça, une deuxième carte apparaîtrait comme un appareil inconnu.
+function Get-LocalInterfaces {
+    $r = @{}
+    try {
+        foreach ($ni in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+            # Même déconnectée, une carte garde souvent son adresse (et Windows y répond lui-même)
+            if ([string]$ni.NetworkInterfaceType -eq 'Loopback') { continue }
+            $up = [string]$ni.OperationalStatus -eq 'Up'
+            $raw = $ni.GetPhysicalAddress().ToString()
+            $mac = if ($raw.Length -eq 12) { (($raw -split '(..)') | Where-Object { $_ }) -join '-' } else { '' }
+            $wifi = [string]$ni.NetworkInterfaceType -eq 'Wireless80211'
+            foreach ($ua in $ni.GetIPProperties().UnicastAddresses) {
+                if ([string]$ua.Address.AddressFamily -eq 'InterNetwork') { $r[$ua.Address.ToString()] = @{ Mac = $mac; Name = [string]$ni.Name; Desc = [string]$ni.Description; Wifi = $wifi; Up = $up } }
+            }
+        }
+    } catch {}
+    $r
+}
+
+# Un appareil du scan qui est en fait une carte réseau de ce PC : même ordinateur, avec sa vraie adresse physique
+function Set-LocalDevice($D, $Locals) {
+    $li = $Locals[[string]$D.Ip]
+    if (-not $li) { return }
+    $D.Self = $true
+    if ($li.Mac) { $D.Mac = $li.Mac; $D.Vendor = Get-Vendor $li.Mac }
+    $D.Host = $env:COMPUTERNAME
+    $how = if ($li.Wifi) { 'Wi-Fi' } else { 'câble' }
+    $D.Title = if ($li.Up) { "$env:COMPUTERNAME (ce PC, $how)" } else { "$env:COMPUTERNAME (ce PC, ancienne adresse $how)" }
+    $D.Adapter = "$($li.Name) : $($li.Desc)$(if (-not $li.Up) { ', déconnectée : Windows répond lui-même à son ancienne adresse' })"
+    $D.Hidden = $false; $D.New = $false
+    $D.KindInfo = Get-DeviceKind $D
+}
+
 function Invoke-NetworkScan {
     if ($script:NetScanning) { return }
     $net = Get-ActiveNet
@@ -348,6 +382,7 @@ function Invoke-NetworkScan {
     }
     $known = @($knownMap.Keys)
     $first = -not $known.Count
+    $locals = Get-LocalInterfaces
     $list = foreach ($d in $devs.Values) {
         $d.Self = $d.Ip -eq $self
         $d.Gateway = $d.Ip -eq $net.Gateway
@@ -356,6 +391,7 @@ function Invoke-NetworkScan {
         $d.KindInfo = Get-DeviceKind $d
         $d.Title = if ($d.Self) { "$env:COMPUTERNAME (ce PC)" } elseif ($d.Host -and $d.Host -ne 'lan') { $d.Host } elseif ($d.Gateway) { 'Box Internet' } elseif ($d.Vendor -and $d.Vendor -ne 'Adresse privée') { $d.Vendor } else { 'Appareil inconnu' }
         $d.New = (-not $first) -and $d.Mac -and ($known -notcontains $d.Mac) -and -not $d.Self
+        if ($d.Ip -ne $self) { Set-LocalDevice $d $locals }
         $d
     }
     $list = @($list | Sort-Object @{ Expression = { if ($_.Self) { 0 } elseif ($_.Gateway) { 1 } else { 2 } } }, @{ Expression = { [version]$_.Ip } })
@@ -635,6 +671,7 @@ function Show-DeviceDetail($D) {
         @('Type', $D.KindInfo.Kind)
     )
     if ($D.Host) { $rows += , @('Nom sur le réseau', $D.Host) }
+    if ($D.Adapter) { $rows += , @('Carte réseau', $D.Adapter) }
     if ($D.Announced -and $D.Announced -ne $D.Host) { $rows += , @('Nom annoncé par l''appareil', $D.Announced) }
     if ($D.Model) { $rows += , @('Modèle', "$(if ($D.Maker) { $D.Maker + ' ' })$($D.Model)") }
     if ($D.NbName) { $rows += , @('Nom Windows', "$($D.NbName)$(if ($D.NbGroup) { " (groupe $($D.NbGroup))" })") }

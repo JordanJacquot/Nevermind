@@ -363,6 +363,16 @@ $script:T.Run.Add_Tick({
                 $script:NetList = $saved
                 "$nodes éléments animés (orbes, impulsions), carte non redessinée par les filtres"
             }
+            Test-Step 'Deuxième carte réseau de ce PC' {
+                $loc = Get-LocalInterfaces
+                Assert-Test ($loc.Count -ge 1) 'cartes réseau de ce PC non lues'
+                # De préférence une carte déconnectée qui garde son adresse (le cas de « pcjordan-1 »)
+                $ip = @(@($loc.Keys | Where-Object { $_ -notlike '169.254.*' -and $_ -ne '127.0.0.1' -and -not $loc[$_].Up }) + @($loc.Keys | Where-Object { $_ -notlike '169.254.*' -and $_ -ne '127.0.0.1' }))[0]
+                $d = @{ Ip = $ip; Ms = $null; Mac = $null; Self = $false; Gateway = $false; Host = ''; Vendor = ''; Title = 'pcjordan-1'; New = $true; Hidden = $true }
+                Set-LocalDevice $d $loc
+                Assert-Test ($d.Self -and $d.Mac -and $d.Title -like "$env:COMPUTERNAME (ce PC*" -and -not $d.Hidden -and -not $d.New) "carte $ip : $($d.Title), mac $($d.Mac)"
+                "$($loc.Count) adresse(s) de ce PC ; $ip reconnue comme « $($d.Title) », adresse physique $($d.Mac)$(if ($d.Vendor) { ", $($d.Vendor)" })"
+            }
             Test-Step 'Réseau approfondi (situation simulée)' {
                 $script:NetList = @(
                     @{ Ip = '10.0.0.1'; Ms = 1; Mac = 'AA-BB-CC-00-00-01'; Ttl = 64; Self = $false; Gateway = $true; Host = ''; Vendor = ''; Title = 'Box Internet'; New = $false },

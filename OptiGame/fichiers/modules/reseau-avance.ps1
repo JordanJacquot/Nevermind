@@ -247,6 +247,9 @@ function Merge-NetDeep($R, $Net, [string[]]$Subnet) {
         }
         Update-DeviceIdentity $d
     }
+    $locals = Get-LocalInterfaces
+    $primary = if ($Net) { [string]$Net.Ip } else { '' }
+    foreach ($d in $list) { if ([string]$d.Ip -ne $primary) { Set-LocalDevice $d $locals } }
     $script:NetList = @($list | Sort-Object @{ Expression = { if ($_.Self) { 0 } elseif ($_.Gateway) { 1 } else { 2 } } }, @{ Expression = { try { [version]$_.Ip } catch { [version]'255.255.255.255' } } })
     $added
 }
