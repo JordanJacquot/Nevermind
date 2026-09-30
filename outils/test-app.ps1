@@ -344,19 +344,24 @@ $script:T.Run.Add_Tick({
                     $script:NetList += @{ Ip = "192.168.1.$(10 + $i)"; Ms = $(if ($i % 4 -eq 3) { $null } else { $i }); Mac = "AA-$i"; Gateway = $false; Self = ($i -eq 0); Hidden = ($i % 4 -eq 3); New = ($i -eq 5); Camera = ($k -eq 'Caméra')
                         Title = "Appareil $i"; Vendor = 'Test'; KindInfo = @{ Kind = $k; Glyph = 0xE774; Color = '#4EA8FF' } }
                 }
-                Show-NetMap; Wait-TestMs 600
+                Show-NetMap; Wait-TestMs 2600
                 Assert-Test ($ui.NetMapSub.Text -match 'Appareil 3 \(192\.168\.1\.13\)') "appareils discrets non nommés en haut de la carte : $($ui.NetMapSub.Text)"
                 Set-NetFilter 'hidden'
                 Assert-Test ($ui.NetDevices.Children.Count -eq 3) "filtre Discrets : $($ui.NetDevices.Children.Count) appareils (attendu 3)"
                 Set-NetFilter 'all'
-                $nodes = @($ui.NetMapCanvas.Children | Where-Object { $_ -is [System.Windows.Controls.StackPanel] }).Count
-                Assert-Test ($ui.NetMapOverlay.Visibility -eq 'Visible' -and $nodes -eq 15) "carte : $nodes éléments (attendu 15 : Internet, la box et 13 appareils)"
+                $nodes = @($ui.NetMapCanvas.Children | Where-Object { $_ -is [System.Windows.Controls.StackPanel] })
+                Assert-Test ($ui.NetMapOverlay.Visibility -eq 'Visible' -and $nodes.Count -eq 15) "carte : $($nodes.Count) éléments (attendu 15 : Internet, la box et 13 appareils)"
+                # Changer le filtre de la liste ne redessine pas la carte : les appareils restent affichés
+                Assert-Test (@($nodes | Where-Object { $_.RenderTransform.ScaleX -lt 0.99 }).Count -eq 0) 'la carte a été redessinée par un changement de filtre'
+                $pulse = @($ui.NetMapCanvas.Children | Where-Object { $_ -is [System.Windows.Shapes.Path] -and $_.Data -is [System.Windows.Media.EllipseGeometry] })[0]
+                Assert-Test ($pulse -and $pulse.Data.Center -ne [System.Windows.Point]::new(600, 430)) 'les impulsions ne bougent pas'
                 Save-TestShot 'carte-reseau'
+                $nodes = $nodes.Count
                 for ($i = 14; $i -lt 34; $i++) { $script:NetList += @{ Ip = "192.168.1.$(10 + $i)"; Ms = 2; Mac = "AA-$i"; Gateway = $false; Self = $false; Title = "Objet $i"; KindInfo = @{ Kind = 'Objet connecté'; Glyph = 0xE80F; Color = '#4EA8FF' } } }
-                Show-NetMap; Wait-TestMs 400; Save-TestShot 'carte-reseau-33'
+                Show-NetMap; Wait-TestMs 3000; Save-TestShot 'carte-reseau-33'
                 Hide-NetMap
                 $script:NetList = $saved
-                "$nodes éléments, deux anneaux au delà de 14 appareils"
+                "$nodes éléments animés (orbes, impulsions), carte non redessinée par les filtres"
             }
             Test-Step 'Réseau approfondi (situation simulée)' {
                 $script:NetList = @(
