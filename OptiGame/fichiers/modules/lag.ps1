@@ -211,7 +211,7 @@ function Get-PingStats([double[]]$A) {
     $sorted = $ok.ToArray(); [Array]::Sort($sorted)
     $med = $sorted[[int]($sorted.Count / 2)]
     $p95 = $sorted[[int][math]::Floor(0.95 * ($sorted.Count - 1))]
-    $lim = $med + [math]::Max(30, 4 * $jit)
+    $lim = $med + [math]::Max(30.0, 4 * $jit)
     $spikes = New-Object System.Collections.Generic.List[double]
     for ($i = 0; $i -lt $n; $i++) { $r = $A[2 * $i + 1]; if ($r -lt 0 -or $r -gt $lim) { $spikes.Add($A[2 * $i]) } }
     @{ N = $n; Loss = $loss; Dead = $false; Med = [math]::Round($med, 1); P95 = [math]::Round($p95, 1); Jit = [math]::Round($jit, 1); Max = [math]::Round($sorted[-1], 1); Spikes = $spikes.ToArray() }
@@ -371,7 +371,7 @@ function Get-LagDiagnosis($R) {
                 Tips = @('Change de serveur ou de région si le jeu le permet.', 'Regarde si d''autres joueurs signalent des soucis (réseaux sociaux du jeu).') }
         }
     }
-    $mins = [math]::Max(1, $R.Seconds / 60)
+    $mins = [math]::Max(1.0, $R.Seconds / 60)
     if ($R.Gaps -and $R.Gaps / $mins -ge 2 -and $gS -notin 'bad', 'warn' -and $rS -notin 'bad', 'warn') {
         $f += @{ Status = 'warn'; Title = 'Le serveur envoyait ses données par à-coups'
             Detail = "$($R.Gaps) fois, le serveur du jeu n'a rien envoyé pendant plus d'un quart de seconde (le plus long : $($R.MaxGap) ms), alors que ta connexion était stable. Ça vient du serveur ou de la route jusqu'à lui."
@@ -494,33 +494,65 @@ function New-LagChart($S) {
     foreach ($y in 0.25, 0.5, 0.75) {
         $ln = New-Object System.Windows.Shapes.Line
         $ln.X1 = 0; $ln.X2 = $w; $ln.Y1 = $h * $y; $ln.Y2 = $h * $y
-        $ln.Stroke = Get-Brush '#232833'; $ln.StrokeThickness = 1
+        $ln.Stroke = Get-Brush '#232A37'; $ln.StrokeThickness = 1
+        $ln.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new([double[]]@(2, 4))
         [void]$cv.Children.Add($ln)
     }
     foreach ($k in 'ref', 'gw', 'srv') {
         $vals = @($S.Series.$k)
         if ($vals.Count -lt 2) { continue }
-        $pl = New-Object System.Windows.Shapes.Polyline
-        $pl.Stroke = Get-Brush $LagColors[$k]; $pl.StrokeThickness = 2; $pl.StrokeLineJoin = 'Round'
+        # Morceaux continus (une perte coupe la courbe), chacun lissé
+        $parts = New-Object System.Collections.ArrayList
+        $cur = New-Object 'System.Collections.Generic.List[System.Windows.Point]'
         for ($i = 0; $i -lt $vals.Count; $i++) {
             $x = $w * $i / ($vals.Count - 1)
             $v = [double]$vals[$i]
             if ($v -lt 0) {
-                $m = New-Object System.Windows.Shapes.Rectangle
-                $m.Width = [math]::Max(2, $w / $vals.Count); $m.Height = 6; $m.Fill = Get-Brush $Colors.bad
-                [System.Windows.Controls.Canvas]::SetLeft($m, $x - 1); [System.Windows.Controls.Canvas]::SetTop($m, $h - 6)
+                $m = New-Object System.Windows.Controls.Border
+                $m.Width = [math]::Max(4, $w / $vals.Count); $m.Height = 6; $m.CornerRadius = [System.Windows.CornerRadius]::new(3)
+                $m.Background = Get-Brush $Colors.bad; $m.Effect = New-Glow $Colors.bad 8 0.8
+                [System.Windows.Controls.Canvas]::SetLeft($m, $x - 2); [System.Windows.Controls.Canvas]::SetTop($m, $h - 7)
                 [void]$cv.Children.Add($m)
+                if ($cur.Count) { [void]$parts.Add($cur); $cur = New-Object 'System.Collections.Generic.List[System.Windows.Point]' }
                 continue
             }
-            [void]$pl.Points.Add([System.Windows.Point]::new($x, $h - 4 - ($h - 8) * [math]::Min(1, $v / $max)))
+            $cur.Add([System.Windows.Point]::new($x, $h - 4 - ($h - 8) * [math]::Min(1.0, $v / $max)))
         }
+        if ($cur.Count) { [void]$parts.Add($cur) }
+        $geo = New-Object System.Windows.Media.PathGeometry
+        $area = New-Object System.Windows.Media.PathGeometry
+        foreach ($p in $parts) {
+            if ($p.Count -lt 2) { continue }
+            $fig = Get-SmoothFigure $p 0 $h
+            [void]$geo.Figures.Add($fig)
+            $af = $fig.Clone()
+            [void]$af.Segments.Add([System.Windows.Media.LineSegment]::new([System.Windows.Point]::new($p[$p.Count - 1].X, $h), $false))
+            [void]$af.Segments.Add([System.Windows.Media.LineSegment]::new([System.Windows.Point]::new($p[0].X, $h), $false))
+            $af.IsClosed = $true
+            [void]$area.Figures.Add($af)
+        }
+        $fillPath = New-Object System.Windows.Shapes.Path
+        $fillPath.Data = $area
+        $col = Get-Color $LagColors[$k]
+        $fillPath.Fill = New-LinearBrush @(('#{0:X2}{1:X2}{2:X2}{3:X2}' -f 50, $col.R, $col.G, $col.B), ('#00{0:X2}{1:X2}{2:X2}' -f $col.R, $col.G, $col.B)) 0 0 0 1
+        [void]$cv.Children.Add($fillPath)
+        $pl = New-Object System.Windows.Shapes.Path
+        $pl.Data = $geo
+        $pl.Stroke = New-LinearBrush @($LagColors[$k], (Get-LightHex $LagColors[$k] 0.35)) 0 0 1 0
+        $pl.StrokeThickness = 2.2; $pl.StrokeLineJoin = 'Round'
+        $pl.Effect = New-Glow $LagColors[$k] 10 0.7
         [void]$cv.Children.Add($pl)
     }
     $mx = New-Text "$max ms" 11 '#5B6475'
     [System.Windows.Controls.Canvas]::SetLeft($mx, 4); [System.Windows.Controls.Canvas]::SetTop($mx, 2)
     [void]$cv.Children.Add($mx)
     $sp = New-Object System.Windows.Controls.StackPanel
-    [void]$sp.Children.Add($cv)
+    $frame = New-Object System.Windows.Controls.Border
+    $frame.Background = New-LinearBrush @('#141922', '#0E1117') 0 0 0 1
+    $frame.BorderBrush = Get-Brush 'card-border'; $frame.BorderThickness = New-Thickness 1 1 1 1
+    $frame.CornerRadius = [System.Windows.CornerRadius]::new(14); $frame.Padding = New-Thickness 12 10 12 10
+    $frame.Child = $cv
+    [void]$sp.Children.Add($frame)
     $leg = New-Object System.Windows.Controls.WrapPanel
     $leg.Margin = New-Thickness 0 6 0 0
     foreach ($k in 'gw', 'ref', 'srv') {

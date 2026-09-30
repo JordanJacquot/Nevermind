@@ -641,7 +641,7 @@ function Show-DeviceDetail($D) {
     if ($D.OsGuess) { $rows += , @('Système probable', $D.OsGuess) }
     if (@($D.ServiceLabels).Count) { $rows += , @('Ce qu''il propose', (@($D.ServiceLabels) -join ', ')) }
     if ($D.WebTitle) { $rows += , @('Sa page de réglages', $D.WebTitle) }
-    if (@($D.Ipv6).Count) { $rows += , @('Adresse IPv6', (@($D.Ipv6) | Select-Object -First 2) -join ', ') }
+    if (@($D.Ipv6).Count) { $rows += , @('Adresse IPv6', ((@($D.Ipv6) | Select-Object -First 2) -join ', ')) }
     if (@($D.FoundBy).Count) { $rows += , @('Trouvé grâce à', (@($D.FoundBy) -join ', '), '#9AA3B2') }
     if ($D.Hidden) { $rows += , @('Appareil discret', 'Il ne répond pas au ping. C''est normal pour beaucoup de téléphones et de PC protégés par un pare-feu.', '#9AA3B2') }
     if ($D.Camera) { $rows += , @('Caméra possible', "Indices : $(@($D.CameraWhy) -join ', '). Vérifie que tu sais à qui elle est et où elle filme.", $Colors.warn) }
