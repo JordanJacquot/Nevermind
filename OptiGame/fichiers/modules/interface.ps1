@@ -32,12 +32,14 @@ function Set-Status([string]$Text) {
     Update-UI
 }
 
-# Écran de chargement du démarrage : étape en cours et barre qui avance en douceur
+# Écran de chargement du démarrage : l'étape arrive en glissant, l'aiguille du compteur monte
 function Set-StartupStep([string]$Text, [double]$Pct) {
     $ui.StartupStep.Text = $Text
-    $a = New-Object System.Windows.Media.Animation.DoubleAnimation
-    $a.To = $Pct; $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(500))
-    $ui.StartupBar.BeginAnimation([System.Windows.Controls.Primitives.RangeBase]::ValueProperty, $a)
+    try {
+        Start-FromTo $ui.StartupStep ([System.Windows.UIElement]::OpacityProperty) 0 1 350
+        Start-FromTo $ui.StartupStep.RenderTransform ([System.Windows.Media.TranslateTransform]::YProperty) 10 0 350
+        Set-LoaderProgress $Pct
+    } catch {}
     Update-UI
 }
 
@@ -45,9 +47,17 @@ function Hide-StartupOverlay {
     $o = $ui.StartupOverlay
     if ($o.Visibility -ne 'Visible') { return }
     $a = New-Object System.Windows.Media.Animation.DoubleAnimation
-    $a.To = 0; $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(300))
+    $a.To = 0; $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(380))
+    # Le temps de voir l'aiguille à 100 %, puis l'écran s'efface en zoomant légèrement
+    $a.BeginTime = [TimeSpan]::FromMilliseconds(450)
+    foreach ($p in [System.Windows.Media.ScaleTransform]::ScaleXProperty, [System.Windows.Media.ScaleTransform]::ScaleYProperty) {
+        $z = New-Object System.Windows.Media.Animation.DoubleAnimation
+        $z.From = 1; $z.To = 1.08; $z.BeginTime = [TimeSpan]::FromMilliseconds(450)
+        $z.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(380))
+        $ui.StartupZoom.BeginAnimation($p, $z)
+    }
     # Une fois l'écran parti : « Prêt. », puis visite guidée ou nouveautés
-    $a.Add_Completed({ $ui.StartupOverlay.Visibility = 'Collapsed'; if ($script:LogoGlow) { $script:LogoGlow.BeginAnimation([System.Windows.Media.Effects.DropShadowEffect]::OpacityProperty, $null); $ui.StartupLogo.Effect = $null }; $t = $script:StartupThen; $script:StartupThen = $null; if ($t) { & $t } })
+    $a.Add_Completed({ $ui.StartupOverlay.Visibility = 'Collapsed'; try { Stop-StartupLoader } catch {}; $t = $script:StartupThen; $script:StartupThen = $null; if ($t) { & $t } })
     $o.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $a)
 }
 

@@ -326,7 +326,12 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($l.Count -eq 1) 'durée du démarrage non notée'
                 # Capture de l'écran de chargement (réaffiché un instant)
                 $ui.StartupOverlay.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null); $ui.StartupOverlay.Opacity = 1; $ui.StartupOverlay.Visibility = 'Visible'
-                Set-StartupStep 'Recherche de tes jeux...' 86; $ui.StartupDetail.Text = 'Calcul: Fichiers temporaires (utilisateur)...'; Wait-TestMs 700; Save-TestShot 'chargement'
+                foreach ($zp in [System.Windows.Media.ScaleTransform]::ScaleXProperty, [System.Windows.Media.ScaleTransform]::ScaleYProperty) { $ui.StartupZoom.BeginAnimation($zp, $null) }
+                Start-StartupLoader
+                Assert-Test ($ui.StartupLoaderHost.Children.Count -eq 1 -and $script:Loader.Loops.Count -ge 6) 'compteur animé absent'
+                Set-StartupStep 'Recherche de tes jeux...' 72; $ui.StartupDetail.Text = 'Calcul: Fichiers temporaires (utilisateur)...'; Wait-TestMs 1200; Save-TestShot 'chargement'
+                Stop-StartupLoader
+                Assert-Test ($null -eq $script:Loader) 'animations du chargement non arrêtées'
                 $ui.StartupOverlay.Visibility = 'Collapsed'
                 ($l[0].Line -replace '^.*Démarrage terminé', 'premières tâches terminées')
             }

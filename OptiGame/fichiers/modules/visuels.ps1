@@ -402,3 +402,181 @@ function Update-Stepper($Stepper, [string]$Phase, [switch]$AllDone) {
     }
     $Stepper.Cur = $Phase
 }
+
+# ---------------------------------------------------------------------------
+# Écran de chargement : compteur de vitesse animé (l'aiguille monte avec le chargement)
+# ---------------------------------------------------------------------------
+function New-LinearBrush([string[]]$Hex, [double]$X1 = 0, [double]$Y1 = 0, [double]$X2 = 1, [double]$Y2 = 0) {
+    $b = New-Object System.Windows.Media.LinearGradientBrush
+    $b.StartPoint = [System.Windows.Point]::new($X1, $Y1); $b.EndPoint = [System.Windows.Point]::new($X2, $Y2)
+    for ($i = 0; $i -lt $Hex.Count; $i++) {
+        [void]$b.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString($Hex[$i]), $i / [math]::Max(1, $Hex.Count - 1)))
+    }
+    $b
+}
+
+function New-LoaderArc([double]$C, [double]$R, [double]$Start, [double]$Sweep, $Stroke, [double]$Thick) {
+    $p = New-Object System.Windows.Shapes.Path
+    $p.Data = Get-ArcGeometry $C $R $Start $Sweep
+    $p.Stroke = $Stroke; $p.StrokeThickness = $Thick
+    $p.StrokeStartLineCap = 'Round'; $p.StrokeEndLineCap = 'Round'
+    $p
+}
+
+# Animation en boucle, notée pour être arrêtée quand l'écran disparaît
+function Start-LoaderLoop($Target, $Property, [double]$From, [double]$To, [int]$Ms, [bool]$Reverse) {
+    $a = New-Object System.Windows.Media.Animation.DoubleAnimation
+    $a.From = $From; $a.To = $To; $a.AutoReverse = $Reverse
+    $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds($Ms))
+    $a.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+    if ($Reverse) { $e = New-Object System.Windows.Media.Animation.SineEase; $e.EasingMode = 'EaseInOut'; $a.EasingFunction = $e }
+    $Target.BeginAnimation($Property, $a)
+    [void]$script:Loader.Loops.Add(@{ T = $Target; P = $Property })
+}
+
+# Un anneau qui tourne autour du compteur (un arc lumineux en forme de comète)
+function New-LoaderSpinner($Canvas, [double]$C, [double]$R, [double]$Sweep, [string]$Hex, [double]$Thick, [int]$Ms, [bool]$Reverse) {
+    $g = New-Object System.Windows.Controls.Canvas
+    $g.Width = 2 * $C; $g.Height = 2 * $C
+    $rot = New-Object System.Windows.Media.RotateTransform 0, $C, $C
+    $g.RenderTransform = $rot
+    $col = [System.Windows.Media.ColorConverter]::ConvertFromString($Hex)
+    $b = New-Object System.Windows.Media.LinearGradientBrush
+    $b.StartPoint = [System.Windows.Point]::new(0, 1); $b.EndPoint = [System.Windows.Point]::new(1, 0)
+    [void]$b.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.Color]::FromArgb(0, $col.R, $col.G, $col.B), 0))
+    [void]$b.GradientStops.Add([System.Windows.Media.GradientStop]::new($col, 1))
+    $arc = New-LoaderArc $C $R 0 $Sweep $b $Thick
+    [void]$g.Children.Add($arc)
+    [void]$Canvas.Children.Add($g)
+    Start-LoaderLoop $rot ([System.Windows.Media.RotateTransform]::AngleProperty) $(if ($Reverse) { 360 } else { 0 }) $(if ($Reverse) { 0 } else { 360 }) $Ms $false
+    $arc
+}
+
+function Start-StartupLoader {
+    $lh = $ui.StartupLoaderHost
+    if (-not $lh) { return }
+    $lh.Children.Clear()
+    $S = 260.0; $C = 130.0
+    $script:Loader = @{ Loops = (New-Object System.Collections.ArrayList); Shown = 0.0; Ticks = @() }
+    $cv = New-Object System.Windows.Controls.Canvas
+    $cv.Width = $S; $cv.Height = $S
+
+    # Halo qui respire derrière le compteur
+    $halo = New-Object System.Windows.Shapes.Ellipse
+    $halo.Width = 220; $halo.Height = 220
+    $rb = New-Object System.Windows.Media.RadialGradientBrush
+    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#4022D37A'), 0))
+    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#0022D37A'), 1))
+    $halo.Fill = $rb
+    $halo.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5)
+    $hs = New-Object System.Windows.Media.ScaleTransform 1, 1
+    $halo.RenderTransform = $hs
+    [System.Windows.Controls.Canvas]::SetLeft($halo, 20); [System.Windows.Controls.Canvas]::SetTop($halo, 20)
+    [void]$cv.Children.Add($halo)
+    Start-LoaderLoop $hs ([System.Windows.Media.ScaleTransform]::ScaleXProperty) 0.85 1.12 1600 $true
+    Start-LoaderLoop $hs ([System.Windows.Media.ScaleTransform]::ScaleYProperty) 0.85 1.12 1600 $true
+
+    # Anneau fin, et deux comètes qui tournent en sens inverse
+    $ring = New-Object System.Windows.Shapes.Ellipse
+    $ring.Width = 228; $ring.Height = 228; $ring.Stroke = Get-Brush '#1A2130'; $ring.StrokeThickness = 1.5
+    [System.Windows.Controls.Canvas]::SetLeft($ring, 16); [System.Windows.Controls.Canvas]::SetTop($ring, 16)
+    [void]$cv.Children.Add($ring)
+    $c1 = New-LoaderSpinner $cv $C 114 120 '#22D37A' 3 1500 $false
+    $c1.Effect = New-Glow '#22D37A' 14 0.9
+    [void](New-LoaderSpinner $cv $C 122 70 '#4EA8FF' 2 2600 $true)
+
+    # Particules en orbite
+    foreach ($pt in @(@(104, 3200, '#9022D37A', 4), @(126, 4300, '#904EA8FF', 3), @(96, 2400, '#70FFFFFF', 3))) {
+        $g = New-Object System.Windows.Controls.Canvas
+        $rot = New-Object System.Windows.Media.RotateTransform 0, $C, $C
+        $g.RenderTransform = $rot
+        $d = New-Object System.Windows.Shapes.Ellipse
+        $d.Width = $pt[3]; $d.Height = $pt[3]; $d.Fill = Get-Brush $pt[2]
+        [System.Windows.Controls.Canvas]::SetLeft($d, $C + $pt[0] - $pt[3] / 2); [System.Windows.Controls.Canvas]::SetTop($d, $C - $pt[3] / 2)
+        [void]$g.Children.Add($d)
+        [void]$cv.Children.Add($g)
+        $r0 = Get-Random -Minimum 0 -Maximum 360
+        Start-LoaderLoop $rot ([System.Windows.Media.RotateTransform]::AngleProperty) $r0 ($r0 + 360) $pt[1] $false
+    }
+
+    # Graduations du compteur (elles s'allument quand l'aiguille passe)
+    for ($i = 0; $i -le 10; $i++) {
+        $ang = (135 + 27 * $i) * [math]::PI / 180
+        $ln = New-Object System.Windows.Shapes.Line
+        $r1 = if ($i % 5 -eq 0) { 88 } else { 92 }
+        $ln.X1 = $C + $r1 * [math]::Cos($ang); $ln.Y1 = $C + $r1 * [math]::Sin($ang)
+        $ln.X2 = $C + 99 * [math]::Cos($ang); $ln.Y2 = $C + 99 * [math]::Sin($ang)
+        $ln.Stroke = Get-Brush '#2A3242'; $ln.StrokeThickness = $(if ($i % 5 -eq 0) { 3 } else { 2 })
+        $ln.StrokeStartLineCap = 'Round'; $ln.StrokeEndLineCap = 'Round'
+        [void]$cv.Children.Add($ln)
+        $script:Loader.Ticks += , @($ln, (10 * $i))
+    }
+
+    # Arc du compteur : fond et remplissage dégradé vert vers cyan
+    [void]$cv.Children.Add((New-LoaderArc $C 78 135 270 (Get-Brush '#1B212C') 10))
+    $prog = New-LoaderArc $C 78 135 0.1 (New-LinearBrush @('#22D37A', '#4EE0FF') 0 1 1 0) 10
+    $prog.Effect = New-Glow '#22D37A' 16 0.7
+    [void]$cv.Children.Add($prog)
+
+    # Aiguille et moyeu
+    $needle = New-Object System.Windows.Shapes.Polygon
+    foreach ($p in @(@(($C - 10), ($C - 3)), @(($C + 64), $C), @(($C - 10), ($C + 3)))) { [void]$needle.Points.Add([System.Windows.Point]::new($p[0], $p[1])) }
+    $needle.Fill = New-LinearBrush @('#FFFFFF', '#5CF0AA') 0 0 1 0
+    $nrot = New-Object System.Windows.Media.RotateTransform 135, $C, $C
+    $needle.RenderTransform = $nrot
+    $needle.Effect = New-Glow '#5CF0AA' 10 0.8
+    [void]$cv.Children.Add($needle)
+    $hub = New-Object System.Windows.Shapes.Ellipse
+    $hub.Width = 20; $hub.Height = 20; $hub.Fill = Get-Brush '#0E1116'; $hub.Stroke = Get-Brush '#22D37A'; $hub.StrokeThickness = 3
+    [System.Windows.Controls.Canvas]::SetLeft($hub, $C - 10); [System.Windows.Controls.Canvas]::SetTop($hub, $C - 10)
+    [void]$cv.Children.Add($hub)
+
+    # Pourcentage sous le moyeu
+    $txt = New-Text '0 %' 24 '#FFFFFF' -Bold
+    $txt.Width = $S; $txt.TextAlignment = 'Center'; $txt.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe UI Variable Display, Segoe UI'
+    [System.Windows.Controls.Canvas]::SetTop($txt, $C + 36)
+    [void]$cv.Children.Add($txt)
+
+    [void]$lh.Children.Add($cv)
+    $script:Loader.Arc = $prog; $script:Loader.Needle = $nrot; $script:Loader.Text = $txt
+
+    # Halo de fond qui dérive lentement
+    if ($ui.StartupHalo) {
+        $pa = New-Object System.Windows.Media.Animation.PointAnimation
+        $pa.From = [System.Windows.Point]::new(0.3, 0.2); $pa.To = [System.Windows.Point]::new(0.7, 0.8)
+        $pa.Duration = [System.Windows.Duration]::new([TimeSpan]::FromSeconds(6)); $pa.AutoReverse = $true
+        $pa.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+        $ui.StartupHalo.BeginAnimation([System.Windows.Media.RadialGradientBrush]::CenterProperty, $pa)
+        [void]$script:Loader.Loops.Add(@{ T = $ui.StartupHalo; P = [System.Windows.Media.RadialGradientBrush]::CenterProperty })
+    }
+}
+
+# L'aiguille monte (avec un petit rebond de moteur), l'arc se remplit, le pourcentage défile
+function Set-LoaderProgress([double]$Pct) {
+    $L = $script:Loader
+    if (-not $L) { return }
+    $a = New-Object System.Windows.Media.Animation.DoubleAnimation
+    $a.To = 135 + 270 * $Pct / 100
+    $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(750))
+    $e = New-Object System.Windows.Media.Animation.BackEase; $e.Amplitude = 0.5; $e.EasingMode = 'EaseOut'
+    $a.EasingFunction = $e
+    $L.Needle.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
+    Start-Anim {
+        param($k, $s)
+        $L2 = $script:Loader
+        if (-not $L2) { return }
+        $v = $s.From + ($s.To - $s.From) * $k
+        $L2.Shown = $v
+        $L2.Arc.Data = Get-ArcGeometry 130 78 135 ([math]::Max(0.1, 270 * $v / 100))
+        $L2.Text.Text = '{0:N0} %' -f $v
+        foreach ($t in $L2.Ticks) { if ($v -ge $t[1] -and -not $t[0].Tag) { $t[0].Tag = 1; $t[0].Stroke = Get-Brush '#5CF0AA' } }
+    } @{ From = $L.Shown; To = $Pct } 700
+}
+
+function Stop-StartupLoader {
+    $L = $script:Loader
+    if (-not $L) { return }
+    foreach ($x in $L.Loops) { try { $x.T.BeginAnimation($x.P, $null) } catch {} }
+    $script:Loader = $null
+    $ui.StartupLoaderHost.Children.Clear()
+}

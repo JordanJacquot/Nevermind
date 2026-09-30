@@ -197,14 +197,7 @@ $Window.Add_ContentRendered({
     if ($back) { $back.Add_Click({ Show-Page $HubIndex }) }
     $script:TopReport = $ui.Tabs.Template.FindName('TopReport', $ui.Tabs)
     if ($script:TopReport) { $script:TopReport.Add_Click({ Invoke-Safe { Show-ReportPanel } }) }
-    if ($logo) { $ui.StartupLogo.Source = $logo.Source }
-    $script:LogoGlow = New-Glow '#22D37A' 30 0.2
-    $ui.StartupLogo.Effect = $script:LogoGlow
-    $pulse = New-Object System.Windows.Media.Animation.DoubleAnimation
-    $pulse.From = 0.15; $pulse.To = 0.85; $pulse.AutoReverse = $true
-    $pulse.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(900))
-    $pulse.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
-    $script:LogoGlow.BeginAnimation([System.Windows.Media.Effects.DropShadowEffect]::OpacityProperty, $pulse)
+    try { Start-StartupLoader } catch { Write-Log "Chargement: $_" }
     # Premières tâches derrière l'écran de chargement : l'app n'apparaît qu'une fois prête
     $t0 = Get-Date
     try {
