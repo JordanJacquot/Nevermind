@@ -12,6 +12,8 @@ OptiGame vérifie la santé de ton PC (processeur, carte graphique, mémoire, di
 
 La première fois, Windows peut afficher « Windows a protégé votre ordinateur » : clique sur « Informations complémentaires » puis « Exécuter quand même ».
 
+Dans la page **Sauvegarde**, « Raccourci et démarrage » crée un raccourci sur le bureau et peut lancer OptiGame à chaque démarrage du PC (réduit près de l'horloge, sans demande d'autorisation de Windows).
+
 Les mises à jour sont ensuite proposées directement dans l'application. Relancer OptiGame alors qu'il est déjà ouvert (même caché près de l'horloge) ramène simplement sa fenêtre.
 
 ## Ce que fait l'application

@@ -189,6 +189,73 @@ function Restore-AllSettings {
 }
 
 # ---------------------------------------------------------------------------
+# Raccourci sur le bureau et lancement au démarrage du PC
+# ---------------------------------------------------------------------------
+# Le démarrage passe par une tâche planifiée « avec les droits les plus élevés » : OptiGame s'ouvre
+# sans la demande d'autorisation de Windows (une simple entrée « Exécuter » la ferait apparaître à chaque démarrage).
+$AutoStartTask = 'OptiGame (démarrage)'
+
+function Get-AppRoot { if ((Split-Path $AppDir -Leaf) -eq 'fichiers') { Split-Path $AppDir -Parent } else { $AppDir } }
+function Get-DesktopShortcutPath {
+    $desk = if ($script:DesktopDir) { $script:DesktopDir } else { [Environment]::GetFolderPath('Desktop') }
+    Join-Path $desk 'OptiGame.lnk'
+}
+
+# Cible d'un raccourci (vide s'il n'existe pas ou est illisible)
+function Get-ShortcutTarget([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return '' }
+    try {
+        $sh = New-Object -ComObject WScript.Shell
+        try { [string]$sh.CreateShortcut($Path).TargetPath } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($sh) }
+    } catch { '' }
+}
+
+function Test-DesktopShortcut { (Get-ShortcutTarget (Get-DesktopShortcutPath)) -eq (Join-Path (Get-AppRoot) 'OptiGame.exe') }
+
+function New-DesktopShortcut {
+    $root = Get-AppRoot
+    $exe = Join-Path $root 'OptiGame.exe'
+    if (-not (Test-Path -LiteralPath $exe)) { throw "OptiGame.exe est introuvable dans le dossier $root." }
+    $sh = New-Object -ComObject WScript.Shell
+    try {
+        $lnk = $sh.CreateShortcut((Get-DesktopShortcutPath))
+        $lnk.TargetPath = $exe
+        $lnk.WorkingDirectory = $root
+        $lnk.IconLocation = "$exe,0"
+        $lnk.Description = 'OptiGame : analyse et optimisation gaming'
+        $lnk.Save()
+    } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($sh) }
+}
+
+function Get-AutoStartTask { Get-ScheduledTask -TaskName $AutoStartTask -ErrorAction SilentlyContinue | Select-Object -First 1 }
+function Test-AutoStart { $null -ne (Get-AutoStartTask) }
+
+function Set-AutoStart([bool]$On) {
+    if (-not $On) {
+        if (Get-AutoStartTask) { Unregister-ScheduledTask -TaskName $AutoStartTask -Confirm:$false -ErrorAction Stop }
+        return
+    }
+    $ps1 = Join-Path $AppDir 'OptiGame.ps1'
+    $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $act = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1`" -Demarrage" -WorkingDirectory $env:USERPROFILE
+    $trg = New-ScheduledTaskTrigger -AtLogOn -User $user
+    $trg.Delay = 'PT15S'   # laisse Windows finir d'ouvrir la session
+    $pr = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
+    $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $AutoStartTask -Action $act -Trigger $trg -Principal $pr -Settings $set -Description 'Lance OptiGame à l''ouverture de session, réduit près de l''horloge. Se règle dans OptiGame, page Sauvegarde.' -Force -ErrorAction Stop | Out-Null
+}
+
+# Dossier d'OptiGame déplacé ou renommé : la tâche de démarrage suit
+function Update-AutoStartPath {
+    $t = Get-AutoStartTask
+    if (-not $t) { return }
+    $ps1 = Join-Path $AppDir 'OptiGame.ps1'
+    if ([string]@($t.Actions)[0].Arguments -notlike "*`"$ps1`"*") {
+        try { Set-AutoStart $true; Write-Log "Démarrage automatique : chemin mis à jour ($ps1)" } catch { Write-Log "Démarrage automatique : $_" }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Désinstallation
 # ---------------------------------------------------------------------------
 function Invoke-Uninstall {
@@ -197,6 +264,7 @@ function Invoke-Uninstall {
     $steps = @()
     if ($n) { $steps += "  - remettre les $n réglage$(if ($n -gt 1) {'s'}) de Windows modifié$(if ($n -gt 1) {'s'}) par OptiGame comme avant" }
     $steps += "  - supprimer ses données (sauvegarde, journal, préférences)"
+    if ((Test-AutoStart) -or (Test-DesktopShortcut)) { $steps += "  - retirer son raccourci du bureau et son lancement au démarrage" }
     $steps += "  - supprimer les fichiers d'OptiGame de ce dossier"
     $q = "Désinstaller OptiGame ?`n`nL'application va :`n" + ($steps -join "`n") + "`n`nLes points de restauration Windows sont conservés."
     if ([System.Windows.MessageBox]::Show($q, 'Désinstaller OptiGame', 'YesNo', 'Question') -ne 'Yes') { return }
@@ -204,6 +272,8 @@ function Invoke-Uninstall {
     $errors = @()
     if ($n) { $errors += Restore-AllSettings }
     try { Remove-Item -LiteralPath $DataDir -Recurse -Force -ErrorAction Stop } catch { $errors += "Données: $($_.Exception.Message)" }
+    try { Set-AutoStart $false } catch { $errors += "Démarrage automatique: $($_.Exception.Message)" }
+    if (Test-DesktopShortcut) { try { [IO.File]::Delete((Get-DesktopShortcutPath)) } catch {} }
 
     # Fichiers de l'application: uniquement ceux livrés avec OptiGame, jamais le reste du dossier.
     $here = $AppDir

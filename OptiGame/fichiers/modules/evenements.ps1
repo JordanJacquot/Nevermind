@@ -31,6 +31,7 @@ $Window.Add_SourceInitialized({
 foreach ($ov in $ui.TestOverlay, $ui.Overlay, $ui.NetMapOverlay) { $ov.Add_IsVisibleChanged({ try { Update-BackdropBlur } catch {} }) }
 
 $Window.Add_StateChanged({
+    if ($script:StartHidden) { return }   # lancement avec Windows : la fenêtre se prépare d'abord, réduite
     if ($Window.WindowState -eq 'Minimized') { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } }
     else { $script:StateBeforeTray = [string]$Window.WindowState }
 })
@@ -157,6 +158,8 @@ $ui.ChkNetWatch.IsChecked = [bool](Get-Setting 'NetWatch' $false)
 $ui.ChkNetWatch.Add_Click({ Invoke-Safe { Set-NetWatch ([bool]$ui.ChkNetWatch.IsChecked); Set-Status $(if ($ui.ChkNetWatch.IsChecked) { 'Surveillance du réseau activée.' } else { 'Surveillance du réseau désactivée.' }) } })
 $ui.ChkBeta.IsChecked = [bool](Get-Setting 'Beta' $false)
 $ui.ChkBeta.Add_Click({ Invoke-Safe { Set-BetaChannel ([bool]$ui.ChkBeta.IsChecked) } })
+$ui.BtnShortcut.Add_Click({ Invoke-Safe { Invoke-CreateShortcut } })
+$ui.ChkAutoStart.Add_Click({ Invoke-Safe { Set-AutoStartFromUi ([bool]$ui.ChkAutoStart.IsChecked) } })
 $Window.Dispatcher.Add_UnhandledException({
     param($s, $e)
     Write-Log "ERREUR non gérée: $($e.Exception.Message)"
@@ -234,6 +237,10 @@ $Window.Add_ContentRendered({
             Update-BackupSummary
             Update-HistoryList
         }
+        Invoke-Safe {
+            if (-not $env:OPTIGAME_TEST) { Update-AutoStartPath }
+            Update-ShortcutCard
+        }
         Set-StartupStep 'Protection du PC...' 72
         Invoke-Safe {
             if (-not $script:SecurityBuilt) { $script:SecurityBuilt = $true; Update-SecurityTab }
@@ -254,6 +261,15 @@ $Window.Add_ContentRendered({
             Invoke-Safe { Invoke-WelcomeChecks }
             try { Invoke-UpdateCheck } catch { Write-Log "Vérification de mise à jour: $_" }
         }
-        Hide-StartupOverlay
+        if ($script:StartHidden) {
+            # Lancé avec Windows : pas d'animation (une fenêtre cachée ne l'avancerait pas), direction l'horloge
+            $script:StartHidden = $false
+            $ui.StartupOverlay.Visibility = 'Collapsed'
+            try { Stop-StartupLoader } catch {}
+            $t = $script:StartupThen; $script:StartupThen = $null
+            $Window.ShowInTaskbar = $true
+            try { Hide-ToTray } catch { Write-Log "Réduction: $_" }
+            & $t
+        } else { Hide-StartupOverlay }
     }
 })

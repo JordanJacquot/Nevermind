@@ -1,16 +1,17 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.45
+    OptiGame 1.0.46
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
     et peut être annulé depuis l'onglet Sauvegarde.
 
+    OptiGame.ps1 -Demarrage  s'ouvre réduit près de l'horloge (lancement avec Windows).
     OptiGame.ps1 -Uninstall  remet les réglages comme avant et supprime l'application.
 #>
-param([switch]$Uninstall)
+param([switch]$Uninstall, [switch]$Demarrage)   # -Demarrage : lancé avec Windows, réduit près de l'horloge
 
-$AppVersion = '1.0.45'
+$AppVersion = '1.0.46'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -41,6 +42,7 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
         $inner = $_.Exception; while ($inner.InnerException) { $inner = $inner.InnerException }
         if ($inner -is [System.UnauthorizedAccessException]) { $alreadyRunning = $true }
     }
+    if ($alreadyRunning -and $Demarrage) { exit }   # déjà ouvert : le lancement avec Windows n'a rien à faire
     if ($alreadyRunning) {
         Send-ShowRequest
         # Relance après une mise à jour : l'ancienne version est en train de se fermer. On attend un peu :
@@ -80,7 +82,7 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
         # Ancienne version encore en train de se fermer (relance après une mise à jour) : elle libère la place sous peu
         $got = $false
         try { $got = $script:InstanceMutex.WaitOne(3000) } catch [System.Threading.AbandonedMutexException] { $got = $true }
-        if (-not $got) { Send-ShowRequest; exit }
+        if (-not $got) { if (-not $Demarrage) { Send-ShowRequest }; exit }
     }
     try { if (Test-Path -LiteralPath $ShowRequest) { [IO.File]::Delete($ShowRequest) } } catch {}
 }
@@ -98,7 +100,7 @@ try {
 # Écran de chargement, affiché pendant que l'app se prépare
 # ---------------------------------------------------------------------------
 $Splash = $null
-if (-not $env:OPTIGAME_TEST -and -not $Uninstall) {
+if (-not $env:OPTIGAME_TEST -and -not $Uninstall -and -not $Demarrage) {
     try {
         $Splash = New-Object System.Windows.Window
         $Splash.WindowStyle = 'None'; $Splash.ResizeMode = 'NoResize'; $Splash.WindowStartupLocation = 'CenterScreen'
@@ -170,7 +172,10 @@ $script:Prefetch = @{ PS = $pfPs; Handle = $pfPs.BeginInvoke() }
 $script:TweakRows = @()
 $script:CleanRows = @()
 $script:PingResults = @()
-Write-Log "Démarrage OptiGame $AppVersion (Windows build $($script:Build), langue $((Get-UICulture).Name), PowerShell $($PSVersionTable.PSVersion))"
+# Lancé avec Windows : la fenêtre se prépare sans s'afficher, puis reste près de l'horloge
+$script:StartHidden = [bool]$Demarrage
+if ($script:StartHidden) { $Window.ShowInTaskbar = $false; $Window.ShowActivated = $false; $Window.WindowState = 'Minimized' }
+Write-Log "Démarrage OptiGame $AppVersion (Windows build $($script:Build), langue $((Get-UICulture).Name), PowerShell $($PSVersionTable.PSVersion))$(if ($Demarrage) { ', lancé avec Windows' })"
 $Window.Show()
 [System.Windows.Threading.Dispatcher]::Run()
 if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {

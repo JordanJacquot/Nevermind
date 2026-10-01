@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.45
+﻿OptiGame 1.0.46
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -186,6 +186,9 @@ Sauvegarde
   « Signaler un problème » crée un fichier sur ton bureau (journal de l'app et
   configuration du PC, sans tes fichiers ni ton nom) à envoyer à la personne
   qui t'a donné OptiGame.
+  « Raccourci et démarrage » : crée un raccourci OptiGame sur ton bureau, et
+  peut lancer OptiGame à chaque démarrage du PC. Il reste alors réduit près de
+  l'horloge (mode jeu, mesure des FPS) et Windows ne demande pas d'autorisation.
   « Recevoir les versions bêta » : pour tester les nouveautés avant tout le monde.
 
 

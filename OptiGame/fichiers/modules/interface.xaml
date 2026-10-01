@@ -859,6 +859,20 @@
 
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
               <DockPanel>
+                <Button x:Name="BtnShortcut" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Créer le raccourci" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Text="Raccourci et démarrage"/>
+                  <TextBlock x:Name="ShortcutStatus" Style="{StaticResource Sub}" Text="Mets OptiGame sur ton bureau pour l'ouvrir en un double clic."/>
+                  <DockPanel Margin="0,12,0,0">
+                    <CheckBox x:Name="ChkAutoStart" DockPanel.Dock="Left" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
+                    <TextBlock Text="Lancer OptiGame au démarrage du PC (il reste réduit près de l'horloge, sans demande d'autorisation, pour le mode jeu et la mesure des FPS)" Foreground="#9AA3B2" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                  </DockPanel>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+              <DockPanel>
                 <Button x:Name="BtnReportProblem" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Créer le fichier" VerticalAlignment="Center" Margin="16,0,0,0"/>
                 <StackPanel>
                   <TextBlock Style="{StaticResource H2}" Text="Signaler un problème"/>

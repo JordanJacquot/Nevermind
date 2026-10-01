@@ -309,6 +309,21 @@ $script:T.Run.Add_Tick({
                 $script:T.Step = 'nettoyage : page'; Show-Page 4; $script:T.Step = 'nettoyage : analyse page'; Invoke-CleanScan; Set-Busy $false; Wait-TestMs 500; Save-TestShot 'nettoyage-analyse'
                 "3 fichiers vus (lien et fichier récent ignorés), 2 supprimés, 1 laissé car utilisé, journal $(Split-Path $r.File -Leaf)"
             }
+            Test-Step 'Raccourci sur le bureau et démarrage' {
+                # Bureau simulé : le vrai bureau n'est pas touché
+                $script:DesktopDir = Join-Path $DataDir 'bureau-essai'
+                New-Item -ItemType Directory -Force -Path $script:DesktopDir | Out-Null
+                $exe = Join-Path (Get-AppRoot) 'OptiGame.exe'
+                if (-not (Test-Path -LiteralPath $exe)) { [IO.File]::WriteAllBytes($exe, [byte[]](77, 90)) }
+                Assert-Test (-not (Test-DesktopShortcut)) 'raccourci vu avant sa création'
+                Invoke-CreateShortcut
+                Assert-Test (Test-DesktopShortcut) "raccourci absent ou mauvaise cible : $(Get-ShortcutTarget (Get-DesktopShortcutPath))"
+                Assert-Test ($ui.BtnShortcut.Content -eq 'Recréer le raccourci') "bouton : $($ui.BtnShortcut.Content)"
+                $auto = Test-AutoStart
+                Assert-Test ($ui.ChkAutoStart.IsChecked -eq $auto) 'interrupteur du démarrage différent de la tâche planifiée'
+                $script:DesktopDir = $null
+                "raccourci créé vers $(Split-Path $exe -Leaf), démarrage automatique $(if ($auto) { 'activé' } else { 'désactivé' }) sur ce PC"
+            }
             Test-Step 'Signaler un problème (bouton en haut)' {
                 Assert-Test ($null -ne $script:TopReport -and $script:TopReport.IsVisible) 'bouton « Signaler un problème » absent en haut'
                 Show-Page 6; Wait-TestMs 300

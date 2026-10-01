@@ -204,6 +204,34 @@ function Hide-ToTray {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Raccourci sur le bureau et lancement au démarrage (page Sauvegarde)
+# ---------------------------------------------------------------------------
+function Update-ShortcutCard {
+    $has = Test-DesktopShortcut
+    $ui.BtnShortcut.Content = if ($has) { 'Recréer le raccourci' } else { 'Créer le raccourci' }
+    $ui.ShortcutStatus.Text = if ($has) { 'Le raccourci OptiGame est sur ton bureau.' } else { 'Mets OptiGame sur ton bureau pour l''ouvrir en un double clic.' }
+    $ui.ChkAutoStart.IsChecked = Test-AutoStart
+}
+
+function Invoke-CreateShortcut {
+    New-DesktopShortcut
+    Update-ShortcutCard
+    Set-Status 'Raccourci OptiGame créé sur le bureau.'
+}
+
+function Set-AutoStartFromUi([bool]$On) {
+    try { Set-AutoStart $On }
+    catch {
+        $ui.ChkAutoStart.IsChecked = -not $On
+        Write-Log "Démarrage automatique: $_"
+        Show-Message "Impossible de $(if ($On) { 'programmer' } else { 'retirer' }) le lancement au démarrage :`n`n$($_.Exception.Message)" 'Warning'
+        return
+    }
+    Write-Log "Démarrage automatique $(if ($On) { 'activé' } else { 'désactivé' })"
+    Set-Status $(if ($On) { 'OptiGame se lancera au démarrage du PC, réduit près de l''horloge.' } else { 'OptiGame ne se lancera plus au démarrage du PC.' })
+}
+
 function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) {
     if ($script:Closing) { Write-Log "$Title : $Text"; return }   # l'app se ferme : la bulle disparaîtrait aussitôt
     $script:NotifyAction = $OnClick
@@ -337,7 +365,8 @@ $TourSteps = @(
     @{ Title = 'Tout est annulable'; Lines = @(
         'Chaque changement est sauvegardé avant d''être fait.',
         'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde garde l''historique : tu peux annuler n''importe quel changement.',
-        'Un souci ? Le bouton « Signaler un problème », en haut à droite, crée un fichier à envoyer.') }
+        'Un souci ? Le bouton « Signaler un problème », en haut à droite, crée un fichier à envoyer.',
+        'Page Sauvegarde : crée un raccourci OptiGame sur ton bureau et, si tu veux, lance-le au démarrage du PC.') }
 )
 
 function Show-Tour {
