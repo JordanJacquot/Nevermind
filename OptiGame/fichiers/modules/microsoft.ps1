@@ -90,7 +90,8 @@ function Get-PrivacyItems {
     @(
         @{ Id = 'diag'; Title = 'Données de diagnostic facultatives'; On = ($diag.Level -ge 2); Admin = $true
            Text = 'En plus du minimum : les sites visités dans Edge, les applis que tu utilises et combien de temps, et le détail du matériel, avec l''identifiant de l''appareil.'
-           Off = { Set-Reg $DiagKey 'AllowTelemetry' 1 } },
+           # Fixé par une stratégie de groupe : c'est elle qui décide, la changer elle aussi
+           Off = { Set-Reg $DiagKey 'AllowTelemetry' 1; if ($null -ne (Get-RegNum $DiagPolicyKey 'AllowTelemetry')) { Set-Reg $DiagPolicyKey 'AllowTelemetry' 1 } } },
         @{ Id = 'adid'; Title = 'Identifiant publicitaire'; On = ($adid -ne 0)
            Text = 'Un numéro unique donné aux applis et à leurs régies pub pour te reconnaître d''une appli à l''autre et cibler les pubs.'
            Off = { Set-Reg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo' 'Enabled' 0 } },
@@ -121,7 +122,7 @@ function Get-PcIdentifiers {
     $dt = Get-Service -Name 'DiagTrack' -ErrorAction SilentlyContinue
     $dtOn = $dt -and $dt.Status -eq 'Running'
     $adid = Get-RegNum 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo' 'Enabled'
-    $mid = [string](Get-RegValue 'HKLM:\SOFTWARE\Microsoft\SQMClient' 'MachineId')
+    $mid = ([string](Get-RegValue 'HKLM:\SOFTWARE\Microsoft\SQMClient' 'MachineId')).Trim('{', '}')
     $msa = try { [string](Get-LocalUser -Name $env:USERNAME -ErrorAction Stop).PrincipalSource } catch { '' }
     @(
         @('Identifiant de l''appareil', $(if ($dtOn) { 'Envoyé avec chaque rapport de diagnostic' } else { 'Pas envoyé : service de télémétrie arrêté' }), $(if ($dtOn) { $Colors.warn } else { $Colors.ok })),

@@ -28,18 +28,6 @@ $CleanTargets = @(
     @{ Titre = 'Anciens rapports de plantage (minidumps)'; Paths = @("$env:windir\Minidump") }
 )
 
-$SizeScript = {
-    param($paths)
-    $sum = 0
-    foreach ($p in $paths) {
-        if (Test-Path -LiteralPath $p) {
-            $m = Get-ChildItem -LiteralPath $p -Recurse -Force -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum
-            if ($m.Sum) { $sum += $m.Sum }
-        }
-    }
-    [double]$sum
-}
-
 # Parcours d'un dossier sans suivre les liens (jonctions, liens symboliques) : on ne sort jamais du dossier prévu.
 $CleanWalk = @'
 function Get-CleanFiles([string]$Root, $Dirs) {
@@ -48,9 +36,11 @@ function Get-CleanFiles([string]$Root, $Dirs) {
             if ($e.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
             if ($null -ne $Dirs) { [void]$Dirs.Add($e.FullName) }
             Get-CleanFiles $e.FullName $Dirs
-        } else { $e }
+        } elseif ($e.LastWriteTime -lt $script:CleanBefore) { $e }
     }
 }
+# Fichiers de moins de 24 h laissés : une installation ou un programme en cours peut encore s'en servir
+$script:CleanBefore = (Get-Date).AddDays(-1)
 '@
 
 # Analyse d'une catégorie : nombre de fichiers, taille totale et les plus gros (pour « Voir les fichiers »)

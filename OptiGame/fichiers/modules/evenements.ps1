@@ -121,6 +121,7 @@ $ui.BtnTestAgain.Add_Click({
 $Window.Add_KeyDown({
     param($s, $e)
     if ($e.Key -eq 'Escape' -and $ui.TestOverlay.Visibility -eq 'Visible') { Hide-TestPanel; return }
+    if ($e.Key -eq 'Escape' -and $ui.NetMapOverlay.Visibility -eq 'Visible' -and $ui.Overlay.Visibility -ne 'Visible') { Hide-NetMap; return }
     if ($e.Key -ne 'Escape' -or $ui.Overlay.Visibility -ne 'Visible') { return }
     if ($script:SheetMode -eq 'display') { $script:DisplayChoice = 'revert' } else { Close-Sheet }
 })

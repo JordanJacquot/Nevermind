@@ -697,7 +697,7 @@
             </StackPanel>
             <StackPanel>
               <TextBlock Style="{StaticResource H1}" Text="Nettoyage"/>
-              <TextBlock Style="{StaticResource Sub}" Text="Libère de la place en supprimant les fichiers inutiles."/>
+              <TextBlock Style="{StaticResource Sub}" Text="Libère de la place en supprimant les fichiers inutiles. Ceux de moins de 24 h sont gardés : un programme peut encore s'en servir."/>
             </StackPanel>
           </DockPanel>
           <TextBlock x:Name="CleanTotal" Grid.Row="1" Style="{StaticResource H2}" Margin="0,18,0,12" Text="Clique sur Analyser pour voir ce qui peut être libéré."/>

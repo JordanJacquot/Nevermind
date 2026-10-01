@@ -154,6 +154,7 @@ function Set-TestState([string]$State, [string]$Text) {
     $map = @{ run = $Colors.info; live = $Colors.ok; ok = $Colors.ok; warn = $Colors.warn; bad = $Colors.bad; info = '#9AA3B2' }
     $ui.TestStateDot.Fill = Get-Brush $map[$State]
     $ui.TestStateText.Text = $Text
+    $ui.TestStateDot.Visibility = if ($Text) { 'Visible' } else { 'Collapsed' }
     $ui.TestStateText.Foreground = Get-Brush $map[$State]
     if ($State -in 'run', 'live') { Start-Pulse $ui.TestStateDot } else { Stop-Pulse $ui.TestStateDot }
 }
@@ -165,6 +166,7 @@ function Show-TestPanel($Tile) {
     $ui.TestBody.Children.Clear()
     $ui.TestProgress.Value = 0
     $ui.TestPct.Text = ''
+    Set-TestState 'info' ''   # pas d'état restant de la fenêtre précédente (ex : « Ping en direct »)
     $ui.TestOverlay.Visibility = 'Visible'
     $ui.TestCard.Opacity = 0
     Start-WpfAnim $ui.TestCard ([System.Windows.UIElement]::OpacityProperty) 1 250

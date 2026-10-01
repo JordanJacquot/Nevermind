@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    OptiGame 1.0.44
+    OptiGame 1.0.45
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -10,7 +10,7 @@
 #>
 param([switch]$Uninstall)
 
-$AppVersion = '1.0.44'
+$AppVersion = '1.0.45'
 $UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -41,7 +41,22 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
         $inner = $_.Exception; while ($inner.InnerException) { $inner = $inner.InnerException }
         if ($inner -is [System.UnauthorizedAccessException]) { $alreadyRunning = $true }
     }
-    if ($alreadyRunning) { Send-ShowRequest; exit }
+    if ($alreadyRunning) {
+        Send-ShowRequest
+        # Relance après une mise à jour : l'ancienne version est en train de se fermer. On attend un peu :
+        # si elle disparaît sans avoir pris la demande, c'est à ce lancement-ci d'ouvrir l'app.
+        $gone = $false
+        for ($i = 0; $i -lt 25 -and [IO.File]::Exists($ShowRequest); $i++) {
+            Start-Sleep -Milliseconds 200
+            try { $probe = [System.Threading.Mutex]::OpenExisting('Local\OptiGame-Instance'); $probe.Dispose() }
+            catch {
+                $inner = $_.Exception; while ($inner.InnerException) { $inner = $inner.InnerException }
+                if ($inner -isnot [System.UnauthorizedAccessException]) { $gone = $true; break }
+            }
+        }
+        if (-not $gone) { exit }
+        try { [IO.File]::Delete($ShowRequest) } catch {}
+    }
 }
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -61,7 +76,12 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
     $mutexNew = $false
     $script:InstanceMutex = New-Object System.Threading.Mutex($true, 'Local\OptiGame-Instance', [ref]$mutexNew)
-    if (-not $mutexNew) { Send-ShowRequest; exit }
+    if (-not $mutexNew) {
+        # Ancienne version encore en train de se fermer (relance après une mise à jour) : elle libère la place sous peu
+        $got = $false
+        try { $got = $script:InstanceMutex.WaitOne(3000) } catch [System.Threading.AbandonedMutexException] { $got = $true }
+        if (-not $got) { Send-ShowRequest; exit }
+    }
     try { if (Test-Path -LiteralPath $ShowRequest) { [IO.File]::Delete($ShowRequest) } } catch {}
 }
 
@@ -154,5 +174,7 @@ Write-Log "Démarrage OptiGame $AppVersion (Windows build $($script:Build), lang
 $Window.Show()
 [System.Windows.Threading.Dispatcher]::Run()
 if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
+    # Libère la place avant de relancer, sinon la nouvelle version croirait qu'OptiGame est déjà ouvert
+    if ($script:InstanceMutex) { try { $script:InstanceMutex.ReleaseMutex() } catch {}; $script:InstanceMutex.Dispose(); $script:InstanceMutex = $null }
     Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"")
 }

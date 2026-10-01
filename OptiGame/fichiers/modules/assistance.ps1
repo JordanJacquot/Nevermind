@@ -224,6 +224,9 @@ function Export-ProblemReport([string]$Dest, [string]$Description) {
     $mask = {
         param($t)
         $t = [string]$t
+        # Le dossier du profil peut porter un autre nom que le compte (compte Microsoft : 5 premières lettres de l'e-mail...)
+        $prof = if ($env:USERPROFILE) { Split-Path $env:USERPROFILE -Leaf } else { '' }
+        if ($prof -and $prof.Length -ge 3) { $t = $t -replace "(?i)\\Users\\$([regex]::Escape($prof))(?=\\|\b|$)", '\Users\<utilisateur>' }
         if ($env:USERNAME) { $t = $t -replace [regex]::Escape($env:USERNAME), '<utilisateur>' }
         if ($env:COMPUTERNAME) { $t = $t -replace [regex]::Escape($env:COMPUTERNAME), '<pc>' }
         $t

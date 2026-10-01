@@ -6,7 +6,7 @@ $TrafficIndex = 10
 $LolBins = '^(powershell|pwsh|cmd|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|msbuild|installutil|regasm|regsvcs|cmstp|wmic|forfiles|msiexec|hh)$'
 $RemoteTools = '(?i)^(anydesk|teamviewer\w*|rustdesk|screenconnect\.\w+|connectwise\w*|logmein\w*|splashtop\w*|ultraviewer\w*|supremo\w*|rutserv|rfusclient|aeroadmin|ammyy\w*|remotepc\w*|zohoassist\w*|getscreen\w*)$'
 $SusPorts = @{ 4444 = 'port souvent utilisé par les logiciels espions'; 1337 = 'port souvent utilisé par les logiciels espions'; 31337 = 'port souvent utilisé par les logiciels espions'; 6666 = 'discussion IRC (utilisée par des virus)'; 6667 = 'discussion IRC (utilisée par des virus)'; 6697 = 'discussion IRC (utilisée par des virus)'; 8333 = 'réseau Bitcoin'; 3333 = 'minage de cryptomonnaie'; 5555 = 'port souvent utilisé par les logiciels espions'; 9001 = 'réseau Tor'; 9030 = 'réseau Tor'; 9050 = 'réseau Tor'; 9150 = 'réseau Tor'; 12345 = 'port souvent utilisé par les logiciels espions'; 23 = 'Telnet (non chiffré)' }
-$UploadOk = '(?i)^(onedrive|dropbox|googledrivefs|box|megasync|icloud\w*|obs\w*|streamlabs\w*|discord|steam\w*|teams|ms-teams|zoom|skype|chrome|msedge|firefox|opera|brave|vivaldi|qbittorrent|utorrent|bittorrent|transmission\w*|backblaze\w*|synology\w*|nvcontainer|nvidia share|shadowplay|medal\w*|outplayed|epicgameslauncher)$'
+$UploadOk = '(?i)^(onedrive|dropbox|googledrivefs|box|megasync|icloud\w*|obs\w*|streamlabs\w*|discord|steam\w*|teams|ms-teams|zoom|skype|chrome|msedge|firefox|opera|brave|vivaldi|qbittorrent|utorrent|bittorrent|transmission\w*|backblaze\w*|synology\w*|nvcontainer|nvidia share|shadowplay|medal\w*|outplayed|epicgameslauncher|claude|chatgpt|cursor|code|windsurf|copilot)$'
 $PortNames = @{ 443 = 'web sécurisé (HTTPS)'; 80 = 'web (HTTP)'; 53 = 'noms de domaine (DNS)'; 853 = 'DNS chiffré'; 993 = 'mails (IMAP)'; 995 = 'mails (POP)'; 587 = 'envoi de mails'; 465 = 'envoi de mails'; 25 = 'envoi de mails'; 22 = 'accès à distance (SSH)'; 3389 = 'bureau à distance'; 5228 = 'notifications Google'; 5222 = 'messagerie'; 3478 = 'appels audio / vidéo'; 1194 = 'VPN'; 51820 = 'VPN'; 8080 = 'web (autre port)'; 27015 = 'jeux (Steam)'; 27036 = 'Steam'; 5938 = 'TeamViewer'; 7070 = 'AnyDesk'; 6568 = 'AnyDesk' }
 
 function Format-Bytes([double]$B) {
@@ -71,6 +71,17 @@ function Update-Traffic {
     $st = $script:Traffic
     if (-not $st) { return }
     $st.Ticks++
+    # Processus fermés : Windows réutilise leurs numéros, un nouveau programme serait sinon compté sous l'ancien nom
+    if ($st.Ticks % 15 -eq 0) {
+        $alive = @{}
+        foreach ($p in [Diagnostics.Process]::GetProcesses()) { $alive[$p.Id] = $true; $p.Dispose() }
+        foreach ($procId in @($st.Pids.Keys)) {
+            if ($alive.ContainsKey($procId)) { continue }
+            $a = $st.Apps[$st.Pids[$procId]]
+            if ($a) { $a.Pids.Remove($procId) }
+            $st.Pids.Remove($procId)
+        }
+    }
     Update-TrafficDns
     $now = Get-Date
     $seen = @{}
@@ -146,10 +157,18 @@ $TrafficInspectWork = {
     param($items)
     $sigOf = {
         param($path)
-        try {
+        $r = try {
             $sg = Get-AuthenticodeSignature -FilePath $path -ErrorAction Stop
             @([string]$sg.Status, $(if ($sg.SignerCertificate) { $sg.SignerCertificate.Subject -replace '^.*?CN="?([^",]+).*$', '$1' } else { '' }))
         } catch { @('Error', '') }
+        # Applis du Microsoft Store : la signature est celle du paquet, pas celle du fichier .exe
+        if ($r[0] -ne 'Valid' -and $path -match '(?i)\\WindowsApps\\([^\\_]+)_[^\\]*__([^\\]+)\\') {
+            try {
+                $pk = Get-AppxPackage -Name $Matches[1] -ErrorAction Stop | Where-Object { $_.PublisherId -eq $Matches[2] } | Select-Object -First 1
+                if ($pk -and [string]$pk.SignatureKind -in 'Store', 'System') { $r = @('Valid', ($pk.Publisher -replace '^.*?CN="?([^",]+).*$', '$1')) }
+            } catch {}
+        }
+        $r
     }
     foreach ($it in $items) {
         $s = & $sigOf $it.Path
@@ -846,15 +865,17 @@ function Show-TrafficApp([string]$Key) {
     $body = $ui.TestBody
     $sig = Get-AppSigLabel $a
     [void]$body.Children.Add((New-SectionTitle 'LE PROGRAMME'))
-    [void]$body.Children.Add((New-InfoRows @(
+    $svcList = @($a.Services | Where-Object { $_ })
+    $rows = @(
         @('Nom', "$($a.Title) ($($a.Name))"),
         @('Éditeur', $sig[0], $sig[1]),
         @('Emplacement', $(if ($a.Path) { $a.Path } else { 'Programme de Windows' })),
         @('Envoyé', (Format-Bytes $a.Out)),
         @('Reçu', (Format-Bytes $a.In)),
-        @('Utilise aussi l''UDP', $(if ($a.Udp) { 'Oui (jeux, appels, vidéo : destinations non visibles)' } else { 'Non' })),
-        @('Services Windows', $(if (@($a.Services).Count) { (@($a.Services) | ForEach-Object { "$($_.Title) ($($_.Name))" }) -join ', ' } else { 'Aucun' }))
-    )))
+        @('Utilise aussi l''UDP', $(if ($a.Udp) { 'Oui (jeux, appels, vidéo : destinations non visibles)' } else { 'Non' }))
+    )
+    if ($svcList.Count) { $rows += , @('Services Windows', ((@($svcList) | ForEach-Object { "$($_.Title) ($($_.Name))" }) -join ', ')) }
+    [void]$body.Children.Add((New-InfoRows $rows))
     $trustDate = (Get-TrafficMarks 'TrafficTrusted')[$Key]
     if ($null -ne $trustDate) {
         $tr = New-Grid @('*', 'Auto')

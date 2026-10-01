@@ -286,6 +286,9 @@ $script:T.Run.Add_Tick({
                 [IO.File]::WriteAllBytes("$d\sous\petit.tmp", (New-Object byte[] 2000))
                 [IO.File]::WriteAllBytes("$d\utilise.tmp", (New-Object byte[] 5000))
                 [IO.File]::WriteAllBytes("$out\a-garder.txt", (New-Object byte[] 100))
+                [IO.File]::WriteAllBytes("$d\recent.tmp", (New-Object byte[] 700))
+                # Fichiers vieux de 3 jours ; recent.tmp (à l'instant) doit être laissé
+                foreach ($x in "$d\gros.tmp", "$d\sous\petit.tmp", "$d\utilise.tmp", "$out\a-garder.txt") { [IO.File]::SetLastWriteTime($x, (Get-Date).AddDays(-3)) }
                 # Un lien dans le dossier vers un autre dossier : il ne doit pas être suivi
                 New-Item -ItemType Junction -Path "$d\lien" -Target $out | Out-Null
                 $target = @{ Titre = 'Dossier d''essai'; Paths = @($d) }
@@ -297,13 +300,14 @@ $script:T.Run.Add_Tick({
                 $script:T.Step = 'nettoyage : suppression'; try { $r = Invoke-CleanTargets @($target) } finally { $lock.Dispose() }
                 Assert-Test ($r.Deleted -eq 2 -and $r.Skipped -eq 1) "nettoyage : $($r.Deleted) supprimés, $($r.Skipped) laissés (attendu 2 et 1)"
                 Assert-Test (Test-Path "$out\a-garder.txt") 'un fichier hors du dossier a été supprimé en suivant un lien'
+                Assert-Test (Test-Path "$d\recent.tmp") 'un fichier de moins de 24 h a été supprimé'
                 Assert-Test (-not (Test-Path "$d\sous")) 'dossier vide non supprimé'
                 $log = Get-Content -LiteralPath $r.File -Raw -Encoding UTF8
                 Assert-Test ($log -match '\[SUPPRIMÉ\].*gros\.tmp' -and $log -match '\[LAISSÉ\].*utilise\.tmp') 'journal incomplet'
                 [IO.Directory]::Delete("$d\lien")
                 # Vraie analyse de la page (lecture seule)
                 $script:T.Step = 'nettoyage : page'; Show-Page 4; $script:T.Step = 'nettoyage : analyse page'; Invoke-CleanScan; Set-Busy $false; Wait-TestMs 500; Save-TestShot 'nettoyage-analyse'
-                "3 fichiers vus (lien ignoré), 2 supprimés, 1 laissé car utilisé, journal $(Split-Path $r.File -Leaf)"
+                "3 fichiers vus (lien et fichier récent ignorés), 2 supprimés, 1 laissé car utilisé, journal $(Split-Path $r.File -Leaf)"
             }
             Test-Step 'Signaler un problème (bouton en haut)' {
                 Assert-Test ($null -ne $script:TopReport -and $script:TopReport.IsVisible) 'bouton « Signaler un problème » absent en haut'

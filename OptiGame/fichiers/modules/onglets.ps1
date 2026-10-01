@@ -614,7 +614,7 @@ function Show-CleanFiles($Target, $Info) {
     Set-TestState 'info' 'Avant nettoyage'
     $body = $ui.TestBody
     $top = @($Info.Top)
-    $intro = New-Text "$(if ($Info.Count -gt $top.Count) { "Les $($top.Count) plus gros fichiers sur $($Info.Count)." } else { 'Tous les fichiers, du plus gros au plus petit.' }) Tout ce qui est dans ce$(if ($Target.Paths.Count -gt 1) {'s'}) dossier$(if ($Target.Paths.Count -gt 1) {'s'}) sera supprimé ; un fichier utilisé par un programme est laissé en place. Après le nettoyage, un journal liste chaque fichier." 12.5 '#9AA3B2'
+    $intro = New-Text "$(if ($Info.Count -gt $top.Count) { "Les $($top.Count) plus gros fichiers sur $($Info.Count)." } else { 'Tous les fichiers, du plus gros au plus petit.' }) Tout ce qui est dans ce$(if ($Target.Paths.Count -gt 1) {'s'}) dossier$(if ($Target.Paths.Count -gt 1) {'s'}) sera supprimé ; un fichier utilisé par un programme ou créé il y a moins de 24 h est laissé en place. Après le nettoyage, un journal liste chaque fichier." 12.5 '#9AA3B2'
     $intro.Margin = New-Thickness 0 0 0 8
     [void]$body.Children.Add($intro)
     $wp = New-Object System.Windows.Controls.WrapPanel
