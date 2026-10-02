@@ -319,14 +319,30 @@ function Get-FpsColor([double]$Fps) { if ($Fps -ge 60) { $Colors.ok } elseif ($F
 # ---------------------------------------------------------------------------
 # Overlay (visible en fenêtré ou en plein écran fenêtré)
 # ---------------------------------------------------------------------------
-function Show-FpsOverlay {
-    if ($script:Overlay) { return }
-    $w = New-Object System.Windows.Window
-    $w.WindowStyle = 'None'; $w.AllowsTransparency = $true
-    $w.Background = [System.Windows.Media.Brushes]::Transparent
-    $w.Topmost = $true; $w.ShowInTaskbar = $false; $w.ShowActivated = $false; $w.Focusable = $false
-    $w.SizeToContent = 'WidthAndHeight'; $w.ResizeMode = 'NoResize'; $w.IsHitTestVisible = $false
-    $w.Title = 'OptiGame FPS'
+# Style du compteur : « complet » (chiffre, 1 % bas et moyenne sur un fond) ou « discret » (juste « 144 FPS », petit et semi transparent)
+function Get-FpsOverlayStyle { if ([string](Get-Setting 'FpsOverlayStyle' 'complet') -eq 'discret') { 'discret' } else { 'complet' } }
+
+# Contenu du compteur, partagé par l'overlay et l'aperçu de la page « Mes parties »
+function New-FpsOverlayContent([string]$Style, [string]$Value = '...') {
+    if ($Style -eq 'discret') {
+        $row = New-Object System.Windows.Controls.StackPanel
+        $row.Orientation = 'Horizontal'
+        $row.Opacity = 0.7
+        # Petite ombre : le chiffre reste lisible sur un décor clair sans fond derrière
+        $sh = New-Object System.Windows.Media.Effects.DropShadowEffect
+        $sh.Color = [System.Windows.Media.Colors]::Black; $sh.ShadowDepth = 1; $sh.BlurRadius = 3; $sh.Opacity = 0.9
+        $row.Effect = $sh
+        $fps = New-Text $Value 15 '#FFFFFF' -Semi
+        $fps.TextWrapping = 'NoWrap'
+        [void]$row.Children.Add($fps)
+        $unit = New-Text 'FPS' 10 '#FFFFFF' -Semi
+        $unit.VerticalAlignment = 'Bottom'; $unit.Margin = New-Thickness 3 0 0 2
+        [void]$row.Children.Add($unit)
+        $b = New-Object System.Windows.Controls.Border
+        $b.Padding = New-Thickness 4 2 4 2
+        $b.Child = $row
+        return @{ Root = $b; Fps = $fps; Sub = $null; Discreet = $true }
+    }
     $b = New-Object System.Windows.Controls.Border
     $bg = Get-Brush '#0E1014'; $bg.Opacity = 0.8
     $b.Background = $bg
@@ -335,7 +351,7 @@ function Show-FpsOverlay {
     $sp = New-Object System.Windows.Controls.StackPanel
     $row = New-Object System.Windows.Controls.StackPanel
     $row.Orientation = 'Horizontal'
-    $fps = New-Text '...' 26 $Colors.ok -Bold
+    $fps = New-Text $Value 26 $Colors.ok -Bold
     $fps.TextWrapping = 'NoWrap'
     [void]$row.Children.Add($fps)
     $unit = New-Text 'FPS' 12 '#9AA3B2' -Semi
@@ -346,12 +362,31 @@ function Show-FpsOverlay {
     $sub.TextWrapping = 'NoWrap'
     [void]$sp.Children.Add($sub)
     $b.Child = $sp
-    $w.Content = $b
+    @{ Root = $b; Fps = $fps; Sub = $sub; Discreet = $false }
+}
+
+function Show-FpsOverlay {
+    if ($script:Overlay) { return }
+    $w = New-Object System.Windows.Window
+    $w.WindowStyle = 'None'; $w.AllowsTransparency = $true
+    $w.Background = [System.Windows.Media.Brushes]::Transparent
+    $w.Topmost = $true; $w.ShowInTaskbar = $false; $w.ShowActivated = $false; $w.Focusable = $false
+    $w.SizeToContent = 'WidthAndHeight'; $w.ResizeMode = 'NoResize'; $w.IsHitTestVisible = $false
+    $w.Title = 'OptiGame FPS'
+    $c = New-FpsOverlayContent (Get-FpsOverlayStyle)
+    $w.Content = $c.Root
     $w.Add_SourceInitialized({ param($s, $e) try { [OGNative]::MakeOverlay((New-Object System.Windows.Interop.WindowInteropHelper $s).Handle) } catch {} })
-    $script:Overlay = @{ Win = $w; Fps = $fps; Sub = $sub }
+    $script:Overlay = @{ Win = $w; Fps = $c.Fps; Sub = $c.Sub; Discreet = $c.Discreet }
     $script:OverlayTicks = 0
 }
 
+# Changement de style pendant une partie : le compteur est recréé tout de suite
+function Set-FpsOverlayStyle([string]$Style) {
+    Set-Setting 'FpsOverlayStyle' $Style
+    if ($script:Overlay) { Hide-FpsOverlay; if ($script:FpsTarget -and (Test-FpsOverlay)) { Show-FpsOverlay } }
+    Build-FpsPanel
+    Set-Status "Compteur de FPS : style $Style."
+}
 function Hide-FpsOverlay {
     if (-not $script:Overlay) { return }
     try { $script:Overlay.Win.Close() } catch {}
@@ -442,12 +477,14 @@ function Update-FpsTarget {
     if (-not $o.Win.IsVisible) { Set-OverlayPosition $t.Pid; $o.Win.Show() }
     $l = [FrameMon]::Live()
     if ([FrameMon]::Frames -eq 0) {
-        if (((Get-Date) - $t.Start).TotalSeconds -gt 8) { $o.Fps.Text = '?'; $o.Sub.Text = 'Aucune image reçue pour le moment.' }
+        if (((Get-Date) - $t.Start).TotalSeconds -gt 8) { $o.Fps.Text = '?'; if ($o.Sub) { $o.Sub.Text = 'Aucune image reçue pour le moment.' } }
         return
     }
     $o.Fps.Text = '{0:N0}' -f $l[0]
-    $o.Fps.Foreground = Get-Brush (Get-FpsColor $l[0])
-    $o.Sub.Text = '1 % bas {0:N0}    moyenne {1:N0}' -f $l[1], $l[2]
+    if ($o.Sub) {
+        $o.Fps.Foreground = Get-Brush (Get-FpsColor $l[0])
+        $o.Sub.Text = '1 % bas {0:N0}    moyenne {1:N0}' -f $l[1], $l[2]
+    }
     $script:OverlayTicks++
     if ($script:OverlayTicks % 6 -eq 0) { $o.Win.Topmost = $false; $o.Win.Topmost = $true }
 }
@@ -735,6 +772,35 @@ function Build-FpsPanel {
     }
     $last.Margin = New-Thickness 0
     [void]$sp.Children.Add($last)
+    # Style du compteur, avec un aperçu sur un faux décor de jeu
+    $style = Get-FpsOverlayStyle
+    $sg = New-Grid @('*', 'Auto')
+    $sg.Margin = New-Thickness 0 12 0 0
+    $sl = New-Object System.Windows.Controls.StackPanel
+    [void]$sl.Children.Add((New-Text 'Style du compteur' 13 '#FFFFFF' -Semi))
+    [void]$sl.Children.Add((New-Text $(if ($style -eq 'discret') { 'Discret : juste le chiffre, en petit et en semi transparence.' } else { 'Complet : le chiffre, le 1 % bas et la moyenne de la partie.' }) 12 '#9AA3B2'))
+    $wp = New-Object System.Windows.Controls.WrapPanel
+    $wp.Margin = New-Thickness 0 8 0 0
+    foreach ($o in @(@('complet', 'Complet'), @('discret', 'Discret'))) {
+        $btn = New-Button $o[1] $(if ($style -eq $o[0]) { 'BtnPrimary' } else { 'BtnSecondary' })
+        $btn.Margin = New-Thickness 0 0 8 0
+        $btn.Tag = $o[0]
+        $btn.Add_Click({ param($s, $e) $x = [string]$s.Tag; Invoke-Safe { Set-FpsOverlayStyle $x } })
+        [void]$wp.Children.Add($btn)
+    }
+    [void]$sl.Children.Add($wp)
+    Add-ToGrid $sg $sl 0
+    $pv = New-Object System.Windows.Controls.Border
+    $pv.Width = 190; $pv.Height = 84; $pv.CornerRadius = [System.Windows.CornerRadius]::new(8); $pv.Margin = New-Thickness 16 0 0 0
+    $pv.Background = New-LinearBrush @('#6F9FC8', '#A9C4D8', '#6E8A4E', '#3F5530') 0 0 0 1   # ciel et herbe, assez clair pour juger la lisibilité
+    $pv.ClipToBounds = $true
+    $pc = (New-FpsOverlayContent $style '144').Root
+    $pc.HorizontalAlignment = 'Left'; $pc.VerticalAlignment = 'Top'; $pc.Margin = New-Thickness 8 8 0 0
+    if ($style -ne 'discret') { $pc.LayoutTransform = New-Object System.Windows.Media.ScaleTransform 0.8, 0.8 }
+    $pv.Child = $pc
+    $pv.ToolTip = 'Aperçu sur un décor de jeu'
+    Add-ToGrid $sg $pv 1
+    [void]$sp.Children.Add($sg)
     if (-not (Test-Path -LiteralPath $PresentMonExe)) { [void]$sp.Children.Add((New-Text 'PresentMon est absent du dossier de l''app : réinstalle OptiGame.' 12.5 $Colors.warn -Semi)) }
     $card.Child = $sp
     [void]$panel.Children.Add($card)

@@ -170,6 +170,24 @@ $script:T.Run.Add_Tick({
                 $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder; $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
                 $fs = [IO.File]::Create((Join-Path $script:T.Dir 'captures\overlay.png')); $enc.Save($fs); $fs.Close()
                 Hide-FpsOverlay
+                # Style discret : juste le chiffre, sans sous-ligne, semi transparent ; mise à jour en direct sans erreur
+                Set-FpsOverlayStyle 'discret'
+                Show-FpsOverlay
+                Assert-Test ($script:Overlay.Discreet -and $null -eq $script:Overlay.Sub) 'style discret non appliqué'
+                $script:Overlay.Fps.Text = '144'
+                $script:Overlay.Win.Show(); Wait-TestMs 300
+                $ov = $script:Overlay.Win; $ov.UpdateLayout()
+                Assert-Test ($ov.ActualHeight -lt 40) "compteur discret trop grand : $([int]$ov.ActualWidth) x $([int]$ov.ActualHeight)"
+                $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap([int]$ov.ActualWidth, [int]$ov.ActualHeight, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32)
+                $rtb.Render($ov.Content)
+                $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder; $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
+                $fs = [IO.File]::Create((Join-Path $script:T.Dir 'captures\overlay-discret.png')); $enc.Save($fs); $fs.Close()
+                $script:FpsTarget = @{ Pid = $PID; Start = (Get-Date).AddSeconds(-20); Ticks = 0; Exclusive = $false; Warned = $false; Series = (New-Object System.Collections.ArrayList); Sys = (New-Object System.Collections.ArrayList); ProcCpu = @{}; ProcMem = @{} }
+                Update-FpsTarget
+                $script:FpsTarget = $null
+                Show-Page 1; Set-GamingSubPage 1; Wait-TestMs 300; Save-TestShot 'mes-parties-discret'
+                Hide-FpsOverlay
+                Set-FpsOverlayStyle 'complet'
                 # Mesure lancée puis arrêtée sur un programme (sans droits admin, PresentMon refuse : l'app ne doit pas planter)
                 Start-FpsTarget $PID 'Programme d''essai' 'powershell'
                 Update-FpsTarget

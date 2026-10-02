@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.47
+﻿OptiGame 1.0.48
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -129,6 +129,8 @@ Optimisation gaming
   FPS moyens, chutes (1 % bas), courbe de la partie, et comparaison avant /
   après tes réglages. En option, un compteur en haut à gauche pendant la
   partie (visible en fenêtré ou plein écran fenêtré, pas en plein écran).
+  Deux styles : « Complet » (FPS, 1 % bas et moyenne) ou « Discret » (juste
+  le chiffre, en petit et en semi transparence).
   Quand une partie rame, OptiGame cherche d'où ça vient : carte graphique ou
   processeur à fond, surchauffe, mémoire pleine, disque lent, programmes en
   arrière plan, PC sur batterie, écran bridé, jeu sur la mauvaise carte
