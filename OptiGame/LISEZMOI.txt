@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.48
+﻿OptiGame 1.0.49
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -13,6 +13,12 @@ La première fois seulement, Windows peut afficher « Windows a protégé votre
 ordinateur » : clique sur « Informations complémentaires » puis « Exécuter
 quand même ». C'est normal pour un programme qui ne vient pas du Microsoft
 Store. OptiGame se débloque ensuite tout seul : plus d'avertissement après.
+
+TROUVER UN RÉGLAGE
+Tape ce que tu cherches dans la barre de recherche en haut de chaque page
+(ou Ctrl + K) : fps, ping, démarrage, overlay... OptiGame propose les réglages
+au fil de la frappe, même avec une faute de frappe. Un clic t'emmène sur la
+bonne page et le réglage s'allume en vert.
 
 Rien à installer : l'application utilise PowerShell, déjà présent dans Windows.
 Le dossier « fichiers » contient l'application elle même : ne le supprime pas.
@@ -127,10 +133,11 @@ Optimisation gaming
   Mes parties : OptiGame mesure tes FPS pendant que tu joues (tout seul pour
   les jeux Steam et Epic, Ctrl + Maj + F pour les autres). Pour chaque partie :
   FPS moyens, chutes (1 % bas), courbe de la partie, et comparaison avant /
-  après tes réglages. En option, un compteur en haut à gauche pendant la
-  partie (visible en fenêtré ou plein écran fenêtré, pas en plein écran).
-  Deux styles : « Complet » (FPS, 1 % bas et moyenne) ou « Discret » (juste
-  le chiffre, en petit et en semi transparence).
+  après tes réglages.
+  Overlay : le compteur de FPS par dessus le jeu (visible en fenêtré ou plein
+  écran fenêtré, pas en plein écran). Deux styles : « Complet » (FPS, 1 % bas
+  et moyenne) ou « Discret » (juste le chiffre, en petit et en semi
+  transparence), dans le coin de l'écran de ton choix, avec un aperçu.
   Quand une partie rame, OptiGame cherche d'où ça vient : carte graphique ou
   processeur à fond, surchauffe, mémoire pleine, disque lent, programmes en
   arrière plan, PC sur batterie, écran bridé, jeu sur la mauvaise carte

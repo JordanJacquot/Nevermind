@@ -18,7 +18,7 @@ Les mises à jour sont ensuite proposées directement dans l'application. Relanc
 
 ## Ce que fait l'application
 
-Trois sections dans le menu de gauche : **Ordinateur**, **Réseau** et **Trafic**. Un bouton « Signaler un problème » est toujours disponible en haut à droite.
+Trois sections dans le menu de gauche : **Ordinateur**, **Réseau** et **Trafic**. En haut de chaque page : une **barre de recherche** (Ctrl + K) qui propose les réglages au fil de la frappe, fautes de frappe comprises, et emmène directement au bon endroit ; et un bouton « Signaler un problème ».
 
 ### Ordinateur
 
@@ -28,7 +28,8 @@ L'accueil, avec le score d'optimisation, le niveau de protection et une carte pa
 - **Onduleur** : fabricant, modèle, charge, autonomie, usure de la batterie, alerte en cas de coupure, et réglage en un clic d'un arrêt propre du PC avant que la batterie soit vide. Un onduleur invisible pour Windows est repéré par sa prise USB ou par son logiciel.
 - **Optimisation gaming** :
   - réglages de Windows à l'effet reconnu (plan d'alimentation, mode jeu, Game Bar, planification GPU, accélération de la souris...) ;
-  - **Mes parties** : FPS mesurés pendant tes parties (via PresentMon d'Intel), compteur en overlay, comparaison avant / après, et diagnostic quand une partie rame (carte graphique ou processeur à fond, surchauffe, mémoire, disque, programmes en arrière plan...) avec corrections guidées ;
+  - **Mes parties** : FPS mesurés pendant tes parties (via PresentMon d'Intel), comparaison avant / après, et diagnostic quand une partie rame (carte graphique ou processeur à fond, surchauffe, mémoire, disque, programmes en arrière plan...) avec corrections guidées ;
+  - **Overlay** : compteur de FPS par dessus le jeu, style complet ou discret, dans le coin de l'écran choisi, avec un aperçu ;
   - **Lag en ligne** : pendant tes parties ou en test de 30 secondes, mesure chaque étape du chemin (PC vers box, box vers fournisseur, Internet, serveur du jeu) et explique d'où vient le lag (Wi-Fi, téléchargement en arrière plan, box, serveur loin, VPN) ;
   - **Mode jeu** (ferme des applis pendant que tu joues) et **profils par jeu** (priorité haute, carte graphique puissante).
 - **Tests des composants** : vitesse et santé de chaque disque, processeur (puissance, stabilité), mémoire, capteurs de la carte graphique, débit Internet, lag en charge (bufferbloat), pixels morts.
@@ -92,6 +93,7 @@ OptiGame/            l'application telle qu'elle est distribuée
     trafic.ps1            ce qui sort du PC : connexions par programme, volumes, types de données, alertes, annuaire des serveurs
     microsoft.ps1         ce que Windows envoie à Microsoft : identifiants, réglages, services
     lag.ps1               lag en ligne : mesure du chemin et diagnostic
+    recherche.ps1         barre de recherche des réglages, suggestions et accès direct
     evenements.ps1        branchement des boutons et du démarrage
   fichiers/outils-tiers/  PresentMon.exe (Intel, licence MIT) pour mesurer les FPS
 outils/

@@ -121,6 +121,8 @@ $ui.BtnTestAgain.Add_Click({
 })
 $Window.Add_KeyDown({
     param($s, $e)
+    # Ctrl+K ou Ctrl+F : recherche d'un réglage
+    if (($e.Key -eq 'K' -or $e.Key -eq 'F') -and [System.Windows.Input.Keyboard]::Modifiers -eq 'Control') { Focus-Search; $e.Handled = $true; return }
     if ($e.Key -eq 'Escape' -and $ui.TestOverlay.Visibility -eq 'Visible') { Hide-TestPanel; return }
     if ($e.Key -eq 'Escape' -and $ui.NetMapOverlay.Visibility -eq 'Visible' -and $ui.Overlay.Visibility -ne 'Visible') { Hide-NetMap; return }
     if ($e.Key -ne 'Escape' -or $ui.Overlay.Visibility -ne 'Visible') { return }
@@ -215,6 +217,7 @@ $Window.Add_ContentRendered({
     if ($back) { $back.Add_Click({ Show-Page $HubIndex }) }
     $script:TopReport = $ui.Tabs.Template.FindName('TopReport', $ui.Tabs)
     if ($script:TopReport) { $script:TopReport.Add_Click({ Invoke-Safe { Show-ReportPanel } }) }
+    try { Initialize-Search } catch { Write-Log "Recherche: $_" }
     try { Start-StartupLoader } catch { Write-Log "Chargement: $_" }
     # Premières tâches derrière l'écran de chargement : l'app n'apparaît qu'une fois prête
     $t0 = Get-Date

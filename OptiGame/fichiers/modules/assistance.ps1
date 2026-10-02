@@ -366,6 +366,7 @@ $TourSteps = @(
         'Chaque changement est sauvegardé avant d''être fait.',
         'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde garde l''historique : tu peux annuler n''importe quel changement.',
         'Un souci ? Le bouton « Signaler un problème », en haut à droite, crée un fichier à envoyer.',
+        'Un réglage introuvable ? Tape-le dans la barre de recherche en haut (ou Ctrl + K) : un clic t''y emmène.',
         'Page Sauvegarde : crée un raccourci OptiGame sur ton bureau et, si tu veux, lance-le au démarrage du PC.') }
 )
 

@@ -405,13 +405,33 @@
                   <TextBlock Text="›" Foreground="#5B6475" FontSize="16" Margin="12,0,10,2" VerticalAlignment="Center"/>
                   <TextBlock x:Name="NavCrumb" Foreground="#9AA3B2" FontSize="13" VerticalAlignment="Center"/>
                 </DockPanel>
-                <Button x:Name="TopReport" Style="{StaticResource BtnSecondary}" HorizontalAlignment="Right" VerticalAlignment="Center" Padding="12,6"
-                        ToolTip="Un bug, un souci ? Crée un fichier à envoyer, sans données personnelles.">
-                  <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="&#xE7BA;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#F5A524" Margin="0,1,8,0" VerticalAlignment="Center"/>
-                    <TextBlock Text="Signaler un problème" FontSize="12.5" VerticalAlignment="Center"/>
-                  </StackPanel>
-                </Button>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                  <!-- Recherche d'un réglage (Ctrl+K) : suggestions au fil de la frappe -->
+                  <Border x:Name="SearchBox" Width="290" Height="34" CornerRadius="17" Margin="0,0,10,0"
+                          Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1">
+                    <Grid>
+                      <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#9AA3B2" VerticalAlignment="Center" Margin="14,1,0,0" IsHitTestVisible="False"/>
+                      <TextBlock x:Name="SearchHint" Text="Rechercher un réglage..." Foreground="#5B6475" FontSize="12.5" VerticalAlignment="Center" Margin="38,0,0,0" IsHitTestVisible="False"/>
+                      <TextBlock x:Name="SearchKey" Text="Ctrl+K" Foreground="#5B6475" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,14,0" IsHitTestVisible="False"/>
+                      <TextBox x:Name="SearchInput" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" CaretBrush="#FFFFFF" SelectionBrush="#22D37A"
+                               FontSize="12.5" VerticalAlignment="Center" VerticalContentAlignment="Center" Margin="34,0,12,0" Padding="2,0"/>
+                    </Grid>
+                  </Border>
+                  <Button x:Name="TopReport" Style="{StaticResource BtnSecondary}" VerticalAlignment="Center" Padding="12,6"
+                          ToolTip="Un bug, un souci ? Crée un fichier à envoyer, sans données personnelles.">
+                    <StackPanel Orientation="Horizontal">
+                      <TextBlock Text="&#xE7BA;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#F5A524" Margin="0,1,8,0" VerticalAlignment="Center"/>
+                      <TextBlock Text="Signaler un problème" FontSize="12.5" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </Button>
+                </StackPanel>
+                <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom" VerticalOffset="6"
+                       AllowsTransparency="True" StaysOpen="True" PopupAnimation="Fade">
+                  <Border Width="430" Background="#171B23" BorderBrush="#2C3342" BorderThickness="1" CornerRadius="12" Padding="6" Margin="0,0,10,10">
+                    <Border.Effect><DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.45" Color="Black"/></Border.Effect>
+                    <StackPanel x:Name="SearchResults"/>
+                  </Border>
+                </Popup>
               </Grid>
               <ContentPresenter x:Name="PageHost" Grid.Row="1" ContentSource="SelectedContent" Margin="28,18,28,16">
                 <ContentPresenter.RenderTransform><TranslateTransform/></ContentPresenter.RenderTransform>
@@ -584,6 +604,9 @@
             </Grid>
             <ScrollViewer x:Name="GPageFps" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
               <StackPanel x:Name="FpsPanel" Margin="0,0,8,0"/>
+            </ScrollViewer>
+            <ScrollViewer x:Name="GPageOverlay" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+              <StackPanel x:Name="OverlayPanel" Margin="0,0,8,0"/>
             </ScrollViewer>
             <ScrollViewer x:Name="GPageLag" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
               <StackPanel x:Name="LagPanel" Margin="0,0,8,0"/>

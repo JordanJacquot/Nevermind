@@ -96,8 +96,20 @@ function Start-Live {
 # ---------------------------------------------------------------------------
 # Onglet gaming
 # ---------------------------------------------------------------------------
-function Set-GamingSubPage([int]$Index) {
-    $pages = @($ui.GPageTweaks, $ui.GPageFps, $ui.GPageLag, $ui.GPageMode, $ui.GPageProfiles)
+# Sous-onglets d'Optimisation gaming, appelés par leur nom (Set-GamingSubPage 'overlay')
+$GamingSubPages = @(
+    @{ Id = 'tweaks'; Label = 'Réglages Windows'; Page = 'GPageTweaks' },
+    @{ Id = 'fps'; Label = 'Mes parties'; Page = 'GPageFps' },
+    @{ Id = 'overlay'; Label = 'Overlay'; Page = 'GPageOverlay' },
+    @{ Id = 'lag'; Label = 'Lag en ligne'; Page = 'GPageLag' },
+    @{ Id = 'mode'; Label = 'Mode jeu'; Page = 'GPageMode' },
+    @{ Id = 'profiles'; Label = 'Profils par jeu'; Page = 'GPageProfiles' }
+)
+
+function Set-GamingSubPage($Page) {
+    $Index = if ($Page -is [string]) { [array]::IndexOf(@($GamingSubPages | ForEach-Object { $_.Id }), $Page) } else { [int]$Page }
+    if ($Index -lt 0) { $Index = 0 }
+    $pages = @($GamingSubPages | ForEach-Object { $ui[$_.Page] })
     for ($i = 0; $i -lt $pages.Count; $i++) {
         $pages[$i].Visibility = if ($i -eq $Index) { 'Visible' } else { 'Collapsed' }
         $b = $script:GTabs[$i]
@@ -106,14 +118,14 @@ function Set-GamingSubPage([int]$Index) {
             $b.Child.Foreground = Get-Brush $(if ($i -eq $Index) { '#0B0D10' } else { '#C9CED8' })
         }
     }
-    $script:GamingSubPage = $Index
+    $script:GamingSubPage = $GamingSubPages[$Index].Id
 }
 
 function Build-GamingTabs {
     if ($script:GTabs) { return }
     $script:GTabs = @()
     $i = 0
-    foreach ($label in 'Réglages Windows', 'Mes parties', 'Lag en ligne', 'Mode jeu', 'Profils par jeu') {
+    foreach ($label in @($GamingSubPages | ForEach-Object { $_.Label })) {
         $b = New-Object System.Windows.Controls.Border
         $b.CornerRadius = [System.Windows.CornerRadius]::new(16)
         $b.Padding = New-Thickness 16 7 16 7

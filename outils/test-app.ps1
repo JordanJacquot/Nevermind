@@ -116,7 +116,7 @@ $script:T.Run.Add_Tick({
                 $ui.Tabs.SelectedIndex = 1
                 # Au démarrage, la liste est calculée juste après « Prêt. » : le test passe avant, on la calcule ici.
                 if ($null -eq $script:Games) { Update-GameCache }
-                Wait-TestMs 500; Save-TestShot 'gaming-reglages'; Set-GamingSubPage 3; Wait-TestMs 300; Save-TestShot 'gaming-mode-jeu'; Set-GamingSubPage 4; Wait-TestMs 300; Save-TestShot 'gaming-profils'
+                Wait-TestMs 500; Save-TestShot 'gaming-reglages'; Set-GamingSubPage 'mode'; Wait-TestMs 300; Save-TestShot 'gaming-mode-jeu'; Set-GamingSubPage 'profiles'; Wait-TestMs 300; Save-TestShot 'gaming-profils'
                 Assert-Test ($null -ne $script:Games) 'liste des jeux jamais calculée'
                 Assert-Test ($ui.GameModePanel.Children.Count -ge 1) 'carte du mode jeu absente'
                 # Session de jeu simulée : aucune appli cochée, donc rien n'est fermé sur ce PC
@@ -185,7 +185,7 @@ $script:T.Run.Add_Tick({
                 $script:FpsTarget = @{ Pid = $PID; Start = (Get-Date).AddSeconds(-20); Ticks = 0; Exclusive = $false; Warned = $false; Series = (New-Object System.Collections.ArrayList); Sys = (New-Object System.Collections.ArrayList); ProcCpu = @{}; ProcMem = @{} }
                 Update-FpsTarget
                 $script:FpsTarget = $null
-                Show-Page 1; Set-GamingSubPage 1; Wait-TestMs 300; Save-TestShot 'mes-parties-discret'
+                Show-Page 1; Set-GamingSubPage 'overlay'; Wait-TestMs 300; Save-TestShot 'overlay-page'
                 Hide-FpsOverlay
                 Set-FpsOverlayStyle 'complet'
                 # Mesure lancée puis arrêtée sur un programme (sans droits admin, PresentMon refuse : l'app ne doit pas planter)
@@ -201,7 +201,7 @@ $script:T.Run.Add_Tick({
                 $sess = @((& $mk $lc.AddDays(-2) 110 70), (& $mk $lc.AddDays(-1) 114 74), (& $mk $lc.AddMinutes(5) 121 88), (& $mk $lc.AddMinutes(50) 125 90))
                 ConvertTo-Json -InputObject $sess | Set-Content -LiteralPath $FpsFile -Encoding UTF8
                 Build-FpsPanel
-                $ui.Tabs.SelectedIndex = 1; Set-GamingSubPage 1; Wait-TestMs 500; Save-TestShot 'mes-parties'
+                $ui.Tabs.SelectedIndex = 1; Set-GamingSubPage 'fps'; Wait-TestMs 500; Save-TestShot 'mes-parties'
                 Assert-Test ($ui.FpsPanel.Children.Count -ge 5) "panneau incomplet ($($ui.FpsPanel.Children.Count) éléments)"
                 # Fiche d'une partie (clic sur la ligne la plus récente)
                 $rowCard = @($ui.FpsPanel.Children | Where-Object { $_.Tag -is [string] })[0]
@@ -213,7 +213,7 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($ui.TestOverlay.Visibility -eq 'Visible') 'la fiche de la partie ne s''ouvre pas'
                 $ui.TestScroll.ScrollToEnd(); Wait-TestMs 300; Save-TestShot 'fiche-partie-bas'
                 Hide-TestPanel
-                Set-GamingSubPage 0
+                Set-GamingSubPage 'tweaks'
                 "$hk, overlay, arrêt propre et comparaison OK"
             }
             Test-Step 'Diagnostic des FPS (5 situations)' {
@@ -341,6 +341,38 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($ui.ChkAutoStart.IsChecked -eq $auto) 'interrupteur du démarrage différent de la tâche planifiée'
                 $script:DesktopDir = $null
                 "raccourci créé vers $(Split-Path $exe -Leaf), démarrage automatique $(if ($auto) { 'activé' } else { 'désactivé' }) sur ce PC"
+            }
+            Test-Step 'Recherche des réglages' {
+                Assert-Test ($null -ne $script:Search) 'barre de recherche non branchée'
+                $cases = @(
+                    @('compteur discret', 'Style du compteur*'), @('netoyage', 'Nettoyage*'), @('demarage pc', 'Lancer OptiGame au démarrage*'),
+                    @('raccourci bureau', 'Raccourci sur le bureau'), @('telemetrie', 'Ce que Windows envoie*'), @('ping', '*'), @('position overlay', 'Position du compteur')
+                )
+                foreach ($c in $cases) {
+                    $r = @(Find-Settings $c[0])
+                    Assert-Test ($r.Count -and $r[0].T -like $c[1]) "« $($c[0]) » donne : $(($r | Select-Object -First 3 | ForEach-Object { $_.T }) -join ' | ')"
+                }
+                Assert-Test (-not @(Find-Settings 'zzzqqq').Count) 'résultats pour un mot inconnu'
+                # Suggestions affichées en tapant
+                Focus-Search; $script:Search.Input.Text = 'fps'; Wait-TestMs 200
+                Assert-Test ($script:Search.Popup.IsOpen -and @($script:Search.Rows).Count -ge 3) "suggestions : $(@($script:Search.Rows).Count)"
+                $pc = $script:Search.Popup.Child; $pc.UpdateLayout()
+                $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap([int]$pc.ActualWidth, [int]$pc.ActualHeight, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32)
+                $rtb.Render($pc)
+                $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder; $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
+                $fs = [IO.File]::Create((Join-Path $script:T.Dir 'captures\recherche-suggestions.png')); $enc.Save($fs); $fs.Close()
+                # Aller au réglage : bonne page, bon sous-onglet, réglage mis en évidence
+                Open-SearchEntry (@(Find-Settings 'position compteur')[0]); Wait-TestMs 400
+                Assert-Test ($ui.Tabs.SelectedIndex -eq 1 -and $script:GamingSubPage -eq 'overlay') "page $($ui.Tabs.SelectedIndex), sous-onglet $($script:GamingSubPage)"
+                Assert-Test (-not $script:Search.Popup.IsOpen -and -not $script:Search.Input.Text) 'barre non refermée'
+                Assert-Test ($script:SearchLastHit -and $script:SearchLastHit.Effect) 'réglage non mis en évidence'
+                Assert-Test (-not $script:Search.Input.IsKeyboardFocused) 'la barre garde le focus'
+                Save-TestShot 'recherche-arrivee'
+                Open-SearchEntry (@(Find-Settings 'raccourci bureau')[0]); Wait-TestMs 400
+                $el = Find-PageElement $ui.Tabs.Items[7].Content 'Raccourci et démarrage'
+                Assert-Test ($ui.Tabs.SelectedIndex -eq 7 -and $el) 'réglage « Raccourci et démarrage » non trouvé sur la page'
+                Wait-TestMs 2500
+                "$($cases.Count) recherches justes (fautes de frappe comprises), suggestions affichées, arrivée sur Overlay et Sauvegarde"
             }
             Test-Step 'Signaler un problème (bouton en haut)' {
                 Assert-Test ($null -ne $script:TopReport -and $script:TopReport.IsVisible) 'bouton « Signaler un problème » absent en haut'
@@ -542,7 +574,7 @@ $script:T.Run.Add_Tick({
                 $last = @(Get-LagSessions)[-1]
                 Assert-Test (@(Get-LagSessions).Count -eq $n0 + 1 -and $last.Stats.ref.Med -gt 0) 'mesure réelle non enregistrée'
                 Wait-TestMs 800; Save-TestShot 'lag-mesure'; Hide-TestPanel
-                Show-Page 1; Set-GamingSubPage 2; Wait-TestMs 500; Save-TestShot 'lag'
+                Show-Page 1; Set-GamingSubPage 'lag'; Wait-TestMs 500; Save-TestShot 'lag'
                 "5 situations reconnues ; vraie mesure : box $(Format-Ms $last.Stats.gw.Med), fournisseur $(if ($last.Isp) { $last.Isp } elseif ($last.Stats.isp) { Format-Ms $last.Stats.isp.Med } else { 'non trouvé' }), Internet $(Format-Ms $last.Stats.ref.Med)"
             }
             Test-Step 'Trafic : ce qui sort du PC' {
