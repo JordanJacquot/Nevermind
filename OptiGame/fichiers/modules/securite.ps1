@@ -13,7 +13,7 @@ function Get-ProtectionStatus {
     $arg = @{
         UserDirs = @((Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'), [Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('MyDocuments'))
         Folders = @(Get-SuspectFolders); StartupExes = @(Get-StartupItems | Where-Object { $_.Enabled } | ForEach-Object { $_.Exe })
-        RiskDirs = $riskDirs; Temp = $env:TEMP; Public = "$env:SystemDrive\Users\Public"
+        RiskDirs = $riskDirs; Temp = $env:TEMP; Public = "$env:SystemDrive\Users\Public"; OwnTask = $AutoStartTask; OwnScript = (Join-Path $AppDir 'OptiGame.ps1')
     }
     $d = Invoke-Async $SecDataWork $arg | Select-Object -First 1
     $off = @($d.FirewallOff)

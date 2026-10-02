@@ -250,6 +250,8 @@ $SecDataWork = {
         foreach ($act in @($t2.Actions)) {
             $exe = [Environment]::ExpandEnvironmentVariables([string]$act.Execute).Trim('"')
             $argsTxt = [string]$act.Arguments
+            # Lancement d'OptiGame au démarrage : notre propre tâche (même nom ET même script), pas une menace
+            if ($a.OwnTask -and $t2.TaskName -eq $a.OwnTask -and $t2.TaskPath -eq '\' -and $exe -match '\\WindowsPowerShell\\v1\.0\\powershell\.exe$' -and $argsTxt -eq "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$($a.OwnScript)`" -Demarrage") { continue }
             $hiddenCmd = $exe -match '(powershell|pwsh|cmd|wscript|cscript|mshta)(\.exe)?$' -and $argsTxt -match '(-enc|-encodedcommand|frombase64|downloadstring|downloadfile|invoke-expression|\biex\b|-w(indowstyle)?\s+h(idden)?|http)'
             $riskPath = $exe -like "$($a.Temp)*" -or $exe -like "$($a.Public)*"
             if ($hiddenCmd -or $riskPath) { $r.Tasks += @{ Name = $t2.TaskName; Path = $t2.TaskPath; Cmd = "$exe $argsTxt".Trim(); Bad = $hiddenCmd } }
