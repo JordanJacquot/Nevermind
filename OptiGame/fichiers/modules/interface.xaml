@@ -961,6 +961,11 @@
             </StackPanel>
           </DockPanel>
           <DockPanel Grid.Row="1" Margin="0,16,0,12">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,8,0"
+                        ToolTip="Jaquettes manquantes cherchées sur la boutique Steam puis sur Wikipédia. Seul le nom du jeu est envoyé.">
+              <CheckBox x:Name="ChkLibCovers" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
+              <TextBlock Text="Jaquettes depuis Internet" Foreground="#9AA3B2" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center"/>
+            </StackPanel>
             <Border DockPanel.Dock="Left" Width="230" Height="34" CornerRadius="17" Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1">
               <Grid>
                 <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#9AA3B2" VerticalAlignment="Center" Margin="14,1,0,0" IsHitTestVisible="False"/>

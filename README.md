@@ -40,12 +40,13 @@ L'accueil, avec le score d'optimisation, le niveau de protection et une carte pa
 
 ### Jeux
 
-La bibliothèque de tous tes jeux, comme celle de Steam mais tous launchers confondus (Steam, Epic, Ubisoft Connect, EA app, GOG, Battle.net, Riot, Rockstar, Amazon, Xbox, plus les jeux ajoutés à la main).
+La bibliothèque de tous tes jeux, comme celle de Steam mais tous launchers confondus (Steam, Epic, Ubisoft Connect, EA app, GOG, Battle.net, Riot, Ankama, Rockstar, Amazon, Xbox, plus les jeux ajoutés à la main).
 
-- **Jaquettes** (celles que Steam garde sur le PC, sinon une vignette aux couleurs du jeu), recherche et filtre par launcher, les derniers jeux joués en premier.
+- **Jaquettes** : celles que Steam garde sur le PC, sinon cherchées sur la boutique Steam puis Wikipédia (seul le nom du jeu est envoyé, option désactivable), sinon le logo ou l'icône du jeu, recherche et filtre par launcher, les derniers jeux joués en premier.
 - **Double clic ou « Lancer »** : le jeu démarre par son launcher (connexion, mises à jour, anti triche comme d'habitude), sans les droits administrateur d'OptiGame.
 - **Fiche du jeu** : temps de jeu et nombre de parties (notés par OptiGame), FPS de la dernière partie mesurée.
 - **Optimisation du jeu** : priorité haute, carte graphique puissante, réglages Windows, mesure des FPS, mode jeu, disque du jeu, avec un bouton « Tout optimiser » annulable.
+- **Désinstaller** : ouvre le désinstalleur du jeu ou de son launcher (Steam, Ubisoft, Battle.net, Riot...), la liste se met à jour toute seule.
 
 ### Réseau
 

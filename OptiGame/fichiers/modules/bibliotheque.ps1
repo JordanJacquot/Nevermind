@@ -86,6 +86,182 @@ function Get-ImageBrush([string]$Path, [int]$Width) {
     $script:LibImages[$ck]
 }
 
+# ---------------------------------------------------------------------------
+# Jaquettes manquantes : cherchées sur la boutique Steam (par le nom du jeu : la plupart des jeux Ubisoft,
+# Epic ou Battle.net y sont aussi), puis sur Wikipédia. Seul le nom du jeu est envoyé.
+# Gardées dans le dossier « jaquettes » des données d'OptiGame ; une recherche ratée est retentée après 7 jours.
+# ---------------------------------------------------------------------------
+$CoverDir = Join-Path $DataDir 'jaquettes'
+$CoverIndexFile = Join-Path $CoverDir 'index.json'
+
+function Test-CoversOnline { [bool](Get-Setting 'LibCoversOnline' $true) }
+
+function Get-CoverIndex {
+    if ($null -ne $script:CoverIndex) { return $script:CoverIndex }
+    $script:CoverIndex = @{}
+    try {
+        if (Test-Path -LiteralPath $CoverIndexFile) {
+            $o = Get-Content -LiteralPath $CoverIndexFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($p in $o.PSObject.Properties) { $script:CoverIndex[$p.Name] = @{ Cover = [string]$p.Value.Cover; Hero = [string]$p.Value.Hero; Logo = [string]$p.Value.Logo; Date = [string]$p.Value.Date } }
+        }
+    } catch {}
+    $script:CoverIndex
+}
+
+# Jaquette : fichiers de Steam (ancien puis nouveau nom), sinon celle téléchargée
+function Get-CoverFile($Game, [switch]$Twin) {
+    $f = Get-SteamArt $Game 'library_600x900.jpg'
+    if (-not $f) { $f = Get-SteamArt $Game 'library_capsule.jpg' }
+    if (-not $f) { $c = (Get-CoverIndex)[$Game.Name]; if ($c -and $c.Cover -and (Test-Path -LiteralPath $c.Cover)) { $f = $c.Cover } }
+    # Le même jeu acheté sur un autre launcher (Rocket League sur Epic et sur Steam) : sa jaquette
+    if (-not $f -and -not $Twin) {
+        $me = ConvertTo-SearchText ($Game.Name -replace '[®™©]', '')
+        foreach ($o in @(Get-LibraryGames | Where-Object { $_.Name -ne $Game.Name -and (ConvertTo-SearchText ($_.Name -replace '[®™©]', '')) -eq $me })) { $f = Get-CoverFile $o -Twin; if ($f) { break } }
+    }
+    $f
+}
+
+function Get-LogoFile($Game) {
+    $f = Get-SteamArt $Game 'logo.png'
+    if (-not $f) { $c = (Get-CoverIndex)[$Game.Name]; if ($c -and $c.Logo -and (Test-Path -LiteralPath $c.Logo)) { $f = $c.Logo } }
+    $f
+}
+
+function Get-HeroFile($Game) {
+    foreach ($k in 'library_hero.jpg', 'header.jpg', 'library_header.jpg') { $f = Get-SteamArt $Game $k; if ($f) { return $f } }
+    $c = (Get-CoverIndex)[$Game.Name]
+    if ($c -and $c.Hero -and (Test-Path -LiteralPath $c.Hero)) { return $c.Hero }
+    $null
+}
+
+# Fil séparé : pour chaque jeu, la boutique Steam (identifiant connu ou recherche par nom), puis Wikipédia
+$CoverWork = {
+    param($a)
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $norm = {
+        param($s)
+        $d = ([string]$s).ToLowerInvariant().Normalize([Text.NormalizationForm]::FormD)
+        (-join ($d.ToCharArray() | Where-Object { [Globalization.CharUnicodeInfo]::GetUnicodeCategory($_) -ne 'NonSpacingMark' -and [char]::IsLetterOrDigit($_) }))
+    }
+    # Téléchargement d'une image ; un fichier vide ou une page d'erreur n'est pas gardé
+    $get = {
+        param($url, $file)
+        try {
+            Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing -TimeoutSec 15 -UserAgent 'OptiGame (jaquettes de la bibliotheque)' -ErrorAction Stop
+            if ((Get-Item -LiteralPath $file).Length -gt 3KB) { return $true }
+        } catch {}
+        if (Test-Path -LiteralPath $file) { [IO.File]::Delete($file) }
+        $false
+    }
+    New-Item -ItemType Directory -Force -Path $a.Dir | Out-Null
+    foreach ($g in $a.Games) {
+        $key = & $norm $g.Name
+        if (-not $key) { $key = 'jeu' + [math]::Abs($g.Name.GetHashCode()) }
+        $res = @{ Name = $g.Name; Cover = ''; Hero = ''; Logo = ''; Net = $true }
+        $clean = ($g.Name -replace '[®™©]', '').Trim()
+        $id = $g.AppId
+        if (-not $id) {
+            try {
+                $j = Invoke-RestMethod -Uri "https://store.steampowered.com/api/storesearch/?term=$([uri]::EscapeDataString($clean))&l=french&cc=FR" -TimeoutSec 10 -UserAgent 'OptiGame' -ErrorAction Stop
+                $b = & $norm $clean
+                foreach ($it in @($j.items)) {
+                    $n = & $norm $it.name
+                    # Même jeu : même nom, ou l'un contient l'autre (« Overwatch » et « Overwatch 2 »)
+                    $close = $n -eq $b -or (($n.Contains($b) -or $b.Contains($n)) -and [math]::Min($n.Length, $b.Length) / [math]::Max(1.0, [math]::Max($n.Length, $b.Length)) -ge 0.6)
+                    if ($close) { $id = $it.id; break }
+                }
+            } catch { $res.Net = $false }
+        }
+        if ($id) {
+            $f = Join-Path $a.Dir "$key.jpg"
+            foreach ($u in "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/$id/library_600x900.jpg", "https://cdn.cloudflare.steamstatic.com/steam/apps/$id/library_600x900.jpg") { if (& $get $u $f) { $res.Cover = $f; break } }
+            $h = Join-Path $a.Dir "$key-banniere.jpg"
+            foreach ($u in "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/$id/library_hero.jpg", "https://cdn.cloudflare.steamstatic.com/steam/apps/$id/header.jpg") { if (& $get $u $h) { $res.Hero = $h; break } }
+        }
+        # Pas sur Steam : l'image de la page Wikipédia du jeu. Plus haute que large : c'est la jaquette ;
+        # sinon, si c'est son logo (Valorant, League of Legends, Dofus...), il sert pour la vignette.
+        if (-not $res.Cover) {
+            foreach ($lang in 'en', 'fr') {
+                Start-Sleep -Milliseconds 400   # Wikipédia refuse les demandes trop rapprochées
+                try {
+                    $s = Invoke-RestMethod -Uri "https://$lang.wikipedia.org/api/rest_v1/page/summary/$([uri]::EscapeDataString(($clean -replace ' ', '_')))" -TimeoutSec 10 -UserAgent 'OptiGame (jaquettes de la bibliotheque)' -ErrorAction Stop
+                    $img = $s.originalimage
+                    if ($s.type -ne 'standard' -or -not $img -or "$($s.description) $($s.extract)" -notmatch '(?i)jeu|game') { continue }
+                    # L'adresse se termine par « ?utm_source=... » : l'extension est avant
+                    $src = [string]$img.source
+                    $ext = [IO.Path]::GetExtension(($src -split '\?')[0]).ToLower()
+                    if ($ext -notin '.jpg', '.jpeg', '.png') { continue }
+                    if ($img.height -gt 1.15 * $img.width) {
+                        $f = Join-Path $a.Dir "$key-wiki$ext"
+                        if (& $get $src $f) { $res.Cover = $f; break }
+                    } elseif ($ext -eq '.png' -and $src -match '(?i)logo|\.svg\.png' -and -not $res.Logo) {
+                        $f = Join-Path $a.Dir "$key-logo.png"
+                        if (& $get $src $f) { $res.Logo = $f }
+                    }
+                } catch {
+                    if ($_.Exception.Message -match '429') { $res.Net = $false }   # trop de demandes : on réessaiera plus tard
+                }
+            }
+        }
+        $res
+    }
+}
+
+function Start-CoverDownload {
+    if ($script:CoverJob -or -not (Test-CoversOnline) -or $env:OPTIGAME_TEST) { return }
+    $idx = Get-CoverIndex
+    $todo = @(Get-LibraryGames | Where-Object {
+        $c = $idx[$_.Name]
+        -not (Get-SteamArt $_ 'library_600x900.jpg') -and -not (Get-SteamArt $_ 'library_capsule.jpg') -and
+        (-not $c -or (-not $c.Cover -and $c.Date -and ((Get-Date) - [datetime]$c.Date).TotalDays -gt 7) -or ($c.Cover -and -not (Test-Path -LiteralPath $c.Cover)))
+    } | ForEach-Object { @{ Name = [string]$_.Name; AppId = [string]$_.AppId } })
+    if (-not $todo.Count) { return }
+    $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
+    [void]$ps.AddScript($CoverWork.ToString()).AddArgument(@{ Games = $todo; Dir = $CoverDir })
+    $script:CoverJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
+    if (-not $script:CoverTimer) {
+        $script:CoverTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $script:CoverTimer.Interval = [TimeSpan]::FromSeconds(1)
+        $script:CoverTimer.Add_Tick({ try { Receive-Covers } catch { Write-Log "Jaquettes: $_" } })
+    }
+    $script:CoverTimer.Start()
+    Set-Status "Recherche des jaquettes de $($todo.Count) jeu$(if ($todo.Count -gt 1) {'x'})..."
+}
+
+function Receive-Covers {
+    $j = $script:CoverJob
+    if (-not $j -or -not $j.Handle.IsCompleted) { return }
+    $script:CoverTimer.Stop()
+    $script:CoverJob = $null
+    $res = @()
+    try { $res = @($j.PS.EndInvoke($j.Handle)) } catch { Write-Log "Jaquettes: $_" } finally { $j.PS.Dispose() }
+    $idx = Get-CoverIndex
+    $found = 0
+    foreach ($r in $res) {
+        if (-not $r.Net -and -not $r.Cover -and -not $r.Logo) { continue }   # pas de connexion : on réessaiera au prochain lancement
+        $idx[$r.Name] = @{ Cover = [string]$r.Cover; Hero = [string]$r.Hero; Logo = [string]$r.Logo; Date = (Get-Date).ToString('s') }
+        if ($r.Cover -or $r.Logo) { $found++ }
+    }
+    try { [IO.File]::WriteAllText($CoverIndexFile, (ConvertTo-Json -InputObject $idx -Depth 3 -Compress), (New-Object Text.UTF8Encoding($false))) } catch {}
+    Write-Log "Jaquettes: $found trouvée(s) sur $(@($res).Count)"
+    Set-Status "$found jaquette$(if ($found -gt 1) {'s'}) ajoutée$(if ($found -gt 1) {'s'}) à ta bibliothèque."
+    if ($found -and $script:LibBuilt) { Update-LibraryView }
+}
+
+# Plus grande image d'un fichier .ico (les launchers Riot, Ubisoft... en fournissent en 256 px)
+function Get-BigIcon($Game) {
+    $ico = [string]$Game.Icon
+    if ($ico -notmatch '\.ico$' -or -not (Test-Path -LiteralPath $ico)) { return $null }
+    if (-not $script:LibIcons) { $script:LibIcons = @{} }
+    if ($script:LibIcons.ContainsKey($ico)) { return $script:LibIcons[$ico] }
+    $script:LibIcons[$ico] = try {
+        $dec = [System.Windows.Media.Imaging.BitmapDecoder]::Create((New-Object Uri $ico), 'None', 'OnLoad')
+        $fr = @($dec.Frames | Sort-Object PixelWidth -Descending)[0]
+        if ($fr.PixelWidth -ge 64) { $fr.Freeze(); $fr } else { $null }
+    } catch { $null }
+    $script:LibIcons[$ico]
+}
+
 # Couleur stable tirée du nom du jeu (vignette sans jaquette)
 function Get-GameHue([string]$Name) {
     $h = 0; foreach ($c in $Name.ToCharArray()) { $h = ($h * 31 + [int]$c) % 360 }
@@ -112,19 +288,32 @@ function New-GameCover($Game, [double]$W, [double]$H) {
     $b = New-Object System.Windows.Controls.Border
     $b.Width = $W; $b.Height = $H
     $b.CornerRadius = [System.Windows.CornerRadius]::new(10)
-    # Jaquette Steam : ancien nom, puis celui des versions récentes de Steam
-    $file = Get-SteamArt $Game 'library_600x900.jpg'
-    if (-not $file) { $file = Get-SteamArt $Game 'library_capsule.jpg' }
-    $art = Get-ImageBrush $file ([int]($W * 2))
+    $art = Get-ImageBrush (Get-CoverFile $Game) ([int]($W * 2))
     if ($art) { $b.Background = $art; return $b }
     $hue = Get-GameHue $Game.Name
     $b.Background = New-LinearBrush @($hue, '#141820') 0 0 1 1
     $g = New-Object System.Windows.Controls.Grid
-    $ini = (@($Game.Name -split '[\s:\-]+' | Where-Object { $_ -match '^[A-Za-z0-9À-ÿ]' } | Select-Object -First 2 | ForEach-Object { $_.Substring(0, 1).ToUpper() }) -join '')
-    $t = New-Text $ini ([math]::Round($W / 3.2)) '#FFFFFF' -Bold
-    $t.Opacity = 0.9; $t.HorizontalAlignment = 'Center'; $t.VerticalAlignment = 'Center'
-    [void]$g.Children.Add($t)
-    $icon = Get-GameIcon $Game
+    # Logo officiel du jeu, sinon sa grande icône si son launcher en fournit une, sinon ses initiales
+    $logo = Get-ImageBrush (Get-LogoFile $Game) 300
+    $big = if ($logo) { $null } else { Get-BigIcon $Game }
+    if ($logo) {
+        $li = New-Object System.Windows.Controls.Image
+        $li.Source = $logo.ImageSource; $li.Stretch = 'Uniform'
+        $li.Width = $W * 0.8; $li.MaxHeight = $H * 0.4
+        $li.HorizontalAlignment = 'Center'; $li.VerticalAlignment = 'Center'; $li.Margin = New-Thickness 0 0 0 24
+        [void]$g.Children.Add($li)
+    } elseif ($big) {
+        $bi = New-Object System.Windows.Controls.Image
+        $bi.Source = $big; $bi.Width = [math]::Round($W * 0.55); $bi.Height = $bi.Width
+        $bi.HorizontalAlignment = 'Center'; $bi.VerticalAlignment = 'Center'; $bi.Margin = New-Thickness 0 0 0 24
+        [void]$g.Children.Add($bi)
+    } else {
+        $ini = (@($Game.Name -split '[\s:\-]+' | Where-Object { $_ -match '^[A-Za-z0-9À-ÿ]' } | Select-Object -First 2 | ForEach-Object { $_.Substring(0, 1).ToUpper() }) -join '')
+        $t = New-Text $ini ([math]::Round($W / 3.2)) '#FFFFFF' -Bold
+        $t.Opacity = 0.9; $t.HorizontalAlignment = 'Center'; $t.VerticalAlignment = 'Center'
+        [void]$g.Children.Add($t)
+    }
+    $icon = if ($big -or $logo) { $null } else { Get-GameIcon $Game }
     if ($icon) {
         $img = New-Object System.Windows.Controls.Image
         $img.Source = $icon; $img.Width = 32; $img.Height = 32
@@ -176,6 +365,75 @@ function Start-LibraryGame($Game) {
     $script:LibLaunching = @{ Name = $Game.Name; At = Get-Date }
     Set-Status "Lancement de $($Game.Name)$(if ($Game.Source -and $how.Kind -eq 'url') { " par $($Game.Source)" })..."
     Update-LibraryDetail
+}
+
+# ---------------------------------------------------------------------------
+# Désinstaller : toujours par le désinstalleur du jeu ou de son launcher (qui demande confirmation),
+# jamais en effaçant un dossier soi même. La liste se met à jour quand le jeu a disparu.
+# ---------------------------------------------------------------------------
+# Commande déclarée à Windows : « "C:\...\x.exe" arguments » ou « C:\...\x.exe arguments »
+function Split-Command([string]$Cmd) {
+    $Cmd = $Cmd.Trim()
+    if ($Cmd -match '^"([^"]+)"\s*(.*)$') { return @{ Exe = $Matches[1]; Args = $Matches[2] } }
+    if ($Cmd -match '^(.+?\.exe)\s*(.*)$') { return @{ Exe = $Matches[1]; Args = $Matches[2] } }
+    @{ Exe = $Cmd; Args = '' }
+}
+
+function Get-GameUninstall($Game) {
+    $u = [string]$Game.Uninstall
+    # Jeu Steam sans numéro connu (installé à la main dans le dossier de Steam) : la bibliothèque de Steam
+    if (-not $u -and (-not $Game.Source -or $Game.Source -eq 'Steam')) { return @{ Kind = 'launcher'; Path = 'steam://nav/games' } }
+    if (-not $u) { return @{ Kind = 'none' } }
+    if ($u -like 'launcher|*') { return @{ Kind = 'launcher'; Path = $u.Substring(9) } }
+    if ($u -match '^[a-z][a-z0-9+.-]*://') { return @{ Kind = 'url'; Path = $u } }
+    $c = Split-Command $u
+    @{ Kind = 'exe'; Path = $c.Exe; Args = $c.Args }
+}
+
+function Uninstall-LibraryGame($Game) {
+    if (-not $Game) { return }
+    $src = if ($Game.Source) { $Game.Source } else { 'Steam' }
+    $how = Get-GameUninstall $Game
+    switch ($how.Kind) {
+        'none' {
+            Show-Message "OptiGame ne connaît pas le désinstalleur de « $($Game.Name) ».`n`nLa liste des applications de Windows va s'ouvrir : cherche le jeu et clique sur « Désinstaller »."
+            Open-Url 'ms-settings:appsfeatures'
+            return
+        }
+        'launcher' {
+            Show-Message "« $($Game.Name) » se désinstalle depuis $src : OptiGame l'ouvre pour toi.`n`nDans $src, fais un clic droit sur le jeu (ou ouvre ses options), puis « Désinstaller »."
+            Open-Url $how.Path
+        }
+        default {
+            if (-not (Confirm-Action "Désinstaller « $($Game.Name) » ?`n`nLe désinstalleur de $src va s'ouvrir et te demander de confirmer. Tes sauvegardes dans le cloud ne sont pas touchées.")) { return }
+            if ($how.Kind -eq 'url') { Open-Url $how.Path }
+            else {
+                if (-not (Test-Path -LiteralPath $how.Path)) { Show-Message "Le désinstalleur est introuvable :`n$($how.Path)`n`nDésinstalle le jeu depuis $src." 'Warning'; return }
+                Start-Process -FilePath $how.Path -ArgumentList $how.Args -WorkingDirectory (Split-Path $how.Path -Parent)
+            }
+        }
+    }
+    Write-Log "Bibliothèque: désinstallation de $($Game.Name) demandée ($src)"
+    Set-Status "Désinstallation de $($Game.Name) : suis les instructions de $src. La liste se mettra à jour toute seule."
+    Watch-Uninstall $Game
+}
+
+# Toutes les 10 s pendant 15 min : le jeu a disparu ? la bibliothèque est rafraîchie
+function Watch-Uninstall($Game) {
+    $t = New-Object System.Windows.Threading.DispatcherTimer
+    $t.Interval = [TimeSpan]::FromSeconds(10)
+    $t.Tag = @{ Name = $Game.Name; Exe = [string]@($Game.Exes)[0]; Until = (Get-Date).AddMinutes(15) }
+    $t.Add_Tick({
+        param($s, $e)
+        $x = $s.Tag
+        if ((Get-Date) -gt $x.Until) { $s.Stop(); return }
+        if ($x.Exe -and (Test-Path -LiteralPath $x.Exe)) { return }
+        $s.Stop()
+        try { Update-GameCache } catch { Write-Log "Bibliothèque: $_" }
+        Set-Status "$($x.Name) est désinstallé."
+        Write-Log "Bibliothèque: $($x.Name) désinstallé"
+    })
+    $t.Start()
 }
 
 # ---------------------------------------------------------------------------
@@ -234,6 +492,7 @@ function Update-LibraryView {
     foreach ($g in $shown) { [void]$ui.LibGrid.Children.Add((New-LibraryTile $g)) }
     if (-not $script:LibSelected -or -not @($shown | Where-Object { $_.Name -eq $script:LibSelected }).Count) { $script:LibSelected = if ($shown.Count) { $shown[0].Name } else { $null } }
     Set-LibrarySelection $script:LibSelected
+    try { Start-CoverDownload } catch { Write-Log "Jaquettes: $_" }
 }
 
 function New-LibraryTile($Game) {
@@ -306,15 +565,13 @@ function Update-LibraryDetail {
     # Bannière (image large de Steam, sinon dégradé aux couleurs du jeu)
     $hero = New-Object System.Windows.Controls.Border
     $hero.Height = 150
-    $img = Get-ImageBrush (Get-SteamArt $g 'library_hero.jpg') 720
-    if (-not $img) { $img = Get-ImageBrush (Get-SteamArt $g 'header.jpg') 720 }
-    if (-not $img) { $img = Get-ImageBrush (Get-SteamArt $g 'library_header.jpg') 720 }
+    $img = Get-ImageBrush (Get-HeroFile $g) 720
     $hero.Background = if ($img) { $img } else { New-LinearBrush @((Get-GameHue $g.Name), '#141820') 0 0 1 1 }
     $hg = New-Object System.Windows.Controls.Grid
     $shade = New-Object System.Windows.Controls.Border
     $shade.Background = New-LinearBrush @('#00000000', '#E6141820') 0 0 0 1
     [void]$hg.Children.Add($shade)
-    $logo = Get-SteamArt $g 'logo.png'
+    $logo = Get-LogoFile $g
     if ($logo) {
         $li = New-Object System.Windows.Controls.Image
         $li.Source = (Get-ImageBrush $logo 480).ImageSource
@@ -403,7 +660,7 @@ function Update-LibraryDetail {
     $wp = New-Object System.Windows.Controls.WrapPanel
     $wp.Margin = New-Thickness 0 16 0 0
     $acts = @(@('Ouvrir le dossier', 'folder'), @('Profils par jeu', 'profiles'))
-    if ($g.Custom) { $acts += , @('Retirer de la liste', 'remove') }
+    if ($g.Custom) { $acts += , @('Retirer de la liste', 'remove') } else { $acts += , @('Désinstaller', 'uninstall') }
     foreach ($a in $acts) {
         $b = New-Button $a[0]
         $b.Margin = New-Thickness 0 0 8 8
@@ -416,6 +673,7 @@ function Update-LibraryDetail {
                     'folder' { $d = if ($gm.Dir) { $gm.Dir } else { Split-Path @($gm.Exes)[0] -Parent }; Open-Url $d }
                     'profiles' { Show-Page 1; Set-GamingSubPage 'profiles' }
                     'remove' { Remove-CustomGame @($gm.Exes)[0]; Update-LibraryView }
+                    'uninstall' { Uninstall-LibraryGame $gm }
                 }
             }
         })
@@ -527,6 +785,12 @@ function Initialize-Library {
     $ui.LibSearch.Add_TextChanged({
         $ui.LibSearchHint.Visibility = if ($ui.LibSearch.Text) { 'Collapsed' } else { 'Visible' }
         $script:LibSearchTimer.Stop(); $script:LibSearchTimer.Start()
+    })
+    $ui.ChkLibCovers.IsChecked = Test-CoversOnline
+    $ui.ChkLibCovers.Add_Click({
+        $on = [bool]$ui.ChkLibCovers.IsChecked
+        Set-Setting 'LibCoversOnline' $on
+        if ($on) { Start-CoverDownload } else { Set-Status 'Jaquettes depuis Internet désactivées (celles déjà trouvées restent).' }
     })
     $ui.BtnLibAdd.Add_Click({ Invoke-Safe { Add-CustomGame; Update-LibraryView } })
     $ui.BtnLibRefresh.Add_Click({ Invoke-Safe { Set-Status 'Recherche de tes jeux...'; Update-GameCache; Update-LibraryView; Set-Status "$(@(Get-LibraryGames).Count) jeux trouvés." } })

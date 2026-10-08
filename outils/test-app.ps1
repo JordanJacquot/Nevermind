@@ -376,7 +376,23 @@ $script:T.Run.Add_Tick({
                     Show-Page $HubIndex; Open-SearchEntry $r[0]; Wait-TestMs 400
                     Assert-Test ($ui.Tabs.SelectedIndex -eq $GamesIndex -and $script:LibSelected -eq $pick.Name) 'la recherche n''ouvre pas le jeu'
                 }
-                # Filtre et recherche dans la bibliothèque
+                # Désinstallation : chaque jeu a un moyen (sans rien lancer)
+                $unk = @($games | Where-Object { -not $_.Custom -and (Get-GameUninstall $_).Kind -eq 'none' } | ForEach-Object { $_.Name })
+                $ukinds = @($games | ForEach-Object { (Get-GameUninstall $_).Kind } | Select-Object -Unique)
+                foreach ($g in @($games | Where-Object { $_.AppId })) { Assert-Test ((Get-GameUninstall $g).Path -eq "steam://uninstall/$($g.AppId)") "désinstallation Steam de $($g.Name)" }
+                $sc = Split-Command '"C:\Riot Games\Riot Client\RiotClientServices.exe" --uninstall-product=valorant --uninstall-patchline=live'
+                Assert-Test ($sc.Exe -eq 'C:\Riot Games\Riot Client\RiotClientServices.exe' -and $sc.Args -like '--uninstall-product=valorant*') "commande mal lue : $($sc.Exe) / $($sc.Args)"
+                # Ankama (Dofus) : présent si l'Ankama Launcher a installé des jeux sur ce PC
+                $ank = @(Get-ChildItem "$env:APPDATA\zaap\repositories\production\*\*\release.json" -ErrorAction SilentlyContinue | Where-Object { (Get-Content $_.FullName -Raw) -match '"location":"[A-Z]' })
+                if ($ank.Count) { Assert-Test (@($games | Where-Object { $_.Source -eq 'Ankama' }).Count) 'jeux Ankama (Dofus) absents' }
+                # Jaquette d'un jeu du même nom sur un autre launcher, et jaquette téléchargée
+                $noCover = @($games | Where-Object { -not (Get-CoverFile $_) })
+                $withCover = @($games | Where-Object { Get-CoverFile $_ })
+                if ($noCover.Count -and $withCover.Count) {
+                    $script:CoverIndex = @{ ($noCover[0].Name) = @{ Cover = (Get-CoverFile $withCover[0]); Hero = ''; Logo = ''; Date = (Get-Date).ToString('s') } }
+                    Assert-Test ((Get-CoverFile $noCover[0]) -eq (Get-CoverFile $withCover[0])) 'jaquette téléchargée non utilisée'
+                    $script:CoverIndex = $null
+                }                # Filtre et recherche dans la bibliothèque
                 $ui.LibSearch.Text = 'zzzz'; Wait-TestMs 500
                 Assert-Test ($script:LibTiles.Count -eq 0) 'filtre de recherche sans effet'
                 $ui.LibSearch.Text = ''
@@ -384,7 +400,7 @@ $script:T.Run.Add_Tick({
                 $script:PlayLog = @{}
                 Add-PlayTime 'Jeu d''essai' (Get-Date).AddMinutes(-42)
                 Assert-Test ([int]((Get-PlayLog)['Jeu d''essai'].Seconds / 60) -eq 42) 'temps de jeu mal compté'
-                "$($games.Count) jeux en vignettes (page prête en $tBuild ms, rafraîchie en $tAgain ms), lancement par $(@($kinds.Keys | Sort-Object) -join ', '), panneau et optimisation du jeu, recherche d'un jeu, temps de jeu"
+                "$($games.Count) jeux ($(@($games | Where-Object { Get-CoverFile $_ }).Count) avec jaquette) en vignettes, désinstallation par $($ukinds -join '/')$(if ($unk.Count) { " (sans désinstalleur : $($unk -join ', '))" }) (page prête en $tBuild ms, rafraîchie en $tAgain ms), lancement par $(@($kinds.Keys | Sort-Object) -join ', '), panneau et optimisation du jeu, recherche d'un jeu, temps de jeu"
             }
             Test-Step 'Profils par jeu : libellés (issue 2)' {
                 if ($null -eq $script:Games) { Update-GameCache }

@@ -36,8 +36,10 @@ function Update-GameCache {
         foreach ($e in @($g.Exes)) {
             $base = [IO.Path]::GetFileNameWithoutExtension($e).ToLower()
             if ($base.Length -lt 4 -or $base -match $GenericExe) { continue }
-            if (-not $script:GameIndex.ContainsKey($base)) { $script:GameIndex[$base] = @{ Game = $g.Name; Exes = @(); Source = $g.Source } }
+            if (-not $script:GameIndex.ContainsKey($base)) { $script:GameIndex[$base] = @{ Game = $g.Name; Exes = @(); Source = $g.Source; ByPath = @{} } }
             $script:GameIndex[$base].Exes += $e.ToLower()
+            # Deux jeux avec le même nom d'exécutable (Dofus et Dofus 2) : reconnus par leur dossier
+            $script:GameIndex[$base].ByPath[$e.ToLower()] = $g.Name
         }
     }
     Build-GameSections
@@ -106,7 +108,10 @@ function Test-GameRunning {
     foreach ($p in $procs) {
         $path = try { [string]$p.Path } catch { '' }
         $info = $script:GameIndex[$p.ProcessName.ToLower()]
-        if ($path -and $info -and $info.Exes -contains $path.ToLower()) { Start-GameSession $info.Game $p; return }
+        if ($path -and $info -and $info.Exes -contains $path.ToLower()) {
+            $name = if ($info.ByPath -and $info.ByPath[$path.ToLower()]) { $info.ByPath[$path.ToLower()] } else { $info.Game }
+            Start-GameSession $name $p; return
+        }
     }
 }
 

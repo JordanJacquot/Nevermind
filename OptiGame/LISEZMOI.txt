@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.52
+﻿OptiGame 1.0.53
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -18,7 +18,8 @@ MES JEUX
 La section « Jeux » (menu de gauche) liste tous tes jeux installés, quel que
 soit le launcher. Double clique sur un jeu (ou « Lancer ») pour jouer : il
 démarre par son launcher, comme d'habitude. Sa fiche montre ton temps de jeu,
-tes FPS et ce qui peut être optimisé pour ce jeu (« Tout optimiser »).
+tes FPS et ce qui peut être optimisé pour ce jeu (« Tout optimiser »), et un bouton
+« Désinstaller » qui ouvre le désinstalleur du jeu ou de son launcher.
 
 TROUVER UN RÉGLAGE
 Tape ce que tu cherches dans la barre de recherche en haut de chaque page
@@ -228,6 +229,8 @@ SÉCURITÉ
   d'appareils réseau (IEEE), mesurer le lag en ligne (pings vers ta box, ton
   fournisseur et le serveur du jeu) et identifier les serveurs sans nom dans
   Trafic (rdap.org, seule l'adresse du serveur est envoyée, option coupable).
+  Jaquettes manquantes de la section Jeux : boutique Steam puis Wikipédia,
+  seul le nom du jeu est envoyé (option « Jaquettes depuis Internet »).
   Elle n'envoie aucune donnée te concernant.
 - Le code est lisible : ouvre les fichiers du dossier fichiers\modules avec le
   Bloc-notes pour vérifier.

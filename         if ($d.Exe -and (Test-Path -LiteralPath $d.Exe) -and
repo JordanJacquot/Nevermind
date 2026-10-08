@@ -316,7 +316,7 @@ function Get-StartupItems {
 # Uninstall : comment le désinstaller (adresse, « exe|programme|arguments », ou la commande déclarée à Windows), Icon }.
 # Autonome (tourne dans un fil séparé) : n'utilise aucune autre fonction d'OptiGame.
 function Get-InstalledGames {
-    $bad = 'unins|setup|install|redist|dxsetup|directx|crash|report|easyanticheat|anticheat|eac_|beservice|battleye|_be$|update|helper|prereq|dotnet|webhelper|vcredist|python|java|browser|error|cleanup|touchup|repair|bootstrapper|resourcecompiler|^ui(32|64)$|diagnos|benchmark_?tool|ubisoftgamelauncher|uplay|^upc$|link2ea|socialclub|rockstarservice|cefsharp|leagueclient|riotclient|vanguard|^vgc$|blizzard ?error|agent$|gamelaunchhelper|launcher|snoretoast|notifier'
+    $bad = 'unins|setup|install|redist|dxsetup|directx|crash|report|easyanticheat|anticheat|eac_|beservice|battleye|_be$|update|helper|prereq|dotnet|webhelper|vcredist|python|java|browser|error|cleanup|touchup|repair|bootstrapper|resourcecompiler|^ui(32|64)$|diagnos|benchmark_?tool|ubisoftgamelauncher|uplay|^upc$|link2ea|socialclub|rockstarservice|cefsharp|leagueclient|riotclient|vanguard|^vgc$|blizzard ?error|agent$|gamelaunchhelper|launcher'
     $notGames = '^(wallpaper_engine|Steamworks Shared|SteamVR|Steam Controller Configs|Steamworks Common Redistributables|GameSave|Minecraft Launcher)$'
     # Les launchers eux mêmes ne sont pas des jeux
     $launchers = '^(Battle\.net|Ubisoft Connect|Uplay|EA app|EA Desktop|Origin|Riot Client|Riot Vanguard|Rockstar Games Launcher|Rockstar Games Social Club|GOG GALAXY|GOG Galaxy|Amazon Games|Xbox|Epic Games Launcher)\s*$'
@@ -463,9 +463,9 @@ function Get-InstalledGames {
             Where-Object { $_.Length -gt 200KB -and $_.BaseName -notmatch $bad } |
             Sort-Object @{ Expression = { ($_.FullName.Substring($d.Dir.Length) -split '\\').Count } }, @{ Expression = { $_.Length }; Descending = $true } |
             Select-Object -First 6 | ForEach-Object { $_.FullName })
+        # Exécutable déclaré par le launcher : en tête, sauf si c'est un lanceur (Rocket League déclare « Launcher.exe »)
         # Petit lanceur seulement (Dofus 2 : 184 Ko) : on le garde quand même, c'est le jeu
         if (-not $exes.Count) { $exes = @(Get-ChildItem -LiteralPath $d.Dir -Filter *.exe -Depth 1 -File -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 50KB -and $_.BaseName -notmatch $bad } | Sort-Object Length -Descending | Select-Object -First 3 | ForEach-Object { $_.FullName }) }
-        # Exécutable déclaré par le launcher : en tête, sauf si c'est un lanceur (Rocket League déclare « Launcher.exe »)
         if ($d.Exe -and (Test-Path -LiteralPath $d.Exe) -and ([IO.Path]::GetFileNameWithoutExtension($d.Exe) -notmatch $bad -or -not $exes.Count)) { $exes = @($d.Exe) + $exes }
         $exes = @($exes | Select-Object -Unique)
         $low = $d.Dir.ToLower()
