@@ -521,6 +521,17 @@ $script:T.Run.Add_Tick({
                 $script:T.Step = 'nettoyage : page'; Show-Page 4; $script:T.Step = 'nettoyage : analyse page'; Invoke-CleanScan; Set-Busy $false; Wait-TestMs 500; Save-TestShot 'nettoyage-analyse'
                 "3 fichiers vus (lien et fichier récent ignorés), 2 supprimés, 1 laissé car utilisé, journal $(Split-Path $r.File -Leaf)"
             }
+            Test-Step 'Tâches planifiées lues en arrière plan' {
+                # Invoke-NameMigration / Update-AutoStartPath ne tournent pas dans la copie de test : on vérifie leur lecture des tâches
+                $info = @(Get-TaskInfo @($AutoStartTask, 'Nevermind tâche qui n''existe pas'))
+                $real = Test-AutoStart
+                Assert-Test ($info.Count -eq [int]$real) "$($info.Count) tâche(s) lue(s), attendu $([int]$real)"
+                if ($real) { Assert-Test ($info[0].Args -like '*-Demarrage*') "arguments lus : $($info[0].Args)" }
+                $sw = [Diagnostics.Stopwatch]::StartNew(); $script:Starting = $true
+                try { Update-ShortcutCard } finally { $script:Starting = $false }
+                Assert-Test ([bool]$ui.ChkAutoStart.IsChecked -eq $real) 'case « démarrage » fausse en lecture en arrière plan'
+                "tâche de démarrage $(if ($real) { 'trouvée' } else { 'absente' }), lue en $($sw.ElapsedMilliseconds) ms sans figer la fenêtre"
+            }
             Test-Step 'Raccourci sur le bureau et démarrage' {
                 # Bureau simulé : le vrai bureau n'est pas touché
                 $script:DesktopDir = Join-Path $DataDir 'bureau-essai'

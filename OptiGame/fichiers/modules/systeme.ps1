@@ -251,13 +251,26 @@ function Set-AutoStart([bool]$On) {
 
 # Changement de nom (OptiGame, puis Nexo, puis Nevermind) : les anciennes tâches de démarrage, les anciens
 # raccourcis du bureau et les anciens lanceurs sont remplacés. Seulement ce qui appartient à cette installation.
+# Tâches planifiées présentes parmi ces noms, avec leurs arguments : une seule lecture, en arrière plan
+# (lire les tâches dans la fenêtre la figeait plus d'une seconde au démarrage).
+function Get-TaskInfo([string[]]$Names) {
+    @(Invoke-Async {
+        param($names)
+        foreach ($n in $names) {
+            $t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($t) { @{ Name = $n; Args = [string]@($t.Actions)[0].Arguments } }
+        }
+    } ([string[]]$Names) | Where-Object { $_ })
+}
+
 function Invoke-NameMigration {
     $root = Get-AppRoot
     $newExe = Get-AppExe
     if (-not (Test-Path -LiteralPath $newExe)) { return }   # pas encore de Nevermind.exe (copie de développement)
+    $found = @(Get-TaskInfo $OldAutoStartTasks | ForEach-Object { $_.Name })
     foreach ($task in $OldAutoStartTasks) {
         try {
-            if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) {
+            if ($found -contains $task) {
                 Set-AutoStart $true
                 Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction Stop
                 Write-Log "Nevermind : tâche de démarrage « $task » renommée"
@@ -282,10 +295,10 @@ function Invoke-NameMigration {
 
 # Dossier de Nevermind déplacé ou renommé : la tâche de démarrage suit
 function Update-AutoStartPath {
-    $t = Get-AutoStartTask
+    $t = @(Get-TaskInfo @($AutoStartTask))[0]
     if (-not $t) { return }
     $ps1 = Join-Path $AppDir 'OptiGame.ps1'
-    if ([string]@($t.Actions)[0].Arguments -notlike "*`"$ps1`"*") {
+    if ($t.Args -notlike "*`"$ps1`"*") {
         try { Set-AutoStart $true; Write-Log "Démarrage automatique : chemin mis à jour ($ps1)" } catch { Write-Log "Démarrage automatique : $_" }
     }
 }

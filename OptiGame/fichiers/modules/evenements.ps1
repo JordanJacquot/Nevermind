@@ -259,7 +259,10 @@ $Window.Add_ContentRendered({
             Step-UI; [void]$script:StartGaps.Seen.Add('Update-HistoryList'); Update-HistoryList
         }
         Invoke-Safe {
-            if (-not $env:OPTIGAME_TEST) { Invoke-NameMigration; Update-AutoStartPath }
+            if (-not $env:OPTIGAME_TEST) {
+                Step-UI; [void]$script:StartGaps.Seen.Add('Invoke-NameMigration'); Invoke-NameMigration
+                Step-UI; [void]$script:StartGaps.Seen.Add('Update-AutoStartPath'); Update-AutoStartPath
+            }
             Step-UI; [void]$script:StartGaps.Seen.Add('Update-ShortcutCard'); Update-ShortcutCard
         }
         Set-StartupStep 'Protection du PC...' 72

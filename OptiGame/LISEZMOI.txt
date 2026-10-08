@@ -1,4 +1,4 @@
-﻿Nevermind 1.0.60
+﻿Nevermind 1.0.61
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
