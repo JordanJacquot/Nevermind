@@ -315,6 +315,7 @@ function Get-StartupItems {
 # AppId (Steam), Launch : comment le lancer par son launcher (adresse steam://, uplay://... ; vide = son exécutable),
 # Uninstall : comment le désinstaller (adresse, « exe|programme|arguments », ou la commande déclarée à Windows), Icon }.
 # Leftover = $true : dossier d'un jeu Steam désinstallé (pas un jeu, à proposer au nettoyage).
+# Art : visuels fournis par le launcher lui même (Ankama : jaquette, grande image, logo).
 # Autonome (tourne dans un fil séparé) : n'utilise aucune autre fonction d'OptiGame.
 function Get-InstalledGames {
     $bad = 'unins|setup|install|redist|dxsetup|directx|crash|report|easyanticheat|anticheat|eac_|beservice|battleye|_be$|update|helper|prereq|dotnet|webhelper|vcredist|python|java|browser|error|cleanup|touchup|repair|bootstrapper|resourcecompiler|^ui(32|64)$|diagnos|benchmark_?tool|ubisoftgamelauncher|uplay|^upc$|link2ea|socialclub|rockstarservice|cefsharp|leagueclient|riotclient|vanguard|^vgc$|blizzard ?error|agent$|gamelaunchhelper|launcher|snoretoast|notifier'
@@ -442,7 +443,14 @@ function Get-InstalledGames {
                 default { "$((Get-Culture).TextInfo.ToTitleCase([string]$r.gameName))$(if ($r.name -ne 'main') { " ($($r.name))" })" }
             }
             $via = if ($ankama) { "exe|$ankama|" } else { '' }
-            $dirs += @{ Name = $nm; Dir = (& $norm $r.location); Exe = $null; Source = 'Ankama'; Launch = $via; Uninstall = $(if ($ankama) { "launcher|$ankama" } else { '' }) }
+            # Visuels gardés par le launcher pour chaque jeu : jaquette, grande image, logo
+            $data = Join-Path $rel.DirectoryName 'data'
+            $pick = { param($n) $p = Join-Path $data $n; if (Test-Path -LiteralPath $p) { $p } else { '' } }
+            $homeImg = & $pick 'home_cover.jpg'
+            $portrait = $false
+            if ($homeImg) { try { $im = [System.Drawing.Image]::FromFile($homeImg); $portrait = $im.Height -gt $im.Width; $im.Dispose() } catch {} }
+            $art = @{ Cover = $(if ($portrait) { $homeImg } else { & $pick 'cover.jpg' }); Hero = $homeImg; Logo = (& $pick 'logo.png') }
+            $dirs += @{ Name = $nm; Dir = (& $norm $r.location); Exe = $null; Source = 'Ankama'; Launch = $via; Uninstall = $(if ($ankama) { "launcher|$ankama" } else { '' }); Art = $art; Icon = (& $pick 'icon.png') }
         } catch {}
     }
     # Xbox / Game Pass : dossiers « XboxGames » à la racine des disques
@@ -471,7 +479,8 @@ function Get-InstalledGames {
         $exes = @($exes | Select-Object -Unique)
         $low = $d.Dir.ToLower()
         $un = if ($d.Uninstall) { [string]$d.Uninstall } elseif ($uninstByDir.ContainsKey($low)) { $uninstByDir[$low] } else { '' }
-        if ($exes.Count) { $games += @{ Name = $d.Name; Exes = $exes; Source = $d.Source; Dir = $d.Dir; AppId = $d.AppId; Launch = [string]$d.Launch; Uninstall = $un; Icon = $iconByDir[$low] } }
+        $icon = if ($d.Icon) { $d.Icon } else { $iconByDir[$low] }
+        if ($exes.Count) { $games += @{ Name = $d.Name; Exes = $exes; Source = $d.Source; Dir = $d.Dir; AppId = $d.AppId; Launch = [string]$d.Launch; Uninstall = $un; Icon = $icon; Art = $d.Art } }
     }
     $games
 }

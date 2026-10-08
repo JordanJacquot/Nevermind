@@ -401,6 +401,30 @@ $script:T.Run.Add_Tick({
                 $big = @(Get-BigLeftovers)
                 if ($big.Count) { Assert-Test ($ui.LibLeftoverBar.Visibility -eq 'Visible' -and $ui.LibLeftoverText.Text -match 'récupérer') "bandeau des restes : $($ui.LibLeftoverText.Text)"; Save-TestShot 'bibliotheque-restes' }
                 $loText = if ($big.Count) { "$($lo.Count) dossier(s) de jeux désinstallés, $($big.Count) signalé(s) : $($ui.LibLeftoverText.Text)" } else { "$($lo.Count) petit(s) reste(s) de jeux désinstallés, rien à signaler" }
+                # Suppression définitive : sur un faux reste créé pour l'essai (les vrais dossiers ne sont jamais touchés)
+                $fakeRoot = Join-Path $DataDir 'essai-steam\steamapps\common'
+                $fake = Join-Path $fakeRoot 'Jeu desinstalle'
+                New-Item -ItemType Directory -Force -Path "$fake\data\sous" | Out-Null
+                foreach ($i in 1..30) { [IO.File]::WriteAllBytes("$fake\data\sous\f$i.bin", (New-Object byte[] 2000)) }
+                [IO.File]::WriteAllText("$fake\lecture-seule.txt", 'x'); [IO.File]::SetAttributes("$fake\lecture-seule.txt", 'ReadOnly')
+                $keep = Join-Path $fakeRoot 'Jeu installe'
+                New-Item -ItemType Directory -Force -Path $keep | Out-Null
+                $realLo = $script:Leftovers; $realSizes = $script:LeftoverSizes
+                $script:Leftovers = @(@{ Name = 'Jeu desinstalle'; Dir = $fake; Leftover = $true })
+                $script:LeftoverSizes = @{ $fake = 60MB }
+                # Un dossier qui n'est pas signalé comme reste (ou hors de steamapps\common) est refusé
+                $before = $script:T.Msgs.Count
+                Remove-Leftovers @(@{ Name = 'Jeu installe'; Dir = $keep }) -Force
+                Assert-Test ((Test-Path $keep) -and -not $script:LeftoverDelete) 'un dossier non signalé a été supprimé'
+                $script:T.Msgs.RemoveRange($before, $script:T.Msgs.Count - $before)
+                Remove-Leftovers @($script:Leftovers[0]) -Force
+                $w = 0; while ($script:LeftoverDelete -and $w -lt 20000) { Wait-TestMs 300; $w += 300 }
+                Assert-Test (-not (Test-Path $fake) -and (Test-Path $keep)) "faux reste non supprimé (ou mauvais dossier touché)"
+                Assert-Test (-not @($script:Leftovers).Count -and $script:LastLeftoverFreed -eq 60MB) 'liste des restes non mise à jour'
+                $script:Leftovers = $realLo; $script:LeftoverSizes = $realSizes
+                [IO.Directory]::Delete((Join-Path $DataDir 'essai-steam'), $true)
+                # Jaquettes des jeux Ankama : fournies par leur launcher
+                foreach ($g in @($games | Where-Object { $_.Source -eq 'Ankama' })) { Assert-Test ([bool](Get-CoverFile $g)) "pas de jaquette pour $($g.Name)" }
                 # Filtre et recherche dans la bibliothèque
                 $ui.LibSearch.Text = 'zzzz'; Wait-TestMs 500
                 Assert-Test ($script:LibTiles.Count -eq 0) 'filtre de recherche sans effet'

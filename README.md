@@ -47,6 +47,7 @@ La bibliothèque de tous tes jeux, comme celle de Steam mais tous launchers conf
 - **Fiche du jeu** : temps de jeu et nombre de parties (notés par OptiGame), FPS de la dernière partie mesurée.
 - **Optimisation du jeu** : priorité haute, carte graphique puissante, réglages Windows, mesure des FPS, mode jeu, disque du jeu, avec un bouton « Tout optimiser » annulable.
 - **Désinstaller** : ouvre le désinstalleur du jeu ou de son launcher (Steam, Ubisoft, Battle.net, Riot...), la liste se met à jour toute seule.
+- **Restes de jeux désinstallés** : les dossiers que Steam laisse après une désinstallation (parfois plusieurs Go) sont signalés et supprimables définitivement, un par un ou tous d'un coup.
 
 ### Réseau
 

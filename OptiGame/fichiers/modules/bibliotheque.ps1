@@ -110,6 +110,7 @@ function Get-CoverIndex {
 
 # Jaquette : fichiers de Steam (ancien puis nouveau nom), sinon celle téléchargée
 function Get-CoverFile($Game, [switch]$Twin) {
+    if ($Game.Art -and $Game.Art.Cover -and (Test-Path -LiteralPath $Game.Art.Cover)) { return $Game.Art.Cover }
     $f = Get-SteamArt $Game 'library_600x900.jpg'
     if (-not $f) { $f = Get-SteamArt $Game 'library_capsule.jpg' }
     if (-not $f) { $c = (Get-CoverIndex)[$Game.Name]; if ($c -and $c.Cover -and (Test-Path -LiteralPath $c.Cover)) { $f = $c.Cover } }
@@ -122,12 +123,14 @@ function Get-CoverFile($Game, [switch]$Twin) {
 }
 
 function Get-LogoFile($Game) {
+    if ($Game.Art -and $Game.Art.Logo -and (Test-Path -LiteralPath $Game.Art.Logo)) { return $Game.Art.Logo }
     $f = Get-SteamArt $Game 'logo.png'
     if (-not $f) { $c = (Get-CoverIndex)[$Game.Name]; if ($c -and $c.Logo -and (Test-Path -LiteralPath $c.Logo)) { $f = $c.Logo } }
     $f
 }
 
 function Get-HeroFile($Game) {
+    if ($Game.Art -and $Game.Art.Hero -and (Test-Path -LiteralPath $Game.Art.Hero)) { return $Game.Art.Hero }
     foreach ($k in 'library_hero.jpg', 'header.jpg', 'library_header.jpg') { $f = Get-SteamArt $Game $k; if ($f) { return $f } }
     $c = (Get-CoverIndex)[$Game.Name]
     if ($c -and $c.Hero -and (Test-Path -LiteralPath $c.Hero)) { return $c.Hero }
@@ -212,7 +215,7 @@ function Start-CoverDownload {
     $idx = Get-CoverIndex
     $todo = @(Get-LibraryGames | Where-Object {
         $c = $idx[$_.Name]
-        -not (Get-SteamArt $_ 'library_600x900.jpg') -and -not (Get-SteamArt $_ 'library_capsule.jpg') -and
+        -not (Get-SteamArt $_ 'library_600x900.jpg') -and -not (Get-SteamArt $_ 'library_capsule.jpg') -and -not ($_.Art -and $_.Art.Cover) -and
         (-not $c -or (-not $c.Cover -and $c.Date -and ((Get-Date) - [datetime]$c.Date).TotalDays -gt 7) -or ($c.Cover -and -not (Test-Path -LiteralPath $c.Cover)))
     } | ForEach-Object { @{ Name = [string]$_.Name; AppId = [string]$_.AppId } })
     if (-not $todo.Count) { return }
@@ -439,7 +442,7 @@ function Watch-Uninstall($Game) {
 # ---------------------------------------------------------------------------
 # Restes de jeux désinstallés : Steam garde parfois le dossier d'un jeu après l'avoir désinstallé
 # (sauvegardes, fichiers ajoutés, mods). Pas des jeux : la place qu'ils prennent est signalée, et ils
-# peuvent être mis à la corbeille (fenêtre de Windows, annulable depuis la corbeille).
+# peuvent être supprimés définitivement (sans passer par la corbeille, pour libérer la place tout de suite).
 # ---------------------------------------------------------------------------
 $LeftoverSizeWork = {
     param($dirs)
@@ -500,9 +503,18 @@ function Show-Leftovers {
     $ui.TestProgress.Value = 100; $ui.TestPct.Text = ''
     Set-TestState 'info' "$($list.Count) dossier$(if ($list.Count -gt 1) {'s'})"
     $body = $ui.TestBody
-    $intro = New-Text 'Ces jeux ne sont plus installés (Steam ne les connaît plus), mais leur dossier est resté sur le disque. Il peut contenir des sauvegardes ou des mods : ouvre le dossier pour vérifier avant de le mettre à la corbeille.' 12.5 '#9AA3B2'
+    $intro = New-Text 'Ces jeux ne sont plus installés (Steam ne les connaît plus), mais leur dossier est resté sur le disque. La suppression est définitive : ils ne passent pas par la corbeille, la place est libérée tout de suite et ils ne peuvent pas être récupérés. S''ils contiennent des sauvegardes ou des mods, ouvre les pour vérifier avant.' 12.5 '#9AA3B2'
     $intro.Margin = New-Thickness 0 0 0 10
     [void]$body.Children.Add($intro)
+    if ($list.Count -gt 1) {
+        $total = ($list | ForEach-Object { $script:LeftoverSizes[$_.Dir] } | Measure-Object -Sum).Sum
+        $all = New-Button "Tout supprimer définitivement ($(Format-Size $total))" 'BtnPrimary'
+        $all.HorizontalAlignment = 'Left'; $all.Margin = New-Thickness 0 0 0 12
+        $all.IsEnabled = -not $script:LeftoverDelete
+        $all.Add_Click({ Invoke-Safe { Remove-Leftovers @(Get-BigLeftovers) } })
+        [void]$body.Children.Add($all)
+    }
+    if ($script:LeftoverDelete) { Set-TestState 'run' 'Suppression en cours' }
     foreach ($l in $list) {
         $card = New-Card
         $g = New-Grid @('*', 'Auto', 'Auto')
@@ -517,30 +529,91 @@ function Show-Leftovers {
         $ob.Margin = New-Thickness 12 0 0 0; $ob.VerticalAlignment = 'Center'; $ob.Tag = $l.Dir
         $ob.Add_Click({ param($s, $e) $d = [string]$s.Tag; Invoke-Safe { Open-Url $d } })
         Add-ToGrid $g $ob 1
-        $db = New-Button 'Mettre à la corbeille'
+        $db = New-Button 'Supprimer'
         $db.Margin = New-Thickness 8 0 0 0; $db.VerticalAlignment = 'Center'; $db.Tag = $l
-        $db.Add_Click({ param($s, $e) $x = $s.Tag; Invoke-Safe { Remove-Leftover $x } })
+        $db.IsEnabled = -not $script:LeftoverDelete
+        $db.Add_Click({ param($s, $e) $x = $s.Tag; Invoke-Safe { Remove-Leftovers @($x) } })
         Add-ToGrid $g $db 2
         $card.Child = $g
         [void]$body.Children.Add($card)
     }
 }
 
-function Remove-Leftover($L) {
-    $dir = [string]$L.Dir
-    # Seulement un dossier de jeu dans « steamapps\common », jamais ce dossier lui même
-    if ($dir -notmatch '(?i)\\steamapps\\common\\[^\\]+$' -or -not (Test-Path -LiteralPath $dir)) { Show-Message "Ce dossier ne peut pas être supprimé par OptiGame :`n$dir" 'Warning'; return }
-    if (-not (Confirm-Action "Mettre le dossier de « $($L.Name) » à la corbeille ?`n`n$dir`n`nS'il contient des sauvegardes ou des mods, ils partiront avec. Tu pourras le récupérer depuis la corbeille.")) { return }
-    Add-Type -AssemblyName Microsoft.VisualBasic
-    try {
-        # Fenêtre de Windows (progression, et question s'il est trop gros pour la corbeille)
-        [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($dir, [Microsoft.VisualBasic.FileIO.UIOption]::AllDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
-    } catch [System.OperationCanceledException] { Set-Status 'Suppression annulée.'; return }
-    Write-Log "Bibliothèque: reste de $($L.Name) mis à la corbeille ($dir)"
-    $script:Leftovers = @($script:Leftovers | Where-Object { $_.Dir -ne $dir })
-    Set-Status "Dossier de $($L.Name) mis à la corbeille."
+# Suppression définitive, en arrière plan (un dossier peut compter des centaines de milliers de fichiers).
+# Les fichiers en lecture seule sont débloqués si la première tentative échoue.
+$LeftoverDeleteWork = {
+    param($dirs, $state)
+    foreach ($d in $dirs) {
+        $state.Current = $d
+        $err = ''
+        try { [IO.Directory]::Delete($d, $true) }
+        catch {
+            try {
+                foreach ($f in [IO.Directory]::EnumerateFiles($d, '*', 'AllDirectories')) { try { [IO.File]::SetAttributes($f, 'Normal') } catch {} }
+                [IO.Directory]::Delete($d, $true)
+            } catch { $err = $_.Exception.Message }
+        }
+        if (-not $err -and [IO.Directory]::Exists($d)) { $err = 'des fichiers sont encore utilisés' }
+        [void]$state.Results.Add("$d|$err")
+        $state.Done++
+    }
+}
+
+function Remove-Leftovers([array]$List, [switch]$Force) {
+    if ($script:LeftoverDelete) { return }
+    $installed = @($script:Games | ForEach-Object { [string]$_.Dir } | Where-Object { $_ } | ForEach-Object { $_.ToLower() })
+    $known = @($script:Leftovers | ForEach-Object { ([string]$_.Dir).ToLower() })
+    # Garde fous : un dossier de jeu dans « steamapps\common » (jamais ce dossier lui même), signalé comme
+    # reste de jeu désinstallé, et qui n'appartient à aucun jeu installé
+    $ok = @($List | Where-Object {
+        $d = [string]$_.Dir
+        $d -match '(?i)\\steamapps\\common\\[^\\]+$' -and $known -contains $d.ToLower() -and $installed -notcontains $d.ToLower() -and (Test-Path -LiteralPath $d)
+    })
+    if (-not $ok.Count) { Show-Message 'Aucun de ces dossiers ne peut être supprimé par OptiGame.' 'Warning'; return }
+    $size = ($ok | ForEach-Object { [double]$script:LeftoverSizes[$_.Dir] } | Measure-Object -Sum).Sum
+    $what = if ($ok.Count -eq 1) { "le dossier de « $($ok[0].Name) »" } else { "$($ok.Count) dossiers de jeux désinstallés" }
+    if (-not $Force -and -not (Confirm-Action "Supprimer définitivement $what ($(Format-Size $size)) ?`n`nIls ne passent pas par la corbeille : la place est libérée tout de suite, mais ils ne pourront pas être récupérés. Les sauvegardes ou mods qu'ils contiennent seront perdus.")) { return }
+    $state = [hashtable]::Synchronized(@{ Done = 0; Current = ''; Results = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList)) })
+    $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
+    [void]$ps.AddScript($LeftoverDeleteWork.ToString()).AddArgument(@($ok | ForEach-Object { [string]$_.Dir })).AddArgument($state)
+    $script:LeftoverDelete = @{ PS = $ps; Handle = $ps.BeginInvoke(); State = $state; Items = $ok; Size = $size }
+    Write-Log "Bibliothèque: suppression définitive de $($ok.Count) reste(s) de jeux ($(Format-Size $size))"
+    if ($ui.TestOverlay.Visibility -eq 'Visible' -and $script:LeftoverPanelOpen) { Show-Leftovers }
+    $t = New-Object System.Windows.Threading.DispatcherTimer
+    $t.Interval = [TimeSpan]::FromMilliseconds(400)
+    $t.Add_Tick({ param($s, $e) try { Receive-LeftoverDelete $s } catch { $s.Stop(); $script:LeftoverDelete = $null; Write-Log "Bibliothèque: $_" } })
+    $t.Start()
+}
+
+function Receive-LeftoverDelete($Timer) {
+    $j = $script:LeftoverDelete
+    if (-not $j) { $Timer.Stop(); return }
+    $st = $j.State
+    $cur = @($j.Items | Where-Object { $_.Dir -eq $st.Current })[0]
+    if (-not $j.Handle.IsCompleted) {
+        Set-Status "Suppression des restes de jeux : $([math]::Min($st.Done + 1, $j.Items.Count)) sur $($j.Items.Count)$(if ($cur) { " ($($cur.Name))" })..."
+        return
+    }
+    $Timer.Stop()
+    try { [void]$j.PS.EndInvoke($j.Handle) } catch {} finally { $j.PS.Dispose() }
+    $script:LeftoverDelete = $null
+    $freed = 0.0; $fail = @()
+    foreach ($r in @($st.Results)) {
+        $x = ([string]$r) -split '\|', 2
+        $it = @($j.Items | Where-Object { $_.Dir -eq $x[0] })[0]
+        if ($x[1]) { $fail += "$(if ($it) { $it.Name } else { $x[0] }) : $($x[1])" }
+        else { $freed += [double]$script:LeftoverSizes[$x[0]]; $script:Leftovers = @($script:Leftovers | Where-Object { $_.Dir -ne $x[0] }) }
+    }
+    Write-Log "Bibliothèque: $(Format-Size $freed) libérés$(if ($fail.Count) { ", échecs : $($fail -join ' | ')" })"
+    Set-Status "$(Format-Size $freed) libérés sur le disque."
     Update-LeftoverBar
-    if (@(Get-BigLeftovers).Count) { Show-Leftovers } else { $script:LeftoverPanelOpen = $false; Hide-TestPanel }
+    if ($script:LeftoverPanelOpen) { if (@(Get-BigLeftovers).Count) { Show-Leftovers } else { $script:LeftoverPanelOpen = $false; Hide-TestPanel } }
+    if (-not $script:TestRunning) {
+        $lines = @("$(Format-Size $freed) libérés sur le disque.")
+        if ($fail.Count) { $lines += 'Pas supprimés (ferme le jeu ou son launcher, puis réessaie) :'; $lines += @($fail | ForEach-Object { "•  $_" }) }
+        Show-ResultSheet $(if ($fail.Count) { 'Suppression terminée, avec des exceptions' } else { 'Place libérée' }) $lines $null $null
+    }
+    $script:LastLeftoverFreed = $freed
 }
 
 # ---------------------------------------------------------------------------
