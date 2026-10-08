@@ -361,6 +361,7 @@ $TourSteps = @(
     @{ Title = 'Ton score'; Lines = @(
         'Sur l''accueil « Ordinateur », la note Optimisation montre ce qui freine tes jeux.',
         'Ouvre le Tableau de bord pour voir chaque point : clique dessus, lis la fiche, puis « Exécuter » pour que l''app le corrige.',
+        'La section Jeux réunit tous tes jeux : double clique pour jouer, et optimise chaque jeu depuis sa fiche.',
         'La section Réseau scanne les appareils de ta maison et vérifie leur sécurité.') },
     @{ Title = 'Tout est annulable'; Lines = @(
         'Chaque changement est sauvegardé avant d''être fait.',

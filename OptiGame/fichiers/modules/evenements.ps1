@@ -160,6 +160,7 @@ $ui.ChkNetWatch.IsChecked = [bool](Get-Setting 'NetWatch' $false)
 $ui.ChkNetWatch.Add_Click({ Invoke-Safe { Set-NetWatch ([bool]$ui.ChkNetWatch.IsChecked); Set-Status $(if ($ui.ChkNetWatch.IsChecked) { 'Surveillance du réseau activée.' } else { 'Surveillance du réseau désactivée.' }) } })
 $ui.ChkBeta.IsChecked = [bool](Get-Setting 'Beta' $false)
 $ui.ChkBeta.Add_Click({ Invoke-Safe { Set-BetaChannel ([bool]$ui.ChkBeta.IsChecked) } })
+Initialize-Library
 $ui.BtnShortcut.Add_Click({ Invoke-Safe { Invoke-CreateShortcut } })
 $ui.ChkAutoStart.Add_Click({ Invoke-Safe { Set-AutoStartFromUi ([bool]$ui.ChkAutoStart.IsChecked) } })
 $Window.Dispatcher.Add_UnhandledException({
@@ -174,6 +175,10 @@ $ui.Tabs.Add_SelectionChanged({
     Update-NavBar
     try { Start-PageTransition } catch {}
     if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubStats) { Invoke-Safe { Update-Hub }; return }
+    if ($ui.Tabs.SelectedIndex -eq $GamesIndex) {
+        Invoke-Safe { if (-not $script:LibBuilt) { Build-Library } else { Update-LibraryView } }
+        return
+    }
     if ($ui.Tabs.SelectedIndex -eq $TrafficIndex) {
         Invoke-Safe {
             if (-not $script:TrafficBuilt) { Build-TrafficPage; Start-TrafficWatch } else { Update-TrafficView }

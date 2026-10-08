@@ -18,7 +18,7 @@ Les mises à jour sont ensuite proposées directement dans l'application. Relanc
 
 ## Ce que fait l'application
 
-Trois sections dans le menu de gauche : **Ordinateur**, **Réseau** et **Trafic**. En haut de chaque page : une **barre de recherche** (Ctrl + K) qui propose les réglages au fil de la frappe, fautes de frappe comprises, et emmène directement au bon endroit ; et un bouton « Signaler un problème ».
+Quatre sections dans le menu de gauche : **Ordinateur**, **Jeux**, **Réseau** et **Trafic**. En haut de chaque page : une **barre de recherche** (Ctrl + K) qui propose les réglages au fil de la frappe, fautes de frappe comprises, et emmène directement au bon endroit ; et un bouton « Signaler un problème ».
 
 ### Ordinateur
 
@@ -37,6 +37,15 @@ L'accueil, avec le score d'optimisation, le niveau de protection et une carte pa
 - **Sécurité** : niveau de protection, analyses Microsoft Defender, recherche de fichiers déguisés, programmes cachés, tâches planifiées suspectes, exclusions d'antivirus, hosts et proxy.
 - **Démarrage**, **Connexion** (ping, gigue, DNS), **Nettoyage** (liste des fichiers avant de nettoyer, journal fichier par fichier), **Sauvegarde** (tout annuler, historique, point de restauration, rapport HTML).
 - **PC portables** : mode « Meilleures performances », jeux forcés sur la carte graphique dédiée, santé de la batterie.
+
+### Jeux
+
+La bibliothèque de tous tes jeux, comme celle de Steam mais tous launchers confondus (Steam, Epic, Ubisoft Connect, EA app, GOG, Battle.net, Riot, Rockstar, Amazon, Xbox, plus les jeux ajoutés à la main).
+
+- **Jaquettes** (celles que Steam garde sur le PC, sinon une vignette aux couleurs du jeu), recherche et filtre par launcher, les derniers jeux joués en premier.
+- **Double clic ou « Lancer »** : le jeu démarre par son launcher (connexion, mises à jour, anti triche comme d'habitude), sans les droits administrateur d'OptiGame.
+- **Fiche du jeu** : temps de jeu et nombre de parties (notés par OptiGame), FPS de la dernière partie mesurée.
+- **Optimisation du jeu** : priorité haute, carte graphique puissante, réglages Windows, mesure des FPS, mode jeu, disque du jeu, avec un bouton « Tout optimiser » annulable.
 
 ### Réseau
 
@@ -94,6 +103,7 @@ OptiGame/            l'application telle qu'elle est distribuée
     trafic.ps1            ce qui sort du PC : connexions par programme, volumes, types de données, alertes, annuaire des serveurs
     microsoft.ps1         ce que Windows envoie à Microsoft : identifiants, réglages, services
     lag.ps1               lag en ligne : mesure du chemin et diagnostic
+    bibliotheque.ps1      section Jeux : bibliothèque, lancement, temps de jeu, optimisation par jeu
     recherche.ps1         barre de recherche des réglages, suggestions et accès direct
     evenements.ps1        branchement des boutons et du démarrage
   fichiers/outils-tiers/  PresentMon.exe (Intel, licence MIT) pour mesurer les FPS

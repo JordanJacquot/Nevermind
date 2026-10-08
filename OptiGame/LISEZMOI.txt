@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.51
+﻿OptiGame 1.0.52
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -13,6 +13,12 @@ La première fois seulement, Windows peut afficher « Windows a protégé votre
 ordinateur » : clique sur « Informations complémentaires » puis « Exécuter
 quand même ». C'est normal pour un programme qui ne vient pas du Microsoft
 Store. OptiGame se débloque ensuite tout seul : plus d'avertissement après.
+
+MES JEUX
+La section « Jeux » (menu de gauche) liste tous tes jeux installés, quel que
+soit le launcher. Double clique sur un jeu (ou « Lancer ») pour jouer : il
+démarre par son launcher, comme d'habitude. Sa fiche montre ton temps de jeu,
+tes FPS et ce qui peut être optimisé pour ce jeu (« Tout optimiser »).
 
 TROUVER UN RÉGLAGE
 Tape ce que tu cherches dans la barre de recherche en haut de chaque page

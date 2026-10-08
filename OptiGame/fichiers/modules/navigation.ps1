@@ -5,7 +5,8 @@
 # Navigation : accueil « Ordinateur » avec une carte par fonction
 # ---------------------------------------------------------------------------
 $HubIndex = 8
-$NetIndex = 9
+$GamesIndex = 9   # bibliothèque de jeux (bibliotheque.ps1)
+$NetIndex = 10
 $PageNames = @{ 0 = 'Tableau de bord'; 1 = 'Optimisation gaming'; 2 = 'Démarrage'; 3 = 'Connexion'; 4 = 'Nettoyage'; 5 = 'Tests'; 6 = 'Sécurité'; 7 = 'Sauvegarde' }
 $HubPages = @(
     @{ Index = 0; Glyph = 0xE80F; Title = 'Tableau de bord'; Desc = 'Santé des composants, score et ce qui peut être amélioré.'; Color = '#22D37A' },

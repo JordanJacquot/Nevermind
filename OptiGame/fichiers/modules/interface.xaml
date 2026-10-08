@@ -936,6 +936,59 @@
         </ScrollViewer>
       </TabItem>
 
+      <!-- Jeux : bibliothèque de tous les jeux installés, lancement et optimisation (bibliotheque.ps1) -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE7FC;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="Jeux"/>
+          </StackPanel>
+        </TabItem.Header>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+              <Button x:Name="BtnLibRefresh" Style="{StaticResource BtnSecondary}" Content="Actualiser" Margin="0,0,10,0"/>
+              <Button x:Name="BtnLibAdd" Style="{StaticResource BtnPrimary}" Content="Ajouter un jeu"/>
+            </StackPanel>
+            <StackPanel>
+              <TextBlock Style="{StaticResource H1}" Text="Mes jeux"/>
+              <TextBlock x:Name="LibSub" Style="{StaticResource Sub}" Text="Tous tes jeux, quel que soit le launcher. Double clique pour jouer."/>
+            </StackPanel>
+          </DockPanel>
+          <DockPanel Grid.Row="1" Margin="0,16,0,12">
+            <Border DockPanel.Dock="Left" Width="230" Height="34" CornerRadius="17" Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1">
+              <Grid>
+                <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#9AA3B2" VerticalAlignment="Center" Margin="14,1,0,0" IsHitTestVisible="False"/>
+                <TextBlock x:Name="LibSearchHint" Text="Chercher un jeu..." Foreground="#5B6475" FontSize="12.5" VerticalAlignment="Center" Margin="38,0,0,0" IsHitTestVisible="False"/>
+                <TextBox x:Name="LibSearch" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" CaretBrush="#FFFFFF" SelectionBrush="#22D37A"
+                         FontSize="12.5" VerticalAlignment="Center" VerticalContentAlignment="Center" Margin="34,0,12,0" Padding="2,0"/>
+              </Grid>
+            </Border>
+            <WrapPanel x:Name="LibFilters" Margin="14,0,0,0" VerticalAlignment="Center"/>
+          </DockPanel>
+          <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="360"/>
+            </Grid.ColumnDefinitions>
+            <ScrollViewer x:Name="LibScroll" VerticalScrollBarVisibility="Auto">
+              <WrapPanel x:Name="LibGrid" Margin="0,0,4,0"/>
+            </ScrollViewer>
+            <Border x:Name="LibDetail" Grid.Column="1" Margin="14,0,8,0" CornerRadius="14" ClipToBounds="True"
+                    Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1">
+              <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="LibDetailPanel"/>
+              </ScrollViewer>
+            </Border>
+          </Grid>
+        </Grid>
+      </TabItem>
+
       <!-- Réseau (scan des appareils) -->
       <TabItem>
         <TabItem.Header>

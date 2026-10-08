@@ -2,7 +2,7 @@
 # et ce qui est anormal. Le contenu (chiffré en HTTPS) n'est jamais lu.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
-$TrafficIndex = 10
+$TrafficIndex = 11
 $LolBins = '^(powershell|pwsh|cmd|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|msbuild|installutil|regasm|regsvcs|cmstp|wmic|forfiles|msiexec|hh)$'
 $RemoteTools = '(?i)^(anydesk|teamviewer\w*|rustdesk|screenconnect\.\w+|connectwise\w*|logmein\w*|splashtop\w*|ultraviewer\w*|supremo\w*|rutserv|rfusclient|aeroadmin|ammyy\w*|remotepc\w*|zohoassist\w*|getscreen\w*)$'
 $SusPorts = @{ 4444 = 'port souvent utilisé par les logiciels espions'; 1337 = 'port souvent utilisé par les logiciels espions'; 31337 = 'port souvent utilisé par les logiciels espions'; 6666 = 'discussion IRC (utilisée par des virus)'; 6667 = 'discussion IRC (utilisée par des virus)'; 6697 = 'discussion IRC (utilisée par des virus)'; 8333 = 'réseau Bitcoin'; 3333 = 'minage de cryptomonnaie'; 5555 = 'port souvent utilisé par les logiciels espions'; 9001 = 'réseau Tor'; 9030 = 'réseau Tor'; 9050 = 'réseau Tor'; 9150 = 'réseau Tor'; 12345 = 'port souvent utilisé par les logiciels espions'; 23 = 'Telnet (non chiffré)' }

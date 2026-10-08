@@ -311,7 +311,8 @@ function Get-StartupItems {
 }
 
 # Jeux installés, tous launchers confondus : Steam, Epic, Ubisoft Connect, EA app, GOG Galaxy, Battle.net,
-# Riot, Rockstar, Amazon Games, Xbox / Game Pass. Chaque jeu : { Name, Exes (exécutables probables), Source }.
+# Riot, Rockstar, Amazon Games, Xbox / Game Pass. Chaque jeu : { Name, Exes (exécutables probables), Source, Dir,
+# AppId (Steam), Launch : comment le lancer par son launcher (adresse steam://, uplay://... ; vide = son exécutable) }.
 # Autonome (tourne dans un fil séparé) : n'utilise aucune autre fonction d'OptiGame.
 function Get-InstalledGames {
     $bad = 'unins|setup|install|redist|dxsetup|directx|crash|report|easyanticheat|anticheat|eac_|beservice|battleye|_be$|update|helper|prereq|dotnet|webhelper|vcredist|python|java|browser|error|cleanup|touchup|repair|bootstrapper|resourcecompiler|^ui(32|64)$|diagnos|benchmark_?tool|ubisoftgamelauncher|uplay|^upc$|link2ea|socialclub|rockstarservice|cefsharp|leagueclient|riotclient|vanguard|^vgc$|blizzard ?error|agent$|gamelaunchhelper|launcher'
@@ -338,12 +339,13 @@ function Get-InstalledGames {
             if ($seen.ContainsKey($key)) { continue }
             $seen[$key] = $true
             # Vrai nom de chaque jeu (« Rocket League » au lieu du dossier « rocketleague »).
-            $names = @{}
+            $names = @{}; $ids = @{}
             foreach ($acf in @(Get-ChildItem -LiteralPath (Join-Path $lib 'steamapps') -Filter 'appmanifest_*.acf' -File -ErrorAction SilentlyContinue)) {
                 $txt = Get-Content -LiteralPath $acf.FullName -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
                 if ($txt -match '"installdir"\s+"([^"]+)"') {
                     $installDir = $Matches[1].ToLower()
                     if ($txt -match '"name"\s+"([^"]+)"') { $names[$installDir] = $Matches[1] }
+                    if ($txt -match '"appid"\s+"(\d+)"') { $ids[$installDir] = $Matches[1] }
                 }
             }
             $common = Join-Path $lib 'steamapps\common'
@@ -351,7 +353,10 @@ function Get-InstalledGames {
                 $steamCommon += $common.ToLower()
                 $dirs += Get-ChildItem -LiteralPath $common -Directory -ErrorAction SilentlyContinue |
                     Where-Object { $_.Name -notmatch $notGames } |
-                    ForEach-Object { @{ Name = $(if ($names[$_.Name.ToLower()]) { $names[$_.Name.ToLower()] } else { $_.Name }); Dir = $_.FullName; Exe = $null; Source = 'Steam' } }
+                    ForEach-Object {
+                        $id = $ids[$_.Name.ToLower()]
+                        @{ Name = $(if ($names[$_.Name.ToLower()]) { $names[$_.Name.ToLower()] } else { $_.Name }); Dir = $_.FullName; Exe = $null; Source = 'Steam'; AppId = $id; Launch = $(if ($id) { "steam://rungameid/$id" } else { '' }) }
+                    }
             }
         }
     }
@@ -361,7 +366,8 @@ function Get-InstalledGames {
             $j = Get-Content -LiteralPath $m.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($j.InstallLocation -and (Test-Path -LiteralPath $j.InstallLocation)) {
                 $exe = if ($j.LaunchExecutable) { Join-Path $j.InstallLocation $j.LaunchExecutable } else { $null }
-                $dirs += @{ Name = $j.DisplayName; Dir = $j.InstallLocation; Exe = $exe; Source = 'Epic Games' }
+                $launch = if ($j.CatalogNamespace -and $j.CatalogItemId -and $j.AppName) { "com.epicgames.launcher://apps/$($j.CatalogNamespace)%3A$($j.CatalogItemId)%3A$($j.AppName)?action=launch&silent=true" } else { '' }
+                $dirs += @{ Name = $j.DisplayName; Dir = $j.InstallLocation; Exe = $exe; Source = 'Epic Games'; Launch = $launch }
             }
         } catch {}
     }
@@ -375,7 +381,7 @@ function Get-InstalledGames {
     $ubiNames = @{}
     foreach ($k in @(Get-ChildItem 'HKLM:\SOFTWARE\WOW6432Node\Ubisoft\Launcher\Installs' -ErrorAction SilentlyContinue)) {
         $dir = & $norm (Get-ItemProperty $k.PSPath -ErrorAction SilentlyContinue).InstallDir
-        if ($dir) { $ubiNames[$dir.ToLower()] = $k.PSChildName }
+        if ($dir) { $ubiNames[$dir.ToLower()] = $k.PSChildName }   # numéro du jeu chez Ubisoft
     }
     # Programmes installés : les jeux des autres launchers s'y déclarent (nom, dossier, icône = souvent l'exécutable)
     $sources = @(
@@ -400,16 +406,26 @@ function Get-InstalledGames {
         if ($ubiNames.ContainsKey($low)) { $ubiNames.Remove($low) }
         $icon = (& $norm ($u.DisplayIcon -replace ',\s*-?\d+$', ''))
         $exe = if ($icon -match '\.exe$' -and $icon.ToLower().StartsWith($low)) { $icon } else { $null }
-        $dirs += @{ Name = [string]$u.DisplayName.Trim(); Dir = $dir; Exe = $exe; Source = $src }
+        # Lancement par le launcher (connexion, mises à jour, anti triche : comme depuis le launcher lui même)
+        $us = [string]$u.UninstallString
+        $launch = ''
+        if ($u.PSChildName -match '^Uplay Install (\d+)') { $launch = "uplay://launch/$($Matches[1])/0" }
+        elseif ($src -eq 'Riot' -and $us -match '^"?([^"]*RiotClientServices\.exe)"?.*--uninstall-product=(\S+)\s+--uninstall-patchline=(\S*)') { $launch = "exe|$($Matches[1])|--launch-product=$($Matches[2]) --launch-patchline=$($Matches[3])" }
+        elseif ($src -eq 'Battle.net' -and $us -match '--uid=(\S+)') {
+            $codes = @{ prometheus = 'Pro'; hs_beta = 'WTCG'; fenris = 'Fen'; diablo3 = 'D3'; wow = 'WoW'; s2 = 'S2'; heroes = 'Hero'; osi = 'OSI'; w3 = 'W3'; odin = 'ODIN'; auks = 'AUKS'; lazarus = 'LAZR'; fore = 'FORE'; zeus = 'ZEUS'; viper = 'VIPR'; rtro = 'RTRO'; anbs = 'ANBS' }
+            $uid = $Matches[1].Trim('"').ToLower()
+            if ($codes.ContainsKey($uid)) { $launch = "battlenet://$($codes[$uid])" }
+        }
+        $dirs += @{ Name = [string]$u.DisplayName.Trim(); Dir = $dir; Exe = $exe; Source = $src; Launch = $launch }
     }
-    foreach ($d in @($ubiNames.Keys)) { if (Test-Path -LiteralPath $d) { $dirs += @{ Name = (Split-Path $d -Leaf); Dir = $d; Exe = $null; Source = 'Ubisoft Connect' } } }
+    foreach ($d in @($ubiNames.Keys)) { if (Test-Path -LiteralPath $d) { $dirs += @{ Name = (Split-Path $d -Leaf); Dir = $d; Exe = $null; Source = 'Ubisoft Connect'; Launch = "uplay://launch/$($ubiNames[$d])/0" } } }
     # Xbox / Game Pass : dossiers « XboxGames » à la racine des disques
     foreach ($drv in @([IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady })) {
         $xb = Join-Path $drv.RootDirectory.FullName 'XboxGames'
         if (-not (Test-Path -LiteralPath $xb)) { continue }
         foreach ($g in @(Get-ChildItem -LiteralPath $xb -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch $notGames })) {
             $content = Join-Path $g.FullName 'Content'
-            $dirs += @{ Name = $g.Name; Dir = $(if (Test-Path -LiteralPath $content) { $content } else { $g.FullName }); Exe = $null; Source = 'Xbox' }
+            $dirs += @{ Name = $g.Name; Dir = $(if (Test-Path -LiteralPath $content) { $content } else { $g.FullName }); Exe = $null; Source = 'Xbox'; Launch = "xbox:$($g.Name)" }
         }
     }
 
@@ -425,7 +441,7 @@ function Get-InstalledGames {
         # Exécutable déclaré par le launcher : en tête, sauf si c'est un lanceur (Rocket League déclare « Launcher.exe »)
         if ($d.Exe -and (Test-Path -LiteralPath $d.Exe) -and ([IO.Path]::GetFileNameWithoutExtension($d.Exe) -notmatch $bad -or -not $exes.Count)) { $exes = @($d.Exe) + $exes }
         $exes = @($exes | Select-Object -Unique)
-        if ($exes.Count) { $games += @{ Name = $d.Name; Exes = $exes; Source = $d.Source } }
+        if ($exes.Count) { $games += @{ Name = $d.Name; Exes = $exes; Source = $d.Source; Dir = $d.Dir; AppId = $d.AppId; Launch = [string]$d.Launch } }
     }
     $games
 }

@@ -331,17 +331,60 @@ $script:T.Run.Add_Tick({
                 try {
                     Wait-TestMs 800
                     $old = $script:GameSession; $script:GameSession = $null
+                    # Seulement le jeu d'essai : une vraie partie en cours sur le PC ne doit pas passer devant
+                    $idx = $script:GameIndex; $script:GameIndex = @{ monjeuessai = $idx['monjeuessai'] }
                     $fm = Get-Setting 'FpsMeasure' $false; $lm = Get-Setting 'LagMeasure' $true
                     Set-Setting 'FpsMeasure' $false; Set-Setting 'LagMeasure' $false
                     Test-GameRunning
                     $seen = $script:GameSession -and $script:GameSession.Game -eq 'Mon jeu d''essai'
                     if ($script:GameSession) { $script:GameSession.Closed = @(); Stop-GameSession }
+                    $script:GameIndex = $idx; $script:GameSession = $old
                     Set-Setting 'FpsMeasure' $fm; Set-Setting 'LagMeasure' $lm
                 } finally { try { $p.Kill() } catch {} }
                 Assert-Test $seen 'jeu ajouté non reconnu à son lancement'
                 Remove-CustomGame $exe
                 Assert-Test (-not @($script:Games | Where-Object { $_.Name -eq 'Mon jeu d''essai' }).Count) 'jeu ajouté non retiré'
                 "$(@($script:Games).Count) jeux ($($by -join ', ')), aucun launcher pris pour un jeu ; jeu ajouté reconnu à son lancement puis retiré"
+            }
+            Test-Step 'Bibliothèque de jeux' {
+                $sw = [Diagnostics.Stopwatch]::StartNew(); Show-Page $GamesIndex; $tBuild = $sw.ElapsedMilliseconds; Wait-TestMs 600
+                $sw.Restart(); Update-LibraryView; $tAgain = $sw.ElapsedMilliseconds
+                Assert-Test ($tAgain -lt 1500) "rafraîchir la bibliothèque prend $tAgain ms"
+                $games = @(Get-LibraryGames)
+                Assert-Test ($games.Count -ge [math]::Min(2, @($script:Games).Count)) "bibliothèque : $($games.Count) jeux pour $(@($script:Games).Count) trouvés"
+                Assert-Test ($script:LibBuilt -and $script:LibTiles.Count -eq $games.Count) "vignettes : $($script:LibTiles.Count) pour $($games.Count) jeux"
+                # Comment chaque jeu sera lancé (sans rien lancer)
+                $kinds = @{}
+                foreach ($g in $games) {
+                    $h = Get-GameLaunch $g
+                    Assert-Test ([bool]$h.Path) "aucun moyen de lancer $($g.Name)"
+                    if ($g.AppId) { Assert-Test ($h.Path -like 'steam://rungameid/*') "$($g.Name) : $($h.Path)" }
+                    $kinds[$(if ($h.Kind -eq 'url') { ($h.Path -split ':')[0] } else { 'exe' })] = $true
+                }
+                # Jeu choisi : panneau avec Lancer et l'optimisation
+                $busy = if ($script:GameSession) { $script:GameSession.Game } else { '' }
+                $pick = @($games | Where-Object { $_.AppId -and $_.Name -ne $busy } | Select-Object -First 1)[0]
+                if (-not $pick) { $pick = $games[0] }
+                if ($pick) {
+                    Set-LibrarySelection $pick.Name; Wait-TestMs 400
+                    $el = Find-PageElement $ui.LibDetailPanel 'Lancer'
+                    Assert-Test ($el -and (Find-PageElement $ui.LibDetailPanel 'OPTIMISATION DU JEU')) 'panneau du jeu incomplet'
+                    Save-TestShot 'bibliotheque'
+                    # Recherche d'un jeu par son nom : ouvre la bibliothèque sur lui
+                    $r = @(Find-Settings $pick.Name)
+                    Assert-Test ($r.Count -and $r[0].Game -eq $pick.Name) "recherche du jeu : $(($r | Select-Object -First 2 | ForEach-Object { $_.T }) -join ' | ')"
+                    Show-Page $HubIndex; Open-SearchEntry $r[0]; Wait-TestMs 400
+                    Assert-Test ($ui.Tabs.SelectedIndex -eq $GamesIndex -and $script:LibSelected -eq $pick.Name) 'la recherche n''ouvre pas le jeu'
+                }
+                # Filtre et recherche dans la bibliothèque
+                $ui.LibSearch.Text = 'zzzz'; Wait-TestMs 500
+                Assert-Test ($script:LibTiles.Count -eq 0) 'filtre de recherche sans effet'
+                $ui.LibSearch.Text = ''
+                # Temps de jeu noté à la fin d'une partie
+                $script:PlayLog = @{}
+                Add-PlayTime 'Jeu d''essai' (Get-Date).AddMinutes(-42)
+                Assert-Test ([int]((Get-PlayLog)['Jeu d''essai'].Seconds / 60) -eq 42) 'temps de jeu mal compté'
+                "$($games.Count) jeux en vignettes (page prête en $tBuild ms, rafraîchie en $tAgain ms), lancement par $(@($kinds.Keys | Sort-Object) -join ', '), panneau et optimisation du jeu, recherche d'un jeu, temps de jeu"
             }
             Test-Step 'Profils par jeu : libellés (issue 2)' {
                 if ($null -eq $script:Games) { Update-GameCache }
@@ -626,6 +669,8 @@ $script:T.Run.Add_Tick({
                     Assert-Test ($titles -contains $k[2] -and $k[1].Level -eq $k[3]) "$($k[0]) : trouvé « $($titles -join ' / ') » ($($k[1].Level))"
                 }
                 # Jeu hors ligne (aucun serveur) avec une connexion stable : rien n'est gardé
+                # Une vraie partie en cours sur le PC (mesure lancée toute seule par la copie de test) : on repart de zéro
+                if ($script:LagSession) { $script:LagSession = $null; if ($script:LagTimer) { $script:LagTimer.Stop() }; [LagMon]::Stop() }
                 $nOff = @(Get-LagSessions).Count
                 Start-LagSession 'Jeu solo' 0 0; Wait-TestMs 1500
                 $script:LagSession.Start = (Get-Date).AddMinutes(-2); Stop-LagSession

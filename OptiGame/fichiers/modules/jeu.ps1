@@ -41,6 +41,7 @@ function Update-GameCache {
         }
     }
     Build-GameSections
+    if ($script:LibBuilt) { Update-LibraryView }
 }
 
 # Jeux ajoutés à la main (jeu autonome, itch.io, émulateur...) : { Name, Exes, Source = 'Ajouté' }
@@ -125,6 +126,7 @@ function Start-GameSession([string]$Game, $Proc) {
     if ((Test-FpsMeasure) -and -not $script:FpsTarget) { Start-FpsTarget $Proc.Id $Game $Proc.ProcessName }
     if ((Test-LagMeasure) -and -not $script:LagSession) { try { Start-LagSession $Game $Proc.Id } catch { Write-Log "Lag: $_" } }
     Update-GameModeStatus
+    if ($script:LibBuilt) { Update-LibraryView }
     if ($closed.Count) { Show-Notify 'Mode jeu activé' "$Game : $(($closed | ForEach-Object { $_.Name }) -join ', ') fermé$(if ($closed.Count -gt 1) {'s'}) pendant que tu joues." }
 }
 
@@ -144,6 +146,7 @@ function Stop-GameSession {
         } catch { $failed += $c.Name }
     }
     $mins = [int]((Get-Date) - $s.Start).TotalMinutes
+    try { Add-PlayTime $s.Game $s.Start } catch { Write-Log "Temps de jeu: $_" }
     Write-Log "Mode jeu: fin de $($s.Game) après $mins min$(if ($failed) { ", à relancer à la main: $($failed -join ', ')" })"
     Update-GameModeStatus
     if ($s.Closed.Count) {
@@ -352,7 +355,8 @@ $FpsHotkeyId = 7001
 function Test-FpsMeasure { [bool](Get-Setting 'FpsMeasure' ([bool](Get-Setting 'FpsOverlay' $false))) }
 function Test-FpsOverlay { [bool](Get-Setting 'FpsOverlay' $false) }
 
-function Test-GameWatchNeeded { ([bool](Get-Setting 'GameMode' $false)) -or (Test-FpsMeasure) -or (Test-LagMeasure) }
+# Toujours actif : la bibliothèque note le temps de jeu de chaque partie (une lecture des programmes toutes les 5 s)
+function Test-GameWatchNeeded { $true }
 
 function Update-GameWatch {
     if (Test-GameWatchNeeded) { Start-GameWatch } else { Stop-GameWatch }

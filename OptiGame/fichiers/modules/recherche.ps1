@@ -22,6 +22,11 @@ $SearchEntries = @(
     @{ T = 'Profils par jeu'; P = 1; S = 'profiles'; K = 'priorite haute carte graphique puissante gpu profil jeu' },
     @{ T = 'Ajouter un jeu (non reconnu)'; P = 1; S = 'profiles'; A = 'Ajouter un jeu'; K = 'ajouter jeu manquant detecte reconnu ubisoft ea gog battlenet riot xbox autre launcher itch emulateur' },
     @{ T = 'Mes jeux reconnus'; P = 1; S = 'profiles'; A = 'Ajouter un jeu'; K = 'liste jeux installes launchers steam epic ubisoft ea gog battlenet riot xbox' },
+    # Jeux
+    @{ T = 'Mes jeux (bibliothèque)'; P = 'jeux'; A = 'Mes jeux'; K = 'jeux bibliotheque library steam liste installes' },
+    @{ T = 'Lancer un jeu'; P = 'jeux'; A = 'Mes jeux'; K = 'lancer jouer demarrer jeu play' },
+    @{ T = 'Optimiser un jeu'; P = 'jeux'; A = 'Mes jeux'; K = 'optimiser jeu tout optimiser priorite' },
+    @{ T = 'Temps de jeu'; P = 'jeux'; A = 'Mes jeux'; K = 'temps heures joue derniere partie' },
     # Tableau de bord
     @{ T = 'Score et analyse du PC'; P = 0; A = 'Relancer l''analyse'; K = 'score analyse sante composants note' },
     @{ T = 'Tout corriger'; P = 0; A = 'Tout corriger'; K = 'corriger reparer ameliorer score' },
@@ -106,7 +111,10 @@ function Get-SearchIndex {
         if ($tw -and $tw.Titre) { [void]$all.Add(@{ T = [string]$tw.Titre; P = 1; S = 'tweaks'; A = [string]$tw.Titre; K = 'reglage windows optimisation' }) }
     }
     if ($script:Games) {
-        foreach ($g in @($script:Games | Where-Object { $_.Name } | Select-Object -First 80)) { [void]$all.Add(@{ T = "Profil de $($g.Name)"; P = 1; S = 'profiles'; A = [string]$g.Name; K = 'jeu profil priorite' }) }
+        foreach ($g in @($script:Games | Where-Object { $_.Name } | Select-Object -First 80)) {
+            [void]$all.Add(@{ T = [string]$g.Name; P = 'jeux'; Game = [string]$g.Name; K = "jeu lancer jouer $($g.Source)" })
+            [void]$all.Add(@{ T = "Profil de $($g.Name)"; P = 1; S = 'profiles'; A = [string]$g.Name; K = 'jeu profil priorite' })
+        }
     }
     foreach ($e in $all) {
         if (-not $e.Where) { $e.Where = Get-SearchWhere $e }
@@ -123,6 +131,7 @@ function Get-SearchWhere($E) {
     $sub = if ($E.S) { ' › ' + (@($GamingSubPages | Where-Object { $_.Id -eq $E.S })[0]).Label } else { '' }
     switch ($E.P) {
         'reseau' { 'Réseau' }
+        'jeux' { 'Jeux' }
         'trafic' { 'Trafic' }
         default { "Ordinateur › $($PageNames[[int]$E.P])$sub" }
     }
@@ -238,9 +247,10 @@ function Open-SearchEntry($E) {
     if ($ui.TestOverlay.Visibility -eq 'Visible') { Hide-TestPanel }
     if ($ui.NetMapOverlay.Visibility -eq 'Visible') { Hide-NetMap }
     if ($ui.Overlay.Visibility -eq 'Visible' -and $script:SheetMode -ne 'display') { Close-Sheet }
-    $page = switch ($E.P) { 'reseau' { $NetIndex } 'trafic' { $TrafficIndex } default { [int]$E.P } }
+    $page = switch ($E.P) { 'reseau' { $NetIndex } 'trafic' { $TrafficIndex } 'jeux' { $GamesIndex } default { [int]$E.P } }
     Show-Page $page
     if ($E.S) { Build-GamingTabs; Set-GamingSubPage $E.S }
+    if ($E.Game) { $ui.LibSearch.Text = ''; $script:LibFilter = 'Tous'; Update-LibraryView; Set-LibrarySelection $E.Game }
     Set-Status "$($E.T) : $($E.Where)"
     $anchor = [string]$E.A
     $after = $E.Do
