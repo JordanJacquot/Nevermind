@@ -1,4 +1,4 @@
-﻿Nevermind 1.0.61
+﻿Nevermind 1.0.62
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -147,10 +147,6 @@ Optimisation gaming
   les jeux reconnus, Ctrl + Maj + F pour les autres). Pour chaque partie :
   FPS moyens, chutes (1 % bas), courbe de la partie, et comparaison avant /
   après tes réglages.
-  Overlay : le compteur de FPS par dessus le jeu (visible en fenêtré ou plein
-  écran fenêtré, pas en plein écran). Deux styles : « Complet » (FPS, 1 % bas
-  et moyenne) ou « Discret » (juste le chiffre, en petit et en semi
-  transparence), dans le coin de l'écran de ton choix, avec un aperçu.
   Quand une partie rame, Nevermind cherche d'où ça vient : carte graphique ou
   processeur à fond, surchauffe, mémoire pleine, disque lent, programmes en
   arrière plan, PC sur batterie, écran bridé, jeu sur la mauvaise carte
@@ -205,13 +201,26 @@ Sauvegarde
   Annule TOUS les changements de Nevermind en un clic, ou un seul changement
   grâce à l'historique. Crée un point de restauration Windows, exporte un
   rapport HTML pour comparer vos PC.
-  « Signaler un problème » crée un fichier sur ton bureau (journal de l'app et
-  configuration du PC, sans tes fichiers ni ton nom) à envoyer à la personne
-  qui t'a donné Nevermind.
-  « Raccourci et démarrage » : crée un raccourci Nevermind sur ton bureau, et
-  peut lancer Nevermind à chaque démarrage du PC. Il reste alors réduit près de
-  l'horloge (mode jeu, mesure des FPS) et Windows ne demande pas d'autorisation.
-  « Recevoir les versions bêta » : pour tester les nouveautés avant tout le monde.
+
+OVERLAY (onglet en haut)
+  Le compteur de FPS par dessus le jeu (visible en fenêtré ou plein écran
+  fenêtré, pas en plein écran exclusif). Grand aperçu en direct : clique sur un
+  coin de l'écran pour y placer le compteur. Deux styles : « Complet » (FPS,
+  1 % bas et moyenne) ou « Discret » (juste le chiffre, en petit et en semi
+  transparence). Ctrl + Maj + F lance la mesure sur un jeu non reconnu.
+
+PARAMÈTRES (roue crantée en haut à droite)
+  Général : « Raccourci et démarrage » crée un raccourci Nevermind sur ton
+  bureau, et peut lancer Nevermind à chaque démarrage du PC. Il reste alors
+  réduit près de l'horloge (mode jeu, mesure des FPS) et Windows ne demande pas
+  d'autorisation.
+  Jeux : mesure des FPS, mesure du lag, mode jeu, jaquettes depuis Internet.
+  Réseau et vie privée : alerte nouvel appareil, identification des serveurs.
+  Mises à jour : « Recevoir les versions bêta » pour tester les nouveautés avant
+  tout le monde.
+  Aide : « Signaler un problème » crée un fichier sur ton bureau (journal de
+  l'app et configuration du PC, sans tes fichiers ni ton nom) à envoyer à la
+  personne qui t'a donné Nevermind.
 
 
 SÉCURITÉ

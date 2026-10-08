@@ -404,6 +404,7 @@ function New-FpsOverlayContent([string]$Style, [string]$Value = '...') {
         $row.Effect = $sh
         $fps = New-Text $Value 15 '#FFFFFF' -Semi
         $fps.TextWrapping = 'NoWrap'
+        $fps.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
         [void]$row.Children.Add($fps)
         $unit = New-Text 'FPS' 10 '#FFFFFF' -Semi
         $unit.VerticalAlignment = 'Bottom'; $unit.Margin = New-Thickness 3 0 0 2
@@ -413,16 +414,19 @@ function New-FpsOverlayContent([string]$Style, [string]$Value = '...') {
         $b.Child = $row
         return @{ Root = $b; Fps = $fps; Sub = $null; Discreet = $true }
     }
+    # Verre sombre et liseré cyan vers magenta (DA Nevermind) ; le chiffre garde sa couleur (vert = fluide)
     $b = New-Object System.Windows.Controls.Border
-    $bg = Get-Brush '#0D0B14'; $bg.Opacity = 0.8
-    $b.Background = $bg
-    $b.CornerRadius = [System.Windows.CornerRadius]::new(10)
+    $b.Background = Get-Brush '#D90B0820'
+    $b.BorderBrush = New-LinearBrush @('#B000E5FF', '#B0FF2EB5') 0 0 1 1
+    $b.BorderThickness = New-Thickness 1 1 1 1
+    $b.CornerRadius = [System.Windows.CornerRadius]::new(12)
     $b.Padding = New-Thickness 12 5 14 7
     $sp = New-Object System.Windows.Controls.StackPanel
     $row = New-Object System.Windows.Controls.StackPanel
     $row.Orientation = 'Horizontal'
     $fps = New-Text $Value 26 $Colors.ok -Bold
     $fps.TextWrapping = 'NoWrap'
+    $fps.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
     [void]$row.Children.Add($fps)
     $unit = New-Text 'FPS' 12 '#A6A1BC' -Semi
     $unit.VerticalAlignment = 'Bottom'; $unit.Margin = New-Thickness 6 0 0 5
@@ -859,109 +863,346 @@ function Invoke-FpsHelp {
         '4.  Quitte le jeu : Nevermind t''explique d''où vient le problème et ce qu''il peut régler pour toi.') $null 'Nevermind regarde qui freine (carte graphique ou processeur), la température, la mémoire, le disque et les programmes en arrière plan.'
 }
 
-# Onglet « Mes parties »
-# Onglet « Overlay » : le compteur de FPS affiché par dessus le jeu (affichage, style, coin, aperçu)
+# ---------------------------------------------------------------------------
+# Onglet « Overlay » (à côté de Trafic) : tout le compteur de FPS au même endroit.
+# Grand aperçu sur une scène de jeu (coins cliquables), état en direct, style, position, raccourci.
+# ---------------------------------------------------------------------------
+$OverlayIndex = 12
+
+# Scène de jeu factice (coucher de soleil néon) : assez claire en haut pour juger la lisibilité du compteur
+function New-OverlayScene([double]$W, [double]$H, [double]$Radius = 14) {
+    $b = New-Object System.Windows.Controls.Border
+    $b.Width = $W; $b.Height = $H
+    $b.CornerRadius = [System.Windows.CornerRadius]::new($Radius)
+    $b.ClipToBounds = $true
+    $b.Background = New-LinearBrush @('#3B2A7A', '#B0508F', '#F59E6B') 0 0 0 0.62
+    $cv = New-Object System.Windows.Controls.Canvas
+    $cv.Width = $W; $cv.Height = $H
+    # Soleil
+    $sun = New-Object System.Windows.Shapes.Ellipse
+    $sun.Width = $H * 0.42; $sun.Height = $sun.Width
+    $sun.Fill = New-LinearBrush @('#FFE38A', '#FF6FA8') 0 0 0 1
+    $sun.Effect = New-Glow '#FF9F6B' ($H * 0.12) 0.8
+    [System.Windows.Controls.Canvas]::SetLeft($sun, $W * 0.5 - $sun.Width / 2); [System.Windows.Controls.Canvas]::SetTop($sun, $H * 0.62 - $sun.Height * 0.78)
+    [void]$cv.Children.Add($sun)
+    # Montagnes
+    foreach ($m in @(@('#4A2B6E', @(0, 0.62, 0.18, 0.42, 0.34, 0.62)), @('#3A2160', @(0.22, 0.62, 0.42, 0.36, 0.6, 0.62)), @('#4A2B6E', @(0.55, 0.62, 0.78, 0.4, 1, 0.62)))) {
+        $pg = New-Object System.Windows.Shapes.Polygon
+        $pts = New-Object System.Windows.Media.PointCollection
+        $c = $m[1]
+        for ($i = 0; $i -lt $c.Count; $i += 2) { [void]$pts.Add([System.Windows.Point]::new($c[$i] * $W, $c[$i + 1] * $H)) }
+        $pg.Points = $pts; $pg.Fill = Get-Brush $m[0]
+        [void]$cv.Children.Add($pg)
+    }
+    # Sol en grille néon
+    $ground = New-Object System.Windows.Shapes.Rectangle
+    $ground.Width = $W; $ground.Height = $H * 0.38
+    $ground.Fill = New-LinearBrush @('#1A0F33', '#0B0820') 0 0 0 1
+    [System.Windows.Controls.Canvas]::SetTop($ground, $H * 0.62)
+    [void]$cv.Children.Add($ground)
+    $gridBrush = New-AlphaBrush '#FF2EB5' 110
+    for ($i = 0; $i -le 12; $i++) {
+        $x = $W * $i / 12
+        $ln = New-Object System.Windows.Shapes.Line
+        $ln.X1 = $W / 2 + ($x - $W / 2) * 0.15; $ln.Y1 = $H * 0.62; $ln.X2 = $W / 2 + ($x - $W / 2) * 1.6; $ln.Y2 = $H
+        $ln.Stroke = $gridBrush; $ln.StrokeThickness = 1
+        [void]$cv.Children.Add($ln)
+    }
+    foreach ($f in 0.66, 0.72, 0.8, 0.9) {
+        $ln = New-Object System.Windows.Shapes.Line
+        $ln.X1 = 0; $ln.X2 = $W; $ln.Y1 = $H * $f; $ln.Y2 = $H * $f
+        $ln.Stroke = $gridBrush; $ln.StrokeThickness = 1
+        [void]$cv.Children.Add($ln)
+    }
+    $b.Child = $cv
+    $b
+}
+
+# Compteur posé dans un coin d'une scène (aperçu)
+function Add-OverlayPreview($Parent, [string]$Style, [string]$Corner, [string]$Value, [double]$Scale = 1.0) {
+    $c = New-FpsOverlayContent $Style $Value
+    if ($c.Sub) { $c.Sub.Text = '1 % bas 118    moyenne 141' }
+    if ($Scale -ne 1.0) { $c.Root.LayoutTransform = New-Object System.Windows.Media.ScaleTransform $Scale, $Scale }
+    $c.Root.HorizontalAlignment = if ($Corner -like '?d') { 'Right' } else { 'Left' }
+    $c.Root.VerticalAlignment = if ($Corner -like 'b?') { 'Bottom' } else { 'Top' }
+    $m = 12 * $Scale
+    $c.Root.Margin = New-Thickness $m $m $m $m
+    [void]$Parent.Children.Add($c.Root)
+    $c
+}
+
+function New-OverlayPanelCard([string]$Title, [string]$Text, [string]$Color) {
+    $card = New-Card
+    $card.Margin = New-Thickness 0 0 0 0
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $head = New-Object System.Windows.Controls.StackPanel
+    $head.Orientation = 'Horizontal'
+    $dot = New-Object System.Windows.Shapes.Ellipse
+    $dot.Width = 9; $dot.Height = 9; $dot.Fill = Get-Brush $Color; $dot.Effect = New-Glow $Color 10 0.9
+    $dot.VerticalAlignment = 'Center'; $dot.Margin = New-Thickness 0 1 10 0
+    [void]$head.Children.Add($dot)
+    [void]$head.Children.Add((New-Text $Title 15 '#FFFFFF' -Bold))
+    [void]$sp.Children.Add($head)
+    if ($Text) {
+        $d = New-Text $Text 12 '#8E88A8'
+        $d.Margin = New-Thickness 19 2 0 14
+        [void]$sp.Children.Add($d)
+    }
+    $card.Child = $sp
+    @{ Card = $card; Body = $sp }
+}
+
+function Set-FpsOverlayOn([bool]$On) {
+    Set-Setting 'FpsOverlay' $On
+    if (-not $On) { Hide-FpsOverlay } elseif ($script:FpsTarget) { Show-FpsOverlay }
+    Build-FpsPanel
+    Build-OverlayPanel
+    Set-Status $(if ($On) { 'Compteur de FPS affiché pendant les parties.' } else { 'Compteur de FPS masqué.' })
+}
+
+# Mesure des FPS : même effet depuis Mes parties, Overlay ou les Paramètres
+function Set-FpsMeasure([bool]$On) {
+    Set-Setting 'FpsMeasure' $On
+    if (-not $On -and $script:FpsTarget) { Stop-FpsTarget }
+    Update-GameWatch; Update-FpsHotkey
+    Build-FpsPanel; Build-OverlayPanel
+    Set-Status $(if ($On) { 'Mesure des FPS activée : lance un jeu.' } else { 'Mesure des FPS désactivée.' })
+}
+function Enable-FpsMeasure { Set-FpsMeasure $true }
+
 function Build-OverlayPanel {
     $panel = $ui.OverlayPanel
     if (-not $panel) { return }
     $panel.Children.Clear()
-
-    # Affichage
-    $card = New-Card
-    $card.Margin = New-Thickness 0 0 0 12
-    $sp = New-Object System.Windows.Controls.StackPanel
-    $row = New-SwitchRow 'Afficher le compteur pendant la partie' 'Par dessus le jeu, en fenêtré ou en plein écran fenêtré (pas en plein écran exclusif).' (Test-FpsOverlay) {
-        param($s, $e)
-        $on = [bool]$s.IsChecked
-        Set-Setting 'FpsOverlay' $on
-        if (-not $on) { Hide-FpsOverlay } elseif ($script:FpsTarget) { Show-FpsOverlay }
-        Build-FpsPanel
-        Set-Status $(if ($on) { 'Compteur de FPS affiché pendant les parties.' } else { 'Compteur de FPS masqué.' })
-    }
-    $row.Margin = New-Thickness 0
-    [void]$sp.Children.Add($row)
-    if (-not (Test-FpsMeasure)) {
-        $wg = New-Grid @('*', 'Auto')
-        $wg.Margin = New-Thickness 0 12 0 0
-        $wt = New-Text 'La mesure des FPS est coupée : le compteur ne peut pas s''afficher.' 12.5 $Colors.warn -Semi
-        $wt.VerticalAlignment = 'Center'
-        Add-ToGrid $wg $wt 0
-        $wb = New-Button 'Activer la mesure' 'BtnPrimary'
-        $wb.Margin = New-Thickness 16 0 0 0
-        $wb.Add_Click({ Invoke-Safe { Set-Setting 'FpsMeasure' $true; Update-GameWatch; Update-FpsHotkey; Build-FpsPanel; Build-OverlayPanel; Set-Status 'Mesure des FPS activée : lance un jeu.' } })
-        Add-ToGrid $wg $wb 1
-        [void]$sp.Children.Add($wg)
-    }
-    $card.Child = $sp
-    [void]$panel.Children.Add($card)
-
-    # Apparence : style et coin de l'écran, avec un aperçu
     $style = Get-FpsOverlayStyle
     $corner = Get-FpsOverlayCorner
-    $card = New-Card
-    $card.Margin = New-Thickness 0 0 0 12
-    $g = New-Grid @('*', 'Auto')
-    $left = New-Object System.Windows.Controls.StackPanel
-    [void]$left.Children.Add((New-Text 'Style du compteur' 14 '#FFFFFF' -Semi))
-    $d = New-Text $(if ($style -eq 'discret') { 'Discret : juste le chiffre, en petit et en semi transparence.' } else { 'Complet : le chiffre, le 1 % bas et la moyenne de la partie.' }) 12 '#A6A1BC'
-    $d.Margin = New-Thickness 0 2 0 0
-    [void]$left.Children.Add($d)
-    $wp = New-Object System.Windows.Controls.WrapPanel
-    $wp.Margin = New-Thickness 0 8 0 0
-    foreach ($o in @(@('complet', 'Complet'), @('discret', 'Discret'))) {
-        $btn = New-Button $o[1] $(if ($style -eq $o[0]) { 'BtnPrimary' } else { 'BtnSecondary' })
-        $btn.Margin = New-Thickness 0 0 8 0
-        $btn.Tag = $o[0]
-        $btn.Add_Click({ param($s, $e) $x = [string]$s.Tag; Invoke-Safe { Set-FpsOverlayStyle $x; Build-FpsPanel } })
-        [void]$wp.Children.Add($btn)
-    }
-    [void]$left.Children.Add($wp)
-    $pt = New-Text 'Position du compteur' 14 '#FFFFFF' -Semi
-    $pt.Margin = New-Thickness 0 18 0 0
-    [void]$left.Children.Add($pt)
-    $pd = New-Text 'Le coin de l''écran du jeu où il s''affiche.' 12 '#A6A1BC'
-    $pd.Margin = New-Thickness 0 2 0 0
-    [void]$left.Children.Add($pd)
-    $ug = New-Object System.Windows.Controls.Primitives.UniformGrid
-    $ug.Columns = 2
-    $ug.HorizontalAlignment = 'Left'
-    $ug.Margin = New-Thickness 0 8 0 0
-    foreach ($k in @($OverlayCorners.Keys)) {
-        $btn = New-Button $OverlayCorners[$k] $(if ($corner -eq $k) { 'BtnPrimary' } else { 'BtnSecondary' })
-        $btn.Margin = New-Thickness 0 0 8 8
-        $btn.Tag = $k
-        $btn.Add_Click({ param($s, $e) $x = [string]$s.Tag; Invoke-Safe { Set-FpsOverlayCorner $x; Build-FpsPanel } })
-        [void]$ug.Children.Add($btn)
-    }
-    [void]$left.Children.Add($ug)
-    Add-ToGrid $g $left 0
-    # Aperçu 16:9 sur un faux décor de jeu (ciel et herbe, assez clair pour juger la lisibilité)
-    $pvBox = New-Object System.Windows.Controls.StackPanel
-    $pvBox.Margin = New-Thickness 20 0 0 0
-    $pv = New-Object System.Windows.Controls.Border
-    $pv.Width = 300; $pv.Height = 169
-    $pv.CornerRadius = [System.Windows.CornerRadius]::new(10)
-    $pv.Background = New-LinearBrush @('#6F9FC8', '#A9C4D8', '#6E8A4E', '#3F5530') 0 0 0 1
-    $pv.ClipToBounds = $true
-    $pc = (New-FpsOverlayContent $style '144').Root
-    if ($style -ne 'discret') { $pc.LayoutTransform = New-Object System.Windows.Media.ScaleTransform 0.75, 0.75 }
-    $pc.HorizontalAlignment = if ($corner -like '?d') { 'Right' } else { 'Left' }
-    $pc.VerticalAlignment = if ($corner -like 'b?') { 'Bottom' } else { 'Top' }
-    $pc.Margin = New-Thickness 8 8 8 8
-    $pv.Child = $pc
-    [void]$pvBox.Children.Add($pv)
-    $cap = New-Text 'Aperçu sur un décor de jeu' 11.5 '#655E7E'
-    $cap.HorizontalAlignment = 'Center'; $cap.Margin = New-Thickness 0 6 0 0
-    [void]$pvBox.Children.Add($cap)
-    Add-ToGrid $g $pvBox 1
-    $card.Child = $g
-    [void]$panel.Children.Add($card)
+    $on = Test-FpsOverlay
+    $measure = Test-FpsMeasure
 
-    $tips = New-Text "Jeu non reconnu : appuie sur Ctrl + Maj + F pendant la partie pour lancer la mesure et le compteur.`nEn plein écran exclusif, Windows ne laisse rien s'afficher par dessus le jeu : choisis « plein écran fenêtré » ou « sans bordure » dans les options du jeu." 12 '#655E7E'
-    $tips.Margin = New-Thickness 4 2 0 0
-    [void]$panel.Children.Add($tips)
+    # Ligne 1 : grand aperçu (coins cliquables) et état
+    $top = New-Grid @('*', '340')
+    $top.Margin = New-Thickness 0 0 0 16
+    $hero = New-Object System.Windows.Controls.Border
+    $hero.CornerRadius = [System.Windows.CornerRadius]::new(22)
+    $hero.Background = Get-Brush 'card'
+    $hero.BorderBrush = New-LinearBrush @('#9900E5FF', '#22FFFFFF', '#99FF2EB5') 0 0 1 1
+    $hero.BorderThickness = New-Thickness 1 1 1 1
+    $hero.Padding = New-Thickness 16 16 16 12
+    $hero.Margin = New-Thickness 0 0 16 0
+    $hs = New-Object System.Windows.Controls.StackPanel
+    $sceneHost = New-Object System.Windows.Controls.Grid
+    $sceneHost.Width = 560; $sceneHost.Height = 315
+    $sceneHost.HorizontalAlignment = 'Center'
+    [void]$sceneHost.Children.Add((New-OverlayScene 560 315 16))
+    $pv = Add-OverlayPreview $sceneHost $style $corner '144'
+    if (-not $on) { $pv.Root.Opacity = 0.25 }
+    $script:OverlayPreview = $pv
+    # Coins cliquables : survol en pointillés, clic pour y placer le compteur
+    foreach ($k in @($OverlayCorners.Keys)) {
+        if ($k -eq $corner) { continue }
+        $hot = New-Object System.Windows.Controls.Grid
+        $hot.Width = 150; $hot.Height = 74
+        $hot.HorizontalAlignment = if ($k -like '?d') { 'Right' } else { 'Left' }
+        $hot.VerticalAlignment = if ($k -like 'b?') { 'Bottom' } else { 'Top' }
+        $hot.Margin = New-Thickness 8 8 8 8
+        $hot.Background = Get-Brush '#01FFFFFF'
+        $hot.Cursor = [System.Windows.Input.Cursors]::Hand
+        $hot.ToolTip = "Placer le compteur $($OverlayCorners[$k].ToLower())"
+        $r = New-Object System.Windows.Shapes.Rectangle
+        $r.RadiusX = 10; $r.RadiusY = 10
+        $r.Stroke = Get-Brush '#CCFFFFFF'; $r.StrokeThickness = 1.5
+        $r.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new([double[]]@(4, 3))
+        $r.Fill = Get-Brush '#22FFFFFF'
+        $r.Opacity = 0
+        [void]$hot.Children.Add($r)
+        $lbl = New-Text 'Placer ici' 12 '#FFFFFF' -Semi
+        $lbl.HorizontalAlignment = 'Center'; $lbl.VerticalAlignment = 'Center'; $lbl.Opacity = 0
+        [void]$hot.Children.Add($lbl)
+        $hot.Tag = @{ Corner = $k; R = $r; L = $lbl }
+        $hot.Add_MouseEnter({ param($s, $e) $s.Tag.R.Opacity = 1; $s.Tag.L.Opacity = 1 })
+        $hot.Add_MouseLeave({ param($s, $e) $s.Tag.R.Opacity = 0; $s.Tag.L.Opacity = 0 })
+        $hot.Add_MouseLeftButtonUp({ param($s, $e) $x = [string]$s.Tag.Corner; Invoke-Safe { Set-FpsOverlayCorner $x; Build-FpsPanel } })
+        [void]$sceneHost.Children.Add($hot)
+    }
+    [void]$hs.Children.Add($sceneHost)
+    $cap = New-Text 'Aperçu en direct. Clique sur un coin de l''écran pour y placer le compteur.' 12 '#8E88A8'
+    $cap.HorizontalAlignment = 'Center'; $cap.Margin = New-Thickness 0 10 0 0
+    [void]$hs.Children.Add($cap)
+    $hero.Child = $hs
+    Add-ToGrid $top $hero 0
+
+    # État : interrupteur, ce qui se passe maintenant, raccourci
+    $st = New-OverlayPanelCard 'Compteur à l''écran' '' '#00E5FF'
+    $st.Card.Padding = New-Thickness 20 18 20 18
+    $row = New-SwitchRow 'Afficher le compteur pendant la partie' 'Par dessus le jeu, en fenêtré ou plein écran fenêtré.' $on { param($s, $e) $v = [bool]$s.IsChecked; Invoke-Safe { Set-FpsOverlayOn $v } }
+    $row.Margin = New-Thickness 0 14 0 0
+    [void]$st.Body.Children.Add($row)
+    $state = New-Object System.Windows.Controls.Border
+    $state.CornerRadius = [System.Windows.CornerRadius]::new(14)
+    $state.Padding = New-Thickness 14 12 14 12
+    $state.Margin = New-Thickness 0 6 0 0
+    $ss = New-Object System.Windows.Controls.StackPanel
+    if (-not $measure) {
+        $state.Background = New-AlphaBrush $Colors.warn 30
+        $t = New-Text 'La mesure des FPS est coupée : le compteur ne peut pas s''afficher.' 12.5 $Colors.warn -Semi
+        $t.TextWrapping = 'Wrap'
+        [void]$ss.Children.Add($t)
+        $b = New-Button 'Activer la mesure' 'BtnPrimary'
+        $b.Margin = New-Thickness 0 10 0 0; $b.HorizontalAlignment = 'Left'
+        $b.Add_Click({ Invoke-Safe { Enable-FpsMeasure } })
+        [void]$ss.Children.Add($b)
+    } else {
+        $state.Background = Get-Brush '#12FFFFFF'
+        $live = [bool]$script:FpsTarget
+        $line = New-Object System.Windows.Controls.StackPanel
+        $line.Orientation = 'Horizontal'
+        $dot = New-Object System.Windows.Shapes.Ellipse
+        $dot.Width = 8; $dot.Height = 8; $dot.VerticalAlignment = 'Center'; $dot.Margin = New-Thickness 0 1 8 0
+        $dot.Fill = Get-Brush $(if ($live -and $on) { $Colors.ok } elseif ($on) { '#00E5FF' } else { '#655E7E' })
+        if ($live -and $on) { $dot.Effect = New-Glow $Colors.ok 10 0.9 }
+        [void]$line.Children.Add($dot)
+        $txt = if (-not $on) { 'Compteur masqué' } elseif ($live) { "Affiché sur $($script:FpsTarget.Name)" } else { 'Prêt : il apparaîtra dès que tu lances un jeu' }
+        $lt = New-Text $txt 12.5 '#EEEBF7' -Semi
+        $lt.TextWrapping = 'Wrap'; $lt.MaxWidth = 230
+        [void]$line.Children.Add($lt)
+        [void]$ss.Children.Add($line)
+    }
+    $state.Child = $ss
+    [void]$st.Body.Children.Add($state)
+    # Raccourci clavier
+    $kt = New-Text 'Raccourci Ctrl + Maj + F' 13.5 '#FFFFFF' -Semi
+    $kt.Margin = New-Thickness 0 18 0 6
+    [void]$st.Body.Children.Add($kt)
+    $keys = New-Object System.Windows.Controls.StackPanel
+    $keys.Orientation = 'Horizontal'
+    $first = $true
+    foreach ($k in 'Ctrl', 'Maj', 'F') {
+        if (-not $first) { $plus = New-Text '+' 12 '#8E88A8'; $plus.Margin = New-Thickness 6 0 6 0; $plus.VerticalAlignment = 'Center'; [void]$keys.Children.Add($plus) }
+        $first = $false
+        $kc = New-Object System.Windows.Controls.Border
+        $kc.CornerRadius = [System.Windows.CornerRadius]::new(8)
+        $kc.Background = Get-Brush '#1AFFFFFF'; $kc.BorderBrush = Get-Brush '#33FFFFFF'; $kc.BorderThickness = New-Thickness 1 1 1 3
+        $kc.Padding = New-Thickness 10 4 10 4
+        $kx = New-Text $k 12 '#FFFFFF' -Bold
+        $kx.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
+        $kc.Child = $kx
+        [void]$keys.Children.Add($kc)
+    }
+    [void]$st.Body.Children.Add($keys)
+    $kd = New-Text 'Jeu non reconnu ? Appuie dessus pendant la partie pour lancer ou arrêter la mesure et le compteur.' 12 '#8E88A8'
+    $kd.Margin = New-Thickness 0 8 0 0
+    [void]$st.Body.Children.Add($kd)
+    Add-ToGrid $top $st.Card 1
+    [void]$panel.Children.Add($top)
+
+    # Ligne 2 : style et position
+    $row2 = New-Grid @('*', '*')
+    $row2.Margin = New-Thickness 0 0 0 16
+    $sc = New-OverlayPanelCard 'Style du compteur' 'Choisis ce qui s''affiche par dessus ton jeu.' '#B04BFF'
+    $sc.Card.Margin = New-Thickness 0 0 8 0
+    $tiles = New-Grid @('*', '*')
+    $col = 0
+    foreach ($o in @(@('complet', 'Complet', 'Le chiffre, le 1 % bas et la moyenne.'), @('discret', 'Discret', 'Juste le chiffre, petit et semi transparent.'))) {
+        $sel = $style -eq $o[0]
+        $tile = New-Object System.Windows.Controls.Border
+        $tile.CornerRadius = [System.Windows.CornerRadius]::new(16)
+        $tile.Padding = New-Thickness 10 10 10 12
+        $tile.Margin = New-Thickness $(if ($col) { 6 } else { 0 }) 0 $(if ($col) { 0 } else { 6 }) 0
+        $tile.Background = Get-Brush $(if ($sel) { '#18FFFFFF' } else { '#0AFFFFFF' })
+        $tile.BorderThickness = New-Thickness $(if ($sel) { 2 } else { 1 }) $(if ($sel) { 2 } else { 1 }) $(if ($sel) { 2 } else { 1 }) $(if ($sel) { 2 } else { 1 })
+        $tile.BorderBrush = if ($sel) { New-LinearBrush @('#00E5FF', '#B04BFF') 0 0 1 1 } else { Get-Brush '#1CFFFFFF' }
+        if ($sel) { $tile.Effect = New-Glow '#00E5FF' 16 0.35 }
+        $tile.Cursor = [System.Windows.Input.Cursors]::Hand
+        $tsp = New-Object System.Windows.Controls.StackPanel
+        $mini = New-Object System.Windows.Controls.Grid
+        $mini.Height = 92; $mini.ClipToBounds = $true
+        [void]$mini.Children.Add((New-OverlayScene 220 92 10))
+        [void](Add-OverlayPreview $mini $o[0] 'hg' '144' 0.75)
+        [void]$tsp.Children.Add($mini)
+        $nm = New-Object System.Windows.Controls.StackPanel
+        $nm.Orientation = 'Horizontal'; $nm.Margin = New-Thickness 2 10 0 0
+        [void]$nm.Children.Add((New-Text $o[1] 14 '#FFFFFF' -Semi))
+        if ($sel) { $ck = New-Text ([string][char]0xE73E) 12 '#00E5FF'; $ck.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'; $ck.Margin = New-Thickness 8 3 0 0; [void]$nm.Children.Add($ck) }
+        [void]$tsp.Children.Add($nm)
+        $ds = New-Text $o[2] 11.5 '#8E88A8'
+        $ds.Margin = New-Thickness 2 2 0 0
+        [void]$tsp.Children.Add($ds)
+        $tile.Child = $tsp
+        $tile.Tag = $o[0]
+        $tile.Add_MouseLeftButtonUp({ param($s, $e) $x = [string]$s.Tag; Invoke-Safe { Set-FpsOverlayStyle $x; Build-FpsPanel } })
+        Add-ToGrid $tiles $tile $col
+        $col++
+    }
+    [void]$sc.Body.Children.Add($tiles)
+    Add-ToGrid $row2 $sc.Card 0
+
+    $pc = New-OverlayPanelCard 'Position du compteur' 'Le coin de l''écran du jeu où il s''affiche.' '#FF2EB5'
+    $pc.Card.Margin = New-Thickness 8 0 0 0
+    $pg = New-Grid @('Auto', '*')
+    # Petit écran avec un bouton par coin
+    $scr = New-Object System.Windows.Controls.Grid
+    $scr.Width = 196; $scr.Height = 110
+    $frame = New-Object System.Windows.Controls.Border
+    $frame.CornerRadius = [System.Windows.CornerRadius]::new(12)
+    $frame.Background = Get-Brush '#0AFFFFFF'; $frame.BorderBrush = Get-Brush '#33FFFFFF'; $frame.BorderThickness = New-Thickness 2 2 2 2
+    [void]$scr.Children.Add($frame)
+    foreach ($k in @($OverlayCorners.Keys)) {
+        $sel = $k -eq $corner
+        $cb = New-Object System.Windows.Controls.Border
+        $cb.Width = 46; $cb.Height = 26
+        $cb.CornerRadius = [System.Windows.CornerRadius]::new(8)
+        $cb.HorizontalAlignment = if ($k -like '?d') { 'Right' } else { 'Left' }
+        $cb.VerticalAlignment = if ($k -like 'b?') { 'Bottom' } else { 'Top' }
+        $cb.Margin = New-Thickness 8 8 8 8
+        $cb.Background = if ($sel) { New-LinearBrush @('#00E5FF', '#B04BFF') 0 0 1 0 } else { Get-Brush '#16FFFFFF' }
+        if ($sel) { $cb.Effect = New-Glow '#00E5FF' 12 0.6 }
+        $cb.Cursor = [System.Windows.Input.Cursors]::Hand
+        $cb.ToolTip = $OverlayCorners[$k]
+        $ct = New-Text 'FPS' 10 $(if ($sel) { '#08060F' } else { '#8E88A8' }) -Bold
+        $ct.HorizontalAlignment = 'Center'; $ct.VerticalAlignment = 'Center'
+        $cb.Child = $ct
+        $cb.Tag = $k
+        $cb.Add_MouseEnter({ param($s, $e) if ($s.Tag -ne (Get-FpsOverlayCorner)) { $s.Background = Get-Brush '#2AFFFFFF' } })
+        $cb.Add_MouseLeave({ param($s, $e) if ($s.Tag -ne (Get-FpsOverlayCorner)) { $s.Background = Get-Brush '#16FFFFFF' } })
+        $cb.Add_MouseLeftButtonUp({ param($s, $e) $x = [string]$s.Tag; Invoke-Safe { Set-FpsOverlayCorner $x; Build-FpsPanel } })
+        [void]$scr.Children.Add($cb)
+    }
+    Add-ToGrid $pg $scr 0
+    $pinfo = New-Object System.Windows.Controls.StackPanel
+    $pinfo.VerticalAlignment = 'Center'; $pinfo.Margin = New-Thickness 18 0 0 0
+    [void]$pinfo.Children.Add((New-Text $OverlayCorners[$corner] 16 '#FFFFFF' -Bold))
+    $pt = New-Text 'Il reste collé au bord, même quand le chiffre change de taille.' 12 '#8E88A8'
+    $pt.Margin = New-Thickness 0 4 0 0
+    [void]$pinfo.Children.Add($pt)
+    Add-ToGrid $pg $pinfo 1
+    [void]$pc.Body.Children.Add($pg)
+    Add-ToGrid $row2 $pc.Card 1
+    [void]$panel.Children.Add($row2)
+
+    # Bon à savoir
+    $tip = New-OverlayPanelCard 'Bon à savoir' '' '#4EA8FF'
+    $tt = New-Text "En plein écran exclusif, Windows ne laisse rien s'afficher par dessus le jeu : choisis « plein écran fenêtré » ou « sans bordure » dans les options du jeu. La mesure, elle, continue quand même.`nTes FPS de chaque partie (moyenne, chutes, courbe) sont gardés dans Optimisation gaming, onglet Mes parties." 12.5 '#B9B3CC'
+    $tt.Margin = New-Thickness 19 8 0 0
+    [void]$tip.Body.Children.Add($tt)
+    [void]$panel.Children.Add($tip.Card)
+    Start-OverlayPreviewAnim
 }
 
+# Le chiffre de l'aperçu bouge comme en jeu, tant que l'onglet est affiché
+function Start-OverlayPreviewAnim {
+    if (-not $script:OverlayPreviewTimer) {
+        $script:OverlayPreviewTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $script:OverlayPreviewTimer.Interval = [TimeSpan]::FromMilliseconds(450)
+        $script:OverlayPreviewTimer.Add_Tick({
+            if ($ui.Tabs.SelectedIndex -ne $OverlayIndex -or -not $Window.IsVisible -or -not $script:OverlayPreview) { $script:OverlayPreviewTimer.Stop(); return }
+            $v = Get-Random -Minimum 136 -Maximum 149
+            $script:OverlayPreview.Fps.Text = [string]$v
+        })
+    }
+    if ($ui.Tabs.SelectedIndex -eq $OverlayIndex) { $script:OverlayPreviewTimer.Start() }
+}
+
+# Onglet « Mes parties »
 function Build-FpsPanel {
     $panel = $ui.FpsPanel
     if (-not $panel) { return }
@@ -972,12 +1213,7 @@ function Build-FpsPanel {
     [void]$sp.Children.Add((New-SwitchRow 'Mesurer mes FPS quand je joue' 'Automatique pour tes jeux (Steam, Epic, Ubisoft, EA, Battle.net, Riot, GOG, Xbox...). Pour un autre jeu : Ctrl + Maj + F pendant la partie.' (Test-FpsMeasure) {
         param($s, $e)
         $on = [bool]$s.IsChecked
-        Set-Setting 'FpsMeasure' $on
-        if (-not $on -and $script:FpsTarget) { Stop-FpsTarget }
-        Update-GameWatch
-        Update-FpsHotkey
-        Set-Status $(if ($on) { 'Mesure des FPS activée : lance un jeu.' } else { 'Mesure des FPS désactivée.' })
-        Build-OverlayPanel
+        Invoke-Safe { Set-FpsMeasure $on }
     }))
     # Le compteur à l'écran a son propre onglet
     $og = New-Grid @('*', 'Auto')
@@ -987,7 +1223,7 @@ function Build-FpsPanel {
     Add-ToGrid $og $ot 0
     $ob = New-Button 'Régler le compteur'
     $ob.Margin = New-Thickness 16 0 0 0
-    $ob.Add_Click({ Set-GamingSubPage 'overlay' })
+    $ob.Add_Click({ Show-Page $OverlayIndex })
     Add-ToGrid $og $ob 1
     [void]$sp.Children.Add($og)
     if (-not (Test-Path -LiteralPath $PresentMonExe)) { [void]$sp.Children.Add((New-Text 'PresentMon est absent du dossier de l''app : réinstalle Nevermind.' 12.5 $Colors.warn -Semi)) }

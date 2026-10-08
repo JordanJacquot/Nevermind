@@ -704,6 +704,7 @@ function Build-TrafficPage {
     $sw.IsChecked = [bool](Get-Setting 'TrafficLookup' $true)
     $sw.VerticalAlignment = 'Center'; $sw.Margin = New-Thickness 16 0 0 0
     $sw.Add_Click({ param($sender, $e) Set-Setting 'TrafficLookup' ([bool]$sender.IsChecked) })
+    $script:TrafficLookupSwitch = $sw
     Add-ToGrid $lk $sw 1
     [void]$p.Children.Add($lk)
     $mc = New-Card

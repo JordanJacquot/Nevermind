@@ -96,11 +96,10 @@ function Start-Live {
 # ---------------------------------------------------------------------------
 # Onglet gaming
 # ---------------------------------------------------------------------------
-# Sous-onglets d'Optimisation gaming, appelés par leur nom (Set-GamingSubPage 'overlay')
+# Sous-onglets d'Optimisation gaming, appelés par leur nom (Set-GamingSubPage 'lag')
 $GamingSubPages = @(
     @{ Id = 'tweaks'; Label = 'Réglages Windows'; Page = 'GPageTweaks' },
     @{ Id = 'fps'; Label = 'Mes parties'; Page = 'GPageFps' },
-    @{ Id = 'overlay'; Label = 'Overlay'; Page = 'GPageOverlay' },
     @{ Id = 'lag'; Label = 'Lag en ligne'; Page = 'GPageLag' },
     @{ Id = 'mode'; Label = 'Mode jeu'; Page = 'GPageMode' },
     @{ Id = 'profiles'; Label = 'Profils par jeu'; Page = 'GPageProfiles' }
@@ -114,7 +113,7 @@ function Set-GamingSubPage($Page) {
         $pages[$i].Visibility = if ($i -eq $Index) { 'Visible' } else { 'Collapsed' }
         $b = $script:GTabs[$i]
         if ($b) {
-            $b.Background = Get-Brush $(if ($i -eq $Index) { $Colors.accent } else { '#16FFFFFF' })
+            $b.Background = if ($i -eq $Index) { $Window.FindResource('AccentBg') } else { Get-Brush '#16FFFFFF' }
             $b.Child.Foreground = Get-Brush $(if ($i -eq $Index) { '#07060C' } else { '#D3CDE3' })
         }
     }

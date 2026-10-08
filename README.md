@@ -18,7 +18,11 @@ Les mises à jour sont ensuite proposées directement dans l'application. Relanc
 
 ## Ce que fait l'application
 
-Quatre onglets dans la barre du haut : **Ordinateur**, **Jeux**, **Réseau** et **Trafic**. Dans la même barre : une **barre de recherche** (Ctrl + K) qui propose les réglages au fil de la frappe, fautes de frappe comprises, et emmène directement au bon endroit ; et un bouton « Signaler ».
+Cinq onglets dans la barre du haut : **Ordinateur**, **Jeux**, **Réseau**, **Trafic** et **Overlay**. Dans la même barre : une **barre de recherche** (Ctrl + K) qui propose les réglages au fil de la frappe, fautes de frappe comprises, et emmène directement au bon endroit ; et une **roue crantée** qui ouvre les **Paramètres** (Général, Jeux, Réseau et vie privée, Mises à jour, Aide avec « Signaler un problème »).
+
+### Overlay
+
+Le compteur de FPS par dessus le jeu, tout au même endroit : grand aperçu en direct sur une scène de jeu (clic sur un coin pour y placer le compteur), affichage, style complet ou discret, position, et le raccourci Ctrl + Maj + F pour un jeu non reconnu.
 
 ### Ordinateur
 

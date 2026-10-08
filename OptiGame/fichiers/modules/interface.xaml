@@ -132,7 +132,7 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="TabItem">
-            <Border x:Name="Bd" CornerRadius="17" Padding="16,7" Margin="0,0,6,0">
+            <Border x:Name="Bd" CornerRadius="17" Padding="13,7" Margin="0,0,4,0">
               <Border.Background><SolidColorBrush x:Name="BdBrush" Color="#00FFFFFF"/></Border.Background>
               <ContentPresenter ContentSource="Header"/>
             </Border>
@@ -377,7 +377,7 @@
                 </LinearGradientBrush>
               </Border.BorderBrush>
               <DockPanel Margin="14,0,12,0">
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,26,0">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,18,0">
                   <Border x:Name="LogoMarkHost" Width="38" Height="38" VerticalAlignment="Center" CornerRadius="12" Padding="5" Cursor="Hand" Background="#33000000"/>
                   <Grid x:Name="LogoWordHost" VerticalAlignment="Center" Margin="10,0,0,0" Cursor="Hand"/>
                 </StackPanel>
@@ -392,15 +392,13 @@
                                FontSize="12.5" VerticalAlignment="Center" VerticalContentAlignment="Center" Margin="34,0,12,0" Padding="2,0"/>
                     </Grid>
                   </Border>
-                  <Button x:Name="TopReport" Style="{StaticResource BtnSecondary}" VerticalAlignment="Center" Padding="12,7"
-                          ToolTip="Un bug, un souci ? Crée un fichier à envoyer, sans données personnelles.">
-                    <StackPanel Orientation="Horizontal">
-                      <TextBlock Text="&#xE7BA;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#F5A524" Margin="0,1,8,0" VerticalAlignment="Center"/>
-                      <TextBlock Text="Signaler" FontSize="12.5" VerticalAlignment="Center"/>
-                    </StackPanel>
+                  <Button x:Name="TopSettings" Style="{StaticResource BtnSecondary}" VerticalAlignment="Center" Width="38" Height="38" Padding="0" ToolTip="Paramètres de Nevermind">
+                    <TextBlock x:Name="TopSettingsIcon" Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                      <TextBlock.RenderTransform><RotateTransform/></TextBlock.RenderTransform>
+                    </TextBlock>
                   </Button>
                 </StackPanel>
-                <StackPanel IsItemsHost="True" Orientation="Horizontal" VerticalAlignment="Center"/>
+                <StackPanel x:Name="TopTabsHost" IsItemsHost="True" Orientation="Horizontal" VerticalAlignment="Center"/>
               </DockPanel>
             </Border>
             <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom" VerticalOffset="8"
@@ -588,9 +586,6 @@
             </Grid>
             <ScrollViewer x:Name="GPageFps" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
               <StackPanel x:Name="FpsPanel" Margin="0,0,8,0"/>
-            </ScrollViewer>
-            <ScrollViewer x:Name="GPageOverlay" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-              <StackPanel x:Name="OverlayPanel" Margin="0,0,8,0"/>
             </ScrollViewer>
             <ScrollViewer x:Name="GPageLag" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
               <StackPanel x:Name="LagPanel" Margin="0,0,8,0"/>
@@ -850,43 +845,6 @@
               </DockPanel>
             </Border>
 
-            <Border Style="{StaticResource Card}" Margin="0,0,0,10">
-              <DockPanel>
-                <Button x:Name="BtnCheckUpdate" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Vérifier" VerticalAlignment="Center" Margin="16,0,0,0"/>
-                <StackPanel>
-                  <TextBlock Style="{StaticResource H2}" Text="Mises à jour"/>
-                  <TextBlock x:Name="UpdateStatus" Style="{StaticResource Sub}"/>
-                  <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                    <CheckBox x:Name="ChkBeta" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
-                    <TextBlock Text="Recevoir les versions bêta (nouveautés en avant-première, peuvent contenir des bugs)" Foreground="#A6A1BC" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                  </StackPanel>
-                </StackPanel>
-              </DockPanel>
-            </Border>
-
-            <Border Style="{StaticResource Card}" Margin="0,0,0,10">
-              <DockPanel>
-                <Button x:Name="BtnShortcut" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Créer le raccourci" VerticalAlignment="Center" Margin="16,0,0,0"/>
-                <StackPanel>
-                  <TextBlock Style="{StaticResource H2}" Text="Raccourci et démarrage"/>
-                  <TextBlock x:Name="ShortcutStatus" Style="{StaticResource Sub}" Text="Mets Nevermind sur ton bureau pour l'ouvrir en un double clic."/>
-                  <DockPanel Margin="0,12,0,0">
-                    <CheckBox x:Name="ChkAutoStart" DockPanel.Dock="Left" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
-                    <TextBlock Text="Lancer Nevermind au démarrage du PC (il reste réduit près de l'horloge, sans demande d'autorisation, pour le mode jeu et la mesure des FPS)" Foreground="#A6A1BC" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
-                  </DockPanel>
-                </StackPanel>
-              </DockPanel>
-            </Border>
-
-            <Border Style="{StaticResource Card}" Margin="0,0,0,10">
-              <DockPanel>
-                <Button x:Name="BtnReportProblem" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Créer le fichier" VerticalAlignment="Center" Margin="16,0,0,0"/>
-                <StackPanel>
-                  <TextBlock Style="{StaticResource H2}" Text="Signaler un problème"/>
-                  <TextBlock Style="{StaticResource Sub}" Text="Crée un fichier sur ton bureau avec le journal de l'app et la configuration de ton PC, sans tes fichiers ni ton nom. Envoie le à la personne qui t'a donné Nevermind."/>
-                </StackPanel>
-              </DockPanel>
-            </Border>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
@@ -1111,6 +1069,28 @@
           </ScrollViewer>
         </Grid>
       </TabItem>
+      <!-- Overlay : le compteur de FPS par dessus le jeu -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="&#xE890;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Margin="0,2,8,0"/>
+            <TextBlock Text="Overlay"/>
+          </StackPanel>
+        </TabItem.Header>
+        <Grid>
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+          </Grid.RowDefinitions>
+          <StackPanel>
+            <TextBlock Style="{StaticResource H1}" Text="Overlay"/>
+            <TextBlock Style="{StaticResource Sub}" Text="Ton compteur de FPS par dessus le jeu : un coup d'oeil suffit, sans quitter la partie."/>
+          </StackPanel>
+          <ScrollViewer Grid.Row="1" Margin="0,18,0,0" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="OverlayPanel" Margin="0,0,8,0"/>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
     </TabControl>
 
     <Border Grid.Row="2" Background="#00000000" Padding="36,4,36,8">
@@ -1119,6 +1099,110 @@
         <TextBlock x:Name="StatusText" Text="Prêt." Foreground="#8E88A8" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
       </DockPanel>
     </Border>
+
+    <!-- Paramètres (roue crantée en haut à droite) : un onglet par famille de réglages -->
+    <Grid x:Name="SettingsOverlay" Grid.RowSpan="3" Visibility="Collapsed">
+      <Border x:Name="SettingsBackdrop" Background="#C8060410"/>
+      <Border x:Name="SettingsBox" Width="860" Height="580" Margin="24" CornerRadius="26" BorderThickness="1" VerticalAlignment="Center" HorizontalAlignment="Center">
+        <Border.Background>
+          <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#F5161230" Offset="0"/>
+            <GradientStop Color="#F50C0A18" Offset="1"/>
+          </LinearGradientBrush>
+        </Border.Background>
+        <Border.BorderBrush>
+          <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#9900E5FF" Offset="0"/>
+            <GradientStop Color="#22FFFFFF" Offset="0.5"/>
+            <GradientStop Color="#99FF2EB5" Offset="1"/>
+          </LinearGradientBrush>
+        </Border.BorderBrush>
+        <Border.Effect><DropShadowEffect Color="#000000" BlurRadius="60" ShadowDepth="0" Opacity="0.7"/></Border.Effect>
+        <Border.RenderTransform><ScaleTransform x:Name="SettingsZoom" ScaleX="1" ScaleY="1" CenterX="430" CenterY="290"/></Border.RenderTransform>
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+          <!-- Colonne des onglets -->
+          <Border Background="#0DFFFFFF" CornerRadius="25,0,0,25" BorderBrush="#14FFFFFF" BorderThickness="0,0,1,0">
+            <DockPanel Margin="16,22,16,18">
+              <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,0,0,22">
+                <TextBlock Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="18" Foreground="#00E5FF" VerticalAlignment="Center" Margin="0,1,10,0"/>
+                <TextBlock Text="Paramètres" FontSize="20" FontWeight="Bold" Foreground="White" VerticalAlignment="Center"/>
+              </StackPanel>
+              <TextBlock x:Name="SettingsVersion" DockPanel.Dock="Bottom" Foreground="#655E7E" FontSize="11.5" Margin="8,0,0,0"/>
+              <StackPanel x:Name="SettingsTabs"/>
+            </DockPanel>
+          </Border>
+          <!-- Contenu de l'onglet -->
+          <Grid Grid.Column="1" Margin="28,22,18,18">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <DockPanel Margin="0,0,10,16">
+              <Button x:Name="SettingsClose" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Width="36" Height="36" Padding="0" ToolTip="Fermer (Échap)">
+                <TextBlock Text="&#xE711;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Button>
+              <StackPanel VerticalAlignment="Center">
+                <TextBlock x:Name="SettingsTitle" FontSize="22" FontWeight="Bold" Foreground="White"/>
+                <TextBlock x:Name="SettingsSub" FontSize="12.5" Foreground="#8E88A8" Margin="0,2,0,0" TextWrapping="Wrap"/>
+              </StackPanel>
+            </DockPanel>
+            <ScrollViewer x:Name="SettingsScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto">
+              <Grid Margin="0,0,10,0">
+                <StackPanel x:Name="SetGeneral">
+<Border Style="{StaticResource Card}" Margin="0,0,0,12" Padding="18,16">
+              <DockPanel>
+                <Button x:Name="BtnShortcut" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Créer le raccourci" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Text="Raccourci et démarrage"/>
+                  <TextBlock x:Name="ShortcutStatus" Style="{StaticResource Sub}" Text="Mets Nevermind sur ton bureau pour l'ouvrir en un double clic."/>
+                  <DockPanel Margin="0,12,0,0">
+                    <CheckBox x:Name="ChkAutoStart" DockPanel.Dock="Left" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
+                    <TextBlock Text="Lancer Nevermind au démarrage du PC (il reste réduit près de l'horloge, sans demande d'autorisation, pour le mode jeu et la mesure des FPS)" Foreground="#A6A1BC" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                  </DockPanel>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+                  <StackPanel x:Name="SetGeneralMore"/>
+                </StackPanel>
+                <StackPanel x:Name="SetGames" Visibility="Collapsed"/>
+                <StackPanel x:Name="SetNetwork" Visibility="Collapsed"/>
+                <StackPanel x:Name="SetUpdates" Visibility="Collapsed">
+<Border Style="{StaticResource Card}" Margin="0,0,0,12" Padding="18,16">
+              <DockPanel>
+                <Button x:Name="BtnCheckUpdate" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Vérifier" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Text="Mises à jour"/>
+                  <TextBlock x:Name="UpdateStatus" Style="{StaticResource Sub}"/>
+                  <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                    <CheckBox x:Name="ChkBeta" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
+                    <TextBlock Text="Recevoir les versions bêta (nouveautés en avant-première, peuvent contenir des bugs)" Foreground="#A6A1BC" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                  </StackPanel>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+                </StackPanel>
+                <StackPanel x:Name="SetHelp" Visibility="Collapsed">
+<Border Style="{StaticResource Card}" Margin="0,0,0,12" Padding="18,16">
+              <DockPanel>
+                <Button x:Name="BtnReportProblem" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Créer le fichier" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <StackPanel>
+                  <TextBlock Style="{StaticResource H2}" Text="Signaler un problème"/>
+                  <TextBlock Style="{StaticResource Sub}" Text="Crée un fichier sur ton bureau avec le journal de l'app et la configuration de ton PC, sans tes fichiers ni ton nom. Envoie le à la personne qui t'a donné Nevermind."/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+                  <StackPanel x:Name="SetHelpMore"/>
+                </StackPanel>
+              </Grid>
+            </ScrollViewer>
+          </Grid>
+        </Grid>
+      </Border>
+    </Grid>
 
     <!-- Fiche détaillée d'un point à corriger -->
     <Grid x:Name="Overlay" Grid.RowSpan="3" Visibility="Collapsed">

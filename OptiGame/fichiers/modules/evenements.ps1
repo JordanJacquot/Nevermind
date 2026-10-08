@@ -125,6 +125,7 @@ $Window.Add_KeyDown({
     # Ctrl+K ou Ctrl+F : recherche d'un réglage
     if (($e.Key -eq 'K' -or $e.Key -eq 'F') -and [System.Windows.Input.Keyboard]::Modifiers -eq 'Control') { Focus-Search; $e.Handled = $true; return }
     if ($e.Key -eq 'Escape' -and $ui.TestOverlay.Visibility -eq 'Visible') { Hide-TestPanel; return }
+    if ($e.Key -eq 'Escape' -and $ui.SettingsOverlay.Visibility -eq 'Visible' -and $ui.Overlay.Visibility -ne 'Visible') { Hide-Settings; return }
     if ($e.Key -eq 'Escape' -and $ui.NetMapOverlay.Visibility -eq 'Visible' -and $ui.Overlay.Visibility -ne 'Visible') { Hide-NetMap; return }
     if ($e.Key -ne 'Escape' -or $ui.Overlay.Visibility -ne 'Visible') { return }
     if ($script:SheetMode -eq 'display') { $script:DisplayChoice = 'revert' } else { Close-Sheet }
@@ -180,6 +181,7 @@ $ui.Tabs.Add_SelectionChanged({
         Invoke-Safe { if (-not $script:LibBuilt) { Build-Library } else { Update-LibraryView } }
         return
     }
+    if ($ui.Tabs.SelectedIndex -eq $OverlayIndex) { Invoke-Safe { Build-OverlayPanel }; return }
     if ($ui.Tabs.SelectedIndex -eq $TrafficIndex) {
         Invoke-Safe {
             if (-not $script:TrafficBuilt) { Build-TrafficPage; Start-TrafficWatch } else { Update-TrafficView }
@@ -218,8 +220,12 @@ $Window.Add_ContentRendered({
     $script:NavCrumb = $ui.Tabs.Template.FindName('NavCrumb', $ui.Tabs)
     $back = $ui.Tabs.Template.FindName('NavBack', $ui.Tabs)
     if ($back) { $back.Add_Click({ Show-Page $HubIndex }) }
-    $script:TopReport = $ui.Tabs.Template.FindName('TopReport', $ui.Tabs)
-    if ($script:TopReport) { $script:TopReport.Add_Click({ Invoke-Safe { Show-ReportPanel } }) }
+    # Roue crantée : Paramètres (Signaler un problème est dans l'onglet Aide)
+    $script:TopSettings = $ui.Tabs.Template.FindName('TopSettings', $ui.Tabs)
+    $script:SettingsGear = $ui.Tabs.Template.FindName('TopSettingsIcon', $ui.Tabs)
+    if ($script:SettingsGear) { $script:SettingsGear.RenderTransform = New-Object System.Windows.Media.RotateTransform }   # celle du modèle est figée
+    if ($script:TopSettings) { $script:TopSettings.Add_Click({ Invoke-Safe { Show-Settings } }) }
+    try { Initialize-TopBarFit } catch { Write-Log "Barre du haut: $_" }
     try { Initialize-Search } catch { Write-Log "Recherche: $_" }
     try { Start-StartupLoader } catch { Write-Log "Chargement: $_" }
     # Premières tâches derrière l'écran de chargement : l'app n'apparaît qu'une fois prête

@@ -288,7 +288,7 @@ function Export-ProblemReport([string]$Dest, [string]$Description) {
         Set-Content -LiteralPath (Join-Path $tmp 'infos.txt') -Value (& $mask ($info -join "`r`n")) -Encoding UTF8
         if ($Description.Trim()) {
             $page = if ($script:ReportPage -ge 0) { [string]$PageNames[$script:ReportPage] } else { '' }
-            if ($script:ReportPage -eq $HubIndex) { $page = 'Ordinateur' } elseif ($script:ReportPage -eq $NetIndex) { $page = 'Réseau' } elseif ($script:ReportPage -eq $TrafficIndex) { $page = 'Trafic' }
+            if ($script:ReportPage -eq $HubIndex) { $page = 'Ordinateur' } elseif ($script:ReportPage -eq $NetIndex) { $page = 'Réseau' } elseif ($script:ReportPage -eq $TrafficIndex) { $page = 'Trafic' } elseif ($script:ReportPage -eq $OverlayIndex) { $page = 'Overlay' }
             Set-Content -LiteralPath (Join-Path $tmp 'description.txt') -Value (& $mask "Ce qui ne va pas :`r`n$($Description.Trim())`r`n`r`nPage ouverte : $page") -Encoding UTF8
         }
         $errs = @(foreach ($e in @($global:Error | Select-Object -First 80)) {
@@ -369,9 +369,9 @@ $TourSteps = @(
     @{ Title = 'Tout est annulable'; Lines = @(
         'Chaque changement est sauvegardé avant d''être fait.',
         'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde garde l''historique : tu peux annuler n''importe quel changement.',
-        'Un souci ? Le bouton « Signaler », en haut à droite, crée un fichier à envoyer.',
+        'La roue crantée, en haut à droite, ouvre les Paramètres : raccourci sur le bureau, lancement au démarrage, mises à jour, et « Signaler un problème » dans l''onglet Aide.',
         'Un réglage introuvable ? Tape-le dans la barre de recherche en haut (ou Ctrl + K) : un clic t''y emmène.',
-        'Page Sauvegarde : crée un raccourci Nevermind sur ton bureau et, si tu veux, lance-le au démarrage du PC.') }
+        'L''onglet Overlay règle ton compteur de FPS par dessus le jeu.') }
 )
 
 function Show-Tour {

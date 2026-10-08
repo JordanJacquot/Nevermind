@@ -220,7 +220,7 @@ $script:T.Run.Add_Tick({
                 $script:FpsTarget = @{ Pid = $PID; Start = (Get-Date).AddSeconds(-20); Ticks = 0; Exclusive = $false; Warned = $false; Series = (New-Object System.Collections.ArrayList); Sys = (New-Object System.Collections.ArrayList); ProcCpu = @{}; ProcMem = @{} }
                 Update-FpsTarget
                 $script:FpsTarget = $null
-                Show-Page 1; Set-GamingSubPage 'overlay'; Wait-TestMs 300; Save-TestShot 'overlay-page'
+                Show-Page $OverlayIndex; Wait-TestMs 300; Save-TestShot 'overlay-page-discret'
                 Hide-FpsOverlay
                 Set-FpsOverlayStyle 'complet'
                 # Mesure lancée puis arrêtée sur un programme (sans droits admin, PresentMon refuse : l'app ne doit pas planter)
@@ -250,6 +250,39 @@ $script:T.Run.Add_Tick({
                 Hide-TestPanel
                 Set-GamingSubPage 'tweaks'
                 "$hk, overlay, arrêt propre et comparaison OK"
+            }
+            Test-Step 'Onglet Overlay' {
+                $oldOn = Test-FpsOverlay; $oldStyle = Get-FpsOverlayStyle; $oldCorner = Get-FpsOverlayCorner; $oldMeasure = Test-FpsMeasure
+                try {
+                    Set-Setting 'FpsMeasure' $true; Set-Setting 'FpsOverlay' $true
+                    Assert-Test ($ui.Tabs.Items[$OverlayIndex].Visibility -eq 'Visible') 'onglet Overlay absent de la barre'
+                    Show-Page $OverlayIndex; Wait-TestMs 500
+                    Assert-Test ($ui.Tabs.SelectedIndex -eq $OverlayIndex -and $ui.OverlayPanel.Children.Count -ge 3) 'page Overlay vide'
+                    foreach ($a in 'Afficher le compteur pendant la partie', 'Style du compteur', 'Position du compteur', 'Raccourci Ctrl + Maj + F') {
+                        Assert-Test ([bool](Find-PageElement $ui.Tabs.Items[$OverlayIndex].Content $a)) "« $a » absent de la page"
+                    }
+                    Assert-Test (-not ($GamingSubPages | Where-Object { $_.Id -eq 'overlay' })) 'sous-onglet Overlay encore dans Optimisation gaming'
+                    # L'aperçu bouge tout seul
+                    $v1 = $script:OverlayPreview.Fps.Text; Wait-TestMs 1400; $v2 = $script:OverlayPreview.Fps.Text
+                    Assert-Test ($script:OverlayPreviewTimer.IsEnabled) 'aperçu figé'
+                    Save-TestShot 'overlay-onglet'
+                    # Coin et style changés depuis la page : réglages enregistrés, aperçu à jour
+                    Set-FpsOverlayCorner 'bd'; Wait-TestMs 200
+                    Assert-Test ((Get-FpsOverlayCorner) -eq 'bd' -and $script:OverlayPreview.Root.HorizontalAlignment -eq 'Right' -and $script:OverlayPreview.Root.VerticalAlignment -eq 'Bottom') 'coin non appliqué à l''aperçu'
+                    Set-FpsOverlayStyle 'discret'; Wait-TestMs 200
+                    Assert-Test ($script:OverlayPreview.Discreet) 'style discret non appliqué à l''aperçu'
+                    Save-TestShot 'overlay-onglet-discret'
+                    # Mesure coupée : avertissement et bouton pour la réactiver
+                    Set-Setting 'FpsMeasure' $false; Build-OverlayPanel
+                    Assert-Test ([bool](Find-PageElement $ui.OverlayPanel 'Activer la mesure')) 'pas de bouton pour réactiver la mesure'
+                    # En quittant l'onglet, l'aperçu s'arrête
+                    Show-Page $HubIndex; Wait-TestMs 700
+                    Assert-Test (-not $script:OverlayPreviewTimer.IsEnabled) 'aperçu toujours animé hors de l''onglet'
+                } finally {
+                    Set-Setting 'FpsMeasure' $oldMeasure; Set-Setting 'FpsOverlay' $oldOn; Set-Setting 'FpsOverlayStyle' $oldStyle; Set-Setting 'FpsOverlayCorner' $oldCorner
+                    Build-OverlayPanel
+                }
+                "page complète, aperçu animé ($v1 puis $v2), coin et style appliqués, mesure coupée signalée"
             }
             Test-Step 'Diagnostic des FPS (5 situations)' {
                 $base = @{ CpuRatio = 0.5; GpuRatio = 0.6; Stutters = 0; Cpu = 30; CpuMax = 50; Perf = 105; Ram = 55; Gpu = 60; Temp = 65; Vram = 50; Power = 60; Disk = 10; DiskAvg = 3
@@ -592,21 +625,62 @@ $script:T.Run.Add_Tick({
                 $fs = [IO.File]::Create((Join-Path $script:T.Dir 'captures\recherche-suggestions.png')); $enc.Save($fs); $fs.Close()
                 # Aller au réglage : bonne page, bon sous-onglet, réglage mis en évidence
                 Open-SearchEntry (@(Find-Settings 'position compteur')[0]); Wait-TestMs 400
-                Assert-Test ($ui.Tabs.SelectedIndex -eq 1 -and $script:GamingSubPage -eq 'overlay') "page $($ui.Tabs.SelectedIndex), sous-onglet $($script:GamingSubPage)"
+                Assert-Test ($ui.Tabs.SelectedIndex -eq $OverlayIndex) "page $($ui.Tabs.SelectedIndex) au lieu de l'onglet Overlay"
                 Assert-Test (-not $script:Search.Popup.IsOpen -and -not $script:Search.Input.Text) 'barre non refermée'
                 Assert-Test ($script:SearchLastHit -and $script:SearchLastHit.Effect) 'réglage non mis en évidence'
                 Assert-Test (-not $script:Search.Input.IsKeyboardFocused) 'la barre garde le focus'
                 Save-TestShot 'recherche-arrivee'
                 Open-SearchEntry (@(Find-Settings 'raccourci bureau')[0]); Wait-TestMs 400
-                $el = Find-PageElement $ui.Tabs.Items[7].Content 'Raccourci et démarrage'
-                Assert-Test ($ui.Tabs.SelectedIndex -eq 7 -and $el) 'réglage « Raccourci et démarrage » non trouvé sur la page'
+                $el = Find-PageElement $ui.SettingsScroll 'Raccourci et démarrage'
+                Assert-Test ($ui.SettingsOverlay.Visibility -eq 'Visible' -and $script:SettingsTab -eq 'general' -and $el) 'réglage « Raccourci et démarrage » non trouvé dans les Paramètres'
+                Hide-Settings
                 Wait-TestMs 2500
-                "$($cases.Count) recherches justes (fautes de frappe comprises), suggestions affichées, arrivée sur Overlay et Sauvegarde"
+                "$($cases.Count) recherches justes (fautes de frappe comprises), suggestions affichées, arrivée sur Overlay et dans les Paramètres"
             }
-            Test-Step 'Signaler un problème (bouton en haut)' {
-                Assert-Test ($null -ne $script:TopReport -and $script:TopReport.IsVisible) 'bouton « Signaler un problème » absent en haut'
+            Test-Step 'Paramètres (roue crantée)' {
+                Assert-Test ($null -ne $script:TopSettings -and $script:TopSettings.IsVisible) 'roue crantée absente en haut'
+                Assert-Test ($null -eq $ui.Tabs.Template.FindName('TopReport', $ui.Tabs)) 'bouton Signaler encore dans la barre'
                 Show-Page 6; Wait-TestMs 300
-                Assert-Test $script:TopReport.IsVisible 'bouton absent sur une page intérieure'
+                Assert-Test $script:TopSettings.IsVisible 'roue absente sur une page intérieure'
+                $script:TopSettings.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))); Wait-TestMs 400
+                Assert-Test ($ui.SettingsOverlay.Visibility -eq 'Visible') 'la roue n''ouvre pas les Paramètres'
+                Save-TestShot 'parametres-general'
+                $seen = @()
+                foreach ($t in $SettingsTabs) {
+                    Set-SettingsTab $t.Id; Wait-TestMs 150
+                    Assert-Test ($ui[$t.Panel].Visibility -eq 'Visible' -and $ui[$t.Panel].Children.Count) "onglet $($t.Label) vide"
+                    $seen += $t.Label
+                    if ($t.Id -in 'jeux', 'aide') { Save-TestShot "parametres-$($t.Id)" }
+                }
+                # Un réglage changé ici est à jour sur sa page (jaquettes : sans effet de bord)
+                $old = Test-CoversOnline
+                Set-SettingsTab 'jeux'
+                $sw = @($ui.SetGames.Children | ForEach-Object { $_.Child } | Where-Object { $_ -is [System.Windows.Controls.Grid] -and (Get-TextBlockText $_.Children[0].Children[0]) -eq 'Jaquettes depuis Internet' })[0]
+                Assert-Test ($null -ne $sw) 'interrupteur Jaquettes introuvable'
+                $chk = $sw.Children[1]; $chk.IsChecked = -not $old
+                $chk.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+                Assert-Test ((Test-CoversOnline) -ne $old -and [bool]$ui.ChkLibCovers.IsChecked -ne $old) 'réglage non repris sur la page Jeux'
+                Set-Setting 'LibCoversOnline' $old; $ui.ChkLibCovers.IsChecked = $old
+                # Signaler un problème : dans Aide
+                Set-SettingsTab 'aide'
+                Assert-Test ($ui.BtnReportProblem.IsVisible) 'Signaler un problème absent de l''onglet Aide'
+                # Échap ferme
+                $ev = New-Object System.Windows.Input.KeyEventArgs ([System.Windows.Input.Keyboard]::PrimaryDevice, [System.Windows.PresentationSource]::FromVisual($Window), 0, [System.Windows.Input.Key]::Escape)
+                $ev.RoutedEvent = [System.Windows.UIElement]::KeyDownEvent; $Window.RaiseEvent($ev)
+                Assert-Test ($ui.SettingsOverlay.Visibility -ne 'Visible') 'Échap ne ferme pas les Paramètres'
+                # Fenêtre au plus étroit : les 5 onglets ne passent pas sous la recherche
+                $oldW = $Window.Width; $wasMax = $Window.WindowState
+                $Window.WindowState = 'Normal'; $Window.Width = $Window.MinWidth; Wait-TestMs 400; Update-TopBarFit; $Window.UpdateLayout()
+                $tb = $script:TopBar
+                $tabsRight = $tb.Tabs.TranslatePoint([System.Windows.Point]::new($tb.Tabs.ActualWidth, 0), $Window).X
+                $searchLeft = $tb.Search.TranslatePoint([System.Windows.Point]::new(0, 0), $Window).X
+                Save-TestShot 'barre-etroite'
+                $Window.Width = $oldW; $Window.WindowState = $wasMax; Wait-TestMs 300
+                Assert-Test ($tabsRight -le $searchLeft) "onglets jusqu'à $([int]$tabsRight) px, recherche à $([int]$searchLeft) px"
+                Show-Page $HubIndex
+                "$($seen.Count) onglets ($($seen -join ', ')), réglage synchronisé avec sa page, Échap ferme, barre du haut tenue à $([int]$Window.MinWidth) px"
+            }
+            Test-Step 'Signaler un problème (Paramètres, Aide)' {
                 Show-ReportPanel; $script:ReportBox.Text = 'Le jeu rame depuis la mise à jour'; Wait-TestMs 400; Save-TestShot 'signaler'; Hide-TestPanel
                 $dir = Join-Path $DataDir 'essai-rapport'; New-Item -ItemType Directory -Force -Path $dir | Out-Null
                 $zip = Export-ProblemReport $dir 'Le jeu rame depuis la mise à jour'
@@ -615,7 +689,7 @@ $script:T.Run.Add_Tick({
                 try { $names = @($z.Entries | ForEach-Object { $_.Name }) } finally { $z.Dispose() }
                 Assert-Test ($names -contains 'description.txt' -and $names -contains 'infos.txt') "contenu du fichier : $($names -join ', ')"
                 Show-Page $HubIndex
-                "bouton visible partout, fichier avec la description ($($names.Count) fichiers)"
+                "fichier avec la description ($($names.Count) fichiers)"
             }
             Test-Step 'Écran de chargement au démarrage' {
                 Wait-TestMs 500

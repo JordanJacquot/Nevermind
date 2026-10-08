@@ -2,7 +2,7 @@
 # Suggestions au fil de la frappe ; un clic ouvre la bonne page et fait clignoter le réglage.
 # Chargé par OptiGame.ps1 après les pages (il connaît leurs numéros) et avant evenements.ps1.
 
-# Réglages et actions trouvables. P : page (numéro ou 'trafic'), S : sous-onglet d'Optimisation gaming,
+# Réglages et actions trouvables. P : page (numéro, 'jeux', 'reseau', 'trafic' ou 'overlay'), S : sous-onglet d'Optimisation gaming,
 # A : texte affiché sur la page, mis en évidence à l'arrivée, K : autres mots qui doivent le trouver,
 # Do : action après l'arrivée (ouvrir une fenêtre). Les accents et majuscules ne comptent pas.
 $SearchEntries = @(
@@ -12,10 +12,10 @@ $SearchEntries = @(
     @{ T = 'Mesurer mes FPS'; P = 1; S = 'fps'; A = 'Mesurer mes FPS quand je joue'; K = 'fps images par seconde presentmon mesure partie framerate' },
     @{ T = 'Mes parties (historique des FPS)'; P = 1; S = 'fps'; A = 'Mesurer mes FPS quand je joue'; K = 'historique parties fps moyenne bas avant apres comparaison' },
     @{ T = 'Mes FPS ne sont pas normaux'; P = 1; S = 'fps'; A = 'Mes FPS ne sont pas normaux : trouver pourquoi'; K = 'diagnostic fps rame saccades chutes freeze lent' },
-    @{ T = 'Raccourci Ctrl+Maj+F (mesure manuelle)'; P = 1; S = 'overlay'; A = 'Afficher le compteur pendant la partie'; K = 'raccourci clavier hotkey touche mesure manuelle autre jeu' },
-    @{ T = 'Compteur de FPS à l''écran (overlay)'; P = 1; S = 'overlay'; A = 'Afficher le compteur pendant la partie'; K = 'overlay compteur afficher ecran osd fps' },
-    @{ T = 'Style du compteur : complet ou discret'; P = 1; S = 'overlay'; A = 'Style du compteur'; K = 'overlay discret petit transparent semi transparence taille apparence' },
-    @{ T = 'Position du compteur'; P = 1; S = 'overlay'; A = 'Position du compteur'; K = 'overlay coin haut bas gauche droite emplacement deplacer' },
+    @{ T = 'Raccourci Ctrl+Maj+F (mesure manuelle)'; P = 'overlay'; A = 'Raccourci Ctrl + Maj + F'; K = 'raccourci clavier hotkey touche mesure manuelle autre jeu' },
+    @{ T = 'Compteur de FPS à l''écran (overlay)'; P = 'overlay'; A = 'Afficher le compteur pendant la partie'; K = 'overlay compteur afficher ecran osd fps' },
+    @{ T = 'Style du compteur : complet ou discret'; P = 'overlay'; A = 'Style du compteur'; K = 'overlay discret petit transparent semi transparence taille apparence' },
+    @{ T = 'Position du compteur'; P = 'overlay'; A = 'Position du compteur'; K = 'overlay coin haut bas gauche droite emplacement deplacer' },
     @{ T = 'Lag en ligne'; P = 1; S = 'lag'; A = 'Mesurer ma connexion quand je joue'; K = 'lag ping latence serveur jeu connexion partie online' },
     @{ T = 'Tester ma connexion pour le jeu (30 s)'; P = 1; S = 'lag'; A = 'Tester ma connexion maintenant (30 s)'; K = 'test lag ping latence' },
     @{ T = 'Mode jeu : fermer des applis pendant que je joue'; P = 1; S = 'mode'; A = 'Fermer des applis pendant que je joue'; K = 'mode jeu fermer applis discord chrome navigateur' },
@@ -61,10 +61,10 @@ $SearchEntries = @(
     @{ T = 'Historique des changements'; P = 7; A = 'Historique des changements'; K = 'historique annuler changement' },
     @{ T = 'Point de restauration Windows'; P = 7; A = 'Point de restauration Windows'; K = 'restauration systeme sauvegarde' },
     @{ T = 'Rapport du PC'; P = 7; A = 'Rapport de ton PC'; K = 'rapport export html partager configuration' },
-    @{ T = 'Mises à jour de Nevermind'; P = 7; A = 'Mises à jour'; K = 'version update maj nouvelle' },
-    @{ T = 'Versions bêta'; P = 7; A = 'Mises à jour'; K = 'beta preversion avant premiere' },
-    @{ T = 'Raccourci sur le bureau'; P = 7; A = 'Raccourci et démarrage'; K = 'raccourci bureau icone' },
-    @{ T = 'Lancer Nevermind au démarrage du PC'; P = 7; A = 'Raccourci et démarrage'; K = 'demarrage automatique boot windows lancement auto allumage' },
+    @{ T = 'Mises à jour de Nevermind'; P = 'parametres'; Tab = 'maj'; A = 'Mises à jour'; K = 'version update maj nouvelle' },
+    @{ T = 'Versions bêta'; P = 'parametres'; Tab = 'maj'; A = 'Mises à jour'; K = 'beta preversion avant premiere' },
+    @{ T = 'Raccourci sur le bureau'; P = 'parametres'; Tab = 'general'; A = 'Raccourci et démarrage'; K = 'raccourci bureau icone' },
+    @{ T = 'Lancer Nevermind au démarrage du PC'; P = 'parametres'; Tab = 'general'; A = 'Raccourci et démarrage'; K = 'demarrage automatique boot windows lancement auto allumage' },
     @{ T = 'Signaler un problème'; P = 7; A = 'Signaler un problème'; K = 'bug erreur rapport aide support' },
     # Réseau
     @{ T = 'Scanner le réseau'; P = 'reseau'; A = 'Scanner le réseau'; K = 'appareils wifi box scan connectes' },
@@ -74,6 +74,9 @@ $SearchEntries = @(
     # Trafic
     @{ T = 'Ce qui sort de ton PC'; P = 'trafic'; A = 'Ce qui sort de ton PC'; K = 'trafic internet donnees envoyees programmes connexions espion' },
     @{ T = 'Identifier les serveurs sans nom'; P = 'trafic'; A = 'Identifier les serveurs sans nom'; K = 'rdap annuaire serveur ip proprietaire' },
+    @{ T = 'Paramètres de Nevermind'; P = 'parametres'; Tab = 'general'; K = 'parametres reglages options configuration roue engrenage settings' },
+    @{ T = 'Signaler un problème'; P = 'parametres'; Tab = 'aide'; A = 'Signaler un problème'; K = 'bug souci erreur rapport envoyer probleme aide' },
+    @{ T = 'Revoir la visite guidée'; P = 'parametres'; Tab = 'aide'; A = 'Visite guidée'; K = 'visite tutoriel aide decouvrir' },
     @{ T = 'Ce que Windows envoie à Microsoft'; P = 'trafic'; A = 'Ce que Windows envoie à Microsoft'; K = 'telemetrie microsoft vie privee identifiant confidentialite diagnostic'; Do = { Show-WindowsPrivacy } },
     @{ T = 'Bloquer Internet à un programme'; P = 'trafic'; A = 'Ce qui sort de ton PC'; K = 'pare feu bloquer internet firewall programme' }
 )
@@ -135,6 +138,8 @@ function Get-SearchWhere($E) {
         'reseau' { 'Réseau' }
         'jeux' { 'Jeux' }
         'trafic' { 'Trafic' }
+        'overlay' { 'Overlay' }
+        'parametres' { 'Paramètres › ' + (@($SettingsTabs | Where-Object { $_.Id -eq $E.Tab })[0]).Label }
         default { "Ordinateur › $($PageNames[[int]$E.P])$sub" }
     }
 }
@@ -249,7 +254,15 @@ function Open-SearchEntry($E) {
     if ($ui.TestOverlay.Visibility -eq 'Visible') { Hide-TestPanel }
     if ($ui.NetMapOverlay.Visibility -eq 'Visible') { Hide-NetMap }
     if ($ui.Overlay.Visibility -eq 'Visible' -and $script:SheetMode -ne 'display') { Close-Sheet }
-    $page = switch ($E.P) { 'reseau' { $NetIndex } 'trafic' { $TrafficIndex } 'jeux' { $GamesIndex } default { [int]$E.P } }
+    if ($E.P -ne 'parametres') { Hide-Settings }
+    if ($E.P -eq 'parametres') {
+        Show-Settings $E.Tab
+        Set-Status "$($E.T) : $($E.Where)"
+        $anchor = [string]$E.A
+        if ($anchor) { $null = $Window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Loaded, [Action]{ try { $el = Find-PageElement $ui.SettingsScroll $anchor; if ($el) { Show-Highlight $el } } catch { Write-Log "Recherche: $_" } }) }
+        return
+    }
+    $page = switch ($E.P) { 'reseau' { $NetIndex } 'trafic' { $TrafficIndex } 'overlay' { $OverlayIndex } 'jeux' { $GamesIndex } default { [int]$E.P } }
     Show-Page $page
     if ($E.S) { Build-GamingTabs; Set-GamingSubPage $E.S }
     if ($E.Game) { $ui.LibSearch.Text = ''; $script:LibFilter = 'Tous'; Update-LibraryView; Set-LibrarySelection $E.Game }
