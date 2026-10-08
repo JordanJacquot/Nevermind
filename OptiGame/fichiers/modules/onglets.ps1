@@ -151,6 +151,7 @@ function Build-GamingTab {
     $tweaks = @(Get-AvailableTweaks)
     $done = 0
     foreach ($t in $tweaks) {
+        Step-UI
         $ok = Test-Tweak $t
         if ($ok) { $done++ }
         $card = New-Card
@@ -338,6 +339,7 @@ function Update-StartupList {
     $panel = $ui.StartupPanel
     $panel.Children.Clear()
     foreach ($s in $script:StartupEntries) {
+        Step-UI
         $card = New-Card
         $card.Padding = New-Thickness 14 12 16 12
         $g = New-Grid @('Auto', '*', 'Auto')

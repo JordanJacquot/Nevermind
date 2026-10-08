@@ -111,6 +111,7 @@ function Build-Hub {
     }
     $n = 0
     foreach ($fam in $HubFamilies) {
+        Step-UI
         # Panneau de verre bordé de la couleur de la famille
         $panel = New-Object System.Windows.Controls.Border
         $panel.CornerRadius = [System.Windows.CornerRadius]::new(24)
@@ -133,6 +134,7 @@ function Build-Hub {
         $sub.Margin = New-Thickness 28 2 0 12
         [void]$sp.Children.Add($sub)
         foreach ($pg in $fam.Pages) {
+            Step-UI
             $row = New-Object System.Windows.Controls.Border
             $row.CornerRadius = [System.Windows.CornerRadius]::new(16)
             $row.Background = Get-Brush '#0CFFFFFF'

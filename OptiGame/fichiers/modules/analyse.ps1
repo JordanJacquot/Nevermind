@@ -172,6 +172,7 @@ function Show-HealthCards($Cards) {
     $ui.HealthRight.Children.Clear()
     $hl = 0; $hr = 0
     foreach ($c in $Cards) {
+        Step-UI
         $h = 4 + 2 * $c.Bars.Count + $c.Lines.Count + 2 * $c.Notes.Count + $(if ($c.Action) { 2 } else { 0 })
         if ($hl -le $hr) { [void]$ui.HealthLeft.Children.Add((New-HealthCard $c)); $hl += $h }
         else { [void]$ui.HealthRight.Children.Add((New-HealthCard $c)); $hr += $h }

@@ -280,6 +280,7 @@ function Build-GameProfiles {
     $gpuNames = @($script:AnalysisData.GPUs | ForEach-Object { [string]$_.Name } | Where-Object { $_ -notmatch 'Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta|Microsoft Basic' })
     $dual = $gpuNames.Count -ge 2
     foreach ($g in $games) {
+        Step-UI
         $card = New-Card
         $card.Padding = New-Thickness 16 10 16 10
         $card.Margin = New-Thickness 0 0 0 6
@@ -330,10 +331,10 @@ function Build-GameProfiles {
 }
 
 function Build-GameSections {
-    Build-GameModeCard
-    Build-FpsPanel
-    Build-OverlayPanel
-    Build-GameProfiles
+    Build-GameModeCard; Step-UI
+    Build-FpsPanel; Step-UI
+    Build-OverlayPanel; Step-UI
+    Build-GameProfiles; Step-UI
     Build-LagPanel
 }
 
@@ -1016,5 +1017,5 @@ function Build-FpsPanel {
     $h = New-Text 'Dernières parties (clique pour le détail)' 13 '#A6A1BC' -Semi
     $h.Margin = New-Thickness 0 0 0 6
     [void]$panel.Children.Add($h)
-    foreach ($s in @($recent | Select-Object -First 12)) { [void]$panel.Children.Add((New-FpsRow $s)) }
+    foreach ($s in @($recent | Select-Object -First 12)) { Step-UI; [void]$panel.Children.Add((New-FpsRow $s)) }
 }

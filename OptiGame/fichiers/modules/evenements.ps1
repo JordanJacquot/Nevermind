@@ -224,45 +224,63 @@ $Window.Add_ContentRendered({
     try { Start-StartupLoader } catch { Write-Log "Chargement: $_" }
     # Premières tâches derrière l'écran de chargement : l'app n'apparaît qu'une fois prête
     $t0 = Get-Date
+    # Détecteur de blocages du chargement : note dans le journal chaque gel de la fenêtre (animation figée) et ce qui tournait
+    $script:StartGaps = @{ Sw = [Diagnostics.Stopwatch]::StartNew(); Last = 0.0; Seen = (New-Object System.Collections.ArrayList) }
+    $gapT = New-Object System.Windows.Threading.DispatcherTimer
+    $gapT.Interval = [TimeSpan]::FromMilliseconds(15)
+    $gapT.Add_Tick({
+        $g = $script:StartGaps
+        if (-not $g) { return }
+        $now = $g.Sw.Elapsed.TotalMilliseconds
+        if ($g.Last -and ($now - $g.Last) -gt 120) { Write-Log ("Chargement : fenêtre figée {0:N0} ms ({1})" -f ($now - $g.Last), ((@($g.Seen) | Select-Object -Unique) -join ', ')) }
+        if ($g.Seen.Count -gt 1) { $keep = $g.Seen[-1]; $g.Seen.Clear(); [void]$g.Seen.Add($keep) }
+        $g.Last = $now
+    })
+    $gapT.Start()
+    $script:Starting = $true
+    $script:StartGapTimer = $gapT
     try {
         Set-StartupStep 'Préparation de l''interface...' 5
-        Build-Hub
+        Step-UI; [void]$script:StartGaps.Seen.Add('Build-Hub'); Build-Hub
         $ui.Tabs.SelectedIndex = $HubIndex
-        Update-Hub
-        Start-Live
+        Step-UI; [void]$script:StartGaps.Seen.Add('Update-Hub'); Update-Hub
+        Step-UI; [void]$script:StartGaps.Seen.Add('Start-Live'); Start-Live
         Set-StartupStep 'Analyse de ton PC...' 12
-        Invoke-Safe { Invoke-Analysis }
+        Invoke-Safe { Step-UI; [void]$script:StartGaps.Seen.Add('Invoke-Analysis'); Invoke-Analysis }
         Set-StartupStep 'Réglages gaming et programmes au démarrage...' 50
         Invoke-Safe {
-            Build-GamingTab
-            Update-StartupList
+            Step-UI; [void]$script:StartGaps.Seen.Add('Build-GamingTab'); Build-GamingTab
+            Step-UI; [void]$script:StartGaps.Seen.Add('Update-StartupList'); Update-StartupList
         }
         Set-StartupStep 'Connexion et sauvegardes...' 62
         Invoke-Safe {
-            Update-NetInfo
-            Update-BackupSummary
-            Update-HistoryList
+            Step-UI; [void]$script:StartGaps.Seen.Add('Update-NetInfo'); Update-NetInfo
+            Step-UI; [void]$script:StartGaps.Seen.Add('Update-BackupSummary'); Update-BackupSummary
+            Step-UI; [void]$script:StartGaps.Seen.Add('Update-HistoryList'); Update-HistoryList
         }
         Invoke-Safe {
             if (-not $env:OPTIGAME_TEST) { Invoke-NameMigration; Update-AutoStartPath }
-            Update-ShortcutCard
+            Step-UI; [void]$script:StartGaps.Seen.Add('Update-ShortcutCard'); Update-ShortcutCard
         }
         Set-StartupStep 'Protection du PC...' 72
         Invoke-Safe {
-            if (-not $script:SecurityBuilt) { $script:SecurityBuilt = $true; Update-SecurityTab }
-            Update-Hub
+            if (-not $script:SecurityBuilt) { $script:SecurityBuilt = $true; Step-UI; [void]$script:StartGaps.Seen.Add('Update-SecurityTab'); Update-SecurityTab }
+            Step-UI; [void]$script:StartGaps.Seen.Add('Update-Hub'); Update-Hub
         }
         Set-StartupStep 'Recherche de tes jeux...' 86
         Invoke-Safe {
-            Update-GameCache
-            Update-Hub   # la carte « Ta dernière partie » a besoin de la liste des jeux
-            Update-GameWatch
-            Update-FpsHotkey
+            Step-UI; [void]$script:StartGaps.Seen.Add('Update-GameCache'); Update-GameCache
+            Step-UI; [void]$script:StartGaps.Seen.Add('Update-Hub'); Update-Hub   # la carte « Ta dernière partie » a besoin de la liste des jeux
+            Step-UI; [void]$script:StartGaps.Seen.Add('Update-GameWatch'); Update-GameWatch
+            Step-UI; [void]$script:StartGaps.Seen.Add('Update-FpsHotkey'); Update-FpsHotkey
             if (Get-Setting 'NetWatch' $false) { Set-NetWatch $true }
         }
         Set-StartupStep 'C''est prêt !' 100
+        $script:StartGapTimer.Stop(); $script:StartGaps = $null; $script:Starting = $false
         Write-Log "Démarrage terminé en $([math]::Round(((Get-Date) - $t0).TotalSeconds, 1)) s"
     } finally {
+        $script:Starting = $false
+        if ($script:StartGapTimer) { $script:StartGapTimer.Stop() }
         $script:StartupThen = {
             Set-Status 'Prêt.'
             Invoke-Safe { Invoke-WelcomeChecks }

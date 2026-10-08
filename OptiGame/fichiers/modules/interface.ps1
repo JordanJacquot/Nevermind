@@ -26,6 +26,14 @@ function Update-UI {
     $Window.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Background)
 }
 
+# Pendant l'écran de chargement : rend la main à la fenêtre toutes les 40 ms au plus,
+# pour que l'animation continue de tourner pendant les longues constructions de pages.
+function Step-UI {
+    if (-not $script:Starting) { return }
+    if (-not $script:StepSw) { $script:StepSw = [Diagnostics.Stopwatch]::StartNew() }
+    if ($script:StepSw.ElapsedMilliseconds -ge 40) { Update-UI; $script:StepSw.Restart() }
+}
+
 function Set-Status([string]$Text) {
     $ui.StatusText.Text = $Text
     # Pendant le chargement, le détail de ce que fait l'app s'affiche sous la barre

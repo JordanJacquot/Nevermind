@@ -5,6 +5,7 @@
 # Tableau de bord
 # ---------------------------------------------------------------------------
 function Add-Finding($List, [string]$Status, [string]$Titre, [string]$Detail, [int]$Weight, [string]$Action, [string]$ActionLabel, [string]$Id, $Fix) {
+    Step-UI
     if (-not $Id) { $Id = $Titre }
     [void]$List.Add([pscustomobject]@{
         Id = $Id; Status = $Status; Titre = $Titre; Detail = $Detail; Weight = $Weight
@@ -131,6 +132,7 @@ function Show-Improvements($Active) {
     }
 
     foreach ($f in $items) {
+        Step-UI
         $row = New-Object System.Windows.Controls.Border
         $row.CornerRadius = [System.Windows.CornerRadius]::new(10)
         $row.Padding = New-Thickness 12 10 12 10
@@ -227,7 +229,7 @@ function Show-Findings($All, $Active) {
     $issues = @($Active | Where-Object { $_.Status -ne 'ok' })
     $script:OkFindings = @($Active | Where-Object { $_.Status -eq 'ok' })
     $script:IgnoredFindings = @($All | Where-Object { $script:Ignored -contains $_.Id -and $_.Status -ne 'ok' })
-    foreach ($f in $issues) { Add-FindingCard $panel $f }
+    foreach ($f in $issues) { Step-UI; Add-FindingCard $panel $f }
     if (-not $issues.Count) {
         Add-FindingCard $panel ([pscustomobject]@{ Status = 'ok'; Titre = 'Rien à corriger'; Detail = 'Ton PC est bien réglé pour le jeu.'; Gain = 0; Fix = $null; Action = $null })
     }
@@ -381,6 +383,7 @@ function Invoke-SheetRun {
     $script:RunLog = New-Object System.Collections.ArrayList
     try {
         foreach ($f in $items) {
+        Step-UI
             Set-Status "En cours : $($f.Titre)..."
             try {
                 & $f.Fix.Run $f.Fix.Args
