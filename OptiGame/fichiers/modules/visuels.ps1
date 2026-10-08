@@ -154,30 +154,30 @@ function New-Gauge([string]$Label, [double]$Value, [double]$Max, [string]$Fmt, [
     $g = New-Object System.Windows.Controls.Canvas
     $g.Width = 144; $g.Height = 144
 
-    # Disque central en verre
+    # Halo très léger de la couleur au centre (style verre néon)
     $disc = New-Object System.Windows.Shapes.Ellipse
     $disc.Width = 88; $disc.Height = 88
     $rb = New-Object System.Windows.Media.RadialGradientBrush
-    $rb.GradientOrigin = [System.Windows.Point]::new(0.4, 0.3)
-    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new((Get-Color '#222A38'), 0))
-    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new((Get-Color '#12161E'), 1))
-    $disc.Fill = $rb; $disc.Stroke = New-AlphaBrush $Color 50; $disc.StrokeThickness = 1
+    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new((New-AlphaBrush $Color 34).Color, 0))
+    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new((New-AlphaBrush $Color 0).Color, 1))
+    $disc.Fill = $rb
     [System.Windows.Controls.Canvas]::SetLeft($disc, $c - 44); [System.Windows.Controls.Canvas]::SetTop($disc, $c - 44)
     [void]$g.Children.Add($disc)
 
     # Couronne de LED (éteinte, puis allumée jusqu'à la valeur)
     $ledOff = New-LoaderArc $c 69 135 270 (Get-Brush '#1E2531') 4
+    $ledOff.Visibility = 'Collapsed'
     $ledOff.StrokeStartLineCap = 'Flat'; $ledOff.StrokeEndLineCap = 'Flat'
     $ledOff.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new([double[]]@(0.7, 1.3))
     [void]$g.Children.Add($ledOff)
     $led = New-LoaderArc $c 69 135 0.1 (Get-Brush $Color) 4
     $led.StrokeStartLineCap = 'Flat'; $led.StrokeEndLineCap = 'Flat'
     $led.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new([double[]]@(0.7, 1.3))
-    $led.Opacity = 0.75
+    $led.Visibility = 'Collapsed'   # ancienne couronne de LED, retirée avec la DA néon
     [void]$g.Children.Add($led)
 
     # Piste et arc de valeur en dégradé lumineux
-    [void]$g.Children.Add((New-LoaderArc $c $r 135 270 (Get-Brush '#1A2029') 10))
+    [void]$g.Children.Add((New-LoaderArc $c $r 135 270 (Get-Brush '#22FFFFFF') 10))
     $arc = New-LoaderArc $c $r 135 0.1 (New-LinearBrush @($Color, (Get-LightHex $Color 0.45)) 0 1 1 0) 10
     $arc.Effect = New-Glow $Color 18 0.65
     [void]$g.Children.Add($arc)
@@ -188,6 +188,7 @@ function New-Gauge([string]$Label, [double]$Value, [double]$Max, [string]$Fmt, [
     $knob.Stroke = Get-Brush $Color; $knob.StrokeThickness = 3
     $knob.Effect = New-Glow $Color 14 0.9
     $knob.Visibility = 'Hidden'
+    $knob.Width = 10; $knob.Height = 10; $knob.Stroke = $null
     [void]$g.Children.Add($knob)
 
     # Valeur au centre
@@ -226,8 +227,8 @@ function Update-GaugeVisual($S, [double]$V) {
     $S.Arc.Data = Get-ArcGeometry $S.C $S.R 135 $sweep
     $S.Led.Data = Get-ArcGeometry $S.C 69 135 $sweep
     $a = (135 + $sweep) * [math]::PI / 180
-    [System.Windows.Controls.Canvas]::SetLeft($S.Knob, $S.C + $S.R * [math]::Cos($a) - 7)
-    [System.Windows.Controls.Canvas]::SetTop($S.Knob, $S.C + $S.R * [math]::Sin($a) - 7)
+    [System.Windows.Controls.Canvas]::SetLeft($S.Knob, $S.C + $S.R * [math]::Cos($a) - $S.Knob.Width / 2)
+    [System.Windows.Controls.Canvas]::SetTop($S.Knob, $S.C + $S.R * [math]::Sin($a) - $S.Knob.Height / 2)
     $S.Knob.Visibility = if ($f -gt 0.01) { 'Visible' } else { 'Hidden' }
     $S.Num.Text = $S.Fmt -f $V
 }
@@ -257,7 +258,7 @@ function New-LiveChart([string]$Color, [string]$Unit, [string]$Fmt = '{0:N0}') {
     foreach ($y in 0.25, 0.5, 0.75) {
         $ln = New-Object System.Windows.Shapes.Line
         $ln.X1 = 0; $ln.X2 = $w; $ln.Y1 = $h * $y; $ln.Y2 = $h * $y
-        $ln.Stroke = Get-Brush '#241F36'; $ln.StrokeThickness = 1
+        $ln.Stroke = Get-Brush '#1CFFFFFF'; $ln.StrokeThickness = 1
         $ln.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new([double[]]@(2, 4))
         [void]$cv.Children.Add($ln)
     }
@@ -310,7 +311,7 @@ function New-LiveChart([string]$Color, [string]$Unit, [string]$Fmt = '{0:N0}') {
     [System.Windows.Controls.Canvas]::SetLeft($maxText, 4); [System.Windows.Controls.Canvas]::SetTop($maxText, 2)
     [void]$cv.Children.Add($maxText)
     $border = New-Object System.Windows.Controls.Border
-    $border.Background = New-LinearBrush @('#14111D', '#0E0C16') 0 0 0 1
+    $border.Background = New-LinearBrush @('#14FFFFFF', '#06FFFFFF') 0 0 0 1
     $border.BorderBrush = Get-Brush 'card-border'; $border.BorderThickness = New-Thickness 1 1 1 1
     $border.CornerRadius = [System.Windows.CornerRadius]::new(14)
     $border.Padding = New-Thickness 12 10 12 10
@@ -389,7 +390,7 @@ function New-CompareBars([array]$Rows, [string]$Unit) {
         Add-ToGrid $g $lbl 0
         $track = New-Object System.Windows.Controls.Border
         $track.Height = 14; $track.CornerRadius = [System.Windows.CornerRadius]::new(7)
-        $track.Background = Get-Brush '#1C1829'
+        $track.Background = Get-Brush '#16FFFFFF'
         $track.Width = $barMax; $track.HorizontalAlignment = 'Left'; $track.VerticalAlignment = 'Center'
         $bar = New-Object System.Windows.Controls.Border
         $bar.Height = 14; $bar.CornerRadius = [System.Windows.CornerRadius]::new(7)
@@ -474,16 +475,15 @@ function New-Verdict([string]$Status, [string]$Text) {
     $b
 }
 
-# Titre de section façon commentaire de code : « // TITRE », la barre en cyan
+# Titre de section : un point néon cyan puis le titre en petites capitales discrètes
 function New-SectionTitle([string]$Text) {
     $title = New-Object System.Windows.Controls.TextBlock
-    $title.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
     $title.FontSize = 11.5; $title.FontWeight = 'SemiBold'
     $title.TextWrapping = 'Wrap'
-    $r1 = New-Object System.Windows.Documents.Run '// '
+    $r1 = New-Object System.Windows.Documents.Run '●  '
     $r1.Foreground = Get-Brush $NexoCyan
-    $r2 = New-Object System.Windows.Documents.Run $Text
-    $r2.Foreground = Get-Brush '#7D769A'
+    $r2 = New-Object System.Windows.Documents.Run $Text.ToUpper()
+    $r2.Foreground = Get-Brush '#8E88A8'
     $title.Inlines.Add($r1); $title.Inlines.Add($r2)
     $title.Margin = New-Thickness 0 16 0 2
     $title
@@ -528,7 +528,7 @@ function New-Stepper($Steps) {
         $b.CornerRadius = [System.Windows.CornerRadius]::new(14)
         $b.Padding = New-Thickness 12 5 12 5
         $b.Margin = New-Thickness 0 0 8 6
-        $b.Background = Get-Brush '#1C1829'
+        $b.Background = Get-Brush '#16FFFFFF'
         $txt = New-Text "○  $($Steps[$k])" 12.5 '#655E7E' -Semi
         $txt.TextWrapping = 'NoWrap'
         $b.Child = $txt
@@ -552,7 +552,7 @@ function Update-Stepper($Stepper, [string]$Phase, [switch]$AllDone) {
             $ch.B.Background = $bg; $ch.T.Text = "●  $($ch.Label)"; $ch.T.Foreground = Get-Brush '#FFFFFF'
             Start-Pulse $ch.B
         } else {
-            $ch.B.Background = Get-Brush '#1C1829'; $ch.T.Text = "○  $($ch.Label)"; $ch.T.Foreground = Get-Brush '#655E7E'
+            $ch.B.Background = Get-Brush '#16FFFFFF'; $ch.T.Text = "○  $($ch.Label)"; $ch.T.Foreground = Get-Brush '#655E7E'
         }
     }
     $Stepper.Cur = $Phase
@@ -757,7 +757,7 @@ function Start-StartupLoader {
     Start-LoaderLoop $hs ([System.Windows.Media.ScaleTransform]::ScaleYProperty) 0.85 1.1 1600 $true
 
     # Anneau de fond et anneau de progression (dégradé cyan vers magenta)
-    [void]$cv.Children.Add((New-LoaderArc $C 112 -90 359.9 (Get-Brush '#1C1829') 6))
+    [void]$cv.Children.Add((New-LoaderArc $C 112 -90 359.9 (Get-Brush '#16FFFFFF') 6))
     $prog = New-LoaderArc $C 112 -90 0.1 (New-LinearBrush @($NexoCyan, $NexoMagenta) 0 0 1 1) 6
     $prog.Effect = New-Glow $NexoCyan 14 0.7
     [void]$cv.Children.Add($prog)

@@ -646,7 +646,7 @@ function Update-LibraryView {
         $on = $script:LibFilter -eq $c[0]
         $b = New-Object System.Windows.Controls.Border
         $b.CornerRadius = [System.Windows.CornerRadius]::new(15); $b.Padding = New-Thickness 12 5 12 5; $b.Margin = New-Thickness 0 2 6 2
-        $b.Background = Get-Brush $(if ($on) { $Colors.accent } else { '#1C1829' })
+        $b.Background = Get-Brush $(if ($on) { $Colors.accent } else { '#16FFFFFF' })
         $b.Cursor = [System.Windows.Input.Cursors]::Hand
         $t = New-Text "$($c[0]) ($($c[1]))" 12 $(if ($on) { '#07060C' } else { '#D3CDE3' }) -Semi
         $t.TextWrapping = 'NoWrap'

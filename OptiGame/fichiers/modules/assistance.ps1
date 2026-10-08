@@ -334,7 +334,7 @@ function Show-ReportPanel {
     $tb.Height = 90; $tb.Margin = New-Thickness 0 8 0 0
     $tb.AcceptsReturn = $true; $tb.TextWrapping = 'Wrap'; $tb.VerticalScrollBarVisibility = 'Auto'
     $tb.FontSize = 13; $tb.Padding = New-Thickness 8 6 8 6
-    $tb.Background = Get-Brush '#0E0C16'; $tb.Foreground = Get-Brush '#FFFFFF'; $tb.BorderBrush = Get-Brush '#2E2843'; $tb.CaretBrush = Get-Brush '#FFFFFF'
+    $tb.Background = Get-Brush '#0E0C16'; $tb.Foreground = Get-Brush '#FFFFFF'; $tb.BorderBrush = Get-Brush '#2AFFFFFF'; $tb.CaretBrush = Get-Brush '#FFFFFF'
     [void]$body.Children.Add($tb)
     $n = New-Text 'Nevermind crée un fichier .zip sur ton bureau avec ta phrase, les infos du PC (Windows, composants, score) et le journal de l''app. Il ne contient ni tes fichiers, ni ton nom, ni tes mots de passe. Envoie-le à la personne qui t''a donné Nevermind (Discord par exemple).' 12 '#A6A1BC'
     $n.Margin = New-Thickness 0 10 0 0
@@ -366,7 +366,7 @@ $TourSteps = @(
     @{ Title = 'Tout est annulable'; Lines = @(
         'Chaque changement est sauvegardé avant d''être fait.',
         'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde garde l''historique : tu peux annuler n''importe quel changement.',
-        'Un souci ? Le bouton « Signaler un problème », en haut à droite, crée un fichier à envoyer.',
+        'Un souci ? Le bouton « Signaler », en haut à droite, crée un fichier à envoyer.',
         'Un réglage introuvable ? Tape-le dans la barre de recherche en haut (ou Ctrl + K) : un clic t''y emmène.',
         'Page Sauvegarde : crée un raccourci Nevermind sur ton bureau et, si tu veux, lance-le au démarrage du PC.') }
 )

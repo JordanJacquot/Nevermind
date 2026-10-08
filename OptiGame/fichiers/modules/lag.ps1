@@ -494,7 +494,7 @@ function New-LagChart($S) {
     foreach ($y in 0.25, 0.5, 0.75) {
         $ln = New-Object System.Windows.Shapes.Line
         $ln.X1 = 0; $ln.X2 = $w; $ln.Y1 = $h * $y; $ln.Y2 = $h * $y
-        $ln.Stroke = Get-Brush '#241F36'; $ln.StrokeThickness = 1
+        $ln.Stroke = Get-Brush '#1CFFFFFF'; $ln.StrokeThickness = 1
         $ln.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new([double[]]@(2, 4))
         [void]$cv.Children.Add($ln)
     }
@@ -548,7 +548,7 @@ function New-LagChart($S) {
     [void]$cv.Children.Add($mx)
     $sp = New-Object System.Windows.Controls.StackPanel
     $frame = New-Object System.Windows.Controls.Border
-    $frame.Background = New-LinearBrush @('#14111D', '#0E0C16') 0 0 0 1
+    $frame.Background = New-LinearBrush @('#14FFFFFF', '#06FFFFFF') 0 0 0 1
     $frame.BorderBrush = Get-Brush 'card-border'; $frame.BorderThickness = New-Thickness 1 1 1 1
     $frame.CornerRadius = [System.Windows.CornerRadius]::new(14); $frame.Padding = New-Thickness 12 10 12 10
     $frame.Child = $cv
@@ -592,7 +592,7 @@ function Show-LagSession([string]$Id) {
         # Les routeurs des fournisseurs répondent au ping quand ils ont le temps : si Internet va bien, ce n'est pas un vrai souci
         if ($seg[0] -eq 'isp' -and $status -in 'bad', 'warn' -and (Get-SegStatus $s.Stats.ref 'ref') -eq 'ok') { $status = 'ok' }
         $b = New-Object System.Windows.Controls.Border
-        $b.Background = Get-Brush '#1D1A2A'
+        $b.Background = Get-Brush '#12FFFFFF'
         $b.BorderBrush = Get-Brush $(if ($status -eq 'none') { '#655E7E' } else { $Colors[$status] })
         $b.BorderThickness = New-Thickness 3 0 0 0
         $b.CornerRadius = [System.Windows.CornerRadius]::new(8)

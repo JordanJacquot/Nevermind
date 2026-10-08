@@ -108,7 +108,7 @@ function New-NetRadar([switch]$Spin) {
     foreach ($r in 96, 68, 40) {
         $e = New-Object System.Windows.Shapes.Ellipse
         $e.Width = $r * 2; $e.Height = $r * 2
-        $e.Stroke = Get-Brush '#201B30'; $e.StrokeThickness = 1.5
+        $e.Stroke = Get-Brush '#1CFFFFFF'; $e.StrokeThickness = 1.5
         [void]$g.Children.Add($e)
     }
     $dots = New-Object System.Windows.Controls.Canvas
@@ -458,7 +458,7 @@ function Show-NetDevices {
         $b.Padding = New-Thickness 14 6 14 6
         $b.Margin = New-Thickness 0 0 8 0
         $b.Cursor = [System.Windows.Input.Cursors]::Hand
-        $b.Background = Get-Brush $(if ($on) { $Colors.accent } else { '#1C1829' })
+        $b.Background = Get-Brush $(if ($on) { $Colors.accent } else { '#16FFFFFF' })
         $t = New-Text "$($f.Label) ($cnt)" 12.5 $(if ($on) { '#07060C' } else { '#D3CDE3' }) -Semi
         $t.TextWrapping = 'NoWrap'
         $b.Child = $t
@@ -740,7 +740,7 @@ function Show-DeviceDetail($D) {
         $col = switch ($pi[1]) { 'bad' { $Colors.bad } 'warn' { $Colors.warn } default { $Colors.info } }
         if ($pi[1] -eq 'bad') { $worst = 'bad'; $notes += $pi[0] } elseif ($pi[1] -eq 'warn' -and $worst -ne 'bad') { $worst = 'warn'; $notes += $pi[0] }
         $card = New-Object System.Windows.Controls.Border
-        $card.Background = Get-Brush '#1C1829'
+        $card.Background = Get-Brush '#16FFFFFF'
         $card.CornerRadius = [System.Windows.CornerRadius]::new(10)
         $card.Padding = New-Thickness 12 9 12 9
         $card.Margin = New-Thickness 0 0 0 6

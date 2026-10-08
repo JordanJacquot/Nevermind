@@ -135,7 +135,7 @@ function Show-Improvements($Active) {
         $row.CornerRadius = [System.Windows.CornerRadius]::new(10)
         $row.Padding = New-Thickness 12 10 12 10
         $row.Margin = New-Thickness 0 0 0 6
-        $row.Background = Get-Brush '#1D1929'
+        $row.Background = Get-Brush '#10FFFFFF'
         $row.Cursor = [System.Windows.Input.Cursors]::Hand
         $row.Tag = $f
         $g = New-Grid @('Auto', '*', 'Auto', 'Auto')
@@ -169,7 +169,7 @@ function Show-Improvements($Active) {
 
         $row.Child = $g
         $row.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush '#252B37' })
-        $row.Add_MouseLeave({ param($s, $e) $s.Background = Get-Brush '#1D1929' })
+        $row.Add_MouseLeave({ param($s, $e) $s.Background = Get-Brush '#10FFFFFF' })
         $row.Add_MouseLeftButtonUp({ param($s, $e) Open-Sheet @($s.Tag) })
         [void]$panel.Children.Add($row)
     }

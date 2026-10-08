@@ -323,7 +323,7 @@ function Add-FpsDiagnosisView($S, $Body) {
             $pb = New-Object System.Windows.Controls.ProgressBar
             $pb.Height = 8; $pb.Minimum = 0; $pb.Maximum = 100; $pb.Value = [math]::Min(100.0, 100 * $b[1])
             $pb.Foreground = Get-Brush $(if ($b[1] -ge 0.85) { $Colors.warn } else { $Colors.info })
-            $pb.Background = Get-Brush '#272237'; $pb.BorderThickness = New-Thickness 0 0 0 0; $pb.VerticalAlignment = 'Center'
+            $pb.Background = Get-Brush '#22FFFFFF'; $pb.BorderThickness = New-Thickness 0 0 0 0; $pb.VerticalAlignment = 'Center'
             Add-ToGrid $row $pb 1
             $v = New-Text ('{0:N0} %' -f (100 * $b[1])) 12 '#EEEBF7' -Semi
             $v.HorizontalAlignment = 'Right'

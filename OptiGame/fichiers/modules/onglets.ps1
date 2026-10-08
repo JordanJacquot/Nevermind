@@ -114,7 +114,7 @@ function Set-GamingSubPage($Page) {
         $pages[$i].Visibility = if ($i -eq $Index) { 'Visible' } else { 'Collapsed' }
         $b = $script:GTabs[$i]
         if ($b) {
-            $b.Background = Get-Brush $(if ($i -eq $Index) { $Colors.accent } else { '#1C1829' })
+            $b.Background = Get-Brush $(if ($i -eq $Index) { $Colors.accent } else { '#16FFFFFF' })
             $b.Child.Foreground = Get-Brush $(if ($i -eq $Index) { '#07060C' } else { '#D3CDE3' })
         }
     }
@@ -352,7 +352,7 @@ function Update-StartupList {
             $iconEl = New-Object System.Windows.Controls.Border
             $iconEl.Width = 32; $iconEl.Height = 32
             $iconEl.CornerRadius = [System.Windows.CornerRadius]::new(8)
-            $iconEl.Background = Get-Brush '#272237'
+            $iconEl.Background = Get-Brush '#22FFFFFF'
         }
         $iconEl.Margin = New-Thickness 0 0 14 0
         $iconEl.VerticalAlignment = 'Center'

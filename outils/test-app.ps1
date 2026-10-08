@@ -88,8 +88,11 @@ $script:T.Run.Add_Tick({
             $script:T.Watch = $true
             Save-TestShot 'accueil'
             Test-Step 'Accueil Ordinateur' {
-                Assert-Test ($ui.HubCards.Children.Count -ge 8) "seulement $($ui.HubCards.Children.Count) cartes"
-                "$($ui.HubCards.Children.Count) cartes"
+                Assert-Test ($ui.HubCards.Children.Count -eq 3) "$($ui.HubCards.Children.Count) familles au lieu de 3"
+                Assert-Test ($script:HubStats.Count -eq 8) "seulement $($script:HubStats.Count) outils"
+                Assert-Test ($ui.HubHello.Text -like 'Salut *') 'pas de bonjour'
+                Assert-Test ($ui.HubTodoPanel.Children.Count -ge 2) 'carte « À faire » vide'
+                "3 familles, 8 outils, « $($ui.HubHello.Text) »"
             }
             Test-Step 'Tableau de bord' {
                 $ui.Tabs.SelectedIndex = 0; Wait-TestMs 800; Save-TestShot 'tableau-de-bord'

@@ -284,9 +284,9 @@ function Find-PageElement($Root, [string]$Text) {
         if ($x -is [System.Windows.UIElement] -and $x.Visibility -ne 'Visible') { continue }
         $label = if ($x -is [System.Windows.Controls.TextBlock]) { Get-TextBlockText $x } elseif ($x -is [System.Windows.Controls.ContentControl] -and $x.Content -is [string]) { [string]$x.Content } else { $null }
         if ($label) {
-            $label = $label -replace '^// ', ''   # titres de section « // TITRE »
+            $label = $label -replace '^(// |●  )', ''   # titres de section « ● TITRE »
             if ($label -eq $Text) { return $x }
-            if (-not $partial -and $label.StartsWith($Text)) { $partial = $x }
+            if (-not $partial -and $label.StartsWith($Text, [StringComparison]::OrdinalIgnoreCase)) { $partial = $x }
         }
         $kids = @([System.Windows.LogicalTreeHelper]::GetChildren($x) | Where-Object { $_ -is [System.Windows.DependencyObject] })
         for ($i = $kids.Count - 1; $i -ge 0; $i--) { $stack.Push($kids[$i]) }

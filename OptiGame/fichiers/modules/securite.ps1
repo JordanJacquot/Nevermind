@@ -376,7 +376,7 @@ function New-Radar {
     foreach ($r in 90, 64, 38) {
         $e = New-Object System.Windows.Shapes.Ellipse
         $e.Width = $r * 2; $e.Height = $r * 2
-        $e.Stroke = Get-Brush '#201B30'; $e.StrokeThickness = 1.5
+        $e.Stroke = Get-Brush '#1CFFFFFF'; $e.StrokeThickness = 1.5
         [void]$g.Children.Add($e)
     }
     $sweep = New-Object System.Windows.Shapes.Path

@@ -578,7 +578,7 @@ function Get-AppDataTypes($St, $A) {
 # Bloc d'un type de données dans la fiche : titre, explication, volumes, puis ses serveurs.
 function New-TrafficTypeBlock($St, $G) {
     $b = New-Object System.Windows.Controls.Border
-    $b.Background = Get-Brush '#1D1A2A'
+    $b.Background = Get-Brush '#12FFFFFF'
     $b.BorderBrush = Get-Brush $G.Type.Color
     $b.BorderThickness = New-Thickness 3 0 0 0
     $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
@@ -932,7 +932,7 @@ function Add-TrafficSummary($body, $a, $ids) {
     }
     [void]$body.Children.Add((New-SectionTitle 'EN RÉSUMÉ'))
     $box = New-Object System.Windows.Controls.Border
-    $box.Background = Get-Brush '#1D1A2A'
+    $box.Background = Get-Brush '#12FFFFFF'
     $box.CornerRadius = [System.Windows.CornerRadius]::new(8)
     $box.Padding = New-Thickness 14 8 14 8
     $box.Margin = New-Thickness 0 6 0 0

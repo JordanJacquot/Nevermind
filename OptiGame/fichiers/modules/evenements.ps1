@@ -211,8 +211,7 @@ $ui.BtnCheckUpdate.Add_Click({
 
 $Window.Add_ContentRendered({
     if ($Splash) { try { $Splash.Close() } catch {}; $script:Splash = $null }
-    $v = $ui.Tabs.Template.FindName('VersionText', $ui.Tabs)
-    if ($v) { $v.Text = "Version $AppVersion" }
+    if ($ui.VersionText) { $ui.VersionText.Text = "Nevermind $AppVersion" }
     # Logo Nevermind animé (le N et le mot « glitchent » au survol et de temps en temps)
     try { Initialize-NexoLogo $ui.Tabs.Template.FindName('LogoMarkHost', $ui.Tabs) $ui.Tabs.Template.FindName('LogoWordHost', $ui.Tabs) } catch { Write-Log "Logo: $_" }
     $script:NavBar = $ui.Tabs.Template.FindName('NavBar', $ui.Tabs)

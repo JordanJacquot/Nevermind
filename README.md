@@ -18,11 +18,11 @@ Les mises à jour sont ensuite proposées directement dans l'application. Relanc
 
 ## Ce que fait l'application
 
-Quatre sections dans le menu de gauche : **Ordinateur**, **Jeux**, **Réseau** et **Trafic**. En haut de chaque page : une **barre de recherche** (Ctrl + K) qui propose les réglages au fil de la frappe, fautes de frappe comprises, et emmène directement au bon endroit ; et un bouton « Signaler un problème ».
+Quatre onglets dans la barre du haut : **Ordinateur**, **Jeux**, **Réseau** et **Trafic**. Dans la même barre : une **barre de recherche** (Ctrl + K) qui propose les réglages au fil de la frappe, fautes de frappe comprises, et emmène directement au bon endroit ; et un bouton « Signaler ».
 
 ### Ordinateur
 
-L'accueil, avec le score d'optimisation, le niveau de protection et une carte par fonction.
+L'accueil : un bonjour, les notes Optimisation et Protection, la carte « À faire » (ce qui rapporte le plus, avec son bouton), puis les outils rangés en trois familles : **Performances** (Optimisation gaming, Démarrage, Nettoyage), **Santé du PC** (Tableau de bord, Tests) et **Protection** (Sécurité, Connexion, Sauvegarde).
 
 - **Tableau de bord** : mesures en direct, santé de chaque composant, score et liste de ce qui peut être amélioré. Chaque point ouvre une fiche : ce qui a été trouvé, ce que l'app va faire, bouton Exécuter, puis « Revenir en arrière » si besoin.
 - **Onduleur** : fabricant, modèle, charge, autonomie, usure de la batterie, alerte en cas de coupure, et réglage en un clic d'un arrêt propre du PC avant que la batterie soit vide. Un onduleur invisible pour Windows est repéré par sa prise USB ou par son logiciel.

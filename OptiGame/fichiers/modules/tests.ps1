@@ -134,7 +134,7 @@ function Set-TileSummary($Tile, [array]$Chips, [string]$Status) {
     $Tile.Summary.Children.Clear()
     foreach ($c2 in $Chips) {
         $b = New-Object System.Windows.Controls.Border
-        $b.Background = Get-Brush '#1C1829'
+        $b.Background = Get-Brush '#16FFFFFF'
         $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
         $b.Padding = New-Thickness 10 5 10 6
         $b.Margin = New-Thickness 0 0 6 6

@@ -169,7 +169,7 @@ function Invoke-PrivacyOff([array]$Items) {
 
 function New-PrivacyRow($It) {
     $b = New-Object System.Windows.Controls.Border
-    $b.Background = Get-Brush '#1D1A2A'
+    $b.Background = Get-Brush '#12FFFFFF'
     $b.BorderBrush = Get-Brush $(if ($It.On) { $Colors.warn } else { $Colors.ok })
     $b.BorderThickness = New-Thickness 3 0 0 0
     $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
@@ -244,7 +244,7 @@ function Show-WindowsPrivacy {
         if (-not $ms.Count) { [void]$body.Children.Add((New-Text 'Aucun échange avec Microsoft vu depuis le début de la surveillance.' 12.5 '#A6A1BC')) }
         foreach ($r in @($ms | Select-Object -First 12)) {
             $b = New-Object System.Windows.Controls.Border
-            $b.Background = Get-Brush '#1D1A2A'
+            $b.Background = Get-Brush '#12FFFFFF'
             $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
             $b.Padding = New-Thickness 16 10 16 10
             $b.Margin = New-Thickness 0 0 0 6

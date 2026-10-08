@@ -401,7 +401,7 @@ function Show-NetAuditResult($A) {
     if ($oks.Count) {
         [void]$body.Children.Add((New-SectionTitle 'TOUT VA BIEN'))
         $box = New-Object System.Windows.Controls.Border
-        $box.Background = Get-Brush '#1C1829'
+        $box.Background = Get-Brush '#16FFFFFF'
         $box.CornerRadius = [System.Windows.CornerRadius]::new(10)
         $box.Padding = New-Thickness 14 8 14 8
         $box.Margin = New-Thickness 0 4 0 0

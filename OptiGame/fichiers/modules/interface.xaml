@@ -5,31 +5,33 @@
         FontFamily="Segoe UI Variable Text, Segoe UI" Foreground="#EEEBF7">
   <Window.Resources>
     <!-- Thème Nevermind : cartes en verre sombre, accent cyan et magenta (couleurs du logo) ; le vert ne dit plus que « tout va bien » -->
-    <LinearGradientBrush x:Key="CardBg" StartPoint="0,0" EndPoint="0,1">
-      <GradientStop Color="#1C1828" Offset="0"/>
-      <GradientStop Color="#121019" Offset="1"/>
+    <!-- Panneaux en verre : translucides au dessus des lueurs du fond, bord clair en haut à gauche -->
+    <LinearGradientBrush x:Key="CardBg" StartPoint="0,0" EndPoint="1,1">
+      <GradientStop Color="#17FFFFFF" Offset="0"/>
+      <GradientStop Color="#08FFFFFF" Offset="1"/>
     </LinearGradientBrush>
-    <LinearGradientBrush x:Key="CardHoverBg" StartPoint="0,0" EndPoint="0,1">
-      <GradientStop Color="#241F36" Offset="0"/>
-      <GradientStop Color="#1A1727" Offset="1"/>
+    <LinearGradientBrush x:Key="CardHoverBg" StartPoint="0,0" EndPoint="1,1">
+      <GradientStop Color="#22FFFFFF" Offset="0"/>
+      <GradientStop Color="#0EFFFFFF" Offset="1"/>
     </LinearGradientBrush>
-    <LinearGradientBrush x:Key="CardBorder" StartPoint="0,0" EndPoint="0,1">
-      <GradientStop Color="#3B3454" Offset="0"/>
-      <GradientStop Color="#1A1626" Offset="1"/>
+    <LinearGradientBrush x:Key="CardBorder" StartPoint="0,0" EndPoint="1,1">
+      <GradientStop Color="#40FFFFFF" Offset="0"/>
+      <GradientStop Color="#0AFFFFFF" Offset="1"/>
     </LinearGradientBrush>
-    <LinearGradientBrush x:Key="AccentBg" StartPoint="0,0" EndPoint="1,1">
-      <GradientStop Color="#4DF2FF" Offset="0"/>
-      <GradientStop Color="#00A8D8" Offset="1"/>
+    <!-- Dégradé de la marque Nevermind : cyan vers violet -->
+    <LinearGradientBrush x:Key="AccentBg" StartPoint="0,0" EndPoint="1,0">
+      <GradientStop Color="#00E5FF" Offset="0"/>
+      <GradientStop Color="#B04BFF" Offset="1"/>
     </LinearGradientBrush>
 
-    <Style x:Key="BtnPrimary" TargetType="Button">
+<Style x:Key="BtnPrimary" TargetType="Button">
       <Setter Property="Background" Value="{StaticResource AccentBg}"/>
-      <Setter Property="Foreground" Value="#01161C"/>
-      <Setter Property="BorderBrush" Value="#8AF6FF"/>
+      <Setter Property="Foreground" Value="#08060F"/>
+      <Setter Property="BorderBrush" Value="#00FFFFFF"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="FontSize" Value="13"/>
-      <Setter Property="Padding" Value="16,9"/>
+      <Setter Property="Padding" Value="18,9"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template">
         <Setter.Value>
@@ -37,11 +39,11 @@
             <Grid x:Name="Root" RenderTransformOrigin="0.5,0.5">
               <Grid.RenderTransform><ScaleTransform x:Name="Scale" ScaleX="1" ScaleY="1"/></Grid.RenderTransform>
               <Border x:Name="B" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                      BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="9" Padding="{TemplateBinding Padding}">
+                      BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="19" Padding="{TemplateBinding Padding}">
                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
               </Border>
               <!-- Reflet qui apparaît au survol -->
-              <Border x:Name="Shine" CornerRadius="9" IsHitTestVisible="False" Opacity="0">
+              <Border x:Name="Shine" CornerRadius="19" IsHitTestVisible="False" Opacity="0">
                 <Border.Background>
                   <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
                     <GradientStop Color="#38FFFFFF" Offset="0"/>
@@ -77,43 +79,34 @@
       <Style.Triggers>
         <!-- Halo cyan au survol -->
         <Trigger Property="IsMouseOver" Value="True">
-          <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#00E5FF" BlurRadius="18" ShadowDepth="0" Opacity="0.55"/></Setter.Value></Setter>
+          <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#00E5FF" BlurRadius="22" ShadowDepth="0" Opacity="0.6"/></Setter.Value></Setter>
         </Trigger>
       </Style.Triggers>
     </Style>
     <Style x:Key="BtnSecondary" TargetType="Button" BasedOn="{StaticResource BtnPrimary}">
-      <Setter Property="Background">
-        <Setter.Value>
-          <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#2A2440" Offset="0"/>
-            <GradientStop Color="#221D31" Offset="1"/>
-          </LinearGradientBrush>
-        </Setter.Value>
-      </Setter>
-      <Setter Property="Foreground" Value="#EEEBF7"/>
-      <Setter Property="BorderBrush" Value="#3B3454"/>
+      <Setter Property="Background" Value="#16FFFFFF"/>
+      <Setter Property="Foreground" Value="#F2EFFA"/>
+      <Setter Property="BorderBrush" Value="#26FFFFFF"/>
       <Setter Property="BorderThickness" Value="1"/>
       <Style.Triggers>
         <Trigger Property="IsMouseOver" Value="True">
-          <Setter Property="BorderBrush" Value="#544A78"/>
-          <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#4EA8FF" BlurRadius="14" ShadowDepth="0" Opacity="0.25"/></Setter.Value></Setter>
+          <Setter Property="BorderBrush" Value="#8000E5FF"/>
+          <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#00E5FF" BlurRadius="16" ShadowDepth="0" Opacity="0.3"/></Setter.Value></Setter>
         </Trigger>
       </Style.Triggers>
     </Style>
-    <Style x:Key="Card" TargetType="Border">
+<Style x:Key="Card" TargetType="Border">
       <Setter Property="Background" Value="{StaticResource CardBg}"/>
       <Setter Property="BorderBrush" Value="{StaticResource CardBorder}"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="14"/>
-      <Setter Property="Padding" Value="18"/>
+      <Setter Property="CornerRadius" Value="20"/>
+      <Setter Property="Padding" Value="20"/>
     </Style>
     <Style x:Key="H1" TargetType="TextBlock">
       <Setter Property="FontFamily" Value="Segoe UI Variable Display, Segoe UI"/>
-      <Setter Property="FontSize" Value="26"/>
+      <Setter Property="FontSize" Value="28"/>
       <Setter Property="FontWeight" Value="Bold"/>
       <Setter Property="Foreground" Value="White"/>
-      <!-- Écho magenta décalé, comme les lettres du logo -->
-      <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#FF2EB5" Direction="0" ShadowDepth="2" BlurRadius="0" Opacity="0.55"/></Setter.Value></Setter>
     </Style>
     <Style x:Key="H2" TargetType="TextBlock">
       <Setter Property="FontSize" Value="16"/>
@@ -130,63 +123,45 @@
       <Setter Property="Foreground" Value="#EEEBF7"/>
       <Setter Property="Cursor" Value="Hand"/>
     </Style>
+    <!-- Onglets du haut : pilules, celle de la page ouverte en dégradé de la marque -->
     <Style TargetType="TabItem">
-      <Setter Property="Foreground" Value="#A6A1BC"/>
+      <Setter Property="Foreground" Value="#C9C3DD"/>
       <Setter Property="FontSize" Value="14"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Cursor" Value="Hand"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="TabItem">
-            <Grid Margin="0,2">
-              <Border x:Name="Bd" CornerRadius="10" Padding="16,10,14,10">
-                <Border.Background><SolidColorBrush x:Name="BdBrush" Color="#00FFFFFF"/></Border.Background>
-                <ContentPresenter ContentSource="Header"/>
-              </Border>
-              <!-- Barre lumineuse de la page ouverte -->
-              <Border x:Name="Bar" Width="3" CornerRadius="2" HorizontalAlignment="Left" Margin="1,10" Opacity="0">
-                <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#00E5FF" Offset="0"/><GradientStop Color="#FF2EB5" Offset="1"/></LinearGradientBrush></Border.Background>
-              </Border>
-            </Grid>
+            <Border x:Name="Bd" CornerRadius="17" Padding="16,7" Margin="0,0,6,0">
+              <Border.Background><SolidColorBrush x:Name="BdBrush" Color="#00FFFFFF"/></Border.Background>
+              <ContentPresenter ContentSource="Header"/>
+            </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
                 <Setter Property="Foreground" Value="White"/>
                 <Trigger.EnterActions><BeginStoryboard><Storyboard>
-                  <ColorAnimation Storyboard.TargetName="BdBrush" Storyboard.TargetProperty="Color" To="#12FFFFFF" Duration="0:0:0.15"/>
+                  <ColorAnimation Storyboard.TargetName="BdBrush" Storyboard.TargetProperty="Color" To="#16FFFFFF" Duration="0:0:0.15"/>
                 </Storyboard></BeginStoryboard></Trigger.EnterActions>
                 <Trigger.ExitActions><BeginStoryboard><Storyboard>
                   <ColorAnimation Storyboard.TargetName="BdBrush" Storyboard.TargetProperty="Color" To="#00FFFFFF" Duration="0:0:0.25"/>
                 </Storyboard></BeginStoryboard></Trigger.ExitActions>
               </Trigger>
               <Trigger Property="Tag" Value="parent">
-                <Setter TargetName="Bd" Property="Background">
-                  <Setter.Value>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                      <GradientStop Color="#3300E5FF" Offset="0"/>
-                      <GradientStop Color="#08FF2EB5" Offset="1"/>
-                    </LinearGradientBrush>
-                  </Setter.Value>
-                </Setter>
-                <Setter TargetName="Bar" Property="Opacity" Value="1"/>
-                <Setter Property="Foreground" Value="White"/>
+                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBg}"/>
+                <Setter Property="Foreground" Value="#08060F"/>
+                <Setter TargetName="Bd" Property="Effect"><Setter.Value><DropShadowEffect Color="#00E5FF" BlurRadius="18" ShadowDepth="0" Opacity="0.55"/></Setter.Value></Setter>
               </Trigger>
               <Trigger Property="IsSelected" Value="True">
-                <Setter TargetName="Bd" Property="Background">
-                  <Setter.Value>
-                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                      <GradientStop Color="#3300E5FF" Offset="0"/>
-                      <GradientStop Color="#08FF2EB5" Offset="1"/>
-                    </LinearGradientBrush>
-                  </Setter.Value>
-                </Setter>
-                <Setter TargetName="Bar" Property="Opacity" Value="1"/>
-                <Setter Property="Foreground" Value="White"/>
+                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBg}"/>
+                <Setter Property="Foreground" Value="#08060F"/>
+                <Setter TargetName="Bd" Property="Effect"><Setter.Value><DropShadowEffect Color="#00E5FF" BlurRadius="18" ShadowDepth="0" Opacity="0.55"/></Setter.Value></Setter>
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
         </Setter.Value>
       </Setter>
     </Style>
-    <!-- Barres de défilement sombres -->
+<!-- Barres de défilement sombres -->
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#18151F"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightBrushKey}" Color="#18151F"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightLightBrushKey}" Color="#18151F"/>
@@ -261,7 +236,7 @@
         <Setter.Value>
           <ControlTemplate TargetType="CheckBox">
             <Border x:Name="Track" Width="46" Height="26" CornerRadius="13" BorderThickness="1" BorderBrush="#3A4355">
-              <Border.Background><SolidColorBrush x:Name="TrackBrush" Color="#2A2440"/></Border.Background>
+              <Border.Background><SolidColorBrush x:Name="TrackBrush" Color="#2EFFFFFF"/></Border.Background>
               <Ellipse x:Name="Knob" Width="20" Height="20" Fill="#EEEBF7" Stroke="#40000000" StrokeThickness="1" HorizontalAlignment="Left" Margin="2,0,0,0">
                 <Ellipse.RenderTransform><TranslateTransform x:Name="KnobMove" X="0"/></Ellipse.RenderTransform>
               </Ellipse>
@@ -276,7 +251,7 @@
                 </Storyboard></BeginStoryboard></Trigger.EnterActions>
                 <Trigger.ExitActions><BeginStoryboard><Storyboard>
                   <DoubleAnimation Storyboard.TargetName="KnobMove" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.2"><DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation>
-                  <ColorAnimation Storyboard.TargetName="TrackBrush" Storyboard.TargetProperty="Color" To="#2A2440" Duration="0:0:0.2"/>
+                  <ColorAnimation Storyboard.TargetName="TrackBrush" Storyboard.TargetProperty="Color" To="#2EFFFFFF" Duration="0:0:0.2"/>
                 </Storyboard></BeginStoryboard></Trigger.ExitActions>
               </Trigger>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Knob" Property="Fill" Value="White"/></Trigger>
@@ -290,7 +265,7 @@
       <Setter Property="Height" Value="8"/>
       <Setter Property="Maximum" Value="100"/>
       <Setter Property="Foreground" Value="#00D9F5"/>
-      <Setter Property="Background" Value="#1E1A2E"/>
+      <Setter Property="Background" Value="#1EFFFFFF"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ProgressBar">
@@ -317,7 +292,7 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="GridViewColumnHeader">
-            <Border Background="#110F19" BorderBrush="#231E33" BorderThickness="0,0,1,1" Padding="8,7">
+            <Border Background="#14FFFFFF" BorderBrush="#1CFFFFFF" BorderThickness="0,0,1,1" Padding="8,7">
               <ContentPresenter HorizontalAlignment="Left"/>
             </Border>
           </ControlTemplate>
@@ -333,37 +308,38 @@
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
-    <!-- Fond Nevermind : noir violacé, halo cyan en haut, halo magenta en bas, trame d'écran très légère -->
+    <!-- Fond Nevermind : nuit violette et trois lueurs (cyan en haut à gauche, violet au centre, magenta en bas à droite) -->
     <Grid x:Name="Backdrop" Grid.RowSpan="3" IsHitTestVisible="False">
       <Rectangle x:Name="BackdropBase">
         <Rectangle.Fill>
           <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#0E0B18" Offset="0"/>
-            <GradientStop Color="#07060C" Offset="1"/>
+            <GradientStop Color="#0C0920" Offset="0"/>
+            <GradientStop Color="#06050F" Offset="1"/>
           </LinearGradientBrush>
         </Rectangle.Fill>
       </Rectangle>
       <Rectangle>
         <Rectangle.Fill>
-          <RadialGradientBrush Center="0.28,0" GradientOrigin="0.28,0" RadiusX="0.6" RadiusY="0.75">
-            <GradientStop Color="#2200E5FF" Offset="0"/>
+          <RadialGradientBrush Center="0.12,0.05" GradientOrigin="0.12,0.05" RadiusX="0.5" RadiusY="0.55">
+            <GradientStop Color="#4400E5FF" Offset="0"/>
             <GradientStop Color="#0000E5FF" Offset="1"/>
           </RadialGradientBrush>
         </Rectangle.Fill>
       </Rectangle>
       <Rectangle>
         <Rectangle.Fill>
-          <RadialGradientBrush Center="1,1" GradientOrigin="1,1" RadiusX="0.6" RadiusY="0.8">
-            <GradientStop Color="#1CFF2EB5" Offset="0"/>
-            <GradientStop Color="#00FF2EB5" Offset="1"/>
+          <RadialGradientBrush Center="0.6,0.35" GradientOrigin="0.6,0.35" RadiusX="0.45" RadiusY="0.45">
+            <GradientStop Color="#267A3CFF" Offset="0"/>
+            <GradientStop Color="#007A3CFF" Offset="1"/>
           </RadialGradientBrush>
         </Rectangle.Fill>
       </Rectangle>
-      <Rectangle Opacity="0.05">
+      <Rectangle>
         <Rectangle.Fill>
-          <LinearGradientBrush StartPoint="0,0" EndPoint="0,4" MappingMode="Absolute" SpreadMethod="Repeat">
-            <GradientStop Color="#FFFFFFFF" Offset="0"/><GradientStop Color="#FFFFFFFF" Offset="0.25"/><GradientStop Color="#00FFFFFF" Offset="0.25"/><GradientStop Color="#00FFFFFF" Offset="1"/>
-          </LinearGradientBrush>
+          <RadialGradientBrush Center="0.92,0.9" GradientOrigin="0.92,0.9" RadiusX="0.5" RadiusY="0.55">
+            <GradientStop Color="#44FF2EB5" Offset="0"/>
+            <GradientStop Color="#00FF2EB5" Offset="1"/>
+          </RadialGradientBrush>
         </Rectangle.Fill>
       </Rectangle>
     </Grid>
@@ -382,70 +358,69 @@
       </DockPanel>
     </Border>
 
-    <TabControl x:Name="Tabs" Grid.Row="1" TabStripPlacement="Left" Background="Transparent" BorderThickness="0">
+    <TabControl x:Name="Tabs" Grid.Row="1" TabStripPlacement="Top" Background="Transparent" BorderThickness="0">
       <TabControl.Template>
         <ControlTemplate TargetType="TabControl">
           <Grid>
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="230"/>
-              <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <Border Background="#B30E0C16" BorderBrush="#211C31" BorderThickness="0,0,1,0">
-              <DockPanel Margin="14,22,14,16">
-                <DockPanel DockPanel.Dock="Top" Margin="6,0,0,26">
-                  <Border x:Name="LogoMarkHost" Width="42" Height="42" Margin="0,0,10,0" VerticalAlignment="Center" CornerRadius="11" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="6" Cursor="Hand"><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#1D1C2B" Offset="0"/><GradientStop Color="#07070A" Offset="1"/></LinearGradientBrush></Border.Background></Border>
-                  <StackPanel VerticalAlignment="Center">
-                    <Grid x:Name="LogoWordHost" HorizontalAlignment="Left" Cursor="Hand"/>
-                    <TextBlock Text="Ton PC, tes jeux, ton réseau" Foreground="#A6A1BC" FontSize="11.5"/>
-                  </StackPanel>
-                </DockPanel>
-                <TextBlock x:Name="VersionText" DockPanel.Dock="Bottom" Foreground="#655E7E" FontSize="11" Margin="8,0,0,0"/>
-                <StackPanel IsItemsHost="True"/>
-              </DockPanel>
-            </Border>
-            <Grid Grid.Column="1">
-              <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-              </Grid.RowDefinitions>
-              <Grid Margin="28,12,28,0">
-                <DockPanel x:Name="NavBar" Visibility="Collapsed" LastChildFill="False" HorizontalAlignment="Left">
-                  <Button x:Name="NavBack" Style="{StaticResource BtnSecondary}" Content="←  Ordinateur" Padding="12,6" FontSize="12.5"/>
-                  <TextBlock Text="›" Foreground="#655E7E" FontSize="16" Margin="12,0,10,2" VerticalAlignment="Center"/>
-                  <TextBlock x:Name="NavCrumb" Foreground="#A6A1BC" FontSize="13" VerticalAlignment="Center"/>
-                </DockPanel>
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <!-- Barre du haut en verre -->
+            <Border Margin="20,14,20,0" Height="60" CornerRadius="22" Background="#14FFFFFF" BorderThickness="1">
+              <Border.BorderBrush>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                  <GradientStop Color="#7000E5FF" Offset="0"/>
+                  <GradientStop Color="#18FFFFFF" Offset="0.5"/>
+                  <GradientStop Color="#70FF2EB5" Offset="1"/>
+                </LinearGradientBrush>
+              </Border.BorderBrush>
+              <DockPanel Margin="14,0,12,0">
+                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,26,0">
+                  <Border x:Name="LogoMarkHost" Width="38" Height="38" VerticalAlignment="Center" CornerRadius="12" Padding="5" Cursor="Hand" Background="#33000000"/>
+                  <Grid x:Name="LogoWordHost" VerticalAlignment="Center" Margin="10,0,0,0" Cursor="Hand"/>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                   <!-- Recherche d'un réglage (Ctrl+K) : suggestions au fil de la frappe -->
-                  <Border x:Name="SearchBox" Width="290" Height="34" CornerRadius="17" Margin="0,0,10,0"
-                          Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1">
+                  <Border x:Name="SearchBox" Width="250" Height="36" CornerRadius="18" Margin="0,0,10,0" Background="#1AFFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1">
                     <Grid>
                       <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#A6A1BC" VerticalAlignment="Center" Margin="14,1,0,0" IsHitTestVisible="False"/>
-                      <TextBlock x:Name="SearchHint" Text="Rechercher un réglage..." Foreground="#655E7E" FontSize="12.5" VerticalAlignment="Center" Margin="38,0,0,0" IsHitTestVisible="False"/>
+                      <TextBlock x:Name="SearchHint" Text="Rechercher..." Foreground="#8E88A8" FontSize="12.5" VerticalAlignment="Center" Margin="38,0,0,0" IsHitTestVisible="False"/>
                       <TextBlock x:Name="SearchKey" Text="Ctrl+K" Foreground="#655E7E" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,14,0" IsHitTestVisible="False"/>
                       <TextBox x:Name="SearchInput" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" CaretBrush="#FFFFFF" SelectionBrush="#00E5FF"
                                FontSize="12.5" VerticalAlignment="Center" VerticalContentAlignment="Center" Margin="34,0,12,0" Padding="2,0"/>
                     </Grid>
                   </Border>
-                  <Button x:Name="TopReport" Style="{StaticResource BtnSecondary}" VerticalAlignment="Center" Padding="12,6"
+                  <Button x:Name="TopReport" Style="{StaticResource BtnSecondary}" VerticalAlignment="Center" Padding="12,7"
                           ToolTip="Un bug, un souci ? Crée un fichier à envoyer, sans données personnelles.">
                     <StackPanel Orientation="Horizontal">
                       <TextBlock Text="&#xE7BA;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#F5A524" Margin="0,1,8,0" VerticalAlignment="Center"/>
-                      <TextBlock Text="Signaler un problème" FontSize="12.5" VerticalAlignment="Center"/>
+                      <TextBlock Text="Signaler" FontSize="12.5" VerticalAlignment="Center"/>
                     </StackPanel>
                   </Button>
                 </StackPanel>
-                <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom" VerticalOffset="6"
-                       AllowsTransparency="True" StaysOpen="True" PopupAnimation="Fade">
-                  <Border Width="430" Background="#171B23" BorderBrush="#2E2843" BorderThickness="1" CornerRadius="12" Padding="6" Margin="0,0,10,10">
-                    <Border.Effect><DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.45" Color="Black"/></Border.Effect>
-                    <StackPanel x:Name="SearchResults"/>
-                  </Border>
-                </Popup>
-              </Grid>
-              <ContentPresenter x:Name="PageHost" Grid.Row="1" ContentSource="SelectedContent" Margin="28,18,28,16">
-                <ContentPresenter.RenderTransform><TranslateTransform/></ContentPresenter.RenderTransform>
-              </ContentPresenter>
+                <StackPanel IsItemsHost="True" Orientation="Horizontal" VerticalAlignment="Center"/>
+              </DockPanel>
+            </Border>
+            <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom" VerticalOffset="8"
+                   AllowsTransparency="True" StaysOpen="True" PopupAnimation="Fade">
+              <Border Width="430" Background="#F2120E22" BorderBrush="#3300E5FF" BorderThickness="1" CornerRadius="18" Padding="8" Margin="0,0,10,10">
+                <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="4" Opacity="0.5" Color="Black"/></Border.Effect>
+                <StackPanel x:Name="SearchResults"/>
+              </Border>
+            </Popup>
+            <!-- Fil d'Ariane des pages d'outils, et numéro de version -->
+            <Grid Grid.Row="1" Margin="34,14,34,0">
+              <DockPanel x:Name="NavBar" Visibility="Collapsed" LastChildFill="False" HorizontalAlignment="Left">
+                <Button x:Name="NavBack" Style="{StaticResource BtnSecondary}" Content="←  Ordinateur" Padding="14,6" FontSize="12.5"/>
+                <TextBlock Text="›" Foreground="#655E7E" FontSize="16" Margin="12,0,10,2" VerticalAlignment="Center"/>
+                <TextBlock x:Name="NavCrumb" Foreground="#C9C3DD" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              </DockPanel>
             </Grid>
+            <ContentPresenter x:Name="PageHost" Grid.Row="2" ContentSource="SelectedContent" Margin="34,16,34,10">
+              <ContentPresenter.RenderTransform><TranslateTransform/></ContentPresenter.RenderTransform>
+            </ContentPresenter>
           </Grid>
         </ControlTemplate>
       </TabControl.Template>
@@ -476,7 +451,7 @@
               <Border Style="{StaticResource Card}" Margin="0,0,12,0">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                   <Grid Width="130" Height="130">
-                    <Ellipse Stroke="#231E33" StrokeThickness="10"/>
+                    <Ellipse Stroke="#22FFFFFF" StrokeThickness="10"/>
                     <Ellipse x:Name="ScoreRing" Stroke="#4EA8FF" StrokeThickness="10" StrokeDashArray="0 1000" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
                       <Ellipse.RenderTransform><RotateTransform Angle="-90"/></Ellipse.RenderTransform>
                     </Ellipse>
@@ -569,7 +544,7 @@
       <TabItem Visibility="Collapsed">
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="&#xE7FC;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="&#xE7FC;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Margin="0,2,8,0"/>
             <TextBlock Text="Optimisation gaming"/>
           </StackPanel>
         </TabItem.Header>
@@ -920,27 +895,44 @@
       <TabItem>
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="&#xE7F4;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="&#xE7F4;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Margin="0,2,8,0"/>
             <TextBlock Text="Ordinateur"/>
           </StackPanel>
         </TabItem.Header>
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="0,0,8,0">
-            <TextBlock Style="{StaticResource H1}" Text="Ordinateur"/>
-            <TextBlock x:Name="HubSub" Style="{StaticResource Sub}"/>
-            <Border Style="{StaticResource Card}" Margin="0,18,0,0" Padding="18,14">
-              <Grid>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="Auto"/>
-                  <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel x:Name="HubGaugeOpt" VerticalAlignment="Center"/>
-                <StackPanel x:Name="HubGaugeSec" Grid.Column="1" VerticalAlignment="Center"/>
-                <StackPanel x:Name="HubSummary" Grid.Column="2" VerticalAlignment="Center" Margin="24,0,0,0"/>
-              </Grid>
-            </Border>
-            <UniformGrid x:Name="HubCards" Columns="3" Margin="0,16,0,0"/>
+            <TextBlock x:Name="HubHello" Style="{StaticResource H1}" FontSize="36" Text="Salut"/>
+            <TextBlock x:Name="HubSub" Style="{StaticResource Sub}" FontSize="15" Foreground="#B9B3CC"/>
+            <Grid Margin="0,22,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250"/>
+                <ColumnDefinition Width="250"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border x:Name="HubOptCard" Style="{StaticResource Card}" Margin="0,0,16,0" Padding="16" Cursor="Hand">
+                <StackPanel x:Name="HubGaugeOpt" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+              </Border>
+              <Border x:Name="HubSecCard" Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,16,0" Padding="16" Cursor="Hand">
+                <StackPanel x:Name="HubGaugeSec" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+              </Border>
+              <Border x:Name="HubTodo" Grid.Column="2" CornerRadius="20" Padding="26,22" BorderThickness="1">
+                <Border.Background>
+                  <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#2200E5FF" Offset="0"/>
+                    <GradientStop Color="#22FF2EB5" Offset="1"/>
+                  </LinearGradientBrush>
+                </Border.Background>
+                <Border.BorderBrush>
+                  <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#AA00E5FF" Offset="0"/>
+                    <GradientStop Color="#AAFF2EB5" Offset="1"/>
+                  </LinearGradientBrush>
+                </Border.BorderBrush>
+                <StackPanel x:Name="HubTodoPanel" VerticalAlignment="Center"/>
+              </Border>
+            </Grid>
+            <UniformGrid x:Name="HubCards" Columns="3" Margin="-8,18,-8,0"/>
+            <TextBlock x:Name="HubSpecs" Foreground="#655E7E" FontSize="11.5" Margin="4,14,0,0" TextWrapping="Wrap"/>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
@@ -949,7 +941,7 @@
       <TabItem>
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="&#xE7FC;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="&#xE7FC;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Margin="0,2,8,0"/>
             <TextBlock Text="Jeux"/>
           </StackPanel>
         </TabItem.Header>
@@ -1017,7 +1009,7 @@
       <TabItem>
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="&#xE701;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="&#xE701;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Margin="0,2,8,0"/>
             <TextBlock Text="Réseau"/>
           </StackPanel>
         </TabItem.Header>
@@ -1085,7 +1077,7 @@
       <TabItem>
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="&#xE898;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="15" Margin="0,2,12,0"/>
+            <TextBlock Text="&#xE898;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="14" Margin="0,2,8,0"/>
             <TextBlock Text="Trafic"/>
           </StackPanel>
         </TabItem.Header>
@@ -1108,8 +1100,11 @@
       </TabItem>
     </TabControl>
 
-    <Border Grid.Row="2" Background="#B30E0C16" BorderBrush="#211C31" BorderThickness="0,1,0,0" Padding="16,8">
-      <StackPanel Orientation="Horizontal"><TextBlock Text="›" Foreground="#00E5FF" FontSize="14" FontWeight="Bold" Margin="0,-2,8,0" FontFamily="Cascadia Code, Consolas"/><TextBlock x:Name="StatusText" Text="Prêt." Foreground="#A6A1BC" FontSize="12" FontFamily="Cascadia Code, Consolas" VerticalAlignment="Center"/></StackPanel>
+    <Border Grid.Row="2" Background="#00000000" Padding="36,4,36,8">
+      <DockPanel>
+        <TextBlock x:Name="VersionText" DockPanel.Dock="Right" Foreground="#4E4866" FontSize="11" VerticalAlignment="Center"/>
+        <TextBlock x:Name="StatusText" Text="Prêt." Foreground="#8E88A8" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+      </DockPanel>
     </Border>
 
     <!-- Fiche détaillée d'un point à corriger -->
