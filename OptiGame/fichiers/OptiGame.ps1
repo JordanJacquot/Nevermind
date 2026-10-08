@@ -12,7 +12,7 @@
 param([switch]$Uninstall, [switch]$Demarrage)   # -Demarrage : lancé avec Windows, réduit près de l'horloge
 
 $AppVersion = '1.0.56'
-$UpdateRepo = 'JordanJacquot/OptiGame'   # dépôt GitHub où sont publiées les mises à jour
+$UpdateRepo = 'JordanJacquot/Nexo'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
 # Droits administrateur
