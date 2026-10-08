@@ -1,4 +1,4 @@
-﻿# Nexo : diagnostic des FPS d'une partie. D'où vient le problème, et comment le régler
+﻿# Nevermind : diagnostic des FPS d'une partie. D'où vient le problème, et comment le régler
 # sans rendre le jeu moche (on commence toujours par ce qui coûte le moins en qualité).
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
@@ -135,7 +135,7 @@ function Get-FpsDiagnosis($S) {
     $items = New-Object System.Collections.ArrayList
     if (-not $d) {
         return @{ Limit = 'unknown'; Problem = $false; Status = 'info'; Headline = 'Pas de diagnostic pour cette partie'
-                  Text = 'Elle a été mesurée par une ancienne version de Nexo. Rejoue une partie pour avoir le diagnostic complet.'; Items = @() }
+                  Text = 'Elle a été mesurée par une ancienne version de Nevermind. Rejoue une partie pour avoir le diagnostic complet.'; Items = @() }
     }
     $avg = [double]$S.Avg; $low = [double]$S.Low1
     $perMin = $d.Stutters / [math]::Max(1.0, $S.Seconds / 60)
@@ -180,7 +180,7 @@ function Get-FpsDiagnosis($S) {
         Add-DiagItem $items 'bad' 'Le PC était sur batterie' 'Sur batterie, Windows bride le processeur et la carte graphique pour tenir plus longtemps : les FPS chutent.' @('Branche le chargeur quand tu joues.') $null
     }
     if ($limit -eq 'igpu' -and $game) {
-        Add-DiagItem $items 'bad' "Forcer la grosse carte graphique pour $gameName" 'Windows choisit parfois la puce intégrée pour économiser la batterie. Nexo peut obliger le jeu à utiliser la carte puissante.' @('Relance le jeu après le réglage.') @(
+        Add-DiagItem $items 'bad' "Forcer la grosse carte graphique pour $gameName" 'Windows choisit parfois la puce intégrée pour économiser la batterie. Nevermind peut obliger le jeu à utiliser la carte puissante.' @('Relance le jeu après le réglage.') @(
             @{ Label = 'Utiliser la carte puissante'; NoRefresh = $true; Arg = $game; Script = { param($g) Hide-TestPanel; Set-GameProfile $g 'gpu' $true; Show-Message "C'est réglé. Relance $($g.Name) pour que ce soit pris en compte." } })
     }
     $powerOk = $true
@@ -294,7 +294,7 @@ function Invoke-TweakFix([string[]]$Ids) {
     try { foreach ($t in $sel) { & $t.Apply; $done += $t.Titre } } finally { $log = $script:RunLog; $script:RunLog = $null }
     Build-GamingTab
     Update-BackupSummary
-    Show-ResultSheet 'C''est fait !' (@('Réglage appliqué :') + @($done | ForEach-Object { "•  $_" }) + @('Rejoue une partie : Nexo comparera tes FPS avant / après.')) $log $null
+    Show-ResultSheet 'C''est fait !' (@('Réglage appliqué :') + @($done | ForEach-Object { "•  $_" }) + @('Rejoue une partie : Nevermind comparera tes FPS avant / après.')) $log $null
 }
 
 # Section « d'où ça vient » dans la fiche d'une partie.
@@ -309,7 +309,7 @@ function Add-FpsDiagnosisView($S, $Body) {
     $card.Margin = New-Thickness 0 4 0 8
     $sp = New-Object System.Windows.Controls.StackPanel
     [void]$sp.Children.Add((New-Text $dg.Headline 16 '#FFFFFF' -Bold))
-    $t = New-Text $dg.Text 13 '#C9CED8'
+    $t = New-Text $dg.Text 13 '#D3CDE3'
     $t.Margin = New-Thickness 0 4 0 0
     [void]$sp.Children.Add($t)
     $d = $S.Diag
@@ -319,18 +319,18 @@ function Add-FpsDiagnosisView($S, $Body) {
         foreach ($b in @(@('Carte graphique', $d.GpuRatio), @('Processeur', $d.CpuRatio))) {
             $row = New-Grid @('130', '*', '50')
             $row.Margin = New-Thickness 0 2 0 2
-            Add-ToGrid $row (New-Text $b[0] 12 '#9AA3B2') 0
+            Add-ToGrid $row (New-Text $b[0] 12 '#A6A1BC') 0
             $pb = New-Object System.Windows.Controls.ProgressBar
             $pb.Height = 8; $pb.Minimum = 0; $pb.Maximum = 100; $pb.Value = [math]::Min(100.0, 100 * $b[1])
             $pb.Foreground = Get-Brush $(if ($b[1] -ge 0.85) { $Colors.warn } else { $Colors.info })
-            $pb.Background = Get-Brush '#262C38'; $pb.BorderThickness = New-Thickness 0 0 0 0; $pb.VerticalAlignment = 'Center'
+            $pb.Background = Get-Brush '#272237'; $pb.BorderThickness = New-Thickness 0 0 0 0; $pb.VerticalAlignment = 'Center'
             Add-ToGrid $row $pb 1
-            $v = New-Text ('{0:N0} %' -f (100 * $b[1])) 12 '#E6E8EE' -Semi
+            $v = New-Text ('{0:N0} %' -f (100 * $b[1])) 12 '#EEEBF7' -Semi
             $v.HorizontalAlignment = 'Right'
             Add-ToGrid $row $v 2
             [void]$bars.Children.Add($row)
         }
-        [void]$bars.Children.Add((New-Text 'Part du temps où chacun travaillait pour dessiner une image. Celui qui est proche de 100 % limite les FPS.' 11 '#5B6475'))
+        [void]$bars.Children.Add((New-Text 'Part du temps où chacun travaillait pour dessiner une image. Celui qui est proche de 100 % limite les FPS.' 11 '#655E7E'))
         [void]$sp.Children.Add($bars)
     }
     $card.Child = $sp

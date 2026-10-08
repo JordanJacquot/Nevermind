@@ -1,4 +1,4 @@
-﻿# Nexo : audit de sécurité du réseau.
+﻿# Nevermind : audit de sécurité du réseau.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -334,12 +334,12 @@ function New-AuditLine($C) {
     $head = New-Object System.Windows.Controls.TextBlock
     $head.TextWrapping = 'Wrap'
     $cat = New-Object System.Windows.Documents.Run ("$($AuditCats[$C.Cat])   ")
-    $cat.Foreground = Get-Brush '#5B6475'; $cat.FontSize = 11.5; $cat.FontWeight = 'SemiBold'
+    $cat.Foreground = Get-Brush '#655E7E'; $cat.FontSize = 11.5; $cat.FontWeight = 'SemiBold'
     $tt = New-Object System.Windows.Documents.Run $C.Title
     $tt.Foreground = Get-Brush '#FFFFFF'; $tt.FontSize = 13.5; $tt.FontWeight = 'SemiBold'
     [void]$head.Inlines.Add($cat); [void]$head.Inlines.Add($tt)
     [void]$sp.Children.Add($head)
-    [void]$sp.Children.Add((New-Text $C.Detail 12 '#9AA3B2'))
+    [void]$sp.Children.Add((New-Text $C.Detail 12 '#A6A1BC'))
     foreach ($i in @($C.Items | Select-Object -First 6)) {
         $it = New-Text "•  $i" 11.5 '#6B7486'
         $it.TextTrimming = 'CharacterEllipsis'; $it.TextWrapping = 'NoWrap'; $it.ToolTip = [string]$i
@@ -363,7 +363,7 @@ function Show-NetAuditResult($A) {
     $sp.VerticalAlignment = 'Center'
     $sp.Margin = New-Thickness 20 0 0 0
     [void]$sp.Children.Add((New-Text (Get-AuditLabel $A.Score) 20 $col -Bold))
-    $sub = New-Text "Audit du $($A.Date.ToString('dd/MM/yyyy à HH:mm')), $($A.Count) appareils vérifiés." 12.5 '#9AA3B2'
+    $sub = New-Text "Audit du $($A.Date.ToString('dd/MM/yyyy à HH:mm')), $($A.Count) appareils vérifiés." 12.5 '#A6A1BC'
     $sub.Margin = New-Thickness 0 4 0 0
     [void]$sp.Children.Add($sub)
     $chips = New-Object System.Windows.Controls.WrapPanel
@@ -401,7 +401,7 @@ function Show-NetAuditResult($A) {
     if ($oks.Count) {
         [void]$body.Children.Add((New-SectionTitle 'TOUT VA BIEN'))
         $box = New-Object System.Windows.Controls.Border
-        $box.Background = Get-Brush '#1A1F29'
+        $box.Background = Get-Brush '#1C1829'
         $box.CornerRadius = [System.Windows.CornerRadius]::new(10)
         $box.Padding = New-Thickness 14 8 14 8
         $box.Margin = New-Thickness 0 4 0 0
@@ -412,7 +412,7 @@ function Show-NetAuditResult($A) {
     }
     [void]$body.Children.Add((New-SectionTitle 'BONS RÉFLEXES'))
     foreach ($t in $AuditTips) {
-        $tip = New-Text "•  $t" 13 '#C9CED8'
+        $tip = New-Text "•  $t" 13 '#D3CDE3'
         $tip.Margin = New-Thickness 2 3 0 3
         [void]$body.Children.Add($tip)
     }
@@ -462,7 +462,7 @@ function Invoke-NetAudit {
     $stepper = New-Stepper ([ordered]@{ wifi = 'Wi-Fi'; box = 'Box et UPnP'; dns = 'DNS'; devices = 'Appareils'; pc = 'Ce PC' })
     [void]$body.Children.Add($stepper.El)
     $count = @($script:NetList | Where-Object { -not $_.Self }).Count
-    $wait = New-Text "Vérification de ton Wi-Fi, de ta box et de $count appareils. Ça prend une vingtaine de secondes, rien n'est modifié pendant l'audit." 13 '#9AA3B2'
+    $wait = New-Text "Vérification de ton Wi-Fi, de ta box et de $count appareils. Ça prend une vingtaine de secondes, rien n'est modifié pendant l'audit." 13 '#A6A1BC'
     $wait.Margin = New-Thickness 0 6 0 0
     [void]$body.Children.Add($wait)
     [OGNative]::Cancel = $false; [OGNative]::Progress = 0; [OGNative]::Phase = ''
@@ -516,7 +516,7 @@ function Export-NetAudit {
     if (-not $A) { return }
     $dlg = New-Object Microsoft.Win32.SaveFileDialog
     $dlg.Filter = 'Page web (*.html)|*.html'
-    $dlg.FileName = "Audit réseau Nexo $(Get-Date -Format 'yyyy-MM-dd').html"
+    $dlg.FileName = "Audit réseau Nevermind $(Get-Date -Format 'yyyy-MM-dd').html"
     $dlg.InitialDirectory = [Environment]::GetFolderPath('Desktop')
     if ($dlg.ShowDialog($Window) -ne $true) { return }
     $enc = { param($s) [System.Net.WebUtility]::HtmlEncode([string]$s) }
@@ -535,21 +535,21 @@ function Export-NetAudit {
     $html = @"
 <!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Audit réseau Nexo</title>
+<title>Audit réseau Nevermind</title>
 <style>
-body{margin:0;background:#0E1014;color:#E6E8EE;font:15px/1.5 'Segoe UI',system-ui,sans-serif}
+body{margin:0;background:#0D0B14;color:#EEEBF7;font:15px/1.5 'Segoe UI',system-ui,sans-serif}
 main{max-width:860px;margin:0 auto;padding:32px 16px}
 h1{margin:0;font-size:28px}h1 span{color:#00D9F5}
 h2{margin:32px 0 12px;font-size:18px}
-.sub{color:#9AA3B2}
-.score{display:flex;align-items:center;gap:20px;background:#181C24;border:1px solid #232937;border-radius:12px;padding:20px;margin-top:24px}
+.sub{color:#A6A1BC}
+.score{display:flex;align-items:center;gap:20px;background:#18151F;border:1px solid #231E33;border-radius:12px;padding:20px;margin-top:24px}
 .score b{font-size:48px;color:$col}
-.f{display:flex;gap:14px;background:#181C24;border:1px solid #232937;border-radius:12px;padding:12px 16px;margin-bottom:8px}
-.f p{margin:2px 0 0;color:#9AA3B2;font-size:14px}
-.f ul{margin:6px 0 0;padding-left:18px;color:#C9CED8;font-size:13px}
-.cat{display:inline-block;margin-right:10px;color:#5B6475;font-size:12px;font-weight:600;text-transform:uppercase}
+.f{display:flex;gap:14px;background:#18151F;border:1px solid #231E33;border-radius:12px;padding:12px 16px;margin-bottom:8px}
+.f p{margin:2px 0 0;color:#A6A1BC;font-size:14px}
+.f ul{margin:6px 0 0;padding-left:18px;color:#D3CDE3;font-size:13px}
+.cat{display:inline-block;margin-right:10px;color:#655E7E;font-size:12px;font-weight:600;text-transform:uppercase}
 .dot{flex:none;width:12px;height:12px;border-radius:50%;margin-top:6px}
-.tips{background:#181C24;border:1px solid #232937;border-radius:12px;padding:12px 16px 12px 34px;color:#C9CED8}
+.tips{background:#18151F;border:1px solid #231E33;border-radius:12px;padding:12px 16px 12px 34px;color:#D3CDE3}
 </style></head><body><main>
 <h1>Opti<span>Game</span></h1>
 <div class="sub">Audit de sécurité du réseau, depuis $(& $enc $env:COMPUTERNAME), le $($A.Date.ToString('dd/MM/yyyy à HH:mm'))</div>

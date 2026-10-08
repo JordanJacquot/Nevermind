@@ -1,4 +1,4 @@
-﻿# Nexo : données, sauvegarde et accès au registre.
+﻿# Nevermind : données, sauvegarde et accès au registre.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------

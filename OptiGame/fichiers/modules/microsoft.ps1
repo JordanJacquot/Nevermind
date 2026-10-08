@@ -1,4 +1,4 @@
-﻿# Nexo : ce que Windows envoie à Microsoft. Les identifiants du PC, les réglages qui envoient
+﻿# Nevermind : ce que Windows envoie à Microsoft. Les identifiants du PC, les réglages qui envoient
 # des données en plus du minimum (avec « Couper », annulable), et les envois vus en direct.
 # Le contenu est chiffré : ce qui est envoyé vient de la documentation de Microsoft, pas d'une lecture.
 # Chargé par OptiGame.ps1 après trafic.ps1.
@@ -169,7 +169,7 @@ function Invoke-PrivacyOff([array]$Items) {
 
 function New-PrivacyRow($It) {
     $b = New-Object System.Windows.Controls.Border
-    $b.Background = Get-Brush '#1E232D'
+    $b.Background = Get-Brush '#1D1A2A'
     $b.BorderBrush = Get-Brush $(if ($It.On) { $Colors.warn } else { $Colors.ok })
     $b.BorderThickness = New-Thickness 3 0 0 0
     $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
@@ -181,7 +181,7 @@ function New-PrivacyRow($It) {
     [void]$hd.Children.Add((New-Text $It.Title 14 '#FFFFFF' -Semi))
     [void]$hd.Children.Add((New-Badge $(if ($It.On) { 'Envoie' } else { 'Coupé' }) $(if ($It.On) { $Colors.warn } else { $Colors.ok })))
     [void]$sp.Children.Add($hd)
-    $d = New-Text $It.Text 12 '#9AA3B2'
+    $d = New-Text $It.Text 12 '#A6A1BC'
     $d.Margin = New-Thickness 0 4 0 0
     [void]$sp.Children.Add($d)
     Add-ToGrid $g $sp 0
@@ -238,13 +238,13 @@ function Show-WindowsPrivacy {
     # En direct
     [void]$body.Children.Add((New-SectionTitle 'EN CE MOMENT'))
     if (-not $script:Traffic) {
-        [void]$body.Children.Add((New-Text 'Lance la surveillance de la page Trafic pour voir quels programmes parlent à Microsoft.' 12.5 '#9AA3B2'))
+        [void]$body.Children.Add((New-Text 'Lance la surveillance de la page Trafic pour voir quels programmes parlent à Microsoft.' 12.5 '#A6A1BC'))
     } else {
         $ms = @(Get-MsTraffic)
-        if (-not $ms.Count) { [void]$body.Children.Add((New-Text 'Aucun échange avec Microsoft vu depuis le début de la surveillance.' 12.5 '#9AA3B2')) }
+        if (-not $ms.Count) { [void]$body.Children.Add((New-Text 'Aucun échange avec Microsoft vu depuis le début de la surveillance.' 12.5 '#A6A1BC')) }
         foreach ($r in @($ms | Select-Object -First 12)) {
             $b = New-Object System.Windows.Controls.Border
-            $b.Background = Get-Brush '#1E232D'
+            $b.Background = Get-Brush '#1D1A2A'
             $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
             $b.Padding = New-Thickness 16 10 16 10
             $b.Margin = New-Thickness 0 0 0 6
@@ -253,7 +253,7 @@ function Show-WindowsPrivacy {
             $t = New-Text $r.App.Title 13.5 '#FFFFFF' -Semi
             $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'
             Add-ToGrid $hd $t 0
-            $vol = New-Text "↑ $(Format-Bytes $r.Out)   ↓ $(Format-Bytes $r.In)" 12 '#C9CED8'
+            $vol = New-Text "↑ $(Format-Bytes $r.Out)   ↓ $(Format-Bytes $r.In)" 12 '#D3CDE3'
             $vol.Margin = New-Thickness 12 0 0 0
             Add-ToGrid $hd $vol 1
             [void]$sp.Children.Add($hd)
@@ -261,7 +261,7 @@ function Show-WindowsPrivacy {
             foreach ($h in $r.Hits) { $k = if ($h.Svc) { $h.Svc.Label } else { '' }; if (-not $svcs.ContainsKey($k)) { $svcs[$k] = $h.Svc } }
             foreach ($k in @($svcs.Keys | Sort-Object { $_ -eq '' })) {
                 $line = if ($k) { "$k : $($svcs[$k].Text)" } else { 'Autre service Microsoft : le nom du serveur ne dit pas lequel' }
-                $l = New-Text $line 12 $(if ($k -in 'Télémétrie de Windows', 'Pubs et suggestions de Windows') { $Colors.warn } else { '#9AA3B2' })
+                $l = New-Text $line 12 $(if ($k -in 'Télémétrie de Windows', 'Pubs et suggestions de Windows') { $Colors.warn } else { '#A6A1BC' })
                 $l.Margin = New-Thickness 0 3 0 0
                 [void]$sp.Children.Add($l)
             }
@@ -269,7 +269,7 @@ function Show-WindowsPrivacy {
             [void]$body.Children.Add($b)
         }
     }
-    $n = New-Text 'Le contenu est chiffré : ce qui est envoyé est décrit d''après la documentation de Microsoft, pas lu. Les données « obligatoires » (identifiant de l''appareil, version, plantages) ne peuvent pas être coupées sur Windows Famille ou Pro sans arrêter le service de télémétrie.' 11.5 '#5B6475'
+    $n = New-Text 'Le contenu est chiffré : ce qui est envoyé est décrit d''après la documentation de Microsoft, pas lu. Les données « obligatoires » (identifiant de l''appareil, version, plantages) ne peuvent pas être coupées sur Windows Famille ou Pro sans arrêter le service de télémétrie.' 11.5 '#655E7E'
     $n.Margin = New-Thickness 0 12 0 0
     [void]$body.Children.Add($n)
 }

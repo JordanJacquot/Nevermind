@@ -1,4 +1,4 @@
-﻿# Nexo : barre de recherche des réglages (en haut de chaque page, Ctrl+K).
+﻿# Nevermind : barre de recherche des réglages (en haut de chaque page, Ctrl+K).
 # Suggestions au fil de la frappe ; un clic ouvre la bonne page et fait clignoter le réglage.
 # Chargé par OptiGame.ps1 après les pages (il connaît leurs numéros) et avant evenements.ps1.
 
@@ -57,14 +57,14 @@ $SearchEntries = @(
     @{ T = 'Mettre à jour l''antivirus'; P = 6; A = 'Mettre à jour la base'; K = 'defender definitions signatures antivirus' },
     @{ T = 'Niveau de protection'; P = 6; A = 'Points à vérifier'; K = 'protection securite score pare feu' },
     # Sauvegarde
-    @{ T = 'Tout annuler'; P = 7; A = 'Annuler les changements de Nexo'; K = 'annuler restaurer revenir arriere defaire' },
+    @{ T = 'Tout annuler'; P = 7; A = 'Annuler les changements de Nevermind'; K = 'annuler restaurer revenir arriere defaire' },
     @{ T = 'Historique des changements'; P = 7; A = 'Historique des changements'; K = 'historique annuler changement' },
     @{ T = 'Point de restauration Windows'; P = 7; A = 'Point de restauration Windows'; K = 'restauration systeme sauvegarde' },
     @{ T = 'Rapport du PC'; P = 7; A = 'Rapport de ton PC'; K = 'rapport export html partager configuration' },
-    @{ T = 'Mises à jour de Nexo'; P = 7; A = 'Mises à jour'; K = 'version update maj nouvelle' },
+    @{ T = 'Mises à jour de Nevermind'; P = 7; A = 'Mises à jour'; K = 'version update maj nouvelle' },
     @{ T = 'Versions bêta'; P = 7; A = 'Mises à jour'; K = 'beta preversion avant premiere' },
     @{ T = 'Raccourci sur le bureau'; P = 7; A = 'Raccourci et démarrage'; K = 'raccourci bureau icone' },
-    @{ T = 'Lancer Nexo au démarrage du PC'; P = 7; A = 'Raccourci et démarrage'; K = 'demarrage automatique boot windows lancement auto allumage' },
+    @{ T = 'Lancer Nevermind au démarrage du PC'; P = 7; A = 'Raccourci et démarrage'; K = 'demarrage automatique boot windows lancement auto allumage' },
     @{ T = 'Signaler un problème'; P = 7; A = 'Signaler un problème'; K = 'bug erreur rapport aide support' },
     # Réseau
     @{ T = 'Scanner le réseau'; P = 'reseau'; A = 'Scanner le réseau'; K = 'appareils wifi box scan connectes' },
@@ -78,7 +78,7 @@ $SearchEntries = @(
     @{ T = 'Bloquer Internet à un programme'; P = 'trafic'; A = 'Ce qui sort de ton PC'; K = 'pare feu bloquer internet firewall programme' }
 )
 # Suggestions quand la barre est vide
-$SearchStarters = @('Compteur de FPS à l''écran (overlay)', 'Mes FPS ne sont pas normaux', 'Lag en ligne', 'Nettoyage du disque', 'Lancer Nexo au démarrage du PC', 'Ce que Windows envoie à Microsoft')
+$SearchStarters = @('Compteur de FPS à l''écran (overlay)', 'Mes FPS ne sont pas normaux', 'Lag en ligne', 'Nettoyage du disque', 'Lancer Nevermind au démarrage du PC', 'Ce que Windows envoie à Microsoft')
 
 # Minuscules, sans accents ni ponctuation
 function ConvertTo-SearchText([string]$Text) {
@@ -183,12 +183,12 @@ function Update-SearchResults {
     $script:Search.List = $list
     $script:Search.Sel = 0
     if ($head) {
-        $h = New-Text $head 10.5 '#5B6475' -Semi
+        $h = New-Text $head 10.5 '#655E7E' -Semi
         $h.Margin = New-Thickness 10 4 0 4
         [void]$box.Children.Add($h)
     }
     if (-not $list.Count) {
-        $n = New-Text "Aucun réglage trouvé pour « $($text.Trim()) ». Essaie un autre mot : fps, ping, démarrage, nettoyage..." 12.5 '#9AA3B2'
+        $n = New-Text "Aucun réglage trouvé pour « $($text.Trim()) ». Essaie un autre mot : fps, ping, démarrage, nettoyage..." 12.5 '#A6A1BC'
         $n.Margin = New-Thickness 10 8 10 8
         [void]$box.Children.Add($n)
     }
@@ -204,7 +204,7 @@ function Update-SearchResults {
         $t = New-Text $e.T 13 '#FFFFFF' -Semi
         $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'
         [void]$sp.Children.Add($t)
-        $w = New-Text $e.Where 11.5 '#9AA3B2'
+        $w = New-Text $e.Where 11.5 '#A6A1BC'
         $w.TextTrimming = 'CharacterEllipsis'; $w.TextWrapping = 'NoWrap'
         [void]$sp.Children.Add($w)
         $row.Child = $sp
@@ -268,6 +268,12 @@ function Open-SearchEntry($E) {
     }.GetNewClosure())
 }
 
+# Texte d'un TextBlock, même fait de plusieurs morceaux colorés (son .Text est alors vide)
+function Get-TextBlockText($Tb) {
+    if ($Tb.Text) { return $Tb.Text }
+    -join @($Tb.Inlines | ForEach-Object { if ($_ -is [System.Windows.Documents.Run]) { $_.Text } })
+}
+
 # Premier élément visible de la page qui affiche ce texte (titre, bouton, case)
 function Find-PageElement($Root, [string]$Text) {
     $stack = New-Object System.Collections.Stack
@@ -276,8 +282,9 @@ function Find-PageElement($Root, [string]$Text) {
     while ($stack.Count) {
         $x = $stack.Pop()
         if ($x -is [System.Windows.UIElement] -and $x.Visibility -ne 'Visible') { continue }
-        $label = if ($x -is [System.Windows.Controls.TextBlock]) { $x.Text } elseif ($x -is [System.Windows.Controls.ContentControl] -and $x.Content -is [string]) { [string]$x.Content } else { $null }
+        $label = if ($x -is [System.Windows.Controls.TextBlock]) { Get-TextBlockText $x } elseif ($x -is [System.Windows.Controls.ContentControl] -and $x.Content -is [string]) { [string]$x.Content } else { $null }
         if ($label) {
+            $label = $label -replace '^// ', ''   # titres de section « // TITRE »
             if ($label -eq $Text) { return $x }
             if (-not $partial -and $label.StartsWith($Text)) { $partial = $x }
         }

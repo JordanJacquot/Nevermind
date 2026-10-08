@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    Nexo 1.0.56
+    Nevermind 1.0.57
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -11,8 +11,8 @@
 #>
 param([switch]$Uninstall, [switch]$Demarrage)   # -Demarrage : lancé avec Windows, réduit près de l'horloge
 
-$AppVersion = '1.0.56'
-$UpdateRepo = 'JordanJacquot/Nexo'   # dépôt GitHub où sont publiées les mises à jour
+$AppVersion = '1.0.57'
+$UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
 # Droits administrateur
@@ -20,7 +20,7 @@ $UpdateRepo = 'JordanJacquot/Nexo'   # dépôt GitHub où sont publiées les mis
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Drawing, System.Windows.Forms
 
 # ---------------------------------------------------------------------------
-# Une seule fenêtre : si Nexo tourne déjà (même caché près de l'horloge), on le ramène devant
+# Une seule fenêtre : si Nevermind tourne déjà (même caché près de l'horloge), on le ramène devant
 # ---------------------------------------------------------------------------
 # La fenêtre ouverte a les droits administrateur : ce lancement-ci ne peut pas lui envoyer de signal
 # direct, il dépose donc une « demande d'affichage » qu'elle surveille.
@@ -68,8 +68,8 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
             @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"") + @(if ($Uninstall) { '-Uninstall' }))
     } catch {
         [System.Windows.MessageBox]::Show(
-            "Nexo a besoin des droits administrateur pour modifier les réglages de Windows.`n`nRelance l'application et clique sur « Oui » quand Windows le demande.",
-            'Nexo', 'OK', 'Warning') | Out-Null
+            "Nevermind a besoin des droits administrateur pour modifier les réglages de Windows.`n`nRelance l'application et clique sur « Oui » quand Windows le demande.",
+            'Nevermind', 'OK', 'Warning') | Out-Null
     }
     exit
 }
@@ -87,12 +87,12 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
     try { if (Test-Path -LiteralPath $ShowRequest) { [IO.File]::Delete($ShowRequest) } } catch {}
 }
 
-# Retire la marque « téléchargé depuis Internet » des fichiers de Nexo, pour que
+# Retire la marque « téléchargé depuis Internet » des fichiers de Nevermind, pour que
 # Windows n'affiche plus d'avertissement aux lancements suivants.
 try {
     $appRoot = if ((Split-Path $PSScriptRoot -Leaf) -eq 'fichiers') { Split-Path $PSScriptRoot -Parent } else { $PSScriptRoot }
     @(Get-ChildItem -LiteralPath $PSScriptRoot -File -Recurse -ErrorAction SilentlyContinue) +
-    @(Get-ChildItem -LiteralPath $appRoot -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(Nexo\.exe|Désinstaller Nexo\.exe|OptiGame\.exe|Désinstaller OptiGame\.exe|LISEZMOI\.txt)$' }) |
+    @(Get-ChildItem -LiteralPath $appRoot -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(Nevermind\.exe|Désinstaller Nevermind\.exe|OptiGame\.exe|Désinstaller OptiGame\.exe|LISEZMOI\.txt)$' }) |
         Unblock-File -ErrorAction SilentlyContinue
 } catch {}
 
@@ -104,9 +104,9 @@ if (-not $env:OPTIGAME_TEST -and -not $Uninstall -and -not $Demarrage) {
     try {
         $Splash = New-Object System.Windows.Window
         $Splash.WindowStyle = 'None'; $Splash.ResizeMode = 'NoResize'; $Splash.WindowStartupLocation = 'CenterScreen'
-        $Splash.Width = 360; $Splash.Height = 190; $Splash.Title = 'Nexo'
-        $Splash.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#12151B')
-        $Splash.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#2C3342'); $Splash.BorderThickness = 1
+        $Splash.Width = 360; $Splash.Height = 190; $Splash.Title = 'Nevermind'
+        $Splash.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#110F19')
+        $Splash.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#2E2843'); $Splash.BorderThickness = 1
         $sp = New-Object System.Windows.Controls.StackPanel
         $sp.VerticalAlignment = 'Center'; $sp.HorizontalAlignment = 'Center'
         $ico = Join-Path $PSScriptRoot 'OptiGame.ico'
@@ -117,7 +117,7 @@ if (-not $env:OPTIGAME_TEST -and -not $Uninstall -and -not $Demarrage) {
             $img.Width = 56; $img.Height = 56; $img.Margin = '0,0,0,12'
             [void]$sp.Children.Add($img)
         }
-        foreach ($t in @(@('Nexo', 22, '#FFFFFF', 'Bold'), @('Préparation de ton tableau de bord...', 13, '#9AA3B2', 'Normal'))) {
+        foreach ($t in @(@('Nevermind', 22, '#FFFFFF', 'Bold'), @('Préparation de ton tableau de bord...', 13, '#A6A1BC', 'Normal'))) {
             $tb = New-Object System.Windows.Controls.TextBlock
             $tb.Text = $t[0]; $tb.FontSize = $t[1]; $tb.FontWeight = $t[3]; $tb.HorizontalAlignment = 'Center'
             $tb.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString($t[2])
@@ -136,7 +136,7 @@ $AppDir = $PSScriptRoot
 $ModulesDir = Join-Path $AppDir 'modules'
 $missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'optimisations.ps1', 'systeme.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'reseau-avance.ps1', 'carte-reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'assistance.ps1', 'jeu.ps1', 'diagnostic-fps.ps1', 'trafic.ps1', 'microsoft.ps1', 'lag.ps1', 'bibliotheque.ps1', 'recherche.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
 if ($missing) {
-    [System.Windows.MessageBox]::Show("Des fichiers de Nexo sont manquants :`n`n$($missing -join ', ')`n`nRetélécharge Nexo et remplace tout le dossier.", 'OptiGame', 'OK', 'Error') | Out-Null
+    [System.Windows.MessageBox]::Show("Des fichiers de Nevermind sont manquants :`n`n$($missing -join ', ')`n`nRetélécharge Nevermind et remplace tout le dossier.", 'OptiGame', 'OK', 'Error') | Out-Null
     exit
 }
 
@@ -175,11 +175,11 @@ $script:PingResults = @()
 # Lancé avec Windows : la fenêtre se prépare sans s'afficher, puis reste près de l'horloge
 $script:StartHidden = [bool]$Demarrage
 if ($script:StartHidden) { $Window.ShowInTaskbar = $false; $Window.ShowActivated = $false; $Window.WindowState = 'Minimized' }
-Write-Log "Démarrage Nexo $AppVersion (Windows build $($script:Build), langue $((Get-UICulture).Name), PowerShell $($PSVersionTable.PSVersion))$(if ($Demarrage) { ', lancé avec Windows' })"
+Write-Log "Démarrage Nevermind $AppVersion (Windows build $($script:Build), langue $((Get-UICulture).Name), PowerShell $($PSVersionTable.PSVersion))$(if ($Demarrage) { ', lancé avec Windows' })"
 $Window.Show()
 [System.Windows.Threading.Dispatcher]::Run()
 if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
-    # Libère la place avant de relancer, sinon la nouvelle version croirait que Nexo est déjà ouvert
+    # Libère la place avant de relancer, sinon la nouvelle version croirait que Nevermind est déjà ouvert
     if ($script:InstanceMutex) { try { $script:InstanceMutex.ReleaseMutex() } catch {}; $script:InstanceMutex.Dispose(); $script:InstanceMutex = $null }
     Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"")
 }

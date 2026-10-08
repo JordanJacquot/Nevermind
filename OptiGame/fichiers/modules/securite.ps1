@@ -1,4 +1,4 @@
-﻿# Nexo : onglet Sécurité (antivirus, points suspects, analyses Defender).
+﻿# Nevermind : onglet Sécurité (antivirus, points suspects, analyses Defender).
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -181,7 +181,7 @@ function New-StatusLine([string]$Label, [string]$Value, [string]$Status) {
     $dot.Width = 9; $dot.Height = 9; $dot.Fill = Get-Brush $Colors[$Status]
     $dot.Margin = New-Thickness 0 0 10 0; $dot.VerticalAlignment = 'Center'
     Add-ToGrid $g $dot 0
-    Add-ToGrid $g (New-Text $Label 13 '#9AA3B2') 1
+    Add-ToGrid $g (New-Text $Label 13 '#A6A1BC') 1
     Add-ToGrid $g (New-Text $Value 13 '#FFFFFF' -Semi) 2
     $g
 }
@@ -197,7 +197,7 @@ function New-SecurityCard($Check) {
     Add-ToGrid $head $dot 0
     $txt = New-Object System.Windows.Controls.StackPanel
     [void]$txt.Children.Add((New-Text $Check.Title 14.5 '#FFFFFF' -Semi))
-    $d = New-Text $Check.Detail 12.5 '#9AA3B2'
+    $d = New-Text $Check.Detail 12.5 '#A6A1BC'
     $d.Margin = New-Thickness 0 3 0 0
     [void]$txt.Children.Add($d)
     Add-ToGrid $head $txt 1
@@ -211,12 +211,12 @@ function New-SecurityCard($Check) {
         $items = New-Object System.Windows.Controls.StackPanel
         $shown = if ($Check.ShowAll) { @($Check.Items) } else { @($Check.Items | Select-Object -First 5) }
         foreach ($i in $shown) {
-            $t2 = New-Text ([string]$i) 12 '#C9CED8'
+            $t2 = New-Text ([string]$i) 12 '#D3CDE3'
             if ($Check.ShowAll) { $t2.TextWrapping = 'Wrap' } else { $t2.TextTrimming = 'CharacterEllipsis'; $t2.TextWrapping = 'NoWrap'; $t2.ToolTip = [string]$i }
             $t2.Margin = New-Thickness 0 2 0 2
             [void]$items.Children.Add($t2)
         }
-        if (-not $Check.ShowAll -and @($Check.Items).Count -gt 5) { [void]$items.Children.Add((New-Text "et $(@($Check.Items).Count - 5) autre(s)..." 12 '#5B6475')) }
+        if (-not $Check.ShowAll -and @($Check.Items).Count -gt 5) { [void]$items.Children.Add((New-Text "et $(@($Check.Items).Count - 5) autre(s)..." 12 '#655E7E')) }
         $box.Child = $items
         [void]$sp.Children.Add($box)
     }
@@ -329,7 +329,7 @@ function Update-SecurityTab {
     $ui.SecHistory.Children.Clear()
     $hist = @(Get-ThreatHistory $S)
     if (-not $hist.Count) {
-        [void]$ui.SecHistory.Children.Add((New-Text 'Aucune menace trouvée sur ce PC récemment.' 13 '#9AA3B2'))
+        [void]$ui.SecHistory.Children.Add((New-Text 'Aucune menace trouvée sur ce PC récemment.' 13 '#A6A1BC'))
     }
     foreach ($h in $hist) {
         $card = New-Card
@@ -337,7 +337,7 @@ function Update-SecurityTab {
         $row = New-Grid @('*', 'Auto')
         $sp = New-Object System.Windows.Controls.StackPanel
         [void]$sp.Children.Add((New-Text "$($h.Name)" 13.5 '#FFFFFF' -Semi))
-        $sub = New-Text "$($h.When.ToString('dd/MM/yyyy HH:mm'))   $($h.File)" 12 '#9AA3B2'
+        $sub = New-Text "$($h.When.ToString('dd/MM/yyyy HH:mm'))   $($h.File)" 12 '#A6A1BC'
         $sub.TextTrimming = 'CharacterEllipsis'; $sub.TextWrapping = 'NoWrap'; $sub.ToolTip = $h.File
         [void]$sp.Children.Add($sub)
         Add-ToGrid $row $sp 0
@@ -376,7 +376,7 @@ function New-Radar {
     foreach ($r in 90, 64, 38) {
         $e = New-Object System.Windows.Shapes.Ellipse
         $e.Width = $r * 2; $e.Height = $r * 2
-        $e.Stroke = Get-Brush '#1F2633'; $e.StrokeThickness = 1.5
+        $e.Stroke = Get-Brush '#201B30'; $e.StrokeThickness = 1.5
         [void]$g.Children.Add($e)
     }
     $sweep = New-Object System.Windows.Shapes.Path
@@ -425,7 +425,7 @@ function Invoke-DefenderScan([string]$Type, [string[]]$Paths, [string]$Title) {
         'QuickScan'  { 'Analyse des endroits où se cachent les virus. Ça prend en général quelques minutes, tu peux continuer à utiliser ton PC.' }
         'FullScan'   { 'Analyse de tous les fichiers du PC. Ça peut prendre une heure ou plus : tu peux continuer à utiliser ton PC.' }
         default      { "Analyse de $(@($Paths).Count) élément$(if (@($Paths).Count -gt 1) {'s'})." }
-    }) 13 '#9AA3B2'
+    }) 13 '#A6A1BC'
     $hint.HorizontalAlignment = 'Center'; $hint.TextAlignment = 'Center'
     $hint.Margin = New-Thickness 40 4 40 10
     [void]$body.Children.Add($hint)
@@ -480,7 +480,7 @@ function Invoke-DefenderScan([string]$Type, [string[]]$Paths, [string]$Title) {
     $script:LastScanResult = if ($found.Count) { 'threats' } else { 'clean' }
     if (-not $found.Count) {
         $radar.Shield.Fill = Get-Brush $Colors.ok
-        $check = New-Text '✓' 30 '#0B0D10' -Bold
+        $check = New-Text '✓' 30 '#07060C' -Bold
         $check.HorizontalAlignment = 'Center'; $check.VerticalAlignment = 'Center'
         [void]$radar.El.Children.Add($check)
         $scale = New-Object System.Windows.Media.ScaleTransform 0.6, 0.6

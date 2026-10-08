@@ -1,4 +1,4 @@
-﻿# Nexo : constats, score, fiches de correction et retour en arrière.
+﻿# Nevermind : constats, score, fiches de correction et retour en arrière.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -135,7 +135,7 @@ function Show-Improvements($Active) {
         $row.CornerRadius = [System.Windows.CornerRadius]::new(10)
         $row.Padding = New-Thickness 12 10 12 10
         $row.Margin = New-Thickness 0 0 0 6
-        $row.Background = Get-Brush '#1D222C'
+        $row.Background = Get-Brush '#1D1929'
         $row.Cursor = [System.Windows.Input.Cursors]::Hand
         $row.Tag = $f
         $g = New-Grid @('Auto', '*', 'Auto', 'Auto')
@@ -162,14 +162,14 @@ function Show-Improvements($Active) {
         $badge.Margin = New-Thickness 0 0 12 0
         Add-ToGrid $g $badge 2
 
-        $chev = New-Text '›' 22 '#9AA3B2' -Bold
+        $chev = New-Text '›' 22 '#A6A1BC' -Bold
         $chev.VerticalAlignment = 'Center'
         $chev.Margin = New-Thickness 0 -4 0 0
         Add-ToGrid $g $chev 3
 
         $row.Child = $g
         $row.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush '#252B37' })
-        $row.Add_MouseLeave({ param($s, $e) $s.Background = Get-Brush '#1D222C' })
+        $row.Add_MouseLeave({ param($s, $e) $s.Background = Get-Brush '#1D1929' })
         $row.Add_MouseLeftButtonUp({ param($s, $e) Open-Sheet @($s.Tag) })
         [void]$panel.Children.Add($row)
     }
@@ -191,7 +191,7 @@ function Add-FindingCard($Panel, $f, [switch]$Ignored) {
     if ($f.Gain -gt 0 -and -not $Ignored) { [void]$head.Children.Add((New-Badge "+$($f.Gain) pts" $Colors.ok)) }
     [void]$sp.Children.Add($head)
     if ($f.Detail) {
-        $d = New-Text $f.Detail 12.5 '#9AA3B2'
+        $d = New-Text $f.Detail 12.5 '#A6A1BC'
         $d.Margin = New-Thickness 0 3 0 0
         [void]$sp.Children.Add($d)
     }
@@ -261,14 +261,14 @@ function Show-Findings($All, $Active) {
 # Fiche détaillée (fenêtre par dessus l'application)
 # ---------------------------------------------------------------------------
 function Add-SheetSection([string]$Title, [string[]]$Lines, [switch]$Numbered, [switch]$Bullets) {
-    $h = New-Text $Title 13 '#9AA3B2' -Semi
+    $h = New-Text $Title 13 '#A6A1BC' -Semi
     $h.Margin = New-Thickness 0 18 0 6
     [void]$ui.SheetBody.Children.Add($h)
     $i = 0
     foreach ($l in $Lines) {
         $i++
         $prefix = if ($Numbered) { "$i.  " } elseif ($Bullets) { '•  ' } else { '' }
-        $t = New-Text "$prefix$l" 14 '#E6E8EE'
+        $t = New-Text "$prefix$l" 14 '#EEEBF7'
         $t.Margin = New-Thickness $(if ($prefix) { 4 } else { 0 }) 2 0 4
         [void]$ui.SheetBody.Children.Add($t)
     }
@@ -312,7 +312,7 @@ function Open-Sheet($Items) {
         $badges.Margin = New-Thickness 18 8 0 0
         if ($f.Gain -gt 0) { [void]$badges.Children.Add((New-Badge "+$($f.Gain) points au score" $Colors.ok)) }
         if ($fix) { $k = Get-FixKind $f; [void]$badges.Children.Add((New-Badge $k.Text $k.Color)) }
-        if ($fix -and $fix.Reboot) { [void]$badges.Children.Add((New-Badge 'Redémarrage requis' '#9AA3B2')) }
+        if ($fix -and $fix.Reboot) { [void]$badges.Children.Add((New-Badge 'Redémarrage requis' '#A6A1BC')) }
         foreach ($c in $badges.Children) { $c.Margin = New-Thickness 0 0 8 0 }
         [void]$body.Children.Add($badges)
 
@@ -341,7 +341,7 @@ function Open-Sheet($Items) {
         $auto = @($script:SheetItems)
         $sum = ($auto | Measure-Object Gain -Sum).Sum
         [void]$body.Children.Add((New-Text 'Tout corriger en un clic' 21 '#FFFFFF' -Bold))
-        $s = New-Text "L'app va appliquer $($auto.Count) correction$(if ($auto.Count -gt 1) {'s'}), pour environ +$sum points :" 14 '#9AA3B2'
+        $s = New-Text "L'app va appliquer $($auto.Count) correction$(if ($auto.Count -gt 1) {'s'}), pour environ +$sum points :" 14 '#A6A1BC'
         $s.Margin = New-Thickness 0 6 0 0
         [void]$body.Children.Add($s)
         foreach ($f in $auto) { Add-SheetSection "$($f.Titre)   (+$($f.Gain) pts)" $f.Fix.What -Bullets }
@@ -441,7 +441,7 @@ function Confirm-DisplayChange($Log) {
     $body = $ui.SheetBody
     $body.Children.Clear()
     [void]$body.Children.Add((New-Text 'Tes écrans s''affichent bien ?' 21 '#FFFFFF' -Bold))
-    $t = New-Text "La fréquence de l'écran vient d'être changée. Si un écran est resté noir ou affiche un message d'erreur, ne touche à rien : l'app revient toute seule à l'ancien réglage." 14 '#E6E8EE'
+    $t = New-Text "La fréquence de l'écran vient d'être changée. Si un écran est resté noir ou affiche un message d'erreur, ne touche à rien : l'app revient toute seule à l'ancien réglage." 14 '#EEEBF7'
     $t.Margin = New-Thickness 0 12 0 0
     [void]$body.Children.Add($t)
     Add-SheetInfo 'Sans réponse, retour automatique à l''ancien réglage.' $Colors.warn
@@ -546,7 +546,7 @@ function Show-ResultSheet([string]$Title, [string[]]$Lines, $Log, [string]$Note)
     Add-ToGrid $head (New-Text $Title 21 '#FFFFFF' -Bold) 1
     [void]$body.Children.Add($head)
     foreach ($l in $Lines) {
-        $t = New-Text $l 14 '#E6E8EE'
+        $t = New-Text $l 14 '#EEEBF7'
         $t.Margin = New-Thickness 0 8 0 0
         [void]$body.Children.Add($t)
     }

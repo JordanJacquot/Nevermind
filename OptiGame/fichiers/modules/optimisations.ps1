@@ -1,4 +1,4 @@
-﻿# Nexo : optimisations gaming, programmes au démarrage, jeux installés.
+﻿# Nevermind : optimisations gaming, programmes au démarrage, jeux installés.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -316,7 +316,7 @@ function Get-StartupItems {
 # Uninstall : comment le désinstaller (adresse, « exe|programme|arguments », ou la commande déclarée à Windows), Icon }.
 # Leftover = $true : dossier d'un jeu Steam désinstallé (pas un jeu, à proposer au nettoyage).
 # Art : visuels fournis par le launcher lui même (Ankama : jaquette, grande image, logo).
-# Autonome (tourne dans un fil séparé) : n'utilise aucune autre fonction de Nexo.
+# Autonome (tourne dans un fil séparé) : n'utilise aucune autre fonction de Nevermind.
 function Get-InstalledGames {
     $bad = 'unins|setup|install|redist|dxsetup|directx|crash|report|easyanticheat|anticheat|eac_|beservice|battleye|_be$|update|helper|prereq|dotnet|webhelper|vcredist|python|java|browser|error|cleanup|touchup|repair|bootstrapper|resourcecompiler|^ui(32|64)$|diagnos|benchmark_?tool|ubisoftgamelauncher|uplay|^upc$|link2ea|socialclub|rockstarservice|cefsharp|leagueclient|riotclient|vanguard|^vgc$|blizzard ?error|agent$|gamelaunchhelper|launcher|snoretoast|notifier'
     $notGames = '^(wallpaper_engine|Steamworks Shared|SteamVR|Steam Controller Configs|Steamworks Common Redistributables|GameSave|Minecraft Launcher)$'

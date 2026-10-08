@@ -1,4 +1,4 @@
-﻿# Nexo : recherche approfondie des appareils du réseau (appareils discrets, noms, modèles, caméras).
+﻿# Nevermind : recherche approfondie des appareils du réseau (appareils discrets, noms, modèles, caméras).
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # Services annoncés par les appareils, en clair.
@@ -260,7 +260,7 @@ function Invoke-NetDeepScan($Net, [string[]]$Subnet, $Hero) {
     $ui.BtnNetScan.IsEnabled = $false
     $bar = New-Object System.Windows.Controls.ProgressBar
     $bar.Width = 220; $bar.Height = 5; $bar.Margin = New-Thickness 0 8 0 0
-    $line = New-Text 'Recherche approfondie : appareils discrets, noms et modèles...' 12 '#9AA3B2'
+    $line = New-Text 'Recherche approfondie : appareils discrets, noms et modèles...' 12 '#A6A1BC'
     $line.HorizontalAlignment = 'Center'; $line.Margin = New-Thickness 0 10 0 0
     [void]$ui.NetHero.Children.Add($line)
     [void]$ui.NetHero.Children.Add($bar)
@@ -305,7 +305,7 @@ function Invoke-NetDeepScan($Net, [string[]]$Subnet, $Hero) {
     if ($hidden) { $parts += "$hidden discret$(if ($hidden -gt 1) {'s'})" }
     if ($cams) { $parts += "$cams caméra$(if ($cams -gt 1) {'s'}) possible$(if ($cams -gt 1) {'s'})" }
     $line.Text = "Recherche approfondie terminée$(if ($parts) { ' : ' + ($parts -join ', ') })."
-    $line.Foreground = Get-Brush $(if ($cams) { $Colors.warn } else { '#9AA3B2' })
+    $line.Foreground = Get-Brush $(if ($cams) { $Colors.warn } else { '#A6A1BC' })
     if ($hidden -or $cams) {
         $line.Text += '  Voir lesquels'
         $line.TextDecorations = [System.Windows.TextDecorations]::Underline

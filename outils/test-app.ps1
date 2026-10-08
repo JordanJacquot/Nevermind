@@ -501,9 +501,9 @@ $script:T.Run.Add_Tick({
                 $script:DesktopDir = $null
                 "raccourci créé vers $(Split-Path $exe -Leaf), démarrage automatique $(if ($auto) { 'activé' } else { 'désactivé' }) sur ce PC"
             }
-            Test-Step 'Identité Nexo (nom, logo animé, couleurs)' {
-                Assert-Test ($Window.Title -eq 'Nexo') "titre de la fenêtre : $($Window.Title)"
-                Assert-Test ($script:LogoMark -and $script:LogoWord -and $script:LogoWord.Text.Text -eq 'Nexo') 'logo de la barre de gauche absent'
+            Test-Step 'Identité Nevermind (nom, logo animé, couleurs)' {
+                Assert-Test ($Window.Title -eq 'Nevermind') "titre de la fenêtre : $($Window.Title)"
+                Assert-Test ($script:LogoMark -and $script:LogoWord -and $script:LogoWord.Text.Text -eq 'Nevermind') 'logo de la barre de gauche absent'
                 # Un saut de glitch déplace les calques puis les remet au repos
                 while ($script:LogoMark.Busy) { Wait-TestMs 100 }   # un saut automatique en cours
                 Start-NexoGlitch $script:LogoMark $script:LogoWord 1500
@@ -517,8 +517,8 @@ $script:T.Run.Add_Tick({
                     $stack = New-Object System.Collections.Stack; $stack.Push($ui.Tabs.Items[$i])
                     while ($stack.Count) {
                         $x = $stack.Pop()
-                        $txt = if ($x -is [System.Windows.Controls.TextBlock]) { $x.Text } elseif ($x -is [System.Windows.Controls.ContentControl] -and $x.Content -is [string]) { $x.Content } else { '' }
-                        if ($txt -match 'OptiGame' -and $txt -notmatch '\\OptiGame|OptiGame\\') { $seen += $txt }
+                        $txt = if ($x -is [System.Windows.Controls.TextBlock]) { Get-TextBlockText $x } elseif ($x -is [System.Windows.Controls.ContentControl] -and $x.Content -is [string]) { $x.Content } else { '' }
+                        if ($txt -match 'OptiGame|\bNexo\b' -and $txt -notmatch '\\OptiGame|OptiGame\\') { $seen += $txt }
                         foreach ($ch in [System.Windows.LogicalTreeHelper]::GetChildren($x)) { if ($ch -is [System.Windows.DependencyObject]) { $stack.Push($ch) } }
                     }
                 }
@@ -528,7 +528,7 @@ $script:T.Run.Add_Tick({
             }            Test-Step 'Recherche des réglages' {
                 Assert-Test ($null -ne $script:Search) 'barre de recherche non branchée'
                 $cases = @(
-                    @('compteur discret', 'Style du compteur*'), @('netoyage', 'Nettoyage*'), @('demarage pc', 'Lancer Nexo au démarrage*'),
+                    @('compteur discret', 'Style du compteur*'), @('netoyage', 'Nettoyage*'), @('demarage pc', 'Lancer Nevermind au démarrage*'),
                     @('raccourci bureau', 'Raccourci sur le bureau'), @('telemetrie', 'Ce que Windows envoie*'), @('ping', '*'), @('position overlay', 'Position du compteur')
                 )
                 foreach ($c in $cases) {
@@ -580,7 +580,7 @@ $script:T.Run.Add_Tick({
                 $ui.StartupOverlay.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null); $ui.StartupOverlay.Opacity = 1; $ui.StartupOverlay.Visibility = 'Visible'
                 foreach ($zp in [System.Windows.Media.ScaleTransform]::ScaleXProperty, [System.Windows.Media.ScaleTransform]::ScaleYProperty) { $ui.StartupZoom.BeginAnimation($zp, $null) }
                 Start-StartupLoader
-                Assert-Test ($ui.StartupLoaderHost.Children.Count -eq 1 -and $script:Loader.Loops.Count -ge 4 -and $script:Loader.Mark -and $script:Loader.GlitchTimer.IsEnabled) 'chargement animé (logo Nexo) absent'
+                Assert-Test ($ui.StartupLoaderHost.Children.Count -eq 1 -and $script:Loader.Loops.Count -ge 4 -and $script:Loader.Mark -and $script:Loader.GlitchTimer.IsEnabled) 'chargement animé (logo Nevermind) absent'
                 Set-StartupStep 'Recherche de tes jeux...' 72; $ui.StartupDetail.Text = 'Calcul: Fichiers temporaires (utilisateur)...'; Wait-TestMs 1200; Save-TestShot 'chargement'
                 $gt = $script:Loader.GlitchTimer
                 Stop-StartupLoader

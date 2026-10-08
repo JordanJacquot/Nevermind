@@ -1,10 +1,10 @@
-﻿# Nexo : diagnostic du lag en ligne. Pendant une partie (ou un test de 30 s), mesure chaque
+﻿# Nevermind : diagnostic du lag en ligne. Pendant une partie (ou un test de 30 s), mesure chaque
 # étape du chemin : PC vers box, box vers fournisseur, Internet, serveur du jeu. Puis explique d'où
 # vient le lag (Wi-Fi, téléchargement, box, serveur loin) et propose des corrections.
 # Chargé par OptiGame.ps1 après jeu.ps1 et trafic.ps1.
 
 $LagFile = Join-Path $DataDir 'lag.json'
-$LagColors = @{ gw = '#4EA8FF'; isp = '#9AA3B2'; ref = '#B18CFF'; srv = '#22D37A' }
+$LagColors = @{ gw = '#4EA8FF'; isp = '#A6A1BC'; ref = '#B18CFF'; srv = '#22D37A' }
 $LagNames = @{ gw = 'Ton PC vers ta box'; isp = 'Ta box vers ton fournisseur'; ref = 'Internet (référence)'; srv = 'Serveur du jeu' }
 
 function Test-LagMeasure { [bool](Get-Setting 'LagMeasure' $true) }
@@ -346,12 +346,12 @@ function Get-LagDiagnosis($R) {
             }
             $f += @{ Status = $rS; Title = 'Un téléchargement sature ta connexion'
                 Detail = "Pendant les pics de ping, ton PC téléchargeait ou envoyait en même temps : $names. La connexion était pleine, les paquets du jeu attendaient leur tour."
-                Tips = @('Dans Steam : Paramètres, Téléchargements, décoche « Autoriser les téléchargements pendant une partie ».', 'Active le Mode jeu de Nexo : il ferme les launchers et la synchronisation pendant tes parties.', 'Lance tes mises à jour et téléchargements avant ou après tes parties.')
+                Tips = @('Dans Steam : Paramètres, Téléchargements, décoche « Autoriser les téléchargements pendant une partie ».', 'Active le Mode jeu de Nevermind : il ferme les launchers et la synchronisation pendant tes parties.', 'Lance tes mises à jour et téléchargements avant ou après tes parties.')
                 Actions = $acts }
         } else {
             $isp = if ($R.Isp) { " ($($R.Isp))" } else { '' }
             $tips = @('Regarde si quelqu''un de la maison regarde une vidéo, télécharge ou sauvegarde en ligne pendant tes parties.', 'Redémarre ta box : débranche la 30 secondes.', 'Fais le test « Latence en charge » de la page Tests : il montre si ta box gère mal les gros téléchargements.', "Si ça dure plusieurs jours, contacte ton fournisseur$isp avec ces chiffres.")
-            if (-not $R.Etw) { $tips += 'Lance Nexo en administrateur : il pourra voir si un programme de ce PC télécharge pendant tes parties.' }
+            if (-not $R.Etw) { $tips += 'Lance Nevermind en administrateur : il pourra voir si un programme de ce PC télécharge pendant tes parties.' }
             $f += @{ Status = $rS; Title = 'Ta connexion Internet sature ou décroche'
                 Detail = "Ton PC et ta box communiquent bien, mais le ping vers Internet a des pics (jusqu'à $(Format-Ms $ref.P95), $($ref.Loss) % perdus). Soit un autre appareil de la maison utilise beaucoup la connexion, soit ta box ou ton fournisseur a un souci."
                 Tips = $tips }
@@ -384,7 +384,7 @@ function Get-LagDiagnosis($R) {
     # 5. Serveur non repéré
     if (-not $R.Quick -and -not $R.Server) {
         $f += @{ Status = 'info'; Title = 'Serveur du jeu non repéré'
-            Detail = $(if ($R.Etw) { 'Le jeu n''a pas échangé assez avec un serveur pour que Nexo le reconnaisse (menu, partie hors ligne ?).' } else { 'Lance Nexo en administrateur : il pourra repérer le serveur du jeu (même en UDP) et vérifier s''il est loin.' }) }
+            Detail = $(if ($R.Etw) { 'Le jeu n''a pas échangé assez avec un serveur pour que Nevermind le reconnaisse (menu, partie hors ligne ?).' } else { 'Lance Nevermind en administrateur : il pourra repérer le serveur du jeu (même en UDP) et vérifier s''il est loin.' }) }
     }
     if (-not @($f | Where-Object { $_.Status -in 'bad', 'warn' }).Count) {
         $parts = @(); if ($gw -and -not $gw.Dead) { $parts += "box $(Format-Ms $gw.Med)" }; if ($ref -and -not $ref.Dead) { $parts += "Internet $(Format-Ms $ref.Med)" }; if ($srv -and -not $srv.Dead) { $parts += "serveur $(Format-Ms $srv.Med)" }
@@ -429,7 +429,7 @@ function Build-LagPanel {
     $card = New-Card
     $card.Margin = New-Thickness 0 0 0 16
     $sp = New-Object System.Windows.Controls.StackPanel
-    [void]$sp.Children.Add((New-SwitchRow 'Mesurer ma connexion quand je joue' 'Pour tes jeux en ligne : Nexo mesure ta box, Internet et le serveur du jeu pendant la partie, puis t''explique d''où vient le lag.' (Test-LagMeasure) {
+    [void]$sp.Children.Add((New-SwitchRow 'Mesurer ma connexion quand je joue' 'Pour tes jeux en ligne : Nevermind mesure ta box, Internet et le serveur du jeu pendant la partie, puis t''explique d''où vient le lag.' (Test-LagMeasure) {
         param($s, $e)
         Set-Setting 'LagMeasure' ([bool]$s.IsChecked)
         if (-not $s.IsChecked -and $script:LagSession -and -not $script:LagSession.Seconds) { Stop-LagSession }
@@ -453,10 +453,10 @@ function Build-LagPanel {
 
     $all = @(Get-LagSessions)
     if (-not $all.Count) {
-        [void]$panel.Children.Add((New-Text 'Aucune mesure pour l''instant. Joue une partie en ligne (au moins une minute) ou lance le test rapide : le résultat apparaîtra ici.' 13 '#5B6475'))
+        [void]$panel.Children.Add((New-Text 'Aucune mesure pour l''instant. Joue une partie en ligne (au moins une minute) ou lance le test rapide : le résultat apparaîtra ici.' 13 '#655E7E'))
         return
     }
-    $h = New-Text 'Dernières mesures (clique pour le détail)' 13 '#9AA3B2' -Semi
+    $h = New-Text 'Dernières mesures (clique pour le détail)' 13 '#A6A1BC' -Semi
     $h.Margin = New-Thickness 0 0 0 6
     [void]$panel.Children.Add($h)
     foreach ($s in @($all | Sort-Object { [datetime]$_.Date } -Descending | Select-Object -First 15)) {
@@ -470,9 +470,9 @@ function Build-LagPanel {
         Add-ToGrid $g $dot 0
         $tx = New-Object System.Windows.Controls.StackPanel
         [void]$tx.Children.Add((New-Text "$($s.Game) : $($s.Diag.Title)" 14 '#FFFFFF' -Semi))
-        [void]$tx.Children.Add((New-Text "$(([datetime]$s.Date).ToString('dd/MM à HH:mm')), $(Format-PlayTime $s.Seconds). $(Get-LagSessionLine $s)" 12 '#9AA3B2'))
+        [void]$tx.Children.Add((New-Text "$(([datetime]$s.Date).ToString('dd/MM à HH:mm')), $(Format-PlayTime $s.Seconds). $(Get-LagSessionLine $s)" 12 '#A6A1BC'))
         Add-ToGrid $g $tx 1
-        $ch = New-Text '›' 22 '#5B6475'; $ch.VerticalAlignment = 'Center'
+        $ch = New-Text '›' 22 '#655E7E'; $ch.VerticalAlignment = 'Center'
         Add-ToGrid $g $ch 2
         $c.Child = $g
         $c.Tag = [string]$s.Id
@@ -494,7 +494,7 @@ function New-LagChart($S) {
     foreach ($y in 0.25, 0.5, 0.75) {
         $ln = New-Object System.Windows.Shapes.Line
         $ln.X1 = 0; $ln.X2 = $w; $ln.Y1 = $h * $y; $ln.Y2 = $h * $y
-        $ln.Stroke = Get-Brush '#232A37'; $ln.StrokeThickness = 1
+        $ln.Stroke = Get-Brush '#241F36'; $ln.StrokeThickness = 1
         $ln.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new([double[]]@(2, 4))
         [void]$cv.Children.Add($ln)
     }
@@ -543,12 +543,12 @@ function New-LagChart($S) {
         $pl.Effect = New-Glow $LagColors[$k] 10 0.7
         [void]$cv.Children.Add($pl)
     }
-    $mx = New-Text "$max ms" 11 '#5B6475'
+    $mx = New-Text "$max ms" 11 '#655E7E'
     [System.Windows.Controls.Canvas]::SetLeft($mx, 4); [System.Windows.Controls.Canvas]::SetTop($mx, 2)
     [void]$cv.Children.Add($mx)
     $sp = New-Object System.Windows.Controls.StackPanel
     $frame = New-Object System.Windows.Controls.Border
-    $frame.Background = New-LinearBrush @('#141922', '#0E1117') 0 0 0 1
+    $frame.Background = New-LinearBrush @('#14111D', '#0E0C16') 0 0 0 1
     $frame.BorderBrush = Get-Brush 'card-border'; $frame.BorderThickness = New-Thickness 1 1 1 1
     $frame.CornerRadius = [System.Windows.CornerRadius]::new(14); $frame.Padding = New-Thickness 12 10 12 10
     $frame.Child = $cv
@@ -592,8 +592,8 @@ function Show-LagSession([string]$Id) {
         # Les routeurs des fournisseurs répondent au ping quand ils ont le temps : si Internet va bien, ce n'est pas un vrai souci
         if ($seg[0] -eq 'isp' -and $status -in 'bad', 'warn' -and (Get-SegStatus $s.Stats.ref 'ref') -eq 'ok') { $status = 'ok' }
         $b = New-Object System.Windows.Controls.Border
-        $b.Background = Get-Brush '#1E232D'
-        $b.BorderBrush = Get-Brush $(if ($status -eq 'none') { '#5B6475' } else { $Colors[$status] })
+        $b.Background = Get-Brush '#1D1A2A'
+        $b.BorderBrush = Get-Brush $(if ($status -eq 'none') { '#655E7E' } else { $Colors[$status] })
         $b.BorderThickness = New-Thickness 3 0 0 0
         $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
         $b.Padding = New-Thickness 16 10 16 10
@@ -601,7 +601,7 @@ function Show-LagSession([string]$Id) {
         $g = New-Grid @('*', 'Auto')
         $l = New-Object System.Windows.Controls.StackPanel
         [void]$l.Children.Add((New-Text $seg[1] 14 '#FFFFFF' -Semi))
-        $sub = New-Text $seg[2] 12 '#9AA3B2'
+        $sub = New-Text $seg[2] 12 '#A6A1BC'
         $sub.TextTrimming = 'CharacterEllipsis'; $sub.TextWrapping = 'NoWrap'
         [void]$l.Children.Add($sub)
         Add-ToGrid $g $l 0
@@ -610,10 +610,10 @@ function Show-LagSession([string]$Id) {
         if ($x -and -not $x.Dead) {
             $v = New-Text (Format-Ms $x.Med) 15 '#FFFFFF' -Semi; $v.HorizontalAlignment = 'Right'
             [void]$r.Children.Add($v)
-            $d = New-Text "variation $($x.Jit) ms, pics $(Format-Ms $x.P95), perdus $($x.Loss) %" 11.5 $(if ($status -in 'bad', 'warn') { $Colors[$status] } else { '#9AA3B2' }); $d.HorizontalAlignment = 'Right'
+            $d = New-Text "variation $($x.Jit) ms, pics $(Format-Ms $x.P95), perdus $($x.Loss) %" 11.5 $(if ($status -in 'bad', 'warn') { $Colors[$status] } else { '#A6A1BC' }); $d.HorizontalAlignment = 'Right'
             [void]$r.Children.Add($d)
         } else {
-            [void]$r.Children.Add((New-Text $(if ($x) { 'Ne répond pas au ping' } else { 'Pas mesuré' }) 12 '#5B6475'))
+            [void]$r.Children.Add((New-Text $(if ($x) { 'Ne répond pas au ping' } else { 'Pas mesuré' }) 12 '#655E7E'))
         }
         Add-ToGrid $g $r 1
         $b.Child = $g
@@ -635,7 +635,7 @@ function Show-LagSession([string]$Id) {
         $c.Margin = New-Thickness 0 6 0 0
         [void]$body.Children.Add($c)
     }
-    $n = New-Text "Pings envoyés deux fois par seconde vers chaque étape. « Variation » : de combien le ping change d'un envoi à l'autre (au dessus de 10 ms, ça se sent en jeu). « Pics » : 95 % des pings étaient en dessous. $(if (-not $s.Etw) { 'Sans les droits administrateur, le serveur du jeu est repéré par sa connexion TCP seulement.' })" 11.5 '#5B6475'
+    $n = New-Text "Pings envoyés deux fois par seconde vers chaque étape. « Variation » : de combien le ping change d'un envoi à l'autre (au dessus de 10 ms, ça se sent en jeu). « Pics » : 95 % des pings étaient en dessous. $(if (-not $s.Etw) { 'Sans les droits administrateur, le serveur du jeu est repéré par sa connexion TCP seulement.' })" 11.5 '#655E7E'
     $n.Margin = New-Thickness 0 12 0 0
     [void]$body.Children.Add($n)
 }

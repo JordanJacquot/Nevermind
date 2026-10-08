@@ -1,4 +1,4 @@
-﻿# Nexo : section Réseau : scan des appareils et fiche détaillée.
+﻿# Nevermind : section Réseau : scan des appareils et fiche détaillée.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -32,7 +32,7 @@ $NetScanWork = {
             try {
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
                 $tmp = "$($a.Oui).csv"
-                Invoke-WebRequest 'https://standards-oui.ieee.org/oui/oui.csv' -OutFile $tmp -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0 Nexo' } -TimeoutSec 60
+                Invoke-WebRequest 'https://standards-oui.ieee.org/oui/oui.csv' -OutFile $tmp -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0 Nevermind' } -TimeoutSec 60
                 Import-Csv -LiteralPath $tmp | ForEach-Object { "$($_.Assignment)|$($_.'Organization Name')" } | Set-Content -LiteralPath $a.Oui -Encoding UTF8
                 Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue
             } catch {}
@@ -81,24 +81,24 @@ function Get-DeviceKind($D) {
     if ($D.Self) { return @{ Kind = 'Ce PC'; Glyph = 0xE7F4; Color = $Colors.info } }
     if ($D.Gateway) { return @{ Kind = 'Box Internet'; Glyph = 0xE80F; Color = $Colors.ok } }
     if ($D.Camera) { return @{ Kind = 'Caméra'; Glyph = 0xE714; Color = $Colors.warn } }
-    if ($svc -match '(?i)_ipp|_printer|_pdl-datastream|PrintDevice|\bPrinter\b') { return @{ Kind = 'Imprimante'; Glyph = 0xE749; Color = '#9AA3B2' } }
+    if ($svc -match '(?i)_ipp|_printer|_pdl-datastream|PrintDevice|\bPrinter\b') { return @{ Kind = 'Imprimante'; Glyph = 0xE749; Color = '#A6A1BC' } }
     if ($t -match '(?i)\brt-|router|routeur|archer|\bdeco\b|orbi|mesh|access.?point|repeater|répéteur|ubiquiti|unifi') { return @{ Kind = 'Routeur ou répéteur Wi-Fi'; Glyph = 0xE774; Color = $Colors.ok } }
     if ($D.NbName -or $svc -match '(?i)pub:Computer|_workstation|_smb\b') { return @{ Kind = 'Ordinateur'; Glyph = 0xE7F4; Color = $Colors.info } }
     if ($svc -match '(?i)_companion-link') { return @{ Kind = 'Appareil Apple'; Glyph = 0xE8EA; Color = '#B18CFF' } }
     if ($svc -match '(?i)_googlecast|_amzn-wplay|_androidtvremote2|MediaRenderer|_mediaremotetv|_airplay') { return @{ Kind = 'TV ou multimédia'; Glyph = 0xE7F4; Color = $Colors.warn } }
-    if ($svc -match '(?i)_sonos|_raop') { return @{ Kind = 'Enceinte ou audio'; Glyph = 0xE7F5; Color = '#FF7AB6' } }
+    if ($svc -match '(?i)_sonos|_raop') { return @{ Kind = 'Enceinte ou audio'; Glyph = 0xE7F5; Color = '#FF5CC8' } }
     if ($svc -match '(?i)_hap|_homekit|_matter|_hue|_alexa') { return @{ Kind = 'Objet connecté'; Glyph = 0xE80F; Color = '#4EA8FF' } }
     if ($t -match '(?i)\brt-|router|routeur|archer|\bdeco\b|orbi|mesh|access.?point|repeater|répéteur|ubiquiti|unifi') { return @{ Kind = 'Routeur ou répéteur Wi-Fi'; Glyph = 0xE774; Color = $Colors.ok } }
     if ($t -match '(?i)iphone|ipad|android|galaxy|pixel|redmi|oneplus|oppo|honor|phone|motorola|poco') { return @{ Kind = 'Téléphone ou tablette'; Glyph = 0xE8EA; Color = '#B18CFF' } }
-    if ($t -match '(?i)playstation|\bps[345]\b|sony interactive|nintendo|xbox|switch') { return @{ Kind = 'Console de jeu'; Glyph = 0xE7FC; Color = '#FF7AB6' } }
+    if ($t -match '(?i)playstation|\bps[345]\b|sony interactive|nintendo|xbox|switch') { return @{ Kind = 'Console de jeu'; Glyph = 0xE7FC; Color = '#FF5CC8' } }
     if ($t -match '(?i)webos|\btv\b|tizen|bravia|androidtv|chromecast|roku|fire.?tv|lg innotek|hisense|\btcl\b') { return @{ Kind = 'TV ou multimédia'; Glyph = 0xE7F4; Color = $Colors.warn } }
-    if ($t -match '(?i)printer|imprimante|hewlett|\bhp\b|canon|epson|brother|lexmark|kyocera') { return @{ Kind = 'Imprimante'; Glyph = 0xE749; Color = '#9AA3B2' } }
+    if ($t -match '(?i)printer|imprimante|hewlett|\bhp\b|canon|epson|brother|lexmark|kyocera') { return @{ Kind = 'Imprimante'; Glyph = 0xE749; Color = '#A6A1BC' } }
     if ($t -match '(?i)sagemcom|sercomm|arcadyan|technicolor|freebox|livebox|bbox|decodeur|décodeur') { return @{ Kind = 'Box ou décodeur TV'; Glyph = 0xE80F; Color = $Colors.ok } }
     if ($t -match '(?i)espressif|tuya|shelly|sonoff|signify|philips lighting|amazon|google|nest|ring|meross|netatmo|tapo|xiaomi') { return @{ Kind = 'Objet connecté'; Glyph = 0xE80F; Color = '#4EA8FF' } }
     if ($t -match '(?i)\bapple\b') { return @{ Kind = 'Appareil Apple'; Glyph = 0xE8EA; Color = '#B18CFF' } }
     if ($t -match '(?i)desktop|laptop|\bpc|asustek|micro-star|gigabyte|dell|lenovo|acer|intel|realtek|killer') { return @{ Kind = 'Ordinateur'; Glyph = 0xE7F4; Color = $Colors.info } }
     if ($D.Vendor -eq 'Adresse privée') { return @{ Kind = 'Téléphone probable'; Glyph = 0xE8EA; Color = '#B18CFF' } }
-    @{ Kind = 'Appareil'; Glyph = 0xE774; Color = '#9AA3B2' }
+    @{ Kind = 'Appareil'; Glyph = 0xE774; Color = '#A6A1BC' }
 }
 
 function New-NetRadar([switch]$Spin) {
@@ -108,7 +108,7 @@ function New-NetRadar([switch]$Spin) {
     foreach ($r in 96, 68, 40) {
         $e = New-Object System.Windows.Shapes.Ellipse
         $e.Width = $r * 2; $e.Height = $r * 2
-        $e.Stroke = Get-Brush '#1F2633'; $e.StrokeThickness = 1.5
+        $e.Stroke = Get-Brush '#201B30'; $e.StrokeThickness = 1.5
         [void]$g.Children.Add($e)
     }
     $dots = New-Object System.Windows.Controls.Canvas
@@ -201,7 +201,7 @@ function Show-NetHeroIdle {
     $t = New-Text 'Prêt à scanner ton réseau' 14 '#FFFFFF' -Semi
     $t.HorizontalAlignment = 'Center'; $t.Margin = New-Thickness 0 12 0 0
     [void]$ui.NetHero.Children.Add($t)
-    $h = New-Text 'Clique sur « Scanner le réseau » en haut à droite.' 12.5 '#9AA3B2'
+    $h = New-Text 'Clique sur « Scanner le réseau » en haut à droite.' 12.5 '#A6A1BC'
     $h.HorizontalAlignment = 'Center'; $h.Margin = New-Thickness 0 4 0 0
     [void]$ui.NetHero.Children.Add($h)
 }
@@ -230,7 +230,7 @@ function New-DeviceTile($D, [int]$Index) {
     $name = New-Text $D.Title 14.5 '#FFFFFF' -Semi
     $name.TextTrimming = 'CharacterEllipsis'; $name.TextWrapping = 'NoWrap'; $name.ToolTip = $D.Title
     [void]$sp.Children.Add($name)
-    [void]$sp.Children.Add((New-Text $k.Kind 12 '#9AA3B2'))
+    [void]$sp.Children.Add((New-Text $k.Kind 12 '#A6A1BC'))
     $badges = New-Object System.Windows.Controls.WrapPanel
     $badges.Margin = New-Thickness -10 6 0 0
     if ($D.Self) { [void]$badges.Children.Add((New-Badge 'Ce PC' $Colors.info)) }
@@ -238,9 +238,9 @@ function New-DeviceTile($D, [int]$Index) {
     if ($D.New) { [void]$badges.Children.Add((New-Badge 'Nouveau' $Colors.warn)) }
     if ($D.Camera) { $cb = New-Badge 'Caméra ?' $Colors.warn; $cb.ToolTip = "Indices : $(@($D.CameraWhy) -join ', ')"; [void]$badges.Children.Add($cb) }
     if ($D.Hidden) { $hb = New-Badge 'Discret' '#B18CFF'; $hb.ToolTip = 'Ne répond pas au ping : trouvé autrement. C''est normal pour beaucoup de téléphones et de PC protégés.'; [void]$badges.Children.Add($hb) }
-    if ($null -ne $D.Ms) { [void]$badges.Children.Add((New-Badge $(if ($D.Ms -lt 1) { '< 1 ms' } else { "$($D.Ms) ms" }) '#9AA3B2')) }
+    if ($null -ne $D.Ms) { [void]$badges.Children.Add((New-Badge $(if ($D.Ms -lt 1) { '< 1 ms' } else { "$($D.Ms) ms" }) '#A6A1BC')) }
     if ($badges.Children.Count) { [void]$sp.Children.Add($badges) }
-    $det = New-Text "$($D.Ip)$(if ($D.Model) { '   ' + $D.Model } elseif ($D.Vendor) { '   ' + $D.Vendor })" 11.5 '#5B6475'
+    $det = New-Text "$($D.Ip)$(if ($D.Model) { '   ' + $D.Model } elseif ($D.Vendor) { '   ' + $D.Vendor })" 11.5 '#655E7E'
     $det.Margin = New-Thickness 0 8 0 0
     $det.TextTrimming = 'CharacterEllipsis'; $det.TextWrapping = 'NoWrap'
     $det.ToolTip = "Adresse : $($D.Ip)`nAdresse physique : $($D.Mac)`nFabricant : $($D.Vendor)"
@@ -319,7 +319,7 @@ function Invoke-NetworkScan {
     $radar.Icon.Visibility = 'Collapsed'
     $radar.Num.Text = '0'
     [void]$ui.NetHero.Children.Add($radar.El)
-    $phase = New-Text 'Recherche des appareils...' 13 '#9AA3B2' -Semi
+    $phase = New-Text 'Recherche des appareils...' 13 '#A6A1BC' -Semi
     $phase.HorizontalAlignment = 'Center'; $phase.Margin = New-Thickness 0 12 0 8
     [void]$ui.NetHero.Children.Add($phase)
     $bar = New-Object System.Windows.Controls.ProgressBar
@@ -458,8 +458,8 @@ function Show-NetDevices {
         $b.Padding = New-Thickness 14 6 14 6
         $b.Margin = New-Thickness 0 0 8 0
         $b.Cursor = [System.Windows.Input.Cursors]::Hand
-        $b.Background = Get-Brush $(if ($on) { $Colors.accent } else { '#1A1F29' })
-        $t = New-Text "$($f.Label) ($cnt)" 12.5 $(if ($on) { '#0B0D10' } else { '#C9CED8' }) -Semi
+        $b.Background = Get-Brush $(if ($on) { $Colors.accent } else { '#1C1829' })
+        $t = New-Text "$($f.Label) ($cnt)" 12.5 $(if ($on) { '#07060C' } else { '#D3CDE3' }) -Semi
         $t.TextWrapping = 'NoWrap'
         $b.Child = $t
         $b.Tag = $f.Id
@@ -473,9 +473,9 @@ function Show-NetDevices {
     foreach ($d in @($list | Where-Object $test)) { [void]$ui.NetDevices.Children.Add((New-DeviceTile $d $i)); $i++ }
     $ui.NetDevSummary.Text = "$($list.Count) appareil$(if ($list.Count -gt 1) {'s'})" + $(if ($newCount) { ", $newCount nouveau$(if ($newCount -gt 1) {'x'})" } else { '' }) + $(if ($hidden) { ", $hidden discret$(if ($hidden -gt 1) {'s'})" } else { '' })
     $ui.NetDevHint.Text = if ($cur -eq 'hidden') {
-        'Les appareils discrets ne répondent pas au ping : Nexo les a trouvés autrement (la table de ta box, leurs annonces sur le réseau). C''est normal pour beaucoup de téléphones, de PC protégés par un pare-feu et d''objets connectés en veille. Clique dessus pour voir ce qui a été trouvé.'
+        'Les appareils discrets ne répondent pas au ping : Nevermind les a trouvés autrement (la table de ta box, leurs annonces sur le réseau). C''est normal pour beaucoup de téléphones, de PC protégés par un pare-feu et d''objets connectés en veille. Clique dessus pour voir ce qui a été trouvé.'
     } elseif ($first) {
-        'Premier scan : ces appareils sont mémorisés, Nexo te signalera tout nouvel appareil au prochain scan. Clique sur un appareil pour voir ses détails.'
+        'Premier scan : ces appareils sont mémorisés, Nevermind te signalera tout nouvel appareil au prochain scan. Clique sur un appareil pour voir ses détails.'
     } elseif ($newCount) {
         'Un appareil « Nouveau » n''était pas là au scan précédent. Si tu ne le reconnais pas, change le mot de passe de ton Wi-Fi depuis la page de ta box. Attention : les téléphones récents changent parfois d''adresse et peuvent apparaître comme nouveaux.'
     } else {
@@ -535,7 +535,7 @@ function Invoke-NetWatch {
     }
     if (-not $new.Count) { return }
     Write-Log "Nouvel appareil sur le réseau: $($new -join ', ')"
-    Show-Notify $(if ($new.Count -gt 1) { "$($new.Count) nouveaux appareils sur ton réseau" } else { 'Nouvel appareil sur ton réseau' }) "$($new -join ', '). Si tu ne le reconnais pas, ouvre la section Réseau de Nexo."
+    Show-Notify $(if ($new.Count -gt 1) { "$($new.Count) nouveaux appareils sur ton réseau" } else { 'Nouvel appareil sur ton réseau' }) "$($new -join ', '). Si tu ne le reconnais pas, ouvre la section Réseau de Nevermind."
 }
 
 # ---------------------------------------------------------------------------
@@ -589,7 +589,7 @@ function New-InfoRows([array]$Rows) {
     foreach ($r in $Rows) {
         $g = New-Grid @('200', '*')
         $g.Margin = New-Thickness 0 3 0 3
-        Add-ToGrid $g (New-Text $r[0] 13 '#9AA3B2') 0
+        Add-ToGrid $g (New-Text $r[0] 13 '#A6A1BC') 0
         $v = New-Text ([string]$r[1]) 13 $(if ($r.Count -gt 2) { $r[2] } else { '#FFFFFF' }) -Semi
         $v.TextWrapping = 'Wrap'
         Add-ToGrid $g $v 1
@@ -633,7 +633,7 @@ function Update-DevPing {
         if ($m.Sent -ge 3) {
             if (-not $m.Times.Count) {
                 $m.S.Verdict.Text = 'Cet appareil ne répond pas au ping. C''est normal pour certains téléphones, consoles ou PC qui le bloquent.'
-                $m.S.Verdict.Foreground = Get-Brush '#9AA3B2'
+                $m.S.Verdict.Foreground = Get-Brush '#A6A1BC'
             } elseif ($loss -ge 5 -or $jit -gt 15) {
                 $m.S.Verdict.Text = 'Connexion instable : des réponses se perdent ou arrivent en retard. Souvent le signe d''un Wi-Fi faible.'
                 $m.S.Verdict.Foreground = Get-Brush $Colors.warn
@@ -679,12 +679,12 @@ function Show-DeviceDetail($D) {
     if (@($D.ServiceLabels).Count) { $rows += , @('Ce qu''il propose', (@($D.ServiceLabels) -join ', ')) }
     if ($D.WebTitle) { $rows += , @('Sa page de réglages', $D.WebTitle) }
     if (@($D.Ipv6).Count) { $rows += , @('Adresse IPv6', ((@($D.Ipv6) | Select-Object -First 2) -join ', ')) }
-    if (@($D.FoundBy).Count) { $rows += , @('Trouvé grâce à', (@($D.FoundBy) -join ', '), '#9AA3B2') }
-    if ($D.Hidden) { $rows += , @('Appareil discret', 'Il ne répond pas au ping. C''est normal pour beaucoup de téléphones et de PC protégés par un pare-feu.', '#9AA3B2') }
+    if (@($D.FoundBy).Count) { $rows += , @('Trouvé grâce à', (@($D.FoundBy) -join ', '), '#A6A1BC') }
+    if ($D.Hidden) { $rows += , @('Appareil discret', 'Il ne répond pas au ping. C''est normal pour beaucoup de téléphones et de PC protégés par un pare-feu.', '#A6A1BC') }
     if ($D.Camera) { $rows += , @('Caméra possible', "Indices : $(@($D.CameraWhy) -join ', '). Vérifie que tu sais à qui elle est et où elle filme.", $Colors.warn) }
     $rows += , @('Vu pour la première fois', $firstTxt)
     if ($D.New) { $rows += , @('Statut', 'Nouvel appareil depuis le dernier scan', $Colors.warn) }
-    if ($D.Vendor -eq 'Adresse privée') { $rows += , @('Bon à savoir', 'Les téléphones récents cachent leur vraie adresse physique : le fabricant ne peut pas être connu.', '#9AA3B2') }
+    if ($D.Vendor -eq 'Adresse privée') { $rows += , @('Bon à savoir', 'Les téléphones récents cachent leur vraie adresse physique : le fabricant ne peut pas être connu.', '#A6A1BC') }
     [void]$body.Children.Add((New-InfoRows $rows))
 
     # Ping en direct
@@ -699,13 +699,13 @@ function Show-DeviceDetail($D) {
     foreach ($s in @(@('Avg', 'Moyenne'), @('Min', 'Plus rapide'), @('Max', 'Plus lent'), @('Jit', 'Variation (gigue)'), @('Loss', 'Réponses perdues'))) {
         $g = New-Grid @('170', '*')
         $g.Margin = New-Thickness 0 3 0 3
-        Add-ToGrid $g (New-Text $s[1] 13 '#9AA3B2') 0
+        Add-ToGrid $g (New-Text $s[1] 13 '#A6A1BC') 0
         $v = New-Text '...' 13 '#FFFFFF' -Semi
         Add-ToGrid $g $v 1
         [void]$sp.Children.Add($g)
         $stats[$s[0]] = $v
     }
-    $verdict = New-Text 'Mesure en cours...' 12.5 '#9AA3B2' -Semi
+    $verdict = New-Text 'Mesure en cours...' 12.5 '#A6A1BC' -Semi
     $verdict.Margin = New-Thickness 0 10 0 0
     [void]$sp.Children.Add($verdict)
     $stats.Verdict = $verdict
@@ -722,7 +722,7 @@ function Show-DeviceDetail($D) {
 
     # Services ouverts (en arrière plan)
     [void]$body.Children.Add((New-SectionTitle 'SERVICES OUVERTS'))
-    $wait = New-Text 'Recherche des services proposés par cet appareil...' 13 '#9AA3B2'
+    $wait = New-Text 'Recherche des services proposés par cet appareil...' 13 '#A6A1BC'
     [void]$body.Children.Add($wait)
     $ports = [int[]]@($PortInfo.Keys)
     $open = @(Invoke-Async { param($a) [OGNative]::ScanPorts($a.Ip, [int[]]$a.Ports, 600) } @{ Ip = $D.Ip; Ports = $ports })
@@ -731,7 +731,7 @@ function Show-DeviceDetail($D) {
     $worst = 'ok'
     $notes = @()
     if (-not $open.Count) {
-        [void]$body.Children.Add((New-Text 'Aucun service ouvert parmi les plus courants. C''est normal pour un téléphone, une console ou une TV : ils n''acceptent pas de connexions.' 13 '#9AA3B2'))
+        [void]$body.Children.Add((New-Text 'Aucun service ouvert parmi les plus courants. C''est normal pour un téléphone, une console ou une TV : ils n''acceptent pas de connexions.' 13 '#A6A1BC'))
     }
     $i = 0
     foreach ($port in $open) {
@@ -740,7 +740,7 @@ function Show-DeviceDetail($D) {
         $col = switch ($pi[1]) { 'bad' { $Colors.bad } 'warn' { $Colors.warn } default { $Colors.info } }
         if ($pi[1] -eq 'bad') { $worst = 'bad'; $notes += $pi[0] } elseif ($pi[1] -eq 'warn' -and $worst -ne 'bad') { $worst = 'warn'; $notes += $pi[0] }
         $card = New-Object System.Windows.Controls.Border
-        $card.Background = Get-Brush '#1A1F29'
+        $card.Background = Get-Brush '#1C1829'
         $card.CornerRadius = [System.Windows.CornerRadius]::new(10)
         $card.Padding = New-Thickness 12 9 12 9
         $card.Margin = New-Thickness 0 0 0 6
@@ -759,7 +759,7 @@ function Show-DeviceDetail($D) {
         $txt = New-Object System.Windows.Controls.StackPanel
         $txt.Margin = New-Thickness 12 0 8 0
         [void]$txt.Children.Add((New-Text $pi[0] 13.5 '#FFFFFF' -Semi))
-        [void]$txt.Children.Add((New-Text $pi[2] 12 '#9AA3B2'))
+        [void]$txt.Children.Add((New-Text $pi[2] 12 '#A6A1BC'))
         Add-ToGrid $g $txt 1
         if ($pi[3]) {
             $b = New-Button 'Ouvrir'
@@ -779,7 +779,7 @@ function Show-DeviceDetail($D) {
         default { if ($open.Count) { 'Rien d''inhabituel pour ce type d''appareil.' } else { 'Rien à signaler.' } }
     }
     [void]$body.Children.Add((New-Verdict $worst $txt))
-    $note = New-Text "Seuls les $($ports.Count) services les plus courants sont vérifiés." 11.5 '#5B6475'
+    $note = New-Text "Seuls les $($ports.Count) services les plus courants sont vérifiés." 11.5 '#655E7E'
     $note.Margin = New-Thickness 0 8 0 0
     [void]$body.Children.Add($note)
 }

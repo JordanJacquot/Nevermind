@@ -1,4 +1,4 @@
-﻿# Nexo : section « Jeux », la bibliothèque de tous les jeux installés (comme celle de Steam).
+﻿# Nevermind : section « Jeux », la bibliothèque de tous les jeux installés (comme celle de Steam).
 # Jaquettes, recherche, filtre par launcher ; double clic ou « Lancer » pour jouer (par le launcher du jeu) ;
 # temps de jeu, dernières parties et optimisation du jeu sélectionné.
 # Chargé par OptiGame.ps1 après jeu.ps1 (liste des jeux) et diagnostic-fps.ps1.
@@ -6,7 +6,7 @@
 $PlayFile = Join-Path $DataDir 'jeux.json'
 
 # ---------------------------------------------------------------------------
-# Temps de jeu (noté à chaque partie repérée par Nexo, quel que soit le launcher)
+# Temps de jeu (noté à chaque partie repérée par Nevermind, quel que soit le launcher)
 # ---------------------------------------------------------------------------
 function Get-PlayLog {
     if ($null -ne $script:PlayLog) { return $script:PlayLog }
@@ -33,7 +33,7 @@ function Add-PlayTime([string]$Game, [datetime]$Start) {
 }
 
 function Format-LastPlayed([string]$Iso) {
-    if (-not $Iso) { return 'jamais lancé avec Nexo ouvert' }
+    if (-not $Iso) { return 'jamais lancé avec Nevermind ouvert' }
     $d = [datetime]$Iso
     $days = ((Get-Date).Date - $d.Date).Days
     if ($days -le 0) { "aujourd'hui à $($d.ToString('HH:mm'))" } elseif ($days -eq 1) { 'hier' } elseif ($days -lt 7) { "il y a $days jours" } else { "le $($d.ToString('dd/MM/yyyy'))" }
@@ -89,7 +89,7 @@ function Get-ImageBrush([string]$Path, [int]$Width) {
 # ---------------------------------------------------------------------------
 # Jaquettes manquantes : cherchées sur la boutique Steam (par le nom du jeu : la plupart des jeux Ubisoft,
 # Epic ou Battle.net y sont aussi), puis sur Wikipédia. Seul le nom du jeu est envoyé.
-# Gardées dans le dossier « jaquettes » des données de Nexo ; une recherche ratée est retentée après 7 jours.
+# Gardées dans le dossier « jaquettes » des données de Nevermind ; une recherche ratée est retentée après 7 jours.
 # ---------------------------------------------------------------------------
 $CoverDir = Join-Path $DataDir 'jaquettes'
 $CoverIndexFile = Join-Path $CoverDir 'index.json'
@@ -268,7 +268,7 @@ function Get-BigIcon($Game) {
 # Couleur stable tirée du nom du jeu (vignette sans jaquette)
 function Get-GameHue([string]$Name) {
     $h = 0; foreach ($c in $Name.ToCharArray()) { $h = ($h * 31 + [int]$c) % 360 }
-    $palette = @('#4EA8FF', '#B18CFF', '#22D37A', '#F5A524', '#FF7AB6', '#2EC4D6', '#FF6B5B', '#8FA8FF')
+    $palette = @('#4EA8FF', '#B18CFF', '#22D37A', '#F5A524', '#FF5CC8', '#2EC4D6', '#FF6B5B', '#8FA8FF')
     $palette[$h % $palette.Count]
 }
 
@@ -294,7 +294,7 @@ function New-GameCover($Game, [double]$W, [double]$H) {
     $art = Get-ImageBrush (Get-CoverFile $Game) ([int]($W * 2))
     if ($art) { $b.Background = $art; return $b }
     $hue = Get-GameHue $Game.Name
-    $b.Background = New-LinearBrush @($hue, '#141820') 0 0 1 1
+    $b.Background = New-LinearBrush @($hue, '#15121E') 0 0 1 1
     $g = New-Object System.Windows.Controls.Grid
     # Logo officiel du jeu, sinon sa grande icône si son launcher en fournit une, sinon ses initiales
     $logo = Get-ImageBrush (Get-LogoFile $Game) 300
@@ -333,7 +333,7 @@ function New-GameCover($Game, [double]$W, [double]$H) {
 
 # ---------------------------------------------------------------------------
 # Lancer un jeu : par son launcher (connexion, mises à jour, anti triche), sinon son exécutable.
-# Toujours sans les droits administrateur de Nexo (passe par l'Explorateur).
+# Toujours sans les droits administrateur de Nevermind (passe par l'Explorateur).
 # ---------------------------------------------------------------------------
 function Get-GameLaunch($Game) {
     $l = [string]$Game.Launch
@@ -399,12 +399,12 @@ function Uninstall-LibraryGame($Game) {
     $how = Get-GameUninstall $Game
     switch ($how.Kind) {
         'none' {
-            Show-Message "Nexo ne connaît pas le désinstalleur de « $($Game.Name) ».`n`nLa liste des applications de Windows va s'ouvrir : cherche le jeu et clique sur « Désinstaller »."
+            Show-Message "Nevermind ne connaît pas le désinstalleur de « $($Game.Name) ».`n`nLa liste des applications de Windows va s'ouvrir : cherche le jeu et clique sur « Désinstaller »."
             Open-Url 'ms-settings:appsfeatures'
             return
         }
         'launcher' {
-            Show-Message "« $($Game.Name) » se désinstalle depuis $src : Nexo l'ouvre pour toi.`n`nDans $src, fais un clic droit sur le jeu (ou ouvre ses options), puis « Désinstaller »."
+            Show-Message "« $($Game.Name) » se désinstalle depuis $src : Nevermind l'ouvre pour toi.`n`nDans $src, fais un clic droit sur le jeu (ou ouvre ses options), puis « Désinstaller »."
             Open-Url $how.Path
         }
         default {
@@ -503,7 +503,7 @@ function Show-Leftovers {
     $ui.TestProgress.Value = 100; $ui.TestPct.Text = ''
     Set-TestState 'info' "$($list.Count) dossier$(if ($list.Count -gt 1) {'s'})"
     $body = $ui.TestBody
-    $intro = New-Text 'Ces jeux ne sont plus installés (Steam ne les connaît plus), mais leur dossier est resté sur le disque. La suppression est définitive : ils ne passent pas par la corbeille, la place est libérée tout de suite et ils ne peuvent pas être récupérés. S''ils contiennent des sauvegardes ou des mods, ouvre les pour vérifier avant.' 12.5 '#9AA3B2'
+    $intro = New-Text 'Ces jeux ne sont plus installés (Steam ne les connaît plus), mais leur dossier est resté sur le disque. La suppression est définitive : ils ne passent pas par la corbeille, la place est libérée tout de suite et ils ne peuvent pas être récupérés. S''ils contiennent des sauvegardes ou des mods, ouvre les pour vérifier avant.' 12.5 '#A6A1BC'
     $intro.Margin = New-Thickness 0 0 0 10
     [void]$body.Children.Add($intro)
     if ($list.Count -gt 1) {
@@ -521,7 +521,7 @@ function Show-Leftovers {
         $sp = New-Object System.Windows.Controls.StackPanel
         $sz = if ($script:LeftoverSizes -and $script:LeftoverSizes.ContainsKey($l.Dir)) { Format-Size $script:LeftoverSizes[$l.Dir] } else { 'taille en cours de calcul' }
         [void]$sp.Children.Add((New-Text "$($l.Name)  ·  $sz" 14 '#FFFFFF' -Semi))
-        $p = New-Text $l.Dir 11.5 '#5B6475'
+        $p = New-Text $l.Dir 11.5 '#655E7E'
         $p.TextTrimming = 'CharacterEllipsis'; $p.TextWrapping = 'NoWrap'
         [void]$sp.Children.Add($p)
         Add-ToGrid $g $sp 0
@@ -569,7 +569,7 @@ function Remove-Leftovers([array]$List, [switch]$Force) {
         $d = [string]$_.Dir
         $d -match '(?i)\\steamapps\\common\\[^\\]+$' -and $known -contains $d.ToLower() -and $installed -notcontains $d.ToLower() -and (Test-Path -LiteralPath $d)
     })
-    if (-not $ok.Count) { Show-Message 'Aucun de ces dossiers ne peut être supprimé par Nexo.' 'Warning'; return }
+    if (-not $ok.Count) { Show-Message 'Aucun de ces dossiers ne peut être supprimé par Nevermind.' 'Warning'; return }
     $size = ($ok | ForEach-Object { [double]$script:LeftoverSizes[$_.Dir] } | Measure-Object -Sum).Sum
     $what = if ($ok.Count -eq 1) { "le dossier de « $($ok[0].Name) »" } else { "$($ok.Count) dossiers de jeux désinstallés" }
     if (-not $Force -and -not (Confirm-Action "Supprimer définitivement $what ($(Format-Size $size)) ?`n`nIls ne passent pas par la corbeille : la place est libérée tout de suite, mais ils ne pourront pas être récupérés. Les sauvegardes ou mods qu'ils contiennent seront perdus.")) { return }
@@ -646,9 +646,9 @@ function Update-LibraryView {
         $on = $script:LibFilter -eq $c[0]
         $b = New-Object System.Windows.Controls.Border
         $b.CornerRadius = [System.Windows.CornerRadius]::new(15); $b.Padding = New-Thickness 12 5 12 5; $b.Margin = New-Thickness 0 2 6 2
-        $b.Background = Get-Brush $(if ($on) { $Colors.accent } else { '#1A1F29' })
+        $b.Background = Get-Brush $(if ($on) { $Colors.accent } else { '#1C1829' })
         $b.Cursor = [System.Windows.Input.Cursors]::Hand
-        $t = New-Text "$($c[0]) ($($c[1]))" 12 $(if ($on) { '#0B0D10' } else { '#C9CED8' }) -Semi
+        $t = New-Text "$($c[0]) ($($c[1]))" 12 $(if ($on) { '#07060C' } else { '#D3CDE3' }) -Semi
         $t.TextWrapping = 'NoWrap'
         $b.Child = $t
         $b.Tag = [string]$c[0]
@@ -665,7 +665,7 @@ function Update-LibraryView {
     $ui.LibGrid.Children.Clear()
     $script:LibTiles = @{}
     if (-not $shown.Count) {
-        $e = New-Text $(if ($all.Count) { 'Aucun jeu ne correspond.' } else { 'Aucun jeu trouvé sur ce PC. Clique sur « Ajouter un jeu » pour ajouter le tien.' }) 13 '#9AA3B2'
+        $e = New-Text $(if ($all.Count) { 'Aucun jeu ne correspond.' } else { 'Aucun jeu trouvé sur ce PC. Clique sur « Ajouter un jeu » pour ajouter le tien.' }) 13 '#A6A1BC'
         $e.Margin = New-Thickness 4 8 0 0
         [void]$ui.LibGrid.Children.Add($e)
     }
@@ -694,17 +694,17 @@ function New-LibraryTile($Game) {
         $bd.Background = Get-Brush $Colors.ok; $bd.CornerRadius = [System.Windows.CornerRadius]::new(8)
         $bd.Padding = New-Thickness 8 2 8 2; $bd.Margin = New-Thickness 0 8 8 0
         $bd.HorizontalAlignment = 'Right'; $bd.VerticalAlignment = 'Top'
-        $bd.Child = (New-Text 'En jeu' 11 '#0B0D10' -Bold)
+        $bd.Child = (New-Text 'En jeu' 11 '#07060C' -Bold)
         [void]$g.Children.Add($bd)
     }
     $frame.Child = $g
     $move = New-Object System.Windows.Media.TranslateTransform
     $frame.RenderTransform = $move
     [void]$tile.Children.Add($frame)
-    $n = New-Text $Game.Name 12.5 '#E6E8EE' -Semi
+    $n = New-Text $Game.Name 12.5 '#EEEBF7' -Semi
     $n.TextTrimming = 'CharacterEllipsis'; $n.TextWrapping = 'NoWrap'; $n.Margin = New-Thickness 2 6 0 0; $n.ToolTip = $Game.Name
     [void]$tile.Children.Add($n)
-    $src = New-Text $(if ($Game.Source) { $Game.Source } else { 'Steam' }) 11 '#5B6475'
+    $src = New-Text $(if ($Game.Source) { $Game.Source } else { 'Steam' }) 11 '#655E7E'
     $src.Margin = New-Thickness 2 0 0 0
     [void]$tile.Children.Add($src)
     $tile.Tag = $Game.Name
@@ -738,7 +738,7 @@ function Update-LibraryDetail {
     $p.Children.Clear()
     $g = @(Get-LibraryGames | Where-Object { $_.Name -eq $script:LibSelected })[0]
     if (-not $g) {
-        $e = New-Text 'Choisis un jeu à gauche.' 13 '#9AA3B2'
+        $e = New-Text 'Choisis un jeu à gauche.' 13 '#A6A1BC'
         $e.Margin = New-Thickness 20 20 20 20
         [void]$p.Children.Add($e)
         return
@@ -747,10 +747,10 @@ function Update-LibraryDetail {
     $hero = New-Object System.Windows.Controls.Border
     $hero.Height = 150
     $img = Get-ImageBrush (Get-HeroFile $g) 720
-    $hero.Background = if ($img) { $img } else { New-LinearBrush @((Get-GameHue $g.Name), '#141820') 0 0 1 1 }
+    $hero.Background = if ($img) { $img } else { New-LinearBrush @((Get-GameHue $g.Name), '#15121E') 0 0 1 1 }
     $hg = New-Object System.Windows.Controls.Grid
     $shade = New-Object System.Windows.Controls.Border
-    $shade.Background = New-LinearBrush @('#00000000', '#E6141820') 0 0 0 1
+    $shade.Background = New-LinearBrush @('#00000000', '#E615121E') 0 0 0 1
     [void]$hg.Children.Add($shade)
     $logo = Get-LogoFile $g
     if ($logo) {
@@ -769,7 +769,7 @@ function Update-LibraryDetail {
     [void]$body.Children.Add($title)
     $log = Get-PlayLog
     $pl = $log[$g.Name]
-    $meta = New-Text "$(if ($g.Source) { $g.Source } else { 'Steam' })  ·  dernière partie : $(Format-LastPlayed $(if ($pl) { $pl.Last } else { '' }))" 12 '#9AA3B2'
+    $meta = New-Text "$(if ($g.Source) { $g.Source } else { 'Steam' })  ·  dernière partie : $(Format-LastPlayed $(if ($pl) { $pl.Last } else { '' }))" 12 '#A6A1BC'
     $meta.Margin = New-Thickness 0 2 0 12
     [void]$body.Children.Add($meta)
 
@@ -783,7 +783,7 @@ function Update-LibraryDetail {
     $play.Add_Click({ param($s, $e) $n = [string]$s.Tag; $x = @(Get-LibraryGames | Where-Object { $_.Name -eq $n })[0]; Invoke-Safe { Start-LibraryGame $x } })
     [void]$body.Children.Add($play)
     $how = Get-GameLaunch $g
-    $hw = New-Text $(if ($how.Kind -eq 'url' -and $g.Source) { "Lancé par $($g.Source) (connexion, mises à jour et anti triche comme d'habitude)." } else { 'Lancé directement depuis son dossier.' }) 11 '#5B6475'
+    $hw = New-Text $(if ($how.Kind -eq 'url' -and $g.Source) { "Lancé par $($g.Source) (connexion, mises à jour et anti triche comme d'habitude)." } else { 'Lancé directement depuis son dossier.' }) 11 '#655E7E'
     $hw.Margin = New-Thickness 0 6 0 0; $hw.TextWrapping = 'Wrap'
     [void]$body.Children.Add($hw)
 
@@ -802,7 +802,7 @@ function Update-LibraryDetail {
     )
     for ($i = 0; $i -lt 3; $i++) {
         $c = New-Object System.Windows.Controls.StackPanel
-        [void]$c.Children.Add((New-Text $cells[$i][0] 10.5 '#5B6475' -Semi))
+        [void]$c.Children.Add((New-Text $cells[$i][0] 10.5 '#655E7E' -Semi))
         [void]$c.Children.Add((New-Text $cells[$i][1] 16 '#FFFFFF' -Bold))
         Add-ToGrid $stats $c $i
     }
@@ -811,14 +811,14 @@ function Update-LibraryDetail {
         $lv = Get-FpsVerdict $last
         $lk = New-Button "Dernière partie mesurée : $('{0:N0}' -f $last.Avg) FPS, 1 % bas $('{0:N0}' -f $last.Low1). Voir le détail"
         $lk.Margin = New-Thickness 0 10 0 0; $lk.HorizontalAlignment = 'Stretch'; $lk.HorizontalContentAlignment = 'Left'
-        $lk.Foreground = Get-Brush $(if ($lv[0] -eq 'ok') { '#C9CED8' } else { $Colors.warn })
+        $lk.Foreground = Get-Brush $(if ($lv[0] -eq 'ok') { '#D3CDE3' } else { $Colors.warn })
         $lk.Tag = [string]$last.Id
         $lk.Add_Click({ param($s, $e) $id = [string]$s.Tag; Invoke-Safe { Show-FpsSession $id } })
         [void]$body.Children.Add($lk)
     }
 
     # Optimisation du jeu
-    $sec = New-Text 'OPTIMISATION DU JEU' 11 '#5B6475' -Semi
+    $sec = New-SectionTitle 'OPTIMISATION DU JEU'
     $sec.Margin = New-Thickness 0 20 0 6
     [void]$body.Children.Add($sec)
     $items = @(Get-GameOptimizations $g)
@@ -870,7 +870,7 @@ function Get-GameOptimizations($Game) {
     $gpuNames = @($script:AnalysisData.GPUs | ForEach-Object { [string]$_.Name } | Where-Object { $_ -notmatch 'Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta|Microsoft Basic' })
     $prio = (@(Get-GameExeNames $Game).Count -gt 0)
     if ($prio) {
-        $list += @{ Id = 'priority'; Title = 'Priorité haute'; Text = 'Le jeu passe avant les autres programmes (même Nexo fermé).'; Ok = (Test-GamePriority $Game); Switch = $true }
+        $list += @{ Id = 'priority'; Title = 'Priorité haute'; Text = 'Le jeu passe avant les autres programmes (même Nevermind fermé).'; Ok = (Test-GamePriority $Game); Switch = $true }
     }
     if ($gpuNames.Count -ge 2) {
         $list += @{ Id = 'gpu'; Title = 'Carte graphique puissante'; Text = 'Le jeu utilise la grosse carte, pas la puce intégrée.'; Ok = ((Get-GpuPreference @($Game.Exes)[0]) -match 'GpuPreference=2'); Switch = $true }
@@ -900,11 +900,11 @@ function New-OptimRow($Game, $It) {
     $row.Margin = New-Thickness 0 8 0 0
     $dot = New-Object System.Windows.Shapes.Ellipse
     $dot.Width = 8; $dot.Height = 8; $dot.Margin = New-Thickness 0 6 10 0; $dot.VerticalAlignment = 'Top'
-    $dot.Fill = Get-Brush $(if ($It.Ok) { $Colors.ok } elseif ($It.Optional) { '#5B6475' } else { $Colors.warn })
+    $dot.Fill = Get-Brush $(if ($It.Ok) { $Colors.ok } elseif ($It.Optional) { '#655E7E' } else { $Colors.warn })
     Add-ToGrid $row $dot 0
     $sp = New-Object System.Windows.Controls.StackPanel
     [void]$sp.Children.Add((New-Text $It.Title 13 '#FFFFFF' -Semi))
-    $tx = New-Text $It.Text 11.5 '#9AA3B2'
+    $tx = New-Text $It.Text 11.5 '#A6A1BC'
     $tx.TextWrapping = 'Wrap'
     [void]$sp.Children.Add($tx)
     Add-ToGrid $row $sp 1
@@ -955,7 +955,7 @@ function Invoke-GameOptimize($Game) {
     Build-GameProfiles
     $tw = @($items | Where-Object { $_.Id -eq 'tweaks' })[0]
     if ($tw) { Invoke-TweakFix @($tw.Ids); $script:LibTweaks = $null }
-    else { Show-ResultSheet "$($Game.Name) est optimisé" (@('Fait :') + @($done | ForEach-Object { "•  $_" }) + @('Joue une partie : Nexo mesurera tes FPS pour vérifier.')) $null $null }
+    else { Show-ResultSheet "$($Game.Name) est optimisé" (@('Fait :') + @($done | ForEach-Object { "•  $_" }) + @('Joue une partie : Nevermind mesurera tes FPS pour vérifier.')) $null $null }
     Update-LibraryDetail
 }
 

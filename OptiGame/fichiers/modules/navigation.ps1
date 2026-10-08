@@ -1,4 +1,4 @@
-﻿# Nexo : accueil « Ordinateur » et navigation entre les pages.
+﻿# Nevermind : accueil « Ordinateur » et navigation entre les pages.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -15,8 +15,8 @@ $HubPages = @(
     @{ Index = 6; Glyph = 0xE72E; Title = 'Sécurité'; Desc = 'Antivirus et recherche de tout ce qui est suspect.'; Color = '#22D37A' },
     @{ Index = 2; Glyph = 0xE7E8; Title = 'Démarrage'; Desc = 'Les programmes qui se lancent avec Windows.'; Color = '#F5A524' },
     @{ Index = 3; Glyph = 0xE774; Title = 'Connexion'; Desc = 'Ping, stabilité de la connexion et serveur DNS.'; Color = '#4EA8FF' },
-    @{ Index = 4; Glyph = 0xE74D; Title = 'Nettoyage'; Desc = 'Libère de la place sur le disque.'; Color = '#FF7AB6' },
-    @{ Index = 7; Glyph = 0xE777; Title = 'Sauvegarde'; Desc = 'Tout annuler, rapport du PC et mises à jour.'; Color = '#9AA3B2' }
+    @{ Index = 4; Glyph = 0xE74D; Title = 'Nettoyage'; Desc = 'Libère de la place sur le disque.'; Color = '#FF5CC8' },
+    @{ Index = 7; Glyph = 0xE777; Title = 'Sauvegarde'; Desc = 'Tout annuler, rapport du PC et mises à jour.'; Color = '#A6A1BC' }
 )
 
 function Show-Page([int]$Index) { $ui.Tabs.SelectedIndex = $Index }
@@ -61,14 +61,14 @@ function Build-Hub {
         $gl.HorizontalAlignment = 'Center'; $gl.VerticalAlignment = 'Center'
         $ic.Child = $gl
         Add-ToGrid $head $ic 0
-        $chev = New-Text '›' 24 '#5B6475' -Bold
+        $chev = New-Text '›' 24 '#655E7E' -Bold
         $chev.VerticalAlignment = 'Center'
         Add-ToGrid $head $chev 2
         [void]$sp.Children.Add($head)
         $t1 = New-Text $pg.Title 16 '#FFFFFF' -Semi
         $t1.Margin = New-Thickness 0 12 0 0
         [void]$sp.Children.Add($t1)
-        $d = New-Text $pg.Desc 12.5 '#9AA3B2'
+        $d = New-Text $pg.Desc 12.5 '#A6A1BC'
         $d.Margin = New-Thickness 0 3 0 0
         $d.MinHeight = 34
         [void]$sp.Children.Add($d)
@@ -89,7 +89,7 @@ function Build-Hub {
             param($s, $e)
             $s.BorderBrush = Get-Brush 'card-border'
             $s.Background = Get-Brush 'card'
-            $s.Tag.Chev.Foreground = Get-Brush '#5B6475'
+            $s.Tag.Chev.Foreground = Get-Brush '#655E7E'
             $s.Effect = $null
             Start-WpfAnim $s.Tag.Move ([System.Windows.Media.TranslateTransform]::YProperty) 0 180
         })
@@ -125,8 +125,8 @@ function Update-Hub {
         if ($info[$k]) {
             $g = New-Grid @('130', '*')
             $g.Margin = New-Thickness 0 4 0 4
-            Add-ToGrid $g (New-Text $k 12.5 '#9AA3B2') 0
-            $v = New-Text ([string]$info[$k]) 12.5 '#E6E8EE' -Semi
+            Add-ToGrid $g (New-Text $k 12.5 '#A6A1BC') 0
+            $v = New-Text ([string]$info[$k]) 12.5 '#EEEBF7' -Semi
             $v.TextTrimming = 'CharacterEllipsis'; $v.TextWrapping = 'NoWrap'
             Add-ToGrid $g $v 1
             [void]$ui.HubSummary.Children.Add($g)

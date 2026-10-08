@@ -1,4 +1,4 @@
-﻿# Génère les icônes de Nexo : un N blanc « glitch » (échos cyan et magenta, tranches décalées) sur fond sombre.
+﻿# Génère les icônes de Nevermind : un N blanc « glitch » (échos cyan et magenta, tranches décalées) sur fond sombre.
 #   OptiGame.ico              icône de l'application (nom de fichier gardé pour les mises à jour)
 #   OptiGame-desinstaller.ico même icône avec un badge rouge
 param([string]$OutDir = (Join-Path $PSScriptRoot 'icones'))

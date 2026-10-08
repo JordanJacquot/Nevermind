@@ -1,4 +1,4 @@
-﻿# Nexo : branchement des boutons et événements de la fenêtre.
+﻿# Nevermind : branchement des boutons et événements de la fenêtre.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ $Window.Add_StateChanged({
     if ($Window.WindowState -eq 'Minimized') { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } }
     else { $script:StateBeforeTray = [string]$Window.WindowState }
 })
-# Un nouveau lancement de Nexo demande d'afficher cette fenêtre (elle peut être cachée près de l'horloge)
+# Un nouveau lancement de Nevermind demande d'afficher cette fenêtre (elle peut être cachée près de l'horloge)
 if (-not $env:OPTIGAME_TEST) {
     $script:ShowWatch = New-Object System.Windows.Threading.DispatcherTimer
     $script:ShowWatch.Interval = [TimeSpan]::FromMilliseconds(600)
@@ -147,7 +147,7 @@ $ui.BtnRestorePoint.Add_Click({
     Invoke-Safe {
         Set-Busy $true
         $r = Invoke-Async {
-            try { Checkpoint-Computer -Description 'Nexo (manuel)' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; 'OK' }
+            try { Checkpoint-Computer -Description 'Nevermind (manuel)' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; 'OK' }
             catch { $_.Exception.Message }
         }
         if ("$r" -eq 'OK') { Set-Status 'Point de restauration créé.'; Show-Message 'Point de restauration créé.' }
@@ -213,7 +213,7 @@ $Window.Add_ContentRendered({
     if ($Splash) { try { $Splash.Close() } catch {}; $script:Splash = $null }
     $v = $ui.Tabs.Template.FindName('VersionText', $ui.Tabs)
     if ($v) { $v.Text = "Version $AppVersion" }
-    # Logo Nexo animé (le N et le mot « glitchent » au survol et de temps en temps)
+    # Logo Nevermind animé (le N et le mot « glitchent » au survol et de temps en temps)
     try { Initialize-NexoLogo $ui.Tabs.Template.FindName('LogoMarkHost', $ui.Tabs) $ui.Tabs.Template.FindName('LogoWordHost', $ui.Tabs) } catch { Write-Log "Logo: $_" }
     $script:NavBar = $ui.Tabs.Template.FindName('NavBar', $ui.Tabs)
     $script:NavCrumb = $ui.Tabs.Template.FindName('NavCrumb', $ui.Tabs)
@@ -245,7 +245,7 @@ $Window.Add_ContentRendered({
             Update-HistoryList
         }
         Invoke-Safe {
-            if (-not $env:OPTIGAME_TEST) { Invoke-NexoMigration; Update-AutoStartPath }
+            if (-not $env:OPTIGAME_TEST) { Invoke-NameMigration; Update-AutoStartPath }
             Update-ShortcutCard
         }
         Set-StartupStep 'Protection du PC...' 72

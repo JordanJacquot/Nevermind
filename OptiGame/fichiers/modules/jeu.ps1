@@ -1,4 +1,4 @@
-﻿# Nexo : mode jeu automatique, profils par jeu et alerte de température.
+﻿# Nevermind : mode jeu automatique, profils par jeu et alerte de température.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ function Add-CustomGame([string]$Exe, [string]$Name) {
     $list = @(@(Get-Setting 'CustomGames' @()) | Where-Object { $_ -and [string]$_.Exe -ne $Exe })
     Set-Setting 'CustomGames' @($list + @{ Name = $Name; Exe = $Exe })
     Update-GameCache
-    Set-Status "$Name ajouté à tes jeux : Nexo le reconnaîtra à son lancement."
+    Set-Status "$Name ajouté à tes jeux : Nevermind le reconnaîtra à son lancement."
 }
 
 function Remove-CustomGame([string]$Exe) {
@@ -166,7 +166,7 @@ function Update-GameModeStatus {
     if (-not $script:GameModeStatus) { return }
     $t = $script:GameModeStatus
     if (-not (Get-Setting 'GameMode' $false)) {
-        $t.Text = 'Désactivé.'; $t.Foreground = Get-Brush '#5B6475'
+        $t.Text = 'Désactivé.'; $t.Foreground = Get-Brush '#655E7E'
     } elseif ($script:GameSession) {
         $n = @($script:GameSession.Closed).Count
         $t.Text = "En jeu : $($script:GameSession.Game). $n appli$(if ($n -gt 1) {'s'}) fermée$(if ($n -gt 1) {'s'})."
@@ -193,7 +193,7 @@ function Build-GameModeCard {
     }
     $row.Margin = New-Thickness 0
     [void]$sp.Children.Add($row)
-    $script:GameModeStatus = New-Text '' 12.5 '#5B6475' -Semi
+    $script:GameModeStatus = New-Text '' 12.5 '#655E7E' -Semi
     $script:GameModeStatus.Margin = New-Thickness 0 6 0 0
     [void]$sp.Children.Add($script:GameModeStatus)
     $wrap = New-Object System.Windows.Controls.WrapPanel
@@ -202,7 +202,7 @@ function Build-GameModeCard {
     foreach ($a in $GameModeApps) {
         $cb = New-Object System.Windows.Controls.CheckBox
         $cb.Content = $a.Name
-        $cb.Foreground = Get-Brush '#E6E8EE'
+        $cb.Foreground = Get-Brush '#EEEBF7'
         $cb.Margin = New-Thickness 0 0 20 8
         $cb.IsChecked = $sel -contains $a.Id
         $cb.Tag = $a.Id
@@ -215,7 +215,7 @@ function Build-GameModeCard {
         [void]$wrap.Children.Add($cb)
     }
     [void]$sp.Children.Add($wrap)
-    $n = New-Text 'Ne coche pas le launcher du jeu auquel tu joues (Epic, EA, Ubisoft). Marche tant que Nexo est ouvert, même réduit.' 12 '#5B6475'
+    $n = New-Text 'Ne coche pas le launcher du jeu auquel tu joues (Epic, EA, Ubisoft). Marche tant que Nevermind est ouvert, même réduit.' 12 '#655E7E'
     $n.Margin = New-Thickness 0 4 0 0
     [void]$sp.Children.Add($n)
     $card.Child = $sp
@@ -260,7 +260,7 @@ function Set-GameProfile($Game, [string]$What, [bool]$On) {
 function Build-GameProfiles {
     $panel = $ui.GameProfilesPanel
     $panel.Children.Clear()
-    if ($null -eq $script:Games) { [void]$panel.Children.Add((New-Text 'Recherche des jeux installés...' 13 '#5B6475')); return }
+    if ($null -eq $script:Games) { [void]$panel.Children.Add((New-Text 'Recherche des jeux installés...' 13 '#655E7E')); return }
     $games = @($script:Games | Where-Object { (Get-GameExeNames $_).Count } | Sort-Object { $_.Name })
     # En tête : d'où viennent les jeux, et ajout d'un jeu que les launchers ne déclarent pas
     $hd = New-Grid @('*', 'Auto')
@@ -268,7 +268,7 @@ function Build-GameProfiles {
     $srcs = @($games | Group-Object { if ($_.Source) { $_.Source } else { 'Steam' } } | Sort-Object Count -Descending | ForEach-Object { "$($_.Name) $($_.Count)" })
     $hl = New-Object System.Windows.Controls.StackPanel
     [void]$hl.Children.Add((New-Text $(if ($games.Count) { "$($games.Count) jeu$(if ($games.Count -gt 1) {'x'}) reconnu$(if ($games.Count -gt 1) {'s'}) : $($srcs -join ', ')." } else { 'Aucun jeu trouvé sur ce PC.' }) 13 '#FFFFFF' -Semi))
-    $intro = New-Text 'Un jeu manque (jeu autonome, itch.io, émulateur...) ? Ajoute le : Nexo le reconnaîtra à son lancement (mode jeu, FPS, lag). Les réglages ci dessous sont appliqués à chaque lancement, même Nexo fermé ; « Priorité haute » : le jeu passe avant les autres programmes.' 12 '#9AA3B2'
+    $intro = New-Text 'Un jeu manque (jeu autonome, itch.io, émulateur...) ? Ajoute le : Nevermind le reconnaîtra à son lancement (mode jeu, FPS, lag). Les réglages ci dessous sont appliqués à chaque lancement, même Nevermind fermé ; « Priorité haute » : le jeu passe avant les autres programmes.' 12 '#A6A1BC'
     $intro.Margin = New-Thickness 0 2 0 0
     [void]$hl.Children.Add($intro)
     Add-ToGrid $hd $hl 0
@@ -291,12 +291,12 @@ function Build-GameProfiles {
         [void]$sp.Children.Add($nm)
         $exeNames = Get-GameExeNames $g
         $src = if ($g.Source) { $g.Source } else { 'Steam' }
-        $sub = New-Text "$src  ·  $($exeNames -join ', ')" 11.5 '#5B6475'
+        $sub = New-Text "$src  ·  $($exeNames -join ', ')" 11.5 '#655E7E'
         $sub.TextTrimming = 'CharacterEllipsis'; $sub.TextWrapping = 'NoWrap'; $sub.ToolTip = (@($g.Exes) -join "`n")
         [void]$sp.Children.Add($sub)
         if ($g.Custom) {
             $rm = New-Object System.Windows.Controls.TextBlock
-            $rm.Text = 'Retirer de la liste'; $rm.FontSize = 11.5; $rm.Foreground = Get-Brush '#9AA3B2'; $rm.TextDecorations = [System.Windows.TextDecorations]::Underline
+            $rm.Text = 'Retirer de la liste'; $rm.FontSize = 11.5; $rm.Foreground = Get-Brush '#A6A1BC'; $rm.TextDecorations = [System.Windows.TextDecorations]::Underline
             $rm.Cursor = [System.Windows.Input.Cursors]::Hand; $rm.Margin = New-Thickness 0 2 0 0; $rm.HorizontalAlignment = 'Left'
             $rm.Tag = [string]$g.Exes[0]
             $rm.Add_MouseLeftButtonUp({ param($s, $e) $x = [string]$s.Tag; Invoke-Safe { Remove-CustomGame $x } })
@@ -318,7 +318,7 @@ function Build-GameProfiles {
             $sw.Tag = @{ Game = $g; What = $o[0] }
             $sw.Add_Click({ param($s, $e) $x = $s.Tag; $on = [bool]$s.IsChecked; Invoke-Safe { Set-GameProfile $x.Game $x.What $on } })
             [void]$box.Children.Add($sw)
-            $lbl = New-Text $o[1] 12.5 '#9AA3B2'
+            $lbl = New-Text $o[1] 12.5 '#A6A1BC'
             $lbl.Margin = New-Thickness 8 0 0 0; $lbl.VerticalAlignment = 'Center'
             [void]$box.Children.Add($lbl)
             Add-ToGrid $row $box $col
@@ -413,7 +413,7 @@ function New-FpsOverlayContent([string]$Style, [string]$Value = '...') {
         return @{ Root = $b; Fps = $fps; Sub = $null; Discreet = $true }
     }
     $b = New-Object System.Windows.Controls.Border
-    $bg = Get-Brush '#0E1014'; $bg.Opacity = 0.8
+    $bg = Get-Brush '#0D0B14'; $bg.Opacity = 0.8
     $b.Background = $bg
     $b.CornerRadius = [System.Windows.CornerRadius]::new(10)
     $b.Padding = New-Thickness 12 5 14 7
@@ -423,11 +423,11 @@ function New-FpsOverlayContent([string]$Style, [string]$Value = '...') {
     $fps = New-Text $Value 26 $Colors.ok -Bold
     $fps.TextWrapping = 'NoWrap'
     [void]$row.Children.Add($fps)
-    $unit = New-Text 'FPS' 12 '#9AA3B2' -Semi
+    $unit = New-Text 'FPS' 12 '#A6A1BC' -Semi
     $unit.VerticalAlignment = 'Bottom'; $unit.Margin = New-Thickness 6 0 0 5
     [void]$row.Children.Add($unit)
     [void]$sp.Children.Add($row)
-    $sub = New-Text 'Mesure en cours...' 11.5 '#C9CED8'
+    $sub = New-Text 'Mesure en cours...' 11.5 '#D3CDE3'
     $sub.TextWrapping = 'NoWrap'
     [void]$sp.Children.Add($sub)
     $b.Child = $sp
@@ -441,7 +441,7 @@ function Show-FpsOverlay {
     $w.Background = [System.Windows.Media.Brushes]::Transparent
     $w.Topmost = $true; $w.ShowInTaskbar = $false; $w.ShowActivated = $false; $w.Focusable = $false
     $w.SizeToContent = 'WidthAndHeight'; $w.ResizeMode = 'NoResize'; $w.IsHitTestVisible = $false
-    $w.Title = 'Nexo FPS'
+    $w.Title = 'Nevermind FPS'
     $c = New-FpsOverlayContent (Get-FpsOverlayStyle)
     $w.Content = $c.Root
     $w.Add_SourceInitialized({ param($s, $e) try { [OGNative]::MakeOverlay((New-Object System.Windows.Interop.WindowInteropHelper $s).Handle) } catch {} })
@@ -482,7 +482,7 @@ function Set-OverlayPosition([int]$ProcId) {
     $h = [IntPtr]::Zero
     try { $h = (Get-Process -Id $ProcId -ErrorAction Stop).MainWindowHandle } catch {}
     $scr = if ($h -ne [IntPtr]::Zero) { [System.Windows.Forms.Screen]::FromHandle($h) } else { [System.Windows.Forms.Screen]::PrimaryScreen }
-    # Échelle de l'écran : celle du compteur s'il est affiché (la fenêtre de Nexo peut être cachée près de l'horloge)
+    # Échelle de l'écran : celle du compteur s'il est affiché (la fenêtre de Nevermind peut être cachée près de l'horloge)
     $src = [System.Windows.PresentationSource]::FromVisual($o.Win)
     if (-not $src) { $src = [System.Windows.PresentationSource]::FromVisual($Window) }
     $k = if ($src) { $src.CompositionTarget.TransformToDevice.M11 } else { 1.0 }
@@ -534,7 +534,7 @@ function Stop-FpsTarget {
     Build-FpsPanel
     $open = { Show-Page 1; Set-GamingSubPage 'fps'; Show-FpsSession $saved.Id }.GetNewClosure()
     if ($saved -and (Test-FpsProblem $saved)) {
-        Show-Notify "Partie terminée : $($t.Name)" ('{0:N0} FPS en moyenne, avec des chutes. Nexo a regardé d''où ça vient : clique ici pour voir et corriger.' -f $s[0]) $open
+        Show-Notify "Partie terminée : $($t.Name)" ('{0:N0} FPS en moyenne, avec des chutes. Nevermind a regardé d''où ça vient : clique ici pour voir et corriger.' -f $s[0]) $open
     } else {
         Show-Notify "Partie terminée : $($t.Name)" ('{0} de jeu, {1:N0} FPS en moyenne (1 % bas {2:N0}). Tout était fluide.' -f (Format-PlayTime $s[4]), $s[0], $s[1]) $open
     }
@@ -581,7 +581,7 @@ function Update-FpsTarget {
 # Ctrl+Maj+F : lance ou arrête la mesure sur le jeu au premier plan, quel que soit son launcher.
 function Switch-FpsManual {
     if (-not (Test-FpsMeasure)) {
-        Show-Notify 'Mesure des FPS désactivée' 'Active la dans Nexo, page Optimisation gaming, onglet Mes parties.'
+        Show-Notify 'Mesure des FPS désactivée' 'Active la dans Nevermind, page Optimisation gaming, onglet Mes parties.'
         return
     }
     if ($script:FpsTarget) {
@@ -672,7 +672,7 @@ function Test-FpsProblem($S) {
     ($S.Avg -lt 60) -or ($S.Low1 -lt 0.5 * $S.Avg) -or ($perMin -gt 6)
 }
 
-# Date du dernier changement fait par Nexo (non annulé).
+# Date du dernier changement fait par Nevermind (non annulé).
 function Get-LastChangeDate {
     if ($null -eq $script:History) { Import-History }
     foreach ($h in $script:History) {
@@ -713,12 +713,12 @@ function New-FpsCompare($Sessions) {
     $row = New-Grid @('*', '*', 'Auto')
     foreach ($x in @(@(0, "Avant le $($lc.ToString('dd/MM'))", $b, $before.Count), @(1, 'Après', $a, $after.Count))) {
         $sp = New-Object System.Windows.Controls.StackPanel
-        [void]$sp.Children.Add((New-Text $x[1] 11.5 '#9AA3B2'))
+        [void]$sp.Children.Add((New-Text $x[1] 11.5 '#A6A1BC'))
         [void]$sp.Children.Add((New-Text ('{0:N0} FPS' -f $x[2][0]) 18 '#FFFFFF' -Bold))
-        [void]$sp.Children.Add((New-Text ('1 % bas {0:N0}, {1} partie{2}' -f $x[2][1], $x[3], $(if ($x[3] -gt 1) { 's' })) 11.5 '#9AA3B2'))
+        [void]$sp.Children.Add((New-Text ('1 % bas {0:N0}, {1} partie{2}' -f $x[2][1], $x[3], $(if ($x[3] -gt 1) { 's' })) 11.5 '#A6A1BC'))
         Add-ToGrid $row $sp $x[0]
     }
-    $col = if ([math]::Abs($pct) -lt 3) { '#9AA3B2' } elseif ($pct -gt 0) { $Colors.ok } else { $Colors.warn }
+    $col = if ([math]::Abs($pct) -lt 3) { '#A6A1BC' } elseif ($pct -gt 0) { $Colors.ok } else { $Colors.warn }
     $delta = New-Text $(if ([math]::Abs($pct) -lt 3) { 'Pareil' } else { '{0}{1:N0} %' -f $(if ($pct -gt 0) { '+' } else { '' }), $pct }) 20 $col -Bold
     $delta.VerticalAlignment = 'Center'
     Add-ToGrid $row $delta 2
@@ -748,7 +748,7 @@ function Show-FpsSession([string]$Id) {
     )))
     [void]$body.Children.Add((New-Verdict $v[0] $v[1]))
     if ([int]$s.MenuSec -ge 5) {
-        $mn = New-Text "Menus, chargements ou cinématiques bloqués à $([int]$s.MenuFps) FPS pendant $(Format-PlayTime $s.MenuSec) : mis à part, ils ne comptent ni dans ces chiffres ni comme des chutes (les creux de la courbe)." 12 '#9AA3B2'
+        $mn = New-Text "Menus, chargements ou cinématiques bloqués à $([int]$s.MenuFps) FPS pendant $(Format-PlayTime $s.MenuSec) : mis à part, ils ne comptent ni dans ces chiffres ni comme des chutes (les creux de la courbe)." 12 '#A6A1BC'
         $mn.Margin = New-Thickness 2 6 0 0
         [void]$body.Children.Add($mn)
     }
@@ -769,12 +769,12 @@ function Show-FpsSession([string]$Id) {
         [void]$body.Children.Add((New-SectionTitle 'AVANT / APRÈS TES DERNIERS RÉGLAGES'))
         [void]$body.Children.Add($cmp)
     }
-    # Jeu mesuré avec Ctrl+Maj+F et inconnu de Nexo : proposer de l'ajouter pour la prochaine fois
+    # Jeu mesuré avec Ctrl+Maj+F et inconnu de Nevermind : proposer de l'ajouter pour la prochaine fois
     $exePath = if ($s.Diag) { [string]$s.Diag.Path } else { '' }
     if ($exePath -and (Test-Path -LiteralPath $exePath) -and -not @($script:Games | Where-Object { @($_.Exes) -contains $exePath }).Count) {
         $ag = New-Grid @('*', 'Auto')
         $ag.Margin = New-Thickness 0 12 0 0
-        $at = New-Text "Nexo ne connaît pas encore ce jeu : ajoute le pour qu'il soit reconnu tout seul la prochaine fois (mode jeu, FPS, lag)." 12.5 '#C9CED8'
+        $at = New-Text "Nevermind ne connaît pas encore ce jeu : ajoute le pour qu'il soit reconnu tout seul la prochaine fois (mode jeu, FPS, lag)." 12.5 '#D3CDE3'
         $at.VerticalAlignment = 'Center'
         Add-ToGrid $ag $at 0
         $ab = New-Button 'Ajouter à mes jeux' 'BtnPrimary'
@@ -804,18 +804,18 @@ function New-FpsRow($S) {
     $nm.TextTrimming = 'CharacterEllipsis'; $nm.TextWrapping = 'NoWrap'
     [void]$left.Children.Add($nm)
     $d = [datetime]$S.Date
-    [void]$left.Children.Add((New-Text "$($d.ToString('dd/MM')) à $($d.ToString('HH:mm')), $(Format-PlayTime $S.Seconds)" 11.5 '#9AA3B2'))
+    [void]$left.Children.Add((New-Text "$($d.ToString('dd/MM')) à $($d.ToString('HH:mm')), $(Format-PlayTime $S.Seconds)" 11.5 '#A6A1BC'))
     Add-ToGrid $row $left 0
     $mid = New-Object System.Windows.Controls.StackPanel
     $mid.HorizontalAlignment = 'Right'; $mid.VerticalAlignment = 'Center'; $mid.Margin = New-Thickness 12 0 12 0
     $big = New-Text ('{0:N0} FPS' -f $S.Avg) 16 (Get-FpsColor $S.Avg) -Bold
     $big.HorizontalAlignment = 'Right'
     [void]$mid.Children.Add($big)
-    $sm = New-Text $(if (Test-FpsProblem $S) { '1 % bas {0:N0}, à vérifier' -f $S.Low1 } else { '1 % bas {0:N0}' -f $S.Low1 }) 11.5 $(if (Test-FpsProblem $S) { $Colors.warn } else { '#9AA3B2' })
+    $sm = New-Text $(if (Test-FpsProblem $S) { '1 % bas {0:N0}, à vérifier' -f $S.Low1 } else { '1 % bas {0:N0}' -f $S.Low1 }) 11.5 $(if (Test-FpsProblem $S) { $Colors.warn } else { '#A6A1BC' })
     $sm.HorizontalAlignment = 'Right'
     [void]$mid.Children.Add($sm)
     Add-ToGrid $row $mid 1
-    $chev = New-Text '›' 22 '#5B6475'
+    $chev = New-Text '›' 22 '#655E7E'
     $chev.VerticalAlignment = 'Center'
     Add-ToGrid $row $chev 2
     $card.Child = $row
@@ -832,7 +832,7 @@ function New-SwitchRow([string]$Title, [string]$Text, [bool]$On, [scriptblock]$O
     $row.Margin = New-Thickness 0 0 0 10
     $sp = New-Object System.Windows.Controls.StackPanel
     [void]$sp.Children.Add((New-Text $Title 14 '#FFFFFF' -Semi))
-    $t = New-Text $Text 12 '#9AA3B2'
+    $t = New-Text $Text 12 '#A6A1BC'
     $t.Margin = New-Thickness 0 2 0 0
     [void]$sp.Children.Add($t)
     Add-ToGrid $row $sp 0
@@ -854,8 +854,8 @@ function Invoke-FpsHelp {
     Show-ResultSheet 'Trouvons d''où viennent tes problèmes de FPS' @(
         '1.  La mesure des FPS est activée.',
         '2.  Lance ton jeu et joue au moins 5 minutes, de préférence là où ça rame.',
-        '3.  Si Nexo ne reconnaît pas le jeu, appuie sur Ctrl + Maj + F en jeu (ou ajoute le dans Profils par jeu).',
-        '4.  Quitte le jeu : Nexo t''explique d''où vient le problème et ce qu''il peut régler pour toi.') $null 'Nexo regarde qui freine (carte graphique ou processeur), la température, la mémoire, le disque et les programmes en arrière plan.'
+        '3.  Si Nevermind ne reconnaît pas le jeu, appuie sur Ctrl + Maj + F en jeu (ou ajoute le dans Profils par jeu).',
+        '4.  Quitte le jeu : Nevermind t''explique d''où vient le problème et ce qu''il peut régler pour toi.') $null 'Nevermind regarde qui freine (carte graphique ou processeur), la température, la mémoire, le disque et les programmes en arrière plan.'
 }
 
 # Onglet « Mes parties »
@@ -902,7 +902,7 @@ function Build-OverlayPanel {
     $g = New-Grid @('*', 'Auto')
     $left = New-Object System.Windows.Controls.StackPanel
     [void]$left.Children.Add((New-Text 'Style du compteur' 14 '#FFFFFF' -Semi))
-    $d = New-Text $(if ($style -eq 'discret') { 'Discret : juste le chiffre, en petit et en semi transparence.' } else { 'Complet : le chiffre, le 1 % bas et la moyenne de la partie.' }) 12 '#9AA3B2'
+    $d = New-Text $(if ($style -eq 'discret') { 'Discret : juste le chiffre, en petit et en semi transparence.' } else { 'Complet : le chiffre, le 1 % bas et la moyenne de la partie.' }) 12 '#A6A1BC'
     $d.Margin = New-Thickness 0 2 0 0
     [void]$left.Children.Add($d)
     $wp = New-Object System.Windows.Controls.WrapPanel
@@ -918,7 +918,7 @@ function Build-OverlayPanel {
     $pt = New-Text 'Position du compteur' 14 '#FFFFFF' -Semi
     $pt.Margin = New-Thickness 0 18 0 0
     [void]$left.Children.Add($pt)
-    $pd = New-Text 'Le coin de l''écran du jeu où il s''affiche.' 12 '#9AA3B2'
+    $pd = New-Text 'Le coin de l''écran du jeu où il s''affiche.' 12 '#A6A1BC'
     $pd.Margin = New-Thickness 0 2 0 0
     [void]$left.Children.Add($pd)
     $ug = New-Object System.Windows.Controls.Primitives.UniformGrid
@@ -949,14 +949,14 @@ function Build-OverlayPanel {
     $pc.Margin = New-Thickness 8 8 8 8
     $pv.Child = $pc
     [void]$pvBox.Children.Add($pv)
-    $cap = New-Text 'Aperçu sur un décor de jeu' 11.5 '#5B6475'
+    $cap = New-Text 'Aperçu sur un décor de jeu' 11.5 '#655E7E'
     $cap.HorizontalAlignment = 'Center'; $cap.Margin = New-Thickness 0 6 0 0
     [void]$pvBox.Children.Add($cap)
     Add-ToGrid $g $pvBox 1
     $card.Child = $g
     [void]$panel.Children.Add($card)
 
-    $tips = New-Text "Jeu non reconnu : appuie sur Ctrl + Maj + F pendant la partie pour lancer la mesure et le compteur.`nEn plein écran exclusif, Windows ne laisse rien s'afficher par dessus le jeu : choisis « plein écran fenêtré » ou « sans bordure » dans les options du jeu." 12 '#5B6475'
+    $tips = New-Text "Jeu non reconnu : appuie sur Ctrl + Maj + F pendant la partie pour lancer la mesure et le compteur.`nEn plein écran exclusif, Windows ne laisse rien s'afficher par dessus le jeu : choisis « plein écran fenêtré » ou « sans bordure » dans les options du jeu." 12 '#655E7E'
     $tips.Margin = New-Thickness 4 2 0 0
     [void]$panel.Children.Add($tips)
 }
@@ -981,7 +981,7 @@ function Build-FpsPanel {
     # Le compteur à l'écran a son propre onglet
     $og = New-Grid @('*', 'Auto')
     $og.Margin = New-Thickness 0 4 0 0
-    $ot = New-Text "Compteur à l'écran : $(if (Test-FpsOverlay) { "affiché, style $(Get-FpsOverlayStyle), $($OverlayCorners[(Get-FpsOverlayCorner)].ToLower())" } else { 'masqué' })." 12.5 '#9AA3B2'
+    $ot = New-Text "Compteur à l'écran : $(if (Test-FpsOverlay) { "affiché, style $(Get-FpsOverlayStyle), $($OverlayCorners[(Get-FpsOverlayCorner)].ToLower())" } else { 'masqué' })." 12.5 '#A6A1BC'
     $ot.VerticalAlignment = 'Center'
     Add-ToGrid $og $ot 0
     $ob = New-Button 'Régler le compteur'
@@ -989,20 +989,20 @@ function Build-FpsPanel {
     $ob.Add_Click({ Set-GamingSubPage 'overlay' })
     Add-ToGrid $og $ob 1
     [void]$sp.Children.Add($og)
-    if (-not (Test-Path -LiteralPath $PresentMonExe)) { [void]$sp.Children.Add((New-Text 'PresentMon est absent du dossier de l''app : réinstalle Nexo.' 12.5 $Colors.warn -Semi)) }
+    if (-not (Test-Path -LiteralPath $PresentMonExe)) { [void]$sp.Children.Add((New-Text 'PresentMon est absent du dossier de l''app : réinstalle Nevermind.' 12.5 $Colors.warn -Semi)) }
     $card.Child = $sp
     [void]$panel.Children.Add($card)
 
     $all = @(Get-FpsSessions)
     if (-not $all.Count) {
-        $e = New-Text 'Aucune partie mesurée pour l''instant. Joue au moins 30 secondes : tes FPS moyens, tes chutes et la courbe de la partie apparaîtront ici.' 13 '#5B6475'
+        $e = New-Text 'Aucune partie mesurée pour l''instant. Joue au moins 30 secondes : tes FPS moyens, tes chutes et la courbe de la partie apparaîtront ici.' 13 '#655E7E'
         [void]$panel.Children.Add($e)
         return
     }
     $recent = @($all | Sort-Object { [datetime]$_.Date } -Descending)
     $cmp = New-FpsCompare @($all | Where-Object { $_.Key -eq $recent[0].Key })
     if ($cmp) {
-        [void]$panel.Children.Add((New-Text "$(Get-SessionName $recent[0]) : avant / après tes derniers réglages" 13 '#9AA3B2' -Semi))
+        [void]$panel.Children.Add((New-Text "$(Get-SessionName $recent[0]) : avant / après tes derniers réglages" 13 '#A6A1BC' -Semi))
         $cc = New-Card
         $cc.Margin = New-Thickness 0 6 0 16
         $cc.Child = $cmp
@@ -1013,7 +1013,7 @@ function Build-FpsPanel {
     $help.Margin = New-Thickness 0 0 0 16
     $help.Add_Click({ Invoke-Safe { Invoke-FpsHelp } })
     [void]$panel.Children.Add($help)
-    $h = New-Text 'Dernières parties (clique pour le détail)' 13 '#9AA3B2' -Semi
+    $h = New-Text 'Dernières parties (clique pour le détail)' 13 '#A6A1BC' -Semi
     $h.Margin = New-Thickness 0 0 0 6
     [void]$panel.Children.Add($h)
     foreach ($s in @($recent | Select-Object -First 12)) { [void]$panel.Children.Add((New-FpsRow $s)) }

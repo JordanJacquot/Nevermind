@@ -1,4 +1,4 @@
-﻿# Nexo : mesures en direct, onglets Gaming, Démarrage, Connexion, Nettoyage et Sauvegarde.
+﻿# Nevermind : mesures en direct, onglets Gaming, Démarrage, Connexion, Nettoyage et Sauvegarde.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -114,8 +114,8 @@ function Set-GamingSubPage($Page) {
         $pages[$i].Visibility = if ($i -eq $Index) { 'Visible' } else { 'Collapsed' }
         $b = $script:GTabs[$i]
         if ($b) {
-            $b.Background = Get-Brush $(if ($i -eq $Index) { $Colors.accent } else { '#1A1F29' })
-            $b.Child.Foreground = Get-Brush $(if ($i -eq $Index) { '#0B0D10' } else { '#C9CED8' })
+            $b.Background = Get-Brush $(if ($i -eq $Index) { $Colors.accent } else { '#1C1829' })
+            $b.Child.Foreground = Get-Brush $(if ($i -eq $Index) { '#07060C' } else { '#D3CDE3' })
         }
     }
     $script:GamingSubPage = $GamingSubPages[$Index].Id
@@ -131,7 +131,7 @@ function Build-GamingTabs {
         $b.Padding = New-Thickness 16 7 16 7
         $b.Margin = New-Thickness 0 0 8 0
         $b.Cursor = [System.Windows.Input.Cursors]::Hand
-        $t = New-Text $label 13 '#C9CED8' -Semi
+        $t = New-Text $label 13 '#D3CDE3' -Semi
         $t.TextWrapping = 'NoWrap'
         $b.Child = $t
         $b.Tag = $i
@@ -166,9 +166,9 @@ function Build-GamingTab {
         Add-ToGrid $g $cb 0
         $sp = New-Object System.Windows.Controls.StackPanel
         $sp.VerticalAlignment = 'Center'
-        $title = New-Text $t.Titre 14 $(if ($ok) { '#9AA3B2' } else { '#FFFFFF' }) -Semi
+        $title = New-Text $t.Titre 14 $(if ($ok) { '#A6A1BC' } else { '#FFFFFF' }) -Semi
         [void]$sp.Children.Add($title)
-        $desc = New-Text $t.Description 12 '#9AA3B2'
+        $desc = New-Text $t.Description 12 '#A6A1BC'
         $desc.Margin = New-Thickness 0 4 0 0
         $desc.Visibility = 'Collapsed'
         [void]$sp.Children.Add($desc)
@@ -180,10 +180,10 @@ function Build-GamingTab {
         } else {
             $impactColor = switch ($t.Impact) { 'Important' { $Colors.bad } 'Moyen' { $Colors.warn } default { $Colors.info } }
             [void]$right.Children.Add((New-Badge "Impact $($t.Impact.ToLower())" $impactColor))
-            if ($t.Recommended -eq $false) { [void]$right.Children.Add((New-Badge 'Optionnel' '#9AA3B2')) }
+            if ($t.Recommended -eq $false) { [void]$right.Children.Add((New-Badge 'Optionnel' '#A6A1BC')) }
         }
-        if ($t.Reboot) { [void]$right.Children.Add((New-Badge 'Redémarrage' '#9AA3B2')) }
-        $chev = New-Text '▾' 14 '#5B6475'
+        if ($t.Reboot) { [void]$right.Children.Add((New-Badge 'Redémarrage' '#A6A1BC')) }
+        $chev = New-Text '▾' 14 '#655E7E'
         $chev.Margin = New-Thickness 10 0 0 0; $chev.VerticalAlignment = 'Center'
         [void]$right.Children.Add($chev)
         Add-ToGrid $g $right 2
@@ -212,14 +212,14 @@ function New-RestorePoint {
     # Windows refuse sinon plus d'un point de restauration par 24 h.
     Set-Reg 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' 'SystemRestorePointCreationFrequency' 0
     $r = Invoke-Async {
-        try { Checkpoint-Computer -Description 'Nexo' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; 'OK' }
+        try { Checkpoint-Computer -Description 'Nevermind' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; 'OK' }
         catch { $_.Exception.Message }
     }
     if ("$r" -eq 'OK') { Set-Status 'Point de restauration créé.'; return $true }
     Write-Log "Point de restauration: $r"
     Confirm-Action ("Impossible de créer le point de restauration.`n`nMotif: $r`n`n" +
         "La protection du système est peut-être désactivée sur ce PC. Tu peux quand même continuer: " +
-        "Nexo garde une sauvegarde de chaque réglage modifié et peut tout annuler depuis l'onglet Sauvegarde.`n`nContinuer ?")
+        "Nevermind garde une sauvegarde de chaque réglage modifié et peut tout annuler depuis l'onglet Sauvegarde.`n`nContinuer ?")
 }
 
 function Invoke-ApplyTweaks {
@@ -307,9 +307,9 @@ function Get-StartupInfo($Item) {
     } elseif ($text -match $KeepStartup) {
         $adv = @{ Kind = 'keep'; Label = 'À garder'; Color = $Colors.warn; Why = 'Pilote ou protection de ton PC : laisse le activé.' }
     } elseif ($text -match $DeviceStartup) {
-        $adv = @{ Kind = 'choice'; Label = 'À toi de voir'; Color = '#9AA3B2'; Why = 'Garde le si tu utilises les réglages de ta souris, ton clavier ou tes lumières.' }
+        $adv = @{ Kind = 'choice'; Label = 'À toi de voir'; Color = '#A6A1BC'; Why = 'Garde le si tu utilises les réglages de ta souris, ton clavier ou tes lumières.' }
     } else {
-        $adv = @{ Kind = 'choice'; Label = 'À toi de voir'; Color = '#9AA3B2'; Why = 'Désactive le si tu ne t''en sers pas dès que tu allumes ton PC.' }
+        $adv = @{ Kind = 'choice'; Label = 'À toi de voir'; Color = '#A6A1BC'; Why = 'Désactive le si tu ne t''en sers pas dès que tu allumes ton PC.' }
     }
     # Applis lancées par un petit programme de mise à jour (Discord...) : on prend l'icône de la vraie appli.
     $iconExe = $Item.Exe
@@ -352,7 +352,7 @@ function Update-StartupList {
             $iconEl = New-Object System.Windows.Controls.Border
             $iconEl.Width = 32; $iconEl.Height = 32
             $iconEl.CornerRadius = [System.Windows.CornerRadius]::new(8)
-            $iconEl.Background = Get-Brush '#262C38'
+            $iconEl.Background = Get-Brush '#272237'
         }
         $iconEl.Margin = New-Thickness 0 0 14 0
         $iconEl.VerticalAlignment = 'Center'
@@ -364,7 +364,7 @@ function Update-StartupList {
         [void]$head.Children.Add((New-Text $s.Name 14.5 '#FFFFFF' -Semi))
         [void]$head.Children.Add((New-Badge $s.Advice.Label $s.Advice.Color))
         [void]$sp.Children.Add($head)
-        $sub = New-Text $s.Advice.Why 12.5 '#9AA3B2'
+        $sub = New-Text $s.Advice.Why 12.5 '#A6A1BC'
         $sub.Margin = New-Thickness 0 3 0 0
         [void]$sp.Children.Add($sub)
         Add-ToGrid $g $sp 1
@@ -385,7 +385,7 @@ function Update-StartupList {
         [void]$panel.Children.Add($card)
     }
     if (-not $script:StartupEntries.Count) {
-        [void]$panel.Children.Add((New-Text 'Aucun programme ne se lance avec Windows.' 14 '#9AA3B2'))
+        [void]$panel.Children.Add((New-Text 'Aucun programme ne se lance avec Windows.' 14 '#A6A1BC'))
     }
     Update-StartupCount
 }
@@ -443,7 +443,7 @@ function Update-NetInfo {
     foreach ($k in $rows.Keys) {
         $g = New-Grid @('100', '*')
         $g.Margin = New-Thickness 0 6 0 0
-        Add-ToGrid $g (New-Text $k 13 '#9AA3B2') 0
+        Add-ToGrid $g (New-Text $k 13 '#A6A1BC') 0
         Add-ToGrid $g (New-Text ([string]$rows[$k]) 13) 1
         [void]$panel.Children.Add($g)
     }
@@ -517,7 +517,7 @@ function Invoke-NetTest {
         Add-ToGrid $g $dot 0
         $sp = New-Object System.Windows.Controls.StackPanel
         [void]$sp.Children.Add((New-Text "$($t.Label) ($($t.Host))" 14 '#FFFFFF' -Semi))
-        $v = New-Text $verdict 12.5 '#9AA3B2'; $v.Margin = New-Thickness 0 3 0 0
+        $v = New-Text $verdict 12.5 '#A6A1BC'; $v.Margin = New-Thickness 0 3 0 0
         [void]$sp.Children.Add($v)
         Add-ToGrid $g $sp 1
         $stats = New-Text "$($m.Avg) ms   gigue $($m.Jitter) ms   pertes $($m.Loss) %" 13 $Colors[$st] -Semi
@@ -575,10 +575,10 @@ function Invoke-CleanScan {
         $cb.IsChecked = $size -gt 0
         $cb.VerticalContentAlignment = 'Center'
         Add-ToGrid $g $cb 0
-        $nb = New-Text "$count fichier$(if ($count -gt 1) {'s'})" 12.5 '#5B6475'
+        $nb = New-Text "$count fichier$(if ($count -gt 1) {'s'})" 12.5 '#655E7E'
         $nb.VerticalAlignment = 'Center'; $nb.Margin = New-Thickness 12 0 16 0
         Add-ToGrid $g $nb 1
-        $sz = New-Text (Format-Size $size) 14 $(if ($size -gt 500MB) { $Colors.warn } else { '#9AA3B2' }) -Semi
+        $sz = New-Text (Format-Size $size) 14 $(if ($size -gt 500MB) { $Colors.warn } else { '#A6A1BC' }) -Semi
         $sz.VerticalAlignment = 'Center'
         Add-ToGrid $g $sz 2
         if ($count) {
@@ -603,7 +603,7 @@ function Add-LastCleanInfo {
     if (-not $l -or -not $l.Date) { return }
     $g = New-Grid @('*', 'Auto')
     $g.Margin = New-Thickness 4 10 0 0
-    $t = New-Text "Dernier nettoyage le $(([datetime]$l.Date).ToString('dd/MM à HH:mm')) : $(Format-Size ([double]$l.Freed)) libérés, $($l.Deleted) fichier(s) supprimé(s), $($l.Skipped) laissé(s) car utilisé(s), $($l.Errors) refusé(s)." 12.5 '#9AA3B2'
+    $t = New-Text "Dernier nettoyage le $(([datetime]$l.Date).ToString('dd/MM à HH:mm')) : $(Format-Size ([double]$l.Freed)) libérés, $($l.Deleted) fichier(s) supprimé(s), $($l.Skipped) laissé(s) car utilisé(s), $($l.Errors) refusé(s)." 12.5 '#A6A1BC'
     $t.VerticalAlignment = 'Center'
     Add-ToGrid $g $t 0
     if ($l.File -and (Test-Path -LiteralPath ([string]$l.File))) {
@@ -626,7 +626,7 @@ function Show-CleanFiles($Target, $Info) {
     Set-TestState 'info' 'Avant nettoyage'
     $body = $ui.TestBody
     $top = @($Info.Top)
-    $intro = New-Text "$(if ($Info.Count -gt $top.Count) { "Les $($top.Count) plus gros fichiers sur $($Info.Count)." } else { 'Tous les fichiers, du plus gros au plus petit.' }) Tout ce qui est dans ce$(if ($Target.Paths.Count -gt 1) {'s'}) dossier$(if ($Target.Paths.Count -gt 1) {'s'}) sera supprimé ; un fichier utilisé par un programme ou créé il y a moins de 24 h est laissé en place. Après le nettoyage, un journal liste chaque fichier." 12.5 '#9AA3B2'
+    $intro = New-Text "$(if ($Info.Count -gt $top.Count) { "Les $($top.Count) plus gros fichiers sur $($Info.Count)." } else { 'Tous les fichiers, du plus gros au plus petit.' }) Tout ce qui est dans ce$(if ($Target.Paths.Count -gt 1) {'s'}) dossier$(if ($Target.Paths.Count -gt 1) {'s'}) sera supprimé ; un fichier utilisé par un programme ou créé il y a moins de 24 h est laissé en place. Après le nettoyage, un journal liste chaque fichier." 12.5 '#A6A1BC'
     $intro.Margin = New-Thickness 0 0 0 8
     [void]$body.Children.Add($intro)
     $wp = New-Object System.Windows.Controls.WrapPanel
@@ -641,9 +641,9 @@ function Show-CleanFiles($Target, $Info) {
     }
     [void]$body.Children.Add($wp)
     $hd = New-Grid @('*', '110', '80')
-    Add-ToGrid $hd (New-Text 'FICHIER' 11 '#5B6475' -Semi) 0
-    Add-ToGrid $hd (New-Text 'MODIFIÉ LE' 11 '#5B6475' -Semi) 1
-    $hs = New-Text 'TAILLE' 11 '#5B6475' -Semi; $hs.HorizontalAlignment = 'Right'
+    Add-ToGrid $hd (New-Text 'FICHIER' 11 '#655E7E' -Semi) 0
+    Add-ToGrid $hd (New-Text 'MODIFIÉ LE' 11 '#655E7E' -Semi) 1
+    $hs = New-Text 'TAILLE' 11 '#655E7E' -Semi; $hs.HorizontalAlignment = 'Right'
     Add-ToGrid $hd $hs 2
     [void]$body.Children.Add($hd)
     foreach ($f in $top) {
@@ -652,11 +652,11 @@ function Show-CleanFiles($Target, $Info) {
         $path = [string]$f[0]
         $short = $path
         foreach ($p in $Target.Paths) { if ($path.StartsWith($p, [StringComparison]::OrdinalIgnoreCase)) { $short = $path.Substring($p.Length).TrimStart('\') } }
-        $t = New-Text $short 12 '#E6E8EE'
+        $t = New-Text $short 12 '#EEEBF7'
         $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'; $t.ToolTip = $path
         Add-ToGrid $row $t 0
-        Add-ToGrid $row (New-Text $(try { ([datetime]$f[2]).ToString('dd/MM/yyyy') } catch { '' }) 12 '#9AA3B2') 1
-        $s = New-Text (Format-Size ([double]$f[1])) 12 '#C9CED8'
+        Add-ToGrid $row (New-Text $(try { ([datetime]$f[2]).ToString('dd/MM/yyyy') } catch { '' }) 12 '#A6A1BC') 1
+        $s = New-Text (Format-Size ([double]$f[1])) 12 '#D3CDE3'
         $s.HorizontalAlignment = 'Right'
         Add-ToGrid $row $s 2
         [void]$body.Children.Add($row)
@@ -685,15 +685,15 @@ function Get-BackupCount {
 function Update-BackupSummary {
     $n = Get-BackupCount
     $ui.BackupSummary.Text = if ($n) {
-        "$n réglage$(if ($n -gt 1) {'s'}) modifié$(if ($n -gt 1) {'s'}) par Nexo. Un clic remet tout comme avant."
+        "$n réglage$(if ($n -gt 1) {'s'}) modifié$(if ($n -gt 1) {'s'}) par Nevermind. Un clic remet tout comme avant."
     } else {
-        "Nexo n'a encore rien modifié sur ce PC."
+        "Nevermind n'a encore rien modifié sur ce PC."
     }
 }
 
 function Invoke-UndoAll {
     if (-not (Get-BackupCount)) { Show-Message "Il n'y a aucun changement à annuler."; return }
-    if (-not (Confirm-Action "Remettre tous les réglages modifiés par Nexo comme ils étaient avant ?")) { return }
+    if (-not (Confirm-Action "Remettre tous les réglages modifiés par Nevermind comme ils étaient avant ?")) { return }
     Set-Busy $true
     Set-Status 'Restauration des réglages...'
     $errors = Restore-AllSettings
@@ -713,7 +713,7 @@ function Export-Report {
     $a = $script:LastAnalysis
     $dlg = New-Object Microsoft.Win32.SaveFileDialog
     $dlg.Filter = 'Page web (*.html)|*.html'
-    $dlg.FileName = "Rapport Nexo $env:COMPUTERNAME $(Get-Date -Format 'yyyy-MM-dd').html"
+    $dlg.FileName = "Rapport Nevermind $env:COMPUTERNAME $(Get-Date -Format 'yyyy-MM-dd').html"
     $dlg.InitialDirectory = [Environment]::GetFolderPath('Desktop')
     if ($dlg.ShowDialog($Window) -ne $true) { return }
 
@@ -745,20 +745,20 @@ function Export-Report {
     $html = @"
 <!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rapport Nexo</title>
+<title>Rapport Nevermind</title>
 <style>
-body{margin:0;background:#0E1014;color:#E6E8EE;font:15px/1.5 'Segoe UI',system-ui,sans-serif}
+body{margin:0;background:#0D0B14;color:#EEEBF7;font:15px/1.5 'Segoe UI',system-ui,sans-serif}
 main{max-width:860px;margin:0 auto;padding:32px 16px}
 h1{margin:0;font-size:28px}h1 span{color:#00D9F5}
 h2{margin:32px 0 12px;font-size:18px}
-.sub{color:#9AA3B2}
-.score{display:flex;align-items:center;gap:20px;background:#181C24;border:1px solid #232937;border-radius:12px;padding:20px;margin-top:24px}
+.sub{color:#A6A1BC}
+.score{display:flex;align-items:center;gap:20px;background:#18151F;border:1px solid #231E33;border-radius:12px;padding:20px;margin-top:24px}
 .score b{font-size:48px;color:$($a.Color)}
-table{width:100%;border-collapse:collapse;background:#181C24;border:1px solid #232937;border-radius:12px;overflow:hidden}
-th,td{text-align:left;padding:10px 14px;border-bottom:1px solid #232937;vertical-align:top}
-th{color:#9AA3B2;font-weight:normal;width:180px}
-.f{display:flex;gap:14px;background:#181C24;border:1px solid #232937;border-radius:12px;padding:12px 16px;margin-bottom:8px}
-.f p{margin:2px 0 0;color:#9AA3B2;font-size:14px}
+table{width:100%;border-collapse:collapse;background:#18151F;border:1px solid #231E33;border-radius:12px;overflow:hidden}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid #231E33;vertical-align:top}
+th{color:#A6A1BC;font-weight:normal;width:180px}
+.f{display:flex;gap:14px;background:#18151F;border:1px solid #231E33;border-radius:12px;padding:12px 16px;margin-bottom:8px}
+.f p{margin:2px 0 0;color:#A6A1BC;font-size:14px}
 .dot{flex:none;width:12px;height:12px;border-radius:50%;margin-top:6px}
 .c{margin-bottom:14px}
 .ch{display:flex;justify-content:space-between;gap:12px;font-size:16px}

@@ -1,4 +1,4 @@
-﻿# Nexo : ce qui sort du PC. Quels programmes communiquent avec Internet, avec qui, combien,
+﻿# Nevermind : ce qui sort du PC. Quels programmes communiquent avec Internet, avec qui, combien,
 # et ce qui est anormal. Le contenu (chiffré en HTTPS) n'est jamais lu.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
@@ -42,7 +42,7 @@ function Get-TrafficApp([int]$ProcId) {
         $desc = ''
         if ($path) { try { $desc = [string][Diagnostics.FileVersionInfo]::GetVersionInfo($path).FileDescription } catch {} }
         if ($svc.Count) { $desc = "Windows : $($svc[0].Title)$(if ($svc.Count -gt 1) { " (+$($svc.Count - 1))" })" }
-        $st.Apps[$key] = @{ Key = $key; Name = $name; Path = $path; Services = $svc; Title = $(if ($ProcId -eq $PID) { 'Nexo (cette app)' } elseif ($desc -and $desc.Length -lt 90) { $desc } else { $name })
+        $st.Apps[$key] = @{ Key = $key; Name = $name; Path = $path; Services = $svc; Title = $(if ($ProcId -eq $PID) { 'Nevermind (cette app)' } elseif ($desc -and $desc.Length -lt 90) { $desc } else { $name })
             OutClosed = [double]0; InClosed = [double]0; Out = [double]0; In = [double]0; Rate = [double]0; LastOut = [double]0
             Dest = @{}; Ports = @{}; Udp = $false; Pids = @{}; Sig = $null; Publisher = ''; First = Get-Date; Icon = $null; IsSelf = ($ProcId -eq $PID) }
         if ($path -and -not $st.Sig.ContainsKey($key)) { $st.SigQueue.Enqueue($key) } elseif (-not $path) { $st.Apps[$key].Sig = 'NoPath' }
@@ -519,46 +519,46 @@ $DataTypes = @(
     @{ Id = 'security'; Rx = 'smartscreen|wdcp\.|wd\.microsoft|defender|safebrowsing|malwarebytes|avast|avg\.com|kaspersky|bitdefender|eset\.|norton|mcafee'
        Label = 'Protection'; Color = '#22D37A'; Text = 'Vérifie des fichiers ou des adresses de sites auprès de l''éditeur de sécurité.' },
     @{ Id = 'cert'; Rx = 'ocsp|\bcrl|pki\.|digicert|sectigo|letsencrypt|lencr\.org|globalsign|verisign|usertrust|comodoca|entrust|godaddy\.com/repository|ctldl\.windowsupdate'
-       Label = 'Vérification de certificats'; Color = '#9AA3B2'; Text = 'Vérifie que les sites et les programmes sont authentiques. Très peu de données.' },
+       Label = 'Vérification de certificats'; Color = '#A6A1BC'; Text = 'Vérifie que les sites et les programmes sont authentiques. Très peu de données.' },
     @{ Id = 'auth'; Rx = '(^|\.)login\.|\bauth|oauth|accounts\.|identity|\bsso\.|signin|msauth|passport'
        Label = 'Connexion à ton compte'; Color = '#4EA8FF'; Text = 'Identifiants chiffrés pour ouvrir ou garder ta session.' },
     @{ Id = 'remote'; Rx = 'anydesk|teamviewer|rustdesk|screenconnect|splashtop|logmein'
        Label = 'Prise en main à distance'; Color = '#F04438'; Text = 'Images de ton écran, clavier et souris quand une session à distance est ouverte.' },
     @{ Id = 'ai'; Rx = 'anthropic|claude\.ai|openai|chatgpt|oaiusercontent|gemini|bard\.google|copilot|perplexity|mistral\.ai'
-       Label = 'Assistant IA'; Color = '#FF7AB6'; Text = 'Tes questions et le contexte que tu envoies à l''assistant (textes, fichiers ouverts).' },
+       Label = 'Assistant IA'; Color = '#FF5CC8'; Text = 'Tes questions et le contexte que tu envoies à l''assistant (textes, fichiers ouverts).' },
     @{ Id = 'sync'; Rx = 'onedrive|sharepoint|dropbox|drive\.google|docs\.google|googleusercontent|icloud|box\.com|\bmega\.(nz|io)|backblaze|pcloud|nextcloud'
        Label = 'Synchronisation de fichiers'; Color = '#4EA8FF'; Text = 'Tes fichiers envoyés vers (ou récupérés depuis) ton espace de stockage en ligne.' },
     @{ Id = 'chat'; Rx = 'discord|whatsapp|telegram|signal\.org|teams|skype|slack|zoom\.us|messenger|trouter|\.gateway\.'
        Label = 'Messagerie et appels'; Color = '#4EA8FF'; Text = 'Tes messages, ta voix ou ta vidéo pendant les appels, et ta présence en ligne.' },
     @{ Id = 'stream'; Rx = 'googlevideo|youtube|ytimg|nflxvideo|netflix|twitch|ttvnw|jtvnw|primevideo|aiv-cdn|disney|dssott|spotify|scdn\.co|deezer|dzcdn|soundcloud|crunchyroll'
-       Label = 'Vidéo ou musique'; Color = '#9AA3B2'; Text = 'Tu reçois surtout de la vidéo ou du son. Ce qui part est minime (ce que tu regardes, ta position dans la vidéo).' },
+       Label = 'Vidéo ou musique'; Color = '#A6A1BC'; Text = 'Tu reçois surtout de la vidéo ou du son. Ce qui part est minime (ce que tu regardes, ta position dans la vidéo).' },
     @{ Id = 'game'; Rx = 'steamcommunity|steampowered|steamserver|valve\.net|riotgames|leagueoflegends|pvp\.net|epicgames|unrealengine|battle\.net|blizzard|ea\.com|origin\.com|ubisoft|ubi\.com|xboxlive|playstation|nintendo|netmarble|playfab|gamesparks|photonengine|faceit|easyanticheat|battleye'
        Label = 'Jeu en ligne'; Color = '#22D37A'; Text = 'Tes actions en jeu, le chat, ton compte et parfois les vérifications de l''anti-triche.' },
     @{ Id = 'update'; Rx = 'windowsupdate|delivery\.mp\.microsoft|\bdl\.|download|update|steamcontent|epicgames-download|akamaized|akamai|cloudfront|fastly|cdn|edgesuite|edgekey|content'
-       Label = 'Mise à jour ou téléchargement'; Color = '#9AA3B2'; Text = 'Le programme récupère des fichiers : mises à jour, jeux, images, pages.' },
+       Label = 'Mise à jour ou téléchargement'; Color = '#A6A1BC'; Text = 'Le programme récupère des fichiers : mises à jour, jeux, images, pages.' },
     @{ Id = 'cloud'; Rx = '1e100\.net|amazonaws|azure|cloudapp|googleapis|gstatic|cloudflare|herokuapp|digitalocean|ovh\.|hetzner|linode|vultr'
-       Label = 'Serveur de l''éditeur'; Color = '#9AA3B2'; Text = 'Échanges avec les serveurs du programme (hébergés dans un grand centre de données). Le contenu dépend du programme.' }
+       Label = 'Serveur de l''éditeur'; Color = '#A6A1BC'; Text = 'Échanges avec les serveurs du programme (hébergés dans un grand centre de données). Le contenu dépend du programme.' }
 )
 
 # Type d'une destination : d'après le nom du serveur, sinon d'après le port et le sens des échanges.
 function Get-DestType($Name, [int]$Port, [double]$Out, [double]$In, $App, $Owner) {
     $n = ([string]$Name).ToLower()
-    if ($Port -in 53, 853) { return @{ Id = 'dns'; Label = 'Recherche d''adresses'; Color = '#9AA3B2'; Text = 'Traduit les noms de sites en adresses. Très peu de données.' } }
+    if ($Port -in 53, 853) { return @{ Id = 'dns'; Label = 'Recherche d''adresses'; Color = '#A6A1BC'; Text = 'Traduit les noms de sites en adresses. Très peu de données.' } }
     if ($n) { foreach ($t in $DataTypes) { if ($n -match $t.Rx) { return $t } } }
     # Propriétaire trouvé dans l'annuaire : Valve, Riot, Discord...
     $own = if ($Owner) { "$($Owner.O) $($Owner.N)".ToLower() } else { '' }
     if ($own.Trim()) { foreach ($x in $OwnerTypes) { if ($own -match $x[1]) { return @($DataTypes | Where-Object { $_.Id -eq $x[0] })[0] } } }
     if ($App -and $App.Name -match $RemoteTools) { return @($DataTypes | Where-Object { $_.Id -eq 'remote' })[0] }
     if ($Out -gt 10MB -and $Out -gt 3 * $In) { return @{ Id = 'upload'; Label = 'Envoi important'; Color = '#F5A524'; Text = 'Le programme envoie bien plus qu''il ne reçoit : fichiers, vidéo ou sauvegarde. À vérifier si tu ne sais pas pourquoi.' } }
-    if ($In -gt 3 * [math]::Max(1.0, $Out) -and $In -gt 1MB) { return @{ Id = 'download'; Label = 'Téléchargement'; Color = '#9AA3B2'; Text = 'Le programme reçoit surtout des données (fichiers, contenus).' } }
-    if (-not $n -and $own.Trim()) { return @{ Id = 'owned'; Label = 'Serveur d''une entreprise connue'; Color = '#9AA3B2'; Text = 'On sait à qui appartient le serveur (indiqué sous son adresse), mais pas précisément ce qui est échangé.' } }
-    if (-not $n) { return @{ Id = 'unknown'; Label = 'Serveur non identifié'; Color = '#5B6475'; Text = 'Adresse sans nom ni propriétaire connu : impossible de savoir à quoi elle sert.' } }
-    @{ Id = 'other'; Label = 'Échanges avec le serveur'; Color = '#5B6475'; Text = 'Le nom du serveur ne dit pas précisément ce qui est échangé.' }
+    if ($In -gt 3 * [math]::Max(1.0, $Out) -and $In -gt 1MB) { return @{ Id = 'download'; Label = 'Téléchargement'; Color = '#A6A1BC'; Text = 'Le programme reçoit surtout des données (fichiers, contenus).' } }
+    if (-not $n -and $own.Trim()) { return @{ Id = 'owned'; Label = 'Serveur d''une entreprise connue'; Color = '#A6A1BC'; Text = 'On sait à qui appartient le serveur (indiqué sous son adresse), mais pas précisément ce qui est échangé.' } }
+    if (-not $n) { return @{ Id = 'unknown'; Label = 'Serveur non identifié'; Color = '#655E7E'; Text = 'Adresse sans nom ni propriétaire connu : impossible de savoir à quoi elle sert.' } }
+    @{ Id = 'other'; Label = 'Échanges avec le serveur'; Color = '#655E7E'; Text = 'Le nom du serveur ne dit pas précisément ce qui est échangé.' }
 }
 
 # Échanges groupés par type pour un programme : { Type, Out, In, Count, Dests }.
 # Le réseau local passe en dernier, sinon le plus gros volume d'abord.
-$LocalType = @{ Id = 'local'; Label = 'Appareils de ton réseau'; Color = '#9AA3B2'; Text = 'Échanges avec des appareils de chez toi (box, imprimante, TV...) : rien ne sort sur Internet.' }
+$LocalType = @{ Id = 'local'; Label = 'Appareils de ton réseau'; Color = '#A6A1BC'; Text = 'Échanges avec des appareils de chez toi (box, imprimante, TV...) : rien ne sort sur Internet.' }
 function Get-AppDestGroups($St, $A) {
     $sum = @{}
     foreach ($d in @($A.Dest.Values)) {
@@ -578,7 +578,7 @@ function Get-AppDataTypes($St, $A) {
 # Bloc d'un type de données dans la fiche : titre, explication, volumes, puis ses serveurs.
 function New-TrafficTypeBlock($St, $G) {
     $b = New-Object System.Windows.Controls.Border
-    $b.Background = Get-Brush '#1E232D'
+    $b.Background = Get-Brush '#1D1A2A'
     $b.BorderBrush = Get-Brush $G.Type.Color
     $b.BorderThickness = New-Thickness 3 0 0 0
     $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
@@ -588,7 +588,7 @@ function New-TrafficTypeBlock($St, $G) {
     $hd = New-Grid @('*', 'Auto')
     $tl = New-Object System.Windows.Controls.StackPanel
     [void]$tl.Children.Add((New-Text $G.Type.Label 14.5 $G.Type.Color -Semi))
-    $desc = New-Text $G.Type.Text 12 '#9AA3B2'
+    $desc = New-Text $G.Type.Text 12 '#A6A1BC'
     $desc.Margin = New-Thickness 0 3 0 0
     [void]$tl.Children.Add($desc)
     Add-ToGrid $hd $tl 0
@@ -596,7 +596,7 @@ function New-TrafficTypeBlock($St, $G) {
     $vol.Margin = New-Thickness 20 0 0 0
     $up = New-Text "↑ $(Format-Bytes $G.Out)" 14 '#FFFFFF' -Semi
     $up.HorizontalAlignment = 'Right'; $up.ToolTip = 'Envoyé'
-    $dn = New-Text "↓ $(Format-Bytes $G.In)" 12 '#9AA3B2'
+    $dn = New-Text "↓ $(Format-Bytes $G.In)" 12 '#A6A1BC'
     $dn.HorizontalAlignment = 'Right'; $dn.ToolTip = 'Reçu'
     [void]$vol.Children.Add($up); [void]$vol.Children.Add($dn)
     Add-ToGrid $hd $vol 1
@@ -608,40 +608,40 @@ function New-TrafficTypeBlock($St, $G) {
     foreach ($d in @($dests | Select-Object -First 6)) {
         $row = New-Grid @('18', '*', 'Auto')
         $row.Margin = New-Thickness 0 4 0 4
-        $dot = New-Text '●' 9 $(if ($d.Live) { $Colors.ok } else { '#5B6475' })
+        $dot = New-Text '●' 9 $(if ($d.Live) { $Colors.ok } else { '#655E7E' })
         $dot.VerticalAlignment = 'Center'
         $dot.ToolTip = $(if ($d.Live) { 'Connexion ouverte' } else { 'Connexion terminée' })
         Add-ToGrid $row $dot 0
         $nm = $St.Dns[[string]$d.Remote]
         $left = New-Object System.Windows.Controls.StackPanel
-        $t = New-Text $(if ($nm) { $nm } else { $d.Remote }) 12.5 '#E6E8EE'
+        $t = New-Text $(if ($nm) { $nm } else { $d.Remote }) 12.5 '#EEEBF7'
         $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'
         [void]$left.Children.Add($t)
         $ow = if (-not $d.Private) { Get-ServerOwner $d.Remote }
         if ($ow) {
-            $ot = New-Text "Appartient à $(Get-OwnerLabel $ow)" 11.5 '#C9CED8'
+            $ot = New-Text "Appartient à $(Get-OwnerLabel $ow)" 11.5 '#D3CDE3'
             $ot.TextTrimming = 'CharacterEllipsis'; $ot.TextWrapping = 'NoWrap'
             [void]$left.Children.Add($ot)
         }
         $ms = Get-MsService $nm
         if ($ms) {
-            $mt = New-Text "Microsoft, $($ms.Label) : $($ms.Text)" 11.5 '#C9CED8'
+            $mt = New-Text "Microsoft, $($ms.Label) : $($ms.Text)" 11.5 '#D3CDE3'
             $mt.TextTrimming = 'CharacterEllipsis'; $mt.TextWrapping = 'NoWrap'; $mt.ToolTip = $mt.Text
             [void]$left.Children.Add($mt)
         }
         $pn = $PortNames[[int]$d.Port]
         $warnPort = $SusPorts.ContainsKey([int]$d.Port)
-        $info = New-Text "$(if ($nm) { $d.Remote + ', ' })port $($d.Port)$(if ($pn) { ' (' + $pn + ')' } elseif ($warnPort) { ' (' + $SusPorts[[int]$d.Port] + ')' })" 11 $(if ($warnPort) { $Colors.warn } else { '#5B6475' })
+        $info = New-Text "$(if ($nm) { $d.Remote + ', ' })port $($d.Port)$(if ($pn) { ' (' + $pn + ')' } elseif ($warnPort) { ' (' + $SusPorts[[int]$d.Port] + ')' })" 11 $(if ($warnPort) { $Colors.warn } else { '#655E7E' })
         $info.TextTrimming = 'CharacterEllipsis'; $info.TextWrapping = 'NoWrap'
         [void]$left.Children.Add($info)
         Add-ToGrid $row $left 1
-        $v = New-Text "↑ $(Format-Bytes $d.Out)    ↓ $(Format-Bytes $d.In)" 11.5 '#9AA3B2'
+        $v = New-Text "↑ $(Format-Bytes $d.Out)    ↓ $(Format-Bytes $d.In)" 11.5 '#A6A1BC'
         $v.VerticalAlignment = 'Center'; $v.Margin = New-Thickness 16 0 0 0
         Add-ToGrid $row $v 2
         [void]$sp.Children.Add($row)
     }
     if ($dests.Count -gt 6) {
-        $more = New-Text "+ $($dests.Count - 6) autre$(if ($dests.Count -gt 7) {'s'}) serveur$(if ($dests.Count -gt 7) {'s'}) du même type" 11.5 '#5B6475'
+        $more = New-Text "+ $($dests.Count - 6) autre$(if ($dests.Count -gt 7) {'s'}) serveur$(if ($dests.Count -gt 7) {'s'}) du même type" 11.5 '#655E7E'
         $more.Margin = New-Thickness 18 2 0 2
         [void]$sp.Children.Add($more)
     }
@@ -656,10 +656,10 @@ function Get-AppSigLabel($A) {
     switch ($A.Sig) {
         'Valid' { @($(if ($A.Publisher) { "Signé : $($A.Publisher)" } else { 'Signé' }), $Colors.ok) }
         'HashMismatch' { @('Signature invalide', $Colors.bad) }
-        $null { @('Vérification...', '#9AA3B2') }
-        'Unknown' { @('Signature non vérifiable', '#9AA3B2') }
+        $null { @('Vérification...', '#A6A1BC') }
+        'Unknown' { @('Signature non vérifiable', '#A6A1BC') }
         'NotTrusted' { @('Certificat non reconnu', $Colors.warn) }
-        default { @($(if ($A.Path) { 'Non signé' } else { 'Programme système' }), $(if ($A.Path) { $Colors.warn } else { '#9AA3B2' })) }
+        default { @($(if ($A.Path) { 'Non signé' } else { 'Programme système' }), $(if ($A.Path) { $Colors.warn } else { '#A6A1BC' })) }
     }
 }
 
@@ -683,7 +683,7 @@ function Build-TrafficPage {
         $sp = New-Object System.Windows.Controls.StackPanel
         $v = New-Text '...' 22 '#FFFFFF' -Bold
         [void]$sp.Children.Add($v)
-        [void]$sp.Children.Add((New-Text $s[1] 12 '#9AA3B2'))
+        [void]$sp.Children.Add((New-Text $s[1] 12 '#A6A1BC'))
         $c.Child = $sp
         [void]$stats.Children.Add($c)
         $script:TrafficStats[$s[0]] = $v
@@ -697,7 +697,7 @@ function Build-TrafficPage {
     $lk.Margin = New-Thickness 0 12 0 0
     $lkt = New-Object System.Windows.Controls.StackPanel
     [void]$lkt.Children.Add((New-Text 'Identifier les serveurs sans nom' 13 '#FFFFFF' -Semi))
-    [void]$lkt.Children.Add((New-Text 'Cherche à qui appartient chaque adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public des adresses Internet (rdap.org). Seule l''adresse du serveur est envoyée.' 11.5 '#9AA3B2'))
+    [void]$lkt.Children.Add((New-Text 'Cherche à qui appartient chaque adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public des adresses Internet (rdap.org). Seule l''adresse du serveur est envoyée.' 11.5 '#A6A1BC'))
     Add-ToGrid $lk $lkt 0
     $sw = New-Object System.Windows.Controls.CheckBox
     $sw.Style = $Window.FindResource('Switch')
@@ -712,7 +712,7 @@ function Build-TrafficPage {
     $mg = New-Grid @('*', 'Auto')
     $mt = New-Object System.Windows.Controls.StackPanel
     [void]$mt.Children.Add((New-Text 'Ce que Windows envoie à Microsoft' 14 '#FFFFFF' -Semi))
-    [void]$mt.Children.Add((New-Text 'Les identifiants de ton PC (appareil, pub, compte), les réglages qui en envoient plus que le minimum, et les envois vus en direct.' 12 '#9AA3B2'))
+    [void]$mt.Children.Add((New-Text 'Les identifiants de ton PC (appareil, pub, compte), les réglages qui en envoient plus que le minimum, et les envois vus en direct.' 12 '#A6A1BC'))
     Add-ToGrid $mg $mt 0
     $mb = New-Button 'Voir'
     $mb.VerticalAlignment = 'Center'; $mb.Margin = New-Thickness 16 0 0 0
@@ -725,7 +725,7 @@ function Build-TrafficPage {
     [void]$p.Children.Add($script:TrafficAlertBox)
     $h = New-Object System.Windows.Controls.DockPanel
     $h.Margin = New-Thickness 0 18 0 8
-    $script:TrafficSince = New-Text '' 12 '#9AA3B2'
+    $script:TrafficSince = New-Text '' 12 '#A6A1BC'
     $script:TrafficSince.VerticalAlignment = 'Bottom'
     [System.Windows.Controls.DockPanel]::SetDock($script:TrafficSince, 'Right')
     [void]$h.Children.Add($script:TrafficSince)
@@ -733,7 +733,7 @@ function Build-TrafficPage {
     [void]$p.Children.Add($h)
     $script:TrafficList = New-Object System.Windows.Controls.StackPanel
     [void]$p.Children.Add($script:TrafficList)
-    $n = New-Text 'Le contenu des échanges est chiffré (HTTPS) : Nexo voit quel programme parle à qui et combien il envoie, jamais ce qu''il y a dedans. Les volumes comptent depuis le début de la surveillance. Pour les échanges UDP (certains jeux, appels vidéo), Windows ne donne pas les destinations.' 11.5 '#5B6475'
+    $n = New-Text 'Le contenu des échanges est chiffré (HTTPS) : Nevermind voit quel programme parle à qui et combien il envoie, jamais ce qu''il y a dedans. Les volumes comptent depuis le début de la surveillance. Pour les échanges UDP (certains jeux, appels vidéo), Windows ne donne pas les destinations.' 11.5 '#655E7E'
     $n.Margin = New-Thickness 0 12 0 0
     [void]$p.Children.Add($n)
     $script:TrafficAlertKeys = $null
@@ -757,13 +757,13 @@ function New-TrafficRow($A) {
     $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'
     [void]$sp.Children.Add($t)
     $sig = Get-AppSigLabel $A
-    if ((Get-TrafficMarks 'TrafficTrusted').ContainsKey($A.Key)) { $sig = @("Approuvé par toi   $($sig[0])", '#9AA3B2') }
+    if ((Get-TrafficMarks 'TrafficTrusted').ContainsKey($A.Key)) { $sig = @("Approuvé par toi   $($sig[0])", '#A6A1BC') }
     $dests = @($A.Dest.Values | Where-Object { -not $_.Private }).Count
     $sub = New-Object System.Windows.Controls.TextBlock
     $sub.FontSize = 11.5; $sub.TextTrimming = 'CharacterEllipsis'
     $r1 = New-Object System.Windows.Documents.Run $sig[0]; $r1.Foreground = Get-Brush $sig[1]
     $r2 = New-Object System.Windows.Documents.Run "   $dests destination$(if ($dests -gt 1) {'s'})$(if ($A.Udp) { ', UDP' })$(if ($A.Live) { "   $($A.Live) connexion$(if ($A.Live -gt 1) {'s'}) ouverte$(if ($A.Live -gt 1) {'s'})" })"
-    $r2.Foreground = Get-Brush '#9AA3B2'
+    $r2.Foreground = Get-Brush '#A6A1BC'
     [void]$sub.Inlines.Add($r1); [void]$sub.Inlines.Add($r2)
     # Type principal : le plus gros volume, un type identifié passe avant « non identifié »
     $main = @(Get-AppDataTypes $script:Traffic $A | Sort-Object @{ Expression = { $_.Type.Id -notin 'unknown', 'other' } }, @{ Expression = { $_.Out + $_.In } }, @{ Expression = { $_.Count } } -Descending)[0]
@@ -779,11 +779,11 @@ function New-TrafficRow($A) {
     $up = New-Text "↑ $(Format-Bytes $A.Out)" 13.5 $(if ($A.Rate -gt 50KB) { $Colors.warn } else { '#FFFFFF' }) -Semi
     $up.HorizontalAlignment = 'Right'
     [void]$vol.Children.Add($up)
-    $down = New-Text "↓ $(Format-Bytes $A.In)$(if ($A.Rate -gt 1KB) { "   ↑ $(Format-Bytes $A.Rate)/s" })" 11.5 '#9AA3B2'
+    $down = New-Text "↓ $(Format-Bytes $A.In)$(if ($A.Rate -gt 1KB) { "   ↑ $(Format-Bytes $A.Rate)/s" })" 11.5 '#A6A1BC'
     $down.HorizontalAlignment = 'Right'
     [void]$vol.Children.Add($down)
     Add-ToGrid $g $vol 2
-    $chev = New-Text '›' 22 '#5B6475'
+    $chev = New-Text '›' 22 '#655E7E'
     $chev.VerticalAlignment = 'Center'
     Add-ToGrid $g $chev 3
     $card.Child = $g
@@ -822,7 +822,7 @@ function Update-TrafficView {
     $mins = [int]((Get-Date) - $st.Started).TotalMinutes
     $script:TrafficSince.Text = "depuis $(if ($mins -lt 1) { 'moins d''une minute' } else { "$mins min" })"
     if (-not [TrafficMon]::CountersOk -and $st.Ticks -gt 2 -and @($st.Conns.Values).Count) {
-        $script:TrafficCounters.Text = 'Windows refuse de compter les données (Nexo doit être lancé en administrateur) : seules les connexions sont affichées.'
+        $script:TrafficCounters.Text = 'Windows refuse de compter les données (Nevermind doit être lancé en administrateur) : seules les connexions sont affichées.'
         $script:TrafficCounters.Visibility = 'Visible'
     } else { $script:TrafficCounters.Visibility = 'Collapsed' }
     # Alertes : reconstruites seulement si elles changent (sinon les boutons clignoteraient)
@@ -834,7 +834,7 @@ function Update-TrafficView {
         if (-not $alerts.Count) {
             [void]$box.Children.Add((New-Verdict 'ok' 'Rien d''anormal pour l''instant : les programmes connectés sont signés par leur éditeur et se comportent normalement.'))
         } else {
-            [void]$box.Children.Add((New-Text 'À VÉRIFIER' 12 '#5B6475' -Semi))
+            [void]$box.Children.Add((New-Text 'À VÉRIFIER' 12 '#655E7E' -Semi))
             foreach ($al in $alerts) {
                 $c = New-SecurityCard @{ Status = $al.Level; Title = "$($al.App.Title) : $(if ($al.Level -eq 'bad') { 'comportement suspect' } elseif ($al.Level -eq 'warn') { 'à vérifier' } else { 'bon à savoir' })"
                     Detail = "Pourquoi : $($al.Why -join ' ; ')."; Items = @($al.App.Path | Where-Object { $_ }); Actions = (Get-TrafficAlertActions $al.App); ShowAll = $true }
@@ -846,7 +846,7 @@ function Update-TrafficView {
     $list = $script:TrafficList
     $list.Children.Clear()
     $sorted = @($apps | Sort-Object @{ Expression = { $_.Out + $_.In } } -Descending | Select-Object -First 40)
-    if (-not $sorted.Count) { [void]$list.Children.Add((New-Text 'Aucun programme ne communique avec Internet pour le moment.' 13 '#5B6475')) }
+    if (-not $sorted.Count) { [void]$list.Children.Add((New-Text 'Aucun programme ne communique avec Internet pour le moment.' 13 '#655E7E')) }
     foreach ($a in $sorted) { [void]$list.Children.Add((New-TrafficRow $a)) }
 }
 
@@ -880,7 +880,7 @@ function Show-TrafficApp([string]$Key) {
     if ($null -ne $trustDate) {
         $tr = New-Grid @('*', 'Auto')
         $tr.Margin = New-Thickness 0 10 0 0
-        Add-ToGrid $tr (New-Text "Tu as approuvé ce programme$(if ($trustDate) { " le $trustDate" }) : il n'est plus signalé." 12.5 '#9AA3B2') 0
+        Add-ToGrid $tr (New-Text "Tu as approuvé ce programme$(if ($trustDate) { " le $trustDate" }) : il n'est plus signalé." 12.5 '#A6A1BC') 0
         $ub = New-Button 'Ne plus lui faire confiance'
         $ub.Tag = $a
         $ub.Add_Click({ param($s, $e) $x = $s.Tag; Invoke-Safe { Hide-TestPanel; Set-TrafficTrust $x $false } })
@@ -909,10 +909,10 @@ function Show-TrafficApp([string]$Key) {
     if ($ids.Count) { Add-TrafficSummary $body $a $ids }
     # Ce qu'il envoie : un bloc par type de données, avec ses serveurs dedans
     [void]$body.Children.Add((New-SectionTitle 'CE QU''IL ENVOIE (PROBABLEMENT)'))
-    $cav = New-Text "Deviné d'après le nom des serveurs et les volumes : le contenu, chiffré, n'est jamais lu.$(if ($a.Udp) { ' Les échanges UDP (jeu, voix) ne sont pas comptés.' })" 11.5 '#5B6475'
+    $cav = New-Text "Deviné d'après le nom des serveurs et les volumes : le contenu, chiffré, n'est jamais lu.$(if ($a.Udp) { ' Les échanges UDP (jeu, voix) ne sont pas comptés.' })" 11.5 '#655E7E'
     $cav.Margin = New-Thickness 0 0 0 10
     [void]$body.Children.Add($cav)
-    if (-not $groups.Count) { [void]$body.Children.Add((New-Text 'Aucune connexion vue pour l''instant.' 13 '#5B6475')) }
+    if (-not $groups.Count) { [void]$body.Children.Add((New-Text 'Aucune connexion vue pour l''instant.' 13 '#655E7E')) }
     foreach ($g in $groups) { [void]$body.Children.Add((New-TrafficTypeBlock $st $g)) }
 }
 
@@ -932,7 +932,7 @@ function Add-TrafficSummary($body, $a, $ids) {
     }
     [void]$body.Children.Add((New-SectionTitle 'EN RÉSUMÉ'))
     $box = New-Object System.Windows.Controls.Border
-    $box.Background = Get-Brush '#1E232D'
+    $box.Background = Get-Brush '#1D1A2A'
     $box.CornerRadius = [System.Windows.CornerRadius]::new(8)
     $box.Padding = New-Thickness 14 8 14 8
     $box.Margin = New-Thickness 0 6 0 0
@@ -942,7 +942,7 @@ function Add-TrafficSummary($body, $a, $ids) {
         $row.Margin = New-Thickness 0 4 0 4
         $ic = New-Text $(switch ($l[0]) { 'ok' { '✓' } 'warn' { '!' } default { 'i' } }) 13.5 $Colors[$l[0]] -Bold
         Add-ToGrid $row $ic 0
-        Add-ToGrid $row (New-Text $l[1] 13 $(if ($l[0] -eq 'warn') { $Colors.warn } else { '#E6E8EE' })) 1
+        Add-ToGrid $row (New-Text $l[1] 13 $(if ($l[0] -eq 'warn') { $Colors.warn } else { '#EEEBF7' })) 1
         [void]$sp.Children.Add($row)
     }
     $box.Child = $sp

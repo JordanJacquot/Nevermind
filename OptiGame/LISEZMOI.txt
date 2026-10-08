@@ -1,18 +1,18 @@
-﻿Nexo 1.0.56
+﻿Nevermind 1.0.57
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
 INSTALLATION
 ------------
 1. Clic droit sur le zip > Extraire tout.
-2. Dans le dossier extrait, double clique sur « Nexo.exe »
+2. Dans le dossier extrait, double clique sur « Nevermind.exe »
    (l'icône avec la jauge verte).
 3. Clique sur « Oui » quand Windows demande l'autorisation.
 
 La première fois seulement, Windows peut afficher « Windows a protégé votre
 ordinateur » : clique sur « Informations complémentaires » puis « Exécuter
 quand même ». C'est normal pour un programme qui ne vient pas du Microsoft
-Store. Nexo se débloque ensuite tout seul : plus d'avertissement après.
+Store. Nevermind se débloque ensuite tout seul : plus d'avertissement après.
 
 MES JEUX
 La section « Jeux » (menu de gauche) liste tous tes jeux installés, quel que
@@ -26,7 +26,7 @@ La suppression est définitive (pas de corbeille) : la place est libérée tout 
 
 TROUVER UN RÉGLAGE
 Tape ce que tu cherches dans la barre de recherche en haut de chaque page
-(ou Ctrl + K) : fps, ping, démarrage, overlay... Nexo propose les réglages
+(ou Ctrl + K) : fps, ping, démarrage, overlay... Nevermind propose les réglages
 au fil de la frappe, même avec une faute de frappe. Un clic t'emmène sur la
 bonne page et le réglage s'allume en vert.
 
@@ -34,32 +34,32 @@ Rien à installer : l'application utilise PowerShell, déjà présent dans Windo
 Le dossier « fichiers » contient l'application elle même : ne le supprime pas.
 
 POURQUOI WINDOWS OU L'ANTIVIRUS PEUVENT RÂLER
-Nexo.exe n'est pas « signé » (un certificat payant chez Microsoft), et il
+Nevermind.exe n'est pas « signé » (un certificat payant chez Microsoft), et il
 lance PowerShell avec les droits administrateur pour modifier les réglages de
 Windows. C'est exactement ce que surveillent les antivirus, donc certains
 peuvent le signaler par prudence, même si le programme est sain. Tout le code
 est lisible dans le dossier « fichiers » (voir SÉCURITÉ plus bas).
-Si ton antivirus bloque Nexo.exe :
-  - ajoute le dossier Nexo dans les exclusions de ton antivirus, ou
-  - utilise le lanceur de secours : fichiers\Lancer Nexo (secours).bat
+Si ton antivirus bloque Nevermind.exe :
+  - ajoute le dossier Nevermind dans les exclusions de ton antivirus, ou
+  - utilise le lanceur de secours : fichiers\Lancer Nevermind (secours).bat
 
 
 DÉSINSTALLATION
 ---------------
-Double clique sur « Désinstaller Nexo.exe » (l'icône avec le rond rouge).
+Double clique sur « Désinstaller Nevermind.exe » (l'icône avec le rond rouge).
 L'application :
   - remet tous les réglages de Windows qu'elle a modifiés comme avant,
   - supprime ses données (sauvegarde, journal, préférences),
   - supprime ses fichiers. Les autres fichiers du dossier ne sont pas touchés.
 Les points de restauration Windows sont conservés.
-Secours : fichiers\Désinstaller Nexo (secours).bat
+Secours : fichiers\Désinstaller Nevermind (secours).bat
 
 CE QUE FAIT L'APPLICATION
 -------------------------
 L'application a deux grandes sections, dans le menu à gauche :
   - Ordinateur : l'accueil, avec une carte pour chaque fonction ci dessous.
   - Lag en ligne (page Gaming) : pendant tes parties, ou en
-    test rapide de 30 secondes, Nexo mesure chaque étape du chemin (ton
+    test rapide de 30 secondes, Nevermind mesure chaque étape du chemin (ton
     PC vers ta box, ta box vers ton fournisseur, Internet, le serveur du jeu)
     et t'explique d'où vient le lag : Wi-Fi, téléchargement en arrière plan,
     box ou fournisseur, serveur trop loin ou qui a des soucis, VPN. Avec des
@@ -67,7 +67,7 @@ L'application a deux grandes sections, dans le menu à gauche :
     repère le vrai serveur du jeu (même en UDP).
   - Trafic : ce qui sort de ton PC. Quels programmes communiquent avec
     Internet, avec quels sites, combien ils envoient et reçoivent, en direct.
-    Nexo signale ce qui est anormal (programme non signé caché dans un
+    Nevermind signale ce qui est anormal (programme non signé caché dans un
     dossier à risque, outil de Windows détourné, port utilisé par les virus
     ou Tor, gros envois inhabituels, prise en main à distance) et permet
     d'analyser le programme avec l'antivirus ou de lui bloquer Internet
@@ -106,7 +106,7 @@ L'application a deux grandes sections, dans le menu à gauche :
     appareils et ce PC, donne une note sur 100, corrige ce qui peut l'être sur
     ce PC et exporte un rapport.
     Option : être prévenu quand un nouvel appareil se connecte (vérifié toutes
-    les 10 minutes tant que Nexo est ouvert).
+    les 10 minutes tant que Nevermind est ouvert).
 
 Tableau de bord
   Mesures en direct : processeur, mémoire, carte graphique (et sa température
@@ -117,7 +117,7 @@ Tableau de bord
   matérielles), réseau, batterie sur les portables, et onduleur s'il y en a un
   (fabricant, modèle, série, charge, autonomie, tension, usure de la batterie,
   alerte en cas de coupure de courant, et ce que fait Windows quand sa batterie
-  baisse : Nexo règle en un clic un arrêt propre à 25 % et une alerte à
+  baisse : Nevermind règle en un clic un arrêt propre à 25 % et une alerte à
   50 %, annulable). Un onduleur branché en USB mais invisible pour Windows est
   repéré par sa marque ou par son logiciel.
   Puis un score sur 100 et « Pour gagner des points » : clique sur un point pour
@@ -137,13 +137,13 @@ Optimisation gaming
   fenêtré, accélération de la souris, raccourci Maj x5, partage des mises à jour.
   Mode jeu automatique : quand un de tes jeux démarre, ferme les applis
   que tu as cochées (OneDrive, Teams...) et les relance quand tu quittes le jeu
-  (tant que Nexo est ouvert, même réduit).
+  (tant que Nevermind est ouvert, même réduit).
   Jeux reconnus : Steam, Epic, Ubisoft Connect, EA app, GOG Galaxy,
   Battle.net, Riot, Rockstar, Amazon Games et Xbox / Game Pass. Un jeu manque ?
   « Ajouter un jeu » dans Profils par jeu (jeu autonome, itch.io, émulateur...).
   Profils par jeu : « Priorité haute » pour chaque jeu (et « Carte puissante »
-  sur les PC à deux cartes graphiques), appliqués même quand Nexo est fermé.
-  Mes parties : Nexo mesure tes FPS pendant que tu joues (tout seul pour
+  sur les PC à deux cartes graphiques), appliqués même quand Nevermind est fermé.
+  Mes parties : Nevermind mesure tes FPS pendant que tu joues (tout seul pour
   les jeux reconnus, Ctrl + Maj + F pour les autres). Pour chaque partie :
   FPS moyens, chutes (1 % bas), courbe de la partie, et comparaison avant /
   après tes réglages.
@@ -151,7 +151,7 @@ Optimisation gaming
   écran fenêtré, pas en plein écran). Deux styles : « Complet » (FPS, 1 % bas
   et moyenne) ou « Discret » (juste le chiffre, en petit et en semi
   transparence), dans le coin de l'écran de ton choix, avec un aperçu.
-  Quand une partie rame, Nexo cherche d'où ça vient : carte graphique ou
+  Quand une partie rame, Nevermind cherche d'où ça vient : carte graphique ou
   processeur à fond, surchauffe, mémoire pleine, disque lent, programmes en
   arrière plan, PC sur batterie, écran bridé, jeu sur la mauvaise carte
   graphique... Il corrige ce qu'il peut en un clic (mode performances,
@@ -202,14 +202,14 @@ Sécurité
   douteuses, exclusions de l'antivirus, fichier hosts, proxy, pare-feu.
 
 Sauvegarde
-  Annule TOUS les changements de Nexo en un clic, ou un seul changement
+  Annule TOUS les changements de Nevermind en un clic, ou un seul changement
   grâce à l'historique. Crée un point de restauration Windows, exporte un
   rapport HTML pour comparer vos PC.
   « Signaler un problème » crée un fichier sur ton bureau (journal de l'app et
   configuration du PC, sans tes fichiers ni ton nom) à envoyer à la personne
-  qui t'a donné Nexo.
-  « Raccourci et démarrage » : crée un raccourci Nexo sur ton bureau, et
-  peut lancer Nexo à chaque démarrage du PC. Il reste alors réduit près de
+  qui t'a donné Nevermind.
+  « Raccourci et démarrage » : crée un raccourci Nevermind sur ton bureau, et
+  peut lancer Nevermind à chaque démarrage du PC. Il reste alors réduit près de
   l'horloge (mode jeu, mesure des FPS) et Windows ne demande pas d'autorisation.
   « Recevoir les versions bêta » : pour tester les nouveautés avant tout le monde.
 

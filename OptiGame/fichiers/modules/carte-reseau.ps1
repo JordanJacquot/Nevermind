@@ -1,4 +1,4 @@
-﻿# Nexo : carte du réseau en constellation. La box au centre comme un astre, Internet au dessus,
+﻿# Nevermind : carte du réseau en constellation. La box au centre comme un astre, Internet au dessus,
 # les appareils en orbes lumineux regroupés par familles, reliés par des liaisons que parcourent
 # des impulsions (plus le ping est court, plus elles vont vite). Un clic ouvre la fiche d'un appareil.
 # Chargé par OptiGame.ps1 après reseau.ps1 et reseau-avance.ps1.
@@ -6,10 +6,10 @@
 $MapFamilies = @(
     @{ Id = 'pc'; Label = 'PC et consoles'; Color = '#4EA8FF'; Kinds = @('Ce PC', 'Ordinateur', 'Console de jeu') },
     @{ Id = 'net'; Label = 'Réseau'; Color = '#2EE6C8'; Kinds = @('Routeur ou répéteur Wi-Fi') },
-    @{ Id = 'media'; Label = 'TV et multimédia'; Color = '#FF7AB6'; Kinds = @('TV ou multimédia', 'Enceinte ou audio', 'Box ou décodeur TV') },
+    @{ Id = 'media'; Label = 'TV et multimédia'; Color = '#FF5CC8'; Kinds = @('TV ou multimédia', 'Enceinte ou audio', 'Box ou décodeur TV') },
     @{ Id = 'mobile'; Label = 'Téléphones et tablettes'; Color = '#B18CFF'; Kinds = @('Téléphone ou tablette', 'Téléphone probable', 'Appareil Apple') },
     @{ Id = 'iot'; Label = 'Objets connectés'; Color = '#FFB547'; Kinds = @('Objet connecté', 'Caméra', 'Imprimante') },
-    @{ Id = 'other'; Label = 'Autres'; Color = '#9AA3B2'; Kinds = @() }
+    @{ Id = 'other'; Label = 'Autres'; Color = '#A6A1BC'; Kinds = @() }
 )
 
 function Get-MapFamily($D) {
@@ -151,7 +151,7 @@ function New-MapNode($Canvas, [string]$Title, [string]$Sub, [int]$Glyph, [string
     $t.TextAlignment = 'Center'; $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'; $t.MaxWidth = $W - 20
     [void]$ls.Children.Add($t)
     if ($Sub) {
-        $s = New-Text $Sub 10.5 '#8B95A7'
+        $s = New-Text $Sub 10.5 '#958EAE'
         $s.TextAlignment = 'Center'; $s.TextTrimming = 'CharacterEllipsis'; $s.TextWrapping = 'NoWrap'; $s.MaxWidth = $W - 20
         [void]$ls.Children.Add($s)
     }

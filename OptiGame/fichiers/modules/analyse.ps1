@@ -1,4 +1,4 @@
-﻿# Nexo : santé des composants et analyse complète.
+﻿# Nevermind : santé des composants et analyse complète.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -12,7 +12,7 @@ function ConvertTo-NvidiaVersion([string]$WinVersion) {
     "$([int]$d.Substring(0, 3)).$($d.Substring(3))"
 }
 $StatusLabels = @{ ok = 'Bon état'; warn = 'À surveiller'; bad = 'Problème'; info = 'Info' }
-$Muted = '#5B6475'
+$Muted = '#655E7E'
 
 function Get-LoadColor([double]$Pct, [double]$Warn = 75, [double]$Bad = 90) {
     if ($Pct -ge $Bad) { $Colors.bad } elseif ($Pct -ge $Warn) { $Colors.warn } else { $Colors.ok }
@@ -104,7 +104,7 @@ function New-HealthCard($C) {
     $ts.Margin = New-Thickness 12 0 8 0
     $ts.VerticalAlignment = 'Center'
     [void]$ts.Children.Add((New-Text $C.Titre 15 '#FFFFFF' -Semi))
-    if ($C.Sous) { [void]$ts.Children.Add((New-Text $C.Sous 12 '#9AA3B2')) }
+    if ($C.Sous) { [void]$ts.Children.Add((New-Text $C.Sous 12 '#A6A1BC')) }
     Add-ToGrid $head $ts 1
     $badge = New-Badge $StatusLabels[$C.Status] $color
     $badge.Margin = New-Thickness 0 0 0 0
@@ -116,8 +116,8 @@ function New-HealthCard($C) {
     foreach ($b in $C.Bars) {
         $row = New-Grid @('*', 'Auto')
         $row.Margin = New-Thickness 0 14 0 6
-        Add-ToGrid $row (New-Text $b.Label 12.5 '#9AA3B2') 0
-        Add-ToGrid $row (New-Text $b.Text 12.5 '#E6E8EE' -Semi) 1
+        Add-ToGrid $row (New-Text $b.Label 12.5 '#A6A1BC') 0
+        Add-ToGrid $row (New-Text $b.Text 12.5 '#EEEBF7' -Semi) 1
         [void]$sp.Children.Add($row)
         $pb = New-Object System.Windows.Controls.ProgressBar
         $pb.Value = [math]::Min(100.0, [math]::Max(0.0, [double]$b.Value))
@@ -131,11 +131,11 @@ function New-HealthCard($C) {
         $lines.Margin = New-Thickness 0 12 0 0
         foreach ($k in $C.Lines.Keys) {
             $v = $C.Lines[$k]
-            $txt = $v; $col = '#E6E8EE'
+            $txt = $v; $col = '#EEEBF7'
             if ($v -is [array]) { $txt = $v[0]; $col = $v[1] }
             $r = New-Grid @('165', '*')
             $r.Margin = New-Thickness 0 3 0 3
-            Add-ToGrid $r (New-Text $k 12.5 '#9AA3B2') 0
+            Add-ToGrid $r (New-Text $k 12.5 '#A6A1BC') 0
             Add-ToGrid $r (New-Text ([string]$txt) 12.5 $col) 1
             [void]$lines.Children.Add($r)
         }
@@ -261,26 +261,26 @@ function Invoke-Analysis {
         if ($nvInstalled -and $nvLatest) {
             $isOld = $false
             try { $isOld = [version]$nvInstalled -lt [version]$nvLatest.Version } catch {}
-            $c.Lines['Pilote'] = @("$nvInstalled$(if ($isOld) { " (la $($nvLatest.Version) est sortie)" } else { ' (le plus récent)' })", $(if ($isOld) { $Colors.warn } else { '#E6E8EE' }))
+            $c.Lines['Pilote'] = @("$nvInstalled$(if ($isOld) { " (la $($nvLatest.Version) est sortie)" } else { ' (le plus récent)' })", $(if ($isOld) { $Colors.warn } else { '#EEEBF7' }))
             if ($isOld) {
                 Add-Note $c 'warn' "Nouveau pilote NVIDIA disponible : $($nvLatest.Version)."
                 $c.Action = $nvLatest.Url; $c.ActionLabel = 'Télécharger le pilote'
                 Add-Finding $F 'warn' "Nouveau pilote NVIDIA disponible ($($nvLatest.Version))" "Tu as la version $nvInstalled. La dernière version « Game Ready » est la $($nvLatest.Version)." $w -Id "gpu-driver:$($g.Name)" -Fix (New-Fix `
                     -Why 'Chaque pilote « Game Ready » apporte des optimisations pour les jeux récents et corrige des bugs (plantages, textures qui clignotent...).' `
-                    -Steps @('Ouvre l''application NVIDIA si tu l''as (onglet Pilotes) et clique sur Télécharger, ou clique sur « Page du pilote ».', 'Lance l''installation (installation rapide). L''écran peut clignoter, c''est normal.', 'Relance l''analyse de Nexo.') `
+                    -Steps @('Ouvre l''application NVIDIA si tu l''as (onglet Pilotes) et clique sur Télécharger, ou clique sur « Page du pilote ».', 'Lance l''installation (installation rapide). L''écran peut clignoter, c''est normal.', 'Relance l''analyse de Nevermind.') `
                     -Open $nvLatest.Url -OpenLabel 'Page du pilote')
             } else {
                 Add-Finding $F 'ok' "Pilote graphique à jour ($($g.Name))" "Tu as le dernier pilote NVIDIA « Game Ready » ($nvInstalled)." $w -Id "gpu-driver:$($g.Name)"
             }
         } elseif ($g.DriverDate) {
             $age = ((Get-Date) - $g.DriverDate).Days
-            $c.Lines['Pilote'] = @("$($g.DriverVersion) du $($g.DriverDate.ToString('dd/MM/yyyy'))", $(if ($age -gt 180) { $Colors.warn } else { '#E6E8EE' }))
+            $c.Lines['Pilote'] = @("$($g.DriverVersion) du $($g.DriverDate.ToString('dd/MM/yyyy'))", $(if ($age -gt 180) { $Colors.warn } else { '#EEEBF7' }))
             if ($age -gt 180) {
                 $months = [math]::Floor($age / 30)
                 Add-Note $c 'warn' "Pilote vieux d'environ $months mois: mets le à jour pour de meilleures performances."
                 $c.Action = Get-DriverLink $g.Name; $c.ActionLabel = 'Télécharger le pilote'
                 $steps = if ($g.Name -match 'NVIDIA|GeForce') {
-                    @('Ouvre l''application NVIDIA si tu l''as (onglet Pilotes), ou clique sur « Site du pilote ».', 'Télécharge le dernier pilote « Game Ready » pour ta carte.', 'Lance l''installation (installation rapide). L''écran peut clignoter, c''est normal.', 'Relance l''analyse de Nexo.')
+                    @('Ouvre l''application NVIDIA si tu l''as (onglet Pilotes), ou clique sur « Site du pilote ».', 'Télécharge le dernier pilote « Game Ready » pour ta carte.', 'Lance l''installation (installation rapide). L''écran peut clignoter, c''est normal.', 'Relance l''analyse de Nevermind.')
                 } elseif ($g.Name -match 'AMD|Radeon') {
                     @('Ouvre AMD Software (clic droit sur le bureau) et va dans « Pilotes et logiciels », ou clique sur « Site du pilote ».', 'Installe la dernière version recommandée.', 'Redémarre si l''installation le demande, puis relance l''analyse.')
                 } else {
@@ -307,7 +307,7 @@ function Invoke-Analysis {
                 }
                 if ($s['pcie.link.width.current'] -and $s['pcie.link.width.max']) {
                     $wc = [int]$s['pcie.link.width.current']; $wm = [int]$s['pcie.link.width.max']
-                    $c.Lines['Liaison PCIe'] = @("x$wc (max x$wm)", $(if ($wc -lt $wm) { $Colors.warn } else { '#E6E8EE' }))
+                    $c.Lines['Liaison PCIe'] = @("x$wc (max x$wm)", $(if ($wc -lt $wm) { $Colors.warn } else { '#EEEBF7' }))
                     if (-not $script:IsLaptop -and $wc -lt $wm -and $wm -ge 16) {
                         Add-Note $c 'warn' "La carte fonctionne en x$wc au lieu de x${wm}: vérifie qu'elle est branchée sur le premier port PCIe (le plus proche du processeur)."
                         Add-Finding $F 'warn' "Carte graphique en PCIe x$wc" "Elle devrait être en x$wm. Souvent elle est branchée sur le mauvais port de la carte mère: tu peux perdre des FPS." 2 -Id 'gpu-pcie' -Fix (New-Fix `
@@ -366,7 +366,7 @@ function Invoke-Analysis {
             $bridled = $max -gt 60 -and ($max - $cur) -ge 5
             $ignored = $bridled -and ($script:Ignored -contains $dispId)
             $sev = if ($primary) { 'bad' } else { 'warn' }
-            $lineColor = if ($ignored) { '#9AA3B2' } elseif ($bridled) { $Colors[$sev] } else { '#E6E8EE' }
+            $lineColor = if ($ignored) { '#A6A1BC' } elseif ($bridled) { $Colors[$sev] } else { '#EEEBF7' }
             $lineText = "${w}x$h à $cur Hz" + $(if ($ignored) { ' (volontaire)' } elseif ($bridled) { " (peut faire $max Hz)" } else { '' })
             $c.Lines["Écran $i$role"] = @($lineText, $lineColor)
             if ($bridled) {
@@ -570,7 +570,7 @@ function Invoke-Analysis {
         if ($bios.ReleaseDate) {
             $years = [math]::Floor(((Get-Date) - $bios.ReleaseDate).TotalDays / 365)
             $ageTxt = if ($years -ge 1) { " (il y a $years an$(if ($years -gt 1) {'s'}))" } else { '' }
-            $c.Lines['Date du BIOS'] = @("$($bios.ReleaseDate.ToString('dd/MM/yyyy'))$ageTxt", $(if ($years -ge 3) { $Colors.warn } else { '#E6E8EE' }))
+            $c.Lines['Date du BIOS'] = @("$($bios.ReleaseDate.ToString('dd/MM/yyyy'))$ageTxt", $(if ($years -ge 3) { $Colors.warn } else { '#EEEBF7' }))
             if ($years -ge 3 -and -not $script:IsLaptop) {
                 Add-Note $c 'info' "BIOS de plus de 3 ans: une mise à jour depuis le site du fabricant peut améliorer la stabilité et la compatibilité mémoire. À faire avec prudence (ne jamais couper le courant pendant la mise à jour)."
             }
@@ -709,7 +709,7 @@ function Invoke-Analysis {
     # --- Sécurité (information seulement)
     $hvci = Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' 'Enabled'
     if ($hvci -eq 1) {
-        Add-Finding $F 'info' 'Intégrité de la mémoire activée' "Cette protection de Windows bloque certains logiciels malveillants mais peut coûter quelques pourcents de FPS. Microsoft conseille de la laisser activée: Nexo n'y touche pas, c'est à toi de décider." 0 -Id 'hvci' -Fix (New-Fix `
+        Add-Finding $F 'info' 'Intégrité de la mémoire activée' "Cette protection de Windows bloque certains logiciels malveillants mais peut coûter quelques pourcents de FPS. Microsoft conseille de la laisser activée: Nevermind n'y touche pas, c'est à toi de décider." 0 -Id 'hvci' -Fix (New-Fix `
             -Why 'C''est un compromis entre sécurité et performances. Microsoft recommande de la laisser activée, et certains anti triche l''exigent.' `
             -Steps @('Si tu veux la désactiver: ouvre Sécurité Windows > Sécurité des appareils > Isolation du noyau.', 'Coupe « Intégrité de la mémoire » et redémarre.', 'Si un jeu ou un anti triche la réclame, réactive la au même endroit.') `
             -Open 'windowsdefender://coreisolation' -OpenLabel 'Isolation du noyau')
@@ -842,7 +842,7 @@ function Add-UpsCards($Ups, $Hints, $Data, $Cards, $F) {
         $w = $Data.BatWmi
         $c = New-Component 'UPS' 'Onduleur' $(if ($name) { $name } else { 'Onduleur' })
         $onBattery = [int]$u.BatteryStatus -eq 1
-        $c.Lines['Alimentation'] = if ($onBattery) { @('Sur batterie (coupure de courant)', $Colors.bad) } else { @('Sur secteur', '#E6E8EE') }
+        $c.Lines['Alimentation'] = if ($onBattery) { @('Sur batterie (coupure de courant)', $Colors.bad) } else { @('Sur secteur', '#EEEBF7') }
         if ($w -and $w.Maker) { $c.Lines['Fabricant'] = $w.Maker }
         if ($w -and $w.Serial) { $c.Lines['Numéro de série'] = $w.Serial }
         $chem = Get-BatChemistry $(if ($w) { $w.Chem } else { $null }) $u.Chemistry
@@ -862,7 +862,7 @@ function Add-UpsCards($Ups, $Hints, $Data, $Cards, $F) {
         if ($w -and $w.Volt -gt 0) { $c.Lines['Tension'] = '{0:N1} V' -f ($w.Volt / 1000) }
         if ($P -and $P.Count) {
             $c.Lines['Batterie faible'] = Format-BatSetting $P 'LowLevel' 'LowAction' 'LowNotify'
-            $c.Lines['Batterie critique'] = @((Format-BatSetting $P 'CritLevel' 'CritAction' ''), $(if ($adv -and $adv.Fix.Contains('CritAction')) { $Colors.bad } else { '#E6E8EE' }))
+            $c.Lines['Batterie critique'] = @((Format-BatSetting $P 'CritLevel' 'CritAction' ''), $(if ($adv -and $adv.Fix.Contains('CritAction')) { $Colors.bad } else { '#EEEBF7' }))
         }
         if ($onBattery) {
             Add-Note $c 'bad' 'Coupure de courant : ton PC tourne sur l''onduleur. Enregistre ton travail et quitte ta partie.'
@@ -912,7 +912,7 @@ function Add-UpsCards($Ups, $Hints, $Data, $Cards, $F) {
         if ($usb.Count) { $found += "câble USB$(if ($brand) { " ($brand)" })" }
         if ($soft.Count) { $found += "logiciel $(($soft | Select-Object -First 2) -join ', ')" }
         $c.Lines['Repéré grâce à'] = $found -join ', '
-        $c.Lines['État de la batterie'] = @('Non transmis à Windows', '#9AA3B2')
+        $c.Lines['État de la batterie'] = @('Non transmis à Windows', '#A6A1BC')
         Add-Note $c 'ok' "$(if ($usb.Count) { 'Il est branché au PC, mais il ne donne pas son état à Windows' } else { "$($soft[0]) est installé : un onduleur est sûrement relié à ce PC, mais il ne donne pas son état à Windows" }) (charge, coupure de courant)."
         Add-Note $c 'warn' "$(if ($soft.Count) { "C'est $($soft[0]) qui doit éteindre le PC pendant une coupure : ouvre-le et vérifie que l'arrêt automatique est activé (vers 25 % de batterie)." } else { 'Pour que le PC s''éteigne proprement pendant une coupure, installe le logiciel de la marque de l''onduleur et active son arrêt automatique.' })"
         [void]$Cards.Add($c)

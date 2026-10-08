@@ -1,4 +1,4 @@
-﻿# Nexo : onglet Tests (disques, processeur, mémoire, carte graphique, réseau, écrans).
+﻿# Nevermind : onglet Tests (disques, processeur, mémoire, carte graphique, réseau, écrans).
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -90,20 +90,20 @@ function New-TestTile([string]$Tag, [string]$Title, [string]$Sub, [string]$Desc)
     $titleText = New-Text $Title 15 '#FFFFFF' -Semi
     $titleText.TextTrimming = 'CharacterEllipsis'; $titleText.TextWrapping = 'NoWrap'
     [void]$ts.Children.Add($titleText)
-    if ($Sub) { [void]$ts.Children.Add((New-Text $Sub 12 '#9AA3B2')) }
+    if ($Sub) { [void]$ts.Children.Add((New-Text $Sub 12 '#A6A1BC')) }
     Add-ToGrid $head $ts 1
     $dot = New-Object System.Windows.Shapes.Ellipse
-    $dot.Width = 10; $dot.Height = 10; $dot.Fill = Get-Brush '#343C4C'
+    $dot.Width = 10; $dot.Height = 10; $dot.Fill = Get-Brush '#3A3350'
     $dot.VerticalAlignment = 'Top'; $dot.Margin = New-Thickness 0 6 0 0
     $dot.ToolTip = 'Pas encore testé'
     Add-ToGrid $head $dot 2
     [void]$sp.Children.Add($head)
-    $d = New-Text $Desc 12.5 '#9AA3B2'
+    $d = New-Text $Desc 12.5 '#A6A1BC'
     $d.Margin = New-Thickness 0 10 0 0
     [void]$sp.Children.Add($d)
     $summary = New-Object System.Windows.Controls.WrapPanel
     $summary.Margin = New-Thickness 0 12 0 0
-    $none = New-Text 'Pas encore testé' 12.5 '#5B6475'
+    $none = New-Text 'Pas encore testé' 12.5 '#655E7E'
     [void]$summary.Children.Add($none)
     [void]$sp.Children.Add($summary)
     $btns = New-Object System.Windows.Controls.WrapPanel
@@ -134,13 +134,13 @@ function Set-TileSummary($Tile, [array]$Chips, [string]$Status) {
     $Tile.Summary.Children.Clear()
     foreach ($c2 in $Chips) {
         $b = New-Object System.Windows.Controls.Border
-        $b.Background = Get-Brush '#1A1F29'
+        $b.Background = Get-Brush '#1C1829'
         $b.CornerRadius = [System.Windows.CornerRadius]::new(8)
         $b.Padding = New-Thickness 10 5 10 6
         $b.Margin = New-Thickness 0 0 6 6
         $sp = New-Object System.Windows.Controls.StackPanel
         [void]$sp.Children.Add((New-Text $c2[1] 14 '#FFFFFF' -Bold))
-        [void]$sp.Children.Add((New-Text $c2[0] 11 '#9AA3B2'))
+        [void]$sp.Children.Add((New-Text $c2[0] 11 '#A6A1BC'))
         $b.Child = $sp
         [void]$Tile.Summary.Children.Add($b)
     }
@@ -151,7 +151,7 @@ function Set-TileSummary($Tile, [array]$Chips, [string]$Status) {
 }
 
 function Set-TestState([string]$State, [string]$Text) {
-    $map = @{ run = $Colors.info; live = $Colors.ok; ok = $Colors.ok; warn = $Colors.warn; bad = $Colors.bad; info = '#9AA3B2' }
+    $map = @{ run = $Colors.info; live = $Colors.ok; ok = $Colors.ok; warn = $Colors.warn; bad = $Colors.bad; info = '#A6A1BC' }
     $ui.TestStateDot.Fill = Get-Brush $map[$State]
     $ui.TestStateText.Text = $Text
     $ui.TestStateDot.Visibility = if ($Text) { 'Visible' } else { 'Collapsed' }
@@ -234,11 +234,11 @@ function Invoke-ComponentTest($Tile, $Def, $Ctx, [string]$Rerun) {
         $head.Orientation = 'Horizontal'
         $cur.LiveVal = New-Text '0' 44 '#FFFFFF' -Bold
         $cur.LiveVal.TextWrapping = 'NoWrap'
-        $unit = New-Text $Def.Chart.Unit 16 '#9AA3B2' -Semi
+        $unit = New-Text $Def.Chart.Unit 16 '#A6A1BC' -Semi
         $unit.VerticalAlignment = 'Bottom'; $unit.Margin = New-Thickness 8 0 0 10
         [void]$head.Children.Add($cur.LiveVal)
         [void]$head.Children.Add($unit)
-        $cur.LiveLabel = New-Text 'Préparation...' 13 '#9AA3B2'
+        $cur.LiveLabel = New-Text 'Préparation...' 13 '#A6A1BC'
         [void]$body.Children.Add($cur.LiveLabel)
         [void]$body.Children.Add($head)
         $cur.Head = $head
@@ -298,7 +298,7 @@ function Show-LastResult($Tile) {
     [void]$body.Children.Add($stepper.El)
     Update-Stepper $stepper '' -AllDone
     if ($last.Def.Chart -and $last.Res.ChartValues.Count) {
-        [void]$body.Children.Add((New-Text 'Courbe du test' 13 '#9AA3B2'))
+        [void]$body.Children.Add((New-Text 'Courbe du test' 13 '#A6A1BC'))
         $ch = New-LiveChart $last.Def.Chart.Color $last.Def.Chart.Unit $last.Def.Chart.Fmt
         if ($last.Def.Chart.Ref) { $ch.RefValue = $last.Def.Chart.Ref; $ch.RefText.Text = $last.Def.Chart.RefLabel }
         foreach ($v in $last.Res.ChartValues) { [void]$ch.Values.Add([double]$v) }
@@ -441,7 +441,7 @@ function Show-DiskHealth($Tile, $Ctx) {
         if ($rel.ReadLatencyMax -gt 0) { $rows += , @('Temps de réponse max en lecture', "$($rel.ReadLatencyMax) ms") }
         if ($rel.WriteLatencyMax -gt 0) { $rows += , @('Temps de réponse max en écriture', "$($rel.WriteLatencyMax) ms") }
     } else {
-        $rows += , @('Détails SMART', 'Non fournis par ce disque', '#9AA3B2')
+        $rows += , @('Détails SMART', 'Non fournis par ce disque', '#A6A1BC')
     }
     foreach ($l in $Ctx.Letters) {
         $v = Get-VolInfo $l
@@ -594,7 +594,7 @@ function Show-GpuMonitor($Tile, $Ctx) {
     }
     $num = { param($s) if ($s -match '^[\d\.]+$') { [double]::Parse($s, [Globalization.CultureInfo]::InvariantCulture) } else { 0 } }
     $plimit = if ($info) { [math]::Max(50.0, (& $num $info[10])) } else { 300 }
-    [void]$body.Children.Add((New-Text 'Lance un jeu, puis reviens ici avec Alt + Tab : tout se met à jour en direct.' 13 '#9AA3B2'))
+    [void]$body.Children.Add((New-Text 'Lance un jeu, puis reviens ici avec Alt + Tab : tout se met à jour en direct.' 13 '#A6A1BC'))
     $gUse = New-Gauge 'Utilisation' ([double]$Live.Gpu) 100 '{0:N0}' '%' $Colors.info 0
     $gauges = @($gUse)
     $gTemp = $null; $gPow = $null
@@ -604,7 +604,7 @@ function Show-GpuMonitor($Tile, $Ctx) {
         $gauges += $gTemp; $gauges += $gPow
     }
     [void]$body.Children.Add((New-GaugeRow $gauges))
-    [void]$body.Children.Add((New-Text 'Utilisation de la carte graphique' 13 '#9AA3B2'))
+    [void]$body.Children.Add((New-Text 'Utilisation de la carte graphique' 13 '#A6A1BC'))
     $chart = New-LiveChart $Colors.info '%' '{0:N0}'
     [void]$body.Children.Add($chart.El)
     $status = 'ok'
@@ -717,7 +717,7 @@ function New-GradeTile([string]$Grade, [string]$Status, [string]$Label) {
     $g = New-Text $Grade 46 $Colors[$Status] -Bold
     $g.HorizontalAlignment = 'Center'
     [void]$sp.Children.Add($g)
-    $l = New-Text $Label 12 '#9AA3B2' -Semi
+    $l = New-Text $Label 12 '#A6A1BC' -Semi
     $l.HorizontalAlignment = 'Center'
     [void]$sp.Children.Add($l)
     $b.Child = $sp
@@ -800,7 +800,7 @@ function Start-PixelTest([int]$Index) {
     $script:PixColors = @('#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#808080')
     $script:PixIndex = 0
     $w.Background = Get-Brush $script:PixColors[0]
-    $hint = New-Text "Cherche les points qui ne sont pas de la bonne couleur.`n`nClic ou Espace : couleur suivante        Échap : quitter" 20 '#9AA3B2'
+    $hint = New-Text "Cherche les points qui ne sont pas de la bonne couleur.`n`nClic ou Espace : couleur suivante        Échap : quitter" 20 '#A6A1BC'
     $hint.HorizontalAlignment = 'Center'; $hint.VerticalAlignment = 'Center'; $hint.TextAlignment = 'Center'
     $w.Content = $hint
     $w.Add_SourceInitialized({ param($s, $e) $s.WindowState = 'Maximized' })

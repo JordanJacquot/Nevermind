@@ -1,4 +1,4 @@
-﻿# Nexo : animations, jauges, courbes et petits composants visuels.
+﻿# Nevermind : animations, jauges, courbes et petits composants visuels.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -196,14 +196,14 @@ function New-Gauge([string]$Label, [double]$Value, [double]$Max, [string]$Fmt, [
     [System.Windows.Controls.Canvas]::SetTop($center, $c - 24)
     $num = New-Text '0' 27 '#FFFFFF' -Bold
     $num.HorizontalAlignment = 'Center'; $num.TextWrapping = 'NoWrap'
-    $num.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe UI Variable Display, Segoe UI'
-    $u = New-Text $Unit 11 '#8B95A7'
+    $num.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
+    $u = New-Text $Unit 11 '#958EAE'
     $u.HorizontalAlignment = 'Center'; $u.Margin = New-Thickness 0 -3 0 0
     [void]$center.Children.Add($num)
     [void]$center.Children.Add($u)
     [void]$g.Children.Add($center)
     [void]$root.Children.Add($g)
-    $lbl = New-Text $Label 13 '#C9CED8' -Semi
+    $lbl = New-Text $Label 13 '#D3CDE3' -Semi
     $lbl.HorizontalAlignment = 'Center'; $lbl.TextAlignment = 'Center'
     $lbl.Margin = New-Thickness 0 -6 0 0
     [void]$root.Children.Add($lbl)
@@ -257,7 +257,7 @@ function New-LiveChart([string]$Color, [string]$Unit, [string]$Fmt = '{0:N0}') {
     foreach ($y in 0.25, 0.5, 0.75) {
         $ln = New-Object System.Windows.Shapes.Line
         $ln.X1 = 0; $ln.X2 = $w; $ln.Y1 = $h * $y; $ln.Y2 = $h * $y
-        $ln.Stroke = Get-Brush '#232A37'; $ln.StrokeThickness = 1
+        $ln.Stroke = Get-Brush '#241F36'; $ln.StrokeThickness = 1
         $ln.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new([double[]]@(2, 4))
         [void]$cv.Children.Add($ln)
     }
@@ -306,11 +306,11 @@ function New-LiveChart([string]$Color, [string]$Unit, [string]$Fmt = '{0:N0}') {
     $bub.Child = $bubText
     $bub.Visibility = 'Hidden'
     [void]$cv.Children.Add($bub)
-    $maxText = New-Text '' 11 '#5B6475'
+    $maxText = New-Text '' 11 '#655E7E'
     [System.Windows.Controls.Canvas]::SetLeft($maxText, 4); [System.Windows.Controls.Canvas]::SetTop($maxText, 2)
     [void]$cv.Children.Add($maxText)
     $border = New-Object System.Windows.Controls.Border
-    $border.Background = New-LinearBrush @('#141922', '#0E1117') 0 0 0 1
+    $border.Background = New-LinearBrush @('#14111D', '#0E0C16') 0 0 0 1
     $border.BorderBrush = Get-Brush 'card-border'; $border.BorderThickness = New-Thickness 1 1 1 1
     $border.CornerRadius = [System.Windows.CornerRadius]::new(14)
     $border.Padding = New-Thickness 12 10 12 10
@@ -383,13 +383,13 @@ function New-CompareBars([array]$Rows, [string]$Unit) {
     foreach ($row in $Rows) {
         $g = New-Grid @('150', '440', '*')
         $g.Margin = New-Thickness 0 6 0 6
-        $lbl = New-Text $row.Label 13 $(if ($row.Mine) { '#FFFFFF' } else { '#9AA3B2' })
+        $lbl = New-Text $row.Label 13 $(if ($row.Mine) { '#FFFFFF' } else { '#A6A1BC' })
         if ($row.Mine) { $lbl.FontWeight = [System.Windows.FontWeights]::SemiBold }
         $lbl.VerticalAlignment = 'Center'
         Add-ToGrid $g $lbl 0
         $track = New-Object System.Windows.Controls.Border
         $track.Height = 14; $track.CornerRadius = [System.Windows.CornerRadius]::new(7)
-        $track.Background = Get-Brush '#1A1F29'
+        $track.Background = Get-Brush '#1C1829'
         $track.Width = $barMax; $track.HorizontalAlignment = 'Left'; $track.VerticalAlignment = 'Center'
         $bar = New-Object System.Windows.Controls.Border
         $bar.Height = 14; $bar.CornerRadius = [System.Windows.CornerRadius]::new(7)
@@ -403,7 +403,7 @@ function New-CompareBars([array]$Rows, [string]$Unit) {
         if ($row.Mine) { $bar.Effect = New-Glow $row.Color 14 0.7 }
         $track.Child = $bar
         Add-ToGrid $g $track 1
-        $val = New-Text '' 13 $(if ($row.Mine) { '#FFFFFF' } else { '#9AA3B2' }) -Semi
+        $val = New-Text '' 13 $(if ($row.Mine) { '#FFFFFF' } else { '#A6A1BC' }) -Semi
         $val.VerticalAlignment = 'Center'; $val.Margin = New-Thickness 12 0 0 0
         Add-ToGrid $g $val 2
         [void]$sp.Children.Add($g)
@@ -437,9 +437,9 @@ function New-StatTile([string]$Label, [double]$Value, [string]$Fmt, [string]$Col
     $sp.Margin = New-Thickness 18 14 18 12
     $num = New-Text '0' 28 $Color -Bold
     $num.TextWrapping = 'NoWrap'
-    $num.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe UI Variable Display, Segoe UI'
+    $num.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
     [void]$sp.Children.Add($num)
-    [void]$sp.Children.Add((New-Text $Label 12.5 '#9AA3B2'))
+    [void]$sp.Children.Add((New-Text $Label 12.5 '#A6A1BC'))
     [void]$g.Children.Add($sp)
     $b.Child = $g
     $b.Opacity = 0
@@ -474,8 +474,17 @@ function New-Verdict([string]$Status, [string]$Text) {
     $b
 }
 
+# Titre de section façon commentaire de code : « // TITRE », la barre en cyan
 function New-SectionTitle([string]$Text) {
-    $title = New-Text $Text 12 '#5B6475' -Semi
+    $title = New-Object System.Windows.Controls.TextBlock
+    $title.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
+    $title.FontSize = 11.5; $title.FontWeight = 'SemiBold'
+    $title.TextWrapping = 'Wrap'
+    $r1 = New-Object System.Windows.Documents.Run '// '
+    $r1.Foreground = Get-Brush $NexoCyan
+    $r2 = New-Object System.Windows.Documents.Run $Text
+    $r2.Foreground = Get-Brush '#7D769A'
+    $title.Inlines.Add($r1); $title.Inlines.Add($r2)
     $title.Margin = New-Thickness 0 16 0 2
     $title
 }
@@ -492,8 +501,8 @@ function New-Details([array]$Rows) {
     foreach ($r in $Rows) {
         $g = New-Grid @('240', '*')
         $g.Margin = New-Thickness 0 3 0 3
-        Add-ToGrid $g (New-Text $r[0] 12.5 '#9AA3B2') 0
-        $col = if ($r.Count -gt 2) { $r[2] } else { '#E6E8EE' }
+        Add-ToGrid $g (New-Text $r[0] 12.5 '#A6A1BC') 0
+        $col = if ($r.Count -gt 2) { $r[2] } else { '#EEEBF7' }
         Add-ToGrid $g (New-Text ([string]$r[1]) 12.5 $col) 1
         [void]$box.Children.Add($g)
     }
@@ -519,8 +528,8 @@ function New-Stepper($Steps) {
         $b.CornerRadius = [System.Windows.CornerRadius]::new(14)
         $b.Padding = New-Thickness 12 5 12 5
         $b.Margin = New-Thickness 0 0 8 6
-        $b.Background = Get-Brush '#1A1F29'
-        $txt = New-Text "○  $($Steps[$k])" 12.5 '#5B6475' -Semi
+        $b.Background = Get-Brush '#1C1829'
+        $txt = New-Text "○  $($Steps[$k])" 12.5 '#655E7E' -Semi
         $txt.TextWrapping = 'NoWrap'
         $b.Child = $txt
         [void]$wp.Children.Add($b)
@@ -543,7 +552,7 @@ function Update-Stepper($Stepper, [string]$Phase, [switch]$AllDone) {
             $ch.B.Background = $bg; $ch.T.Text = "●  $($ch.Label)"; $ch.T.Foreground = Get-Brush '#FFFFFF'
             Start-Pulse $ch.B
         } else {
-            $ch.B.Background = Get-Brush '#1A1F29'; $ch.T.Text = "○  $($ch.Label)"; $ch.T.Foreground = Get-Brush '#5B6475'
+            $ch.B.Background = Get-Brush '#1C1829'; $ch.T.Text = "○  $($ch.Label)"; $ch.T.Foreground = Get-Brush '#655E7E'
         }
     }
     $Stepper.Cur = $Phase
@@ -570,10 +579,11 @@ function New-LoaderArc([double]$C, [double]$R, [double]$Start, [double]$Sweep, $
 }
 
 # ---------------------------------------------------------------------------
-# Logo Nexo : un N blanc avec ses échos cyan et magenta et deux tranches décalées (effet « glitch »).
+# Logo Nevermind : un N blanc avec ses échos cyan et magenta et deux tranches décalées (effet « glitch »).
 # Il « saute » par moments : au survol, toutes les quelques secondes, et pendant le chargement.
 # ---------------------------------------------------------------------------
 $NexoCyan = '#00E5FF'
+$MonoFont = 'Cascadia Code, Consolas'   # police « code » de la DA : chiffres, titres de section, barre d'état
 $NexoMagenta = '#FF2EB5'
 
 # Forme du N dans un carré de côté $Size (trait épais aux bouts arrondis)
@@ -626,13 +636,13 @@ function Set-NexoPose($M, [double[]]$Pose) {
     $M.Pieces[1].RenderTransform.X = $Pose[3] * $s
 }
 
-# Le mot « Nexo » avec les mêmes échos de couleur : { Root, Cyan, Mag, Text }
+# Le mot « Nevermind » avec les mêmes échos de couleur : { Root, Cyan, Mag, Text }
 function New-NexoWord([double]$FontSize) {
     $root = New-Object System.Windows.Controls.Grid
     $mk = {
         param($hex, $dx)
         $t = New-Object System.Windows.Controls.TextBlock
-        $t.Text = 'Nexo'; $t.FontSize = $FontSize; $t.FontWeight = 'Bold'
+        $t.Text = 'Nevermind'; $t.FontSize = $FontSize; $t.FontWeight = 'Bold'
         $t.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe UI Variable Display, Segoe UI'
         $t.Foreground = Get-Brush $hex
         $t.RenderTransform = New-Object System.Windows.Media.TranslateTransform $dx, 0
@@ -719,7 +729,7 @@ function New-LoaderSpinner($Canvas, [double]$C, [double]$R, [double]$Sweep, [str
     $arc
 }
 
-# Écran de chargement : le N de Nexo qui « glitche », un anneau de progression cyan vers magenta,
+# Écran de chargement : le N de Nevermind qui « glitche », un anneau de progression cyan vers magenta,
 # un halo qui respire et une ligne de balayage, comme un vieil écran qui s'allume.
 function Start-StartupLoader {
     $lh = $ui.StartupLoaderHost
@@ -747,7 +757,7 @@ function Start-StartupLoader {
     Start-LoaderLoop $hs ([System.Windows.Media.ScaleTransform]::ScaleYProperty) 0.85 1.1 1600 $true
 
     # Anneau de fond et anneau de progression (dégradé cyan vers magenta)
-    [void]$cv.Children.Add((New-LoaderArc $C 112 -90 359.9 (Get-Brush '#1B1F2C') 6))
+    [void]$cv.Children.Add((New-LoaderArc $C 112 -90 359.9 (Get-Brush '#1C1829') 6))
     $prog = New-LoaderArc $C 112 -90 0.1 (New-LinearBrush @($NexoCyan, $NexoMagenta) 0 0 1 1) 6
     $prog.Effect = New-Glow $NexoCyan 14 0.7
     [void]$cv.Children.Add($prog)
