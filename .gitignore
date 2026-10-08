@@ -11,3 +11,11 @@
 
 # Tests
 /_test/
+
+# Lanceurs de la copie installée à la racine (mises à jour de l'app), pas des fichiers du projet
+/OptiGame.exe
+/Nexo.exe
+/Nevermind.exe
+/Désinstaller OptiGame.exe
+/Désinstaller Nexo.exe
+/Désinstaller Nevermind.exe
