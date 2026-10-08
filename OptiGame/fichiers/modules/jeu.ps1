@@ -452,6 +452,8 @@ function Stop-FpsTarget {
     Hide-FpsOverlay
     if (-not $t) { return }
     $s = [FrameMon]::Summary()
+    # Menus et chargements bloqués (30, 60 FPS...) : mis à part, ils ne sont pas des chutes
+    $t.Plateau = try { [FrameMon]::Plateau() } catch { @(0, 0) }
     $busy = [FrameMon]::Busy()
     $err = [FrameMon]::LastError
     [FrameMon]::Stop()
@@ -589,6 +591,7 @@ function Save-FpsSession($T, $S, $Diag) {
         Id = [guid]::NewGuid().ToString('N').Substring(0, 10); Date = $T.Start.ToString('s'); Game = $T.Name; Key = $T.Key
         Avg = [math]::Round($S[0], 1); Low1 = [math]::Round($S[1], 1); Low01 = [math]::Round($S[2], 1); Seconds = [int]$S[4]; Frames = [int]$S[3]
         Exclusive = [bool]$T.Exclusive; Series = @(Compress-Series $T.Series); Diag = $Diag
+        MenuSec = $(if ($T.Plateau) { [int]$T.Plateau[0] } else { 0 }); MenuFps = $(if ($T.Plateau) { [int]$T.Plateau[1] } else { 0 })
     }
     $list = @(@(Get-FpsSessions) + $new | Select-Object -Last 200)
     try { ConvertTo-Json -InputObject $list -Depth 6 -Compress | Set-Content -LiteralPath $FpsFile -Encoding UTF8 } catch { Write-Log "Écriture des FPS impossible: $_" }
@@ -676,6 +679,11 @@ function Show-FpsSession([string]$Id) {
         (New-Gauge '0,1 % bas' $s.Low01 $max '{0:N0}' 'FPS' (Get-FpsColor $s.Low01) 300)
     )))
     [void]$body.Children.Add((New-Verdict $v[0] $v[1]))
+    if ([int]$s.MenuSec -ge 5) {
+        $mn = New-Text "Menus, chargements ou cinématiques bloqués à $([int]$s.MenuFps) FPS pendant $(Format-PlayTime $s.MenuSec) : mis à part, ils ne comptent ni dans ces chiffres ni comme des chutes (les creux de la courbe)." 12 '#9AA3B2'
+        $mn.Margin = New-Thickness 2 6 0 0
+        [void]$body.Children.Add($mn)
+    }
     $dg = Add-FpsDiagnosisView $s $body
     if ($dg.Problem) { Set-TestState $dg.Status $(if ($dg.Status -eq 'bad') { 'Problème trouvé' } else { 'À améliorer' }) }
     $series = @($s.Series | Where-Object { $null -ne $_ })
@@ -694,7 +702,7 @@ function Show-FpsSession([string]$Id) {
         [void]$body.Children.Add($cmp)
     }
     [void]$body.Children.Add((New-Details @(
-        @('Durée mesurée', (Format-PlayTime $s.Seconds)),
+        @('Durée mesurée', "$(Format-PlayTime $s.Seconds) de jeu$(if ([int]$s.MenuSec -ge 5) { " + $(Format-PlayTime $s.MenuSec) de menus bloqués à $([int]$s.MenuFps) FPS" })"),
         @('Images affichées', ('{0:N0}' -f $s.Frames)),
         @('Mode d''affichage', $(if ($s.Exclusive) { 'Plein écran (le compteur ne peut pas s''afficher par dessus)' } else { 'Fenêtré ou plein écran fenêtré' })),
         @('Mesure', 'PresentMon (Intel). Les moments où le jeu n''était pas au premier plan ne comptent pas.')

@@ -869,8 +869,77 @@ public static class FrameMon
         }
     }
 
+    // Paliers : moments où le jeu est bloqué sur une valeur ronde, plus bas que d'habitude (menus, chargements,
+    // cinématiques limités à 30 ou 60 FPS). Les images y arrivent à un rythme parfaitement régulier : ce n'est
+    // pas le PC qui peine, ces moments ne comptent ni dans les FPS de la partie, ni comme des chutes.
+    static readonly double[] Caps = { 24, 25, 30, 40, 45, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 170, 175, 180, 200, 240 };
+    const int PlateauWindow = 30;         // images par bloc examiné
+    const double PlateauMinSec = 2.0;     // un palier dure au moins 2 s d'affilée (un V-Sync qui décroche par moments, lui, reste compté)
+    static double plateauSec, plateauFps;
+
+    static double CapOf(double fps)
+    {
+        foreach (var c in Caps) if (Math.Abs(fps - c) <= Math.Max(1.5, c * 0.03)) return c;
+        return 0;
+    }
+
+    // Images de jeu (paliers retirés). Si presque toute la session est un palier, on garde tout.
+    static double[] GameFrames(double[] frames)
+    {
+        plateauSec = 0; plateauFps = 0;
+        int n = frames.Length;
+        if (n < PlateauWindow * 4) return frames;
+        var sorted = (double[])frames.Clone();
+        Array.Sort(sorted);
+        double medFps = 1000.0 / sorted[n / 2];
+        int blocks = n / PlateauWindow;
+        var cap = new double[blocks];
+        for (int b = 0; b < blocks; b++)
+        {
+            double sum = 0, sq = 0;
+            for (int i = b * PlateauWindow; i < (b + 1) * PlateauWindow; i++) { sum += frames[i]; sq += frames[i] * frames[i]; }
+            double mean = sum / PlateauWindow;
+            double sd = Math.Sqrt(Math.Max(0, sq / PlateauWindow - mean * mean));
+            double fps = 1000.0 / mean;
+            cap[b] = (sd / mean < 0.05 && fps < 0.85 * medFps) ? CapOf(fps) : 0;
+        }
+        var drop = new bool[blocks];
+        var perCap = new Dictionary<double, double>();
+        int s = 0;
+        while (s < blocks)
+        {
+            if (cap[s] == 0) { s++; continue; }
+            int e = s;
+            double dur = 0;
+            while (e < blocks && cap[e] == cap[s]) { for (int i = e * PlateauWindow; i < (e + 1) * PlateauWindow; i++) dur += frames[i]; e++; }
+            if (dur >= PlateauMinSec * 1000)
+            {
+                for (int k = s; k < e; k++) drop[k] = true;
+                double prev; perCap.TryGetValue(cap[s], out prev); perCap[cap[s]] = prev + dur;
+            }
+            s = e;
+        }
+        var keep = new List<double>(n);
+        double keptMs = 0, totalMs = 0;
+        for (int i = 0; i < n; i++)
+        {
+            totalMs += frames[i];
+            int b = i / PlateauWindow;
+            if (b < blocks && drop[b]) continue;
+            keep.Add(frames[i]); keptMs += frames[i];
+        }
+        // Presque tout en palier (partie bloquée à 60 du début à la fin, ou session passée dans les menus) : rien à retirer
+        if (keep.Count < 300 || keptMs < 20000 || keptMs < 0.2 * totalMs) return frames;
+        foreach (var kv in perCap) { plateauSec += kv.Value / 1000.0; if (plateauFps == 0 || kv.Value > perCap[plateauFps]) plateauFps = kv.Key; }
+        return keep.ToArray();
+    }
+
+    // Paliers de la dernière session analysée : { secondes passées en palier, FPS du palier principal }
+    public static double[] Plateau() { lock (sync) { GameFrames(all.ToArray()); return new double[] { plateauSec, plateauFps }; } }
+
     // Diagnostic de la partie : { part du temps où le processeur travaille, part où la carte graphique travaille
     // (0 à 1, -1 si inconnu), nombre de saccades (images au moins 2,5 fois plus longues que la normale et > 25 ms) }
+    // Les saccades sont comptées sur les images de jeu : un menu bloqué à 30 FPS n'en est pas une.
     public static double[] Busy()
     {
         lock (sync)
@@ -879,12 +948,13 @@ public static class FrameMon
             if (busyCount > 100 && busyFt > 0) { r[0] = cpuBusy / busyFt; r[1] = gpuBusy / busyFt; }
             if (all.Count > 0)
             {
-                var arr = all.ToArray();
+                var game = GameFrames(all.ToArray());
+                var arr = (double[])game.Clone();
                 Array.Sort(arr);
                 double median = arr[arr.Length / 2];
                 double limit = Math.Max(25.0, median * 2.5);
                 int n = 0;
-                foreach (var f in all) if (f > limit) n++;
+                foreach (var f in game) if (f > limit) n++;
                 r[2] = n;
             }
             return r;
@@ -928,17 +998,17 @@ public static class FrameMon
         }
     }
 
-    // Bilan de la session : { FPS moyen, 1 % bas, 0,1 % bas, nombre d'images, secondes mesurées }
+    // Bilan de la session, en jeu (paliers des menus retirés) : { FPS moyen, 1 % bas, 0,1 % bas, nombre d'images, secondes mesurées }
     public static double[] Summary()
     {
         lock (sync)
         {
             var r = new double[5];
-            int n = all.Count;
-            if (n == 0) return r;
+            if (all.Count == 0) return r;
+            var arr = GameFrames(all.ToArray());
+            int n = arr.Length;
             double total = 0;
-            foreach (var f in all) total += f;
-            var arr = all.ToArray();
+            foreach (var f in arr) total += f;
             r[0] = n * 1000.0 / total;
             r[1] = Low(arr, 0.99);
             r[2] = Low(arr, 0.999);

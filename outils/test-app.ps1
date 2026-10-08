@@ -277,6 +277,40 @@ $script:T.Run.Add_Tick({
                 [IO.File]::Delete($lnk)
                 "raccourci libre, $($t.ProcMem.Count) programmes relevés en arrière plan, DNS protégé"
             }
+            Test-Step 'FPS : menus bloqués à 60 pas pris pour des chutes' {
+                # Parties simulées, image par image, comme PresentMon les envoie
+                $rnd = New-Object Random 7
+                $feed = {
+                    param($parts)
+                    [FrameMon]::Reset(); [FrameMon]::Paused = $false
+                    [FrameMon]::Feed('Application,ProcessID,MsBetweenPresents')
+                    foreach ($p in $parts) {
+                        $ms = 0.0
+                        while ($ms -lt $p.Sec * 1000) {
+                            $ft = switch ($p.Kind) { 'jeu' { 5.0 + ($rnd.NextDouble() - 0.5) * 1.6 } 'menu' { 16.667 + ($rnd.NextDouble() - 0.5) * 0.1 } 'chute' { 18 + $rnd.NextDouble() * 30 } }
+                            [FrameMon]::Feed("jeu.exe,1,$($ft.ToString([Globalization.CultureInfo]::InvariantCulture))")
+                            $ms += $ft
+                        }
+                    }
+                }
+                # 1. Jeu à 200 FPS avec 40 s de menu bloqué à 60 : pas de chute
+                & $feed @(@{ Kind = 'jeu'; Sec = 50 }, @{ Kind = 'menu'; Sec = 40 }, @{ Kind = 'jeu'; Sec = 50 })
+                $s = [FrameMon]::Summary(); $pl = [FrameMon]::Plateau(); $b = [FrameMon]::Busy()
+                $sess = @{ Avg = $s[0]; Low1 = $s[1]; Seconds = $s[4]; Diag = @{ Stutters = $b[2] } }
+                Assert-Test ([math]::Abs($pl[0] - 40) -lt 3 -and $pl[1] -eq 60) "palier vu : $([int]$pl[0]) s à $($pl[1]) FPS (attendu 40 s à 60)"
+                Assert-Test (-not (Test-FpsProblem $sess)) "menu pris pour une chute : moyenne $([int]$s[0]), 1 % bas $([int]$s[1])"
+                $menu = "menu de 40 s à 60 mis à part (moyenne $([int]$s[0]), 1 % bas $([int]$s[1]))"
+                # 2. Vraie chute en jeu (images irrégulières) : toujours signalée
+                & $feed @(@{ Kind = 'jeu'; Sec = 50 }, @{ Kind = 'chute'; Sec = 10 }, @{ Kind = 'jeu'; Sec = 50 })
+                $s = [FrameMon]::Summary(); $b = [FrameMon]::Busy()
+                Assert-Test (Test-FpsProblem @{ Avg = $s[0]; Low1 = $s[1]; Seconds = $s[4]; Diag = @{ Stutters = $b[2] } }) "vraie chute non vue : moyenne $([int]$s[0]), 1 % bas $([int]$s[1])"
+                # 3. Jeu bloqué à 60 du début à la fin : rien n'est retiré, moyenne 60
+                & $feed @(@{ Kind = 'menu'; Sec = 60 })
+                $s = [FrameMon]::Summary(); $pl = [FrameMon]::Plateau()
+                Assert-Test ([math]::Abs($s[0] - 60) -lt 1 -and $pl[0] -eq 0) "partie bloquée à 60 : moyenne $([int]$s[0]), palier $([int]$pl[0]) s"
+                [FrameMon]::Reset()
+                "$menu ; vraie chute toujours signalée ; partie entière à 60 gardée"
+            }
             Test-Step 'Profils par jeu : libellés (issue 2)' {
                 if ($null -eq $script:Games) { Update-GameCache }
                 Build-GameProfiles
