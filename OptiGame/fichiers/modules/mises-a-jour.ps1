@@ -1,4 +1,4 @@
-﻿# OptiGame : mises à jour automatiques depuis GitHub.
+﻿# Nexo : mises à jour automatiques depuis GitHub.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -54,14 +54,14 @@ function Invoke-UpdateCheck([switch]$Manual) {
         $ui.BtnCheckUpdate.Content = 'Mettre à jour'
     } else {
         $ui.UpdateStatus.Text = "Version $AppVersion : tu as la dernière version."
-        if ($Manual) { Set-Status 'OptiGame est à jour.' }
+        if ($Manual) { Set-Status 'Nexo est à jour.' }
     }
 }
 
 function Install-Update {
     $rel = $script:PendingUpdate
     if (-not $rel) { return }
-    if (-not (Confirm-Action "Installer la version $($rel.Version) d'OptiGame ?`n`nL'app va se fermer, se mettre à jour puis se relancer. Tes réglages et ta sauvegarde sont conservés.")) { return }
+    if (-not (Confirm-Action "Installer la version $($rel.Version) de Nexo ?`n`nL'app va se fermer, se mettre à jour puis se relancer. Tes réglages et ta sauvegarde sont conservés.")) { return }
     Set-Busy $true
     $ui.UpdateBanner.Visibility = 'Collapsed'
     Set-Status "Téléchargement de la version $($rel.Version)..."
@@ -122,7 +122,7 @@ function Show-WhatsNew([string]$Last) {
     $notes = [string](Invoke-Async $GetNotesScript @{ Repo = $UpdateRepo; Version = $AppVersion } | Select-Object -First 1)
     $lines = @($notes -split "`r?`n" | ForEach-Object { $_.Trim() -replace '^[-*]\s+', '•  ' } | Where-Object { $_ })
     if (-not $lines.Count) { $lines = @('Corrections et améliorations.') }
-    Show-ResultSheet "Quoi de neuf dans la version $AppVersion" $lines $null $(if ($Last -eq 'précédente') { 'OptiGame vient d''être mis à jour.' } else { "Tu avais la version $Last." })
+    Show-ResultSheet "Quoi de neuf dans la version $AppVersion" $lines $null $(if ($Last -eq 'précédente') { 'Nexo vient d''être mis à jour.' } else { "Tu avais la version $Last." })
 }
 
 function Set-BetaChannel([bool]$On) {

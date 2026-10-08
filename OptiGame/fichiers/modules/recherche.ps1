@@ -1,4 +1,4 @@
-﻿# OptiGame : barre de recherche des réglages (en haut de chaque page, Ctrl+K).
+﻿# Nexo : barre de recherche des réglages (en haut de chaque page, Ctrl+K).
 # Suggestions au fil de la frappe ; un clic ouvre la bonne page et fait clignoter le réglage.
 # Chargé par OptiGame.ps1 après les pages (il connaît leurs numéros) et avant evenements.ps1.
 
@@ -57,14 +57,14 @@ $SearchEntries = @(
     @{ T = 'Mettre à jour l''antivirus'; P = 6; A = 'Mettre à jour la base'; K = 'defender definitions signatures antivirus' },
     @{ T = 'Niveau de protection'; P = 6; A = 'Points à vérifier'; K = 'protection securite score pare feu' },
     # Sauvegarde
-    @{ T = 'Tout annuler'; P = 7; A = 'Annuler les changements d''OptiGame'; K = 'annuler restaurer revenir arriere defaire' },
+    @{ T = 'Tout annuler'; P = 7; A = 'Annuler les changements de Nexo'; K = 'annuler restaurer revenir arriere defaire' },
     @{ T = 'Historique des changements'; P = 7; A = 'Historique des changements'; K = 'historique annuler changement' },
     @{ T = 'Point de restauration Windows'; P = 7; A = 'Point de restauration Windows'; K = 'restauration systeme sauvegarde' },
     @{ T = 'Rapport du PC'; P = 7; A = 'Rapport de ton PC'; K = 'rapport export html partager configuration' },
-    @{ T = 'Mises à jour d''OptiGame'; P = 7; A = 'Mises à jour'; K = 'version update maj nouvelle' },
+    @{ T = 'Mises à jour de Nexo'; P = 7; A = 'Mises à jour'; K = 'version update maj nouvelle' },
     @{ T = 'Versions bêta'; P = 7; A = 'Mises à jour'; K = 'beta preversion avant premiere' },
     @{ T = 'Raccourci sur le bureau'; P = 7; A = 'Raccourci et démarrage'; K = 'raccourci bureau icone' },
-    @{ T = 'Lancer OptiGame au démarrage du PC'; P = 7; A = 'Raccourci et démarrage'; K = 'demarrage automatique boot windows lancement auto allumage' },
+    @{ T = 'Lancer Nexo au démarrage du PC'; P = 7; A = 'Raccourci et démarrage'; K = 'demarrage automatique boot windows lancement auto allumage' },
     @{ T = 'Signaler un problème'; P = 7; A = 'Signaler un problème'; K = 'bug erreur rapport aide support' },
     # Réseau
     @{ T = 'Scanner le réseau'; P = 'reseau'; A = 'Scanner le réseau'; K = 'appareils wifi box scan connectes' },
@@ -78,7 +78,7 @@ $SearchEntries = @(
     @{ T = 'Bloquer Internet à un programme'; P = 'trafic'; A = 'Ce qui sort de ton PC'; K = 'pare feu bloquer internet firewall programme' }
 )
 # Suggestions quand la barre est vide
-$SearchStarters = @('Compteur de FPS à l''écran (overlay)', 'Mes FPS ne sont pas normaux', 'Lag en ligne', 'Nettoyage du disque', 'Lancer OptiGame au démarrage du PC', 'Ce que Windows envoie à Microsoft')
+$SearchStarters = @('Compteur de FPS à l''écran (overlay)', 'Mes FPS ne sont pas normaux', 'Lag en ligne', 'Nettoyage du disque', 'Lancer Nexo au démarrage du PC', 'Ce que Windows envoie à Microsoft')
 
 # Minuscules, sans accents ni ponctuation
 function ConvertTo-SearchText([string]$Text) {
@@ -287,7 +287,7 @@ function Find-PageElement($Root, [string]$Text) {
     $partial
 }
 
-# Fait défiler jusqu'au réglage et entoure sa carte d'un halo vert pendant 2 secondes
+# Fait défiler jusqu'au réglage et entoure sa carte d'un halo cyan pendant 2 secondes
 function Show-Highlight($El) {
     $card = $El
     $p = $El
@@ -303,16 +303,16 @@ function Show-Highlight($El) {
         $oldBrush = $card.ReadLocalValue([System.Windows.Controls.Border]::BorderBrushProperty)
         $oldThick = $card.ReadLocalValue([System.Windows.Controls.Border]::BorderThicknessProperty)
         $card.BorderThickness = New-Thickness 2 2 2 2
-        $br = Get-Brush $Colors.ok
+        $br = Get-Brush $Colors.accent
         $card.BorderBrush = $br
         $fade = New-Object System.Windows.Media.Animation.ColorAnimation
-        $fade.To = [System.Windows.Media.Color]::FromArgb(0, 0x22, 0xD3, 0x7A)
+        $fade.To = [System.Windows.Media.Color]::FromArgb(0, 0x00, 0xD9, 0xF5)
         $fade.BeginTime = [TimeSpan]::FromMilliseconds(1200)
         $fade.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(900))
         $br.BeginAnimation([System.Windows.Media.SolidColorBrush]::ColorProperty, $fade)
     }
     $oldEffect = $card.Effect
-    $card.Effect = New-Glow $Colors.ok 22 0.9
+    $card.Effect = New-Glow $Colors.accent 22 0.9
     $t = New-Object System.Windows.Threading.DispatcherTimer
     $t.Interval = [TimeSpan]::FromMilliseconds(2200)
     $state = @{ Card = $card; Effect = $oldEffect; Brush = $oldBrush; Thick = $oldThick; Timer = $t }
@@ -345,7 +345,7 @@ function Initialize-Search {
     $script:Search = $s
     $s.Input.Add_TextChanged({ if ($script:Search.Input.IsKeyboardFocused) { try { Update-SearchResults } catch { Write-Log "Recherche: $_" } } else { Update-SearchHint } })
     $s.Input.Add_GotKeyboardFocus({
-        $script:Search.Box.BorderBrush = Get-Brush $Colors.ok
+        $script:Search.Box.BorderBrush = Get-Brush $Colors.accent
         try { Update-SearchResults } catch { Write-Log "Recherche: $_" }
     })
     $s.Input.Add_LostKeyboardFocus({

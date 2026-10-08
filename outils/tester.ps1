@@ -1,4 +1,4 @@
-﻿# Teste OptiGame automatiquement : lance une copie de l'app hors de l'écran, avec des données
+﻿# Teste Nexo automatiquement : lance une copie de l'app hors de l'écran, avec des données
 # à part (_test\donnees), parcourt toutes les pages et vérifie qu'il n'y a aucune erreur.
 # Rien n'est modifié sur le PC : les boîtes de confirmation répondent toujours « Non ».
 #
@@ -46,7 +46,7 @@ $code = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-app.ps1'), [Text.E
 $code = $code.Replace('__TEST__', $test).Replace('$__COMPLET__', $(if ($Complet) { '$true' } else { '$false' })).Replace('$__CAPTURES__', $(if ($Captures) { '$true' } else { '$false' }))
 Edit-File $main "`$Window.Show()`r`n[System.Windows.Threading.Dispatcher]::Run()`r`n" "$code`r`n"
 
-Write-Host "Test d'OptiGame$(if ($Complet) { ' (complet)' }) en cours, patiente..."
+Write-Host "Test de Nexo$(if ($Complet) { ' (complet)' }) en cours, patiente..."
 $env:OPTIGAME_TEST = '1'   # pas d'écran de chargement pendant le test
 $err = Join-Path $test 'erreurs.txt'
 $p = Start-Process powershell.exe -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$main`"" -PassThru -WindowStyle Hidden -RedirectStandardError $err

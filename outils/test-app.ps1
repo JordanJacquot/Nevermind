@@ -419,6 +419,7 @@ $script:T.Run.Add_Tick({
                 $script:T.Msgs.RemoveRange($before, $script:T.Msgs.Count - $before)
                 Remove-Leftovers @($script:Leftovers[0]) -Force
                 $w = 0; while ($script:LeftoverDelete -and $w -lt 20000) { Wait-TestMs 300; $w += 300 }
+                if ($ui.Overlay.Visibility -eq 'Visible') { Close-Sheet }
                 Assert-Test (-not (Test-Path $fake) -and (Test-Path $keep)) "faux reste non supprimé (ou mauvais dossier touché)"
                 Assert-Test (-not @($script:Leftovers).Count -and $script:LastLeftoverFreed -eq 60MB) 'liste des restes non mise à jour'
                 $script:Leftovers = $realLo; $script:LeftoverSizes = $realSizes
@@ -489,7 +490,7 @@ $script:T.Run.Add_Tick({
                 # Bureau simulé : le vrai bureau n'est pas touché
                 $script:DesktopDir = Join-Path $DataDir 'bureau-essai'
                 New-Item -ItemType Directory -Force -Path $script:DesktopDir | Out-Null
-                $exe = Join-Path (Get-AppRoot) 'OptiGame.exe'
+                $exe = Get-AppExe
                 if (-not (Test-Path -LiteralPath $exe)) { [IO.File]::WriteAllBytes($exe, [byte[]](77, 90)) }
                 Assert-Test (-not (Test-DesktopShortcut)) 'raccourci vu avant sa création'
                 Invoke-CreateShortcut
@@ -500,10 +501,34 @@ $script:T.Run.Add_Tick({
                 $script:DesktopDir = $null
                 "raccourci créé vers $(Split-Path $exe -Leaf), démarrage automatique $(if ($auto) { 'activé' } else { 'désactivé' }) sur ce PC"
             }
-            Test-Step 'Recherche des réglages' {
+            Test-Step 'Identité Nexo (nom, logo animé, couleurs)' {
+                Assert-Test ($Window.Title -eq 'Nexo') "titre de la fenêtre : $($Window.Title)"
+                Assert-Test ($script:LogoMark -and $script:LogoWord -and $script:LogoWord.Text.Text -eq 'Nexo') 'logo de la barre de gauche absent'
+                # Un saut de glitch déplace les calques puis les remet au repos
+                while ($script:LogoMark.Busy) { Wait-TestMs 100 }   # un saut automatique en cours
+                Start-NexoGlitch $script:LogoMark $script:LogoWord 1500
+                $moved = $script:LogoMark.Busy
+                Wait-TestMs 1900
+                $rest = [math]::Abs($script:LogoMark.Cyan.RenderTransform.X - $script:LogoMark.Rest[0] * $script:LogoMark.Size) -lt 0.01 -and -not $script:LogoMark.Busy
+                Assert-Test ($moved -and $rest) "glitch : en cours $moved, retour au repos $rest"
+                # Plus aucun « OptiGame » visible dans la fenêtre (hors chemins de fichiers)
+                $seen = @()
+                foreach ($i in 0..($ui.Tabs.Items.Count - 1)) {
+                    $stack = New-Object System.Collections.Stack; $stack.Push($ui.Tabs.Items[$i])
+                    while ($stack.Count) {
+                        $x = $stack.Pop()
+                        $txt = if ($x -is [System.Windows.Controls.TextBlock]) { $x.Text } elseif ($x -is [System.Windows.Controls.ContentControl] -and $x.Content -is [string]) { $x.Content } else { '' }
+                        if ($txt -match 'OptiGame' -and $txt -notmatch '\\OptiGame|OptiGame\\') { $seen += $txt }
+                        foreach ($ch in [System.Windows.LogicalTreeHelper]::GetChildren($x)) { if ($ch -is [System.Windows.DependencyObject]) { $stack.Push($ch) } }
+                    }
+                }
+                Assert-Test (-not $seen.Count) "« OptiGame » encore affiché : $(($seen | Select-Object -First 3) -join ' | ')"
+                Save-TestShot 'nexo-accueil'
+                'titre, logo animé (saut puis retour au repos), aucun ancien nom affiché'
+            }            Test-Step 'Recherche des réglages' {
                 Assert-Test ($null -ne $script:Search) 'barre de recherche non branchée'
                 $cases = @(
-                    @('compteur discret', 'Style du compteur*'), @('netoyage', 'Nettoyage*'), @('demarage pc', 'Lancer OptiGame au démarrage*'),
+                    @('compteur discret', 'Style du compteur*'), @('netoyage', 'Nettoyage*'), @('demarage pc', 'Lancer Nexo au démarrage*'),
                     @('raccourci bureau', 'Raccourci sur le bureau'), @('telemetrie', 'Ce que Windows envoie*'), @('ping', '*'), @('position overlay', 'Position du compteur')
                 )
                 foreach ($c in $cases) {
@@ -555,10 +580,11 @@ $script:T.Run.Add_Tick({
                 $ui.StartupOverlay.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null); $ui.StartupOverlay.Opacity = 1; $ui.StartupOverlay.Visibility = 'Visible'
                 foreach ($zp in [System.Windows.Media.ScaleTransform]::ScaleXProperty, [System.Windows.Media.ScaleTransform]::ScaleYProperty) { $ui.StartupZoom.BeginAnimation($zp, $null) }
                 Start-StartupLoader
-                Assert-Test ($ui.StartupLoaderHost.Children.Count -eq 1 -and $script:Loader.Loops.Count -ge 6) 'compteur animé absent'
+                Assert-Test ($ui.StartupLoaderHost.Children.Count -eq 1 -and $script:Loader.Loops.Count -ge 4 -and $script:Loader.Mark -and $script:Loader.GlitchTimer.IsEnabled) 'chargement animé (logo Nexo) absent'
                 Set-StartupStep 'Recherche de tes jeux...' 72; $ui.StartupDetail.Text = 'Calcul: Fichiers temporaires (utilisateur)...'; Wait-TestMs 1200; Save-TestShot 'chargement'
+                $gt = $script:Loader.GlitchTimer
                 Stop-StartupLoader
-                Assert-Test ($null -eq $script:Loader) 'animations du chargement non arrêtées'
+                Assert-Test ($null -eq $script:Loader -and -not $gt.IsEnabled) 'animations du chargement non arrêtées'
                 $ui.StartupOverlay.Visibility = 'Collapsed'
                 ($l[0].Line -replace '^.*Démarrage terminé', 'premières tâches terminées')
             }

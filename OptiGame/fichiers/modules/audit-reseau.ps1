@@ -1,4 +1,4 @@
-﻿# OptiGame : audit de sécurité du réseau.
+﻿# Nexo : audit de sécurité du réseau.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -516,7 +516,7 @@ function Export-NetAudit {
     if (-not $A) { return }
     $dlg = New-Object Microsoft.Win32.SaveFileDialog
     $dlg.Filter = 'Page web (*.html)|*.html'
-    $dlg.FileName = "Audit réseau OptiGame $(Get-Date -Format 'yyyy-MM-dd').html"
+    $dlg.FileName = "Audit réseau Nexo $(Get-Date -Format 'yyyy-MM-dd').html"
     $dlg.InitialDirectory = [Environment]::GetFolderPath('Desktop')
     if ($dlg.ShowDialog($Window) -ne $true) { return }
     $enc = { param($s) [System.Net.WebUtility]::HtmlEncode([string]$s) }
@@ -535,11 +535,11 @@ function Export-NetAudit {
     $html = @"
 <!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Audit réseau OptiGame</title>
+<title>Audit réseau Nexo</title>
 <style>
 body{margin:0;background:#0E1014;color:#E6E8EE;font:15px/1.5 'Segoe UI',system-ui,sans-serif}
 main{max-width:860px;margin:0 auto;padding:32px 16px}
-h1{margin:0;font-size:28px}h1 span{color:#22D37A}
+h1{margin:0;font-size:28px}h1 span{color:#00D9F5}
 h2{margin:32px 0 12px;font-size:18px}
 .sub{color:#9AA3B2}
 .score{display:flex;align-items:center;gap:20px;background:#181C24;border:1px solid #232937;border-radius:12px;padding:20px;margin-top:24px}

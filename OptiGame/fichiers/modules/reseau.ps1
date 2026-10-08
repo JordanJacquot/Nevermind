@@ -1,4 +1,4 @@
-﻿# OptiGame : section Réseau : scan des appareils et fiche détaillée.
+﻿# Nexo : section Réseau : scan des appareils et fiche détaillée.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -32,7 +32,7 @@ $NetScanWork = {
             try {
                 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
                 $tmp = "$($a.Oui).csv"
-                Invoke-WebRequest 'https://standards-oui.ieee.org/oui/oui.csv' -OutFile $tmp -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0 OptiGame' } -TimeoutSec 60
+                Invoke-WebRequest 'https://standards-oui.ieee.org/oui/oui.csv' -OutFile $tmp -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0 Nexo' } -TimeoutSec 60
                 Import-Csv -LiteralPath $tmp | ForEach-Object { "$($_.Assignment)|$($_.'Organization Name')" } | Set-Content -LiteralPath $a.Oui -Encoding UTF8
                 Remove-Item -LiteralPath $tmp -ErrorAction SilentlyContinue
             } catch {}
@@ -458,7 +458,7 @@ function Show-NetDevices {
         $b.Padding = New-Thickness 14 6 14 6
         $b.Margin = New-Thickness 0 0 8 0
         $b.Cursor = [System.Windows.Input.Cursors]::Hand
-        $b.Background = Get-Brush $(if ($on) { '#22D37A' } else { '#1A1F29' })
+        $b.Background = Get-Brush $(if ($on) { $Colors.accent } else { '#1A1F29' })
         $t = New-Text "$($f.Label) ($cnt)" 12.5 $(if ($on) { '#0B0D10' } else { '#C9CED8' }) -Semi
         $t.TextWrapping = 'NoWrap'
         $b.Child = $t
@@ -473,9 +473,9 @@ function Show-NetDevices {
     foreach ($d in @($list | Where-Object $test)) { [void]$ui.NetDevices.Children.Add((New-DeviceTile $d $i)); $i++ }
     $ui.NetDevSummary.Text = "$($list.Count) appareil$(if ($list.Count -gt 1) {'s'})" + $(if ($newCount) { ", $newCount nouveau$(if ($newCount -gt 1) {'x'})" } else { '' }) + $(if ($hidden) { ", $hidden discret$(if ($hidden -gt 1) {'s'})" } else { '' })
     $ui.NetDevHint.Text = if ($cur -eq 'hidden') {
-        'Les appareils discrets ne répondent pas au ping : OptiGame les a trouvés autrement (la table de ta box, leurs annonces sur le réseau). C''est normal pour beaucoup de téléphones, de PC protégés par un pare-feu et d''objets connectés en veille. Clique dessus pour voir ce qui a été trouvé.'
+        'Les appareils discrets ne répondent pas au ping : Nexo les a trouvés autrement (la table de ta box, leurs annonces sur le réseau). C''est normal pour beaucoup de téléphones, de PC protégés par un pare-feu et d''objets connectés en veille. Clique dessus pour voir ce qui a été trouvé.'
     } elseif ($first) {
-        'Premier scan : ces appareils sont mémorisés, OptiGame te signalera tout nouvel appareil au prochain scan. Clique sur un appareil pour voir ses détails.'
+        'Premier scan : ces appareils sont mémorisés, Nexo te signalera tout nouvel appareil au prochain scan. Clique sur un appareil pour voir ses détails.'
     } elseif ($newCount) {
         'Un appareil « Nouveau » n''était pas là au scan précédent. Si tu ne le reconnais pas, change le mot de passe de ton Wi-Fi depuis la page de ta box. Attention : les téléphones récents changent parfois d''adresse et peuvent apparaître comme nouveaux.'
     } else {
@@ -535,7 +535,7 @@ function Invoke-NetWatch {
     }
     if (-not $new.Count) { return }
     Write-Log "Nouvel appareil sur le réseau: $($new -join ', ')"
-    Show-Notify $(if ($new.Count -gt 1) { "$($new.Count) nouveaux appareils sur ton réseau" } else { 'Nouvel appareil sur ton réseau' }) "$($new -join ', '). Si tu ne le reconnais pas, ouvre la section Réseau d'OptiGame."
+    Show-Notify $(if ($new.Count -gt 1) { "$($new.Count) nouveaux appareils sur ton réseau" } else { 'Nouvel appareil sur ton réseau' }) "$($new -join ', '). Si tu ne le reconnais pas, ouvre la section Réseau de Nexo."
 }
 
 # ---------------------------------------------------------------------------

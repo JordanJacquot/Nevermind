@@ -1,4 +1,4 @@
-﻿# OptiGame : ce qui sort du PC. Quels programmes communiquent avec Internet, avec qui, combien,
+﻿# Nexo : ce qui sort du PC. Quels programmes communiquent avec Internet, avec qui, combien,
 # et ce qui est anormal. Le contenu (chiffré en HTTPS) n'est jamais lu.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
@@ -42,7 +42,7 @@ function Get-TrafficApp([int]$ProcId) {
         $desc = ''
         if ($path) { try { $desc = [string][Diagnostics.FileVersionInfo]::GetVersionInfo($path).FileDescription } catch {} }
         if ($svc.Count) { $desc = "Windows : $($svc[0].Title)$(if ($svc.Count -gt 1) { " (+$($svc.Count - 1))" })" }
-        $st.Apps[$key] = @{ Key = $key; Name = $name; Path = $path; Services = $svc; Title = $(if ($ProcId -eq $PID) { 'OptiGame (cette app)' } elseif ($desc -and $desc.Length -lt 90) { $desc } else { $name })
+        $st.Apps[$key] = @{ Key = $key; Name = $name; Path = $path; Services = $svc; Title = $(if ($ProcId -eq $PID) { 'Nexo (cette app)' } elseif ($desc -and $desc.Length -lt 90) { $desc } else { $name })
             OutClosed = [double]0; InClosed = [double]0; Out = [double]0; In = [double]0; Rate = [double]0; LastOut = [double]0
             Dest = @{}; Ports = @{}; Udp = $false; Pids = @{}; Sig = $null; Publisher = ''; First = Get-Date; Icon = $null; IsSelf = ($ProcId -eq $PID) }
         if ($path -and -not $st.Sig.ContainsKey($key)) { $st.SigQueue.Enqueue($key) } elseif (-not $path) { $st.Apps[$key].Sig = 'NoPath' }
@@ -733,7 +733,7 @@ function Build-TrafficPage {
     [void]$p.Children.Add($h)
     $script:TrafficList = New-Object System.Windows.Controls.StackPanel
     [void]$p.Children.Add($script:TrafficList)
-    $n = New-Text 'Le contenu des échanges est chiffré (HTTPS) : OptiGame voit quel programme parle à qui et combien il envoie, jamais ce qu''il y a dedans. Les volumes comptent depuis le début de la surveillance. Pour les échanges UDP (certains jeux, appels vidéo), Windows ne donne pas les destinations.' 11.5 '#5B6475'
+    $n = New-Text 'Le contenu des échanges est chiffré (HTTPS) : Nexo voit quel programme parle à qui et combien il envoie, jamais ce qu''il y a dedans. Les volumes comptent depuis le début de la surveillance. Pour les échanges UDP (certains jeux, appels vidéo), Windows ne donne pas les destinations.' 11.5 '#5B6475'
     $n.Margin = New-Thickness 0 12 0 0
     [void]$p.Children.Add($n)
     $script:TrafficAlertKeys = $null
@@ -822,7 +822,7 @@ function Update-TrafficView {
     $mins = [int]((Get-Date) - $st.Started).TotalMinutes
     $script:TrafficSince.Text = "depuis $(if ($mins -lt 1) { 'moins d''une minute' } else { "$mins min" })"
     if (-not [TrafficMon]::CountersOk -and $st.Ticks -gt 2 -and @($st.Conns.Values).Count) {
-        $script:TrafficCounters.Text = 'Windows refuse de compter les données (OptiGame doit être lancé en administrateur) : seules les connexions sont affichées.'
+        $script:TrafficCounters.Text = 'Windows refuse de compter les données (Nexo doit être lancé en administrateur) : seules les connexions sont affichées.'
         $script:TrafficCounters.Visibility = 'Visible'
     } else { $script:TrafficCounters.Visibility = 'Collapsed' }
     # Alertes : reconstruites seulement si elles changent (sinon les boutons clignoteraient)

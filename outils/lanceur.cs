@@ -1,5 +1,5 @@
-﻿// Lanceur d'OptiGame: démarre fichiers\OptiGame.ps1 avec les droits administrateur.
-// Compilé deux fois par construire.ps1 : OptiGame.exe et Désinstaller OptiGame.exe (symbole UNINSTALL).
+// Lanceur de Nexo: démarre fichiers\OptiGame.ps1 avec les droits administrateur.
+// Compilé deux fois par construire.ps1 : Nexo.exe et Désinstaller Nexo.exe (symbole UNINSTALL).
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -7,8 +7,8 @@ using System.IO;
 using System.Reflection;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("OptiGame")]
-[assembly: AssemblyProduct("OptiGame")]
+[assembly: AssemblyTitle("Nexo")]
+[assembly: AssemblyProduct("Nexo")]
 [assembly: AssemblyDescription("Analyse et optimisation gaming pour Windows")]
 [assembly: AssemblyVersion("1.0.0.0")]
 [assembly: AssemblyFileVersion("1.0.0.0")]
@@ -27,8 +27,8 @@ static class Lanceur
             MessageBox.Show(
                 "Le dossier « fichiers » est introuvable à côté de ce programme.\n\n" +
                 "Extrais d'abord tout le zip (clic droit sur le zip, puis « Extraire tout »), " +
-                "puis lance OptiGame depuis le dossier extrait.",
-                "OptiGame", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                "puis lance Nexo depuis le dossier extrait.",
+                "Nexo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return 1;
         }
 
@@ -52,9 +52,9 @@ static class Lanceur
         catch (Win32Exception)
         {
             MessageBox.Show(
-                "OptiGame a besoin des droits administrateur pour analyser et régler Windows.\n\n" +
+                "Nexo a besoin des droits administrateur pour analyser et régler Windows.\n\n" +
                 "Relance-le et clique sur « Oui » quand Windows le demande.",
-                "OptiGame", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                "Nexo", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return 1;
         }
         return 0;

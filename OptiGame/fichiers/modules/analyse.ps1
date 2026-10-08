@@ -1,4 +1,4 @@
-﻿# OptiGame : santé des composants et analyse complète.
+﻿# Nexo : santé des composants et analyse complète.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -267,7 +267,7 @@ function Invoke-Analysis {
                 $c.Action = $nvLatest.Url; $c.ActionLabel = 'Télécharger le pilote'
                 Add-Finding $F 'warn' "Nouveau pilote NVIDIA disponible ($($nvLatest.Version))" "Tu as la version $nvInstalled. La dernière version « Game Ready » est la $($nvLatest.Version)." $w -Id "gpu-driver:$($g.Name)" -Fix (New-Fix `
                     -Why 'Chaque pilote « Game Ready » apporte des optimisations pour les jeux récents et corrige des bugs (plantages, textures qui clignotent...).' `
-                    -Steps @('Ouvre l''application NVIDIA si tu l''as (onglet Pilotes) et clique sur Télécharger, ou clique sur « Page du pilote ».', 'Lance l''installation (installation rapide). L''écran peut clignoter, c''est normal.', 'Relance l''analyse d''OptiGame.') `
+                    -Steps @('Ouvre l''application NVIDIA si tu l''as (onglet Pilotes) et clique sur Télécharger, ou clique sur « Page du pilote ».', 'Lance l''installation (installation rapide). L''écran peut clignoter, c''est normal.', 'Relance l''analyse de Nexo.') `
                     -Open $nvLatest.Url -OpenLabel 'Page du pilote')
             } else {
                 Add-Finding $F 'ok' "Pilote graphique à jour ($($g.Name))" "Tu as le dernier pilote NVIDIA « Game Ready » ($nvInstalled)." $w -Id "gpu-driver:$($g.Name)"
@@ -280,7 +280,7 @@ function Invoke-Analysis {
                 Add-Note $c 'warn' "Pilote vieux d'environ $months mois: mets le à jour pour de meilleures performances."
                 $c.Action = Get-DriverLink $g.Name; $c.ActionLabel = 'Télécharger le pilote'
                 $steps = if ($g.Name -match 'NVIDIA|GeForce') {
-                    @('Ouvre l''application NVIDIA si tu l''as (onglet Pilotes), ou clique sur « Site du pilote ».', 'Télécharge le dernier pilote « Game Ready » pour ta carte.', 'Lance l''installation (installation rapide). L''écran peut clignoter, c''est normal.', 'Relance l''analyse d''OptiGame.')
+                    @('Ouvre l''application NVIDIA si tu l''as (onglet Pilotes), ou clique sur « Site du pilote ».', 'Télécharge le dernier pilote « Game Ready » pour ta carte.', 'Lance l''installation (installation rapide). L''écran peut clignoter, c''est normal.', 'Relance l''analyse de Nexo.')
                 } elseif ($g.Name -match 'AMD|Radeon') {
                     @('Ouvre AMD Software (clic droit sur le bureau) et va dans « Pilotes et logiciels », ou clique sur « Site du pilote ».', 'Installe la dernière version recommandée.', 'Redémarre si l''installation le demande, puis relance l''analyse.')
                 } else {
@@ -709,7 +709,7 @@ function Invoke-Analysis {
     # --- Sécurité (information seulement)
     $hvci = Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' 'Enabled'
     if ($hvci -eq 1) {
-        Add-Finding $F 'info' 'Intégrité de la mémoire activée' "Cette protection de Windows bloque certains logiciels malveillants mais peut coûter quelques pourcents de FPS. Microsoft conseille de la laisser activée: OptiGame n'y touche pas, c'est à toi de décider." 0 -Id 'hvci' -Fix (New-Fix `
+        Add-Finding $F 'info' 'Intégrité de la mémoire activée' "Cette protection de Windows bloque certains logiciels malveillants mais peut coûter quelques pourcents de FPS. Microsoft conseille de la laisser activée: Nexo n'y touche pas, c'est à toi de décider." 0 -Id 'hvci' -Fix (New-Fix `
             -Why 'C''est un compromis entre sécurité et performances. Microsoft recommande de la laisser activée, et certains anti triche l''exigent.' `
             -Steps @('Si tu veux la désactiver: ouvre Sécurité Windows > Sécurité des appareils > Isolation du noyau.', 'Coupe « Intégrité de la mémoire » et redémarre.', 'Si un jeu ou un anti triche la réclame, réactive la au même endroit.') `
             -Open 'windowsdefender://coreisolation' -OpenLabel 'Isolation du noyau')

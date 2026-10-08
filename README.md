@@ -1,20 +1,20 @@
-# OptiGame
+# Nexo
 
 Analyse et optimisation gaming pour Windows 10 et 11.
 
-OptiGame vérifie la santé de ton PC (processeur, carte graphique, mémoire, disques, écrans, stabilité), lui donne un score sur 100 et t'indique ce qui freine tes jeux. Quand c'est possible, il corrige lui même en un clic, et tout peut être annulé. Il surveille aussi ton réseau et tout ce qui sort de ton PC.
+Nexo vérifie la santé de ton PC (processeur, carte graphique, mémoire, disques, écrans, stabilité), lui donne un score sur 100 et t'indique ce qui freine tes jeux. Quand c'est possible, il corrige lui même en un clic, et tout peut être annulé. Il surveille aussi ton réseau et tout ce qui sort de ton PC.
 
 ## Télécharger
 
-1. Va dans [Releases](../../releases/latest) et télécharge **OptiGame.zip**.
+1. Va dans [Releases](../../releases/latest) et télécharge **OptiGame.zip** (le fichier garde l'ancien nom de l'app pour que les versions déjà installées se mettent à jour toutes seules).
 2. Clic droit sur le zip > **Extraire tout**.
-3. Double clique sur **OptiGame.exe** et accepte la demande d'autorisation de Windows.
+3. Double clique sur **Nexo.exe** et accepte la demande d'autorisation de Windows.
 
 La première fois, Windows peut afficher « Windows a protégé votre ordinateur » : clique sur « Informations complémentaires » puis « Exécuter quand même ».
 
-Dans la page **Sauvegarde**, « Raccourci et démarrage » crée un raccourci sur le bureau et peut lancer OptiGame à chaque démarrage du PC (réduit près de l'horloge, sans demande d'autorisation de Windows).
+Dans la page **Sauvegarde**, « Raccourci et démarrage » crée un raccourci sur le bureau et peut lancer Nexo à chaque démarrage du PC (réduit près de l'horloge, sans demande d'autorisation de Windows).
 
-Les mises à jour sont ensuite proposées directement dans l'application. Relancer OptiGame alors qu'il est déjà ouvert (même caché près de l'horloge) ramène simplement sa fenêtre.
+Les mises à jour sont ensuite proposées directement dans l'application. Relancer Nexo alors qu'il est déjà ouvert (même caché près de l'horloge) ramène simplement sa fenêtre.
 
 ## Ce que fait l'application
 
@@ -43,8 +43,8 @@ L'accueil, avec le score d'optimisation, le niveau de protection et une carte pa
 La bibliothèque de tous tes jeux, comme celle de Steam mais tous launchers confondus (Steam, Epic, Ubisoft Connect, EA app, GOG, Battle.net, Riot, Ankama, Rockstar, Amazon, Xbox, plus les jeux ajoutés à la main).
 
 - **Jaquettes** : celles que Steam garde sur le PC, sinon cherchées sur la boutique Steam puis Wikipédia (seul le nom du jeu est envoyé, option désactivable), sinon le logo ou l'icône du jeu, recherche et filtre par launcher, les derniers jeux joués en premier.
-- **Double clic ou « Lancer »** : le jeu démarre par son launcher (connexion, mises à jour, anti triche comme d'habitude), sans les droits administrateur d'OptiGame.
-- **Fiche du jeu** : temps de jeu et nombre de parties (notés par OptiGame), FPS de la dernière partie mesurée.
+- **Double clic ou « Lancer »** : le jeu démarre par son launcher (connexion, mises à jour, anti triche comme d'habitude), sans les droits administrateur de Nexo.
+- **Fiche du jeu** : temps de jeu et nombre de parties (notés par Nexo), FPS de la dernière partie mesurée.
 - **Optimisation du jeu** : priorité haute, carte graphique puissante, réglages Windows, mesure des FPS, mode jeu, disque du jeu, avec un bouton « Tout optimiser » annulable.
 - **Désinstaller** : ouvre le désinstalleur du jeu ou de son launcher (Steam, Ubisoft, Battle.net, Riot...), la liste se met à jour toute seule.
 - **Restes de jeux désinstallés** : les dossiers que Steam laisse après une désinstallation (parfois plusieurs Go) sont signalés et supprimables définitivement, un par un ou tous d'un coup.
@@ -59,7 +59,7 @@ La bibliothèque de tous tes jeux, comme celle de Steam mais tous launchers conf
 
 ### Trafic
 
-Ce qui sort de ton PC, en direct. Le contenu des échanges, chiffré, n'est jamais lu : OptiGame voit quel programme parle à qui et combien il envoie.
+Ce qui sort de ton PC, en direct. Le contenu des échanges, chiffré, n'est jamais lu : Nexo voit quel programme parle à qui et combien il envoie.
 
 - **Programmes connectés** : pour chacun, les serveurs contactés, les volumes envoyés et reçus, la signature de l'éditeur. Les services Windows cachés derrière « svchost » sont affichés par leur vrai nom.
 - **Alertes** : programme non signé dans un dossier à risque, outil de Windows détourné, port utilisé par les virus ou Tor, gros envois inhabituels, prise en main à distance. Pour chaque alerte : « C'est normal, je lui fais confiance », analyse antivirus, blocage d'Internet (annulable), ouvrir l'emplacement.
@@ -67,7 +67,7 @@ Ce qui sort de ton PC, en direct. Le contenu des échanges, chiffré, n'est jama
 - **Serveurs sans nom** identifiés automatiquement : nom officiel de l'adresse et entreprise propriétaire avec son pays, via l'annuaire public des adresses Internet (rdap.org). Seule l'adresse du serveur est envoyée, et l'option se coupe sur la page.
 - **Ce que Windows envoie à Microsoft** : identifiants du PC (appareil, publicité, compte), réglages qui envoient plus que le minimum (télémétrie, pubs, recherche Bing, saisie, voix...) avec un bouton « Couper » annulable, et services Windows qui parlent à Microsoft en direct.
 
-Les compteurs d'octets et le repérage des serveurs en UDP demandent les droits administrateur (OptiGame les demande au lancement).
+Les compteurs d'octets et le repérage des serveurs en UDP demandent les droits administrateur (Nexo les demande au lancement).
 
 ### Engagements
 
@@ -110,12 +110,12 @@ OptiGame/            l'application telle qu'elle est distribuée
     evenements.ps1        branchement des boutons et du démarrage
   fichiers/outils-tiers/  PresentMon.exe (Intel, licence MIT) pour mesurer les FPS
 outils/
-  construire.ps1     génère l'icône, compile OptiGame.exe et le désinstalleur, crée OptiGame.zip
+  construire.ps1     génère l'icône, compile Nexo.exe et le désinstalleur, crée OptiGame.zip
   publier.ps1        publie une nouvelle version sur GitHub
   tester.ps1         lance le test automatique sur une copie isolée de l'app
   test-app.ps1       les étapes du test automatique
   icone.ps1          dessine l'icône
-  lanceur.cs         code du lanceur OptiGame.exe
+  lanceur.cs         code du lanceur Nexo.exe
 ```
 
 Tester (copie isolée de l'app, hors écran, rien n'est modifié sur le PC) :

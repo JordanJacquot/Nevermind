@@ -1,4 +1,4 @@
-﻿# OptiGame : animations, jauges, courbes et petits composants visuels.
+﻿# Nexo : animations, jauges, courbes et petits composants visuels.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -569,6 +569,127 @@ function New-LoaderArc([double]$C, [double]$R, [double]$Start, [double]$Sweep, $
     $p
 }
 
+# ---------------------------------------------------------------------------
+# Logo Nexo : un N blanc avec ses échos cyan et magenta et deux tranches décalées (effet « glitch »).
+# Il « saute » par moments : au survol, toutes les quelques secondes, et pendant le chargement.
+# ---------------------------------------------------------------------------
+$NexoCyan = '#00E5FF'
+$NexoMagenta = '#FF2EB5'
+
+# Forme du N dans un carré de côté $Size (trait épais aux bouts arrondis)
+function Get-NexoN([double]$Size) {
+    $x = $Size * 0.22; $y = $Size * 0.2; $w = $Size * 0.56; $h = $Size * 0.6
+    $p = [System.Windows.Media.Geometry]::Parse("M $x,$($y + $h) L $x,$y L $($x + $w),$($y + $h) L $($x + $w),$y")
+    $pen = New-Object System.Windows.Media.Pen ([System.Windows.Media.Brushes]::Black), ($Size * 0.19)
+    $pen.StartLineCap = 'Round'; $pen.EndLineCap = 'Round'; $pen.LineJoin = 'Round'
+    $wide = $p.GetWidenedPathGeometry($pen)
+    $g = [System.Windows.Media.Geometry]::Combine($wide, $wide, 'Union', $null)
+    $g.Freeze()
+    $g
+}
+
+function New-GeoPath($Geo, [string]$Hex) {
+    $p = New-Object System.Windows.Shapes.Path
+    $p.Data = $Geo; $p.Fill = Get-Brush $Hex
+    $p.RenderTransform = New-Object System.Windows.Media.TranslateTransform 0, 0
+    $p
+}
+
+# Le N animable : { Root, Cyan, Mag, Base, Pieces (tranches), Size, Rest (décalages au repos) }
+function New-NexoMark([double]$Size) {
+    $n = Get-NexoN $Size
+    $root = New-Object System.Windows.Controls.Grid
+    $root.Width = $Size; $root.Height = $Size
+    $cyan = New-GeoPath $n $NexoCyan; $cyan.Opacity = 0.92
+    $mag = New-GeoPath $n $NexoMagenta; $mag.Opacity = 0.92
+    # Le N blanc privé de ses deux tranches, et les tranches à part pour pouvoir les décaler
+    $bands = @(@(0.40, 0.07), @(0.61, 0.05))
+    $bandGeo = New-Object System.Windows.Media.GeometryGroup
+    foreach ($b in $bands) { $bandGeo.Children.Add((New-Object System.Windows.Media.RectangleGeometry ([System.Windows.Rect]::new(-$Size, $Size * $b[0], 3 * $Size, $Size * $b[1])))) }
+    $base = New-GeoPath ([System.Windows.Media.Geometry]::Combine($n, $bandGeo, 'Exclude', $null)) '#FFFFFF'
+    $pieces = foreach ($b in $bands) {
+        $r = New-Object System.Windows.Media.RectangleGeometry ([System.Windows.Rect]::new(-$Size, $Size * $b[0], 3 * $Size, $Size * $b[1]))
+        New-GeoPath ([System.Windows.Media.Geometry]::Combine($n, $r, 'Intersect', $null)) '#FFFFFF'
+    }
+    foreach ($e in @($cyan, $mag, $base) + @($pieces)) { [void]$root.Children.Add($e) }
+    $m = @{ Root = $root; Cyan = $cyan; Mag = $mag; Base = $base; Pieces = @($pieces); Size = $Size; Rest = @(-0.035, 0.035, 0.05, -0.04) }
+    Set-NexoPose $m $m.Rest
+    $m
+}
+
+# Pose : décalages (en fraction de la taille) du cyan, du magenta et des deux tranches
+function Set-NexoPose($M, [double[]]$Pose) {
+    $s = $M.Size
+    $M.Cyan.RenderTransform.X = $Pose[0] * $s
+    $M.Mag.RenderTransform.X = $Pose[1] * $s
+    $M.Pieces[0].RenderTransform.X = $Pose[2] * $s
+    $M.Pieces[1].RenderTransform.X = $Pose[3] * $s
+}
+
+# Le mot « Nexo » avec les mêmes échos de couleur : { Root, Cyan, Mag, Text }
+function New-NexoWord([double]$FontSize) {
+    $root = New-Object System.Windows.Controls.Grid
+    $mk = {
+        param($hex, $dx)
+        $t = New-Object System.Windows.Controls.TextBlock
+        $t.Text = 'Nexo'; $t.FontSize = $FontSize; $t.FontWeight = 'Bold'
+        $t.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe UI Variable Display, Segoe UI'
+        $t.Foreground = Get-Brush $hex
+        $t.RenderTransform = New-Object System.Windows.Media.TranslateTransform $dx, 0
+        $t
+    }
+    $c = & $mk $NexoCyan (-$FontSize * 0.05); $c.Opacity = 0.85
+    $m = & $mk $NexoMagenta ($FontSize * 0.05); $m.Opacity = 0.85
+    $w = & $mk '#FFFFFF' 0
+    foreach ($e in $c, $m, $w) { [void]$root.Children.Add($e) }
+    @{ Root = $root; Cyan = $c; Mag = $m; Text = $w; Size = $FontSize }
+}
+
+# Un « saut » de quelques centaines de millisecondes : décalages au hasard, puis retour au repos
+function Start-NexoGlitch($Mark, $Word = $null, [int]$Ms = 360) {
+    if (-not $Mark -or $Mark.Busy) { return }
+    $Mark.Busy = $true
+    $t = New-Object System.Windows.Threading.DispatcherTimer
+    $t.Interval = [TimeSpan]::FromMilliseconds(45)
+    $t.Tag = @{ Mark = $Mark; Word = $Word; Until = [DateTime]::Now.AddMilliseconds($Ms); Rnd = (New-Object Random) }
+    $t.Add_Tick({
+        param($s, $e)
+        $x = $s.Tag; $r = $x.Rnd
+        if ([DateTime]::Now -gt $x.Until) {
+            $s.Stop()
+            Set-NexoPose $x.Mark $x.Mark.Rest
+            $x.Mark.Base.RenderTransform.X = 0
+            if ($x.Word) { $x.Word.Cyan.RenderTransform.X = -$x.Word.Size * 0.05; $x.Word.Mag.RenderTransform.X = $x.Word.Size * 0.05; $x.Word.Text.RenderTransform.X = 0 }
+            $x.Mark.Busy = $false
+            return
+        }
+        $j = { param($a) ($r.NextDouble() * 2 - 1) * $a }
+        Set-NexoPose $x.Mark @((& $j 0.09), (& $j 0.09), (& $j 0.14), (& $j 0.14))
+        $x.Mark.Base.RenderTransform.X = (& $j 0.03) * $x.Mark.Size
+        if ($x.Word) { $f = $x.Word.Size; $x.Word.Cyan.RenderTransform.X = & $j ($f * 0.18); $x.Word.Mag.RenderTransform.X = & $j ($f * 0.18); $x.Word.Text.RenderTransform.X = & $j ($f * 0.05) }
+    })
+    $t.Start()
+}
+
+# Logo de la barre de gauche : saute au survol et de temps en temps (toutes les 6 à 12 s)
+function Initialize-NexoLogo($MarkHost, $WordHost) {
+    if (-not $MarkHost -or -not $WordHost) { return }
+    $script:LogoMark = New-NexoMark 30
+    $script:LogoWord = New-NexoWord 22
+    $MarkHost.Child = $script:LogoMark.Root
+    $WordHost.Children.Clear(); [void]$WordHost.Children.Add($script:LogoWord.Root)
+    $hover = { Start-NexoGlitch $script:LogoMark $script:LogoWord 420 }
+    $MarkHost.Add_MouseEnter($hover); $WordHost.Add_MouseEnter($hover)
+    $script:LogoTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:LogoTimer.Interval = [TimeSpan]::FromSeconds(8)
+    $script:LogoTimer.Add_Tick({
+        param($s, $e)
+        $s.Interval = [TimeSpan]::FromSeconds((Get-Random -Minimum 6 -Maximum 13))
+        if ($Window.IsVisible -and $Window.IsActive) { Start-NexoGlitch $script:LogoMark $script:LogoWord }
+    })
+    $script:LogoTimer.Start()
+}
+
 # Animation en boucle, notée pour être arrêtée quand l'écran disparaît
 function Start-LoaderLoop($Target, $Property, [double]$From, [double]$To, [int]$Ms, [bool]$Reverse) {
     $a = New-Object System.Windows.Media.Animation.DoubleAnimation
@@ -598,93 +719,74 @@ function New-LoaderSpinner($Canvas, [double]$C, [double]$R, [double]$Sweep, [str
     $arc
 }
 
+# Écran de chargement : le N de Nexo qui « glitche », un anneau de progression cyan vers magenta,
+# un halo qui respire et une ligne de balayage, comme un vieil écran qui s'allume.
 function Start-StartupLoader {
     $lh = $ui.StartupLoaderHost
     if (-not $lh) { return }
     $lh.Children.Clear()
     $S = 260.0; $C = 130.0
-    $script:Loader = @{ Loops = (New-Object System.Collections.ArrayList); Shown = 0.0; Ticks = @() }
+    $script:Loader = @{ Loops = (New-Object System.Collections.ArrayList); Shown = 0.0 }
     $cv = New-Object System.Windows.Controls.Canvas
     $cv.Width = $S; $cv.Height = $S
 
-    # Halo qui respire derrière le compteur
+    # Halo qui respire derrière le logo
     $halo = New-Object System.Windows.Shapes.Ellipse
     $halo.Width = 220; $halo.Height = 220
     $rb = New-Object System.Windows.Media.RadialGradientBrush
-    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#4022D37A'), 0))
-    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#0022D37A'), 1))
+    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#4000E5FF'), 0))
+    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#1AFF2EB5'), 0.6))
+    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#00FF2EB5'), 1))
     $halo.Fill = $rb
     $halo.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5)
     $hs = New-Object System.Windows.Media.ScaleTransform 1, 1
     $halo.RenderTransform = $hs
     [System.Windows.Controls.Canvas]::SetLeft($halo, 20); [System.Windows.Controls.Canvas]::SetTop($halo, 20)
     [void]$cv.Children.Add($halo)
-    Start-LoaderLoop $hs ([System.Windows.Media.ScaleTransform]::ScaleXProperty) 0.85 1.12 1600 $true
-    Start-LoaderLoop $hs ([System.Windows.Media.ScaleTransform]::ScaleYProperty) 0.85 1.12 1600 $true
+    Start-LoaderLoop $hs ([System.Windows.Media.ScaleTransform]::ScaleXProperty) 0.85 1.1 1600 $true
+    Start-LoaderLoop $hs ([System.Windows.Media.ScaleTransform]::ScaleYProperty) 0.85 1.1 1600 $true
 
-    # Anneau fin, et deux comètes qui tournent en sens inverse
-    $ring = New-Object System.Windows.Shapes.Ellipse
-    $ring.Width = 228; $ring.Height = 228; $ring.Stroke = Get-Brush '#1A2130'; $ring.StrokeThickness = 1.5
-    [System.Windows.Controls.Canvas]::SetLeft($ring, 16); [System.Windows.Controls.Canvas]::SetTop($ring, 16)
-    [void]$cv.Children.Add($ring)
-    $c1 = New-LoaderSpinner $cv $C 114 120 '#22D37A' 3 1500 $false
-    $c1.Effect = New-Glow '#22D37A' 14 0.9
-    [void](New-LoaderSpinner $cv $C 122 70 '#4EA8FF' 2 2600 $true)
-
-    # Particules en orbite
-    foreach ($pt in @(@(104, 3200, '#9022D37A', 4), @(126, 4300, '#904EA8FF', 3), @(96, 2400, '#70FFFFFF', 3))) {
-        $g = New-Object System.Windows.Controls.Canvas
-        $rot = New-Object System.Windows.Media.RotateTransform 0, $C, $C
-        $g.RenderTransform = $rot
-        $d = New-Object System.Windows.Shapes.Ellipse
-        $d.Width = $pt[3]; $d.Height = $pt[3]; $d.Fill = Get-Brush $pt[2]
-        [System.Windows.Controls.Canvas]::SetLeft($d, $C + $pt[0] - $pt[3] / 2); [System.Windows.Controls.Canvas]::SetTop($d, $C - $pt[3] / 2)
-        [void]$g.Children.Add($d)
-        [void]$cv.Children.Add($g)
-        $r0 = Get-Random -Minimum 0 -Maximum 360
-        Start-LoaderLoop $rot ([System.Windows.Media.RotateTransform]::AngleProperty) $r0 ($r0 + 360) $pt[1] $false
-    }
-
-    # Graduations du compteur (elles s'allument quand l'aiguille passe)
-    for ($i = 0; $i -le 10; $i++) {
-        $ang = (135 + 27 * $i) * [math]::PI / 180
-        $ln = New-Object System.Windows.Shapes.Line
-        $r1 = if ($i % 5 -eq 0) { 88 } else { 92 }
-        $ln.X1 = $C + $r1 * [math]::Cos($ang); $ln.Y1 = $C + $r1 * [math]::Sin($ang)
-        $ln.X2 = $C + 99 * [math]::Cos($ang); $ln.Y2 = $C + 99 * [math]::Sin($ang)
-        $ln.Stroke = Get-Brush '#2A3242'; $ln.StrokeThickness = $(if ($i % 5 -eq 0) { 3 } else { 2 })
-        $ln.StrokeStartLineCap = 'Round'; $ln.StrokeEndLineCap = 'Round'
-        [void]$cv.Children.Add($ln)
-        $script:Loader.Ticks += , @($ln, (10 * $i))
-    }
-
-    # Arc du compteur : fond et remplissage dégradé vert vers cyan
-    [void]$cv.Children.Add((New-LoaderArc $C 78 135 270 (Get-Brush '#1B212C') 10))
-    $prog = New-LoaderArc $C 78 135 0.1 (New-LinearBrush @('#22D37A', '#4EE0FF') 0 1 1 0) 10
-    $prog.Effect = New-Glow '#22D37A' 16 0.7
+    # Anneau de fond et anneau de progression (dégradé cyan vers magenta)
+    [void]$cv.Children.Add((New-LoaderArc $C 112 -90 359.9 (Get-Brush '#1B1F2C') 6))
+    $prog = New-LoaderArc $C 112 -90 0.1 (New-LinearBrush @($NexoCyan, $NexoMagenta) 0 0 1 1) 6
+    $prog.Effect = New-Glow $NexoCyan 14 0.7
     [void]$cv.Children.Add($prog)
+    # Petite comète magenta qui tourne en sens inverse, plus loin
+    [void](New-LoaderSpinner $cv $C 124 60 $NexoMagenta 2 2600 $true)
 
-    # Aiguille et moyeu
-    $needle = New-Object System.Windows.Shapes.Polygon
-    foreach ($p in @(@(($C - 10), ($C - 3)), @(($C + 64), $C), @(($C - 10), ($C + 3)))) { [void]$needle.Points.Add([System.Windows.Point]::new($p[0], $p[1])) }
-    $needle.Fill = New-LinearBrush @('#FFFFFF', '#5CF0AA') 0 0 1 0
-    $nrot = New-Object System.Windows.Media.RotateTransform 135, $C, $C
-    $needle.RenderTransform = $nrot
-    $needle.Effect = New-Glow '#5CF0AA' 10 0.8
-    [void]$cv.Children.Add($needle)
-    $hub = New-Object System.Windows.Shapes.Ellipse
-    $hub.Width = 20; $hub.Height = 20; $hub.Fill = Get-Brush '#0E1116'; $hub.Stroke = Get-Brush '#22D37A'; $hub.StrokeThickness = 3
-    [System.Windows.Controls.Canvas]::SetLeft($hub, $C - 10); [System.Windows.Controls.Canvas]::SetTop($hub, $C - 10)
-    [void]$cv.Children.Add($hub)
+    # Le N, au centre
+    $mark = New-NexoMark 128
+    [System.Windows.Controls.Canvas]::SetLeft($mark.Root, $C - 64); [System.Windows.Controls.Canvas]::SetTop($mark.Root, $C - 72)
+    [void]$cv.Children.Add($mark.Root)
 
-    # Pourcentage sous le moyeu
-    $txt = New-Text '0 %' 24 '#FFFFFF' -Bold
-    $txt.Width = $S; $txt.TextAlignment = 'Center'; $txt.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe UI Variable Display, Segoe UI'
-    [System.Windows.Controls.Canvas]::SetTop($txt, $C + 36)
+    # Pourcentage sous le N
+    $txt = New-Text '0 %' 18 '#FFFFFF' -Bold
+    $txt.Width = $S; $txt.TextAlignment = 'Center'; $txt.FontFamily = New-Object System.Windows.Media.FontFamily 'Cascadia Code, Consolas'
+    [System.Windows.Controls.Canvas]::SetTop($txt, $C + 58)
     [void]$cv.Children.Add($txt)
 
+    # Ligne de balayage qui descend en boucle (dans le cercle)
+    $scanHost = New-Object System.Windows.Controls.Canvas
+    $scanHost.Width = $S; $scanHost.Height = $S
+    $scanHost.Clip = New-Object System.Windows.Media.EllipseGeometry ([System.Windows.Point]::new($C, $C)), 106, 106
+    $scan = New-Object System.Windows.Shapes.Rectangle
+    $scan.Width = $S; $scan.Height = 3
+    $scan.Fill = New-LinearBrush @('#0000E5FF', '#8000E5FF', '#0000E5FF') 0 0 1 0
+    $st = New-Object System.Windows.Media.TranslateTransform 0, 0
+    $scan.RenderTransform = $st
+    [void]$scanHost.Children.Add($scan)
+    [void]$cv.Children.Add($scanHost)
+    Start-LoaderLoop $st ([System.Windows.Media.TranslateTransform]::YProperty) 20 240 2200 $false
+
     [void]$lh.Children.Add($cv)
-    $script:Loader.Arc = $prog; $script:Loader.Needle = $nrot; $script:Loader.Text = $txt
+    $script:Loader.Arc = $prog; $script:Loader.Text = $txt; $script:Loader.Mark = $mark
+
+    # Petits sauts réguliers du logo pendant le chargement
+    $gt = New-Object System.Windows.Threading.DispatcherTimer
+    $gt.Interval = [TimeSpan]::FromMilliseconds(1300)
+    $gt.Add_Tick({ if ($script:Loader) { Start-NexoGlitch $script:Loader.Mark $null 260 } })
+    $gt.Start()
+    $script:Loader.GlitchTimer = $gt
 
     # Halo de fond qui dérive lentement
     if ($ui.StartupHalo) {
@@ -697,25 +799,19 @@ function Start-StartupLoader {
     }
 }
 
-# L'aiguille monte (avec un petit rebond de moteur), l'arc se remplit, le pourcentage défile
+# L'anneau se remplit, le pourcentage défile, et le logo saute à chaque étape
 function Set-LoaderProgress([double]$Pct) {
     $L = $script:Loader
     if (-not $L) { return }
-    $a = New-Object System.Windows.Media.Animation.DoubleAnimation
-    $a.To = 135 + 270 * $Pct / 100
-    $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(750))
-    $e = New-Object System.Windows.Media.Animation.BackEase; $e.Amplitude = 0.5; $e.EasingMode = 'EaseOut'
-    $a.EasingFunction = $e
-    $L.Needle.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
+    Start-NexoGlitch $L.Mark $null 300
     Start-Anim {
         param($k, $s)
         $L2 = $script:Loader
         if (-not $L2) { return }
         $v = $s.From + ($s.To - $s.From) * $k
         $L2.Shown = $v
-        $L2.Arc.Data = Get-ArcGeometry 130 78 135 ([math]::Max(0.1, 270 * $v / 100))
+        $L2.Arc.Data = Get-ArcGeometry 130 112 -90 ([math]::Max(0.1, [math]::Min(359.9, 3.6 * $v)))
         $L2.Text.Text = '{0:N0} %' -f $v
-        foreach ($t in $L2.Ticks) { if ($v -ge $t[1] -and -not $t[0].Tag) { $t[0].Tag = 1; $t[0].Stroke = Get-Brush '#5CF0AA' } }
     } @{ From = $L.Shown; To = $Pct } 700
 }
 
@@ -723,6 +819,7 @@ function Stop-StartupLoader {
     $L = $script:Loader
     if (-not $L) { return }
     foreach ($x in $L.Loops) { try { $x.T.BeginAnimation($x.P, $null) } catch {} }
+    if ($L.GlitchTimer) { $L.GlitchTimer.Stop() }
     $script:Loader = $null
     $ui.StartupLoaderHost.Children.Clear()
 }

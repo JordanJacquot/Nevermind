@@ -1,4 +1,4 @@
-﻿# OptiGame : accueil « Ordinateur » et navigation entre les pages.
+﻿# Nexo : accueil « Ordinateur » et navigation entre les pages.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -9,7 +9,7 @@ $GamesIndex = 9   # bibliothèque de jeux (bibliotheque.ps1)
 $NetIndex = 10
 $PageNames = @{ 0 = 'Tableau de bord'; 1 = 'Optimisation gaming'; 2 = 'Démarrage'; 3 = 'Connexion'; 4 = 'Nettoyage'; 5 = 'Tests'; 6 = 'Sécurité'; 7 = 'Sauvegarde' }
 $HubPages = @(
-    @{ Index = 0; Glyph = 0xE80F; Title = 'Tableau de bord'; Desc = 'Santé des composants, score et ce qui peut être amélioré.'; Color = '#22D37A' },
+    @{ Index = 0; Glyph = 0xE80F; Title = 'Tableau de bord'; Desc = 'Santé des composants, score et ce qui peut être amélioré.'; Color = '#00D9F5' },
     @{ Index = 1; Glyph = 0xE7FC; Title = 'Optimisation gaming'; Desc = 'Les réglages de Windows qui font gagner des FPS.'; Color = '#B18CFF' },
     @{ Index = 5; Glyph = 0xE9D9; Title = 'Tests'; Desc = 'Vitesse et santé de chaque composant.'; Color = '#4EA8FF' },
     @{ Index = 6; Glyph = 0xE72E; Title = 'Sécurité'; Desc = 'Antivirus et recherche de tout ce qui est suspect.'; Color = '#22D37A' },

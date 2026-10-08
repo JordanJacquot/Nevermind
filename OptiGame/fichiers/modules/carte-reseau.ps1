@@ -1,4 +1,4 @@
-﻿# OptiGame : carte du réseau en constellation. La box au centre comme un astre, Internet au dessus,
+﻿# Nexo : carte du réseau en constellation. La box au centre comme un astre, Internet au dessus,
 # les appareils en orbes lumineux regroupés par familles, reliés par des liaisons que parcourent
 # des impulsions (plus le ping est court, plus elles vont vite). Un clic ouvre la fiche d'un appareil.
 # Chargé par OptiGame.ps1 après reseau.ps1 et reseau-avance.ps1.

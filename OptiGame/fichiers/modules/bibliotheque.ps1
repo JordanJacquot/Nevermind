@@ -1,4 +1,4 @@
-﻿# OptiGame : section « Jeux », la bibliothèque de tous les jeux installés (comme celle de Steam).
+﻿# Nexo : section « Jeux », la bibliothèque de tous les jeux installés (comme celle de Steam).
 # Jaquettes, recherche, filtre par launcher ; double clic ou « Lancer » pour jouer (par le launcher du jeu) ;
 # temps de jeu, dernières parties et optimisation du jeu sélectionné.
 # Chargé par OptiGame.ps1 après jeu.ps1 (liste des jeux) et diagnostic-fps.ps1.
@@ -6,7 +6,7 @@
 $PlayFile = Join-Path $DataDir 'jeux.json'
 
 # ---------------------------------------------------------------------------
-# Temps de jeu (noté à chaque partie repérée par OptiGame, quel que soit le launcher)
+# Temps de jeu (noté à chaque partie repérée par Nexo, quel que soit le launcher)
 # ---------------------------------------------------------------------------
 function Get-PlayLog {
     if ($null -ne $script:PlayLog) { return $script:PlayLog }
@@ -33,7 +33,7 @@ function Add-PlayTime([string]$Game, [datetime]$Start) {
 }
 
 function Format-LastPlayed([string]$Iso) {
-    if (-not $Iso) { return 'jamais lancé avec OptiGame ouvert' }
+    if (-not $Iso) { return 'jamais lancé avec Nexo ouvert' }
     $d = [datetime]$Iso
     $days = ((Get-Date).Date - $d.Date).Days
     if ($days -le 0) { "aujourd'hui à $($d.ToString('HH:mm'))" } elseif ($days -eq 1) { 'hier' } elseif ($days -lt 7) { "il y a $days jours" } else { "le $($d.ToString('dd/MM/yyyy'))" }
@@ -89,7 +89,7 @@ function Get-ImageBrush([string]$Path, [int]$Width) {
 # ---------------------------------------------------------------------------
 # Jaquettes manquantes : cherchées sur la boutique Steam (par le nom du jeu : la plupart des jeux Ubisoft,
 # Epic ou Battle.net y sont aussi), puis sur Wikipédia. Seul le nom du jeu est envoyé.
-# Gardées dans le dossier « jaquettes » des données d'OptiGame ; une recherche ratée est retentée après 7 jours.
+# Gardées dans le dossier « jaquettes » des données de Nexo ; une recherche ratée est retentée après 7 jours.
 # ---------------------------------------------------------------------------
 $CoverDir = Join-Path $DataDir 'jaquettes'
 $CoverIndexFile = Join-Path $CoverDir 'index.json'
@@ -333,7 +333,7 @@ function New-GameCover($Game, [double]$W, [double]$H) {
 
 # ---------------------------------------------------------------------------
 # Lancer un jeu : par son launcher (connexion, mises à jour, anti triche), sinon son exécutable.
-# Toujours sans les droits administrateur d'OptiGame (passe par l'Explorateur).
+# Toujours sans les droits administrateur de Nexo (passe par l'Explorateur).
 # ---------------------------------------------------------------------------
 function Get-GameLaunch($Game) {
     $l = [string]$Game.Launch
@@ -399,12 +399,12 @@ function Uninstall-LibraryGame($Game) {
     $how = Get-GameUninstall $Game
     switch ($how.Kind) {
         'none' {
-            Show-Message "OptiGame ne connaît pas le désinstalleur de « $($Game.Name) ».`n`nLa liste des applications de Windows va s'ouvrir : cherche le jeu et clique sur « Désinstaller »."
+            Show-Message "Nexo ne connaît pas le désinstalleur de « $($Game.Name) ».`n`nLa liste des applications de Windows va s'ouvrir : cherche le jeu et clique sur « Désinstaller »."
             Open-Url 'ms-settings:appsfeatures'
             return
         }
         'launcher' {
-            Show-Message "« $($Game.Name) » se désinstalle depuis $src : OptiGame l'ouvre pour toi.`n`nDans $src, fais un clic droit sur le jeu (ou ouvre ses options), puis « Désinstaller »."
+            Show-Message "« $($Game.Name) » se désinstalle depuis $src : Nexo l'ouvre pour toi.`n`nDans $src, fais un clic droit sur le jeu (ou ouvre ses options), puis « Désinstaller »."
             Open-Url $how.Path
         }
         default {
@@ -569,7 +569,7 @@ function Remove-Leftovers([array]$List, [switch]$Force) {
         $d = [string]$_.Dir
         $d -match '(?i)\\steamapps\\common\\[^\\]+$' -and $known -contains $d.ToLower() -and $installed -notcontains $d.ToLower() -and (Test-Path -LiteralPath $d)
     })
-    if (-not $ok.Count) { Show-Message 'Aucun de ces dossiers ne peut être supprimé par OptiGame.' 'Warning'; return }
+    if (-not $ok.Count) { Show-Message 'Aucun de ces dossiers ne peut être supprimé par Nexo.' 'Warning'; return }
     $size = ($ok | ForEach-Object { [double]$script:LeftoverSizes[$_.Dir] } | Measure-Object -Sum).Sum
     $what = if ($ok.Count -eq 1) { "le dossier de « $($ok[0].Name) »" } else { "$($ok.Count) dossiers de jeux désinstallés" }
     if (-not $Force -and -not (Confirm-Action "Supprimer définitivement $what ($(Format-Size $size)) ?`n`nIls ne passent pas par la corbeille : la place est libérée tout de suite, mais ils ne pourront pas être récupérés. Les sauvegardes ou mods qu'ils contiennent seront perdus.")) { return }
@@ -646,7 +646,7 @@ function Update-LibraryView {
         $on = $script:LibFilter -eq $c[0]
         $b = New-Object System.Windows.Controls.Border
         $b.CornerRadius = [System.Windows.CornerRadius]::new(15); $b.Padding = New-Thickness 12 5 12 5; $b.Margin = New-Thickness 0 2 6 2
-        $b.Background = Get-Brush $(if ($on) { '#22D37A' } else { '#1A1F29' })
+        $b.Background = Get-Brush $(if ($on) { $Colors.accent } else { '#1A1F29' })
         $b.Cursor = [System.Windows.Input.Cursors]::Hand
         $t = New-Text "$($c[0]) ($($c[1]))" 12 $(if ($on) { '#0B0D10' } else { '#C9CED8' }) -Semi
         $t.TextWrapping = 'NoWrap'
@@ -724,7 +724,7 @@ function Set-LibrarySelection([string]$Name) {
     $script:LibSelected = $Name
     foreach ($k in @($script:LibTiles.Keys)) {
         $f = $script:LibTiles[$k]
-        if ($k -eq $Name) { $f.BorderBrush = Get-Brush $Colors.ok; $f.Effect = New-Glow $Colors.ok 14 0.6 }
+        if ($k -eq $Name) { $f.BorderBrush = Get-Brush $Colors.accent; $f.Effect = New-Glow $Colors.accent 14 0.6 }
         else { $f.BorderBrush = [System.Windows.Media.Brushes]::Transparent; $f.Effect = $null }
     }
     Update-LibraryDetail
@@ -870,7 +870,7 @@ function Get-GameOptimizations($Game) {
     $gpuNames = @($script:AnalysisData.GPUs | ForEach-Object { [string]$_.Name } | Where-Object { $_ -notmatch 'Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta|Microsoft Basic' })
     $prio = (@(Get-GameExeNames $Game).Count -gt 0)
     if ($prio) {
-        $list += @{ Id = 'priority'; Title = 'Priorité haute'; Text = 'Le jeu passe avant les autres programmes (même OptiGame fermé).'; Ok = (Test-GamePriority $Game); Switch = $true }
+        $list += @{ Id = 'priority'; Title = 'Priorité haute'; Text = 'Le jeu passe avant les autres programmes (même Nexo fermé).'; Ok = (Test-GamePriority $Game); Switch = $true }
     }
     if ($gpuNames.Count -ge 2) {
         $list += @{ Id = 'gpu'; Title = 'Carte graphique puissante'; Text = 'Le jeu utilise la grosse carte, pas la puce intégrée.'; Ok = ((Get-GpuPreference @($Game.Exes)[0]) -match 'GpuPreference=2'); Switch = $true }
@@ -955,7 +955,7 @@ function Invoke-GameOptimize($Game) {
     Build-GameProfiles
     $tw = @($items | Where-Object { $_.Id -eq 'tweaks' })[0]
     if ($tw) { Invoke-TweakFix @($tw.Ids); $script:LibTweaks = $null }
-    else { Show-ResultSheet "$($Game.Name) est optimisé" (@('Fait :') + @($done | ForEach-Object { "•  $_" }) + @('Joue une partie : OptiGame mesurera tes FPS pour vérifier.')) $null $null }
+    else { Show-ResultSheet "$($Game.Name) est optimisé" (@('Fait :') + @($done | ForEach-Object { "•  $_" }) + @('Joue une partie : Nexo mesurera tes FPS pour vérifier.')) $null $null }
     Update-LibraryDetail
 }
 

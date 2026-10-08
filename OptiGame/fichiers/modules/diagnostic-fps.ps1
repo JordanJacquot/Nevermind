@@ -1,4 +1,4 @@
-﻿# OptiGame : diagnostic des FPS d'une partie. D'où vient le problème, et comment le régler
+﻿# Nexo : diagnostic des FPS d'une partie. D'où vient le problème, et comment le régler
 # sans rendre le jeu moche (on commence toujours par ce qui coûte le moins en qualité).
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
@@ -135,7 +135,7 @@ function Get-FpsDiagnosis($S) {
     $items = New-Object System.Collections.ArrayList
     if (-not $d) {
         return @{ Limit = 'unknown'; Problem = $false; Status = 'info'; Headline = 'Pas de diagnostic pour cette partie'
-                  Text = 'Elle a été mesurée par une ancienne version d''OptiGame. Rejoue une partie pour avoir le diagnostic complet.'; Items = @() }
+                  Text = 'Elle a été mesurée par une ancienne version de Nexo. Rejoue une partie pour avoir le diagnostic complet.'; Items = @() }
     }
     $avg = [double]$S.Avg; $low = [double]$S.Low1
     $perMin = $d.Stutters / [math]::Max(1.0, $S.Seconds / 60)
@@ -180,7 +180,7 @@ function Get-FpsDiagnosis($S) {
         Add-DiagItem $items 'bad' 'Le PC était sur batterie' 'Sur batterie, Windows bride le processeur et la carte graphique pour tenir plus longtemps : les FPS chutent.' @('Branche le chargeur quand tu joues.') $null
     }
     if ($limit -eq 'igpu' -and $game) {
-        Add-DiagItem $items 'bad' "Forcer la grosse carte graphique pour $gameName" 'Windows choisit parfois la puce intégrée pour économiser la batterie. OptiGame peut obliger le jeu à utiliser la carte puissante.' @('Relance le jeu après le réglage.') @(
+        Add-DiagItem $items 'bad' "Forcer la grosse carte graphique pour $gameName" 'Windows choisit parfois la puce intégrée pour économiser la batterie. Nexo peut obliger le jeu à utiliser la carte puissante.' @('Relance le jeu après le réglage.') @(
             @{ Label = 'Utiliser la carte puissante'; NoRefresh = $true; Arg = $game; Script = { param($g) Hide-TestPanel; Set-GameProfile $g 'gpu' $true; Show-Message "C'est réglé. Relance $($g.Name) pour que ce soit pris en compte." } })
     }
     $powerOk = $true
@@ -294,7 +294,7 @@ function Invoke-TweakFix([string[]]$Ids) {
     try { foreach ($t in $sel) { & $t.Apply; $done += $t.Titre } } finally { $log = $script:RunLog; $script:RunLog = $null }
     Build-GamingTab
     Update-BackupSummary
-    Show-ResultSheet 'C''est fait !' (@('Réglage appliqué :') + @($done | ForEach-Object { "•  $_" }) + @('Rejoue une partie : OptiGame comparera tes FPS avant / après.')) $log $null
+    Show-ResultSheet 'C''est fait !' (@('Réglage appliqué :') + @($done | ForEach-Object { "•  $_" }) + @('Rejoue une partie : Nexo comparera tes FPS avant / après.')) $log $null
 }
 
 # Section « d'où ça vient » dans la fiche d'une partie.

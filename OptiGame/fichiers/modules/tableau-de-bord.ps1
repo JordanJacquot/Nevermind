@@ -1,4 +1,4 @@
-﻿# OptiGame : constats, score, fiches de correction et retour en arrière.
+﻿# Nexo : constats, score, fiches de correction et retour en arrière.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-﻿# Publie une nouvelle version d'OptiGame sur GitHub.
+﻿# Publie une nouvelle version de Nexo sur GitHub.
 # Les apps déjà installées la proposent ensuite au lancement (bandeau « Nouvelle version disponible »).
 #
 #   .\outils\publier.ps1 -Version 1.1 -Notes "Ce qui change dans cette version"
@@ -62,10 +62,10 @@ function Invoke-Native([string]$Exe, [string[]]$Arguments) {
 # 1. Numéro de version dans l'app et le LISEZMOI
 $c = [IO.File]::ReadAllText($ps1, [Text.Encoding]::UTF8)
 $c = [regex]::Replace($c, "(?m)^\`$AppVersion = '[^']*'", "`$AppVersion = '$Version'")
-$c = [regex]::Replace($c, '(?m)^    OptiGame [\d\.]+\r?$', "    OptiGame $Version`r")
+$c = [regex]::Replace($c, '(?m)^    (OptiGame|Nexo) [\d\.]+\r?$', "    Nexo $Version`r")
 [IO.File]::WriteAllText($ps1, $c, $utf8)
 $l = [IO.File]::ReadAllText($lisez, [Text.Encoding]::UTF8)
-$l = [regex]::Replace($l, '^OptiGame [\d\.]+', "OptiGame $Version")
+$l = [regex]::Replace($l, '^(OptiGame|Nexo) [\d\.]+', "Nexo $Version")
 [IO.File]::WriteAllText($lisez, $l, $utf8)
 
 # 2. Construction des .exe et du zip
@@ -75,11 +75,11 @@ $l = [regex]::Replace($l, '^OptiGame [\d\.]+', "OptiGame $Version")
 Push-Location $racine
 try {
     Invoke-Native git @('add', '-A')
-    Invoke-Native git @('commit', '-m', "OptiGame $Version", '-m', 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
+    Invoke-Native git @('commit', '-m', "Nexo $Version", '-m', 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
     Invoke-Native git @('tag', "v$Version")
     Invoke-Native git @('push', 'origin', 'HEAD', '--tags')
-    if (-not $Notes) { $Notes = "OptiGame $Version" }
-    $ghArgs = @('release', 'create', "v$Version", (Join-Path $racine 'OptiGame.zip'), '--title', "OptiGame $Version$(if ($Beta) { ' (bêta)' })", '--notes', $Notes)
+    if (-not $Notes) { $Notes = "Nexo $Version" }
+    $ghArgs = @('release', 'create', "v$Version", (Join-Path $racine 'OptiGame.zip'), '--title', "Nexo $Version$(if ($Beta) { ' (bêta)' })", '--notes', $Notes)
     if ($Beta) { $ghArgs += '--prerelease' }
     Invoke-Native gh $ghArgs
 } finally { Pop-Location }

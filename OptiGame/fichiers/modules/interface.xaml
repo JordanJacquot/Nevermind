@@ -1,10 +1,10 @@
 ﻿<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="OptiGame" Width="1120" Height="740" MinWidth="920" MinHeight="600"
+        Title="Nexo" Width="1120" Height="740" MinWidth="920" MinHeight="600"
         WindowStartupLocation="CenterScreen" Background="#0B0D12"
         FontFamily="Segoe UI Variable Text, Segoe UI" Foreground="#E6E8EE">
   <Window.Resources>
-    <!-- Thème : cartes en verre sombre, accent vert lumineux -->
+    <!-- Thème Nexo : cartes en verre sombre, accent cyan et magenta (couleurs du logo) ; le vert ne dit plus que « tout va bien » -->
     <LinearGradientBrush x:Key="CardBg" StartPoint="0,0" EndPoint="0,1">
       <GradientStop Color="#1C212B" Offset="0"/>
       <GradientStop Color="#14181F" Offset="1"/>
@@ -18,14 +18,14 @@
       <GradientStop Color="#1B2029" Offset="1"/>
     </LinearGradientBrush>
     <LinearGradientBrush x:Key="AccentBg" StartPoint="0,0" EndPoint="1,1">
-      <GradientStop Color="#34EB96" Offset="0"/>
-      <GradientStop Color="#14B862" Offset="1"/>
+      <GradientStop Color="#4DF2FF" Offset="0"/>
+      <GradientStop Color="#00A8D8" Offset="1"/>
     </LinearGradientBrush>
 
     <Style x:Key="BtnPrimary" TargetType="Button">
       <Setter Property="Background" Value="{StaticResource AccentBg}"/>
-      <Setter Property="Foreground" Value="#06140C"/>
-      <Setter Property="BorderBrush" Value="#6AF2B4"/>
+      <Setter Property="Foreground" Value="#01161C"/>
+      <Setter Property="BorderBrush" Value="#8AF6FF"/>
       <Setter Property="BorderThickness" Value="0"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="FontSize" Value="13"/>
@@ -75,9 +75,9 @@
         </Setter.Value>
       </Setter>
       <Style.Triggers>
-        <!-- Halo vert au survol -->
+        <!-- Halo cyan au survol -->
         <Trigger Property="IsMouseOver" Value="True">
-          <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#22D37A" BlurRadius="18" ShadowDepth="0" Opacity="0.55"/></Setter.Value></Setter>
+          <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#00E5FF" BlurRadius="18" ShadowDepth="0" Opacity="0.55"/></Setter.Value></Setter>
         </Trigger>
       </Style.Triggers>
     </Style>
@@ -142,7 +142,7 @@
               </Border>
               <!-- Barre lumineuse de la page ouverte -->
               <Border x:Name="Bar" Width="3" CornerRadius="2" HorizontalAlignment="Left" Margin="1,10" Opacity="0">
-                <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#5CF0AA" Offset="0"/><GradientStop Color="#14B862" Offset="1"/></LinearGradientBrush></Border.Background>
+                <Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#00E5FF" Offset="0"/><GradientStop Color="#FF2EB5" Offset="1"/></LinearGradientBrush></Border.Background>
               </Border>
             </Grid>
             <ControlTemplate.Triggers>
@@ -159,8 +159,8 @@
                 <Setter TargetName="Bd" Property="Background">
                   <Setter.Value>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                      <GradientStop Color="#3322D37A" Offset="0"/>
-                      <GradientStop Color="#0822D37A" Offset="1"/>
+                      <GradientStop Color="#3300E5FF" Offset="0"/>
+                      <GradientStop Color="#08FF2EB5" Offset="1"/>
                     </LinearGradientBrush>
                   </Setter.Value>
                 </Setter>
@@ -171,8 +171,8 @@
                 <Setter TargetName="Bd" Property="Background">
                   <Setter.Value>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                      <GradientStop Color="#3322D37A" Offset="0"/>
-                      <GradientStop Color="#0822D37A" Offset="1"/>
+                      <GradientStop Color="#3300E5FF" Offset="0"/>
+                      <GradientStop Color="#08FF2EB5" Offset="1"/>
                     </LinearGradientBrush>
                   </Setter.Value>
                 </Setter>
@@ -198,7 +198,7 @@
             <Border x:Name="T" Background="#343C4C" CornerRadius="4"/>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="T" Property="Background" Value="#4A5468"/></Trigger>
-              <Trigger Property="IsDragging" Value="True"><Setter TargetName="T" Property="Background" Value="#22D37A"/></Trigger>
+              <Trigger Property="IsDragging" Value="True"><Setter TargetName="T" Property="Background" Value="#00E5FF"/></Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
         </Setter.Value>
@@ -267,10 +267,10 @@
             <ControlTemplate.Triggers>
               <!-- Le bouton glisse et la piste s'allume en douceur -->
               <Trigger Property="IsChecked" Value="True">
-                <Setter TargetName="Track" Property="BorderBrush" Value="#5CF0AA"/>
+                <Setter TargetName="Track" Property="BorderBrush" Value="#7FF4FF"/>
                 <Trigger.EnterActions><BeginStoryboard><Storyboard>
                   <DoubleAnimation Storyboard.TargetName="KnobMove" Storyboard.TargetProperty="X" To="20" Duration="0:0:0.2"><DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation>
-                  <ColorAnimation Storyboard.TargetName="TrackBrush" Storyboard.TargetProperty="Color" To="#22D37A" Duration="0:0:0.2"/>
+                  <ColorAnimation Storyboard.TargetName="TrackBrush" Storyboard.TargetProperty="Color" To="#00D9F5" Duration="0:0:0.2"/>
                 </Storyboard></BeginStoryboard></Trigger.EnterActions>
                 <Trigger.ExitActions><BeginStoryboard><Storyboard>
                   <DoubleAnimation Storyboard.TargetName="KnobMove" Storyboard.TargetProperty="X" To="0" Duration="0:0:0.2"><DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction></DoubleAnimation>
@@ -287,7 +287,7 @@
     <Style TargetType="ProgressBar">
       <Setter Property="Height" Value="8"/>
       <Setter Property="Maximum" Value="100"/>
-      <Setter Property="Foreground" Value="#22D37A"/>
+      <Setter Property="Foreground" Value="#00D9F5"/>
       <Setter Property="Background" Value="#1E2430"/>
       <Setter Property="Template">
         <Setter.Value>
@@ -344,8 +344,8 @@
       <Rectangle>
         <Rectangle.Fill>
           <RadialGradientBrush Center="0.28,0" GradientOrigin="0.28,0" RadiusX="0.6" RadiusY="0.75">
-            <GradientStop Color="#2622D37A" Offset="0"/>
-            <GradientStop Color="#0022D37A" Offset="1"/>
+            <GradientStop Color="#2200E5FF" Offset="0"/>
+            <GradientStop Color="#0000E5FF" Offset="1"/>
           </RadialGradientBrush>
         </Rectangle.Fill>
       </Rectangle>
@@ -360,14 +360,14 @@
     </Grid>
 
     <!-- Bandeau « nouvelle version disponible » -->
-    <Border x:Name="UpdateBanner" Visibility="Collapsed" Background="#12281F" BorderBrush="#22D37A" BorderThickness="0,0,0,1" Padding="18,10">
+    <Border x:Name="UpdateBanner" Visibility="Collapsed" Background="#0C2230" BorderBrush="#00E5FF" BorderThickness="0,0,0,1" Padding="18,10">
       <DockPanel>
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
           <Button x:Name="BtnUpdateLater" Style="{StaticResource BtnSecondary}" Content="Plus tard" Margin="0,0,10,0"/>
           <Button x:Name="BtnUpdate" Style="{StaticResource BtnPrimary}" Content="Mettre à jour"/>
         </StackPanel>
         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-          <Ellipse Width="9" Height="9" Fill="#22D37A" Margin="0,0,10,0" VerticalAlignment="Center"/>
+          <Ellipse Width="9" Height="9" Fill="#00E5FF" Margin="0,0,10,0" VerticalAlignment="Center"/>
           <TextBlock x:Name="UpdateText" Foreground="White" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
         </StackPanel>
       </DockPanel>
@@ -384,10 +384,10 @@
             <Border Background="#B30F1218" BorderBrush="#1F2531" BorderThickness="0,0,1,0">
               <DockPanel Margin="14,22,14,16">
                 <DockPanel DockPanel.Dock="Top" Margin="6,0,0,26">
-                  <Image x:Name="LogoImg" Width="42" Height="42" Margin="0,0,10,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
+                  <Border x:Name="LogoMarkHost" Width="42" Height="42" Margin="0,0,10,0" VerticalAlignment="Center" CornerRadius="11" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="6" Cursor="Hand"><Border.Background><LinearGradientBrush StartPoint="0,0" EndPoint="0,1"><GradientStop Color="#1D1C2B" Offset="0"/><GradientStop Color="#07070A" Offset="1"/></LinearGradientBrush></Border.Background></Border>
                   <StackPanel VerticalAlignment="Center">
-                    <TextBlock FontSize="22" FontWeight="Bold"><Run Text="Opti" Foreground="White"/><Run Text="Game" Foreground="#22D37A"/></TextBlock>
-                    <TextBlock Text="Optimisation gaming" Foreground="#9AA3B2" FontSize="12"/>
+                    <Grid x:Name="LogoWordHost" HorizontalAlignment="Left" Cursor="Hand"/>
+                    <TextBlock Text="Ton PC, tes jeux, ton réseau" Foreground="#9AA3B2" FontSize="11.5"/>
                   </StackPanel>
                 </DockPanel>
                 <TextBlock x:Name="VersionText" DockPanel.Dock="Bottom" Foreground="#5B6475" FontSize="11" Margin="8,0,0,0"/>
@@ -413,7 +413,7 @@
                       <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#9AA3B2" VerticalAlignment="Center" Margin="14,1,0,0" IsHitTestVisible="False"/>
                       <TextBlock x:Name="SearchHint" Text="Rechercher un réglage..." Foreground="#5B6475" FontSize="12.5" VerticalAlignment="Center" Margin="38,0,0,0" IsHitTestVisible="False"/>
                       <TextBlock x:Name="SearchKey" Text="Ctrl+K" Foreground="#5B6475" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,14,0" IsHitTestVisible="False"/>
-                      <TextBox x:Name="SearchInput" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" CaretBrush="#FFFFFF" SelectionBrush="#22D37A"
+                      <TextBox x:Name="SearchInput" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" CaretBrush="#FFFFFF" SelectionBrush="#00E5FF"
                                FontSize="12.5" VerticalAlignment="Center" VerticalContentAlignment="Center" Margin="34,0,12,0" Padding="2,0"/>
                     </Grid>
                   </Border>
@@ -728,7 +728,7 @@
             <StackPanel x:Name="CleanPanel"/>
           </ScrollViewer>
           <TextBlock Grid.Row="3" Style="{StaticResource Sub}" FontSize="12" Margin="0,12,0,0"
-                     Text="OptiGame ne touche jamais à tes documents, à la corbeille ni aux caches de shaders des jeux: les vider provoquerait des saccades le temps qu'ils se reconstruisent."/>
+                     Text="Nexo ne touche jamais à tes documents, à la corbeille ni aux caches de shaders des jeux: les vider provoquerait des saccades le temps qu'ils se reconstruisent."/>
         </Grid>
       </TabItem>
 
@@ -829,7 +829,7 @@
               <DockPanel>
                 <Button x:Name="BtnUndo" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Tout annuler" VerticalAlignment="Center" Margin="16,0,0,0"/>
                 <StackPanel>
-                  <TextBlock Style="{StaticResource H2}" Text="Annuler les changements d'OptiGame"/>
+                  <TextBlock Style="{StaticResource H2}" Text="Annuler les changements de Nexo"/>
                   <TextBlock x:Name="BackupSummary" Style="{StaticResource Sub}"/>
                 </StackPanel>
               </DockPanel>
@@ -838,7 +838,7 @@
             <Border Style="{StaticResource Card}" Margin="0,0,0,10">
               <StackPanel>
                 <TextBlock Style="{StaticResource H2}" Text="Historique des changements"/>
-                <TextBlock Style="{StaticResource Sub}" Text="Tout ce qu'OptiGame a changé, du plus récent au plus ancien. Tu peux annuler n'importe quel changement."/>
+                <TextBlock Style="{StaticResource Sub}" Text="Tout ce que Nexo a changé, du plus récent au plus ancien. Tu peux annuler n'importe quel changement."/>
                 <StackPanel x:Name="HistoryPanel" Margin="0,14,0,0"/>
               </StackPanel>
             </Border>
@@ -885,10 +885,10 @@
                 <Button x:Name="BtnShortcut" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Créer le raccourci" VerticalAlignment="Center" Margin="16,0,0,0"/>
                 <StackPanel>
                   <TextBlock Style="{StaticResource H2}" Text="Raccourci et démarrage"/>
-                  <TextBlock x:Name="ShortcutStatus" Style="{StaticResource Sub}" Text="Mets OptiGame sur ton bureau pour l'ouvrir en un double clic."/>
+                  <TextBlock x:Name="ShortcutStatus" Style="{StaticResource Sub}" Text="Mets Nexo sur ton bureau pour l'ouvrir en un double clic."/>
                   <DockPanel Margin="0,12,0,0">
                     <CheckBox x:Name="ChkAutoStart" DockPanel.Dock="Left" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
-                    <TextBlock Text="Lancer OptiGame au démarrage du PC (il reste réduit près de l'horloge, sans demande d'autorisation, pour le mode jeu et la mesure des FPS)" Foreground="#9AA3B2" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                    <TextBlock Text="Lancer Nexo au démarrage du PC (il reste réduit près de l'horloge, sans demande d'autorisation, pour le mode jeu et la mesure des FPS)" Foreground="#9AA3B2" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
                   </DockPanel>
                 </StackPanel>
               </DockPanel>
@@ -899,7 +899,7 @@
                 <Button x:Name="BtnReportProblem" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Créer le fichier" VerticalAlignment="Center" Margin="16,0,0,0"/>
                 <StackPanel>
                   <TextBlock Style="{StaticResource H2}" Text="Signaler un problème"/>
-                  <TextBlock Style="{StaticResource Sub}" Text="Crée un fichier sur ton bureau avec le journal de l'app et la configuration de ton PC, sans tes fichiers ni ton nom. Envoie le à la personne qui t'a donné OptiGame."/>
+                  <TextBlock Style="{StaticResource Sub}" Text="Crée un fichier sur ton bureau avec le journal de l'app et la configuration de ton PC, sans tes fichiers ni ton nom. Envoie le à la personne qui t'a donné Nexo."/>
                 </StackPanel>
               </DockPanel>
             </Border>
@@ -970,7 +970,7 @@
               <Grid>
                 <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#9AA3B2" VerticalAlignment="Center" Margin="14,1,0,0" IsHitTestVisible="False"/>
                 <TextBlock x:Name="LibSearchHint" Text="Chercher un jeu..." Foreground="#5B6475" FontSize="12.5" VerticalAlignment="Center" Margin="38,0,0,0" IsHitTestVisible="False"/>
-                <TextBox x:Name="LibSearch" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" CaretBrush="#FFFFFF" SelectionBrush="#22D37A"
+                <TextBox x:Name="LibSearch" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" CaretBrush="#FFFFFF" SelectionBrush="#00E5FF"
                          FontSize="12.5" VerticalAlignment="Center" VerticalContentAlignment="Center" Margin="34,0,12,0" Padding="2,0"/>
               </Grid>
             </Border>
@@ -1062,7 +1062,7 @@
               </DockPanel>
               <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                 <CheckBox x:Name="ChkNetWatch" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
-                <TextBlock Text="Me prévenir quand un nouvel appareil se connecte (vérifié toutes les 10 minutes, tant qu'OptiGame est ouvert)" Foreground="#9AA3B2" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                <TextBlock Text="Me prévenir quand un nouvel appareil se connecte (vérifié toutes les 10 minutes, tant que Nexo est ouvert)" Foreground="#9AA3B2" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
               </StackPanel>
               <WrapPanel x:Name="NetDevFilters" Margin="0,0,0,12"/>
               <UniformGrid x:Name="NetDevices" Columns="3"/>
@@ -1206,18 +1206,19 @@
     <Grid x:Name="StartupOverlay" Grid.RowSpan="3">
       <Grid.Background>
         <RadialGradientBrush x:Name="StartupHalo" Center="0.5,0.4" GradientOrigin="0.5,0.4" RadiusX="0.85" RadiusY="0.95">
-          <GradientStop Color="#132A1F" Offset="0"/>
+          <GradientStop Color="#171433" Offset="0"/>
           <GradientStop Color="#0B0D12" Offset="1"/>
         </RadialGradientBrush>
       </Grid.Background>
       <StackPanel x:Name="StartupContent" VerticalAlignment="Center" HorizontalAlignment="Center" Width="440" RenderTransformOrigin="0.5,0.5">
         <StackPanel.RenderTransform><ScaleTransform x:Name="StartupZoom" ScaleX="1" ScaleY="1"/></StackPanel.RenderTransform>
         <Grid x:Name="StartupLoaderHost" Width="260" Height="260" Margin="0,0,0,6"/>
-        <TextBlock Text="OptiGame" FontSize="32" FontWeight="Bold" HorizontalAlignment="Center" FontFamily="Segoe UI Variable Display, Segoe UI">
+        <TextBlock Text="Nexo" FontSize="32" FontWeight="Bold" HorizontalAlignment="Center" FontFamily="Segoe UI Variable Display, Segoe UI">
           <TextBlock.Foreground>
             <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-              <GradientStop Color="#FFFFFF" Offset="0.2"/>
-              <GradientStop Color="#5CF0AA" Offset="1"/>
+              <GradientStop Color="#7FF4FF" Offset="0"/>
+              <GradientStop Color="#FFFFFF" Offset="0.5"/>
+              <GradientStop Color="#FF7AD0" Offset="1"/>
             </LinearGradientBrush>
           </TextBlock.Foreground>
         </TextBlock>

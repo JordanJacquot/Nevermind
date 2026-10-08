@@ -1,4 +1,4 @@
-﻿# OptiGame : onglet Sécurité (antivirus, points suspects, analyses Defender).
+﻿# Nexo : onglet Sécurité (antivirus, points suspects, analyses Defender).
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------

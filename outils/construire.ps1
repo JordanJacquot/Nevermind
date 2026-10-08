@@ -1,8 +1,9 @@
-﻿# Construit le dossier OptiGame prêt à partager, puis OptiGame.zip.
+﻿# Construit le dossier de Nexo prêt à partager, puis OptiGame.zip. Le zip et son dossier gardent le nom
+# « OptiGame » : les versions déjà installées cherchent ce nom pour se mettre à jour.
 #
 #   OptiGame\
-#     OptiGame.exe                         <- à lancer (icône OptiGame)
-#     Désinstaller OptiGame.exe            <- désinstallation propre
+#     Nexo.exe                             <- à lancer (icône Nexo)
+#     Désinstaller Nexo.exe                <- désinstallation propre
 #     LISEZMOI.txt
 #     fichiers\OptiGame.ps1, OptiGame.ico, lanceurs de secours (.bat)
 #     fichiers\modules\                    <- le code découpé par partie
@@ -27,9 +28,10 @@ function Build-Exe([string]$Out, [string]$Icon, [string]$Define) {
     & $csc @opts $source
     if ($LASTEXITCODE) { throw "Échec de compilation de $Out" }
 }
-Build-Exe (Join-Path $app 'OptiGame.exe') (Join-Path $icones 'OptiGame.ico') ''
-Build-Exe (Join-Path $app 'Désinstaller OptiGame.exe') (Join-Path $icones 'OptiGame-desinstaller.ico') 'UNINSTALL'
+Build-Exe (Join-Path $app 'Nexo.exe') (Join-Path $icones 'OptiGame.ico') ''
+Build-Exe (Join-Path $app 'Désinstaller Nexo.exe') (Join-Path $icones 'OptiGame-desinstaller.ico') 'UNINSTALL'
 
+foreach ($old in 'OptiGame.exe', 'Désinstaller OptiGame.exe') { $p = Join-Path $app $old; if (Test-Path -LiteralPath $p) { [IO.File]::Delete($p) } }
 $zip = Join-Path $racine 'OptiGame.zip'
 Compress-Archive -Path $app -DestinationPath $zip -Force
 "OK: $zip"

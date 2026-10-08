@@ -1,4 +1,4 @@
-﻿# OptiGame : ce que Windows envoie à Microsoft. Les identifiants du PC, les réglages qui envoient
+﻿# Nexo : ce que Windows envoie à Microsoft. Les identifiants du PC, les réglages qui envoient
 # des données en plus du minimum (avec « Couper », annulable), et les envois vus en direct.
 # Le contenu est chiffré : ce qui est envoyé vient de la documentation de Microsoft, pas d'une lecture.
 # Chargé par OptiGame.ps1 après trafic.ps1.

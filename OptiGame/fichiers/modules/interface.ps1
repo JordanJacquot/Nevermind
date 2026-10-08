@@ -1,4 +1,4 @@
-﻿# OptiGame : chargement de la fenêtre et aides pour l'interface.
+﻿# Nexo : chargement de la fenêtre et aides pour l'interface.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -14,7 +14,8 @@ foreach ($node in $Xaml.SelectNodes('//*[@*[local-name()="Name"]]')) {
 }
 $ui.Tabs = $Window.FindName('Tabs')
 
-$Colors = @{ ok = '#22D37A'; warn = '#F5A524'; bad = '#F04438'; info = '#4EA8FF' }
+# ok, warn, bad : états (vert = tout va bien) ; accent et accent2 : couleurs de la marque Nexo (cyan, magenta)
+$Colors = @{ ok = '#22D37A'; warn = '#F5A524'; bad = '#F04438'; info = '#4EA8FF'; accent = '#00D9F5'; accent2 = '#FF2EB5' }
 $BusyButtons = 'BtnAnalyze', 'BtnSelectAll', 'BtnApply', 'BtnRefreshStartup', 'BtnDisableStartup',
                'BtnPing', 'BtnDnsApply', 'BtnDnsFlush', 'BtnCleanScan', 'BtnClean', 'BtnUndo', 'BtnRestorePoint', 'BtnExport'
 
@@ -67,11 +68,11 @@ function Set-Busy([bool]$Busy) {
 }
 
 function Show-Message([string]$Text, [string]$Icon = 'Information') {
-    [System.Windows.MessageBox]::Show($Window, $Text, 'OptiGame', 'OK', $Icon) | Out-Null
+    [System.Windows.MessageBox]::Show($Window, $Text, 'Nexo', 'OK', $Icon) | Out-Null
 }
 
 function Confirm-Action([string]$Text) {
-    ([System.Windows.MessageBox]::Show($Window, $Text, 'OptiGame', 'YesNo', 'Question')) -eq 'Yes'
+    ([System.Windows.MessageBox]::Show($Window, $Text, 'Nexo', 'YesNo', 'Question')) -eq 'Yes'
 }
 
 # Exécute une action en affichant les erreurs au lieu de planter.
@@ -250,7 +251,7 @@ $SecDataWork = {
         foreach ($act in @($t2.Actions)) {
             $exe = [Environment]::ExpandEnvironmentVariables([string]$act.Execute).Trim('"')
             $argsTxt = [string]$act.Arguments
-            # Lancement d'OptiGame au démarrage : notre propre tâche (même nom ET même script), pas une menace
+            # Lancement de Nexo au démarrage : notre propre tâche (même nom ET même script), pas une menace
             if ($a.OwnTask -and $t2.TaskName -eq $a.OwnTask -and $t2.TaskPath -eq '\' -and $exe -match '\\WindowsPowerShell\\v1\.0\\powershell\.exe$' -and $argsTxt -eq "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$($a.OwnScript)`" -Demarrage") { continue }
             $hiddenCmd = $exe -match '(powershell|pwsh|cmd|wscript|cscript|mshta)(\.exe)?$' -and $argsTxt -match '(-enc|-encodedcommand|frombase64|downloadstring|downloadfile|invoke-expression|\biex\b|-w(indowstyle)?\s+h(idden)?|http)'
             $riskPath = $exe -like "$($a.Temp)*" -or $exe -like "$($a.Public)*"

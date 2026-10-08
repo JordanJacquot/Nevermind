@@ -1,4 +1,4 @@
-﻿# OptiGame : mesures en direct, onglets Gaming, Démarrage, Connexion, Nettoyage et Sauvegarde.
+﻿# Nexo : mesures en direct, onglets Gaming, Démarrage, Connexion, Nettoyage et Sauvegarde.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ function Set-GamingSubPage($Page) {
         $pages[$i].Visibility = if ($i -eq $Index) { 'Visible' } else { 'Collapsed' }
         $b = $script:GTabs[$i]
         if ($b) {
-            $b.Background = Get-Brush $(if ($i -eq $Index) { '#22D37A' } else { '#1A1F29' })
+            $b.Background = Get-Brush $(if ($i -eq $Index) { $Colors.accent } else { '#1A1F29' })
             $b.Child.Foreground = Get-Brush $(if ($i -eq $Index) { '#0B0D10' } else { '#C9CED8' })
         }
     }
@@ -212,14 +212,14 @@ function New-RestorePoint {
     # Windows refuse sinon plus d'un point de restauration par 24 h.
     Set-Reg 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' 'SystemRestorePointCreationFrequency' 0
     $r = Invoke-Async {
-        try { Checkpoint-Computer -Description 'OptiGame' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; 'OK' }
+        try { Checkpoint-Computer -Description 'Nexo' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; 'OK' }
         catch { $_.Exception.Message }
     }
     if ("$r" -eq 'OK') { Set-Status 'Point de restauration créé.'; return $true }
     Write-Log "Point de restauration: $r"
     Confirm-Action ("Impossible de créer le point de restauration.`n`nMotif: $r`n`n" +
         "La protection du système est peut-être désactivée sur ce PC. Tu peux quand même continuer: " +
-        "OptiGame garde une sauvegarde de chaque réglage modifié et peut tout annuler depuis l'onglet Sauvegarde.`n`nContinuer ?")
+        "Nexo garde une sauvegarde de chaque réglage modifié et peut tout annuler depuis l'onglet Sauvegarde.`n`nContinuer ?")
 }
 
 function Invoke-ApplyTweaks {
@@ -685,15 +685,15 @@ function Get-BackupCount {
 function Update-BackupSummary {
     $n = Get-BackupCount
     $ui.BackupSummary.Text = if ($n) {
-        "$n réglage$(if ($n -gt 1) {'s'}) modifié$(if ($n -gt 1) {'s'}) par OptiGame. Un clic remet tout comme avant."
+        "$n réglage$(if ($n -gt 1) {'s'}) modifié$(if ($n -gt 1) {'s'}) par Nexo. Un clic remet tout comme avant."
     } else {
-        "OptiGame n'a encore rien modifié sur ce PC."
+        "Nexo n'a encore rien modifié sur ce PC."
     }
 }
 
 function Invoke-UndoAll {
     if (-not (Get-BackupCount)) { Show-Message "Il n'y a aucun changement à annuler."; return }
-    if (-not (Confirm-Action "Remettre tous les réglages modifiés par OptiGame comme ils étaient avant ?")) { return }
+    if (-not (Confirm-Action "Remettre tous les réglages modifiés par Nexo comme ils étaient avant ?")) { return }
     Set-Busy $true
     Set-Status 'Restauration des réglages...'
     $errors = Restore-AllSettings
@@ -713,7 +713,7 @@ function Export-Report {
     $a = $script:LastAnalysis
     $dlg = New-Object Microsoft.Win32.SaveFileDialog
     $dlg.Filter = 'Page web (*.html)|*.html'
-    $dlg.FileName = "Rapport OptiGame $env:COMPUTERNAME $(Get-Date -Format 'yyyy-MM-dd').html"
+    $dlg.FileName = "Rapport Nexo $env:COMPUTERNAME $(Get-Date -Format 'yyyy-MM-dd').html"
     $dlg.InitialDirectory = [Environment]::GetFolderPath('Desktop')
     if ($dlg.ShowDialog($Window) -ne $true) { return }
 
@@ -745,11 +745,11 @@ function Export-Report {
     $html = @"
 <!DOCTYPE html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rapport OptiGame</title>
+<title>Rapport Nexo</title>
 <style>
 body{margin:0;background:#0E1014;color:#E6E8EE;font:15px/1.5 'Segoe UI',system-ui,sans-serif}
 main{max-width:860px;margin:0 auto;padding:32px 16px}
-h1{margin:0;font-size:28px}h1 span{color:#22D37A}
+h1{margin:0;font-size:28px}h1 span{color:#00D9F5}
 h2{margin:32px 0 12px;font-size:18px}
 .sub{color:#9AA3B2}
 .score{display:flex;align-items:center;gap:20px;background:#181C24;border:1px solid #232937;border-radius:12px;padding:20px;margin-top:24px}

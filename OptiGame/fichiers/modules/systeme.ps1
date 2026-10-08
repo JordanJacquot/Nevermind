@@ -1,4 +1,4 @@
-﻿# OptiGame : connexion active, nettoyage, restauration et désinstallation.
+﻿# Nexo : connexion active, nettoyage, restauration et désinstallation.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -90,13 +90,13 @@ foreach ($p in $paths) {
 @{ Freed = $freed; Deleted = $del; Skipped = $skip; Errors = $err; Log = $log.ToArray() }
 '@)
 
-# Nettoie les catégories et écrit le journal (dossier « nettoyage » des données d'OptiGame, 10 derniers gardés)
+# Nettoie les catégories et écrit le journal (dossier « nettoyage » des données de Nexo, 10 derniers gardés)
 function Invoke-CleanTargets([array]$Targets) {
     $now = Get-Date
     $dir = Join-Path $DataDir 'nettoyage'
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add("Nettoyage OptiGame du $($now.ToString('dd/MM/yyyy à HH:mm:ss'))")
+    $lines.Add("Nettoyage Nexo du $($now.ToString('dd/MM/yyyy à HH:mm:ss'))")
     $lines.Add('SUPPRIMÉ : effacé.  LAISSÉ : utilisé par un programme, il sera effacé une prochaine fois.  REFUSÉ : Windows n''autorise pas à l''effacer.')
     $tot = @{ Freed = 0.0; Deleted = 0; Skipped = 0; Errors = 0 }
     foreach ($t in $Targets) {
@@ -128,7 +128,7 @@ function Format-Size([double]$Bytes) {
 }
 
 # ---------------------------------------------------------------------------
-# Restauration de tous les réglages modifiés par OptiGame
+# Restauration de tous les réglages modifiés par Nexo
 # ---------------------------------------------------------------------------
 function Restore-AllSettings {
     $errors = @()
@@ -148,7 +148,7 @@ function Restore-AllSettings {
             }
         } catch { $errors += "$($e.Path)\$($e.Name): $($_.Exception.Message)" }
     }
-    # Services arrêtés par OptiGame (télémétrie) : état d'origine
+    # Services arrêtés par Nexo (télémétrie) : état d'origine
     foreach ($l in @(Get-Setting 'SvcOriginal' @())) {
         $x = ([string]$l) -split '\|'
         try {
@@ -191,14 +191,16 @@ function Restore-AllSettings {
 # ---------------------------------------------------------------------------
 # Raccourci sur le bureau et lancement au démarrage du PC
 # ---------------------------------------------------------------------------
-# Le démarrage passe par une tâche planifiée « avec les droits les plus élevés » : OptiGame s'ouvre
+# Le démarrage passe par une tâche planifiée « avec les droits les plus élevés » : Nexo s'ouvre
 # sans la demande d'autorisation de Windows (une simple entrée « Exécuter » la ferait apparaître à chaque démarrage).
-$AutoStartTask = 'OptiGame (démarrage)'
+$AutoStartTask = 'Nexo (démarrage)'
+$OldAutoStartTask = 'OptiGame (démarrage)'   # nom avant le passage à Nexo (1.0.56)
 
 function Get-AppRoot { if ((Split-Path $AppDir -Leaf) -eq 'fichiers') { Split-Path $AppDir -Parent } else { $AppDir } }
-function Get-DesktopShortcutPath {
+function Get-AppExe { Join-Path (Get-AppRoot) 'Nexo.exe' }
+function Get-DesktopShortcutPath([string]$Name = 'Nexo') {
     $desk = if ($script:DesktopDir) { $script:DesktopDir } else { [Environment]::GetFolderPath('Desktop') }
-    Join-Path $desk 'OptiGame.lnk'
+    Join-Path $desk "$Name.lnk"
 }
 
 # Cible d'un raccourci (vide s'il n'existe pas ou est illisible)
@@ -210,19 +212,19 @@ function Get-ShortcutTarget([string]$Path) {
     } catch { '' }
 }
 
-function Test-DesktopShortcut { (Get-ShortcutTarget (Get-DesktopShortcutPath)) -eq (Join-Path (Get-AppRoot) 'OptiGame.exe') }
+function Test-DesktopShortcut { (Get-ShortcutTarget (Get-DesktopShortcutPath)) -eq (Get-AppExe) }
 
 function New-DesktopShortcut {
     $root = Get-AppRoot
-    $exe = Join-Path $root 'OptiGame.exe'
-    if (-not (Test-Path -LiteralPath $exe)) { throw "OptiGame.exe est introuvable dans le dossier $root." }
+    $exe = Get-AppExe
+    if (-not (Test-Path -LiteralPath $exe)) { throw "Nexo.exe est introuvable dans le dossier $root." }
     $sh = New-Object -ComObject WScript.Shell
     try {
         $lnk = $sh.CreateShortcut((Get-DesktopShortcutPath))
         $lnk.TargetPath = $exe
         $lnk.WorkingDirectory = $root
         $lnk.IconLocation = "$exe,0"
-        $lnk.Description = 'OptiGame : analyse et optimisation gaming'
+        $lnk.Description = 'Nexo : ton PC, tes jeux, ton réseau'
         $lnk.Save()
     } finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($sh) }
 }
@@ -242,10 +244,38 @@ function Set-AutoStart([bool]$On) {
     $trg.Delay = 'PT15S'   # laisse Windows finir d'ouvrir la session
     $pr = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
     $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
-    Register-ScheduledTask -TaskName $AutoStartTask -Action $act -Trigger $trg -Principal $pr -Settings $set -Description 'Lance OptiGame à l''ouverture de session, réduit près de l''horloge. Se règle dans OptiGame, page Sauvegarde.' -Force -ErrorAction Stop | Out-Null
+    Register-ScheduledTask -TaskName $AutoStartTask -Action $act -Trigger $trg -Principal $pr -Settings $set -Description 'Lance Nexo à l''ouverture de session, réduit près de l''horloge. Se règle dans Nexo, page Sauvegarde.' -Force -ErrorAction Stop | Out-Null
 }
 
-# Dossier d'OptiGame déplacé ou renommé : la tâche de démarrage suit
+# Passage d'OptiGame à Nexo : l'ancienne tâche de démarrage, l'ancien raccourci du bureau et les anciens
+# lanceurs (OptiGame.exe) sont remplacés. Seulement ce qui appartient à cette installation.
+function Invoke-NexoMigration {
+    $root = Get-AppRoot
+    $newExe = Get-AppExe
+    if (-not (Test-Path -LiteralPath $newExe)) { return }   # pas encore de Nexo.exe (copie de développement)
+    try {
+        $old = Get-ScheduledTask -TaskName $OldAutoStartTask -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($old) {
+            Set-AutoStart $true
+            Unregister-ScheduledTask -TaskName $OldAutoStartTask -Confirm:$false -ErrorAction Stop
+            Write-Log 'Nexo : tâche de démarrage renommée'
+        }
+    } catch { Write-Log "Nexo, tâche de démarrage : $_" }
+    try {
+        $oldLnk = Get-DesktopShortcutPath 'OptiGame'
+        if ((Get-ShortcutTarget $oldLnk) -eq (Join-Path $root 'OptiGame.exe')) {
+            New-DesktopShortcut
+            [IO.File]::Delete($oldLnk)
+            Write-Log 'Nexo : raccourci du bureau remplacé'
+        }
+    } catch { Write-Log "Nexo, raccourci : $_" }
+    foreach ($n in 'OptiGame.exe', 'Désinstaller OptiGame.exe') {
+        $p = Join-Path $root $n
+        if (Test-Path -LiteralPath $p) { try { [IO.File]::Delete($p); Write-Log "Nexo : ancien lanceur retiré ($n)" } catch {} }
+    }
+}
+
+# Dossier de Nexo déplacé ou renommé : la tâche de démarrage suit
 function Update-AutoStartPath {
     $t = Get-AutoStartTask
     if (-not $t) { return }
@@ -262,36 +292,41 @@ function Invoke-Uninstall {
     Import-Backup
     $n = $script:Backup.Registry.Count + $script:Backup.Dns.Count + $script:Backup.Displays.Count + $(if ($script:Backup.PowerScheme) { 1 } else { 0 }) + $(if ($script:Backup.Overlay) { 1 } else { 0 })
     $steps = @()
-    if ($n) { $steps += "  - remettre les $n réglage$(if ($n -gt 1) {'s'}) de Windows modifié$(if ($n -gt 1) {'s'}) par OptiGame comme avant" }
+    if ($n) { $steps += "  - remettre les $n réglage$(if ($n -gt 1) {'s'}) de Windows modifié$(if ($n -gt 1) {'s'}) par Nexo comme avant" }
     $steps += "  - supprimer ses données (sauvegarde, journal, préférences)"
     if ((Test-AutoStart) -or (Test-DesktopShortcut)) { $steps += "  - retirer son raccourci du bureau et son lancement au démarrage" }
-    $steps += "  - supprimer les fichiers d'OptiGame de ce dossier"
-    $q = "Désinstaller OptiGame ?`n`nL'application va :`n" + ($steps -join "`n") + "`n`nLes points de restauration Windows sont conservés."
-    if ([System.Windows.MessageBox]::Show($q, 'Désinstaller OptiGame', 'YesNo', 'Question') -ne 'Yes') { return }
+    $steps += "  - supprimer les fichiers de Nexo de ce dossier"
+    $q = "Désinstaller Nexo ?`n`nL'application va :`n" + ($steps -join "`n") + "`n`nLes points de restauration Windows sont conservés."
+    if ([System.Windows.MessageBox]::Show($q, 'Désinstaller Nexo', 'YesNo', 'Question') -ne 'Yes') { return }
 
     $errors = @()
     if ($n) { $errors += Restore-AllSettings }
     try { Remove-Item -LiteralPath $DataDir -Recurse -Force -ErrorAction Stop } catch { $errors += "Données: $($_.Exception.Message)" }
     try { Set-AutoStart $false } catch { $errors += "Démarrage automatique: $($_.Exception.Message)" }
+    try { if (Get-ScheduledTask -TaskName $OldAutoStartTask -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $OldAutoStartTask -Confirm:$false -ErrorAction Stop } } catch {}
     if (Test-DesktopShortcut) { try { [IO.File]::Delete((Get-DesktopShortcutPath)) } catch {} }
 
-    # Fichiers de l'application: uniquement ceux livrés avec OptiGame, jamais le reste du dossier.
+    # Fichiers de l'application: uniquement ceux livrés avec Nexo, jamais le reste du dossier.
     $here = $AppDir
     $root = if ((Split-Path $here -Leaf) -eq 'fichiers') { Split-Path $here -Parent } else { $here }
     $files = @(
+        (Join-Path $root 'Nexo.exe'),
+        (Join-Path $root 'Désinstaller Nexo.exe'),
         (Join-Path $root 'OptiGame.exe'),
         (Join-Path $root 'Désinstaller OptiGame.exe'),
         (Join-Path $root 'LISEZMOI.txt'),
         (Join-Path $here 'OptiGame.ps1'),
         (Join-Path $here 'OptiGame.ico'),
+        (Join-Path $here 'Lancer Nexo (secours).bat'),
+        (Join-Path $here 'Désinstaller Nexo (secours).bat'),
         (Join-Path $here 'Lancer OptiGame (secours).bat'),
         (Join-Path $here 'Désinstaller OptiGame (secours).bat')
     ) | Select-Object -Unique | Where-Object { Test-Path -LiteralPath $_ }
 
-    $msg = 'OptiGame est désinstallé.'
+    $msg = 'Nexo est désinstallé.'
     if ($n) { $msg += "`n`nRedémarre le PC pour que tous les réglages d'origine soient pris en compte." }
     if ($errors) { $msg += "`n`nCertains éléments n'ont pas pu être restaurés :`n" + ($errors -join "`n") }
-    [System.Windows.MessageBox]::Show($msg, 'OptiGame', 'OK', 'Information') | Out-Null
+    [System.Windows.MessageBox]::Show($msg, 'Nexo', 'OK', 'Information') | Out-Null
 
     # Les fichiers sont supprimés juste après la fermeture de ce script (ils sont en cours d'utilisation).
     $cmd = 'ping 127.0.0.1 -n 4 >nul'

@@ -1,5 +1,5 @@
-﻿# Génère les icônes d'OptiGame (jauge verte sur fond sombre).
-#   OptiGame.ico              icône de l'application
+﻿# Génère les icônes de Nexo : un N blanc « glitch » (échos cyan et magenta, tranches décalées) sur fond sombre.
+#   OptiGame.ico              icône de l'application (nom de fichier gardé pour les mises à jour)
 #   OptiGame-desinstaller.ico même icône avec un badge rouge
 param([string]$OutDir = (Join-Path $PSScriptRoot 'icones'))
 
@@ -17,10 +17,24 @@ function New-RoundedRect([float]$x, [float]$y, [float]$w, [float]$h, [float]$r) 
     $p
 }
 
-function New-Pen([string]$Hex, [float]$Width) {
-    $pen = New-Object Drawing.Pen ([Drawing.ColorTranslator]::FromHtml($Hex)), $Width
-    $pen.StartCap = 'Round'; $pen.EndCap = 'Round'
-    $pen
+function Col([string]$Hex, [int]$Alpha = 255) { $c = [Drawing.ColorTranslator]::FromHtml($Hex); [Drawing.Color]::FromArgb($Alpha, $c.R, $c.G, $c.B) }
+
+# Le N : un trait épais aux bouts arrondis, transformé en forme pleine
+function New-NPath([float]$s) {
+    $p = New-Object Drawing.Drawing2D.GraphicsPath
+    $x = $s * 0.32; $y = $s * 0.28; $w = $s * 0.36; $h = $s * 0.44
+    $p.AddLines([Drawing.PointF[]]@([Drawing.PointF]::new($x, $y + $h), [Drawing.PointF]::new($x, $y), [Drawing.PointF]::new($x + $w, $y + $h), [Drawing.PointF]::new($x + $w, $y)))
+    $pen = New-Object Drawing.Pen ([Drawing.Color]::Black), ([float]($s * 0.13))
+    $pen.StartCap = 'Round'; $pen.EndCap = 'Round'; $pen.LineJoin = 'Round'
+    $p.Widen($pen)
+    $p
+}
+
+function Fill-Shifted($g, $path, $brush, [float]$dx) {
+    $m = New-Object Drawing.Drawing2D.Matrix
+    $m.Translate($dx, 0)
+    $c = $path.Clone(); $c.Transform($m)
+    $g.FillPath($brush, $c)
 }
 
 function New-IconBitmap([int]$s, [bool]$Uninstall) {
@@ -30,34 +44,43 @@ function New-IconBitmap([int]$s, [bool]$Uninstall) {
     $g.PixelOffsetMode = 'HighQuality'
     $g.Clear([Drawing.Color]::Transparent)
 
-    # Fond: carré arrondi sombre
+    # Fond : carré arrondi sombre, liseré discret
     $m = [math]::Max(0.5, $s * 0.03)
     $bg = New-RoundedRect $m $m ($s - 2 * $m) ($s - 2 * $m) ($s * 0.22)
-    $grad = New-Object Drawing.Drawing2D.LinearGradientBrush ([Drawing.PointF]::new(0, 0)), ([Drawing.PointF]::new(0, $s)),
-        ([Drawing.ColorTranslator]::FromHtml('#252C39')), ([Drawing.ColorTranslator]::FromHtml('#0E1014'))
-    $g.FillPath($grad, $bg)
-    if ($s -ge 32) { $g.DrawPath((New-Object Drawing.Pen ([Drawing.ColorTranslator]::FromHtml('#343C4C')), ([float]($s / 64))), $bg) }
+    $bgBrush = New-Object Drawing.Drawing2D.LinearGradientBrush ([Drawing.PointF]::new(0, 0)), ([Drawing.PointF]::new(0, $s)), (Col '#1D1C2B'), (Col '#07070A')
+    $g.FillPath($bgBrush, $bg)
+    if ($s -ge 32) { $g.DrawPath((New-Object Drawing.Pen (Col '#FFFFFF' 50), ([float]($s / 128))), $bg) }
+    $g.SetClip($bg)
+    # Lignes d'écran (seulement en grand, invisibles en petit)
+    if ($s -ge 64) { for ($y = 0.08; $y -lt 0.95; $y += 0.03) { $g.FillRectangle((New-Object Drawing.SolidBrush (Col '#FFFFFF' 12)), 0, [float]($s * $y), $s, [float][math]::Max(1, $s * 0.006)) } }
 
-    # Jauge
-    $cx = $s / 2; $cy = $s * 0.56; $r = $s * 0.30
-    $arcRect = [Drawing.RectangleF]::new($cx - $r, $cy - $r, 2 * $r, 2 * $r)
-    $w = [math]::Max(1.6, $s * 0.105)
-    $g.DrawArc((New-Pen '#2E3544' $w), $arcRect, 135, 270)
-    $g.DrawArc((New-Pen '#22D37A' $w), $arcRect, 135, 205)
+    # Le N et ses échos de couleur (au moins un pixel de décalage, même en 16 px)
+    $n = New-NPath $s
+    $dx = [float][math]::Max(1, $s * 0.03)
+    Fill-Shifted $g $n (New-Object Drawing.SolidBrush (Col '#00E5FF' 225)) (-$dx)
+    Fill-Shifted $g $n (New-Object Drawing.SolidBrush (Col '#FF2EB5' 225)) $dx
+    $g.FillPath([Drawing.Brushes]::White, $n)
 
-    # Aiguille
-    $a = (135 + 205) * [math]::PI / 180
-    $len = $r * 0.80
-    $g.DrawLine((New-Pen '#FFFFFF' ([math]::Max(1.2, $s * 0.065))), [float]$cx, [float]$cy, [float]($cx + $len * [math]::Cos($a)), [float]($cy + $len * [math]::Sin($a)))
-    $hub = [math]::Max(1.5, $s * 0.075)
-    $g.FillEllipse([Drawing.Brushes]::White, [float]($cx - $hub), [float]($cy - $hub), [float](2 * $hub), [float](2 * $hub))
+    # Tranches décalées : l'effet « glitch » (à partir de 32 px, sinon c'est du bruit)
+    if ($s -ge 32) {
+        foreach ($band in @(@(0.40, 0.05, 0.05), @(0.60, 0.035, -0.04))) {
+            $r = [Drawing.RectangleF]::new(0, [float]($s * $band[0]), $s, [float][math]::Max(1, $s * $band[1]))
+            $g.SetClip($r, 'Intersect')
+            $g.FillRectangle($bgBrush, $r)
+            Fill-Shifted $g $n (New-Object Drawing.SolidBrush (Col '#00E5FF')) ([float]($s * $band[2]))
+            Fill-Shifted $g $n ([Drawing.Brushes]::White) ([float]($s * $band[2] * 0.6))
+            $g.ResetClip(); $g.SetClip($bg)
+        }
+    }
+    $g.ResetClip()
 
     # Badge rouge pour le désinstalleur
     if ($Uninstall) {
         $br = $s * 0.23; $bx = $s - $br - $s * 0.02; $by = $s - $br - $s * 0.02
-        $g.FillEllipse((New-Object Drawing.SolidBrush ([Drawing.ColorTranslator]::FromHtml('#0E1014'))), [float]($bx - $br - $s * 0.03), [float]($by - $br - $s * 0.03), [float](2 * $br + $s * 0.06), [float](2 * $br + $s * 0.06))
-        $g.FillEllipse((New-Object Drawing.SolidBrush ([Drawing.ColorTranslator]::FromHtml('#F04438'))), [float]($bx - $br), [float]($by - $br), [float](2 * $br), [float](2 * $br))
-        $g.DrawLine((New-Pen '#FFFFFF' ([math]::Max(1.2, $s * 0.07))), [float]($bx - $br * 0.5), [float]$by, [float]($bx + $br * 0.5), [float]$by)
+        $g.FillEllipse((New-Object Drawing.SolidBrush (Col '#0E1014')), [float]($bx - $br - $s * 0.03), [float]($by - $br - $s * 0.03), [float](2 * $br + $s * 0.06), [float](2 * $br + $s * 0.06))
+        $g.FillEllipse((New-Object Drawing.SolidBrush (Col '#F04438')), [float]($bx - $br), [float]($by - $br), [float](2 * $br), [float](2 * $br))
+        $pen = New-Object Drawing.Pen ([Drawing.Color]::White), ([float][math]::Max(1.2, $s * 0.07)); $pen.StartCap = 'Round'; $pen.EndCap = 'Round'
+        $g.DrawLine($pen, [float]($bx - $br * 0.5), [float]$by, [float]($bx + $br * 0.5), [float]$by)
     }
     $g.Dispose()
     $bmp
@@ -93,18 +116,17 @@ function Save-Ico([string]$Path, [bool]$Uninstall) {
 Save-Ico (Join-Path $OutDir 'OptiGame.ico') $false
 Save-Ico (Join-Path $OutDir 'OptiGame-desinstaller.ico') $true
 
-# Aperçu pour vérifier le rendu à plusieurs tailles
-$prev = New-Object Drawing.Bitmap 560, 300
+# Aperçu pour vérifier le rendu à plusieurs tailles, sur fond clair et sombre
+$prev = New-Object Drawing.Bitmap 600, 320
 $g = [Drawing.Graphics]::FromImage($prev)
-$g.Clear([Drawing.ColorTranslator]::FromHtml('#F3F3F3'))
+$g.Clear((Col '#F3F3F3'))
+$g.FillRectangle((New-Object Drawing.SolidBrush (Col '#202020')), 300, 0, 300, 320)
 $x = 10
-foreach ($s in 256, 64, 32, 16) {
-    $g.DrawImage((New-IconBitmap $s $false), $x, 10, $s, $s)
-    $x += $s + 14
-}
-$g.DrawImage((New-IconBitmap 128 $true), 10, 160, 128, 128)
-$g.DrawImage((New-IconBitmap 48 $true), 150, 200, 48, 48)
-$g.DrawImage((New-IconBitmap 32 $true), 210, 208, 32, 32)
+foreach ($s in 128, 64, 32, 16) { $g.DrawImage((New-IconBitmap $s $false), $x, 10, $s, $s); $x += $s + 10 }
+$x = 310
+foreach ($s in 128, 64, 32, 16) { $g.DrawImage((New-IconBitmap $s $false), $x, 10, $s, $s); $x += $s + 10 }
+$g.DrawImage((New-IconBitmap 128 $true), 10, 170, 128, 128)
+$g.DrawImage((New-IconBitmap 32 $true), 150, 220, 32, 32)
 $g.Dispose()
 $prev.Save((Join-Path $OutDir 'apercu.png'), [Drawing.Imaging.ImageFormat]::Png)
 'icônes créées'

@@ -1,4 +1,4 @@
-﻿# OptiGame : diagnostic du lag en ligne. Pendant une partie (ou un test de 30 s), mesure chaque
+﻿# Nexo : diagnostic du lag en ligne. Pendant une partie (ou un test de 30 s), mesure chaque
 # étape du chemin : PC vers box, box vers fournisseur, Internet, serveur du jeu. Puis explique d'où
 # vient le lag (Wi-Fi, téléchargement, box, serveur loin) et propose des corrections.
 # Chargé par OptiGame.ps1 après jeu.ps1 et trafic.ps1.
@@ -346,12 +346,12 @@ function Get-LagDiagnosis($R) {
             }
             $f += @{ Status = $rS; Title = 'Un téléchargement sature ta connexion'
                 Detail = "Pendant les pics de ping, ton PC téléchargeait ou envoyait en même temps : $names. La connexion était pleine, les paquets du jeu attendaient leur tour."
-                Tips = @('Dans Steam : Paramètres, Téléchargements, décoche « Autoriser les téléchargements pendant une partie ».', 'Active le Mode jeu d''OptiGame : il ferme les launchers et la synchronisation pendant tes parties.', 'Lance tes mises à jour et téléchargements avant ou après tes parties.')
+                Tips = @('Dans Steam : Paramètres, Téléchargements, décoche « Autoriser les téléchargements pendant une partie ».', 'Active le Mode jeu de Nexo : il ferme les launchers et la synchronisation pendant tes parties.', 'Lance tes mises à jour et téléchargements avant ou après tes parties.')
                 Actions = $acts }
         } else {
             $isp = if ($R.Isp) { " ($($R.Isp))" } else { '' }
             $tips = @('Regarde si quelqu''un de la maison regarde une vidéo, télécharge ou sauvegarde en ligne pendant tes parties.', 'Redémarre ta box : débranche la 30 secondes.', 'Fais le test « Latence en charge » de la page Tests : il montre si ta box gère mal les gros téléchargements.', "Si ça dure plusieurs jours, contacte ton fournisseur$isp avec ces chiffres.")
-            if (-not $R.Etw) { $tips += 'Lance OptiGame en administrateur : il pourra voir si un programme de ce PC télécharge pendant tes parties.' }
+            if (-not $R.Etw) { $tips += 'Lance Nexo en administrateur : il pourra voir si un programme de ce PC télécharge pendant tes parties.' }
             $f += @{ Status = $rS; Title = 'Ta connexion Internet sature ou décroche'
                 Detail = "Ton PC et ta box communiquent bien, mais le ping vers Internet a des pics (jusqu'à $(Format-Ms $ref.P95), $($ref.Loss) % perdus). Soit un autre appareil de la maison utilise beaucoup la connexion, soit ta box ou ton fournisseur a un souci."
                 Tips = $tips }
@@ -384,7 +384,7 @@ function Get-LagDiagnosis($R) {
     # 5. Serveur non repéré
     if (-not $R.Quick -and -not $R.Server) {
         $f += @{ Status = 'info'; Title = 'Serveur du jeu non repéré'
-            Detail = $(if ($R.Etw) { 'Le jeu n''a pas échangé assez avec un serveur pour qu''OptiGame le reconnaisse (menu, partie hors ligne ?).' } else { 'Lance OptiGame en administrateur : il pourra repérer le serveur du jeu (même en UDP) et vérifier s''il est loin.' }) }
+            Detail = $(if ($R.Etw) { 'Le jeu n''a pas échangé assez avec un serveur pour que Nexo le reconnaisse (menu, partie hors ligne ?).' } else { 'Lance Nexo en administrateur : il pourra repérer le serveur du jeu (même en UDP) et vérifier s''il est loin.' }) }
     }
     if (-not @($f | Where-Object { $_.Status -in 'bad', 'warn' }).Count) {
         $parts = @(); if ($gw -and -not $gw.Dead) { $parts += "box $(Format-Ms $gw.Med)" }; if ($ref -and -not $ref.Dead) { $parts += "Internet $(Format-Ms $ref.Med)" }; if ($srv -and -not $srv.Dead) { $parts += "serveur $(Format-Ms $srv.Med)" }
@@ -429,7 +429,7 @@ function Build-LagPanel {
     $card = New-Card
     $card.Margin = New-Thickness 0 0 0 16
     $sp = New-Object System.Windows.Controls.StackPanel
-    [void]$sp.Children.Add((New-SwitchRow 'Mesurer ma connexion quand je joue' 'Pour tes jeux en ligne : OptiGame mesure ta box, Internet et le serveur du jeu pendant la partie, puis t''explique d''où vient le lag.' (Test-LagMeasure) {
+    [void]$sp.Children.Add((New-SwitchRow 'Mesurer ma connexion quand je joue' 'Pour tes jeux en ligne : Nexo mesure ta box, Internet et le serveur du jeu pendant la partie, puis t''explique d''où vient le lag.' (Test-LagMeasure) {
         param($s, $e)
         Set-Setting 'LagMeasure' ([bool]$s.IsChecked)
         if (-not $s.IsChecked -and $script:LagSession -and -not $script:LagSession.Seconds) { Stop-LagSession }
@@ -622,7 +622,7 @@ function Show-LagSession([string]$Id) {
     [void]$body.Children.Add((New-SectionTitle 'LE PING PENDANT LA MESURE'))
     [void]$body.Children.Add((New-LagChart $s))
 
-    [void]$body.Children.Add((New-SectionTitle 'CE QU''OPTIGAME A TROUVÉ'))
+    [void]$body.Children.Add((New-SectionTitle 'CE QUE NEXO A TROUVÉ'))
     foreach ($fd in @($s.Diag.Findings)) {
         $acts = @()
         foreach ($a in @($fd.Actions)) {

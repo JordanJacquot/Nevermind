@@ -1,4 +1,4 @@
-﻿# OptiGame : onglet Tests (disques, processeur, mémoire, carte graphique, réseau, écrans).
+﻿# Nexo : onglet Tests (disques, processeur, mémoire, carte graphique, réseau, écrans).
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------

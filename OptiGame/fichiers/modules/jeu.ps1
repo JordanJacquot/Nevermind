@@ -1,4 +1,4 @@
-﻿# OptiGame : mode jeu automatique, profils par jeu et alerte de température.
+﻿# Nexo : mode jeu automatique, profils par jeu et alerte de température.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ function Add-CustomGame([string]$Exe, [string]$Name) {
     $list = @(@(Get-Setting 'CustomGames' @()) | Where-Object { $_ -and [string]$_.Exe -ne $Exe })
     Set-Setting 'CustomGames' @($list + @{ Name = $Name; Exe = $Exe })
     Update-GameCache
-    Set-Status "$Name ajouté à tes jeux : OptiGame le reconnaîtra à son lancement."
+    Set-Status "$Name ajouté à tes jeux : Nexo le reconnaîtra à son lancement."
 }
 
 function Remove-CustomGame([string]$Exe) {
@@ -215,7 +215,7 @@ function Build-GameModeCard {
         [void]$wrap.Children.Add($cb)
     }
     [void]$sp.Children.Add($wrap)
-    $n = New-Text 'Ne coche pas le launcher du jeu auquel tu joues (Epic, EA, Ubisoft). Marche tant qu''OptiGame est ouvert, même réduit.' 12 '#5B6475'
+    $n = New-Text 'Ne coche pas le launcher du jeu auquel tu joues (Epic, EA, Ubisoft). Marche tant que Nexo est ouvert, même réduit.' 12 '#5B6475'
     $n.Margin = New-Thickness 0 4 0 0
     [void]$sp.Children.Add($n)
     $card.Child = $sp
@@ -268,7 +268,7 @@ function Build-GameProfiles {
     $srcs = @($games | Group-Object { if ($_.Source) { $_.Source } else { 'Steam' } } | Sort-Object Count -Descending | ForEach-Object { "$($_.Name) $($_.Count)" })
     $hl = New-Object System.Windows.Controls.StackPanel
     [void]$hl.Children.Add((New-Text $(if ($games.Count) { "$($games.Count) jeu$(if ($games.Count -gt 1) {'x'}) reconnu$(if ($games.Count -gt 1) {'s'}) : $($srcs -join ', ')." } else { 'Aucun jeu trouvé sur ce PC.' }) 13 '#FFFFFF' -Semi))
-    $intro = New-Text 'Un jeu manque (jeu autonome, itch.io, émulateur...) ? Ajoute le : OptiGame le reconnaîtra à son lancement (mode jeu, FPS, lag). Les réglages ci dessous sont appliqués à chaque lancement, même OptiGame fermé ; « Priorité haute » : le jeu passe avant les autres programmes.' 12 '#9AA3B2'
+    $intro = New-Text 'Un jeu manque (jeu autonome, itch.io, émulateur...) ? Ajoute le : Nexo le reconnaîtra à son lancement (mode jeu, FPS, lag). Les réglages ci dessous sont appliqués à chaque lancement, même Nexo fermé ; « Priorité haute » : le jeu passe avant les autres programmes.' 12 '#9AA3B2'
     $intro.Margin = New-Thickness 0 2 0 0
     [void]$hl.Children.Add($intro)
     Add-ToGrid $hd $hl 0
@@ -441,7 +441,7 @@ function Show-FpsOverlay {
     $w.Background = [System.Windows.Media.Brushes]::Transparent
     $w.Topmost = $true; $w.ShowInTaskbar = $false; $w.ShowActivated = $false; $w.Focusable = $false
     $w.SizeToContent = 'WidthAndHeight'; $w.ResizeMode = 'NoResize'; $w.IsHitTestVisible = $false
-    $w.Title = 'OptiGame FPS'
+    $w.Title = 'Nexo FPS'
     $c = New-FpsOverlayContent (Get-FpsOverlayStyle)
     $w.Content = $c.Root
     $w.Add_SourceInitialized({ param($s, $e) try { [OGNative]::MakeOverlay((New-Object System.Windows.Interop.WindowInteropHelper $s).Handle) } catch {} })
@@ -482,7 +482,7 @@ function Set-OverlayPosition([int]$ProcId) {
     $h = [IntPtr]::Zero
     try { $h = (Get-Process -Id $ProcId -ErrorAction Stop).MainWindowHandle } catch {}
     $scr = if ($h -ne [IntPtr]::Zero) { [System.Windows.Forms.Screen]::FromHandle($h) } else { [System.Windows.Forms.Screen]::PrimaryScreen }
-    # Échelle de l'écran : celle du compteur s'il est affiché (la fenêtre d'OptiGame peut être cachée près de l'horloge)
+    # Échelle de l'écran : celle du compteur s'il est affiché (la fenêtre de Nexo peut être cachée près de l'horloge)
     $src = [System.Windows.PresentationSource]::FromVisual($o.Win)
     if (-not $src) { $src = [System.Windows.PresentationSource]::FromVisual($Window) }
     $k = if ($src) { $src.CompositionTarget.TransformToDevice.M11 } else { 1.0 }
@@ -534,7 +534,7 @@ function Stop-FpsTarget {
     Build-FpsPanel
     $open = { Show-Page 1; Set-GamingSubPage 'fps'; Show-FpsSession $saved.Id }.GetNewClosure()
     if ($saved -and (Test-FpsProblem $saved)) {
-        Show-Notify "Partie terminée : $($t.Name)" ('{0:N0} FPS en moyenne, avec des chutes. OptiGame a regardé d''où ça vient : clique ici pour voir et corriger.' -f $s[0]) $open
+        Show-Notify "Partie terminée : $($t.Name)" ('{0:N0} FPS en moyenne, avec des chutes. Nexo a regardé d''où ça vient : clique ici pour voir et corriger.' -f $s[0]) $open
     } else {
         Show-Notify "Partie terminée : $($t.Name)" ('{0} de jeu, {1:N0} FPS en moyenne (1 % bas {2:N0}). Tout était fluide.' -f (Format-PlayTime $s[4]), $s[0], $s[1]) $open
     }
@@ -581,7 +581,7 @@ function Update-FpsTarget {
 # Ctrl+Maj+F : lance ou arrête la mesure sur le jeu au premier plan, quel que soit son launcher.
 function Switch-FpsManual {
     if (-not (Test-FpsMeasure)) {
-        Show-Notify 'Mesure des FPS désactivée' 'Active la dans OptiGame, page Optimisation gaming, onglet Mes parties.'
+        Show-Notify 'Mesure des FPS désactivée' 'Active la dans Nexo, page Optimisation gaming, onglet Mes parties.'
         return
     }
     if ($script:FpsTarget) {
@@ -672,7 +672,7 @@ function Test-FpsProblem($S) {
     ($S.Avg -lt 60) -or ($S.Low1 -lt 0.5 * $S.Avg) -or ($perMin -gt 6)
 }
 
-# Date du dernier changement fait par OptiGame (non annulé).
+# Date du dernier changement fait par Nexo (non annulé).
 function Get-LastChangeDate {
     if ($null -eq $script:History) { Import-History }
     foreach ($h in $script:History) {
@@ -769,12 +769,12 @@ function Show-FpsSession([string]$Id) {
         [void]$body.Children.Add((New-SectionTitle 'AVANT / APRÈS TES DERNIERS RÉGLAGES'))
         [void]$body.Children.Add($cmp)
     }
-    # Jeu mesuré avec Ctrl+Maj+F et inconnu d'OptiGame : proposer de l'ajouter pour la prochaine fois
+    # Jeu mesuré avec Ctrl+Maj+F et inconnu de Nexo : proposer de l'ajouter pour la prochaine fois
     $exePath = if ($s.Diag) { [string]$s.Diag.Path } else { '' }
     if ($exePath -and (Test-Path -LiteralPath $exePath) -and -not @($script:Games | Where-Object { @($_.Exes) -contains $exePath }).Count) {
         $ag = New-Grid @('*', 'Auto')
         $ag.Margin = New-Thickness 0 12 0 0
-        $at = New-Text "OptiGame ne connaît pas encore ce jeu : ajoute le pour qu'il soit reconnu tout seul la prochaine fois (mode jeu, FPS, lag)." 12.5 '#C9CED8'
+        $at = New-Text "Nexo ne connaît pas encore ce jeu : ajoute le pour qu'il soit reconnu tout seul la prochaine fois (mode jeu, FPS, lag)." 12.5 '#C9CED8'
         $at.VerticalAlignment = 'Center'
         Add-ToGrid $ag $at 0
         $ab = New-Button 'Ajouter à mes jeux' 'BtnPrimary'
@@ -854,8 +854,8 @@ function Invoke-FpsHelp {
     Show-ResultSheet 'Trouvons d''où viennent tes problèmes de FPS' @(
         '1.  La mesure des FPS est activée.',
         '2.  Lance ton jeu et joue au moins 5 minutes, de préférence là où ça rame.',
-        '3.  Si OptiGame ne reconnaît pas le jeu, appuie sur Ctrl + Maj + F en jeu (ou ajoute le dans Profils par jeu).',
-        '4.  Quitte le jeu : OptiGame t''explique d''où vient le problème et ce qu''il peut régler pour toi.') $null 'OptiGame regarde qui freine (carte graphique ou processeur), la température, la mémoire, le disque et les programmes en arrière plan.'
+        '3.  Si Nexo ne reconnaît pas le jeu, appuie sur Ctrl + Maj + F en jeu (ou ajoute le dans Profils par jeu).',
+        '4.  Quitte le jeu : Nexo t''explique d''où vient le problème et ce qu''il peut régler pour toi.') $null 'Nexo regarde qui freine (carte graphique ou processeur), la température, la mémoire, le disque et les programmes en arrière plan.'
 }
 
 # Onglet « Mes parties »
@@ -989,7 +989,7 @@ function Build-FpsPanel {
     $ob.Add_Click({ Set-GamingSubPage 'overlay' })
     Add-ToGrid $og $ob 1
     [void]$sp.Children.Add($og)
-    if (-not (Test-Path -LiteralPath $PresentMonExe)) { [void]$sp.Children.Add((New-Text 'PresentMon est absent du dossier de l''app : réinstalle OptiGame.' 12.5 $Colors.warn -Semi)) }
+    if (-not (Test-Path -LiteralPath $PresentMonExe)) { [void]$sp.Children.Add((New-Text 'PresentMon est absent du dossier de l''app : réinstalle Nexo.' 12.5 $Colors.warn -Semi)) }
     $card.Child = $sp
     [void]$panel.Children.Add($card)
 

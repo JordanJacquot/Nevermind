@@ -1,4 +1,4 @@
-﻿# OptiGame : historique des changements, signalement d'un problème, visite guidée et nouveautés.
+﻿# Nexo : historique des changements, signalement d'un problème, visite guidée et nouveautés.
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
@@ -143,7 +143,7 @@ function Undo-HistoryEntry([string]$Id) {
 # ---------------------------------------------------------------------------
 # Notifications Windows (bulle près de l'horloge)
 # ---------------------------------------------------------------------------
-# OptiGame tourne en administrateur : tout ce qu'il lance hériterait de ces droits. En passant
+# Nexo tourne en administrateur : tout ce qu'il lance hériterait de ces droits. En passant
 # par l'Explorateur Windows (déjà ouvert en utilisateur normal), le programme démarre sans eux.
 function Open-Url([string]$Target) {
     try { Start-Process -FilePath (Join-Path $env:windir 'explorer.exe') -ArgumentList "`"$Target`"" -ErrorAction Stop }
@@ -177,9 +177,9 @@ function Get-TrayIcon {
         $ni = New-Object System.Windows.Forms.NotifyIcon
         $ico = Join-Path $AppDir 'OptiGame.ico'
         $ni.Icon = if (Test-Path -LiteralPath $ico) { New-Object System.Drawing.Icon (New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))) } else { [System.Drawing.SystemIcons]::Information }
-        $ni.Text = 'OptiGame'
+        $ni.Text = 'Nexo'
         $menu = New-Object System.Windows.Forms.ContextMenuStrip
-        [void]$menu.Items.Add('Ouvrir OptiGame', $null, { Show-MainWindow })
+        [void]$menu.Items.Add('Ouvrir Nexo', $null, { Show-MainWindow })
         [void]$menu.Items.Add('Quitter', $null, { $Window.Close() })
         $ni.ContextMenuStrip = $menu
         $ni.Add_MouseClick({ param($s, $e) if ([string]$e.Button -eq 'Left') { Show-MainWindow } })
@@ -200,7 +200,7 @@ function Hide-ToTray {
     $Window.Hide()
     if (-not (Get-Setting 'TrayHintShown' $false)) {
         Set-Setting 'TrayHintShown' $true
-        Show-Notify 'OptiGame reste ouvert' 'Il continue en arrière plan (mode jeu, mesure des FPS). Clique sur son icône près de l''horloge pour le rouvrir.'
+        Show-Notify 'Nexo reste ouvert' 'Il continue en arrière plan (mode jeu, mesure des FPS). Clique sur son icône près de l''horloge pour le rouvrir.'
     }
 }
 
@@ -210,14 +210,14 @@ function Hide-ToTray {
 function Update-ShortcutCard {
     $has = Test-DesktopShortcut
     $ui.BtnShortcut.Content = if ($has) { 'Recréer le raccourci' } else { 'Créer le raccourci' }
-    $ui.ShortcutStatus.Text = if ($has) { 'Le raccourci OptiGame est sur ton bureau.' } else { 'Mets OptiGame sur ton bureau pour l''ouvrir en un double clic.' }
+    $ui.ShortcutStatus.Text = if ($has) { 'Le raccourci Nexo est sur ton bureau.' } else { 'Mets Nexo sur ton bureau pour l''ouvrir en un double clic.' }
     $ui.ChkAutoStart.IsChecked = Test-AutoStart
 }
 
 function Invoke-CreateShortcut {
     New-DesktopShortcut
     Update-ShortcutCard
-    Set-Status 'Raccourci OptiGame créé sur le bureau.'
+    Set-Status 'Raccourci Nexo créé sur le bureau.'
 }
 
 function Set-AutoStartFromUi([bool]$On) {
@@ -229,7 +229,7 @@ function Set-AutoStartFromUi([bool]$On) {
         return
     }
     Write-Log "Démarrage automatique $(if ($On) { 'activé' } else { 'désactivé' })"
-    Set-Status $(if ($On) { 'OptiGame se lancera au démarrage du PC, réduit près de l''horloge.' } else { 'OptiGame ne se lancera plus au démarrage du PC.' })
+    Set-Status $(if ($On) { 'Nexo se lancera au démarrage du PC, réduit près de l''horloge.' } else { 'Nexo ne se lancera plus au démarrage du PC.' })
 }
 
 function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) {
@@ -264,7 +264,7 @@ function Export-ProblemReport([string]$Dest, [string]$Description) {
     try {
         $os = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
         $info = @(
-            "OptiGame $AppVersion$(if (Get-Setting 'Beta' $false) { ' (versions bêta activées)' })",
+            "Nexo $AppVersion$(if (Get-Setting 'Beta' $false) { ' (versions bêta activées)' })",
             "Date : $(Get-Date -Format 'dd/MM/yyyy HH:mm')",
             "Windows : $($os.ProductName) $($os.DisplayVersion) (build $($os.CurrentBuildNumber).$($os.UBR))",
             "Langue : $((Get-Culture).Name), interface $((Get-UICulture).Name)",
@@ -302,7 +302,7 @@ function Export-ProblemReport([string]$Dest, [string]$Description) {
             if (Test-Path -LiteralPath $p) { Set-Content -LiteralPath (Join-Path $tmp $n) -Value (& $mask (Get-Content -LiteralPath $p -Raw -Encoding UTF8)) -Encoding UTF8 }
         }
         $folder = if ($Dest) { $Dest } else { [Environment]::GetFolderPath('Desktop') }
-        $zip = Join-Path $folder "OptiGame problème $(Get-Date -Format 'yyyy-MM-dd HH.mm').zip"
+        $zip = Join-Path $folder "Nexo problème $(Get-Date -Format 'yyyy-MM-dd HH.mm').zip"
         # Archive créée en arrière plan : la fenêtre ne se fige pas
         [void](Invoke-Async {
             param($a)
@@ -317,7 +317,7 @@ function Export-ProblemReport([string]$Dest, [string]$Description) {
     Set-Status 'Fichier créé sur le bureau.'
     if ($Dest) { return $zip }
     Start-Process explorer.exe -ArgumentList "/select,`"$zip`""
-    Show-Message "Le fichier « $(Split-Path $zip -Leaf) » est sur ton bureau.`n`nEnvoie-le à la personne qui t'a donné OptiGame (par Discord par exemple), avec une phrase qui explique ce qui ne va pas.`n`nIl ne contient ni tes fichiers, ni ton nom, ni tes mots de passe."
+    Show-Message "Le fichier « $(Split-Path $zip -Leaf) » est sur ton bureau.`n`nEnvoie-le à la personne qui t'a donné Nexo (par Discord par exemple), avec une phrase qui explique ce qui ne va pas.`n`nIl ne contient ni tes fichiers, ni ton nom, ni tes mots de passe."
 }
 
 function Show-ReportPanel {
@@ -336,7 +336,7 @@ function Show-ReportPanel {
     $tb.FontSize = 13; $tb.Padding = New-Thickness 8 6 8 6
     $tb.Background = Get-Brush '#0E1116'; $tb.Foreground = Get-Brush '#FFFFFF'; $tb.BorderBrush = Get-Brush '#2C3342'; $tb.CaretBrush = Get-Brush '#FFFFFF'
     [void]$body.Children.Add($tb)
-    $n = New-Text 'OptiGame crée un fichier .zip sur ton bureau avec ta phrase, les infos du PC (Windows, composants, score) et le journal de l''app. Il ne contient ni tes fichiers, ni ton nom, ni tes mots de passe. Envoie-le à la personne qui t''a donné OptiGame (Discord par exemple).' 12 '#9AA3B2'
+    $n = New-Text 'Nexo crée un fichier .zip sur ton bureau avec ta phrase, les infos du PC (Windows, composants, score) et le journal de l''app. Il ne contient ni tes fichiers, ni ton nom, ni tes mots de passe. Envoie-le à la personne qui t''a donné Nexo (Discord par exemple).' 12 '#9AA3B2'
     $n.Margin = New-Thickness 0 10 0 0
     [void]$body.Children.Add($n)
     $wp = New-Object System.Windows.Controls.WrapPanel
@@ -355,8 +355,8 @@ function Show-ReportPanel {
 # Visite guidée (première ouverture) et nouveautés (après une mise à jour)
 # ---------------------------------------------------------------------------
 $TourSteps = @(
-    @{ Title = 'Bienvenue dans OptiGame'; Lines = @(
-        'OptiGame analyse ton PC et le règle pour que tes jeux tournent au mieux.',
+    @{ Title = 'Bienvenue dans Nexo'; Lines = @(
+        'Nexo analyse ton PC et le règle pour que tes jeux tournent au mieux.',
         'Rien n''est modifié sans ton accord : chaque changement passe par un bouton sur lequel tu cliques.') },
     @{ Title = 'Ton score'; Lines = @(
         'Sur l''accueil « Ordinateur », la note Optimisation montre ce qui freine tes jeux.',
@@ -368,7 +368,7 @@ $TourSteps = @(
         'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde garde l''historique : tu peux annuler n''importe quel changement.',
         'Un souci ? Le bouton « Signaler un problème », en haut à droite, crée un fichier à envoyer.',
         'Un réglage introuvable ? Tape-le dans la barre de recherche en haut (ou Ctrl + K) : un clic t''y emmène.',
-        'Page Sauvegarde : crée un raccourci OptiGame sur ton bureau et, si tu veux, lance-le au démarrage du PC.') }
+        'Page Sauvegarde : crée un raccourci Nexo sur ton bureau et, si tu veux, lance-le au démarrage du PC.') }
 )
 
 function Show-Tour {
@@ -408,7 +408,7 @@ function Invoke-WelcomeChecks {
     if (-not $last -and -not $tourDone) {
         # Déjà utilisateur avant l'arrivée de la visite guidée : pas de visite, mais les nouveautés.
         $starts = 0
-        try { $starts = @(Select-String -LiteralPath $LogFile -Pattern 'Démarrage OptiGame' -SimpleMatch).Count } catch {}
+        try { $starts = @(Select-String -LiteralPath $LogFile -Pattern 'Démarrage (OptiGame|Nexo)').Count } catch {}
         if ($starts -gt 1) { Set-Setting 'TourDone' $true; $tourDone = $true; $last = 'précédente' }
     }
     if (-not $tourDone) {
