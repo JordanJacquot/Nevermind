@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.50
+﻿OptiGame 1.0.51
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -48,7 +48,7 @@ CE QUE FAIT L'APPLICATION
 -------------------------
 L'application a deux grandes sections, dans le menu à gauche :
   - Ordinateur : l'accueil, avec une carte pour chaque fonction ci dessous.
-  - Lag en ligne (page Gaming) : pendant tes parties Steam et Epic, ou en
+  - Lag en ligne (page Gaming) : pendant tes parties, ou en
     test rapide de 30 secondes, OptiGame mesure chaque étape du chemin (ton
     PC vers ta box, ta box vers ton fournisseur, Internet, le serveur du jeu)
     et t'explique d'où vient le lag : Wi-Fi, téléchargement en arrière plan,
@@ -125,13 +125,16 @@ Optimisation gaming
   Plan d'alimentation Performances élevées, mode jeu, enregistrement en arrière
   plan de la Game Bar, planification GPU matérielle, optimisations des jeux en
   fenêtré, accélération de la souris, raccourci Maj x5, partage des mises à jour.
-  Mode jeu automatique : quand un jeu Steam ou Epic démarre, ferme les applis
+  Mode jeu automatique : quand un de tes jeux démarre, ferme les applis
   que tu as cochées (OneDrive, Teams...) et les relance quand tu quittes le jeu
   (tant qu'OptiGame est ouvert, même réduit).
+  Jeux reconnus : Steam, Epic, Ubisoft Connect, EA app, GOG Galaxy,
+  Battle.net, Riot, Rockstar, Amazon Games et Xbox / Game Pass. Un jeu manque ?
+  « Ajouter un jeu » dans Profils par jeu (jeu autonome, itch.io, émulateur...).
   Profils par jeu : « Priorité haute » pour chaque jeu (et « Carte puissante »
   sur les PC à deux cartes graphiques), appliqués même quand OptiGame est fermé.
   Mes parties : OptiGame mesure tes FPS pendant que tu joues (tout seul pour
-  les jeux Steam et Epic, Ctrl + Maj + F pour les autres). Pour chaque partie :
+  les jeux reconnus, Ctrl + Maj + F pour les autres). Pour chaque partie :
   FPS moyens, chutes (1 % bas), courbe de la partie, et comparaison avant /
   après tes réglages.
   Overlay : le compteur de FPS par dessus le jeu (visible en fenêtré ou plein
@@ -153,7 +156,7 @@ Spécial PC portable
   fixe branché sur un onduleur n'est pas pris pour un portable). Sur un portable :
   - le mode « Meilleures performances » de Windows est activé au lieu du plan
     Performances élevées ;
-  - si le portable a deux cartes graphiques, tes jeux Steam et Epic sont réglés
+  - si le portable a deux cartes graphiques, tes jeux sont réglés
     pour toujours utiliser la carte dédiée (et pas la puce intégrée) ;
   - la santé de la batterie est affichée, et l'app prévient si tu joues sans
     le chargeur.

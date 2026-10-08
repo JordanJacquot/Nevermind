@@ -324,12 +324,12 @@ function Invoke-Analysis {
     $dedicated = @($gpus | Where-Object { $_.Name -match $dedicatedPattern } | Select-Object -First 1)
     $integrated = @($gpus | Where-Object { $_.Name -notmatch $dedicatedPattern -and $_.Name -notmatch 'Microsoft Basic' })
     if ($script:IsLaptop -and $dedicated.Count -and $integrated.Count) {
-        Set-Status 'Recherche de tes jeux (Steam, Epic)...'
+        Set-Status 'Recherche de tes jeux...'
         $dgpu = $dedicated[0].Name
         $games = @(Invoke-Async ([scriptblock]::Create("function Get-InstalledGames {${function:Get-InstalledGames}}; Get-InstalledGames")))
         $todo = @($games | Where-Object { $g = $_; @($g.Exes | Where-Object { (Get-GpuPreference $_) -notmatch 'GpuPreference=2' }).Count })
         if (-not $games.Count) {
-            Add-Finding $F 'info' 'Jeux sur la carte graphique dédiée' "Aucun jeu Steam ou Epic trouvé. Pour tes autres jeux, choisis « Hautes performances » dans Paramètres > Écran > Graphiques." 0 -Id 'hybrid-gpu' -Fix (New-Fix `
+            Add-Finding $F 'info' 'Jeux sur la carte graphique dédiée' "Aucun jeu trouvé. Pour tes autres jeux, choisis « Hautes performances » dans Paramètres > Écran > Graphiques." 0 -Id 'hybrid-gpu' -Fix (New-Fix `
                 -Why "Ton portable a deux cartes graphiques. Windows peut lancer un jeu sur la puce intégrée, beaucoup moins puissante que ta $dgpu." `
                 -Steps @('Ouvre Paramètres > Système > Écran > Graphiques.', 'Ajoute ton jeu (bouton « Parcourir ») s''il n''est pas dans la liste.', 'Clique dessus, puis « Options » et choisis « Hautes performances ».') `
                 -Open 'ms-settings:display-advancedgraphics' -OpenLabel 'Paramètres graphiques')

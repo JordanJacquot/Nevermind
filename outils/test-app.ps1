@@ -311,6 +311,38 @@ $script:T.Run.Add_Tick({
                 [FrameMon]::Reset()
                 "$menu ; vraie chute toujours signalée ; partie entière à 60 gardée"
             }
+            Test-Step 'Jeux de tous les launchers et jeu ajouté' {
+                if ($null -eq $script:Games) { Update-GameCache }
+                $by = @($script:Games | Group-Object { if ($_.Source) { $_.Source } else { 'Steam' } } | ForEach-Object { "$($_.Name) $($_.Count)" })
+                # Aucun launcher ne doit passer pour un jeu
+                $lnch = @($script:Games | Where-Object { $_.Name -match '^(Battle\.net|Ubisoft Connect|EA app|Riot Client|Riot Vanguard|GOG GALAXY|Rockstar Games Launcher)$' })
+                Assert-Test (-not $lnch.Count) "launcher pris pour un jeu : $(($lnch | ForEach-Object { $_.Name }) -join ', ')"
+                $badExe = @($script:Games | ForEach-Object { @($_.Exes) } | Where-Object { [IO.Path]::GetFileNameWithoutExtension($_) -match 'launcher|uninst|crash' })
+                Assert-Test (-not $badExe.Count) "exécutable non jeu gardé : $(($badExe | Select-Object -First 3) -join ', ')"
+                # Jeu ajouté à la main : reconnu quand il tourne (copie de powershell sous un nom de jeu)
+                $dir = Join-Path $DataDir 'jeu-essai'
+                New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                $exe = Join-Path $dir 'MonJeuEssai.exe'
+                Copy-Item "$PSHOME\powershell.exe" $exe -Force
+                Add-CustomGame $exe 'Mon jeu d''essai'
+                Assert-Test (@($script:Games | Where-Object { $_.Name -eq 'Mon jeu d''essai' -and $_.Custom }).Count -and $script:GameIndex.ContainsKey('monjeuessai')) 'jeu ajouté absent de la liste'
+                Set-GamingSubPage 'profiles'; Wait-TestMs 300; Save-TestShot 'jeux-launchers'
+                $p = Start-Process $exe -ArgumentList '-NoProfile', '-Command', 'Start-Sleep 20' -WindowStyle Hidden -PassThru
+                try {
+                    Wait-TestMs 800
+                    $old = $script:GameSession; $script:GameSession = $null
+                    $fm = Get-Setting 'FpsMeasure' $false; $lm = Get-Setting 'LagMeasure' $true
+                    Set-Setting 'FpsMeasure' $false; Set-Setting 'LagMeasure' $false
+                    Test-GameRunning
+                    $seen = $script:GameSession -and $script:GameSession.Game -eq 'Mon jeu d''essai'
+                    if ($script:GameSession) { $script:GameSession.Closed = @(); Stop-GameSession }
+                    Set-Setting 'FpsMeasure' $fm; Set-Setting 'LagMeasure' $lm
+                } finally { try { $p.Kill() } catch {} }
+                Assert-Test $seen 'jeu ajouté non reconnu à son lancement'
+                Remove-CustomGame $exe
+                Assert-Test (-not @($script:Games | Where-Object { $_.Name -eq 'Mon jeu d''essai' }).Count) 'jeu ajouté non retiré'
+                "$(@($script:Games).Count) jeux ($($by -join ', ')), aucun launcher pris pour un jeu ; jeu ajouté reconnu à son lancement puis retiré"
+            }
             Test-Step 'Profils par jeu : libellés (issue 2)' {
                 if ($null -eq $script:Games) { Update-GameCache }
                 Build-GameProfiles

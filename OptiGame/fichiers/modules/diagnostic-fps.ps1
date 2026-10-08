@@ -114,7 +114,7 @@ function Get-FpsDiagData($T, $Busy) {
 # ---------------------------------------------------------------------------
 # Diagnostic
 # ---------------------------------------------------------------------------
-# Jeu d'une partie (pour les profils) : le jeu Steam ou Epic connu, sinon l'exécutable mesuré.
+# Jeu d'une partie (pour les profils) : le jeu connu, sinon l'exécutable mesuré.
 function Get-SessionGame($S) {
     $key = [string]$S.Key
     if ($script:GameIndex -and $script:GameIndex[$key]) {

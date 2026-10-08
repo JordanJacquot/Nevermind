@@ -429,7 +429,7 @@ function Build-LagPanel {
     $card = New-Card
     $card.Margin = New-Thickness 0 0 0 16
     $sp = New-Object System.Windows.Controls.StackPanel
-    [void]$sp.Children.Add((New-SwitchRow 'Mesurer ma connexion quand je joue' 'Pour les jeux Steam et Epic : OptiGame mesure ta box, Internet et le serveur du jeu pendant la partie, puis t''explique d''où vient le lag.' (Test-LagMeasure) {
+    [void]$sp.Children.Add((New-SwitchRow 'Mesurer ma connexion quand je joue' 'Pour tes jeux en ligne : OptiGame mesure ta box, Internet et le serveur du jeu pendant la partie, puis t''explique d''où vient le lag.' (Test-LagMeasure) {
         param($s, $e)
         Set-Setting 'LagMeasure' ([bool]$s.IsChecked)
         if (-not $s.IsChecked -and $script:LagSession -and -not $script:LagSession.Seconds) { Stop-LagSession }

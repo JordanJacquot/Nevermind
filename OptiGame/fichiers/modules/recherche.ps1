@@ -20,6 +20,8 @@ $SearchEntries = @(
     @{ T = 'Tester ma connexion pour le jeu (30 s)'; P = 1; S = 'lag'; A = 'Tester ma connexion maintenant (30 s)'; K = 'test lag ping latence' },
     @{ T = 'Mode jeu : fermer des applis pendant que je joue'; P = 1; S = 'mode'; A = 'Fermer des applis pendant que je joue'; K = 'mode jeu fermer applis discord chrome navigateur' },
     @{ T = 'Profils par jeu'; P = 1; S = 'profiles'; K = 'priorite haute carte graphique puissante gpu profil jeu' },
+    @{ T = 'Ajouter un jeu (non reconnu)'; P = 1; S = 'profiles'; A = 'Ajouter un jeu'; K = 'ajouter jeu manquant detecte reconnu ubisoft ea gog battlenet riot xbox autre launcher itch emulateur' },
+    @{ T = 'Mes jeux reconnus'; P = 1; S = 'profiles'; A = 'Ajouter un jeu'; K = 'liste jeux installes launchers steam epic ubisoft ea gog battlenet riot xbox' },
     # Tableau de bord
     @{ T = 'Score et analyse du PC'; P = 0; A = 'Relancer l''analyse'; K = 'score analyse sante composants note' },
     @{ T = 'Tout corriger'; P = 0; A = 'Tout corriger'; K = 'corriger reparer ameliorer score' },

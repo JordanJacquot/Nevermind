@@ -27,19 +27,55 @@ function Get-GameModeSelection {
     @(@($s) | ForEach-Object { [string]$_ })
 }
 
-# Liste des jeux (Steam, Epic), calculée une fois en arrière plan.
+# Liste des jeux (tous les launchers, plus ceux ajoutés à la main), calculée une fois en arrière plan.
 function Update-GameCache {
-    $script:Games = @(Invoke-Async ([scriptblock]::Create("function Get-InstalledGames {${function:Get-InstalledGames}}; Get-InstalledGames")))
+    $found = @(Invoke-Async ([scriptblock]::Create("function Get-InstalledGames {${function:Get-InstalledGames}}; Get-InstalledGames")))
+    $script:Games = @($found) + @(Get-CustomGames | Where-Object { $p = $_.Exes[0]; -not @($found | Where-Object { @($_.Exes) -contains $p }).Count })
     $script:GameIndex = @{}
     foreach ($g in $script:Games) {
         foreach ($e in @($g.Exes)) {
             $base = [IO.Path]::GetFileNameWithoutExtension($e).ToLower()
             if ($base.Length -lt 4 -or $base -match $GenericExe) { continue }
-            if (-not $script:GameIndex.ContainsKey($base)) { $script:GameIndex[$base] = @{ Game = $g.Name; Exes = @() } }
+            if (-not $script:GameIndex.ContainsKey($base)) { $script:GameIndex[$base] = @{ Game = $g.Name; Exes = @(); Source = $g.Source } }
             $script:GameIndex[$base].Exes += $e.ToLower()
         }
     }
     Build-GameSections
+}
+
+# Jeux ajoutés à la main (jeu autonome, itch.io, émulateur...) : { Name, Exes, Source = 'Ajouté' }
+function Get-CustomGames {
+    @(@(Get-Setting 'CustomGames' @()) | Where-Object { $_ -and $_.Exe -and (Test-Path -LiteralPath ([string]$_.Exe)) } |
+        ForEach-Object { @{ Name = [string]$_.Name; Exes = @([string]$_.Exe); Source = 'Ajouté'; Custom = $true } })
+}
+
+function Add-CustomGame([string]$Exe, [string]$Name) {
+    if (-not $Exe) {
+        $dlg = New-Object Microsoft.Win32.OpenFileDialog
+        $dlg.Title = 'Choisis le programme du jeu (.exe)'
+        $dlg.Filter = 'Programme du jeu (*.exe)|*.exe'
+        if (-not $dlg.ShowDialog($Window)) { return }
+        $Exe = $dlg.FileName
+    }
+    if (-not $Name) {
+        $vi = try { [Diagnostics.FileVersionInfo]::GetVersionInfo($Exe) } catch { $null }
+        $Name = @([string]$vi.ProductName, [string]$vi.FileDescription, [IO.Path]::GetFileNameWithoutExtension($Exe)) | Where-Object { $_ -and $_.Trim() -and $_.Length -lt 60 } | Select-Object -First 1
+    }
+    $base = [IO.Path]::GetFileNameWithoutExtension($Exe).ToLower()
+    if ($base.Length -lt 4 -or $base -match $GenericExe) {
+        Show-Message "Le nom « $([IO.Path]::GetFileName($Exe)) » est trop courant pour reconnaître le jeu à coup sûr.`n`nChoisis plutôt le programme qui porte le nom du jeu (souvent dans un sous dossier comme Binaries\Win64)." 'Warning'
+        return
+    }
+    $list = @(@(Get-Setting 'CustomGames' @()) | Where-Object { $_ -and [string]$_.Exe -ne $Exe })
+    Set-Setting 'CustomGames' @($list + @{ Name = $Name; Exe = $Exe })
+    Update-GameCache
+    Set-Status "$Name ajouté à tes jeux : OptiGame le reconnaîtra à son lancement."
+}
+
+function Remove-CustomGame([string]$Exe) {
+    Set-Setting 'CustomGames' @(@(Get-Setting 'CustomGames' @()) | Where-Object { $_ -and [string]$_.Exe -ne $Exe })
+    Update-GameCache
+    Set-Status 'Jeu retiré de la liste.'
 }
 
 function Start-GameWatch {
@@ -136,7 +172,7 @@ function Build-GameModeCard {
     $panel.Children.Clear()
     $card = New-Card
     $sp = New-Object System.Windows.Controls.StackPanel
-    $row = New-SwitchRow 'Fermer des applis pendant que je joue' 'Quand un jeu Steam ou Epic démarre, les applis cochées sont fermées, puis relancées quand tu quittes le jeu.' ([bool](Get-Setting 'GameMode' $false)) {
+    $row = New-SwitchRow 'Fermer des applis pendant que je joue' 'Quand un de tes jeux démarre (Steam, Epic, Ubisoft, EA, Battle.net, Riot, GOG, Xbox...), les applis cochées sont fermées, puis relancées quand tu quittes le jeu.' ([bool](Get-Setting 'GameMode' $false)) {
         param($s, $e)
         $on = [bool]$s.IsChecked
         Set-Setting 'GameMode' $on
@@ -215,10 +251,21 @@ function Build-GameProfiles {
     $panel.Children.Clear()
     if ($null -eq $script:Games) { [void]$panel.Children.Add((New-Text 'Recherche des jeux installés...' 13 '#5B6475')); return }
     $games = @($script:Games | Where-Object { (Get-GameExeNames $_).Count } | Sort-Object { $_.Name })
-    if (-not $games.Count) { [void]$panel.Children.Add((New-Text 'Aucun jeu Steam ou Epic trouvé sur ce PC.' 13 '#5B6475')); return }
-    $intro = New-Text 'Appliqués à chaque lancement du jeu, même OptiGame fermé. « Priorité haute » : le jeu passe avant les autres programmes.' 12.5 '#9AA3B2'
-    $intro.Margin = New-Thickness 0 0 0 10
-    [void]$panel.Children.Add($intro)
+    # En tête : d'où viennent les jeux, et ajout d'un jeu que les launchers ne déclarent pas
+    $hd = New-Grid @('*', 'Auto')
+    $hd.Margin = New-Thickness 0 0 0 10
+    $srcs = @($games | Group-Object { if ($_.Source) { $_.Source } else { 'Steam' } } | Sort-Object Count -Descending | ForEach-Object { "$($_.Name) $($_.Count)" })
+    $hl = New-Object System.Windows.Controls.StackPanel
+    [void]$hl.Children.Add((New-Text $(if ($games.Count) { "$($games.Count) jeu$(if ($games.Count -gt 1) {'x'}) reconnu$(if ($games.Count -gt 1) {'s'}) : $($srcs -join ', ')." } else { 'Aucun jeu trouvé sur ce PC.' }) 13 '#FFFFFF' -Semi))
+    $intro = New-Text 'Un jeu manque (jeu autonome, itch.io, émulateur...) ? Ajoute le : OptiGame le reconnaîtra à son lancement (mode jeu, FPS, lag). Les réglages ci dessous sont appliqués à chaque lancement, même OptiGame fermé ; « Priorité haute » : le jeu passe avant les autres programmes.' 12 '#9AA3B2'
+    $intro.Margin = New-Thickness 0 2 0 0
+    [void]$hl.Children.Add($intro)
+    Add-ToGrid $hd $hl 0
+    $add = New-Button 'Ajouter un jeu' 'BtnPrimary'
+    $add.Margin = New-Thickness 16 0 0 0; $add.VerticalAlignment = 'Center'
+    $add.Add_Click({ Invoke-Safe { Add-CustomGame } })
+    Add-ToGrid $hd $add 1
+    [void]$panel.Children.Add($hd)
     $gpuNames = @($script:AnalysisData.GPUs | ForEach-Object { [string]$_.Name } | Where-Object { $_ -notmatch 'Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta|Microsoft Basic' })
     $dual = $gpuNames.Count -ge 2
     foreach ($g in $games) {
@@ -232,9 +279,18 @@ function Build-GameProfiles {
         $nm.TextTrimming = 'CharacterEllipsis'; $nm.TextWrapping = 'NoWrap'
         [void]$sp.Children.Add($nm)
         $exeNames = Get-GameExeNames $g
-        $sub = New-Text ($exeNames -join ', ') 11.5 '#5B6475'
+        $src = if ($g.Source) { $g.Source } else { 'Steam' }
+        $sub = New-Text "$src  ·  $($exeNames -join ', ')" 11.5 '#5B6475'
         $sub.TextTrimming = 'CharacterEllipsis'; $sub.TextWrapping = 'NoWrap'; $sub.ToolTip = (@($g.Exes) -join "`n")
         [void]$sp.Children.Add($sub)
+        if ($g.Custom) {
+            $rm = New-Object System.Windows.Controls.TextBlock
+            $rm.Text = 'Retirer de la liste'; $rm.FontSize = 11.5; $rm.Foreground = Get-Brush '#9AA3B2'; $rm.TextDecorations = [System.Windows.TextDecorations]::Underline
+            $rm.Cursor = [System.Windows.Input.Cursors]::Hand; $rm.Margin = New-Thickness 0 2 0 0; $rm.HorizontalAlignment = 'Left'
+            $rm.Tag = [string]$g.Exes[0]
+            $rm.Add_MouseLeftButtonUp({ param($s, $e) $x = [string]$s.Tag; Invoke-Safe { Remove-CustomGame $x } })
+            [void]$sp.Children.Add($rm)
+        }
         Add-ToGrid $row $sp 0
         # La virgule garde une liste de listes même avec une seule option (sinon PowerShell l'aplatit en lettres)
         $opts = @(, @('priority', 'Priorité haute', (Test-GamePriority $g)))
@@ -701,6 +757,21 @@ function Show-FpsSession([string]$Id) {
         [void]$body.Children.Add((New-SectionTitle 'AVANT / APRÈS TES DERNIERS RÉGLAGES'))
         [void]$body.Children.Add($cmp)
     }
+    # Jeu mesuré avec Ctrl+Maj+F et inconnu d'OptiGame : proposer de l'ajouter pour la prochaine fois
+    $exePath = if ($s.Diag) { [string]$s.Diag.Path } else { '' }
+    if ($exePath -and (Test-Path -LiteralPath $exePath) -and -not @($script:Games | Where-Object { @($_.Exes) -contains $exePath }).Count) {
+        $ag = New-Grid @('*', 'Auto')
+        $ag.Margin = New-Thickness 0 12 0 0
+        $at = New-Text "OptiGame ne connaît pas encore ce jeu : ajoute le pour qu'il soit reconnu tout seul la prochaine fois (mode jeu, FPS, lag)." 12.5 '#C9CED8'
+        $at.VerticalAlignment = 'Center'
+        Add-ToGrid $ag $at 0
+        $ab = New-Button 'Ajouter à mes jeux' 'BtnPrimary'
+        $ab.Margin = New-Thickness 16 0 0 0
+        $ab.Tag = @{ Exe = $exePath; Name = (Get-SessionName $s) }
+        $ab.Add_Click({ param($x, $y) $g = $x.Tag; Invoke-Safe { Add-CustomGame $g.Exe $g.Name; $x.IsEnabled = $false; $x.Content = 'Ajouté' } })
+        Add-ToGrid $ag $ab 1
+        [void]$body.Children.Add($ag)
+    }
     [void]$body.Children.Add((New-Details @(
         @('Durée mesurée', "$(Format-PlayTime $s.Seconds) de jeu$(if ([int]$s.MenuSec -ge 5) { " + $(Format-PlayTime $s.MenuSec) de menus bloqués à $([int]$s.MenuFps) FPS" })"),
         @('Images affichées', ('{0:N0}' -f $s.Frames)),
@@ -771,7 +842,7 @@ function Invoke-FpsHelp {
     Show-ResultSheet 'Trouvons d''où viennent tes problèmes de FPS' @(
         '1.  La mesure des FPS est activée.',
         '2.  Lance ton jeu et joue au moins 5 minutes, de préférence là où ça rame.',
-        '3.  Si ce n''est pas un jeu Steam ou Epic, appuie sur Ctrl + Maj + F en jeu pour lancer la mesure.',
+        '3.  Si OptiGame ne reconnaît pas le jeu, appuie sur Ctrl + Maj + F en jeu (ou ajoute le dans Profils par jeu).',
         '4.  Quitte le jeu : OptiGame t''explique d''où vient le problème et ce qu''il peut régler pour toi.') $null 'OptiGame regarde qui freine (carte graphique ou processeur), la température, la mémoire, le disque et les programmes en arrière plan.'
 }
 
@@ -873,7 +944,7 @@ function Build-OverlayPanel {
     $card.Child = $g
     [void]$panel.Children.Add($card)
 
-    $tips = New-Text "Jeu hors Steam et Epic : appuie sur Ctrl + Maj + F pendant la partie pour lancer la mesure et le compteur.`nEn plein écran exclusif, Windows ne laisse rien s'afficher par dessus le jeu : choisis « plein écran fenêtré » ou « sans bordure » dans les options du jeu." 12 '#5B6475'
+    $tips = New-Text "Jeu non reconnu : appuie sur Ctrl + Maj + F pendant la partie pour lancer la mesure et le compteur.`nEn plein écran exclusif, Windows ne laisse rien s'afficher par dessus le jeu : choisis « plein écran fenêtré » ou « sans bordure » dans les options du jeu." 12 '#5B6475'
     $tips.Margin = New-Thickness 4 2 0 0
     [void]$panel.Children.Add($tips)
 }
@@ -885,7 +956,7 @@ function Build-FpsPanel {
     $card = New-Card
     $card.Margin = New-Thickness 0 0 0 16
     $sp = New-Object System.Windows.Controls.StackPanel
-    [void]$sp.Children.Add((New-SwitchRow 'Mesurer mes FPS quand je joue' 'Automatique pour les jeux Steam et Epic. Pour un autre jeu : Ctrl + Maj + F pendant la partie.' (Test-FpsMeasure) {
+    [void]$sp.Children.Add((New-SwitchRow 'Mesurer mes FPS quand je joue' 'Automatique pour tes jeux (Steam, Epic, Ubisoft, EA, Battle.net, Riot, GOG, Xbox...). Pour un autre jeu : Ctrl + Maj + F pendant la partie.' (Test-FpsMeasure) {
         param($s, $e)
         $on = [bool]$s.IsChecked
         Set-Setting 'FpsMeasure' $on

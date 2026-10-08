@@ -310,13 +310,20 @@ function Get-StartupItems {
     }
 }
 
-# Jeux installés via Steam et Epic Games, avec leurs exécutables probables.
+# Jeux installés, tous launchers confondus : Steam, Epic, Ubisoft Connect, EA app, GOG Galaxy, Battle.net,
+# Riot, Rockstar, Amazon Games, Xbox / Game Pass. Chaque jeu : { Name, Exes (exécutables probables), Source }.
+# Autonome (tourne dans un fil séparé) : n'utilise aucune autre fonction d'OptiGame.
 function Get-InstalledGames {
-    $bad = 'unins|setup|install|redist|dxsetup|directx|crash|report|easyanticheat|anticheat|eac_|beservice|battleye|update|helper|prereq|dotnet|webhelper|vcredist|python|java|browser|error|cleanup|touchup|repair|bootstrapper|resourcecompiler|^ui(32|64)$|diagnos|benchmark_?tool'
-    $notGames = '^(wallpaper_engine|Steamworks Shared|SteamVR|Steam Controller Configs|Steamworks Common Redistributables)$'
+    $bad = 'unins|setup|install|redist|dxsetup|directx|crash|report|easyanticheat|anticheat|eac_|beservice|battleye|_be$|update|helper|prereq|dotnet|webhelper|vcredist|python|java|browser|error|cleanup|touchup|repair|bootstrapper|resourcecompiler|^ui(32|64)$|diagnos|benchmark_?tool|ubisoftgamelauncher|uplay|^upc$|link2ea|socialclub|rockstarservice|cefsharp|leagueclient|riotclient|vanguard|^vgc$|blizzard ?error|agent$|gamelaunchhelper|launcher'
+    $notGames = '^(wallpaper_engine|Steamworks Shared|SteamVR|Steam Controller Configs|Steamworks Common Redistributables|GameSave|Minecraft Launcher)$'
+    # Les launchers eux mêmes ne sont pas des jeux
+    $launchers = '^(Battle\.net|Ubisoft Connect|Uplay|EA app|EA Desktop|Origin|Riot Client|Riot Vanguard|Rockstar Games Launcher|Rockstar Games Social Club|GOG GALAXY|GOG Galaxy|Amazon Games|Xbox|Epic Games Launcher)\s*$'
     $games = @()
     $dirs = @()
+    $norm = { param($p) if ($p) { ([string]$p -replace '/', '\').Trim().Trim('"').TrimEnd('\') } else { '' } }
 
+    # Steam
+    $steamCommon = @()
     $steam = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
     if ($steam) {
         $steam = $steam -replace '/', '\'
@@ -341,32 +348,87 @@ function Get-InstalledGames {
             }
             $common = Join-Path $lib 'steamapps\common'
             if (Test-Path -LiteralPath $common) {
+                $steamCommon += $common.ToLower()
                 $dirs += Get-ChildItem -LiteralPath $common -Directory -ErrorAction SilentlyContinue |
                     Where-Object { $_.Name -notmatch $notGames } |
-                    ForEach-Object { @{ Name = $(if ($names[$_.Name.ToLower()]) { $names[$_.Name.ToLower()] } else { $_.Name }); Dir = $_.FullName; Exe = $null } }
+                    ForEach-Object { @{ Name = $(if ($names[$_.Name.ToLower()]) { $names[$_.Name.ToLower()] } else { $_.Name }); Dir = $_.FullName; Exe = $null; Source = 'Steam' } }
             }
         }
     }
+    # Epic Games
     foreach ($m in @(Get-ChildItem "$env:ProgramData\Epic\EpicGamesLauncher\Data\Manifests\*.item" -ErrorAction SilentlyContinue)) {
         try {
             $j = Get-Content -LiteralPath $m.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($j.InstallLocation -and (Test-Path -LiteralPath $j.InstallLocation)) {
                 $exe = if ($j.LaunchExecutable) { Join-Path $j.InstallLocation $j.LaunchExecutable } else { $null }
-                $dirs += @{ Name = $j.DisplayName; Dir = $j.InstallLocation; Exe = $exe }
+                $dirs += @{ Name = $j.DisplayName; Dir = $j.InstallLocation; Exe = $exe; Source = 'Epic Games' }
             }
         } catch {}
     }
+    # GOG Galaxy (nom, dossier et exécutable exacts)
+    foreach ($k in @(Get-ChildItem 'HKLM:\SOFTWARE\WOW6432Node\GOG.com\Games' -ErrorAction SilentlyContinue)) {
+        $p = Get-ItemProperty $k.PSPath -ErrorAction SilentlyContinue
+        $dir = & $norm $p.path
+        if ($p.gameName -and $dir -and (Test-Path -LiteralPath $dir)) { $dirs += @{ Name = [string]$p.gameName; Dir = $dir; Exe = $(& $norm $p.exe); Source = 'GOG' } }
+    }
+    # Ubisoft Connect : jeux installés même sans entrée « Programmes et fonctionnalités »
+    $ubiNames = @{}
+    foreach ($k in @(Get-ChildItem 'HKLM:\SOFTWARE\WOW6432Node\Ubisoft\Launcher\Installs' -ErrorAction SilentlyContinue)) {
+        $dir = & $norm (Get-ItemProperty $k.PSPath -ErrorAction SilentlyContinue).InstallDir
+        if ($dir) { $ubiNames[$dir.ToLower()] = $k.PSChildName }
+    }
+    # Programmes installés : les jeux des autres launchers s'y déclarent (nom, dossier, icône = souvent l'exécutable)
+    $sources = @(
+        @{ Re = '^Uplay Install'; Pub = 'Ubisoft'; Src = 'Ubisoft Connect' },
+        @{ Re = '^Riot Game '; Pub = 'Riot Games'; Src = 'Riot' },
+        @{ Re = ''; Pub = 'Electronic Arts'; Src = 'EA app' },
+        @{ Re = ''; Pub = 'Blizzard Entertainment'; Src = 'Battle.net' },
+        @{ Re = ''; Pub = 'Rockstar Games'; Src = 'Rockstar' },
+        @{ Re = ''; Pub = 'GOG\.com|GOG Ltd'; Src = 'GOG' },
+        @{ Re = '^AmazonGames/'; Pub = 'Amazon Games|Amazon Game Studios'; Src = 'Amazon Games' }
+    )
+    $uninst = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    foreach ($u in @(Get-ItemProperty $uninst -ErrorAction SilentlyContinue)) {
+        $src = $null
+        foreach ($x in $sources) { if (($x.Re -and $u.PSChildName -match $x.Re) -or ($u.Publisher -and $u.Publisher -match $x.Pub)) { $src = $x.Src; break } }
+        if (-not $src -or -not $u.DisplayName -or $u.DisplayName -match $launchers) { continue }
+        $dir = & $norm $u.InstallLocation
+        if (-not $dir -or -not (Test-Path -LiteralPath $dir)) { continue }
+        # Déjà trouvé par Steam (un jeu EA ou Blizzard acheté sur Steam)
+        $low = $dir.ToLower()
+        if (@($steamCommon | Where-Object { $low.StartsWith($_) }).Count) { continue }
+        if ($ubiNames.ContainsKey($low)) { $ubiNames.Remove($low) }
+        $icon = (& $norm ($u.DisplayIcon -replace ',\s*-?\d+$', ''))
+        $exe = if ($icon -match '\.exe$' -and $icon.ToLower().StartsWith($low)) { $icon } else { $null }
+        $dirs += @{ Name = [string]$u.DisplayName.Trim(); Dir = $dir; Exe = $exe; Source = $src }
+    }
+    foreach ($d in @($ubiNames.Keys)) { if (Test-Path -LiteralPath $d) { $dirs += @{ Name = (Split-Path $d -Leaf); Dir = $d; Exe = $null; Source = 'Ubisoft Connect' } } }
+    # Xbox / Game Pass : dossiers « XboxGames » à la racine des disques
+    foreach ($drv in @([IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady })) {
+        $xb = Join-Path $drv.RootDirectory.FullName 'XboxGames'
+        if (-not (Test-Path -LiteralPath $xb)) { continue }
+        foreach ($g in @(Get-ChildItem -LiteralPath $xb -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch $notGames })) {
+            $content = Join-Path $g.FullName 'Content'
+            $dirs += @{ Name = $g.Name; Dir = $(if (Test-Path -LiteralPath $content) { $content } else { $g.FullName }); Exe = $null; Source = 'Xbox' }
+        }
+    }
 
+    $done = @{}
     foreach ($d in $dirs) {
+        if (-not $d.Dir -or $done.ContainsKey($d.Dir.ToLower())) { continue }
+        $done[$d.Dir.ToLower()] = $true
+        # Les plus gros exécutables les moins enfouis d'abord : c'est presque toujours le jeu
         $exes = @(Get-ChildItem -LiteralPath $d.Dir -Filter *.exe -Recurse -Depth 3 -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Length -gt 200KB -and $_.BaseName -notmatch $bad } | Select-Object -First 6 | ForEach-Object { $_.FullName })
-        if ($d.Exe -and (Test-Path -LiteralPath $d.Exe)) { $exes = @($d.Exe) + $exes }
+            Where-Object { $_.Length -gt 200KB -and $_.BaseName -notmatch $bad } |
+            Sort-Object @{ Expression = { ($_.FullName.Substring($d.Dir.Length) -split '\\').Count } }, @{ Expression = { $_.Length }; Descending = $true } |
+            Select-Object -First 6 | ForEach-Object { $_.FullName })
+        # Exécutable déclaré par le launcher : en tête, sauf si c'est un lanceur (Rocket League déclare « Launcher.exe »)
+        if ($d.Exe -and (Test-Path -LiteralPath $d.Exe) -and ([IO.Path]::GetFileNameWithoutExtension($d.Exe) -notmatch $bad -or -not $exes.Count)) { $exes = @($d.Exe) + $exes }
         $exes = @($exes | Select-Object -Unique)
-        if ($exes.Count) { $games += @{ Name = $d.Name; Exes = $exes } }
+        if ($exes.Count) { $games += @{ Name = $d.Name; Exes = $exes; Source = $d.Source } }
     }
     $games
 }
-
 # Préférence de carte graphique d'un exécutable (Paramètres > Écran > Graphiques). 2 = hautes performances.
 function Get-GpuPreference([string]$Exe) {
     $k = Open-RegKey $DxPath $false

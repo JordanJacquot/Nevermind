@@ -32,6 +32,7 @@ L'accueil, avec le score d'optimisation, le niveau de protection et une carte pa
   - **Overlay** : compteur de FPS par dessus le jeu, style complet ou discret, dans le coin de l'écran choisi, avec un aperçu ;
   - **Lag en ligne** : pendant tes parties ou en test de 30 secondes, mesure chaque étape du chemin (PC vers box, box vers fournisseur, Internet, serveur du jeu) et explique d'où vient le lag (Wi-Fi, téléchargement en arrière plan, box, serveur loin, VPN) ;
   - **Mode jeu** (ferme des applis pendant que tu joues) et **profils par jeu** (priorité haute, carte graphique puissante).
+  - **Jeux reconnus** : Steam, Epic, Ubisoft Connect, EA app, GOG Galaxy, Battle.net, Riot, Rockstar, Amazon Games, Xbox / Game Pass, plus « Ajouter un jeu » pour tout le reste.
 - **Tests des composants** : vitesse et santé de chaque disque, processeur (puissance, stabilité), mémoire, capteurs de la carte graphique, débit Internet, lag en charge (bufferbloat), pixels morts.
 - **Sécurité** : niveau de protection, analyses Microsoft Defender, recherche de fichiers déguisés, programmes cachés, tâches planifiées suspectes, exclusions d'antivirus, hosts et proxy.
 - **Démarrage**, **Connexion** (ping, gigue, DNS), **Nettoyage** (liste des fichiers avant de nettoyer, journal fichier par fichier), **Sauvegarde** (tout annuler, historique, point de restauration, rapport HTML).
