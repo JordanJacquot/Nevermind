@@ -195,65 +195,191 @@ function Build-Hub {
     }
 }
 
-# Carte « À faire » : la chose qui rapporte le plus, avec son bouton
+# Carte mise en avant de l'accueil.
+# « À faire » seulement quand ça vaut le coup : un vrai problème, ou une correction que Nevermind fait en un clic.
+# Sinon « Ta dernière partie ». Ce qui se fait à la main (un pilote à installer...) reste en petite ligne dessous.
+function Get-HubFindings($A) {
+    $all = @(if ($A) { $A.Active | Where-Object { $_.Status -ne 'ok' -and $_.Gain -gt 0 } })
+    $sort = @{ Expression = { $_.Gain }; Descending = $true }
+    $important = @($all | Where-Object { $_.Status -eq 'bad' -or ($_.Fix -and $_.Fix.Auto) } |
+        Sort-Object @{ Expression = { $_.Status -ne 'bad' } }, $sort)
+    $manual = @($all | Where-Object { $important -notcontains $_ } | Sort-Object $sort)
+    @{ Important = $important; Manual = $manual }
+}
+
+# Le dernier jeu lancé (encore installé), avec sa dernière partie mesurée
+function Get-LastPlayedGame {
+    if ($null -eq $script:Games) { return $null }
+    $games = @(Get-LibraryGames)
+    if (-not $games.Count) { return $null }
+    $log = Get-PlayLog
+    $best = $null; $bestDate = [datetime]::MinValue
+    foreach ($g in $games) {
+        $e = $log[$g.Name]
+        if (-not $e -or -not $e.Last) { continue }
+        try { $d = [datetime]$e.Last } catch { continue }
+        if ($d -gt $bestDate) { $best = $g; $bestDate = $d }
+    }
+    if (-not $best) { return $null }
+    $ss = @(Get-FpsSessions | Where-Object { (Get-SessionName $_) -eq $best.Name } | Sort-Object { [datetime]$_.Date })
+    @{ Game = $best; Log = $log[$best.Name]; Last = $(if ($ss.Count) { $ss[-1] }); Prev = $(if ($ss.Count -gt 1) { $ss[-2] }) }
+}
+
+function Open-LibraryGame([string]$Name) {
+    Show-Page $GamesIndex
+    $ui.LibSearch.Text = ''; $script:LibFilter = 'Tous'
+    Update-LibraryView
+    Set-LibrarySelection $Name
+}
+
+function Set-HubCardLook([string]$Look, $Art) {
+    $ui.HubTodoArt.Background = $Art
+    $ui.HubTodoShade.Visibility = if ($Art) { 'Visible' } else { 'Collapsed' }
+    $ui.HubTodo.Background = if ($Art) { Get-Brush '#0B0820' } else { New-LinearBrush @('#2200E5FF', '#22FF2EB5') 0 0 1 1 }
+}
+
+function New-HubTag([string]$Text, [string]$Color) {
+    $t = New-Text $Text 11.5 $Color -Bold
+    $t.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
+    $t
+}
+
+# Petite ligne « Aussi : ... » pour ce qui se fait à la main
+function New-HubManualLine($Manual) {
+    $f = $Manual[0]
+    $row = New-Object System.Windows.Controls.Border
+    $row.CornerRadius = [System.Windows.CornerRadius]::new(12)
+    $row.Background = Get-Brush '#14FFFFFF'
+    $row.Padding = New-Thickness 12 7 12 7
+    $row.Margin = New-Thickness 0 16 0 0
+    $row.HorizontalAlignment = 'Left'
+    $row.Cursor = [System.Windows.Input.Cursors]::Hand
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $sp.Orientation = 'Horizontal'
+    $ic = New-Text ([string][char]0xE946) 12 $Colors.warn
+    $ic.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'
+    $ic.VerticalAlignment = 'Center'; $ic.Margin = New-Thickness 0 1 8 0
+    [void]$sp.Children.Add($ic)
+    $label = "Quand tu as le temps : $($f.Titre)"
+    if ($Manual.Count -gt 1) { $label += "  (+$($Manual.Count - 1))" }
+    $t = New-Text $label 12 '#D3CDE3' -Semi
+    $t.VerticalAlignment = 'Center'; $t.TextTrimming = 'CharacterEllipsis'; $t.MaxWidth = 380
+    [void]$sp.Children.Add($t)
+    $ch = New-Text ([string][char]0xE76C) 10 '#8E88A8'
+    $ch.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'
+    $ch.VerticalAlignment = 'Center'; $ch.Margin = New-Thickness 10 1 0 0
+    [void]$sp.Children.Add($ch)
+    $row.Child = $sp
+    $row.Tag = $Manual
+    $row.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush '#22FFFFFF' })
+    $row.Add_MouseLeave({ param($s, $e) $s.Background = Get-Brush '#14FFFFFF' })
+    $row.Add_MouseLeftButtonUp({ param($s, $e) if (@($s.Tag).Count -gt 1) { Show-Page 0 } else { Invoke-Safe { Open-Sheet @($s.Tag[0]) } } })
+    $row
+}
+
 function Update-HubTodo($A) {
     $p = $ui.HubTodoPanel
     $p.Children.Clear()
-    $tag = New-Text 'À FAIRE' 11.5 '#00E5FF' -Bold
-    $tag.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
-    [void]$p.Children.Add($tag)
-    $top = $null
-    if ($A) {
-        $top = @($A.Active | Where-Object { $_.Status -ne 'ok' -and $_.Gain -gt 0 } |
-            Sort-Object @{ Expression = { $_.Gain }; Descending = $true }, @{ Expression = { -not ($_.Fix -and $_.Fix.Auto) } }) | Select-Object -First 1
-    }
+    $fd = Get-HubFindings $A
     $btns = New-Object System.Windows.Controls.StackPanel
     $btns.Orientation = 'Horizontal'; $btns.Margin = New-Thickness 0 16 0 0
+    $title = $null; $detail = $null; $tag = $null; $art = $null; $extra = $null
+    $last = if (-not $fd.Important.Count) { Get-LastPlayedGame }
+
     if (-not $A) {
+        $tag = New-HubTag 'UN INSTANT' '#00E5FF'
         $title = 'Analyse de ton PC en cours...'
-        $detail = 'Encore quelques secondes et je te dis quoi améliorer.'
-    } elseif ($top) {
-        $title = [string]$top.Titre
-        $detail = [string]$top.Detail
+        $detail = 'Encore quelques secondes et je te dis s''il y a quelque chose à faire.'
+    } elseif ($fd.Important.Count) {
+        $top = $fd.Important[0]
+        $tag = New-HubTag 'À FAIRE' $(if ($top.Status -eq 'bad') { $Colors.bad } else { '#00E5FF' })
+        $title = [string]$top.Titre; $detail = [string]$top.Detail
         if ($top.Fix -and $top.Fix.Auto) {
             $b = New-Button 'Corriger maintenant' 'BtnPrimary'
             $b.Tag = $top
             $b.Add_Click({ param($s, $e) Invoke-Safe { Open-Sheet @($s.Tag) } })
         } else {
             $b = New-Button 'Voir comment faire' 'BtnPrimary'
-            $b.Add_Click({ Show-Page 0 })
+            $b.Tag = $top
+            $b.Add_Click({ param($s, $e) Invoke-Safe { Open-Sheet @($s.Tag) } })
         }
         [void]$btns.Children.Add($b)
-        $more = @($A.Active | Where-Object { $_.Status -ne 'ok' -and $_.Gain -gt 0 }).Count - 1
+        $more = $fd.Important.Count - 1
         if ($more -gt 0) {
             $b2 = New-Button "Voir les $more autres"
             $b2.Margin = New-Thickness 10 0 0 0
             $b2.Add_Click({ Show-Page 0 })
             [void]$btns.Children.Add($b2)
         }
-    } elseif ($null -ne $script:SecurityScore -and $script:SecurityScore -lt 80) {
+    } elseif ($null -ne $script:SecurityScore -and $script:SecurityScore -lt 50) {
+        $tag = New-HubTag 'À FAIRE' $Colors.bad
         $title = 'Vérifie ta protection'
-        $detail = 'Ton PC est optimisé, mais quelques points de sécurité méritent un coup d''oeil.'
+        $detail = 'Des points de sécurité importants méritent un coup d''oeil.'
         $b = New-Button 'Ouvrir Sécurité' 'BtnPrimary'
         $b.Add_Click({ Show-Page 6 })
         [void]$btns.Children.Add($b)
+    } elseif ($last) {
+        # Ta dernière partie : image du jeu en fond, FPS de la dernière partie mesurée
+        $g = $last.Game
+        $art = Get-ImageBrush (Get-HeroFile $g) 900
+        if (-not $art) { $art = Get-ImageBrush (Get-CoverFile $g) 600 }
+        if ($art) { $art = $art.Clone(); $art.AlignmentX = 'Right'; $art.Stretch = 'UniformToFill' }
+        $tag = New-HubTag 'TA DERNIÈRE PARTIE' '#00E5FF'
+        $title = $g.Name
+        $detail = "Joué $(Format-LastPlayed $last.Log.Last), $(Format-PlayTime $last.Log.Seconds) au total"
+        if ($last.Last) {
+            $s = $last.Last
+            $fps = New-Object System.Windows.Controls.StackPanel
+            $fps.Orientation = 'Horizontal'; $fps.Margin = New-Thickness 0 12 0 0
+            $n = New-Text ('{0:N0}' -f $s.Avg) 26 '#FFFFFF' -Bold
+            $n.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
+            [void]$fps.Children.Add($n)
+            $u = New-Text ('FPS moyens   /   1 % bas {0:N0}' -f $s.Low1) 12.5 '#B9B3CC'
+            $u.VerticalAlignment = 'Bottom'; $u.Margin = New-Thickness 8 0 0 5
+            [void]$fps.Children.Add($u)
+            if ($last.Prev -and $last.Prev.Avg -gt 0) {
+                $pct = 100 * ($s.Avg - $last.Prev.Avg) / $last.Prev.Avg
+                if ([math]::Abs($pct) -ge 3) {
+                    $d = New-Text ('{0}{1:N0} %' -f $(if ($pct -gt 0) { '+' } else { '' }), $pct) 12.5 $(if ($pct -gt 0) { $Colors.ok } else { $Colors.warn }) -Bold
+                    $d.VerticalAlignment = 'Bottom'; $d.Margin = New-Thickness 12 0 0 5
+                    $d.ToolTip = 'Par rapport à la partie d''avant'
+                    [void]$fps.Children.Add($d)
+                }
+            }
+            $extra = $fps
+        }
+        $b = New-Button 'Rejouer' 'BtnPrimary'
+        $b.Tag = $g
+        $b.Add_Click({ param($s, $e) Invoke-Safe { Start-LibraryGame $s.Tag } })
+        [void]$btns.Children.Add($b)
+        $b2 = New-Button 'Optimiser ce jeu'
+        $b2.Margin = New-Thickness 10 0 0 0
+        $b2.Tag = $g.Name
+        $b2.Add_Click({ param($s, $e) Invoke-Safe { Open-LibraryGame $s.Tag } })
+        [void]$btns.Children.Add($b2)
     } else {
+        $tag = New-HubTag 'PRÊT À JOUER' $Colors.ok
         $title = 'Tout est en ordre'
-        $detail = 'Rien à corriger pour le moment. Tu peux tester tes composants pour en avoir le coeur net.'
-        $b = New-Button 'Lancer un test' 'BtnPrimary'
-        $b.Add_Click({ Show-Page 5 })
+        $detail = 'Rien d''important à corriger. Lance un jeu depuis Jeux : ta dernière partie s''affichera ici.'
+        $b = New-Button 'Ouvrir mes jeux' 'BtnPrimary'
+        $b.Add_Click({ Show-Page $GamesIndex })
         [void]$btns.Children.Add($b)
     }
+
+    Set-HubCardLook $(if ($art) { 'game' } else { 'todo' }) $art
+    [void]$p.Children.Add($tag)
     $t = New-Text $title 22 '#FFFFFF' -Bold
-    $t.Margin = New-Thickness 0 8 0 0; $t.TextWrapping = 'Wrap'
+    $t.Margin = New-Thickness 0 8 0 0; $t.TextWrapping = 'Wrap'; $t.MaxWidth = 460; $t.HorizontalAlignment = 'Left'
     [void]$p.Children.Add($t)
     if ($detail) {
         $d = New-Text $detail 13 '#B9B3CC'
-        $d.Margin = New-Thickness 0 6 0 0; $d.TextWrapping = 'Wrap'
+        $d.Margin = New-Thickness 0 6 0 0; $d.TextWrapping = 'Wrap'; $d.MaxWidth = 460; $d.HorizontalAlignment = 'Left'
         $d.MaxHeight = 56; $d.TextTrimming = 'CharacterEllipsis'
         [void]$p.Children.Add($d)
     }
+    if ($extra) { [void]$p.Children.Add($extra) }
     if ($btns.Children.Count) { [void]$p.Children.Add($btns) }
+    if ($A -and $fd.Manual.Count) { [void]$p.Children.Add((New-HubManualLine $fd.Manual)) }
 }
 
 function Set-HubStat([int]$Index, [string]$Text, [string]$Color) {
@@ -269,11 +395,13 @@ function Update-Hub {
     $ui.HubHello.Text = "Salut $(Get-FirstName)"
 
     # Phrase de résumé sous le bonjour
-    $todo = if ($a) { @($a.Active | Where-Object { $_.Status -ne 'ok' -and $_.Gain -gt 0 }).Count } else { 0 }
+    $fd = Get-HubFindings $a
+    $todo = $fd.Important.Count
     $ui.HubSub.Text = if (-not $a) { 'Je regarde ton PC, ça prend quelques secondes.' }
-        elseif ($todo -eq 0) { 'Ton PC est au top pour jouer. Rien à corriger.' }
         elseif ($todo -eq 1) { 'Ton PC tourne bien. Il reste une chose à régler pour être au top.' }
-        else { "Ton PC tourne bien. Il reste $todo choses à régler pour être au top." }
+        elseif ($todo -gt 1) { "Ton PC tourne bien. Il reste $todo choses à régler pour être au top." }
+        elseif ($fd.Manual.Count) { 'Ton PC est prêt pour jouer. Une petite chose à faire quand tu auras le temps.' }
+        else { 'Ton PC est au top pour jouer. Rien à corriger.' }
 
     # Anneaux néon
     $ui.HubGaugeOpt.Children.Clear(); $ui.HubGaugeSec.Children.Clear()

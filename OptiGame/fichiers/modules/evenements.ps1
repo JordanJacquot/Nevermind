@@ -255,6 +255,7 @@ $Window.Add_ContentRendered({
         Set-StartupStep 'Recherche de tes jeux...' 86
         Invoke-Safe {
             Update-GameCache
+            Update-Hub   # la carte « Ta dernière partie » a besoin de la liste des jeux
             Update-GameWatch
             Update-FpsHotkey
             if (Get-Setting 'NetWatch' $false) { Set-NetWatch $true }

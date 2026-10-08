@@ -94,6 +94,38 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($ui.HubTodoPanel.Children.Count -ge 2) 'carte « À faire » vide'
                 "3 familles, 8 outils, « $($ui.HubHello.Text) »"
             }
+            Test-Step 'Accueil : carte mise en avant (3 cas)' {
+                if ($null -eq $script:Games) { Update-GameCache }
+                $tagOf = { (Get-TextBlockText $ui.HubTodoPanel.Children[0]) }
+                $manualF = @{ Id = 'test:manuel'; Status = 'warn'; Titre = 'Pilote à installer (test)'; Detail = 'x'; Gain = 4; Fix = @{ Auto = $false } }
+                $autoF = @{ Id = 'test:auto'; Status = 'warn'; Titre = 'Réglage en un clic (test)'; Detail = 'x'; Gain = 2; Fix = @{ Auto = $true } }
+                $realLog = $script:PlayLog
+                $game = @(Get-LibraryGames)[0]
+                try {
+                    # 1. Une correction en un clic : « À faire », le pilote en petite ligne
+                    Update-HubTodo @{ Active = @($manualF, $autoF); Score = 90 }
+                    Assert-Test ((& $tagOf) -eq 'À FAIRE') "étiquette « $(& $tagOf) » au lieu de À FAIRE"
+                    Assert-Test ((Get-TextBlockText $ui.HubTodoPanel.Children[1]) -like 'Réglage en un clic*') 'la correction en un clic n''est pas en avant'
+                    Assert-Test ($ui.HubTodoPanel.Children[-1] -is [System.Windows.Controls.Border]) 'pas de petite ligne pour le pilote'
+                    # 2. Seulement du manuel et un jeu lancé récemment : « Ta dernière partie »
+                    $s1 = 'pas de jeu installé'
+                    if ($game) {
+                        $script:PlayLog = @{ $game.Name = @{ Last = (Get-Date).ToString('s'); Seconds = 4000; Count = 3 } }
+                        Update-HubTodo @{ Active = @($manualF); Score = 96 }
+                        Assert-Test ((& $tagOf) -eq 'TA DERNIÈRE PARTIE') "étiquette « $(& $tagOf) » au lieu de TA DERNIÈRE PARTIE"
+                        Assert-Test ((Get-TextBlockText $ui.HubTodoPanel.Children[1]) -eq $game.Name) 'mauvais jeu affiché'
+                        Assert-Test ($ui.HubTodoPanel.Children[-1] -is [System.Windows.Controls.Border]) 'le pilote a disparu'
+                        Wait-TestMs 300; Save-TestShot 'accueil-derniere-partie'
+                        $s1 = "dernière partie : $($game.Name)$(if ($ui.HubTodoArt.Background) { ' (avec image)' })"
+                    }
+                    # 3. Rien joué, rien à faire : « Prêt à jouer »
+                    $script:PlayLog = @{}
+                    Update-HubTodo @{ Active = @(); Score = 100 }
+                    Assert-Test ((& $tagOf) -eq 'PRÊT À JOUER') "étiquette « $(& $tagOf) » au lieu de PRÊT À JOUER"
+                    Assert-Test (-not $ui.HubTodoArt.Background) 'image de jeu restée'
+                } finally { $script:PlayLog = $realLog; Update-Hub }
+                "à faire, $s1, prêt à jouer"
+            }
             Test-Step 'Tableau de bord' {
                 $ui.Tabs.SelectedIndex = 0; Wait-TestMs 800; Save-TestShot 'tableau-de-bord'
                 $a = $script:LastAnalysis

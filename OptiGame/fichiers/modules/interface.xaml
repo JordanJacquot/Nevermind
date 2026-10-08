@@ -915,7 +915,8 @@
               <Border x:Name="HubSecCard" Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,16,0" Padding="16" Cursor="Hand">
                 <StackPanel x:Name="HubGaugeSec" VerticalAlignment="Center" HorizontalAlignment="Center"/>
               </Border>
-              <Border x:Name="HubTodo" Grid.Column="2" CornerRadius="20" Padding="26,22" BorderThickness="1">
+              <!-- Carte mise en avant : « À faire » quand ça vaut le coup, sinon « Ta dernière partie » (image du jeu en fond) -->
+              <Border x:Name="HubTodo" Grid.Column="2" CornerRadius="20" BorderThickness="1" MinHeight="212">
                 <Border.Background>
                   <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                     <GradientStop Color="#2200E5FF" Offset="0"/>
@@ -928,7 +929,19 @@
                     <GradientStop Color="#AAFF2EB5" Offset="1"/>
                   </LinearGradientBrush>
                 </Border.BorderBrush>
-                <StackPanel x:Name="HubTodoPanel" VerticalAlignment="Center"/>
+                <Grid>
+                  <Border x:Name="HubTodoArt" CornerRadius="19" Opacity="0.85"/>
+                  <Border x:Name="HubTodoShade" CornerRadius="19" Visibility="Collapsed">
+                    <Border.Background>
+                      <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#F00B0820" Offset="0"/>
+                        <GradientStop Color="#C00B0820" Offset="0.5"/>
+                        <GradientStop Color="#300B0820" Offset="1"/>
+                      </LinearGradientBrush>
+                    </Border.Background>
+                  </Border>
+                  <StackPanel x:Name="HubTodoPanel" VerticalAlignment="Center" Margin="26,22"/>
+                </Grid>
               </Border>
             </Grid>
             <UniformGrid x:Name="HubCards" Columns="3" Margin="-8,18,-8,0"/>

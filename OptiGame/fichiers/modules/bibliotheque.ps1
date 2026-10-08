@@ -30,6 +30,7 @@ function Add-PlayTime([string]$Game, [datetime]$Start) {
     $log[$Game] = $e
     try { [IO.File]::WriteAllText($PlayFile, (ConvertTo-Json -InputObject $log -Depth 4 -Compress), (New-Object Text.UTF8Encoding($false))) } catch { Write-Log "Temps de jeu: $_" }
     if ($script:LibBuilt) { Update-LibraryView }
+    if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubStats) { Update-Hub }
 }
 
 function Format-LastPlayed([string]$Iso) {
