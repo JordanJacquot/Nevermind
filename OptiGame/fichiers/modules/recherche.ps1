@@ -26,6 +26,8 @@ $SearchEntries = @(
     @{ T = 'Mes jeux (bibliothèque)'; P = 'jeux'; A = 'Mes jeux'; K = 'jeux bibliotheque library steam liste installes' },
     @{ T = 'Lancer un jeu'; P = 'jeux'; A = 'Mes jeux'; K = 'lancer jouer demarrer jeu play' },
     @{ T = 'Optimiser un jeu'; P = 'jeux'; A = 'Mes jeux'; K = 'optimiser jeu tout optimiser priorite' },
+    @{ T = 'Restes de jeux désinstallés (place à récupérer)'; P = 'jeux'; A = 'Mes jeux'; K = 'place disque espace jeux desinstalles restes dossiers steam liberer'; Do = { if (@(Get-BigLeftovers).Count) { Show-Leftovers } } },
+    @{ T = 'Désinstaller un jeu'; P = 'jeux'; A = 'Mes jeux'; K = 'desinstaller supprimer enlever jeu' },
     @{ T = 'Temps de jeu'; P = 'jeux'; A = 'Mes jeux'; K = 'temps heures joue derniere partie' },
     # Tableau de bord
     @{ T = 'Score et analyse du PC'; P = 0; A = 'Relancer l''analyse'; K = 'score analyse sante composants note' },

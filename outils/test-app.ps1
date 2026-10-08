@@ -392,7 +392,16 @@ $script:T.Run.Add_Tick({
                     $script:CoverIndex = @{ ($noCover[0].Name) = @{ Cover = (Get-CoverFile $withCover[0]); Hero = ''; Logo = ''; Date = (Get-Date).ToString('s') } }
                     Assert-Test ((Get-CoverFile $noCover[0]) -eq (Get-CoverFile $withCover[0])) 'jaquette téléchargée non utilisée'
                     $script:CoverIndex = $null
-                }                # Filtre et recherche dans la bibliothèque
+                }                # Jeux Steam désinstallés dont le dossier est resté : pas des jeux, signalés comme place à récupérer
+                $lo = @($script:Leftovers)
+                Assert-Test (-not @($games | Where-Object { $_.Leftover -or ($_.Source -eq 'Steam' -and -not $_.AppId) }).Count) 'jeu Steam sans fiche d''installation affiché'
+                # Tailles calculées en arrière plan (jusqu'à 60 s pour des centaines de milliers de fichiers)
+                $waited = 0
+                while ($lo.Count -and $script:LeftoverJob -and $waited -lt 60000) { Wait-TestMs 500; $waited += 500 }
+                $big = @(Get-BigLeftovers)
+                if ($big.Count) { Assert-Test ($ui.LibLeftoverBar.Visibility -eq 'Visible' -and $ui.LibLeftoverText.Text -match 'récupérer') "bandeau des restes : $($ui.LibLeftoverText.Text)"; Save-TestShot 'bibliotheque-restes' }
+                $loText = if ($big.Count) { "$($lo.Count) dossier(s) de jeux désinstallés, $($big.Count) signalé(s) : $($ui.LibLeftoverText.Text)" } else { "$($lo.Count) petit(s) reste(s) de jeux désinstallés, rien à signaler" }
+                # Filtre et recherche dans la bibliothèque
                 $ui.LibSearch.Text = 'zzzz'; Wait-TestMs 500
                 Assert-Test ($script:LibTiles.Count -eq 0) 'filtre de recherche sans effet'
                 $ui.LibSearch.Text = ''
@@ -400,7 +409,7 @@ $script:T.Run.Add_Tick({
                 $script:PlayLog = @{}
                 Add-PlayTime 'Jeu d''essai' (Get-Date).AddMinutes(-42)
                 Assert-Test ([int]((Get-PlayLog)['Jeu d''essai'].Seconds / 60) -eq 42) 'temps de jeu mal compté'
-                "$($games.Count) jeux ($(@($games | Where-Object { Get-CoverFile $_ }).Count) avec jaquette) en vignettes, désinstallation par $($ukinds -join '/')$(if ($unk.Count) { " (sans désinstalleur : $($unk -join ', '))" }) (page prête en $tBuild ms, rafraîchie en $tAgain ms), lancement par $(@($kinds.Keys | Sort-Object) -join ', '), panneau et optimisation du jeu, recherche d'un jeu, temps de jeu"
+                "$($games.Count) jeux ($(@($games | Where-Object { Get-CoverFile $_ }).Count) avec jaquette) en vignettes, désinstallation par $($ukinds -join '/')$(if ($unk.Count) { " (sans désinstalleur : $($unk -join ', '))" }) (page prête en $tBuild ms, rafraîchie en $tAgain ms), lancement par $(@($kinds.Keys | Sort-Object) -join ', '), panneau et optimisation du jeu, recherche d'un jeu, temps de jeu ; $loText"
             }
             Test-Step 'Profils par jeu : libellés (issue 2)' {
                 if ($null -eq $script:Games) { Update-GameCache }

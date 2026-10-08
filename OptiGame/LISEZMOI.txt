@@ -1,4 +1,4 @@
-﻿OptiGame 1.0.53
+﻿OptiGame 1.0.54
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -20,6 +20,8 @@ soit le launcher. Double clique sur un jeu (ou « Lancer ») pour jouer : il
 démarre par son launcher, comme d'habitude. Sa fiche montre ton temps de jeu,
 tes FPS et ce qui peut être optimisé pour ce jeu (« Tout optimiser »), et un bouton
 « Désinstaller » qui ouvre le désinstalleur du jeu ou de son launcher.
+Si Steam a laissé le dossier d'un jeu désinstallé (parfois plusieurs Go), la
+section le signale : « Voir », puis « Mettre à la corbeille ».
 
 TROUVER UN RÉGLAGE
 Tape ce que tu cherches dans la barre de recherche en haut de chaque page

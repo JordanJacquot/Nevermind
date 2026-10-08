@@ -982,7 +982,17 @@
               <ColumnDefinition Width="360"/>
             </Grid.ColumnDefinitions>
             <ScrollViewer x:Name="LibScroll" VerticalScrollBarVisibility="Auto">
-              <WrapPanel x:Name="LibGrid" Margin="0,0,4,0"/>
+              <StackPanel>
+                <!-- Dossiers laissés par des jeux désinstallés (place à récupérer) -->
+                <Border x:Name="LibLeftoverBar" Visibility="Collapsed" Margin="0,0,14,14" Padding="14,10" CornerRadius="12"
+                        Background="#1AF5A524" BorderBrush="#55F5A524" BorderThickness="1">
+                  <DockPanel>
+                    <Button x:Name="BtnLibLeftovers" DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="Voir" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                    <TextBlock x:Name="LibLeftoverText" Foreground="#F5C46B" FontSize="12.5" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                  </DockPanel>
+                </Border>
+                <WrapPanel x:Name="LibGrid" Margin="0,0,4,0"/>
+              </StackPanel>
             </ScrollViewer>
             <Border x:Name="LibDetail" Grid.Column="1" Margin="14,0,8,0" CornerRadius="14" ClipToBounds="True"
                     Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource CardBorder}" BorderThickness="1">

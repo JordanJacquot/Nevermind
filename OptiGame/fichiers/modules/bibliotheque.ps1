@@ -437,6 +437,113 @@ function Watch-Uninstall($Game) {
 }
 
 # ---------------------------------------------------------------------------
+# Restes de jeux désinstallés : Steam garde parfois le dossier d'un jeu après l'avoir désinstallé
+# (sauvegardes, fichiers ajoutés, mods). Pas des jeux : la place qu'ils prennent est signalée, et ils
+# peuvent être mis à la corbeille (fenêtre de Windows, annulable depuis la corbeille).
+# ---------------------------------------------------------------------------
+$LeftoverSizeWork = {
+    param($dirs)
+    foreach ($d in $dirs) {
+        $sum = 0.0
+        try { foreach ($f in [IO.Directory]::EnumerateFiles($d, '*', 'AllDirectories')) { try { $sum += (New-Object IO.FileInfo $f).Length } catch {} } } catch {}
+        "$d|$sum"
+    }
+}
+
+function Update-LeftoverBar {
+    $list = @($script:Leftovers | Where-Object { $_ -and (Test-Path -LiteralPath $_.Dir) })
+    if (-not $list.Count) { $ui.LibLeftoverBar.Visibility = 'Collapsed'; return }
+    if (-not $script:LeftoverSizes) { $script:LeftoverSizes = @{} }
+    $missing = @($list | Where-Object { -not $script:LeftoverSizes.ContainsKey($_.Dir) } | ForEach-Object { $_.Dir })
+    if ($missing.Count -and -not $script:LeftoverJob) {
+        # Taille calculée en arrière plan (un dossier peut contenir des centaines de milliers de fichiers)
+        $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
+        [void]$ps.AddScript($LeftoverSizeWork.ToString()).AddArgument($missing)
+        $script:LeftoverJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
+        $t = New-Object System.Windows.Threading.DispatcherTimer
+        $t.Interval = [TimeSpan]::FromMilliseconds(500)
+        $t.Add_Tick({
+            param($s, $e)
+            $j = $script:LeftoverJob
+            if (-not $j -or -not $j.Handle.IsCompleted) { return }
+            $s.Stop(); $script:LeftoverJob = $null
+            try { foreach ($l in @($j.PS.EndInvoke($j.Handle))) { $x = ([string]$l) -split '\|'; $script:LeftoverSizes[$x[0]] = [double]$x[1] } } catch {} finally { $j.PS.Dispose() }
+            Update-LeftoverBar
+        })
+        $t.Start()
+    }
+    # Affiché une fois les tailles connues, seulement pour les dossiers qui pèsent (les petits ne gardent que des réglages)
+    if ($missing.Count) { $ui.LibLeftoverBar.Visibility = 'Collapsed'; return }
+    $big = @(Get-BigLeftovers)
+    if (-not $big.Count) { $ui.LibLeftoverBar.Visibility = 'Collapsed'; return }
+    $size = ($big | ForEach-Object { $script:LeftoverSizes[$_.Dir] } | Measure-Object -Sum).Sum
+    $names = (@($big | Select-Object -First 3 | ForEach-Object { $_.Name }) -join ', ') + $(if ($big.Count -gt 3) { '...' })
+    $ui.LibLeftoverText.Text = "$($big.Count) jeu$(if ($big.Count -gt 1) {'x'}) désinstallé$(if ($big.Count -gt 1) {'s'}) $(if ($big.Count -gt 1) { 'ont' } else { 'a' }) laissé $(if ($big.Count -gt 1) { 'leur dossier' } else { 'son dossier' }) sur le disque ($names) : $(Format-Size $size) à récupérer."
+    $ui.LibLeftoverBar.Visibility = 'Visible'
+    if ($ui.TestOverlay.Visibility -eq 'Visible' -and $script:LeftoverPanelOpen) { Show-Leftovers }
+}
+
+# Restes de plus de 50 Mo, les plus gros d'abord
+function Get-BigLeftovers {
+    if (-not $script:LeftoverSizes) { return @() }
+    @($script:Leftovers | Where-Object { $_ -and $script:LeftoverSizes.ContainsKey($_.Dir) -and $script:LeftoverSizes[$_.Dir] -ge 50MB -and (Test-Path -LiteralPath $_.Dir) } |
+        Sort-Object @{ Expression = { $script:LeftoverSizes[$_.Dir] }; Descending = $true })
+}
+
+function Show-Leftovers {
+    if ($script:TestRunning) { return }
+    $list = @(Get-BigLeftovers)
+    $script:LeftoverPanelOpen = $true
+    Show-TestPanel @{ Tag = 'DEL'; Title = 'Restes de jeux désinstallés'; Sub = 'Dossiers que Steam a laissés après la désinstallation' }
+    Set-TestButtons 'done'
+    $ui.BtnTestAgain.Visibility = 'Collapsed'
+    $ui.TestProgress.Value = 100; $ui.TestPct.Text = ''
+    Set-TestState 'info' "$($list.Count) dossier$(if ($list.Count -gt 1) {'s'})"
+    $body = $ui.TestBody
+    $intro = New-Text 'Ces jeux ne sont plus installés (Steam ne les connaît plus), mais leur dossier est resté sur le disque. Il peut contenir des sauvegardes ou des mods : ouvre le dossier pour vérifier avant de le mettre à la corbeille.' 12.5 '#9AA3B2'
+    $intro.Margin = New-Thickness 0 0 0 10
+    [void]$body.Children.Add($intro)
+    foreach ($l in $list) {
+        $card = New-Card
+        $g = New-Grid @('*', 'Auto', 'Auto')
+        $sp = New-Object System.Windows.Controls.StackPanel
+        $sz = if ($script:LeftoverSizes -and $script:LeftoverSizes.ContainsKey($l.Dir)) { Format-Size $script:LeftoverSizes[$l.Dir] } else { 'taille en cours de calcul' }
+        [void]$sp.Children.Add((New-Text "$($l.Name)  ·  $sz" 14 '#FFFFFF' -Semi))
+        $p = New-Text $l.Dir 11.5 '#5B6475'
+        $p.TextTrimming = 'CharacterEllipsis'; $p.TextWrapping = 'NoWrap'
+        [void]$sp.Children.Add($p)
+        Add-ToGrid $g $sp 0
+        $ob = New-Button 'Ouvrir'
+        $ob.Margin = New-Thickness 12 0 0 0; $ob.VerticalAlignment = 'Center'; $ob.Tag = $l.Dir
+        $ob.Add_Click({ param($s, $e) $d = [string]$s.Tag; Invoke-Safe { Open-Url $d } })
+        Add-ToGrid $g $ob 1
+        $db = New-Button 'Mettre à la corbeille'
+        $db.Margin = New-Thickness 8 0 0 0; $db.VerticalAlignment = 'Center'; $db.Tag = $l
+        $db.Add_Click({ param($s, $e) $x = $s.Tag; Invoke-Safe { Remove-Leftover $x } })
+        Add-ToGrid $g $db 2
+        $card.Child = $g
+        [void]$body.Children.Add($card)
+    }
+}
+
+function Remove-Leftover($L) {
+    $dir = [string]$L.Dir
+    # Seulement un dossier de jeu dans « steamapps\common », jamais ce dossier lui même
+    if ($dir -notmatch '(?i)\\steamapps\\common\\[^\\]+$' -or -not (Test-Path -LiteralPath $dir)) { Show-Message "Ce dossier ne peut pas être supprimé par OptiGame :`n$dir" 'Warning'; return }
+    if (-not (Confirm-Action "Mettre le dossier de « $($L.Name) » à la corbeille ?`n`n$dir`n`nS'il contient des sauvegardes ou des mods, ils partiront avec. Tu pourras le récupérer depuis la corbeille.")) { return }
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    try {
+        # Fenêtre de Windows (progression, et question s'il est trop gros pour la corbeille)
+        [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($dir, [Microsoft.VisualBasic.FileIO.UIOption]::AllDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
+    } catch [System.OperationCanceledException] { Set-Status 'Suppression annulée.'; return }
+    Write-Log "Bibliothèque: reste de $($L.Name) mis à la corbeille ($dir)"
+    $script:Leftovers = @($script:Leftovers | Where-Object { $_.Dir -ne $dir })
+    Set-Status "Dossier de $($L.Name) mis à la corbeille."
+    Update-LeftoverBar
+    if (@(Get-BigLeftovers).Count) { Show-Leftovers } else { $script:LeftoverPanelOpen = $false; Hide-TestPanel }
+}
+
+# ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
 function Get-LibraryGames {
@@ -492,6 +599,7 @@ function Update-LibraryView {
     foreach ($g in $shown) { [void]$ui.LibGrid.Children.Add((New-LibraryTile $g)) }
     if (-not $script:LibSelected -or -not @($shown | Where-Object { $_.Name -eq $script:LibSelected }).Count) { $script:LibSelected = if ($shown.Count) { $shown[0].Name } else { $null } }
     Set-LibrarySelection $script:LibSelected
+    try { Update-LeftoverBar } catch { Write-Log "Bibliothèque: $_" }
     try { Start-CoverDownload } catch { Write-Log "Jaquettes: $_" }
 }
 
@@ -792,6 +900,7 @@ function Initialize-Library {
         Set-Setting 'LibCoversOnline' $on
         if ($on) { Start-CoverDownload } else { Set-Status 'Jaquettes depuis Internet désactivées (celles déjà trouvées restent).' }
     })
+    $ui.BtnLibLeftovers.Add_Click({ Invoke-Safe { Show-Leftovers } })
     $ui.BtnLibAdd.Add_Click({ Invoke-Safe { Add-CustomGame; Update-LibraryView } })
     $ui.BtnLibRefresh.Add_Click({ Invoke-Safe { Set-Status 'Recherche de tes jeux...'; Update-GameCache; Update-LibraryView; Set-Status "$(@(Get-LibraryGames).Count) jeux trouvés." } })
 }

@@ -314,6 +314,7 @@ function Get-StartupItems {
 # Riot, Rockstar, Amazon Games, Xbox / Game Pass. Chaque jeu : { Name, Exes (exécutables probables), Source, Dir,
 # AppId (Steam), Launch : comment le lancer par son launcher (adresse steam://, uplay://... ; vide = son exécutable),
 # Uninstall : comment le désinstaller (adresse, « exe|programme|arguments », ou la commande déclarée à Windows), Icon }.
+# Leftover = $true : dossier d'un jeu Steam désinstallé (pas un jeu, à proposer au nettoyage).
 # Autonome (tourne dans un fil séparé) : n'utilise aucune autre fonction d'OptiGame.
 function Get-InstalledGames {
     $bad = 'unins|setup|install|redist|dxsetup|directx|crash|report|easyanticheat|anticheat|eac_|beservice|battleye|_be$|update|helper|prereq|dotnet|webhelper|vcredist|python|java|browser|error|cleanup|touchup|repair|bootstrapper|resourcecompiler|^ui(32|64)$|diagnos|benchmark_?tool|ubisoftgamelauncher|uplay|^upc$|link2ea|socialclub|rockstarservice|cefsharp|leagueclient|riotclient|vanguard|^vgc$|blizzard ?error|agent$|gamelaunchhelper|launcher|snoretoast|notifier'
@@ -352,12 +353,12 @@ function Get-InstalledGames {
             $common = Join-Path $lib 'steamapps\common'
             if (Test-Path -LiteralPath $common) {
                 $steamCommon += $common.ToLower()
-                $dirs += Get-ChildItem -LiteralPath $common -Directory -ErrorAction SilentlyContinue |
-                    Where-Object { $_.Name -notmatch $notGames } |
-                    ForEach-Object {
-                        $id = $ids[$_.Name.ToLower()]
-                        @{ Name = $(if ($names[$_.Name.ToLower()]) { $names[$_.Name.ToLower()] } else { $_.Name }); Dir = $_.FullName; Exe = $null; Source = 'Steam'; AppId = $id; Launch = $(if ($id) { "steam://rungameid/$id" } else { '' }); Uninstall = $(if ($id) { "steam://uninstall/$id" } else { '' }) }
-                    }
+                foreach ($sd in @(Get-ChildItem -LiteralPath $common -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch $notGames })) {
+                    $id = $ids[$sd.Name.ToLower()]
+                    # Pas de fiche d'installation : Steam a désinstallé le jeu mais laissé son dossier (sauvegardes, fichiers en trop)
+                    if (-not $id) { $games += @{ Name = $sd.Name; Dir = $sd.FullName; Exes = @(); Source = 'Steam'; Leftover = $true }; continue }
+                    $dirs += @{ Name = $(if ($names[$sd.Name.ToLower()]) { $names[$sd.Name.ToLower()] } else { $sd.Name }); Dir = $sd.FullName; Exe = $null; Source = 'Steam'; AppId = $id; Launch = "steam://rungameid/$id"; Uninstall = "steam://uninstall/$id" }
+                }
             }
         }
     }

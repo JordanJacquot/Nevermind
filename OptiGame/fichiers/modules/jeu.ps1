@@ -29,7 +29,10 @@ function Get-GameModeSelection {
 
 # Liste des jeux (tous les launchers, plus ceux ajoutés à la main), calculée une fois en arrière plan.
 function Update-GameCache {
-    $found = @(Invoke-Async ([scriptblock]::Create("function Get-InstalledGames {${function:Get-InstalledGames}}; Get-InstalledGames")))
+    $all = @(Invoke-Async ([scriptblock]::Create("function Get-InstalledGames {${function:Get-InstalledGames}}; Get-InstalledGames")))
+    # Dossiers laissés par des jeux désinstallés : pas des jeux, proposés au nettoyage dans la bibliothèque
+    $script:Leftovers = @($all | Where-Object { $_.Leftover })
+    $found = @($all | Where-Object { -not $_.Leftover })
     $script:Games = @($found) + @(Get-CustomGames | Where-Object { $p = $_.Exes[0]; -not @($found | Where-Object { @($_.Exes) -contains $p }).Count })
     $script:GameIndex = @{}
     foreach ($g in $script:Games) {

@@ -326,7 +326,7 @@ function Invoke-Analysis {
     if ($script:IsLaptop -and $dedicated.Count -and $integrated.Count) {
         Set-Status 'Recherche de tes jeux...'
         $dgpu = $dedicated[0].Name
-        $games = @(Invoke-Async ([scriptblock]::Create("function Get-InstalledGames {${function:Get-InstalledGames}}; Get-InstalledGames")))
+        $games = @(Invoke-Async ([scriptblock]::Create("function Get-InstalledGames {${function:Get-InstalledGames}}; Get-InstalledGames")) | Where-Object { -not $_.Leftover })
         $todo = @($games | Where-Object { $g = $_; @($g.Exes | Where-Object { (Get-GpuPreference $_) -notmatch 'GpuPreference=2' }).Count })
         if (-not $games.Count) {
             Add-Finding $F 'info' 'Jeux sur la carte graphique dédiée' "Aucun jeu trouvé. Pour tes autres jeux, choisis « Hautes performances » dans Paramètres > Écran > Graphiques." 0 -Id 'hybrid-gpu' -Fix (New-Fix `
