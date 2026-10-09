@@ -63,16 +63,14 @@ function New-NeonRing([string]$Label, [double]$Value, [string[]]$Grad, [int]$Del
     $arc = New-LoaderArc $c $r -90 0.1 (New-LinearBrush $Grad 0 0 1 1) 10
     $arc.Effect = New-Glow $Grad[0] 18 0.7
     [void]$cv.Children.Add($arc)
-    $center = New-Object System.Windows.Controls.StackPanel
-    $center.Width = 2 * $c
-    [System.Windows.Controls.Canvas]::SetTop($center, $c - 24)
-    $num = New-Text '0' 30 '#FFFFFF' -Bold
-    $num.HorizontalAlignment = 'Center'
+    # La note seule, au centre exact de l'anneau
+    $center = New-Object System.Windows.Controls.Grid
+    $center.Width = 2 * $c; $center.Height = 2 * $c
+    $num = New-Text '0' 34 '#FFFFFF' -Bold
+    $num.HorizontalAlignment = 'Center'; $num.VerticalAlignment = 'Center'
     $num.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
-    Set-PackFont $num 0.7
-    $u = New-Text 'sur 100' 11 '#8E88A8'
-    $u.HorizontalAlignment = 'Center'; $u.Margin = New-Thickness 0 -4 0 0
-    [void]$center.Children.Add($num); [void]$center.Children.Add($u)
+    Set-PackFont $num 0.6
+    [void]$center.Children.Add($num)
     [void]$cv.Children.Add($center)
     $cv.HorizontalAlignment = 'Center'
     [void]$root.Children.Add($cv)
