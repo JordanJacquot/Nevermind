@@ -1,4 +1,4 @@
-﻿Nevermind 1.0.63
+﻿Nevermind 1.0.64
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -217,8 +217,8 @@ PARAMÈTRES (roue crantée en haut à droite)
   Jeux : mesure des FPS, mesure du lag, mode jeu, jaquettes depuis Internet.
   Réseau et vie privée : alerte nouvel appareil, identification des serveurs.
   Thème : 5 ambiances pour toute l'app. Néon (celui de base), Crépuscule
-  (orange, rose et or), Terminal (vert phosphore, police de code), Rétro 8 bits
-  (pièces, briques et nuages en pixels) et Dresseur (rouge, jaune, bleu).
+  (orange, rose et or), Terminal (vert phosphore, police de code), Arcade
+  (jaune, rouge et bleu sur bleu nuit) et Rubis (rouge, jaune et bleu sur gris).
   Nevermind se relance quelques secondes pour appliquer le thème.
   Mises à jour : « Recevoir les versions bêta » pour tester les nouveautés avant
   tout le monde.

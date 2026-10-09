@@ -16,18 +16,19 @@ $AppThemes = [ordered]@{
         P = '#33FF77'; S = '#B6FF3B'; T = '#00E0A0'; NH = 140; NS = 0.55
         Map = @{ '0C0920' = '030B06'; '06050F' = '000302'; '0B0820' = '020A05'; '08060F' = '001A08' }
         Hello = '> salut {0}_'; Ready = '> prêt.'; Font = 'Cascadia Code, Consolas'; Decor = 'terminal' }
-    retro = @{ Name = 'Rétro 8 bits'; Desc = 'Clin d''oeil aux jeux de plateforme : pièces, briques et nuages en pixels.'
+    arcade = @{ Name = 'Arcade'; Desc = 'Jaune, rouge et bleu vifs sur fond bleu nuit, comme une vieille borne.'
         P = '#FBD000'; S = '#E52521'; T = '#1E88E5'; NH = 228; NS = 0.9
         Map = @{ '0C0920' = '0B1640'; '06050F' = '050A20'; '0B0820' = '0A1338'; '08060F' = '1A1000' }
-        Hello = 'Joueur 1 : {0}'; Ready = 'C''est parti !'; Font = $null; Decor = 'retro' }
-    dresseur = @{ Name = 'Dresseur'; Desc = 'Clin d''oeil aux jeux de monstres de poche : rouge, jaune et bleu, balls en fond.'
+        Hello = 'Salut {0}'; Ready = 'C''est prêt !'; Font = $null; Decor = $null }
+    rubis = @{ Name = 'Rubis'; Desc = 'Rouge vif, jaune et bleu sur un gris anthracite sobre.'
         P = '#FF3B3B'; S = '#FFDE00'; T = '#3B6FFF'; NH = 0; NS = 0.15
         Map = @{ '0C0920' = '17171D'; '06050F' = '0A0A0D'; '0B0820' = '141419'; '08060F' = '1A0606' }
-        Hello = 'Dresseur {0}'; Ready = 'Prêt au combat !'; Font = $null; Decor = 'dresseur' }
+        Hello = 'Salut {0}'; Ready = 'C''est prêt !'; Font = $null; Decor = $null }
 }
 
 # Thème choisi (la copie de test peut en forcer un pour les captures)
 $ThemeId = [string](Get-Setting 'Theme' 'neon')
+$ThemeId = @{ retro = 'arcade'; dresseur = 'rubis' }[$ThemeId], $ThemeId | Where-Object { $_ } | Select-Object -First 1   # anciens noms (1.0.63)
 if ($env:OPTIGAME_TEST -and $env:OPTIGAME_THEME) { $ThemeId = $env:OPTIGAME_THEME }
 if (-not $AppThemes.Contains($ThemeId)) { $ThemeId = 'neon' }
 $Theme = $AppThemes[$ThemeId]
@@ -105,24 +106,6 @@ function Get-ThemeText([string]$Key) { [string]$Theme[$Key] }
 # ---------------------------------------------------------------------------
 function New-RawBrush([string]$Hex) { [System.Windows.Media.BrushConverter]::new().ConvertFromString($Hex) }
 
-# Petit dessin en pixels : une ligne de texte par rangée, une lettre par couleur, « . » = vide
-function New-PixelShape([string[]]$Rows, [double]$Px, [hashtable]$Palette) {
-    $cv = New-Object System.Windows.Controls.Canvas
-    $cv.Width = $Rows[0].Length * $Px; $cv.Height = $Rows.Count * $Px
-    for ($y = 0; $y -lt $Rows.Count; $y++) {
-        for ($x = 0; $x -lt $Rows[$y].Length; $x++) {
-            $ch = [string]$Rows[$y][$x]
-            if (-not $Palette.ContainsKey($ch)) { continue }
-            $r = New-Object System.Windows.Shapes.Rectangle
-            $r.Width = $Px; $r.Height = $Px
-            $r.Fill = New-RawBrush $Palette[$ch]
-            [System.Windows.Controls.Canvas]::SetLeft($r, $x * $Px); [System.Windows.Controls.Canvas]::SetTop($r, $y * $Px)
-            [void]$cv.Children.Add($r)
-        }
-    }
-    $cv
-}
-
 function Add-DecorAt($Parent, $El, [string]$H, [string]$V, [double]$L, [double]$T, [double]$R, [double]$B, [double]$Opacity) {
     $El.HorizontalAlignment = $H; $El.VerticalAlignment = $V
     $El.Margin = [System.Windows.Thickness]::new($L, $T, $R, $B)
@@ -148,44 +131,6 @@ function Add-ThemeDecor {
             $txt.FontFamily = New-Object System.Windows.Media.FontFamily 'Cascadia Code, Consolas'
             $txt.FontSize = 13; $txt.Foreground = New-RawBrush '#33FF77'
             Add-DecorAt $d $txt 'Right' 'Bottom' 0 0 40 40 0.16
-        }
-        'retro' {
-            # Nuages en pixels, bloc « ? », briques et pièces
-            $cloud = @('...WWWW.....', '..WWWWWW.WW.', '.WWWWWWWWWWW', 'WWWWWWWWWWWW', '.WWWWWWWWWW.')
-            $pw = @{ W = '#FFFFFF' }
-            Add-DecorAt $d (New-PixelShape $cloud 9 $pw) 'Left' 'Top' 140 92 0 0 0.16
-            Add-DecorAt $d (New-PixelShape $cloud 7 $pw) 'Right' 'Top' 0 150 300 0 0.13
-            Add-DecorAt $d (New-PixelShape $cloud 6 $pw) 'Left' 'Top' 620 60 0 0 0.11
-            $q = @('KKKKKKKKKK', 'KYYYYYYYYK', 'KYYKKKKYYK', 'KYYYYYKYYK', 'KYYYYKKYYK', 'KYYYYKYYYK', 'KYYYYYYYYK', 'KYYYYKYYYK', 'KYYYYYYYYK', 'KKKKKKKKKK')
-            Add-DecorAt $d (New-PixelShape $q 6 @{ K = '#7A3B00'; Y = '#FBD000' }) 'Right' 'Top' 0 92 46 0 0.42
-            $brick = @('BBBBBBBBBBBBBBBB', 'BRRRRRRRBRRRRRRR', 'BRRRRRRRBRRRRRRR', 'BBBBBBBBBBBBBBBB', 'RRRRBRRRRRRRBRRR', 'RRRRBRRRRRRRBRRR')
-            foreach ($i in 0..2) { Add-DecorAt $d (New-PixelShape $brick 5 @{ B = '#3A1606'; R = '#B4471A' }) 'Right' 'Bottom' 0 0 (40 + 80 * $i) 40 0.32 }
-            $coin = @('.YYY.', 'YYWYY', 'YYWYY', 'YYWYY', '.YYY.')
-            foreach ($c in @(@(126, 0.40), @(160, 0.30), @(194, 0.20))) { Add-DecorAt $d (New-PixelShape $coin 4 @{ Y = '#FBD000'; W = '#FFF2A8' }) 'Right' 'Top' 0 112 $c[0] 0 $c[1] }
-        }
-        'dresseur' {
-            # Balls en filigrane : une grande en bas à droite, une petite en haut à gauche
-            foreach ($b in @(@(420, 'Right', 'Bottom', -120, -120, 0.07), @(160, 'Left', 'Top', 60, 140, 0.05))) {
-                $sz = [double]$b[0]
-                $g = New-Object System.Windows.Controls.Grid
-                $g.Width = $sz; $g.Height = $sz
-                $top = New-Object System.Windows.Shapes.Path
-                $top.Data = [System.Windows.Media.Geometry]::Parse("M 0,$($sz / 2) A $($sz / 2),$($sz / 2) 0 0 1 $sz,$($sz / 2) Z")
-                $top.Fill = New-RawBrush '#FF3B3B'
-                $band = New-Object System.Windows.Shapes.Rectangle
-                $band.Height = $sz / 14; $band.Fill = [System.Windows.Media.Brushes]::White; $band.VerticalAlignment = 'Center'
-                $ring = New-Object System.Windows.Shapes.Ellipse
-                $ring.Stroke = [System.Windows.Media.Brushes]::White; $ring.StrokeThickness = $sz / 22
-                $mid = New-Object System.Windows.Shapes.Ellipse
-                $mid.Width = $sz / 3.6; $mid.Height = $mid.Width; $mid.Fill = New-RawBrush '#17171D'
-                $mid.Stroke = [System.Windows.Media.Brushes]::White; $mid.StrokeThickness = $sz / 22
-                foreach ($x in $top, $band, $ring, $mid) { [void]$g.Children.Add($x) }
-                $g.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5)
-                $g.RenderTransform = New-Object System.Windows.Media.RotateTransform (-18)
-                $l = if ($b[1] -eq 'Left') { $b[3] } else { 0 }; $t = if ($b[2] -eq 'Top') { $b[4] } else { 0 }
-                $r = if ($b[1] -eq 'Right') { $b[3] } else { 0 }; $bt = if ($b[2] -eq 'Bottom') { $b[4] } else { 0 }
-                Add-DecorAt $d $g $b[1] $b[2] $l $t $r $bt $b[5]
-            }
         }
     }
 }

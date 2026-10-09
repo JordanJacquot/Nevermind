@@ -74,7 +74,7 @@ $SearchEntries = @(
     # Trafic
     @{ T = 'Ce qui sort de ton PC'; P = 'trafic'; A = 'Ce qui sort de ton PC'; K = 'trafic internet donnees envoyees programmes connexions espion' },
     @{ T = 'Identifier les serveurs sans nom'; P = 'trafic'; A = 'Identifier les serveurs sans nom'; K = 'rdap annuaire serveur ip proprietaire' },
-    @{ T = 'Thème (couleurs de l''app)'; P = 'parametres'; Tab = 'theme'; K = 'theme couleur couleurs apparence design da sombre terminal retro mario pokemon dresseur crepuscule neon skin' },
+    @{ T = 'Thème (couleurs de l''app)'; P = 'parametres'; Tab = 'theme'; K = 'theme couleur couleurs apparence design da sombre terminal arcade rubis crepuscule neon skin' },
     @{ T = 'Paramètres de Nevermind'; P = 'parametres'; Tab = 'general'; K = 'parametres reglages options configuration roue engrenage settings' },
     @{ T = 'Signaler un problème'; P = 'parametres'; Tab = 'aide'; A = 'Signaler un problème'; K = 'bug souci erreur rapport envoyer probleme aide' },
     @{ T = 'Revoir la visite guidée'; P = 'parametres'; Tab = 'aide'; A = 'Visite guidée'; K = 'visite tutoriel aide decouvrir' },
