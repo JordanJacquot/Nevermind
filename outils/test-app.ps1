@@ -443,6 +443,14 @@ $script:T.Run.Add_Tick({
                     Assert-Test ((Get-OrgTarget 'Next').Name -eq 'Soin-Eni' -and (Get-OrgTarget 'Prev').Name -eq 'Vieux-Cra' -and (Get-OrgTarget 'P3').Name -eq 'Vieux-Cra' -and -not (Get-OrgTarget 'P5')) 'mauvais perso choisi'
                     $script:OrgFakeFg = [IntPtr]1003
                     Assert-Test ((Get-OrgTarget 'Next').Name -eq 'Brakmar-Iop') 'le suivant du dernier n''est pas le premier'
+                    # Logo de classe : retrouvé depuis le nom (accents compris), pris dans le dossier de Nevermind
+                    Assert-Test ((Get-OrgBreedId 'Crâ') -eq 9 -and (Get-OrgBreedId 'Xélor') -eq 5 -and (Get-OrgBreedId 'Forgelance') -eq 20 -and -not (Get-OrgBreedId 'Inconnu')) 'classes mal reconnues'
+                    $iconFile = Join-Path $OrgIconDir 'classe-8.png'
+                    if (-not (Test-Path -LiteralPath $OrgIconDir)) { New-Item -ItemType Directory -Force -Path $OrgIconDir | Out-Null }
+                    Add-Type -AssemblyName System.Drawing; $bmp = New-Object System.Drawing.Bitmap 16, 16; $bmp.SetPixel(8, 8, [System.Drawing.Color]::Red); $bmp.Save($iconFile, [System.Drawing.Imaging.ImageFormat]::Png); $bmp.Dispose()
+                    $bIop = New-OrgBadge @{ Name = 'Brakmar-Iop'; Class = 'Iop' } 30; $bEni = New-OrgBadge @{ Name = 'Soin-Eni'; Class = 'Eniripsa' } 30
+                    Assert-Test ($bIop.Children[0] -is [System.Windows.Controls.Image] -and $bEni.Children[0] -is [System.Windows.Shapes.Ellipse]) 'logo de classe non affiché (ou affiché sans fichier)'
+                    [IO.File]::Delete($iconFile)
                     # Touches
                     $hk = ConvertTo-OrgHotkey 'Ctrl+Maj+Tab'; $f1 = ConvertTo-OrgHotkey 'F1'
                     Assert-Test ($hk.Mods -eq 6 -and $hk.Vk -eq 9 -and $f1.Mods -eq 0 -and $f1.Vk -eq 0x70 -and -not (ConvertTo-OrgHotkey '')) 'touches mal converties'
@@ -476,7 +484,7 @@ $script:T.Run.Add_Tick({
                     # Retour à la bibliothèque
                     $ui.BtnLibOrganizer.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Button]::ClickEvent))); Wait-TestMs 200
                     Assert-Test ($ui.LibBody.Visibility -eq 'Visible' -and $ui.LibTitle.Text -eq 'Mes jeux') 'bibliothèque non revenue'
-                    "titres lus, ordre retenu, suivant / précédent / touche par perso, touche capturée, barre de $nBar persos"
+                    "titres lus, logos de classe, ordre retenu, suivant / précédent / touche par perso, touche capturée, barre de $nBar persos"
                 } finally {
                     $script:OrgFake = $null; $script:OrgFakeFg = $null; $script:OrgCapture = $null
                     try { Stop-OrgWatch } catch {}

@@ -21,7 +21,7 @@ $OrgClassColors = @{
 # ---------------------------------------------------------------------------
 function Get-OrgConfig {
     if ($script:OrgConfig) { return $script:OrgConfig }
-    $c = @{ On = $false; Order = @(); Bar = $true; BarAlways = $false; BarX = $null; BarY = $null
+    $c = @{ On = $false; Order = @(); Bar = $true; BarAlways = $false; BarX = $null; BarY = $null; Classes = @{}
         Hotkeys = @{ Next = 'Ctrl+Tab'; Prev = 'Ctrl+Maj+Tab' } }
     for ($i = 1; $i -le $OrgMaxKeys; $i++) { $c.Hotkeys["P$i"] = "F$i" }
     try {
@@ -31,6 +31,7 @@ function Get-OrgConfig {
             foreach ($k in 'BarX', 'BarY') { if ($null -ne $j.$k) { $c[$k] = [double]$j.$k } }
             $c.Order = @($j.Order | Where-Object { $_ } | ForEach-Object { [string]$_ })
             if ($j.Hotkeys) { foreach ($p in $j.Hotkeys.PSObject.Properties) { $c.Hotkeys[$p.Name] = [string]$p.Value } }
+            if ($j.Classes) { foreach ($p in $j.Classes.PSObject.Properties) { $c.Classes[$p.Name] = [string]$p.Value } }
         }
     } catch { Write-Log "Organizer : réglages illisibles : $_" }
     $script:OrgConfig = $c
@@ -73,14 +74,16 @@ function Get-OrgList {
     if ($added) { Save-OrgConfig }
     $list = @(foreach ($n in $c.Order) {
         $w = $byName[$n]
-        if ($w) { @{ Name = $n; Class = $w.Class; Hwnd = $w.Hwnd; Pid = $w.Pid; Online = $true } }
-        else { @{ Name = $n; Class = [string]$script:OrgClassSeen[$n]; Hwnd = [IntPtr]::Zero; Pid = 0; Online = $false } }
+        if ($w) { @{ Name = $n; Class = $(if ($w.Class) { $w.Class } else { [string]$c.Classes[$n] }); Hwnd = $w.Hwnd; Pid = $w.Pid; Online = $true } }
+        else { @{ Name = $n; Class = [string]$c.Classes[$n]; Hwnd = [IntPtr]::Zero; Pid = 0; Online = $false } }
     })
     foreach ($w in $wins) { if (-not $w.Name) { $list += @{ Name = ''; Class = ''; Hwnd = $w.Hwnd; Pid = $w.Pid; Online = $true } } }
-    foreach ($w in $wins) { if ($w.Name -and $w.Class) { $script:OrgClassSeen[$w.Name] = $w.Class } }
+    # Classe retenue : le perso garde son logo même déconnecté (Dofus 2 n'écrit pas la classe dans le titre)
+    $seen = $false
+    foreach ($w in $wins) { if ($w.Name -and $w.Class -and $c.Classes[$w.Name] -ne $w.Class) { $c.Classes[$w.Name] = $w.Class; $seen = $true } }
+    if ($seen) { Save-OrgConfig }
     $list
 }
-if (-not $script:OrgClassSeen) { $script:OrgClassSeen = @{} }
 
 # Persos connectés seulement, numérotés dans l'ordre (perso 1 = F1 par défaut)
 function Get-OrgOnline { @(Get-OrgList | Where-Object { $_.Online -and $_.Name }) }
@@ -223,6 +226,7 @@ function Update-OrgWatch([switch]$Full) {
             $script:OrgBarSig = $null
         }
         $script:OrgLast = Get-Date
+        Receive-OrgIcons
     }
     $fg = [WinFocus]::Foreground()
     $inGame = $script:OrgHwnds -and $script:OrgHwnds.ContainsKey([int64]$fg)
@@ -242,8 +246,63 @@ function Set-OrgOn([bool]$On) {
 }
 
 # ---------------------------------------------------------------------------
-# Pastille d'un perso : initiale sur la couleur de sa classe
+# Pastille d'un perso : logo de sa classe, sinon son initiale sur la couleur de la classe
+# Les logos (images d'Ankama) ne sont jamais dans l'app : téléchargés une fois depuis DofusDB, gardés sur le PC
 # ---------------------------------------------------------------------------
+$OrgBreeds = @{ feca = 1; osamodas = 2; enutrof = 3; sram = 4; xelor = 5; ecaflip = 6; eniripsa = 7; iop = 8; cra = 9; sadida = 10
+    sacrieur = 11; pandawa = 12; roublard = 13; zobal = 14; steamer = 15; eliotrope = 16; huppermage = 17; ouginak = 18; forgelance = 20 }
+$OrgIconDir = Join-Path $DataDir 'organizer'
+
+function Get-OrgBreedId([string]$Class) {
+    $k = ConvertTo-SearchText $Class
+    if ($k -and $OrgBreeds.ContainsKey($k)) { $OrgBreeds[$k] } else { 0 }
+}
+
+function Get-OrgClassIcon([string]$Class) {
+    $id = Get-OrgBreedId $Class
+    if (-not $id) { return $null }
+    $f = Join-Path $OrgIconDir "classe-$id.png"
+    if (Test-Path -LiteralPath $f) { return $f }
+    # Téléchargement en arrière plan, relevé par Receive-OrgIcons (aucun bloc PowerShell sur un autre fil)
+    if ($null -ne $script:OrgFake) { return $null }
+    if (-not $script:OrgIconJobs) { $script:OrgIconJobs = @{} }
+    if (-not $script:OrgIconJobs.ContainsKey($id)) {
+        try {
+            if (-not (Test-Path -LiteralPath $OrgIconDir)) { New-Item -ItemType Directory -Force -Path $OrgIconDir | Out-Null }
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+            $wc = New-Object System.Net.WebClient
+            $wc.Headers['User-Agent'] = "Nevermind/$AppVersion"
+            $script:OrgIconJobs[$id] = @{ Task = $wc.DownloadFileTaskAsync("https://api.dofusdb.fr/img/breeds/symbol_$id.png", "$f.part"); File = $f; Client = $wc }
+            if (-not $script:OrgIconTimer) {
+                $script:OrgIconTimer = New-Object System.Windows.Threading.DispatcherTimer
+                $script:OrgIconTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+                $script:OrgIconTimer.Add_Tick({ try { Receive-OrgIcons } catch { Write-Log "Organizer : $_" }; if (-not @($script:OrgIconJobs.Values | Where-Object { $_.Task }).Count) { $script:OrgIconTimer.Stop() } })
+            }
+            $script:OrgIconTimer.Start()
+        } catch { Write-Log "Organizer, logo de classe : $_" }
+    }
+    $null
+}
+
+# Logos arrivés : on les garde (fichier complet seulement) et on redessine
+function Receive-OrgIcons {
+    if (-not $script:OrgIconJobs) { return }
+    $got = $false
+    foreach ($id in @($script:OrgIconJobs.Keys)) {
+        $j = $script:OrgIconJobs[$id]
+        if (-not $j.Task -or -not $j.Task.IsCompleted) { continue }
+        try {
+            if (-not $j.Task.IsFaulted -and (Test-Path -LiteralPath "$($j.File).part") -and (Get-Item -LiteralPath "$($j.File).part").Length -gt 100) {
+                [IO.File]::Move("$($j.File).part", $j.File); $got = $true
+            } elseif (Test-Path -LiteralPath "$($j.File).part") { [IO.File]::Delete("$($j.File).part") }
+        } catch { Write-Log "Organizer, logo de classe : $_" }
+        try { $j.Client.Dispose() } catch {}
+        # Échec : on garde la tâche pour ne pas réessayer en boucle pendant cette session
+        $j.Task = $null
+    }
+    if ($got) { $script:OrgBarSig = $null; if ($script:OrgViewOn -and -not $script:OrgDragging) { Build-OrgPanel }; Update-OrgBar }
+}
+
 function Get-OrgColor($Char) {
     $k = ConvertTo-SearchText ([string]$Char.Class)
     if ($k -and $OrgClassColors.ContainsKey($k)) { return $OrgClassColors[$k] }
@@ -253,6 +312,19 @@ function Get-OrgColor($Char) {
 function New-OrgBadge($Char, [double]$Size) {
     $g = New-Object System.Windows.Controls.Grid
     $g.Width = $Size; $g.Height = $Size
+    $icon = Get-OrgClassIcon ([string]$Char.Class)
+    if ($icon) {
+        try {
+            $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+            $bi.BeginInit(); $bi.UriSource = New-Object Uri $icon; $bi.DecodePixelWidth = 128; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
+            $img = New-Object System.Windows.Controls.Image
+            $img.Source = $bi; $img.Stretch = 'Uniform'
+            [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'HighQuality')
+            $img.ToolTip = $Char.Class
+            [void]$g.Children.Add($img)
+            return $g
+        } catch { Write-Log "Organizer, logo illisible : $_" }
+    }
     $e = New-Object System.Windows.Shapes.Ellipse
     $col = Get-OrgColor $Char
     $e.Fill = New-RawGradient @($col, '#33000000') 0 1
