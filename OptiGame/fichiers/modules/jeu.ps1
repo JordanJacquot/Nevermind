@@ -392,6 +392,33 @@ function Get-FpsColor([double]$Fps) { if ($Fps -ge 60) { $Colors.ok } elseif ($F
 # Style du compteur : « complet » (chiffre, 1 % bas et moyenne sur un fond) ou « discret » (juste « 144 FPS », petit et semi transparent)
 function Get-FpsOverlayStyle { if ([string](Get-Setting 'FpsOverlayStyle' 'complet') -eq 'discret') { 'discret' } else { 'complet' } }
 
+# DA du thème sur le compteur : police du pack (nette et à sa taille pixel) ou du thème (Terminal)
+function Set-OverlayFont($El, [double]$PixelSize) {
+    if ($PackFont) {
+        $El.FontFamily = New-Object System.Windows.Media.FontFamily "$PackFont, Cascadia Code, Consolas"
+        if ($ThemePack.FontPixel) {
+            $El.FontSize = $PixelSize
+            [System.Windows.Media.TextOptions]::SetTextRenderingMode($El, 'Aliased')
+            [System.Windows.Media.TextOptions]::SetTextFormattingMode($El, 'Display')
+        }
+    } elseif ($Theme.Font) { $El.FontFamily = New-Object System.Windows.Media.FontFamily $Theme.Font }
+}
+
+# Logo du pack à gauche du chiffre (première image s'il est animé), ou rien
+function New-OverlayPackLogo([double]$Size) {
+    if (-not ($ThemePack -and $ThemePack.Logo)) { return $null }
+    try {
+        $img = New-Object System.Windows.Controls.Image
+        $img.Source = if ($ThemePack.LogoFrames -gt 1) { (Get-SheetFrames $ThemePack.Logo $ThemePack.LogoFrames)[0] } else {
+            $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+            $bi.BeginInit(); $bi.UriSource = New-Object Uri $ThemePack.Logo; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze(); $bi }
+        $img.Width = $Size; $img.Height = $Size; $img.Stretch = 'Uniform'
+        [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, $(if ($ThemePack.FontPixel) { 'NearestNeighbor' } else { 'HighQuality' }))
+        $img.VerticalAlignment = 'Center'
+        $img
+    } catch { $null }
+}
+
 # Contenu du compteur, partagé par l'overlay et l'aperçu de la page « Mes parties »
 function New-FpsOverlayContent([string]$Style, [string]$Value = '...') {
     if ($Style -eq 'discret') {
@@ -405,9 +432,11 @@ function New-FpsOverlayContent([string]$Style, [string]$Value = '...') {
         $fps = New-Text $Value 15 '#FFFFFF' -Semi
         $fps.TextWrapping = 'NoWrap'
         $fps.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
+        Set-OverlayFont $fps 16
         [void]$row.Children.Add($fps)
         $unit = New-Text 'FPS' 10 '#FFFFFF' -Semi
         $unit.VerticalAlignment = 'Bottom'; $unit.Margin = New-Thickness 3 0 0 2
+        Set-OverlayFont $unit 8
         [void]$row.Children.Add($unit)
         $b = New-Object System.Windows.Controls.Border
         $b.Padding = New-Thickness 4 2 4 2
@@ -419,23 +448,37 @@ function New-FpsOverlayContent([string]$Style, [string]$Value = '...') {
     $b.Background = Get-Brush '#D90B0820'
     $b.BorderBrush = New-LinearBrush @('#B000E5FF', '#B0FF2EB5') 0 0 1 1
     $b.BorderThickness = New-Thickness 1 1 1 1
-    $b.CornerRadius = [System.Windows.CornerRadius]::new(12)
+    # Coins carrés pour les thèmes pixel et Terminal, arrondis pour les autres
+    $b.CornerRadius = [System.Windows.CornerRadius]::new($(if (($PackFont -and $ThemePack.FontPixel) -or $Theme.Decor -eq 'terminal') { 3 } else { 12 }))
     $b.Padding = New-Thickness 12 5 14 7
     $sp = New-Object System.Windows.Controls.StackPanel
+    $sp.VerticalAlignment = 'Center'
     $row = New-Object System.Windows.Controls.StackPanel
     $row.Orientation = 'Horizontal'
     $fps = New-Text $Value 26 $Colors.ok -Bold
     $fps.TextWrapping = 'NoWrap'
     $fps.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
+    Set-OverlayFont $fps 24
     [void]$row.Children.Add($fps)
     $unit = New-Text 'FPS' 12 '#A6A1BC' -Semi
     $unit.VerticalAlignment = 'Bottom'; $unit.Margin = New-Thickness 6 0 0 5
+    Set-OverlayFont $unit 8
     [void]$row.Children.Add($unit)
     [void]$sp.Children.Add($row)
     $sub = New-Text 'Mesure en cours...' 11.5 '#D3CDE3'
     $sub.TextWrapping = 'NoWrap'
+    Set-OverlayFont $sub 8
+    if ($PackFont -and $ThemePack.FontPixel) { $sub.Margin = New-Thickness 0 4 0 0 }
     [void]$sp.Children.Add($sub)
-    $b.Child = $sp
+    $logo = New-OverlayPackLogo 40
+    if ($logo) {
+        $all = New-Object System.Windows.Controls.StackPanel
+        $all.Orientation = 'Horizontal'
+        $logo.Margin = New-Thickness 0 0 10 0
+        [void]$all.Children.Add($logo)
+        [void]$all.Children.Add($sp)
+        $b.Child = $all
+    } else { $b.Child = $sp }
     @{ Root = $b; Fps = $fps; Sub = $sub; Discreet = $false }
 }
 
@@ -870,11 +913,22 @@ function Invoke-FpsHelp {
 $OverlayIndex = 12
 
 # Scène de jeu factice (coucher de soleil néon) : assez claire en haut pour juger la lisibilité du compteur
+# Avec un pack qui a un fond d'écran, la scène est ce fond (le compteur se voit dans l'univers du pack)
 function New-OverlayScene([double]$W, [double]$H, [double]$Radius = 14) {
     $b = New-Object System.Windows.Controls.Border
     $b.Width = $W; $b.Height = $H
     $b.CornerRadius = [System.Windows.CornerRadius]::new($Radius)
     $b.ClipToBounds = $true
+    if ($ThemePack -and $ThemePack.Background) {
+        try {
+            $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+            $bi.BeginInit(); $bi.UriSource = New-Object Uri $ThemePack.Background; $bi.DecodePixelWidth = 1280; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
+            $ib = New-Object System.Windows.Media.ImageBrush $bi
+            $ib.Stretch = 'UniformToFill'; $ib.AlignmentX = $ThemePack.BackgroundAlignX; $ib.AlignmentY = $ThemePack.BackgroundAlignY
+            $b.Background = $ib
+            return $b
+        } catch { Write-Log "Fond du pack illisible pour l'aperçu : $_" }
+    }
     $b.Background = New-LinearBrush @('#3B2A7A', '#B0508F', '#F59E6B') 0 0 0 0.62
     $cv = New-Object System.Windows.Controls.Canvas
     $cv.Width = $W; $cv.Height = $H
@@ -919,15 +973,22 @@ function New-OverlayScene([double]$W, [double]$H, [double]$Radius = 14) {
 }
 
 # Compteur posé dans un coin d'une scène (aperçu)
-function Add-OverlayPreview($Parent, [string]$Style, [string]$Corner, [string]$Value, [double]$Scale = 1.0) {
+# MaxWidth : le compteur rétrécit encore s'il est trop large (police pixel dans une petite vignette)
+function Add-OverlayPreview($Parent, [string]$Style, [string]$Corner, [string]$Value, [double]$Scale = 1.0, [double]$MaxWidth = 0) {
     $c = New-FpsOverlayContent $Style $Value
     if ($c.Sub) { $c.Sub.Text = '1 % bas 118    moyenne 141' }
     if ($Scale -ne 1.0) { $c.Root.LayoutTransform = New-Object System.Windows.Media.ScaleTransform $Scale, $Scale }
-    $c.Root.HorizontalAlignment = if ($Corner -like '?d') { 'Right' } else { 'Left' }
-    $c.Root.VerticalAlignment = if ($Corner -like 'b?') { 'Bottom' } else { 'Top' }
+    $el = $c.Root
+    if ($MaxWidth -gt 0) {
+        $el = New-Object System.Windows.Controls.Viewbox
+        $el.StretchDirection = 'DownOnly'; $el.MaxWidth = $MaxWidth
+        $el.Child = $c.Root
+    }
+    $el.HorizontalAlignment = if ($Corner -like '?d') { 'Right' } else { 'Left' }
+    $el.VerticalAlignment = if ($Corner -like 'b?') { 'Bottom' } else { 'Top' }
     $m = 12 * $Scale
-    $c.Root.Margin = New-Thickness $m $m $m $m
-    [void]$Parent.Children.Add($c.Root)
+    $el.Margin = New-Thickness $m $m $m $m
+    [void]$Parent.Children.Add($el)
     $c
 }
 
@@ -1118,7 +1179,7 @@ function Build-OverlayPanel {
         $mini = New-Object System.Windows.Controls.Grid
         $mini.Height = 92; $mini.ClipToBounds = $true
         [void]$mini.Children.Add((New-OverlayScene 220 92 10))
-        [void](Add-OverlayPreview $mini $o[0] 'hg' '144' 0.75)
+        [void](Add-OverlayPreview $mini $o[0] 'hg' '144' 0.75 175)
         [void]$tsp.Children.Add($mini)
         $nm = New-Object System.Windows.Controls.StackPanel
         $nm.Orientation = 'Horizontal'; $nm.Margin = New-Thickness 2 10 0 0
