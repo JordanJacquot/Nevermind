@@ -97,7 +97,7 @@ function Get-ThemePack([string]$Id) {
     if (-not $AppThemes.Contains($p.Base)) { $p.Base = 'neon' }
     $p.FontPixel = if ($null -ne $j.FontPixel) { [bool]$j.FontPixel } else { $true }
     if ($j.Loader -and $j.Loader.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Loader.File)))) {
-        $p.Loader = @{ File = (Join-Path $dir ([string]$j.Loader.File)); Frames = [math]::Max(1, [int]$j.Loader.Frames); Delay = [math]::Max(40, [int]$j.Loader.Delay); Flip = [bool]$j.Loader.Flip; Static = [bool]$j.Loader.Static; Height = [int]$j.Loader.Height }
+        $p.Loader = @{ File = (Join-Path $dir ([string]$j.Loader.File)); Frames = [math]::Max(1, [int]$j.Loader.Frames); Delay = [math]::Max(40, [int]$j.Loader.Delay); Flip = [bool]$j.Loader.Flip; Static = [bool]$j.Loader.Static; Height = [int]$j.Loader.Height; Gap = [int]$j.Loader.Gap }
     }
     $p
 }

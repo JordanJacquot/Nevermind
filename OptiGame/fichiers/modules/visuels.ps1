@@ -854,12 +854,12 @@ function Start-SpriteLoader {
     $bi.BeginInit(); $bi.UriSource = New-Object Uri $L.File; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
     $fw = [int]($bi.PixelWidth / $L.Frames); $fh = $bi.PixelHeight
     $frames = @(for ($i = 0; $i -lt $L.Frames; $i++) { $c = New-Object System.Windows.Media.Imaging.CroppedBitmap $bi, ([System.Windows.Int32Rect]::new($i * $fw, 0, $fw, $fh)); $c.Freeze(); $c })
-    $W = 400.0; $barY = 168.0; $sh = if ($L.Height -gt 0) { [double]$L.Height } else { 120.0 }; $sw = $sh * $fw / $fh
+    $W = 400.0; $barY = 168.0 + [math]::Max(0, $L.Gap); $sh = if ($L.Height -gt 0) { [double]$L.Height } else { 120.0 }; $sw = $sh * $fw / $fh
     if ($sw -gt $W) { $sw = $W; $sh = $sw * $fh / $fw }
     $lh.Children.Clear()
-    $lh.Width = $W; $lh.Height = 210
+    $lh.Width = $W; $lh.Height = 210 + [math]::Max(0, $L.Gap)
     $cv = New-Object System.Windows.Controls.Canvas
-    $cv.Width = $W; $cv.Height = 210
+    $cv.Width = $W; $cv.Height = 210 + [math]::Max(0, $L.Gap)
     # Ombre sous le personnage, puis le personnage
     $shadow = New-Object System.Windows.Shapes.Ellipse
     $shadow.Width = $sw * 0.6; $shadow.Height = 8; $shadow.Fill = Get-Brush '#55000000'
@@ -868,7 +868,8 @@ function Start-SpriteLoader {
     $img = New-Object System.Windows.Controls.Image
     $img.Width = $sw; $img.Height = $sh; $img.Source = $frames[0]
     if ($L.Flip) { $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5); $img.RenderTransform = New-Object System.Windows.Media.ScaleTransform -1, 1 }
-    [System.Windows.Controls.Canvas]::SetTop($img, $barY - $sh + 4)
+    # Gap : espace entre l'animation et la barre (0 = posée dessus)
+    [System.Windows.Controls.Canvas]::SetTop($img, $barY - $sh + 4 - [math]::Max(0, $L.Gap))
     [void]$cv.Children.Add($img)
     # Image fixe (pack fait d'illustrations) : le personnage sautille, son ombre rétrécit à chaque saut
     if ($L.Frames -le 1) {
