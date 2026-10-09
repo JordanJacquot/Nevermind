@@ -854,7 +854,8 @@ function Start-SpriteLoader {
     $bi.BeginInit(); $bi.UriSource = New-Object Uri $L.File; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
     $fw = [int]($bi.PixelWidth / $L.Frames); $fh = $bi.PixelHeight
     $frames = @(for ($i = 0; $i -lt $L.Frames; $i++) { $c = New-Object System.Windows.Media.Imaging.CroppedBitmap $bi, ([System.Windows.Int32Rect]::new($i * $fw, 0, $fw, $fh)); $c.Freeze(); $c })
-    $W = 400.0; $barY = 168.0; $sh = 120.0; $sw = $sh * $fw / $fh
+    $W = 400.0; $barY = 168.0; $sh = if ($L.Height -gt 0) { [double]$L.Height } else { 120.0 }; $sw = $sh * $fw / $fh
+    if ($sw -gt $W) { $sw = $W; $sh = $sw * $fh / $fw }
     $lh.Children.Clear()
     $lh.Width = $W; $lh.Height = 210
     $cv = New-Object System.Windows.Controls.Canvas
@@ -904,7 +905,8 @@ function Start-SpriteLoader {
     [System.Windows.Controls.Canvas]::SetTop($txt, $barY + 22)
     [void]$cv.Children.Add($txt)
     [void]$lh.Children.Add($cv)
-    $script:Loader = @{ Kind = 'sprite'; Loops = (New-Object System.Collections.ArrayList); Shown = 0.0; Img = $img; Shadow = $shadow; Fill = $fill; Text = $txt; Frames = $frames; Frame = 0; W = $W; SpriteW = $sw }
+    $script:Loader = @{ Kind = 'sprite'; Loops = (New-Object System.Collections.ArrayList); Shown = 0.0; Img = $img; Shadow = $shadow; Fill = $fill; Text = $txt; Frames = $frames; Frame = 0; W = $W; SpriteW = $sw; Static = $L.Static }
+    if ($L.Static) { $shadow.Visibility = 'Collapsed' }
     Set-SpriteLoaderPos 0
     # Les images de la course défilent en boucle
     $t = New-Object System.Windows.Threading.DispatcherTimer
@@ -925,7 +927,7 @@ function Set-SpriteLoaderPos([double]$V) {
     $S.Shown = $V
     $w = [math]::Max(14.0, $S.W * $V / 100)
     $S.Fill.Width = $w
-    $x = [math]::Max(0.0, [math]::Min($S.W - $S.SpriteW, $w - $S.SpriteW * 0.7))
+    $x = if ($S.Static) { ($S.W - $S.SpriteW) / 2 } else { [math]::Max(0.0, [math]::Min($S.W - $S.SpriteW, $w - $S.SpriteW * 0.7)) }
     [System.Windows.Controls.Canvas]::SetLeft($S.Img, $x)
     [System.Windows.Controls.Canvas]::SetLeft($S.Shadow, $x + $S.SpriteW * 0.2)
     $S.Text.Text = '{0:N0} %' -f $V
@@ -944,7 +946,14 @@ function Initialize-PackLogo($MarkHost, $WordHost) {
     $MarkHost.Background = [System.Windows.Media.Brushes]::Transparent
     $MarkHost.Padding = New-Thickness 2 2 2 2
     $MarkHost.Child = $img
-    $script:LogoMark = @{ Pack = $true; Img = $img; Rot = $rot }
+    $script:LogoMark = @{ Pack = $true; Img = $img; Rot = $rot; Glow = $ThemePack.LogoGlow; Move = $null }
+    if ($ThemePack.LogoGlow) {
+        $mv = New-Object System.Windows.Media.TranslateTransform
+        $grp = New-Object System.Windows.Media.TransformGroup; $grp.Children.Add($rot); $grp.Children.Add($mv)
+        $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5); $img.RenderTransform = $grp
+        $script:LogoMark.Move = $mv
+        $MarkHost.Add_MouseLeave({ $m = $script:LogoMark; if ($m.Move) { Stop-EggFloat $m.Img $m.Move $m.Rot } })
+    }
     $script:LogoWord = New-NexoWord 22
     $WordHost.Children.Clear(); [void]$WordHost.Children.Add($script:LogoWord.Root)
     $shake = { Start-PackLogoShake }
@@ -962,6 +971,16 @@ function Initialize-PackLogo($MarkHost, $WordHost) {
 function Start-PackLogoShake {
     $m = $script:LogoMark
     if (-not $m -or -not $m.Pack) { return }
+    if ($m.Glow -and $m.Move) {
+        # Lévitation brève (au survol elle continue tant que la souris reste dessus)
+        Start-EggFloat $m.Img $m.Move $m.Rot $m.Glow 3
+        if (-not $m.Img.IsMouseOver) {
+            $t = New-Object System.Windows.Threading.DispatcherTimer; $t.Interval = [TimeSpan]::FromMilliseconds(2800)
+            $t.Add_Tick({ param($x, $e) $x.Stop(); $mm = $script:LogoMark; if ($mm -and $mm.Move -and -not $mm.Img.IsMouseOver) { Stop-EggFloat $mm.Img $mm.Move $mm.Rot } })
+            $t.Start()
+        }
+        return
+    }
     $a = New-Object System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames
     foreach ($k in @(@(0, 0), @(110, -22), @(240, 18), @(360, -12), @(470, 6), @(580, 0))) {
         [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.EasingDoubleKeyFrame ([double]$k[1]), ([System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::FromMilliseconds($k[0])))))
@@ -1032,6 +1051,7 @@ function Initialize-PackTabIcons {
         $t.Interval = [TimeSpan]::FromMilliseconds($def.Delay)
         $st = @{ Img = $img; Frames = $frames; Frame = 0; Timer = $t; Hop = $null; Tilt = $null }
         if ($frames.Count -le 1) {
+            $st.Glow = $def.Glow
             $st.Hop = New-Object System.Windows.Media.TranslateTransform; $st.Tilt = New-Object System.Windows.Media.RotateTransform 0
             $grp = New-Object System.Windows.Media.TransformGroup; $grp.Children.Add($st.Tilt); $grp.Children.Add($st.Hop)
             $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.9); $img.RenderTransform = $grp
@@ -1082,6 +1102,7 @@ function Initialize-PackFooterDance($F) {
 
 # Icône d'onglet faite d'une image fixe : au survol, elle saute et se balance, en boucle
 function Start-IconHop($X) {
+    if ($X.Glow) { Start-EggFloat $X.Img $X.Hop $X.Tilt $X.Glow 4; return }
     $ease = New-Object System.Windows.Media.Animation.QuadraticEase; $ease.EasingMode = 'EaseOut'
     $up = New-Object System.Windows.Media.Animation.DoubleAnimation 0, -5, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(220)))
     $up.AutoReverse = $true; $up.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever; $up.EasingFunction = $ease
@@ -1091,6 +1112,29 @@ function Start-IconHop($X) {
     $X.Tilt.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $sw)
 }
 function Stop-IconHop($X) {
+    if ($X.Glow) { Stop-EggFloat $X.Img $X.Hop $X.Tilt; return }
     $X.Hop.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $null); $X.Hop.Y = 0
     $X.Tilt.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null); $X.Tilt.Angle = 0
+}
+
+# Dofus (œuf) : il s'élève, oscille doucement et une lueur de sa couleur pulse autour
+function Start-EggFloat($Img, $Move, $Tilt, [string]$Color, [double]$Lift) {
+    $sine = New-Object System.Windows.Media.Animation.SineEase; $sine.EasingMode = 'EaseInOut'
+    $up = New-Object System.Windows.Media.Animation.DoubleAnimation 0, (-$Lift), ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(700)))
+    $up.AutoReverse = $true; $up.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever; $up.EasingFunction = $sine
+    $Move.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $up)
+    $wob = New-Object System.Windows.Media.Animation.DoubleAnimation -6, 6, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(1100)))
+    $wob.AutoReverse = $true; $wob.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever; $wob.EasingFunction = $sine
+    $Tilt.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $wob)
+    $fx = New-Object System.Windows.Media.Effects.DropShadowEffect
+    $fx.Color = [System.Windows.Media.ColorConverter]::ConvertFromString($Color); $fx.ShadowDepth = 0; $fx.Opacity = 0.9; $fx.BlurRadius = 4
+    $Img.Effect = $fx
+    $pulse = New-Object System.Windows.Media.Animation.DoubleAnimation 4, 18, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(700)))
+    $pulse.AutoReverse = $true; $pulse.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever; $pulse.EasingFunction = $sine
+    $fx.BeginAnimation([System.Windows.Media.Effects.DropShadowEffect]::BlurRadiusProperty, $pulse)
+}
+function Stop-EggFloat($Img, $Move, $Tilt) {
+    $Move.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $null); $Move.Y = 0
+    $Tilt.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null); $Tilt.Angle = 0
+    $Img.Effect = $null
 }

@@ -46,6 +46,8 @@ $Theme = $AppThemes[$ThemeId]
 #   Footer            dessin animé au centre de la barre du bas : { File = planche PNG, Frames, Delay (ms), Height (px affichés) }
 #   TabIcons          icônes animées des onglets du haut : { jeux = { File, Frames, Delay }, reseau, trafic, overlay, ordinateur }
 #                     (immobiles au repos, animées au survol de l'onglet)
+#   (Loader.Static : l'animation reste centrée au lieu d'avancer avec la barre ; TabIcons.*.Glow / LogoGlow :
+#    couleur d'une lueur, l'image fixe lévite et brille au lieu de sauter)
 #   Logo              image à la place du N de Nevermind (PNG transparent, carré), qui se secoue de temps en temps
 #   Colors            couleurs propres au pack (au lieu d'un thème de base) : { P, S, T, NH, NS, Map }
 #   FontPixel         false pour une police lisse (pas de rendu « pixel », tailles inchangées)
@@ -71,10 +73,11 @@ function Get-ThemePack([string]$Id) {
         foreach ($pr in $j.TabIcons.PSObject.Properties) {
             $v = $pr.Value
             if ($v.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$v.File)))) {
-                $p.TabIcons[$pr.Name] = @{ File = (Join-Path $dir ([string]$v.File)); Frames = [math]::Max(1, [int]$v.Frames); Delay = [math]::Max(40, [int]$v.Delay) }
+                $p.TabIcons[$pr.Name] = @{ File = (Join-Path $dir ([string]$v.File)); Frames = [math]::Max(1, [int]$v.Frames); Delay = [math]::Max(40, [int]$v.Delay); Glow = [string]$v.Glow }
             }
         }
     }
+    $p.LogoGlow = [string]$j.LogoGlow
     $p.Logo = if ($j.Logo -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Logo)))) { Join-Path $dir ([string]$j.Logo) } else { $null }
     if ($j.Font -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Font)))) {
         $p.Font = Join-Path $dir ([string]$j.Font)
@@ -94,7 +97,7 @@ function Get-ThemePack([string]$Id) {
     if (-not $AppThemes.Contains($p.Base)) { $p.Base = 'neon' }
     $p.FontPixel = if ($null -ne $j.FontPixel) { [bool]$j.FontPixel } else { $true }
     if ($j.Loader -and $j.Loader.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Loader.File)))) {
-        $p.Loader = @{ File = (Join-Path $dir ([string]$j.Loader.File)); Frames = [math]::Max(1, [int]$j.Loader.Frames); Delay = [math]::Max(40, [int]$j.Loader.Delay); Flip = [bool]$j.Loader.Flip }
+        $p.Loader = @{ File = (Join-Path $dir ([string]$j.Loader.File)); Frames = [math]::Max(1, [int]$j.Loader.Frames); Delay = [math]::Max(40, [int]$j.Loader.Delay); Flip = [bool]$j.Loader.Flip; Static = [bool]$j.Loader.Static; Height = [int]$j.Loader.Height }
     }
     $p
 }
