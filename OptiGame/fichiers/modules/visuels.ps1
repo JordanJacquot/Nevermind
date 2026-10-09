@@ -942,12 +942,30 @@ function Initialize-PackLogo($MarkHost, $WordHost) {
     $img.Source = $bi; $img.Stretch = 'Uniform'
     [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'HighQuality')
     $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.85)
+    # Logo animé (planche) : première image au repos, l'animation joue au survol et de temps en temps
+    $logoFrames = $null; $logoTimer = $null
+    if ($ThemePack.LogoFrames -gt 1) {
+        $logoFrames = Get-SheetFrames $ThemePack.Logo $ThemePack.LogoFrames
+        $img.Source = $logoFrames[0]
+        $logoTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $logoTimer.Interval = [TimeSpan]::FromMilliseconds($ThemePack.LogoDelay)
+        $logoTimer.Add_Tick({
+            $m = $script:LogoMark; if (-not $m) { return }
+            $m.Frame++
+            if ($m.Frame -ge $m.Frames.Count) {
+                $m.Frame = 0
+                if ($m.Once -and -not $m.Img.IsMouseOver) { $m.Timer.Stop() }
+            }
+            $m.Img.Source = $m.Frames[$m.Frame]
+        })
+        $MarkHost.Add_MouseLeave({ $m = $script:LogoMark; if ($m -and $m.Timer) { $m.Once = $true } })
+    }
     $rot = New-Object System.Windows.Media.RotateTransform 0
     $img.RenderTransform = $rot
     $MarkHost.Background = [System.Windows.Media.Brushes]::Transparent
     $MarkHost.Padding = New-Thickness 2 2 2 2
     $MarkHost.Child = $img
-    $script:LogoMark = @{ Pack = $true; Img = $img; Rot = $rot; Glow = $ThemePack.LogoGlow; Move = $null }
+    $script:LogoMark = @{ Pack = $true; Img = $img; Rot = $rot; Glow = $ThemePack.LogoGlow; Move = $null; Frames = $logoFrames; Timer = $logoTimer; Frame = 0; Once = $true }
     if ($ThemePack.LogoGlow) {
         $mv = New-Object System.Windows.Media.TranslateTransform
         $grp = New-Object System.Windows.Media.TransformGroup; $grp.Children.Add($rot); $grp.Children.Add($mv)
@@ -972,6 +990,12 @@ function Initialize-PackLogo($MarkHost, $WordHost) {
 function Start-PackLogoShake {
     $m = $script:LogoMark
     if (-not $m -or -not $m.Pack) { return }
+    if ($m.Timer) {
+        # Logo animé : un tour complet (en boucle tant que la souris reste dessus)
+        $m.Once = -not $m.Img.IsMouseOver
+        if (-not $m.Timer.IsEnabled) { $m.Frame = 0; $m.Timer.Start() }
+        return
+    }
     if ($m.Glow -and $m.Move) {
         # Lévitation brève (au survol elle continue tant que la souris reste dessus)
         Start-EggFloat $m.Img $m.Move $m.Rot $m.Glow 3

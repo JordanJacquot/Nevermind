@@ -583,7 +583,14 @@ $script:T.Run.Add_Tick({
             Test-Step 'Identité Nevermind (nom, logo animé, couleurs)' {
                 Assert-Test ($Window.Title -eq 'Nevermind') "titre de la fenêtre : $($Window.Title)"
                 Assert-Test ($script:LogoMark -and $script:LogoWord -and $script:LogoWord.Text.Text -eq 'Nevermind') 'logo de la barre de gauche absent'
-                if ($script:LogoMark.Pack -and $script:LogoMark.Glow) {
+                if ($script:LogoMark.Pack -and $script:LogoMark.Timer) {
+                    # Logo animé d'un pack : il joue un tour complet puis revient à sa première image
+                    Start-PackLogoShake; Wait-TestMs 150
+                    $moved = $script:LogoMark.Timer.IsEnabled
+                    Wait-TestMs ([int]($script:LogoMark.Frames.Count * $script:LogoMark.Timer.Interval.TotalMilliseconds) + 800)
+                    $rest = -not $script:LogoMark.Timer.IsEnabled -and $script:LogoMark.Frame -eq 0
+                    Assert-Test ($moved -and $rest) "logo animé du pack : lancé $moved, retour au repos $rest"
+                } elseif ($script:LogoMark.Pack -and $script:LogoMark.Glow) {
                     # Logo d'un pack en Dofus : il lévite et brille, puis revient au repos
                     Start-PackLogoShake; Wait-TestMs 200
                     $moved = $null -ne $script:LogoMark.Img.Effect

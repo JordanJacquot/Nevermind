@@ -78,6 +78,7 @@ function Get-ThemePack([string]$Id) {
         }
     }
     $p.LogoGlow = [string]$j.LogoGlow
+    $p.LogoFrames = [math]::Max(1, [int]$j.LogoFrames); $p.LogoDelay = [math]::Max(30, [int]$j.LogoDelay)
     $p.Logo = if ($j.Logo -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Logo)))) { Join-Path $dir ([string]$j.Logo) } else { $null }
     if ($j.Font -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Font)))) {
         $p.Font = Join-Path $dir ([string]$j.Font)
