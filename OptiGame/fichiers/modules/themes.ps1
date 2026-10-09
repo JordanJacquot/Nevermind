@@ -286,7 +286,9 @@ function Add-PackFontXaml([string]$Text) {
     if ($ThemePack.FontScope -eq 'tout') {
         $Text = $Text.Replace('Segoe UI Variable Text, Segoe UI', $spec).Replace('Cascadia Code, Consolas', $spec)
         # rendu net pour toute la fenêtre (hérité par chaque texte)
-        $Text = [regex]::Replace($Text, '(<Window [^>]*?)FontFamily=', '$1TextOptions.TextRenderingMode="Aliased" TextOptions.TextFormattingMode="Display" FontFamily=', 1)
+        # Rendu net hérité par chaque texte ; un espacement de lignes minimum (certaines polices pixel n'en ont aucun :
+        # deux lignes de texte se touchaient). Les textes plus grands gardent leur espacement naturel.
+        $Text = [regex]::Replace($Text, '(<Window [^>]*?)FontFamily=', '$1TextOptions.TextRenderingMode="Aliased" TextOptions.TextFormattingMode="Display" Block.LineHeight="12" Block.LineStackingStrategy="MaxHeight" FontFamily=', 1)
         $Text = Convert-PackFontSizes $Text
     }
     $Text

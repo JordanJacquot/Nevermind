@@ -199,7 +199,7 @@ function New-Gauge([string]$Label, [double]$Value, [double]$Max, [string]$Fmt, [
     $num.HorizontalAlignment = 'Center'; $num.TextWrapping = 'NoWrap'
     $num.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
     $u = New-Text $Unit 11 '#958EAE'
-    $u.HorizontalAlignment = 'Center'; $u.Margin = New-Thickness 0 -3 0 0
+    $u.HorizontalAlignment = 'Center'; $u.Margin = New-Thickness 0 $(if ($PackSizeAll) { 3 } else { -3 }) 0 0   # police pixel : pas de chevauchement
     [void]$center.Children.Add($num)
     [void]$center.Children.Add($u)
     [void]$g.Children.Add($center)

@@ -767,7 +767,7 @@
                     <ColumnDefinition Width="Auto"/>
                   </Grid.ColumnDefinitions>
                   <StackPanel x:Name="SecLines" VerticalAlignment="Center"/>
-                  <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" Width="220">
+                  <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" MinWidth="220">
                     <Button x:Name="BtnScanQuick" Style="{StaticResource BtnPrimary}" Content="Analyse rapide" Margin="0,0,0,8"/>
                     <Button x:Name="BtnScanFull" Style="{StaticResource BtnSecondary}" Content="Analyse complète" Margin="0,0,0,8"/>
                     <Button x:Name="BtnScanFolder" Style="{StaticResource BtnSecondary}" Content="Analyser un dossier" Margin="0,0,0,8"/>
