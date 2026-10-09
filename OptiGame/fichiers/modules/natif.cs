@@ -1947,3 +1947,46 @@ public static class SpriteTools
         return new int[] { x0, y0, x1 + 1, y1 + 1 };
     }
 }
+
+// Organizer Dofus : met la fenêtre d'un personnage au premier plan.
+// Rien n'est envoyé au jeu (ni touche, ni clic) : c'est l'équivalent d'un clic sur sa fenêtre dans la barre des tâches.
+public static class WinFocus
+{
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int index);
+    [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr h, int index, int value);
+
+    public static IntPtr Foreground() { return GetForegroundWindow(); }
+
+    // Barre flottante : cliquable, mais ne prend jamais le focus au jeu et n'apparaît pas dans Alt+Tab
+    public static void NoActivate(IntPtr h)
+    {
+        const int GWL_EXSTYLE = -20, WS_EX_TOOLWINDOW = 0x80, WS_EX_NOACTIVATE = 0x08000000;
+        SetWindowLong(h, GWL_EXSTYLE, GetWindowLong(h, GWL_EXSTYLE) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE);
+    }
+
+    public static bool Exists(IntPtr h) { return h != IntPtr.Zero && IsWindow(h); }
+
+    public static bool Focus(IntPtr h)
+    {
+        if (!Exists(h)) return false;
+        if (IsIconic(h)) ShowWindow(h, 9);
+        if (SetForegroundWindow(h)) return true;
+        // Windows refuse parfois : on s'accroche un instant au fil de la fenêtre active, comme le fait la barre des tâches
+        uint fg = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero), me = GetCurrentThreadId();
+        bool att = fg != 0 && fg != me && AttachThreadInput(me, fg, true);
+        BringWindowToTop(h);
+        bool ok = SetForegroundWindow(h);
+        if (att) AttachThreadInput(me, fg, false);
+        return ok;
+    }
+}

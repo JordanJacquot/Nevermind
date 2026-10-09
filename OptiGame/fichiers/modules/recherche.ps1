@@ -29,6 +29,9 @@ $SearchEntries = @(
     @{ T = 'Restes de jeux désinstallés (place à récupérer)'; P = 'jeux'; A = 'Mes jeux'; K = 'place disque espace jeux desinstalles restes dossiers steam liberer'; Do = { if (@(Get-BigLeftovers).Count) { Show-Leftovers } } },
     @{ T = 'Désinstaller un jeu'; P = 'jeux'; A = 'Mes jeux'; K = 'desinstaller supprimer enlever jeu' },
     @{ T = 'Temps de jeu'; P = 'jeux'; A = 'Mes jeux'; K = 'temps heures joue derniere partie' },
+    @{ T = 'Organizer Dofus (passer d''un perso à l''autre)'; P = 'jeux'; Org = $true; A = 'Mes personnages'; K = 'organizer organiseur dofus multicompte multi compte perso personnages fenetres switch changer initiative ordre ankama' },
+    @{ T = 'Raccourcis de l''organizer Dofus'; P = 'jeux'; Org = $true; A = 'Raccourcis'; K = 'organizer dofus raccourci touche clavier perso suivant precedent f1' },
+    @{ T = 'Barre flottante de l''organizer Dofus'; P = 'jeux'; Org = $true; A = 'Barre flottante'; K = 'organizer dofus barre flottante boutons persos par dessus jeu' },
     # Tableau de bord
     @{ T = 'Score et analyse du PC'; P = 0; A = 'Relancer l''analyse'; K = 'score analyse sante composants note' },
     @{ T = 'Tout corriger'; P = 0; A = 'Tout corriger'; K = 'corriger reparer ameliorer score' },
@@ -266,6 +269,7 @@ function Open-SearchEntry($E) {
     $page = switch ($E.P) { 'reseau' { $NetIndex } 'trafic' { $TrafficIndex } 'overlay' { $OverlayIndex } 'jeux' { $GamesIndex } default { [int]$E.P } }
     Show-Page $page
     if ($E.S) { Build-GamingTabs; Set-GamingSubPage $E.S }
+    if ($page -eq $GamesIndex) { Show-OrgView ([bool]$E.Org) }
     if ($E.Game) { $ui.LibSearch.Text = ''; $script:LibFilter = 'Tous'; Update-LibraryView; Set-LibrarySelection $E.Game }
     Set-Status "$($E.T) : $($E.Where)"
     $anchor = [string]$E.A

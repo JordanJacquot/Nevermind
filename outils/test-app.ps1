@@ -414,6 +414,77 @@ $script:T.Run.Add_Tick({
                 Assert-Test (-not @($script:Games | Where-Object { $_.Name -eq 'Mon jeu d''essai' }).Count) 'jeu ajouté non retiré'
                 "$(@($script:Games).Count) jeux ($($by -join ', ')), aucun launcher pris pour un jeu ; jeu ajouté reconnu à son lancement puis retiré"
             }
+            Test-Step 'Organizer Dofus' {
+                $oldCfg = $script:OrgConfig
+                try {
+                    # Titres de Dofus 3, Dofus 2 et de l'écran de connexion
+                    $t3 = ConvertFrom-DofusTitle 'Brakmar-Iop - Iop - 3.1.12.5 - Release'
+                    $t2 = ConvertFrom-DofusTitle 'Vieux-Cra - Dofus 2.71.4.10'
+                    $t0 = ConvertFrom-DofusTitle 'Dofus'
+                    Assert-Test ($t3.Name -eq 'Brakmar-Iop' -and $t3.Class -eq 'Iop' -and $t2.Name -eq 'Vieux-Cra' -and -not $t2.Class -and -not $t0.Name) "titres mal lus : $($t3.Name)/$($t3.Class), $($t2.Name)/$($t2.Class), $($t0.Name)"
+                    # Trois persos connectés et une fenêtre à l'écran de connexion (fenêtres factices)
+                    if (Test-Path -LiteralPath $OrgFile) { [IO.File]::Delete($OrgFile) }
+                    $script:OrgConfig = $null
+                    $script:OrgFake = @(
+                        @{ Name = 'Brakmar-Iop'; Class = 'Iop'; Pid = 11; Hwnd = [IntPtr]1001; Title = '' },
+                        @{ Name = 'Soin-Eni'; Class = 'Eniripsa'; Pid = 12; Hwnd = [IntPtr]1002; Title = '' },
+                        @{ Name = 'Vieux-Cra'; Class = ''; Pid = 13; Hwnd = [IntPtr]1003; Title = '' },
+                        @{ Name = ''; Class = ''; Pid = 14; Hwnd = [IntPtr]1004; Title = 'Dofus' })
+                    $l = @(Get-OrgList)
+                    Assert-Test ($l.Count -eq 4 -and (Get-OrgConfig).Order.Count -eq 3) "liste : $($l.Count) lignes, $((Get-OrgConfig).Order.Count) persos retenus"
+                    # Ordre d'initiative : le Crâ passe en premier, retenu dans organizer.json
+                    Move-OrgChar 'Vieux-Cra' 'Brakmar-Iop'
+                    $script:OrgConfig = $null
+                    Assert-Test (((Get-OrgConfig).Order -join ',') -eq 'Vieux-Cra,Brakmar-Iop,Soin-Eni') "ordre : $((Get-OrgConfig).Order -join ',')"
+                    Move-OrgChar 'Vieux-Cra' 'Soin-Eni'
+                    Assert-Test (((Get-OrgConfig).Order -join ',') -eq 'Brakmar-Iop,Soin-Eni,Vieux-Cra') "ordre en descendant : $((Get-OrgConfig).Order -join ',')"
+                    # Suivant, précédent et touche par perso, depuis la fenêtre du Iop
+                    $script:OrgFakeFg = [IntPtr]1001
+                    Assert-Test ((Get-OrgTarget 'Next').Name -eq 'Soin-Eni' -and (Get-OrgTarget 'Prev').Name -eq 'Vieux-Cra' -and (Get-OrgTarget 'P3').Name -eq 'Vieux-Cra' -and -not (Get-OrgTarget 'P5')) 'mauvais perso choisi'
+                    $script:OrgFakeFg = [IntPtr]1003
+                    Assert-Test ((Get-OrgTarget 'Next').Name -eq 'Brakmar-Iop') 'le suivant du dernier n''est pas le premier'
+                    # Touches
+                    $hk = ConvertTo-OrgHotkey 'Ctrl+Maj+Tab'; $f1 = ConvertTo-OrgHotkey 'F1'
+                    Assert-Test ($hk.Mods -eq 6 -and $hk.Vk -eq 9 -and $f1.Mods -eq 0 -and $f1.Vk -eq 0x70 -and -not (ConvertTo-OrgHotkey '')) 'touches mal converties'
+                    Assert-Test ((Format-OrgKey 'Ctrl+D1') -eq 'Ctrl + 1') "nom de touche : $(Format-OrgKey 'Ctrl+D1')"
+                    # Page : bouton de la page Jeux, persos, raccourcis, barre
+                    Show-Page $GamesIndex; Wait-TestMs 300
+                    $ui.BtnLibOrganizer.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Button]::ClickEvent))); Wait-TestMs 300
+                    Assert-Test ($ui.OrgScroll.Visibility -eq 'Visible' -and $ui.LibBody.Visibility -eq 'Collapsed' -and $ui.LibTitle.Text -eq 'Organizer Dofus') 'vue Organizer non affichée'
+                    foreach ($a in 'Mes personnages', 'Activer l''organizer', 'Raccourcis', 'Perso suivant', 'Barre flottante') { Assert-Test ([bool](Find-PageElement $ui.OrgPanel $a)) "« $a » absent" }
+                    Assert-Test ($script:OrgRows.Count -eq 3) "$($script:OrgRows.Count) lignes de persos"
+                    Save-TestShot 'organizer'
+                    # Touche choisie au clavier : F7 pour « suivant », retirée du perso 7
+                    $script:OrgCapture = 'Next'; Build-OrgPanel
+                    $ke = New-Object System.Windows.Input.KeyEventArgs ([System.Windows.Input.Keyboard]::PrimaryDevice, [System.Windows.PresentationSource]::FromVisual($Window), 0, [System.Windows.Input.Key]::F7); $ke.RoutedEvent = [System.Windows.Input.Keyboard]::PreviewKeyDownEvent
+                    Receive-OrgKey $ke
+                    Assert-Test ((Get-OrgConfig).Hotkeys.Next -eq 'F7' -and -not (Get-OrgConfig).Hotkeys.P7 -and -not $script:OrgCapture) "touche capturée : $((Get-OrgConfig).Hotkeys.Next), perso 7 : $((Get-OrgConfig).Hotkeys.P7)"
+                    # Barre flottante : un bouton par perso connecté
+                    Show-OrgBar; Wait-TestMs 300
+                    Assert-Test ($script:OrgBar.Items.Count -eq 3 -and $script:OrgBar.Win.IsVisible) "barre : $($script:OrgBar.Items.Count) boutons"
+                    $bw = $script:OrgBar.Win; $bw.UpdateLayout()
+                    $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap([int]$bw.ActualWidth, [int]$bw.ActualHeight, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32)
+                    $rtb.Render($bw.Content)
+                    $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder; $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
+                    $fs = [IO.File]::Create((Join-Path $script:T.Dir 'captures\organizer-barre.png')); $enc.Save($fs); $fs.Close()
+                    $nBar = $script:OrgBar.Items.Count
+                    # Activation : surveillance lancée puis arrêtée, barre cachée
+                    Set-OrgOn $true; Wait-TestMs 400
+                    Assert-Test ($script:OrgTimer.IsEnabled -and -not $script:OrgKeysOn) 'surveillance non lancée (ou raccourcis pris hors de Dofus)'
+                    Set-OrgOn $false
+                    Assert-Test (-not $script:OrgTimer.IsEnabled -and -not $script:OrgBar.Win.IsVisible) 'organizer pas arrêté'
+                    # Retour à la bibliothèque
+                    $ui.BtnLibOrganizer.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Button]::ClickEvent))); Wait-TestMs 200
+                    Assert-Test ($ui.LibBody.Visibility -eq 'Visible' -and $ui.LibTitle.Text -eq 'Mes jeux') 'bibliothèque non revenue'
+                    "titres lus, ordre retenu, suivant / précédent / touche par perso, touche capturée, barre de $nBar persos"
+                } finally {
+                    $script:OrgFake = $null; $script:OrgFakeFg = $null; $script:OrgCapture = $null
+                    try { Stop-OrgWatch } catch {}
+                    if (Test-Path -LiteralPath $OrgFile) { [IO.File]::Delete($OrgFile) }
+                    $script:OrgConfig = $oldCfg
+                    if ($script:OrgViewOn) { Show-OrgView $false }
+                }
+            }
             Test-Step 'Bibliothèque de jeux' {
                 $sw = [Diagnostics.Stopwatch]::StartNew(); Show-Page $GamesIndex; $tBuild = $sw.ElapsedMilliseconds; Wait-TestMs 600
                 $sw.Restart(); Update-LibraryView; $tAgain = $sw.ElapsedMilliseconds
@@ -631,7 +702,7 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($null -ne $script:Search) 'barre de recherche non branchée'
                 $cases = @(
                     @('compteur discret', 'Style du compteur*'), @('netoyage', 'Nettoyage*'), @('demarage pc', 'Lancer Nevermind au démarrage*'),
-                    @('raccourci bureau', 'Raccourci sur le bureau'), @('telemetrie', 'Ce que Windows envoie*'), @('ping', '*'), @('position overlay', 'Position du compteur')
+                    @('raccourci bureau', 'Raccourci sur le bureau'), @('telemetrie', 'Ce que Windows envoie*'), @('ping', '*'), @('position overlay', 'Position du compteur'), @('organiseur dofus', 'Organizer Dofus*')
                 )
                 foreach ($c in $cases) {
                     $r = @(Find-Settings $c[0])

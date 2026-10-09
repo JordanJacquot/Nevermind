@@ -56,6 +56,7 @@ $Window.Add_Closed({
     try { Stop-FpsTarget } catch { Write-Log "Fermeture, mesure des FPS: $_" }
     try { if ($script:GameSession) { Stop-GameSession } } catch { Write-Log "Fermeture, mode jeu: $_" }
     try { Unregister-FpsHotkey } catch {}
+    try { Stop-OrgWatch; if ($script:OrgBar) { $script:OrgBar.Win.Close() } } catch {}
     try { if ($script:TrafficTimer) { $script:TrafficTimer.Stop() } } catch {}
     try { if ($script:LogoTimer) { $script:LogoTimer.Stop() } } catch {}
     try { if ($script:Footer) { $script:Footer.Timer.Stop() } } catch {}

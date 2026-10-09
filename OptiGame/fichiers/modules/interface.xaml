@@ -925,15 +925,16 @@
           </Grid.RowDefinitions>
           <DockPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+              <Button x:Name="BtnLibOrganizer" Style="{StaticResource BtnSecondary}" Content="Organizer Dofus" Margin="0,0,10,0"/>
               <Button x:Name="BtnLibRefresh" Style="{StaticResource BtnSecondary}" Content="Actualiser" Margin="0,0,10,0"/>
               <Button x:Name="BtnLibAdd" Style="{StaticResource BtnPrimary}" Content="Ajouter un jeu"/>
             </StackPanel>
             <StackPanel>
-              <TextBlock Style="{StaticResource H1}" Text="Mes jeux"/>
+              <TextBlock x:Name="LibTitle" Style="{StaticResource H1}" Text="Mes jeux"/>
               <TextBlock x:Name="LibSub" Style="{StaticResource Sub}" Text="Tous tes jeux, quel que soit le launcher. Double clique pour jouer."/>
             </StackPanel>
           </DockPanel>
-          <DockPanel Grid.Row="1" Margin="0,16,0,12">
+          <DockPanel x:Name="LibToolbar" Grid.Row="1" Margin="0,16,0,12">
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,8,0"
                         ToolTip="Jaquettes manquantes cherchées sur la boutique Steam puis sur Wikipédia. Seul le nom du jeu est envoyé.">
               <CheckBox x:Name="ChkLibCovers" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
@@ -949,7 +950,11 @@
             </Border>
             <WrapPanel x:Name="LibFilters" Margin="14,0,0,0" VerticalAlignment="Center"/>
           </DockPanel>
-          <Grid Grid.Row="2">
+          <!-- Organizer Dofus (bouton « Organizer Dofus » : organizer.ps1) -->
+          <ScrollViewer x:Name="OrgScroll" Grid.Row="1" Grid.RowSpan="2" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Margin="0,16,0,0">
+            <StackPanel x:Name="OrgPanel" Margin="0,0,10,0"/>
+          </ScrollViewer>
+          <Grid x:Name="LibBody" Grid.Row="2">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*"/>
               <ColumnDefinition Width="360"/>

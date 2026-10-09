@@ -637,7 +637,7 @@ function Update-LibraryView {
     if (-not $script:LibBuilt) { return }
     $all = Get-LibraryGames
     $log = Get-PlayLog
-    $ui.LibSub.Text = "$($all.Count) jeu$(if ($all.Count -gt 1) {'x'}) installé$(if ($all.Count -gt 1) {'s'}), tous launchers confondus. Double clique sur un jeu pour jouer."
+    if (-not $script:OrgViewOn) { $ui.LibSub.Text = "$($all.Count) jeu$(if ($all.Count -gt 1) {'x'}) installé$(if ($all.Count -gt 1) {'s'}), tous launchers confondus. Double clique sur un jeu pour jouer." }
     # Filtres : tous, récents, puis un par launcher
     $ui.LibFilters.Children.Clear()
     $chips = @(@('Tous', $all.Count), @('Récents', @($all | Where-Object { $log.ContainsKey($_.Name) }).Count))
