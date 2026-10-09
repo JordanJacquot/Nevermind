@@ -690,9 +690,10 @@ $script:T.Run.Add_Tick({
                 "$($seen.Count) onglets ($($seen -join ', ')), réglage synchronisé avec sa page, Échap ferme, barre du haut tenue à $([int]$Window.MinWidth) px"
             }
             Test-Step 'Thèmes (5 choix)' {
-                Assert-Test ($AppThemes.Count -eq 5) "$($AppThemes.Count) thèmes"
+                $base = @($AppThemes.Keys | Where-Object { -not $AppThemes[$_].Pack })
+                Assert-Test ($base.Count -eq 5) "$($base.Count) thèmes"
                 $raw = [IO.File]::ReadAllText((Join-Path $ModulesDir 'interface.xaml'), [Text.Encoding]::UTF8)
-                foreach ($id in @($AppThemes.Keys)) {
+                foreach ($id in $base) {
                     $th = $AppThemes[$id]
                     Assert-Test ((ConvertTo-ThemeHex '#00E5FF' $id) -eq $th.P) "$id : cyan traduit en $(ConvertTo-ThemeHex '#00E5FF' $id)"
                     foreach ($st in '#22D37A', '#F5A524', '#F04438', '#4EA8FF', '#FFFFFF') { Assert-Test ((ConvertTo-ThemeHex $st $id) -eq $st) "$id : couleur d'état $st changée" }
@@ -713,7 +714,7 @@ $script:T.Run.Add_Tick({
                 Set-AppTheme $other
                 Assert-Test ((Get-Setting 'Theme' '') -eq $other -and $ui.SettingsOverlay.Visibility -eq 'Visible') 'thème non enregistré (ou la copie de test s''est fermée)'
                 Set-Setting 'Theme' $old; $script:ThemePick = $null; Hide-Settings
-                "$(($AppThemes.Values | ForEach-Object { $_.Name }) -join ', ') : fenêtre chargée dans chacun, couleurs d'état intactes"
+                "$(($base | ForEach-Object { $AppThemes[$_].Name }) -join ', ') : fenêtre chargée dans chacun, couleurs d'état intactes"
             }
             Test-Step 'Packs de thème (image perso, chargement)' {
                 Add-Type -AssemblyName System.Drawing
@@ -784,10 +785,10 @@ $script:T.Run.Add_Tick({
                     Assert-Test ($st -and $hdr.Children[0] -is [System.Windows.Controls.Image] -and -not $st.Timer.IsEnabled) 'icône de l''onglet Jeux non remplacée (ou animée au repos)'
                     $ev = New-Object System.Windows.Input.MouseEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0); $ev.RoutedEvent = [System.Windows.Input.Mouse]::MouseEnterEvent
                     $ui.Tabs.Items[$GamesIndex].RaiseEvent($ev)
-                    Assert-Test ($st.Timer.IsEnabled) 'icône non animée au survol'
+                    Assert-Test ($st.Timer.IsEnabled -or ($st.Hop -and $st.Hop.HasAnimatedProperties)) 'icône non animée au survol'
                     $ev = New-Object System.Windows.Input.MouseEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0); $ev.RoutedEvent = [System.Windows.Input.Mouse]::MouseLeaveEvent
                     $ui.Tabs.Items[$GamesIndex].RaiseEvent($ev)
-                    Assert-Test (-not $st.Timer.IsEnabled -and $st.Frame -eq 0) 'icône toujours animée après le survol'
+                    Assert-Test (-not $st.Timer.IsEnabled -and $st.Frame -eq 0 -and (-not $st.Hop -or -not $st.Hop.HasAnimatedProperties)) 'icône toujours animée après le survol'
                 } finally {
                     if ($script:TabIcons) { foreach ($x in $script:TabIcons.Values) { $x.Timer.Stop() }; $script:TabIcons = $null }
                     if ($hdr.Children[0] -ne $oldIcon) { $hdr.Children.RemoveAt(0); $hdr.Children.Insert(0, $oldIcon) }

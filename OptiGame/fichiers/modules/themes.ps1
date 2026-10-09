@@ -47,6 +47,8 @@ $Theme = $AppThemes[$ThemeId]
 #   TabIcons          icônes animées des onglets du haut : { jeux = { File, Frames, Delay }, reseau, trafic, overlay, ordinateur }
 #                     (immobiles au repos, animées au survol de l'onglet)
 #   Logo              image à la place du N de Nevermind (PNG transparent, carré), qui se secoue de temps en temps
+#   Colors            couleurs propres au pack (au lieu d'un thème de base) : { P, S, T, NH, NS, Map }
+#   FontPixel         false pour une police lisse (pas de rendu « pixel », tailles inchangées)
 #   Font, FontScope   police du pack (fichier .ttf) : sur les titres, onglets, boutons et chiffres (« titres »), ou partout (« tout »)
 # ---------------------------------------------------------------------------
 $PacksDir = Join-Path $DataDir 'packs'
@@ -58,7 +60,10 @@ function Get-ThemePack([string]$Id) {
     if (-not (Test-Path -LiteralPath $f)) { return $null }
     try { $j = Get-Content -LiteralPath $f -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Write-Log "Pack $Id illisible : $_"; return $null }
     $p = @{ Id = $Id; Dir = $dir; Name = [string]$j.Name; Desc = [string]$j.Desc; Base = [string]$j.Base; Hello = [string]$j.Hello; Ready = [string]$j.Ready; Loader = $null; Font = $null; FontScope = 'titres' }
-    if ($j.Footer -and $j.Footer.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Footer.File)))) {
+    if ($j.Footer -and $j.Footer.Files) {
+        $fs = @(@($j.Footer.Files) | ForEach-Object { Join-Path $dir ([string]$_) } | Where-Object { Test-Path -LiteralPath $_ })
+        if ($fs.Count) { $p.Footer = @{ Files = $fs; Height = [math]::Max(16, [int]$j.Footer.Height) } }
+    } elseif ($j.Footer -and $j.Footer.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Footer.File)))) {
         $p.Footer = @{ File = (Join-Path $dir ([string]$j.Footer.File)); Frames = [math]::Max(1, [int]$j.Footer.Frames); Delay = [math]::Max(40, [int]$j.Footer.Delay); Height = [math]::Max(16, [int]$j.Footer.Height) }
     }
     $p.TabIcons = @{}
@@ -76,7 +81,18 @@ function Get-ThemePack([string]$Id) {
         if ([string]$j.FontScope -eq 'tout') { $p.FontScope = 'tout' }
     }
     if (-not $p.Name) { $p.Name = $Id }
+    # Couleurs propres au pack : un thème « pack-<dossier> » ajouté à la liste (jamais affiché comme thème de base)
+    if ($j.Colors -and $j.Colors.P -and $j.Colors.S -and $j.Colors.T) {
+        $map = @{}
+        if ($j.Colors.Map) { foreach ($pr in $j.Colors.Map.PSObject.Properties) { $map[$pr.Name.TrimStart('#').ToUpper()] = ([string]$pr.Value).TrimStart('#').ToUpper() } }
+        $key = "pack-$Id"
+        $AppThemes[$key] = @{ Name = $p.Name; Desc = $p.Desc; P = [string]$j.Colors.P; S = [string]$j.Colors.S; T = [string]$j.Colors.T
+            NH = $(if ($null -ne $j.Colors.NH) { [double]$j.Colors.NH } else { $null }); NS = $(if ($j.Colors.NS) { [double]$j.Colors.NS } else { 1.0 })
+            Map = $map; Hello = 'Salut {0}'; Ready = 'C''est prêt !'; Font = $null; Decor = $null; Pack = $true }
+        $p.Base = $key
+    }
     if (-not $AppThemes.Contains($p.Base)) { $p.Base = 'neon' }
+    $p.FontPixel = if ($null -ne $j.FontPixel) { [bool]$j.FontPixel } else { $true }
     if ($j.Loader -and $j.Loader.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Loader.File)))) {
         $p.Loader = @{ File = (Join-Path $dir ([string]$j.Loader.File)); Frames = [math]::Max(1, [int]$j.Loader.Frames); Delay = [math]::Max(40, [int]$j.Loader.Delay); Flip = [bool]$j.Loader.Flip }
     }
@@ -109,6 +125,11 @@ if ($ThemePack -and $ThemePack.Font) {
 # La police pixel est bien plus large qu'une police normale : le texte est réduit d'autant (Scale)
 function Set-PackFont($El, [double]$Scale = 0.82) {
     if (-not $PackFont -or -not $El) { return }
+    if (-not $ThemePack.FontPixel) {
+        # Police lisse : même taille, rendu normal
+        $El.FontFamily = New-Object System.Windows.Media.FontFamily "$PackFont, Segoe UI Variable Display, Segoe UI"
+        return
+    }
     # Police partout : la taille est déjà convertie (Get-UiFontSize)
     if ($ThemePack.FontScope -ne 'tout' -and $Scale -ne 1 -and $El.FontSize) { $El.FontSize = [math]::Round($El.FontSize * $Scale) }
     $El.FontFamily = New-Object System.Windows.Media.FontFamily "$PackFont, Segoe UI Variable Display, Segoe UI"
@@ -254,7 +275,7 @@ function Get-PackFontSize([double]$Size) {
     if ($Size -lt 15) { 8 } elseif ($Size -lt 21) { 12 } elseif ($Size -lt 30) { 16 } else { 24 }
 }
 
-$PackSizeAll = [bool]($PackFont -and $ThemePack.FontScope -eq 'tout')
+$PackSizeAll = [bool]($PackFont -and $ThemePack.FontScope -eq 'tout' -and $ThemePack.FontPixel)
 
 # Taille d'un texte de l'app : convertie en taille pixel quand la police du pack est partout
 function Get-UiFontSize([double]$Size) { if ($PackSizeAll) { Get-PackFontSize $Size } else { $Size } }
@@ -275,7 +296,7 @@ function Convert-PackFontSizes([string]$Text) {
 # avec FontScope « tout », toute l'app
 function Add-PackFontXaml([string]$Text) {
     $spec = [Security.SecurityElement]::Escape("$PackFont, Segoe UI Variable Display, Segoe UI")
-    $crisp = '<Setter Property="TextOptions.TextRenderingMode" Value="Aliased"/><Setter Property="TextOptions.TextFormattingMode" Value="Display"/>'
+    $crisp = if ($ThemePack.FontPixel) { '<Setter Property="TextOptions.TextRenderingMode" Value="Aliased"/><Setter Property="TextOptions.TextFormattingMode" Value="Display"/>' } else { '' }
     $Text = $Text.Replace('Segoe UI Variable Display, Segoe UI', $spec)
     # (pas les boutons : la police pixel, bien plus large, couperait leur texte)
     foreach ($style in '<Style x:Key="H2" TargetType="TextBlock">') {
@@ -288,8 +309,10 @@ function Add-PackFontXaml([string]$Text) {
         # rendu net pour toute la fenêtre (hérité par chaque texte)
         # Rendu net hérité par chaque texte ; un espacement de lignes minimum (certaines polices pixel n'en ont aucun :
         # deux lignes de texte se touchaient). Les textes plus grands gardent leur espacement naturel.
-        $Text = [regex]::Replace($Text, '(<Window [^>]*?)FontFamily=', '$1TextOptions.TextRenderingMode="Aliased" TextOptions.TextFormattingMode="Display" Block.LineHeight="12" Block.LineStackingStrategy="MaxHeight" FontFamily=', 1)
-        $Text = Convert-PackFontSizes $Text
+        if ($ThemePack.FontPixel) {
+            $Text = [regex]::Replace($Text, '(<Window [^>]*?)FontFamily=', '$1TextOptions.TextRenderingMode="Aliased" TextOptions.TextFormattingMode="Display" Block.LineHeight="12" Block.LineStackingStrategy="MaxHeight" FontFamily=', 1)
+            $Text = Convert-PackFontSizes $Text
+        }
     }
     $Text
 }

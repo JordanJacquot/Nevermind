@@ -869,6 +869,22 @@ function Start-SpriteLoader {
     if ($L.Flip) { $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5); $img.RenderTransform = New-Object System.Windows.Media.ScaleTransform -1, 1 }
     [System.Windows.Controls.Canvas]::SetTop($img, $barY - $sh + 4)
     [void]$cv.Children.Add($img)
+    # Image fixe (pack fait d'illustrations) : le personnage sautille, son ombre rétrécit à chaque saut
+    if ($L.Frames -le 1) {
+        $hop = New-Object System.Windows.Media.TranslateTransform
+        $grp = New-Object System.Windows.Media.TransformGroup
+        if ($img.RenderTransform -is [System.Windows.Media.ScaleTransform]) { $grp.Children.Add($img.RenderTransform) }
+        $grp.Children.Add($hop)
+        $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5); $img.RenderTransform = $grp
+        $ease = New-Object System.Windows.Media.Animation.QuadraticEase; $ease.EasingMode = 'EaseOut'
+        $up = New-Object System.Windows.Media.Animation.DoubleAnimation 0, -22, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(260)))
+        $up.AutoReverse = $true; $up.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever; $up.EasingFunction = $ease
+        $hop.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $up)
+        $shs = New-Object System.Windows.Media.ScaleTransform 1, 1; $shadow.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5); $shadow.RenderTransform = $shs
+        $sq = New-Object System.Windows.Media.Animation.DoubleAnimation 1, 0.6, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(260)))
+        $sq.AutoReverse = $true; $sq.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever; $sq.EasingFunction = $ease
+        $shs.BeginAnimation([System.Windows.Media.ScaleTransform]::ScaleXProperty, $sq)
+    }
     # Barre : piste translucide et remplissage aux couleurs du thème
     $track = New-Object System.Windows.Controls.Border
     $track.Width = $W; $track.Height = 14; $track.CornerRadius = [System.Windows.CornerRadius]::new(7)
@@ -965,6 +981,7 @@ function Get-SheetFrames([string]$File, [int]$Count) {
 function Initialize-PackFooter {
     $f = if ($ThemePack) { $ThemePack.Footer } else { $null }
     if (-not $f) { return }
+    if ($f.Files) { Initialize-PackFooterDance $f; return }
     $frames = Get-SheetFrames $f.File $f.Frames
     $img = New-Object System.Windows.Controls.Image
     $img.Source = $frames[0]; $img.Height = $f.Height; $img.Stretch = 'Uniform'
@@ -1013,12 +1030,17 @@ function Initialize-PackTabIcons {
         $sp.VerticalAlignment = 'Center'
         $t = New-Object System.Windows.Threading.DispatcherTimer
         $t.Interval = [TimeSpan]::FromMilliseconds($def.Delay)
-        $st = @{ Img = $img; Frames = $frames; Frame = 0; Timer = $t }
+        $st = @{ Img = $img; Frames = $frames; Frame = 0; Timer = $t; Hop = $null; Tilt = $null }
+        if ($frames.Count -le 1) {
+            $st.Hop = New-Object System.Windows.Media.TranslateTransform; $st.Tilt = New-Object System.Windows.Media.RotateTransform 0
+            $grp = New-Object System.Windows.Media.TransformGroup; $grp.Children.Add($st.Tilt); $grp.Children.Add($st.Hop)
+            $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.9); $img.RenderTransform = $grp
+        }
         $t.Tag = $st
         $t.Add_Tick({ param($s, $e) $x = $s.Tag; $x.Frame = ($x.Frame + 1) % $x.Frames.Count; $x.Img.Source = $x.Frames[$x.Frame] })
         $script:TabIcons[$k] = $st
-        $ti.Add_MouseEnter({ param($s, $e) $x = Get-TabIconState $s; if ($x) { $x.Timer.Start() } })
-        $ti.Add_MouseLeave({ param($s, $e) $x = Get-TabIconState $s; if ($x) { $x.Timer.Stop(); $x.Frame = 0; $x.Img.Source = $x.Frames[0] } })
+        $ti.Add_MouseEnter({ param($s, $e) $x = Get-TabIconState $s; if ($x) { if ($x.Hop) { Start-IconHop $x } else { $x.Timer.Start() } } })
+        $ti.Add_MouseLeave({ param($s, $e) $x = Get-TabIconState $s; if ($x) { if ($x.Hop) { Stop-IconHop $x } else { $x.Timer.Stop(); $x.Frame = 0; $x.Img.Source = $x.Frames[0] } } })
     }
 }
 
@@ -1026,4 +1048,49 @@ function Get-TabIconState($TabItem) {
     if (-not $script:TabIcons) { return $null }
     foreach ($x in $script:TabIcons.Values) { if ($TabItem.Header.Children.Contains($x.Img)) { return $x } }
     $null
+}
+
+# Barre du bas faite d'illustrations fixes : chacune se dandine, l'une après l'autre
+function Initialize-PackFooterDance($F) {
+    $row = New-Object System.Windows.Controls.StackPanel
+    $row.Orientation = 'Horizontal'
+    $i = 0
+    foreach ($file in $F.Files) {
+        $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+        $bi.BeginInit(); $bi.UriSource = New-Object Uri $file; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
+        $img = New-Object System.Windows.Controls.Image
+        $img.Source = $bi; $img.Height = $F.Height; $img.Stretch = 'Uniform'; $img.Margin = New-Thickness 3 0 3 0
+        [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'HighQuality')
+        $rot = New-Object System.Windows.Media.RotateTransform 0
+        $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 1.0); $img.RenderTransform = $rot
+        $a = New-Object System.Windows.Media.Animation.DoubleAnimation -9, 9, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(520)))
+        $a.AutoReverse = $true; $a.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+        $e = New-Object System.Windows.Media.Animation.SineEase; $e.EasingMode = 'EaseInOut'; $a.EasingFunction = $e
+        $a.BeginTime = [TimeSpan]::FromMilliseconds(260 * $i)
+        $rot.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
+        [void]$row.Children.Add($img)
+        $i++
+    }
+    $ui.FooterArt.Child = $row
+    $ui.FooterArt.Visibility = 'Visible'
+    $ui.StatusBar.Padding = New-Thickness 36 2 36 6
+    $script:Footer = @{ Img = $row; Timer = (New-Object System.Windows.Threading.DispatcherTimer) }
+    $fit = { if ($script:Footer) { $ui.StatusText.MaxWidth = [math]::Max(80.0, ($ui.StatusBar.ActualWidth - 72 - $script:Footer.Img.ActualWidth) / 2 - 16) } }
+    $ui.StatusBar.Add_SizeChanged($fit)
+    $row.Add_SizeChanged($fit)
+}
+
+# Icône d'onglet faite d'une image fixe : au survol, elle saute et se balance, en boucle
+function Start-IconHop($X) {
+    $ease = New-Object System.Windows.Media.Animation.QuadraticEase; $ease.EasingMode = 'EaseOut'
+    $up = New-Object System.Windows.Media.Animation.DoubleAnimation 0, -5, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(220)))
+    $up.AutoReverse = $true; $up.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever; $up.EasingFunction = $ease
+    $X.Hop.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $up)
+    $sw = New-Object System.Windows.Media.Animation.DoubleAnimation -10, 10, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(440)))
+    $sw.AutoReverse = $true; $sw.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+    $X.Tilt.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $sw)
+}
+function Stop-IconHop($X) {
+    $X.Hop.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $null); $X.Hop.Y = 0
+    $X.Tilt.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null); $X.Tilt.Angle = 0
 }

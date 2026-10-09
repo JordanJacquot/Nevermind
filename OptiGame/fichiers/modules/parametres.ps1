@@ -315,7 +315,7 @@ function Get-CurrentThemeKey { if ($ThemePack) { "pack:$($ThemePack.Id)" } else 
 
 # Les choix de l'onglet : les 5 thèmes de base puis les packs installés sur ce PC
 function Get-ThemeChoices {
-    $list = @(foreach ($id in @($AppThemes.Keys)) { $t = $AppThemes[$id]; @{ Key = $id; Base = $id; Name = $t.Name; Desc = $t.Desc; Font = $t.Font; Pack = $null } })
+    $list = @(foreach ($id in @($AppThemes.Keys | Where-Object { -not $AppThemes[$_].Pack })) { $t = $AppThemes[$id]; @{ Key = $id; Base = $id; Name = $t.Name; Desc = $t.Desc; Font = $t.Font; Pack = $null } })
     foreach ($pk in @(Get-ThemePacks)) { $list += @{ Key = "pack:$($pk.Id)"; Base = $pk.Base; Name = $pk.Name; Desc = $pk.Desc; Font = $AppThemes[$pk.Base].Font; Pack = $pk } }
     $list
 }
