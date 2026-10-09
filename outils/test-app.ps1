@@ -763,6 +763,18 @@ $script:T.Run.Add_Tick({
                     Stop-StartupLoader; $ui.StartupOverlay.Visibility = 'Collapsed'
                     $script:ThemePack = $oldPack; $ThemePack = $oldPack
                 }
+                # Dessin animé au centre de la barre du bas
+                $oldPack3 = $ThemePack
+                try {
+                    $script:ThemePack = @{ Footer = @{ File = $pk.Loader.File; Frames = 1; Delay = 100; Height = 40 } }; $ThemePack = $script:ThemePack
+                    Initialize-PackFooter; Wait-TestMs 300
+                    Assert-Test ($ui.FooterArt.Visibility -eq 'Visible' -and $ui.FooterArt.Child -and $script:Footer.Timer.IsEnabled) 'dessin de la barre du bas absent'
+                    Assert-Test ($ui.StatusText.MaxWidth -lt $ui.StatusBar.ActualWidth / 2) "le texte d'état peut passer sous le dessin ($($ui.StatusText.MaxWidth) px)"
+                } finally {
+                    if ($script:Footer) { $script:Footer.Timer.Stop(); $script:Footer = $null }
+                    $ui.FooterArt.Child = $null; $ui.FooterArt.Visibility = 'Collapsed'; $ui.StatusText.MaxWidth = [double]::PositiveInfinity
+                    $script:ThemePack = $oldPack3; $ThemePack = $oldPack3
+                }
                 # Police de pack : la fenêtre entière se charge avec (titres, onglets, boutons), et en mode « tout »
                 $oldFont = $PackFont; $oldPack2 = $ThemePack
                 try {
@@ -777,7 +789,7 @@ $script:T.Run.Add_Tick({
                     $tb = New-Text 'Test' 14; Set-PackFont $tb
                     Assert-Test ([string]$tb.FontFamily -like '*Consolas*') "police non posée : $($tb.FontFamily)"
                 } finally { $script:PackFont = $oldFont; $PackFont = $oldFont; $script:ThemePack = $oldPack2; $ThemePack = $oldPack2 }
-                "GIF détouré (reflet gardé), zip importé, carte « Pack » dans Thème, personnage qui avance avec la barre, police du pack chargée"
+                "GIF détouré (reflet gardé), zip importé, carte « Pack » dans Thème, personnage qui avance avec la barre, dessin dans la barre du bas, police du pack chargée"
             }
             Test-Step 'Signaler un problème (Paramètres, Aide)' {
                 Show-ReportPanel; $script:ReportBox.Text = 'Le jeu rame depuis la mise à jour'; Wait-TestMs 400; Save-TestShot 'signaler'; Hide-TestPanel

@@ -43,6 +43,7 @@ $Theme = $AppThemes[$ThemeId]
 #   Base              thème de couleurs utilisé (neon, crepuscule, terminal, arcade, rubis)
 #   Hello, Ready      bonjour de l'accueil (« {0} » = prénom) et fin du chargement (facultatifs)
 #   Loader            écran de chargement : { File = planche PNG (images côte à côte), Frames, Delay (ms), Flip }
+#   Footer            dessin animé au centre de la barre du bas : { File = planche PNG, Frames, Delay (ms), Height (px affichés) }
 #   Logo              image à la place du N de Nevermind (PNG transparent, carré), qui se secoue de temps en temps
 #   Font, FontScope   police du pack (fichier .ttf) : sur les titres, onglets, boutons et chiffres (« titres »), ou partout (« tout »)
 # ---------------------------------------------------------------------------
@@ -55,6 +56,9 @@ function Get-ThemePack([string]$Id) {
     if (-not (Test-Path -LiteralPath $f)) { return $null }
     try { $j = Get-Content -LiteralPath $f -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Write-Log "Pack $Id illisible : $_"; return $null }
     $p = @{ Id = $Id; Dir = $dir; Name = [string]$j.Name; Desc = [string]$j.Desc; Base = [string]$j.Base; Hello = [string]$j.Hello; Ready = [string]$j.Ready; Loader = $null; Font = $null; FontScope = 'titres' }
+    if ($j.Footer -and $j.Footer.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Footer.File)))) {
+        $p.Footer = @{ File = (Join-Path $dir ([string]$j.Footer.File)); Frames = [math]::Max(1, [int]$j.Footer.Frames); Delay = [math]::Max(40, [int]$j.Footer.Delay); Height = [math]::Max(16, [int]$j.Footer.Height) }
+    }
     $p.Logo = if ($j.Logo -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Logo)))) { Join-Path $dir ([string]$j.Logo) } else { $null }
     if ($j.Font -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Font)))) {
         $p.Font = Join-Path $dir ([string]$j.Font)
@@ -129,10 +133,13 @@ function Convert-GifToSheet([string]$Gif, [string]$OutPng, [int]$Height = 160) {
     } finally { $img.Dispose() }
     if (-not $box) { throw 'Image vide après le détourage.' }
     $cw = $box[2] - $box[0]; $ch = $box[3] - $box[1]
+    $native = $Height -le 0
+    if ($native) { $Height = $ch }   # taille d'origine : du pixel art reste net
     $fw = [int][math]::Round($cw * $Height / $ch)
     $sheet = New-Object System.Drawing.Bitmap ($fw * $frames.Count), $Height, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($sheet)
-    $g.InterpolationMode = 'HighQualityBicubic'; $g.PixelOffsetMode = 'HighQuality'; $g.CompositingQuality = 'HighQuality'
+    if ($native) { $g.InterpolationMode = 'NearestNeighbor'; $g.PixelOffsetMode = 'Half' }
+    else { $g.InterpolationMode = 'HighQualityBicubic'; $g.PixelOffsetMode = 'HighQuality'; $g.CompositingQuality = 'HighQuality' }
     for ($i = 0; $i -lt $frames.Count; $i++) {
         $g.DrawImage($frames[$i], (New-Object System.Drawing.Rectangle ($i * $fw), 0, $fw, $Height), (New-Object System.Drawing.Rectangle $box[0], $box[1], $cw, $ch), 'Pixel')
         $frames[$i].Dispose()

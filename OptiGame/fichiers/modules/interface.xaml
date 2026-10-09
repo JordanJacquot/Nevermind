@@ -1094,11 +1094,15 @@
       </TabItem>
     </TabControl>
 
-    <Border Grid.Row="2" Background="#00000000" Padding="36,4,36,8">
-      <DockPanel>
-        <TextBlock x:Name="VersionText" DockPanel.Dock="Right" Foreground="#4E4866" FontSize="11" VerticalAlignment="Center"/>
-        <TextBlock x:Name="StatusText" Text="Prêt." Foreground="#8E88A8" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-      </DockPanel>
+    <Border x:Name="StatusBar" Grid.Row="2" Background="#00000000" Padding="36,4,36,8">
+      <Grid>
+        <DockPanel>
+          <TextBlock x:Name="VersionText" DockPanel.Dock="Right" Foreground="#4E4866" FontSize="11" VerticalAlignment="Center"/>
+          <TextBlock x:Name="StatusText" Text="Prêt." Foreground="#8E88A8" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" HorizontalAlignment="Left"/>
+        </DockPanel>
+        <!-- Dessin animé d'un pack de thème, au centre de la barre -->
+        <Border x:Name="FooterArt" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+      </Grid>
     </Border>
 
     <!-- Paramètres (roue crantée en haut à droite) : un onglet par famille de réglages -->

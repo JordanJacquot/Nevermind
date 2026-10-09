@@ -952,3 +952,39 @@ function Start-PackLogoShake {
     }
     $m.Rot.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
 }
+
+# Planche PNG (images côte à côte) découpée en images prêtes à afficher
+function Get-SheetFrames([string]$File, [int]$Count) {
+    $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+    $bi.BeginInit(); $bi.UriSource = New-Object Uri $File; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
+    $fw = [int]($bi.PixelWidth / $Count)
+    @(for ($i = 0; $i -lt $Count; $i++) { $c = New-Object System.Windows.Media.Imaging.CroppedBitmap $bi, ([System.Windows.Int32Rect]::new($i * $fw, 0, $fw, $bi.PixelHeight)); $c.Freeze(); $c })
+}
+
+# Dessin animé d'un pack au centre de la barre du bas (pixels nets, sans flou d'agrandissement)
+function Initialize-PackFooter {
+    $f = if ($ThemePack) { $ThemePack.Footer } else { $null }
+    if (-not $f) { return }
+    $frames = Get-SheetFrames $f.File $f.Frames
+    $img = New-Object System.Windows.Controls.Image
+    $img.Source = $frames[0]; $img.Height = $f.Height; $img.Stretch = 'Uniform'
+    [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'NearestNeighbor')
+    $ui.FooterArt.Child = $img
+    $ui.FooterArt.Visibility = 'Visible'
+    $ui.StatusBar.Padding = New-Thickness 36 2 36 6
+    $script:Footer = @{ Img = $img; Frames = $frames; Frame = 0 }
+    $t = New-Object System.Windows.Threading.DispatcherTimer
+    $t.Interval = [TimeSpan]::FromMilliseconds($f.Delay)
+    $t.Add_Tick({
+        $F = $script:Footer
+        if (-not $F -or -not $Window.IsVisible) { return }
+        $F.Frame = ($F.Frame + 1) % $F.Frames.Count
+        $F.Img.Source = $F.Frames[$F.Frame]
+    })
+    $t.Start()
+    $script:Footer.Timer = $t
+    # Le texte d'état reste dans la moitié gauche, jamais sous le dessin
+    $fit = { if ($script:Footer) { $ui.StatusText.MaxWidth = [math]::Max(80.0, ($ui.StatusBar.ActualWidth - 72 - $script:Footer.Img.ActualWidth) / 2 - 16) } }
+    $ui.StatusBar.Add_SizeChanged($fit)
+    $script:Footer.Img.Add_SizeChanged($fit)
+}
