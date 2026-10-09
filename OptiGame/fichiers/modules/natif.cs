@@ -1990,3 +1990,74 @@ public static class WinFocus
         return ok;
     }
 }
+
+// Organizer Dofus : boutons de la souris (latéraux, clic molette) comme raccourcis.
+// Écoute globale de la souris dans Nevermind (aucune injection dans le jeu), active seulement quand une fenêtre Dofus est devant.
+// Un bouton choisi est « mangé » (le jeu ne le reçoit pas) et signalé à la fenêtre de Nevermind par un message.
+public static class MouseHook
+{
+    delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", SetLastError = true)] static extern IntPtr SetWindowsHookEx(int idHook, HookProc fn, IntPtr hMod, uint threadId);
+    [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hook);
+    [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll")] static extern IntPtr GetModuleHandle(string name);
+    [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr hwnd, int msg, IntPtr wp, IntPtr lp);
+
+    public const int Message = 0x804E;   // WM_APP + 0x4E : wParam = id du raccourci
+    static HookProc proc = Callback;     // gardé vivant tant que l'écoute tourne
+    static IntPtr hook = IntPtr.Zero, target = IntPtr.Zero;
+    static readonly Dictionary<int, int> binds = new Dictionary<int, int>();   // (mods << 8 | bouton) -> id
+    static int swallowUp;
+
+    public static bool Running { get { return hook != IntPtr.Zero; } }
+
+    // Bouton : 3 = clic molette, 4 = latéral arrière, 5 = latéral avant ; mods : 1 Alt, 2 Ctrl, 4 Maj, 8 Win
+    public static void Clear() { lock (binds) binds.Clear(); }
+    public static void Bind(int mods, int button, int id) { lock (binds) binds[(mods << 8) | button] = id; }
+
+    public static bool Start(IntPtr window)
+    {
+        target = window;
+        if (hook != IntPtr.Zero) return true;
+        hook = SetWindowsHookEx(14, proc, GetModuleHandle(null), 0);
+        return hook != IntPtr.Zero;
+    }
+
+    public static void Stop()
+    {
+        if (hook != IntPtr.Zero) UnhookWindowsHookEx(hook);
+        hook = IntPtr.Zero; swallowUp = 0;
+    }
+
+    static bool Down(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
+
+    static IntPtr Callback(int code, IntPtr wParam, IntPtr lParam)
+    {
+        if (code >= 0)
+        {
+            int msg = wParam.ToInt32(), button = 0;
+            bool down = msg == 0x0207 || msg == 0x020B, up = msg == 0x0208 || msg == 0x020C;
+            if (msg == 0x0207 || msg == 0x0208) button = 3;
+            else if (msg == 0x020B || msg == 0x020C) button = ((Marshal.ReadInt32(lParam, 8) >> 16) & 0xFFFF) == 1 ? 4 : 5;
+            if (button != 0)
+            {
+                if (up && swallowUp == button) { swallowUp = 0; return (IntPtr)1; }
+                if (down)
+                {
+                    int mods = (Down(0x12) ? 1 : 0) | (Down(0x11) ? 2 : 0) | (Down(0x10) ? 4 : 0) | (Down(0x5B) || Down(0x5C) ? 8 : 0);
+                    int id;
+                    bool hit;
+                    lock (binds) hit = binds.TryGetValue((mods << 8) | button, out id);
+                    if (hit)
+                    {
+                        swallowUp = button;
+                        PostMessage(target, Message, (IntPtr)id, IntPtr.Zero);
+                        return (IntPtr)1;
+                    }
+                }
+            }
+        }
+        return CallNextHookEx(hook, code, wParam, lParam);
+    }
+}

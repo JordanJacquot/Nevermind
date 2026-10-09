@@ -144,13 +144,28 @@ function ConvertTo-OrgHotkey([string]$Text) {
     @{ Mods = $mods; Vk = [System.Windows.Input.KeyInterop]::VirtualKeyFromKey($key) }
 }
 
+# Bouton de souris : « Souris4 » (latéral arrière), « Souris5 » (latéral avant), « Molette » (clic), avec Ctrl / Alt / Maj / Win
+function ConvertTo-OrgMouse([string]$Text) {
+    if (-not $Text) { return $null }
+    $mods = 0; $button = 0
+    foreach ($p in ($Text -split '\+')) {
+        switch ($p.Trim()) {
+            'Ctrl' { $mods = $mods -bor 2 } 'Alt' { $mods = $mods -bor 1 } 'Maj' { $mods = $mods -bor 4 } 'Win' { $mods = $mods -bor 8 }
+            'Souris4' { $button = 4 } 'Souris5' { $button = 5 } 'Molette' { $button = 3 }
+            default { return $null }
+        }
+    }
+    if (-not $button) { return $null }
+    @{ Mods = $mods; Button = $button }
+}
+
 # Nom lisible d'une touche (D1 -> 1, NumPad1 -> Pavé 1)
 function Format-OrgKey([string]$Text) {
     if (-not $Text) { return 'Aucune' }
     (@($Text -split '\+' | ForEach-Object {
         $p = $_.Trim()
         if ($p -match '^D(\d)$') { $Matches[1] } elseif ($p -match '^NumPad(\d)$') { "Pavé $($Matches[1])" }
-        else { switch ($p) { 'Space' { 'Espace' } 'Return' { 'Entrée' } 'Escape' { 'Échap' } 'Back' { 'Retour' } 'Oem7' { '²' } 'Oem3' { 'ù' } default { $p } } }
+        else { switch ($p) { 'Souris4' { 'Souris 4 (arrière)' } 'Souris5' { 'Souris 5 (avant)' } 'Molette' { 'Clic molette' } 'Space' { 'Espace' } 'Return' { 'Entrée' } 'Escape' { 'Échap' } 'Back' { 'Retour' } 'Oem7' { '²' } 'Oem3' { 'ù' } default { $p } } }
     })) -join ' + '
 }
 
@@ -162,7 +177,7 @@ function Register-OrgHotkeys {
         if (-not $script:OrgHook) {
             $script:OrgHook = [System.Windows.Interop.HwndSourceHook] {
                 param([IntPtr]$hwnd, [int]$msg, [IntPtr]$wParam, [IntPtr]$lParam, [ref]$handled)
-                if ($msg -eq 0x0312) {
+                if ($msg -eq 0x0312 -or $msg -eq 0x804E) {   # touche (Windows) ou bouton de souris (MouseHook)
                     $id = $wParam.ToInt32()
                     if ($script:OrgKeyIds -and $script:OrgKeyIds.ContainsKey($id)) {
                         try { [void](Show-OrgChar (Get-OrgTarget $script:OrgKeyIds[$id])) } catch { Write-Log "Organizer : $_" }
@@ -174,13 +189,18 @@ function Register-OrgHotkeys {
             [System.Windows.Interop.HwndSource]::FromHwnd($h).AddHook($script:OrgHook)
         }
         $script:OrgKeyIds = @{}
+        [MouseHook]::Clear()
+        $mouse = $false
         $actions = @('Next', 'Prev') + @(1..$OrgMaxKeys | ForEach-Object { "P$_" })
         foreach ($a in $actions) {
+            $id = if ($a -eq 'Next') { $OrgHotkeyBase } elseif ($a -eq 'Prev') { $OrgHotkeyBase + 1 } else { $OrgHotkeyBase + 10 + [int]$a.Substring(1) }
+            $ms = ConvertTo-OrgMouse $c.Hotkeys[$a]
+            if ($ms) { [MouseHook]::Bind($ms.Mods, $ms.Button, $id); $script:OrgKeyIds[$id] = $a; $mouse = $true; continue }
             $hk = ConvertTo-OrgHotkey $c.Hotkeys[$a]
             if (-not $hk) { continue }
-            $id = if ($a -eq 'Next') { $OrgHotkeyBase } elseif ($a -eq 'Prev') { $OrgHotkeyBase + 1 } else { $OrgHotkeyBase + 10 + [int]$a.Substring(1) }
             if ([OGNative]::AddHotKey($h, $id, [uint32]$hk.Mods, [uint32]$hk.Vk)) { $script:OrgKeyIds[$id] = $a }
         }
+        if ($mouse -and -not [MouseHook]::Start($h)) { Write-Log 'Organizer : boutons de souris indisponibles (écoute refusée par Windows).' }
         $script:OrgKeysHandle = $h
         $script:OrgKeysOn = $true
     } catch { Write-Log "Organizer, raccourcis : $_" }
@@ -189,6 +209,7 @@ function Register-OrgHotkeys {
 function Unregister-OrgHotkeys {
     if (-not $script:OrgKeysOn) { return }
     foreach ($id in @($script:OrgKeyIds.Keys)) { try { [OGNative]::RemoveHotKey($script:OrgKeysHandle, $id) } catch {} }
+    try { [MouseHook]::Stop(); [MouseHook]::Clear() } catch {}
     $script:OrgKeyIds = @{}
     $script:OrgKeysOn = $false
 }
@@ -476,7 +497,7 @@ function New-OrgKeyButton([string]$Action) {
     $t.TextWrapping = 'NoWrap'; $t.HorizontalAlignment = 'Center'
     $t.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
     $b.Child = $t
-    $b.ToolTip = 'Clique puis appuie sur la touche voulue (Échap : annuler, Retour arrière : aucune touche)'
+    $b.ToolTip = 'Clique puis appuie sur la touche ou le bouton de souris voulu (bouton latéral, clic molette). Échap : annuler, Retour arrière : aucune touche'
     $b.Tag = $Action
     $b.Add_MouseLeftButtonUp({ param($s, $e) $script:OrgCapture = [string]$s.Tag; Build-OrgPanel; $Window.Focus() })
     $b
@@ -488,24 +509,39 @@ function Receive-OrgKey($E) {
     $E.Handled = $true
     $key = if ($E.Key -eq [System.Windows.Input.Key]::System) { $E.SystemKey } else { $E.Key }
     if ($key -in 'LeftCtrl', 'RightCtrl', 'LeftShift', 'RightShift', 'LeftAlt', 'RightAlt', 'LWin', 'RWin') { return }
+    if ($key -eq 'Escape') { $script:OrgCapture = $null; Build-OrgPanel; return }
+    if ($key -eq 'Back' -or $key -eq 'Delete') { Set-OrgCapturedKey ''; return }
+    Set-OrgCapturedKey (Add-OrgModifiers ([string]$key))
+}
+
+# Bouton de souris capturé (Window.PreviewMouseDown) : latéraux et clic molette (gauche et droit restent normaux)
+function Receive-OrgMouse($E) {
+    if (-not $script:OrgCapture) { return }
+    $name = switch ([string]$E.ChangedButton) { 'XButton1' { 'Souris4' } 'XButton2' { 'Souris5' } 'Middle' { 'Molette' } default { $null } }
+    if (-not $name) { return }
+    $E.Handled = $true
+    Set-OrgCapturedKey (Add-OrgModifiers $name)
+}
+
+function Add-OrgModifiers([string]$Key) {
+    $m = [int][System.Windows.Input.Keyboard]::Modifiers
+    $parts = @()
+    if ($m -band 2) { $parts += 'Ctrl' }
+    if ($m -band 1) { $parts += 'Alt' }
+    if ($m -band 4) { $parts += 'Maj' }
+    if ($m -band 8) { $parts += 'Win' }
+    $parts += $Key
+    $parts -join '+'
+}
+
+function Set-OrgCapturedKey([string]$Text) {
     $action = $script:OrgCapture
     $script:OrgCapture = $null
+    if (-not $action) { return }
     $c = Get-OrgConfig
-    if ($key -eq 'Escape') { Build-OrgPanel; return }
-    if ($key -eq 'Back' -or $key -eq 'Delete') { $c.Hotkeys[$action] = '' }
-    else {
-        $m = [int][System.Windows.Input.Keyboard]::Modifiers
-        $parts = @()
-        if ($m -band 2) { $parts += 'Ctrl' }
-        if ($m -band 1) { $parts += 'Alt' }
-        if ($m -band 4) { $parts += 'Maj' }
-        if ($m -band 8) { $parts += 'Win' }
-        $parts += [string]$key
-        $txt = $parts -join '+'
-        # Une même touche ne sert qu'à une action
-        foreach ($k in @($c.Hotkeys.Keys)) { if ($k -ne $action -and $c.Hotkeys[$k] -eq $txt) { $c.Hotkeys[$k] = '' } }
-        $c.Hotkeys[$action] = $txt
-    }
+    # Une même touche ne sert qu'à une action
+    if ($Text) { foreach ($k in @($c.Hotkeys.Keys)) { if ($k -ne $action -and $c.Hotkeys[$k] -eq $Text) { $c.Hotkeys[$k] = '' } } }
+    $c.Hotkeys[$action] = $Text
     Save-OrgConfig
     if ($script:OrgKeysOn) { Unregister-OrgHotkeys }
     Build-OrgPanel
@@ -648,3 +684,4 @@ function Build-OrgPanel {
 if ((Get-OrgConfig).On) { $null = $Window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::ApplicationIdle, [Action]{ try { Start-OrgWatch } catch { Write-Log "Organizer : $_" } }) }
 $ui.BtnLibOrganizer.Add_Click({ Invoke-Safe { Show-OrgView (-not $script:OrgViewOn) } })
 $Window.Add_PreviewKeyDown({ param($s, $e) if ($script:OrgCapture) { try { Receive-OrgKey $e } catch { Write-Log "Organizer : $_" } } })
+$Window.Add_PreviewMouseDown({ param($s, $e) if ($script:OrgCapture) { try { Receive-OrgMouse $e } catch { Write-Log "Organizer : $_" } } })

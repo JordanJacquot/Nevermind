@@ -467,6 +467,17 @@ $script:T.Run.Add_Tick({
                     $ke = New-Object System.Windows.Input.KeyEventArgs ([System.Windows.Input.Keyboard]::PrimaryDevice, [System.Windows.PresentationSource]::FromVisual($Window), 0, [System.Windows.Input.Key]::F7); $ke.RoutedEvent = [System.Windows.Input.Keyboard]::PreviewKeyDownEvent
                     Receive-OrgKey $ke
                     Assert-Test ((Get-OrgConfig).Hotkeys.Next -eq 'F7' -and -not (Get-OrgConfig).Hotkeys.P7 -and -not $script:OrgCapture) "touche capturée : $((Get-OrgConfig).Hotkeys.Next), perso 7 : $((Get-OrgConfig).Hotkeys.P7)"
+                    # Bouton latéral de la souris comme raccourci : capturé, compris, écouté seulement quand c'est utile
+                    $m4 = ConvertTo-OrgMouse 'Ctrl+Souris4'
+                    Assert-Test ($m4.Mods -eq 2 -and $m4.Button -eq 4 -and (ConvertTo-OrgMouse 'Molette').Button -eq 3 -and -not (ConvertTo-OrgMouse 'F1') -and -not (ConvertTo-OrgHotkey 'Souris4')) 'boutons de souris mal compris'
+                    $script:OrgCapture = 'Prev'
+                    $me = New-Object System.Windows.Input.MouseButtonEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0, [System.Windows.Input.MouseButton]::XButton2); $me.RoutedEvent = [System.Windows.Input.Mouse]::PreviewMouseDownEvent
+                    Receive-OrgMouse $me
+                    Assert-Test ((Get-OrgConfig).Hotkeys.Prev -eq 'Souris5' -and (Format-OrgKey 'Souris5') -eq 'Souris 5 (avant)') "bouton capturé : $((Get-OrgConfig).Hotkeys.Prev)"
+                    Register-OrgHotkeys
+                    Assert-Test ([MouseHook]::Running) 'écoute de la souris non lancée'
+                    Unregister-OrgHotkeys
+                    Assert-Test (-not [MouseHook]::Running) 'écoute de la souris toujours active'
                     # Barre flottante : un bouton par perso connecté
                     Show-OrgBar; Wait-TestMs 300
                     Assert-Test ($script:OrgBar.Items.Count -eq 3 -and $script:OrgBar.Win.IsVisible) "barre : $($script:OrgBar.Items.Count) boutons"
@@ -484,7 +495,7 @@ $script:T.Run.Add_Tick({
                     # Retour à la bibliothèque
                     $ui.BtnLibOrganizer.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Button]::ClickEvent))); Wait-TestMs 200
                     Assert-Test ($ui.LibBody.Visibility -eq 'Visible' -and $ui.LibTitle.Text -eq 'Mes jeux') 'bibliothèque non revenue'
-                    "titres lus, logos de classe, ordre retenu, suivant / précédent / touche par perso, touche capturée, barre de $nBar persos"
+                    "titres lus, logos de classe, ordre retenu, suivant / précédent / touche par perso, touche et bouton de souris capturés, barre de $nBar persos"
                 } finally {
                     $script:OrgFake = $null; $script:OrgFakeFg = $null; $script:OrgCapture = $null
                     try { Stop-OrgWatch } catch {}
