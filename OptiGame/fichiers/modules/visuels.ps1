@@ -1008,6 +1008,9 @@ function Initialize-PackTabIcons {
         [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'HighQuality')
         $sp.Children.RemoveAt(0)
         $sp.Children.Insert(0, $img)
+        # Texte de l'onglet centré sur l'icône (sinon il reste collé en haut, surtout avec une police pixel)
+        foreach ($lbl in @($sp.Children | Where-Object { $_ -is [System.Windows.Controls.TextBlock] })) { $lbl.VerticalAlignment = 'Center' }
+        $sp.VerticalAlignment = 'Center'
         $t = New-Object System.Windows.Threading.DispatcherTimer
         $t.Interval = [TimeSpan]::FromMilliseconds($def.Delay)
         $st = @{ Img = $img; Frames = $frames; Frame = 0; Timer = $t }
