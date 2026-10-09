@@ -46,7 +46,7 @@ function Update-GameCache {
         }
     }
     Build-GameSections
-    if ($script:LibBuilt) { Update-LibraryView }
+    Update-LibraryIfShown
 }
 
 # Jeux ajoutés à la main (jeu autonome, itch.io, émulateur...) : { Name, Exes, Source = 'Ajouté' }
@@ -134,7 +134,7 @@ function Start-GameSession([string]$Game, $Proc) {
     if ((Test-FpsMeasure) -and -not $script:FpsTarget) { Start-FpsTarget $Proc.Id $Game $Proc.ProcessName }
     if ((Test-LagMeasure) -and -not $script:LagSession) { try { Start-LagSession $Game $Proc.Id } catch { Write-Log "Lag: $_" } }
     Update-GameModeStatus
-    if ($script:LibBuilt) { Update-LibraryView }
+    Update-LibraryIfShown
     if ($closed.Count) { Show-Notify 'Mode jeu activé' "$Game : $(($closed | ForEach-Object { $_.Name }) -join ', ') fermé$(if ($closed.Count -gt 1) {'s'}) pendant que tu joues." }
 }
 

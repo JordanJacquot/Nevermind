@@ -32,15 +32,20 @@ function New-TrafficState {
 function Get-TrafficApp([int]$ProcId) {
     $st = $script:Traffic
     if ($st.Pids.ContainsKey($ProcId)) { return $st.Pids[$ProcId] }
-    $p = Get-Process -Id $ProcId -ErrorAction SilentlyContinue
-    $name = if ($ProcId -eq 4) { 'System' } elseif ($p) { $p.ProcessName } else { "Programme $ProcId" }
-    $path = if ($p) { try { [string]$p.Path } catch { '' } } else { '' }
-    if (-not $path -and $ProcId -gt 4) { try { $path = [TrafficMon]::GetProcessPath($ProcId) } catch {} }
+    # Noms des programmes : une seule lecture par passage pour tous les nouveaux (Get-Process par programme coûtait 20 ms chacun)
+    if (-not $st.ProcNames -or (-not $st.ProcNames.ContainsKey($ProcId) -and $st.ProcNamesTick -ne $st.Ticks)) {
+        $st.ProcNames = @{}; $st.ProcNamesTick = $st.Ticks
+        foreach ($pr in [Diagnostics.Process]::GetProcesses()) { $st.ProcNames[$pr.Id] = $pr.ProcessName; $pr.Dispose() }
+    }
+    $pname = $st.ProcNames[$ProcId]
+    $name = if ($ProcId -eq 4) { 'System' } elseif ($pname) { $pname } else { "Programme $ProcId" }
+    $path = ''
+    if ($ProcId -gt 4) { try { $path = [string][TrafficMon]::GetProcessPath($ProcId) } catch {} }
     $svc = if ($name -eq 'svchost') { @(Get-SvcNames $ProcId) } else { @() }
     $key = if ($ProcId -eq $PID) { 'optigame' } elseif ($svc.Count) { 'svc:' + (($svc | ForEach-Object { $_.Name.ToLower() }) -join ',') } elseif ($path) { $path.ToLower() } else { "nom:$($name.ToLower())" }
     if (-not $st.Apps.ContainsKey($key)) {
+        # Description du programme : lue en arrière plan avec sa signature (ouvrir le .exe ici réveillait l'antivirus)
         $desc = ''
-        if ($path) { try { $desc = [string][Diagnostics.FileVersionInfo]::GetVersionInfo($path).FileDescription } catch {} }
         if ($svc.Count) { $desc = "Windows : $($svc[0].Title)$(if ($svc.Count -gt 1) { " (+$($svc.Count - 1))" })" }
         $st.Apps[$key] = @{ Key = $key; Name = $name; Path = $path; Services = $svc; Title = $(if ($ProcId -eq $PID) { 'Nevermind (cette app)' } elseif ($desc -and $desc.Length -lt 90) { $desc } else { $name })
             OutClosed = [double]0; InClosed = [double]0; Out = [double]0; In = [double]0; Rate = [double]0; LastOut = [double]0
@@ -186,7 +191,8 @@ $TrafficInspectWork = {
                 } catch {}
             }
         }
-        @{ Key = $it.Key; Sig = $s[0]; Publisher = $s[1]; Parent = $parent; ParentSig = $parentSig; ParentPub = $parentPub }
+        $desc = try { [string][Diagnostics.FileVersionInfo]::GetVersionInfo($it.Path).FileDescription } catch { '' }
+        @{ Key = $it.Key; Sig = $s[0]; Publisher = $s[1]; Parent = $parent; ParentSig = $parentSig; ParentPub = $parentPub; Desc = $desc }
     }
 }
 
@@ -206,6 +212,7 @@ function Update-TrafficSignatures {
                 if ($a.SigTries -lt 3) { $st.SigQueue.Enqueue($r.Key) } else { $a.Sig = 'Unknown' }
                 continue
             }
+            if ($r.Desc -and $r.Desc.Length -lt 90 -and $a.Title -eq $a.Name -and -not $a.Services.Count -and -not $a.IsSelf) { $a.Title = $r.Desc }
             $a.Sig = $r.Sig; $a.Publisher = $r.Publisher
             $a.Parent = $r.Parent; $a.ParentSig = $r.ParentSig; $a.ParentPub = $r.ParentPub
             $st.Sig[$r.Key] = $a.Sig
@@ -844,11 +851,26 @@ function Update-TrafficView {
             }
         }
     }
+    # Liste : chaque carte est gardée et recréée seulement si ce qu'elle affiche a changé
+    # (tout reconstruire toutes les 2 s faisait hoqueter la page)
     $list = $script:TrafficList
-    $list.Children.Clear()
+    if (-not $script:TrafficRows) { $script:TrafficRows = @{} }
     $sorted = @($apps | Sort-Object @{ Expression = { $_.Out + $_.In } } -Descending | Select-Object -First 40)
-    if (-not $sorted.Count) { [void]$list.Children.Add((New-Text 'Aucun programme ne communique avec Internet pour le moment.' 13 '#655E7E')) }
-    foreach ($a in $sorted) { [void]$list.Children.Add((New-TrafficRow $a)) }
+    $trusted = Get-TrafficMarks 'TrafficTrusted'
+    $cards = @(foreach ($a in $sorted) {
+        $look = "$($a.Title)|$($a.Sig)|$($trusted.ContainsKey($a.Key))|$($a.Dest.Count)|$($a.Udp)|$($a.Live)|$($a.Ports.Count)|$(Format-Bytes $a.Out)|$(Format-Bytes $a.In)|$([int]($a.Rate / 1KB))|$([bool]$a.Icon)"
+        $row = $script:TrafficRows[$a.Key]
+        if (-not $row -or $row.Look -ne $look) { $row = @{ Look = $look; Card = (New-TrafficRow $a) }; $script:TrafficRows[$a.Key] = $row }
+        $row.Card
+    })
+    $order = ($sorted | ForEach-Object { $_.Key }) -join '|'
+    $same = $order -eq $script:TrafficOrder -and $list.Children.Count -eq $cards.Count
+    for ($i = 0; $same -and $i -lt $cards.Count; $i++) { if (-not [object]::ReferenceEquals($list.Children[$i], $cards[$i])) { $same = $false } }
+    if ($same -and $cards.Count) { return }
+    $script:TrafficOrder = $order
+    $list.Children.Clear()
+    if (-not $cards.Count) { [void]$list.Children.Add((New-Text 'Aucun programme ne communique avec Internet pour le moment.' 13 '#655E7E')) }
+    foreach ($c in $cards) { [void]$list.Children.Add($c) }
 }
 
 # Fiche d'un programme : qui il contacte, combien, et pourquoi il est signalé.

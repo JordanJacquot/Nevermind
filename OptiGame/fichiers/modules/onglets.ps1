@@ -118,6 +118,13 @@ function Set-GamingSubPage($Page) {
         }
     }
     $script:GamingSubPage = $GamingSubPages[$Index].Id
+    if ($script:GamingSubPage -eq 'lag' -and $script:LagPanelDirty) { $script:LagPanelDirty = $false; Build-LagPanel }
+}
+
+# Fin d'une partie : la page Lag n'est refaite tout de suite que si elle est à l'écran (0,5 s), sinon à sa prochaine ouverture
+function Request-LagPanel {
+    if ($ui.Tabs.SelectedIndex -eq 1 -and $script:GamingSubPage -eq 'lag' -and $Window.IsVisible) { $script:LagPanelDirty = $false; Build-LagPanel }
+    else { $script:LagPanelDirty = $true }
 }
 
 function Build-GamingTabs {

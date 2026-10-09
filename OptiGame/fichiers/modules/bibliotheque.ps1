@@ -29,8 +29,13 @@ function Add-PlayTime([string]$Game, [datetime]$Start) {
     $e.Last = (Get-Date).ToString('s')
     $log[$Game] = $e
     try { [IO.File]::WriteAllText($PlayFile, (ConvertTo-Json -InputObject $log -Depth 4 -Compress), (New-Object Text.UTF8Encoding($false))) } catch { Write-Log "Temps de jeu: $_" }
-    if ($script:LibBuilt) { Update-LibraryView }
+    Update-LibraryIfShown
     if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubStats) { Update-Hub }
+}
+
+# La bibliothèque cachée n'est pas reconstruite (0,2 à 0,7 s) : elle se rafraîchit quand on ouvre la page Jeux
+function Update-LibraryIfShown {
+    if ($script:LibBuilt -and $ui.Tabs.SelectedIndex -eq $GamesIndex -and -not $script:OrgViewOn -and $Window.IsVisible) { Update-LibraryView }
 }
 
 function Format-LastPlayed([string]$Iso) {
@@ -249,7 +254,7 @@ function Receive-Covers {
     try { [IO.File]::WriteAllText($CoverIndexFile, (ConvertTo-Json -InputObject $idx -Depth 3 -Compress), (New-Object Text.UTF8Encoding($false))) } catch {}
     Write-Log "Jaquettes: $found trouvée(s) sur $(@($res).Count)"
     Set-Status "$found jaquette$(if ($found -gt 1) {'s'}) ajoutée$(if ($found -gt 1) {'s'}) à ta bibliothèque."
-    if ($found -and $script:LibBuilt) { Update-LibraryView }
+    if ($found) { Update-LibraryIfShown }
 }
 
 # Plus grande image d'un fichier .ico (les launchers Riot, Ubisoft... en fournissent en 256 px)

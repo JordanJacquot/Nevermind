@@ -179,6 +179,7 @@ $ui.Tabs.Add_SelectionChanged({
     if ($e.OriginalSource -ne $ui.Tabs) { return }
     Update-NavBar
     try { Start-PageTransition } catch {}
+    if ($ui.Tabs.SelectedIndex -eq 1 -and $script:LagPanelDirty -and $script:GamingSubPage -eq 'lag') { $script:LagPanelDirty = $false; Invoke-Safe { Build-LagPanel } }
     if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubStats) { Invoke-Safe { Update-Hub }; return }
     if ($ui.Tabs.SelectedIndex -eq $GamesIndex) {
         Invoke-Safe { if (-not $script:LibBuilt) { Build-Library } else { Update-LibraryView } }

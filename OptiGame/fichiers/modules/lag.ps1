@@ -289,7 +289,7 @@ function Stop-LagSession {
     [void]$script:LagSessions.Add($obj)
     Save-LagSessions
     Write-Log "Lag: $($s.Game), $([int]($dur / 60)) min, $($rec.Diag.Title)"
-    Build-LagPanel
+    Request-LagPanel
     $open = { Show-Page 1; Set-GamingSubPage 'lag'; Show-LagSession $obj.Id }.GetNewClosure()
     if ($rec.Quick) { if (-not $script:TestRunning) { Show-LagSession $obj.Id } }
     else { Show-Notify "Connexion pendant $($s.Game)" "$($rec.Diag.Title). Clique pour voir le détail." $open }
