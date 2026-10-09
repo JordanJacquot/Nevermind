@@ -1909,6 +1909,33 @@ public static class SpriteTools
         return cleared;
     }
 
+    // Fond uni d'une autre couleur (mauve, gris...) : efface depuis les bords les pixels proches de cette couleur
+    // (écart total R + V + B inférieur à tol), et ceux déjà transparents.
+    public static int RemoveBackgroundColor(byte[] px, int w, int h, int kr, int kg, int kb, int tol)
+    {
+        bool[] seen = new bool[w * h];
+        Stack<int> todo = new Stack<int>();
+        for (int x = 0; x < w; x++) { todo.Push(x); todo.Push((h - 1) * w + x); }
+        for (int y = 0; y < h; y++) { todo.Push(y * w); todo.Push(y * w + w - 1); }
+        int cleared = 0;
+        while (todo.Count > 0)
+        {
+            int i = todo.Pop();
+            if (i < 0 || i >= w * h || seen[i]) continue;
+            seen[i] = true;
+            int o = i * 4;
+            int d = Math.Abs(px[o + 2] - kr) + Math.Abs(px[o + 1] - kg) + Math.Abs(px[o] - kb);
+            if (px[o + 3] != 0 && d > tol) continue;
+            px[o + 3] = 0; cleared++;
+            int x0 = i % w;
+            if (x0 > 0) todo.Push(i - 1);
+            if (x0 < w - 1) todo.Push(i + 1);
+            if (i >= w) todo.Push(i - w);
+            if (i < w * (h - 1)) todo.Push(i + w);
+        }
+        return cleared;
+    }
+
     // Rectangle des pixels visibles : x0, y0, x1, y1 (x1 et y1 exclus), ou null si l'image est vide
     public static int[] OpaqueBounds(byte[] px, int w, int h)
     {

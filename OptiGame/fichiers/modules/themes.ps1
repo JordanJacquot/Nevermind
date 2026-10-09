@@ -44,6 +44,8 @@ $Theme = $AppThemes[$ThemeId]
 #   Hello, Ready      bonjour de l'accueil (« {0} » = prénom) et fin du chargement (facultatifs)
 #   Loader            écran de chargement : { File = planche PNG (images côte à côte), Frames, Delay (ms), Flip }
 #   Footer            dessin animé au centre de la barre du bas : { File = planche PNG, Frames, Delay (ms), Height (px affichés) }
+#   TabIcons          icônes animées des onglets du haut : { jeux = { File, Frames, Delay }, reseau, trafic, overlay, ordinateur }
+#                     (immobiles au repos, animées au survol de l'onglet)
 #   Logo              image à la place du N de Nevermind (PNG transparent, carré), qui se secoue de temps en temps
 #   Font, FontScope   police du pack (fichier .ttf) : sur les titres, onglets, boutons et chiffres (« titres »), ou partout (« tout »)
 # ---------------------------------------------------------------------------
@@ -58,6 +60,15 @@ function Get-ThemePack([string]$Id) {
     $p = @{ Id = $Id; Dir = $dir; Name = [string]$j.Name; Desc = [string]$j.Desc; Base = [string]$j.Base; Hello = [string]$j.Hello; Ready = [string]$j.Ready; Loader = $null; Font = $null; FontScope = 'titres' }
     if ($j.Footer -and $j.Footer.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Footer.File)))) {
         $p.Footer = @{ File = (Join-Path $dir ([string]$j.Footer.File)); Frames = [math]::Max(1, [int]$j.Footer.Frames); Delay = [math]::Max(40, [int]$j.Footer.Delay); Height = [math]::Max(16, [int]$j.Footer.Height) }
+    }
+    $p.TabIcons = @{}
+    if ($j.TabIcons) {
+        foreach ($pr in $j.TabIcons.PSObject.Properties) {
+            $v = $pr.Value
+            if ($v.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$v.File)))) {
+                $p.TabIcons[$pr.Name] = @{ File = (Join-Path $dir ([string]$v.File)); Frames = [math]::Max(1, [int]$v.Frames); Delay = [math]::Max(40, [int]$v.Delay) }
+            }
+        }
     }
     $p.Logo = if ($j.Logo -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Logo)))) { Join-Path $dir ([string]$j.Logo) } else { $null }
     if ($j.Font -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Font)))) {
@@ -123,6 +134,8 @@ function Convert-GifToSheet([string]$Gif, [string]$OutPng, [int]$Height = 160) {
             $data = $bmp.LockBits($rect, 'ReadWrite', $bmp.PixelFormat)
             $px = New-Object byte[] ($data.Stride * $bmp.Height)
             [Runtime.InteropServices.Marshal]::Copy($data.Scan0, $px, 0, $px.Length)
+            # Fond : la couleur du coin de l'image (blanc, damier gris, mauve...), ou rien s'il est déjà transparent
+            if ($px[3] -ne 0) { [void][SpriteTools]::RemoveBackgroundColor($px, $bmp.Width, $bmp.Height, $px[2], $px[1], $px[0], 60) }
             [void][SpriteTools]::RemoveLightBackground($px, $bmp.Width, $bmp.Height, 215, 28)
             [Runtime.InteropServices.Marshal]::Copy($px, 0, $data.Scan0, $px.Length)
             $bmp.UnlockBits($data)

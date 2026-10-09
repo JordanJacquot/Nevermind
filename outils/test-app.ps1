@@ -775,6 +775,24 @@ $script:T.Run.Add_Tick({
                     $ui.FooterArt.Child = $null; $ui.FooterArt.Visibility = 'Collapsed'; $ui.StatusText.MaxWidth = [double]::PositiveInfinity
                     $script:ThemePack = $oldPack3; $ThemePack = $oldPack3
                 }
+                # Icône animée d'onglet : immobile au repos, animée au survol, de retour à la 1re image ensuite
+                $oldPack4 = $ThemePack; $hdr = $ui.Tabs.Items[$GamesIndex].Header; $oldIcon = $hdr.Children[0]
+                try {
+                    $script:ThemePack = @{ TabIcons = @{ jeux = @{ File = $pk.Loader.File; Frames = 1; Delay = 60 } } }; $ThemePack = $script:ThemePack
+                    Initialize-PackTabIcons
+                    $st = $script:TabIcons['jeux']
+                    Assert-Test ($st -and $hdr.Children[0] -is [System.Windows.Controls.Image] -and -not $st.Timer.IsEnabled) 'icône de l''onglet Jeux non remplacée (ou animée au repos)'
+                    $ev = New-Object System.Windows.Input.MouseEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0); $ev.RoutedEvent = [System.Windows.Input.Mouse]::MouseEnterEvent
+                    $ui.Tabs.Items[$GamesIndex].RaiseEvent($ev)
+                    Assert-Test ($st.Timer.IsEnabled) 'icône non animée au survol'
+                    $ev = New-Object System.Windows.Input.MouseEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0); $ev.RoutedEvent = [System.Windows.Input.Mouse]::MouseLeaveEvent
+                    $ui.Tabs.Items[$GamesIndex].RaiseEvent($ev)
+                    Assert-Test (-not $st.Timer.IsEnabled -and $st.Frame -eq 0) 'icône toujours animée après le survol'
+                } finally {
+                    if ($script:TabIcons) { foreach ($x in $script:TabIcons.Values) { $x.Timer.Stop() }; $script:TabIcons = $null }
+                    if ($hdr.Children[0] -ne $oldIcon) { $hdr.Children.RemoveAt(0); $hdr.Children.Insert(0, $oldIcon) }
+                    $script:ThemePack = $oldPack4; $ThemePack = $oldPack4
+                }
                 # Police de pack : la fenêtre entière se charge avec (titres, onglets, boutons), et en mode « tout »
                 $oldFont = $PackFont; $oldPack2 = $ThemePack
                 try {
@@ -789,7 +807,7 @@ $script:T.Run.Add_Tick({
                     $tb = New-Text 'Test' 14; Set-PackFont $tb
                     Assert-Test ([string]$tb.FontFamily -like '*Consolas*') "police non posée : $($tb.FontFamily)"
                 } finally { $script:PackFont = $oldFont; $PackFont = $oldFont; $script:ThemePack = $oldPack2; $ThemePack = $oldPack2 }
-                "GIF détouré (reflet gardé), zip importé, carte « Pack » dans Thème, personnage qui avance avec la barre, dessin dans la barre du bas, police du pack chargée"
+                "GIF détouré (reflet gardé), zip importé, carte « Pack » dans Thème, personnage qui avance avec la barre, dessin dans la barre du bas, icône d'onglet animée au survol, police du pack chargée"
             }
             Test-Step 'Signaler un problème (Paramètres, Aide)' {
                 Show-ReportPanel; $script:ReportBox.Text = 'Le jeu rame depuis la mise à jour'; Wait-TestMs 400; Save-TestShot 'signaler'; Hide-TestPanel

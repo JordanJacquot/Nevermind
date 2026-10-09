@@ -988,3 +988,38 @@ function Initialize-PackFooter {
     $ui.StatusBar.Add_SizeChanged($fit)
     $script:Footer.Img.Add_SizeChanged($fit)
 }
+
+# Icônes animées des onglets du haut (pack de thème) : première image au repos, animation au survol de l'onglet
+function Initialize-PackTabIcons {
+    if (-not $ThemePack -or -not $ThemePack.TabIcons -or -not $ThemePack.TabIcons.Count) { return }
+    $tabs = @{ ordinateur = $HubIndex; jeux = $GamesIndex; reseau = $NetIndex; trafic = $TrafficIndex; overlay = $OverlayIndex }
+    $script:TabIcons = @{}
+    foreach ($k in @($ThemePack.TabIcons.Keys)) {
+        if (-not $tabs.ContainsKey($k)) { continue }
+        $ti = $ui.Tabs.Items[$tabs[$k]]
+        $sp = $ti.Header
+        if (-not ($sp -is [System.Windows.Controls.StackPanel]) -or -not $sp.Children.Count) { continue }
+        $def = $ThemePack.TabIcons[$k]
+        $frames = Get-SheetFrames $def.File $def.Frames
+        $img = New-Object System.Windows.Controls.Image
+        $img.Source = $frames[0]; $img.Height = 24; $img.Stretch = 'Uniform'
+        $img.Margin = New-Thickness 0 -4 6 -4; $img.VerticalAlignment = 'Center'
+        [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'HighQuality')
+        $sp.Children.RemoveAt(0)
+        $sp.Children.Insert(0, $img)
+        $t = New-Object System.Windows.Threading.DispatcherTimer
+        $t.Interval = [TimeSpan]::FromMilliseconds($def.Delay)
+        $st = @{ Img = $img; Frames = $frames; Frame = 0; Timer = $t }
+        $t.Tag = $st
+        $t.Add_Tick({ param($s, $e) $x = $s.Tag; $x.Frame = ($x.Frame + 1) % $x.Frames.Count; $x.Img.Source = $x.Frames[$x.Frame] })
+        $script:TabIcons[$k] = $st
+        $ti.Add_MouseEnter({ param($s, $e) $x = Get-TabIconState $s; if ($x) { $x.Timer.Start() } })
+        $ti.Add_MouseLeave({ param($s, $e) $x = Get-TabIconState $s; if ($x) { $x.Timer.Stop(); $x.Frame = 0; $x.Img.Source = $x.Frames[0] } })
+    }
+}
+
+function Get-TabIconState($TabItem) {
+    if (-not $script:TabIcons) { return $null }
+    foreach ($x in $script:TabIcons.Values) { if ($TabItem.Header.Children.Contains($x.Img)) { return $x } }
+    $null
+}

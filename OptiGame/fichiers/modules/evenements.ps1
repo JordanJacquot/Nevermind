@@ -59,6 +59,7 @@ $Window.Add_Closed({
     try { if ($script:TrafficTimer) { $script:TrafficTimer.Stop() } } catch {}
     try { if ($script:LogoTimer) { $script:LogoTimer.Stop() } } catch {}
     try { if ($script:Footer) { $script:Footer.Timer.Stop() } } catch {}
+    try { if ($script:TabIcons) { foreach ($x in $script:TabIcons.Values) { $x.Timer.Stop() } } } catch {}
     try { [FrameMon]::Stop() } catch {}
     try { if ($script:LagSession) { $script:LagSession = $null; if ($script:LagTimer) { $script:LagTimer.Stop() }; [LagMon]::Stop() } } catch {}
     try { if ([NetFlow]::Running) { [NetFlow]::Stop() } } catch {}
@@ -230,6 +231,7 @@ $Window.Add_ContentRendered({
     try { Initialize-Search } catch { Write-Log "Recherche: $_" }
     try { Add-ThemeDecor } catch { Write-Log "Décor du thème: $_" }
     try { Initialize-PackFooter } catch { Write-Log "Dessin de la barre du bas : $_" }
+    try { Initialize-PackTabIcons } catch { Write-Log "Icônes des onglets : $_" }
     try { Start-StartupLoader } catch { Write-Log "Chargement: $_" }
     # Premières tâches derrière l'écran de chargement : l'app n'apparaît qu'une fois prête
     $t0 = Get-Date
