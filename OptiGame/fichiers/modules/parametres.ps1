@@ -153,7 +153,7 @@ function Initialize-Settings {
         $sp = New-Object System.Windows.Controls.StackPanel
         $sp.Orientation = 'Horizontal'
         $ic = New-Text ([string][char]$t.Glyph) 14 '#C9C3DD'
-        $ic.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'
+        $ic.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'; $ic.FontSize = 14
         $ic.Margin = New-Thickness 0 1 12 0; $ic.VerticalAlignment = 'Center'
         [void]$sp.Children.Add($ic)
         $lb = New-Text $t.Label 13.5 '#C9C3DD' -Semi
@@ -259,7 +259,7 @@ function New-ThemePreview([string]$Id) {
     $bs = New-Object System.Windows.Controls.StackPanel
     $bs.Orientation = 'Horizontal'; $bs.Margin = [System.Windows.Thickness]::new(6, 0, 0, 0); $bs.VerticalAlignment = 'Center'
     $logo = New-Object System.Windows.Controls.TextBlock
-    $logo.Text = 'N'; $logo.FontWeight = 'Black'; $logo.FontSize = 11; $logo.Foreground = [System.Windows.Media.Brushes]::White
+    $logo.Text = 'N'; $logo.FontWeight = 'Black'; $logo.FontSize = Get-UiFontSize 11; $logo.Foreground = [System.Windows.Media.Brushes]::White
     $logo.Margin = [System.Windows.Thickness]::new(0, 0, 8, 0); $logo.VerticalAlignment = 'Center'
     [void]$bs.Children.Add($logo)
     $pill = New-Object System.Windows.Controls.Border

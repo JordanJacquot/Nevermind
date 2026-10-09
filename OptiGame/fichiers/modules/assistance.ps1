@@ -336,7 +336,7 @@ function Show-ReportPanel {
     $tb = New-Object System.Windows.Controls.TextBox
     $tb.Height = 90; $tb.Margin = New-Thickness 0 8 0 0
     $tb.AcceptsReturn = $true; $tb.TextWrapping = 'Wrap'; $tb.VerticalScrollBarVisibility = 'Auto'
-    $tb.FontSize = 13; $tb.Padding = New-Thickness 8 6 8 6
+    $tb.FontSize = Get-UiFontSize 13; $tb.Padding = New-Thickness 8 6 8 6
     $tb.Background = Get-Brush '#0E0C16'; $tb.Foreground = Get-Brush '#FFFFFF'; $tb.BorderBrush = Get-Brush '#2AFFFFFF'; $tb.CaretBrush = Get-Brush '#FFFFFF'
     [void]$body.Children.Add($tb)
     $n = New-Text 'Nevermind crée un fichier .zip sur ton bureau avec ta phrase, les infos du PC (Windows, composants, score) et le journal de l''app. Il ne contient ni tes fichiers, ni ton nom, ni tes mots de passe. Envoie-le à la personne qui t''a donné Nevermind (Discord par exemple).' 12 '#A6A1BC'

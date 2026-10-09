@@ -94,7 +94,8 @@ if ($ThemePack -and $ThemePack.Font) {
 # La police pixel est bien plus large qu'une police normale : le texte est réduit d'autant (Scale)
 function Set-PackFont($El, [double]$Scale = 0.82) {
     if (-not $PackFont -or -not $El) { return }
-    if ($Scale -ne 1 -and $El.FontSize) { $El.FontSize = [math]::Round($El.FontSize * $Scale) }
+    # Police partout : la taille est déjà convertie (Get-UiFontSize)
+    if ($ThemePack.FontScope -ne 'tout' -and $Scale -ne 1 -and $El.FontSize) { $El.FontSize = [math]::Round($El.FontSize * $Scale) }
     $El.FontFamily = New-Object System.Windows.Media.FontFamily "$PackFont, Segoe UI Variable Display, Segoe UI"
     [System.Windows.Media.TextOptions]::SetTextRenderingMode($El, 'Aliased')
     [System.Windows.Media.TextOptions]::SetTextFormattingMode($El, 'Display')
@@ -222,6 +223,33 @@ function ConvertTo-ThemeHex([string]$Hex, [string]$Id = $ThemeId) {
 }
 
 # Texte de la fenêtre (interface.xaml) traduit avant d'être chargé
+# ---------------------------------------------------------------------------
+# Police du pack partout (FontScope « tout ») : une police pixel est presque deux fois plus large.
+# Chaque taille de texte est convertie en taille « pixel exacte » (8, 12, 16 ou 24) : nette, et à peu près
+# aussi large qu'avant, donc rien ne déborde. Les icônes et le compteur de FPS par dessus les jeux
+# (fenêtre à part, police normale) ne changent pas.
+# ---------------------------------------------------------------------------
+function Get-PackFontSize([double]$Size) {
+    if ($Size -lt 15) { 8 } elseif ($Size -lt 21) { 12 } elseif ($Size -lt 30) { 16 } else { 24 }
+}
+
+$PackSizeAll = [bool]($PackFont -and $ThemePack.FontScope -eq 'tout')
+
+# Taille d'un texte de l'app : convertie en taille pixel quand la police du pack est partout
+function Get-UiFontSize([double]$Size) { if ($PackSizeAll) { Get-PackFontSize $Size } else { $Size } }
+
+# Fenêtre : chaque FontSize (attribut ou style) converti, sauf sur les icônes
+function Convert-PackFontSizes([string]$Text) {
+    $Text = [regex]::Replace($Text, '<[A-Za-z][^<>]*?FontSize="[0-9.]+"[^<>]*>', {
+        param($m)
+        if ($m.Value -match 'Fluent Icons|MDL2') { return $m.Value }
+        [regex]::Replace($m.Value, 'FontSize="([0-9.]+)"', { param($n) 'FontSize="' + (Get-PackFontSize ([double]::Parse($n.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture))) + '"' })
+    })
+    $Text = [regex]::Replace($Text, '<Setter Property="FontSize" Value="([0-9.]+)"/>', { param($m) '<Setter Property="FontSize" Value="' + (Get-PackFontSize ([double]::Parse($m.Groups[1].Value, [Globalization.CultureInfo]::InvariantCulture))) + '"/>' })
+    # taille de base de la fenêtre (textes sans taille précise)
+    [regex]::Replace($Text, '(<Window [^>]*?)FontFamily=', '$1FontSize="8" FontFamily=', 1)
+}
+
 # Police du pack dans la fenêtre : titres (style H1, H2, mot « Nevermind » du chargement) ;
 # avec FontScope « tout », toute l'app
 function Add-PackFontXaml([string]$Text) {
@@ -234,7 +262,12 @@ function Add-PackFontXaml([string]$Text) {
     }
     # H1 a déjà sa police (remplacée juste au-dessus) : seulement le rendu net
     $Text = $Text.Replace('<Style x:Key="H1" TargetType="TextBlock">', '<Style x:Key="H1" TargetType="TextBlock">' + $crisp)
-    if ($ThemePack.FontScope -eq 'tout') { $Text = $Text.Replace('Segoe UI Variable Text, Segoe UI', $spec) }
+    if ($ThemePack.FontScope -eq 'tout') {
+        $Text = $Text.Replace('Segoe UI Variable Text, Segoe UI', $spec).Replace('Cascadia Code, Consolas', $spec)
+        # rendu net pour toute la fenêtre (hérité par chaque texte)
+        $Text = [regex]::Replace($Text, '(<Window [^>]*?)FontFamily=', '$1TextOptions.TextRenderingMode="Aliased" TextOptions.TextFormattingMode="Display" FontFamily=', 1)
+        $Text = Convert-PackFontSizes $Text
+    }
     $Text
 }
 

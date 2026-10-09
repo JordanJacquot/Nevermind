@@ -778,7 +778,7 @@ function Update-LibraryDetail {
     $running = $script:GameSession -and $script:GameSession.Game -eq $g.Name
     $starting = $script:LibLaunching -and $script:LibLaunching.Name -eq $g.Name -and ((Get-Date) - $script:LibLaunching.At).TotalSeconds -lt 20
     $play = New-Button $(if ($running) { 'En cours de jeu' } elseif ($starting) { 'Lancement...' } else { 'Lancer' }) 'BtnPrimary'
-    $play.FontSize = 15; $play.Height = 44; $play.HorizontalAlignment = 'Stretch'
+    $play.FontSize = Get-UiFontSize 15; $play.Height = 44; $play.HorizontalAlignment = 'Stretch'
     $play.IsEnabled = -not $running
     $play.Tag = $g.Name
     $play.Add_Click({ param($s, $e) $n = [string]$s.Tag; $x = @(Get-LibraryGames | Where-Object { $_.Name -eq $n })[0]; Invoke-Safe { Start-LibraryGame $x } })

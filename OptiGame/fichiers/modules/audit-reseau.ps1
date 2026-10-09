@@ -334,9 +334,9 @@ function New-AuditLine($C) {
     $head = New-Object System.Windows.Controls.TextBlock
     $head.TextWrapping = 'Wrap'
     $cat = New-Object System.Windows.Documents.Run ("$($AuditCats[$C.Cat])   ")
-    $cat.Foreground = Get-Brush '#655E7E'; $cat.FontSize = 11.5; $cat.FontWeight = 'SemiBold'
+    $cat.Foreground = Get-Brush '#655E7E'; $cat.FontSize = Get-UiFontSize 11.5; $cat.FontWeight = 'SemiBold'
     $tt = New-Object System.Windows.Documents.Run $C.Title
-    $tt.Foreground = Get-Brush '#FFFFFF'; $tt.FontSize = 13.5; $tt.FontWeight = 'SemiBold'
+    $tt.Foreground = Get-Brush '#FFFFFF'; $tt.FontSize = Get-UiFontSize 13.5; $tt.FontWeight = 'SemiBold'
     [void]$head.Inlines.Add($cat); [void]$head.Inlines.Add($tt)
     [void]$sp.Children.Add($head)
     [void]$sp.Children.Add((New-Text $C.Detail 12 '#A6A1BC'))

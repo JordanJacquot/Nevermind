@@ -297,7 +297,7 @@ function Build-GameProfiles {
         [void]$sp.Children.Add($sub)
         if ($g.Custom) {
             $rm = New-Object System.Windows.Controls.TextBlock
-            $rm.Text = 'Retirer de la liste'; $rm.FontSize = 11.5; $rm.Foreground = Get-Brush '#A6A1BC'; $rm.TextDecorations = [System.Windows.TextDecorations]::Underline
+            $rm.Text = 'Retirer de la liste'; $rm.FontSize = Get-UiFontSize 11.5; $rm.Foreground = Get-Brush '#A6A1BC'; $rm.TextDecorations = [System.Windows.TextDecorations]::Underline
             $rm.Cursor = [System.Windows.Input.Cursors]::Hand; $rm.Margin = New-Thickness 0 2 0 0; $rm.HorizontalAlignment = 'Left'
             $rm.Tag = [string]$g.Exes[0]
             $rm.Add_MouseLeftButtonUp({ param($s, $e) $x = [string]$s.Tag; Invoke-Safe { Remove-CustomGame $x } })
@@ -1123,7 +1123,7 @@ function Build-OverlayPanel {
         $nm = New-Object System.Windows.Controls.StackPanel
         $nm.Orientation = 'Horizontal'; $nm.Margin = New-Thickness 2 10 0 0
         [void]$nm.Children.Add((New-Text $o[1] 14 '#FFFFFF' -Semi))
-        if ($sel) { $ck = New-Text ([string][char]0xE73E) 12 '#00E5FF'; $ck.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'; $ck.Margin = New-Thickness 8 3 0 0; [void]$nm.Children.Add($ck) }
+        if ($sel) { $ck = New-Text ([string][char]0xE73E) 12 '#00E5FF'; $ck.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'; $ck.FontSize = 12; $ck.Margin = New-Thickness 8 3 0 0; [void]$nm.Children.Add($ck) }
         [void]$tsp.Children.Add($nm)
         $ds = New-Text $o[2] 11.5 '#8E88A8'
         $ds.Margin = New-Thickness 2 2 0 0

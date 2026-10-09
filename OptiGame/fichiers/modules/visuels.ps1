@@ -478,7 +478,7 @@ function New-Verdict([string]$Status, [string]$Text) {
 # Titre de section : un point néon cyan puis le titre en petites capitales discrètes
 function New-SectionTitle([string]$Text) {
     $title = New-Object System.Windows.Controls.TextBlock
-    $title.FontSize = 11.5; $title.FontWeight = 'SemiBold'
+    $title.FontSize = Get-UiFontSize 11.5; $title.FontWeight = 'SemiBold'
     $title.TextWrapping = 'Wrap'
     $r1 = New-Object System.Windows.Documents.Run '●  '
     $r1.Foreground = Get-Brush $NexoCyan
@@ -584,7 +584,7 @@ function New-LoaderArc([double]$C, [double]$R, [double]$Start, [double]$Sweep, $
 # Il « saute » par moments : au survol, toutes les quelques secondes, et pendant le chargement.
 # ---------------------------------------------------------------------------
 $NexoCyan = '#00E5FF'
-$MonoFont = 'Cascadia Code, Consolas'   # police « code » de la DA : chiffres, titres de section, barre d'état
+$MonoFont = if ($PackFont -and $ThemePack.FontScope -eq 'tout') { "$PackFont, Cascadia Code, Consolas" } else { 'Cascadia Code, Consolas' }   # police « code » de la DA : chiffres, titres de section, barre d'état
 $NexoMagenta = '#FF2EB5'
 
 # Forme du N dans un carré de côté $Size (trait épais aux bouts arrondis)
@@ -643,7 +643,7 @@ function New-NexoWord([double]$FontSize) {
     $mk = {
         param($hex, $dx)
         $t = New-Object System.Windows.Controls.TextBlock
-        $t.Text = 'Nevermind'; $t.FontSize = $FontSize; $t.FontWeight = 'Bold'
+        $t.Text = 'Nevermind'; $t.FontSize = Get-UiFontSize $FontSize; $t.FontWeight = 'Bold'
         $t.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe UI Variable Display, Segoe UI'
         $t.Foreground = Get-Brush $hex
         $t.RenderTransform = New-Object System.Windows.Media.TranslateTransform $dx, 0

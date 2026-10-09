@@ -761,7 +761,7 @@ function New-TrafficRow($A) {
     if ((Get-TrafficMarks 'TrafficTrusted').ContainsKey($A.Key)) { $sig = @("Approuvé par toi   $($sig[0])", '#A6A1BC') }
     $dests = @($A.Dest.Values | Where-Object { -not $_.Private }).Count
     $sub = New-Object System.Windows.Controls.TextBlock
-    $sub.FontSize = 11.5; $sub.TextTrimming = 'CharacterEllipsis'
+    $sub.FontSize = Get-UiFontSize 11.5; $sub.TextTrimming = 'CharacterEllipsis'
     $r1 = New-Object System.Windows.Documents.Run $sig[0]; $r1.Foreground = Get-Brush $sig[1]
     $r2 = New-Object System.Windows.Documents.Run "   $dests destination$(if ($dests -gt 1) {'s'})$(if ($A.Udp) { ', UDP' })$(if ($A.Live) { "   $($A.Live) connexion$(if ($A.Live -gt 1) {'s'}) ouverte$(if ($A.Live -gt 1) {'s'})" })"
     $r2.Foreground = Get-Brush '#A6A1BC'

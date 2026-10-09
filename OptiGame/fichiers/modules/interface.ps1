@@ -299,7 +299,7 @@ function New-Thickness($l, $t, $r, $b) { [System.Windows.Thickness]::new($l, $t,
 function New-Text([string]$Text, [double]$Size = 13, [string]$Color = '#EEEBF7', [switch]$Bold, [switch]$Semi) {
     $t = New-Object System.Windows.Controls.TextBlock
     $t.Text = $Text
-    $t.FontSize = $Size
+    $t.FontSize = Get-UiFontSize $Size
     $t.Foreground = Get-Brush $Color
     $t.TextWrapping = 'Wrap'
     if ($Bold) { $t.FontWeight = [System.Windows.FontWeights]::Bold }

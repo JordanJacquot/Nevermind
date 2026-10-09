@@ -572,7 +572,7 @@ function Invoke-CleanScan {
         $g = New-Grid @('*', 'Auto', 'Auto', 'Auto')
         $cb = New-Object System.Windows.Controls.CheckBox
         $cb.Content = $c.Titre
-        $cb.FontSize = 14
+        $cb.FontSize = Get-UiFontSize 14
         $cb.IsChecked = $size -gt 0
         $cb.VerticalContentAlignment = 'Center'
         Add-ToGrid $g $cb 0

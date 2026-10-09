@@ -261,7 +261,7 @@ function New-HubManualLine($Manual) {
     $sp = New-Object System.Windows.Controls.StackPanel
     $sp.Orientation = 'Horizontal'
     $ic = New-Text ([string][char]0xE946) 12 $Colors.warn
-    $ic.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'
+    $ic.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'; $ic.FontSize = 12
     $ic.VerticalAlignment = 'Center'; $ic.Margin = New-Thickness 0 1 8 0
     [void]$sp.Children.Add($ic)
     $label = "Quand tu as le temps : $($f.Titre)"
@@ -270,7 +270,7 @@ function New-HubManualLine($Manual) {
     $t.VerticalAlignment = 'Center'; $t.TextTrimming = 'CharacterEllipsis'; $t.MaxWidth = 380
     [void]$sp.Children.Add($t)
     $ch = New-Text ([string][char]0xE76C) 10 '#8E88A8'
-    $ch.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'
+    $ch.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'; $ch.FontSize = 10
     $ch.VerticalAlignment = 'Center'; $ch.Margin = New-Thickness 10 1 0 0
     [void]$sp.Children.Add($ch)
     $row.Child = $sp
