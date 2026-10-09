@@ -114,7 +114,8 @@ function Get-OrgTarget([string]$Action) {
     if ($Action -match '^P\d+$') { $n = [int]$Action.Substring(1); if ($n -le $on.Count) { return $on[$n - 1] } else { return $null } }
     $fg = if ($script:OrgFakeFg) { $script:OrgFakeFg } else { [WinFocus]::Foreground() }
     $i = -1
-    for ($k = 0; $k -lt $on.Count; $k++) { if ($on[$k].Hwnd -eq $fg) { $i = $k } }
+    $fgPid = if ($script:OrgFakeFg) { 0 } else { [WinFocus]::Pid($fg) }
+    for ($k = 0; $k -lt $on.Count; $k++) { if ($on[$k].Hwnd -eq $fg -or ($fgPid -and $on[$k].Pid -eq $fgPid)) { $i = $k } }
     if ($i -lt 0) { return $on[0] }
     if ($Action -eq 'Next') { $on[($i + 1) % $on.Count] } else { $on[($i - 1 + $on.Count) % $on.Count] }
 }
@@ -239,8 +240,8 @@ function Update-OrgWatch([switch]$Full) {
     if ($Full -or $script:OrgTick % 8 -eq 0 -or -not $script:OrgLast) {
         $list = @(Get-OrgList)
         $sig = ($list | ForEach-Object { "$($_.Name)|$($_.Hwnd)|$($_.Online)" }) -join ';'
-        $script:OrgHwnds = @{}
-        foreach ($x in $list) { if ($x.Online) { $script:OrgHwnds[[int64]$x.Hwnd] = $true } }
+        $script:OrgHwnds = @{}; $script:OrgPids = @{}
+        foreach ($x in $list) { if ($x.Online) { $script:OrgHwnds[[int64]$x.Hwnd] = $true; if ($x.Pid) { $script:OrgPids[[int]$x.Pid] = $true } } }
         if ($sig -ne $script:OrgSig) {
             $script:OrgSig = $sig
             if ($script:OrgViewOn -and -not $script:OrgDragging) { Build-OrgPanel }
@@ -250,11 +251,16 @@ function Update-OrgWatch([switch]$Full) {
         Receive-OrgIcons
     }
     $fg = [WinFocus]::Foreground()
-    $inGame = $script:OrgHwnds -and $script:OrgHwnds.ContainsKey([int64]$fg)
+    # Dofus devant : sa fenêtre principale ou n'importe quelle autre fenêtre du même jeu
+    $inGame = ($script:OrgHwnds -and $script:OrgHwnds.ContainsKey([int64]$fg)) -or ($script:OrgPids -and $script:OrgPids.ContainsKey([WinFocus]::Pid($fg)))
     if ($inGame) { Register-OrgHotkeys } else { Unregister-OrgHotkeys }
     $c = Get-OrgConfig
     $want = $c.Bar -and $script:OrgHwnds.Count -gt 0 -and ($inGame -or $c.BarAlways -or ($script:OrgBar -and $script:OrgBar.Win.IsMouseOver))
-    if ($want) { Show-OrgBar; if ($fg -ne $script:OrgBarFg) { $script:OrgBarFg = $fg; Update-OrgBar } } else { Hide-OrgBar }
+    if ($want) {
+        Show-OrgBar
+        if ($fg -ne $script:OrgBarFg) { $script:OrgBarFg = $fg; Update-OrgBar; Set-OrgBarOnTop }
+        elseif ($script:OrgTick % 4 -eq 0) { Set-OrgBarOnTop }
+    } else { Hide-OrgBar }
 }
 
 function Set-OrgOn([bool]$On) {
@@ -392,7 +398,20 @@ function Show-OrgBar {
     Update-OrgBar
     $w.Show()
     # Hors de l'écran (écran débranché) : retour en haut au centre
-    if ($w.Left -gt [System.Windows.SystemParameters]::VirtualScreenWidth - 40 -or $w.Top -gt [System.Windows.SystemParameters]::VirtualScreenHeight - 20) { Reset-OrgBarPosition }
+    if (-not (Test-OrgBarOnScreen $w.Left $w.Top)) { Reset-OrgBarPosition }
+    Set-OrgBarOnTop
+}
+
+# Position encore sur un écran branché (écran de gauche : coordonnées négatives)
+function Test-OrgBarOnScreen([double]$X, [double]$Y) {
+    $l = [System.Windows.SystemParameters]::VirtualScreenLeft; $t = [System.Windows.SystemParameters]::VirtualScreenTop
+    $r = $l + [System.Windows.SystemParameters]::VirtualScreenWidth; $b = $t + [System.Windows.SystemParameters]::VirtualScreenHeight
+    $X -ge $l - 20 -and $X -le $r - 60 -and $Y -ge $t - 10 -and $Y -le $b - 30
+}
+
+function Set-OrgBarOnTop {
+    if (-not $script:OrgBar) { return }
+    try { [WinFocus]::KeepOnTop((New-Object System.Windows.Interop.WindowInteropHelper $script:OrgBar.Win).Handle) } catch {}
 }
 
 function Hide-OrgBar {
@@ -433,10 +452,11 @@ function Update-OrgBar {
     })
     [void]$b.Row.Children.Add($grip)
     $fg = [WinFocus]::Foreground()
+    $fgPid = [WinFocus]::Pid($fg)
     $n = 0
     foreach ($ch in @(Get-OrgOnline)) {
         $n++
-        $on = $ch.Hwnd -eq $fg
+        $on = $ch.Hwnd -eq $fg -or ($fgPid -and $ch.Pid -eq $fgPid)
         $pill = New-Object System.Windows.Controls.Border
         $pill.CornerRadius = [System.Windows.CornerRadius]::new($(if (($PackFont -and $ThemePack.FontPixel) -or $Theme.Decor -eq 'terminal') { 2 } else { 10 }))
         $pill.Padding = New-Thickness 5 3 9 3; $pill.Margin = New-Thickness 2 0 2 0
@@ -667,6 +687,9 @@ function Build-OrgPanel {
     $bc.Card.Margin = New-Thickness 0 16 0 0
     [void]$bc.Body.Children.Add((New-SwitchRow 'Afficher la barre' 'Visible quand une fenêtre Dofus est devant.' $c.Bar { param($s, $e) $v = [bool]$s.IsChecked; Invoke-Safe { $cc = Get-OrgConfig; $cc.Bar = $v; Save-OrgConfig; Update-OrgWatch -Full } }))
     [void]$bc.Body.Children.Add((New-SwitchRow 'Toujours visible' 'Même quand tu es sur une autre fenêtre que Dofus.' $c.BarAlways { param($s, $e) $v = [bool]$s.IsChecked; Invoke-Safe { $cc = Get-OrgConfig; $cc.BarAlways = $v; Save-OrgConfig; Update-OrgWatch -Full } }))
+    $fs = New-Text 'Elle n''apparaît pas par dessus Dofus ? Mets le jeu en mode fenêtré ou plein écran fenêtré (sans bordure) : le vrai plein écran cache tout ce qui est par dessus, y compris Discord.' 12 '#8E88A8'
+    $fs.Margin = New-Thickness 0 0 0 8
+    [void]$bc.Body.Children.Add($fs)
     $rb = New-Button 'Remettre la barre en haut au centre'
     $rb.HorizontalAlignment = 'Left'; $rb.Margin = New-Thickness 0 4 0 0
     $rb.Add_Click({ Invoke-Safe { Reset-OrgBarPosition; Set-Status 'Barre flottante remise en haut au centre.' } })

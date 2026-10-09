@@ -1967,6 +1967,14 @@ public static class WinFocus
 
     public static IntPtr Foreground() { return GetForegroundWindow(); }
 
+    // Programme d'une fenêtre (Dofus peut afficher d'autres fenêtres que sa fenêtre principale)
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    public static int Pid(IntPtr h) { uint pid = 0; if (h != IntPtr.Zero) GetWindowThreadProcessId(h, out pid); return (int)pid; }
+
+    // Remet la barre au dessus de tout : un jeu qui passe lui même « toujours devant » la recouvre sinon
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+    public static void KeepOnTop(IntPtr h) { if (h != IntPtr.Zero) SetWindowPos(h, (IntPtr)(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200); }
+
     // Barre flottante : cliquable, mais ne prend jamais le focus au jeu et n'apparaît pas dans Alt+Tab
     public static void NoActivate(IntPtr h)
     {

@@ -487,6 +487,9 @@ $script:T.Run.Add_Tick({
                     $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder; $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
                     $fs = [IO.File]::Create((Join-Path $script:T.Dir 'captures\organizer-barre.png')); $enc.Save($fs); $fs.Close()
                     $nBar = $script:OrgBar.Items.Count
+                    # Barre remise au dessus de tout, et ramenée si sa position est sur un écran débranché
+                    Set-OrgBarOnTop
+                    Assert-Test ((Test-OrgBarOnScreen 200 100) -and -not (Test-OrgBarOnScreen 50000 100) -and -not (Test-OrgBarOnScreen -50000 100) -and -not (Test-OrgBarOnScreen 200 50000)) 'position hors écran mal repérée'
                     # Activation : surveillance lancée puis arrêtée, barre cachée
                     Set-OrgOn $true; Wait-TestMs 400
                     Assert-Test ($script:OrgTimer.IsEnabled -and -not $script:OrgKeysOn) 'surveillance non lancée (ou raccourcis pris hors de Dofus)'
