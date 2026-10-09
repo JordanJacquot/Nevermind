@@ -397,8 +397,11 @@ function Build-ThemePanel {
     }
     [void]$p.Children.Add($foot)
 
-    # Packs : images perso (même de personnages connus), gardés sur ce PC seulement
-    $pk = New-SettingAction 'Packs de thème' "Un pack ajoute ses images (personnage au chargement...). Il reste sur ce PC : pour le partager, envoie le zip à tes potes." 'Importer un pack' {
+    # Packs : juste les deux boutons
+    $pk = New-Object System.Windows.Controls.StackPanel
+    $pk.Orientation = 'Horizontal'; $pk.Margin = New-Thickness 0 6 12 8
+    $imp = New-Button 'Importer un pack'
+    $imp.Add_Click({
         Invoke-Safe {
             $dlg = New-Object Microsoft.Win32.OpenFileDialog
             $dlg.Title = 'Choisis le pack de thème (.zip)'; $dlg.Filter = 'Pack de thème (*.zip)|*.zip'
@@ -408,14 +411,12 @@ function Build-ThemePanel {
             Build-ThemePanel
             Set-Status "Pack « $((Get-ThemePack $id).Name) » ajouté : clique sur « Appliquer et relancer »."
         }
-    }
-    $pk.Margin = New-Thickness 0 6 12 8
+    })
+    [void]$pk.Children.Add($imp)
     $open = New-Button 'Ouvrir le dossier'
-    $open.Margin = New-Thickness 10 0 0 0; $open.VerticalAlignment = 'Center'
+    $open.Margin = New-Thickness 10 0 0 0
     $open.Add_Click({ New-Item -ItemType Directory -Force -Path $PacksDir | Out-Null; Open-Url $PacksDir })
-    $g = $pk.Child
-    $g.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width = [System.Windows.GridLength]::Auto }))
-    Add-ToGrid $g $open 2
+    [void]$pk.Children.Add($open)
     [void]$p.Children.Add($pk)
 }
 
