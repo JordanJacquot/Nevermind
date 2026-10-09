@@ -84,7 +84,7 @@ function Stop-Pulse($Element) {
 
 function New-Glow([string]$Hex, [double]$Blur = 16, [double]$Opacity = 0.55) {
     $fx = New-Object System.Windows.Media.Effects.DropShadowEffect
-    $fx.Color = [System.Windows.Media.ColorConverter]::ConvertFromString($Hex)
+    $fx.Color = [System.Windows.Media.ColorConverter]::ConvertFromString((ConvertTo-ThemeHex $Hex))
     $fx.BlurRadius = $Blur; $fx.ShadowDepth = 0; $fx.Opacity = $Opacity
     $fx
 }
@@ -107,7 +107,7 @@ function Get-ArcGeometry([double]$C, [double]$R, [double]$Start, [double]$Sweep)
     $geo
 }
 
-function Get-Color([string]$Hex) { [System.Windows.Media.ColorConverter]::ConvertFromString($Hex) }
+function Get-Color([string]$Hex) { [System.Windows.Media.ColorConverter]::ConvertFromString((ConvertTo-ThemeHex $Hex)) }
 
 # Couleur éclaircie (mélangée avec du blanc) pour les dégradés lumineux
 function Get-LightHex([string]$Hex, [double]$Amount = 0.4) {
@@ -565,7 +565,7 @@ function New-LinearBrush([string[]]$Hex, [double]$X1 = 0, [double]$Y1 = 0, [doub
     $b = New-Object System.Windows.Media.LinearGradientBrush
     $b.StartPoint = [System.Windows.Point]::new($X1, $Y1); $b.EndPoint = [System.Windows.Point]::new($X2, $Y2)
     for ($i = 0; $i -lt $Hex.Count; $i++) {
-        [void]$b.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString($Hex[$i]), $i / [math]::Max(1, $Hex.Count - 1)))
+        [void]$b.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString((ConvertTo-ThemeHex $Hex[$i])), $i / [math]::Max(1, $Hex.Count - 1)))
     }
     $b
 }
@@ -717,7 +717,7 @@ function New-LoaderSpinner($Canvas, [double]$C, [double]$R, [double]$Sweep, [str
     $g.Width = 2 * $C; $g.Height = 2 * $C
     $rot = New-Object System.Windows.Media.RotateTransform 0, $C, $C
     $g.RenderTransform = $rot
-    $col = [System.Windows.Media.ColorConverter]::ConvertFromString($Hex)
+    $col = [System.Windows.Media.ColorConverter]::ConvertFromString((ConvertTo-ThemeHex $Hex))
     $b = New-Object System.Windows.Media.LinearGradientBrush
     $b.StartPoint = [System.Windows.Point]::new(0, 1); $b.EndPoint = [System.Windows.Point]::new(1, 0)
     [void]$b.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.Color]::FromArgb(0, $col.R, $col.G, $col.B), 0))
@@ -744,9 +744,9 @@ function Start-StartupLoader {
     $halo = New-Object System.Windows.Shapes.Ellipse
     $halo.Width = 220; $halo.Height = 220
     $rb = New-Object System.Windows.Media.RadialGradientBrush
-    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#4000E5FF'), 0))
-    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#1AFF2EB5'), 0.6))
-    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#00FF2EB5'), 1))
+    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString((ConvertTo-ThemeHex '#4000E5FF')), 0))
+    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString((ConvertTo-ThemeHex '#1AFF2EB5')), 0.6))
+    [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString((ConvertTo-ThemeHex '#00FF2EB5')), 1))
     $halo.Fill = $rb
     $halo.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5)
     $hs = New-Object System.Windows.Media.ScaleTransform 1, 1

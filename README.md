@@ -18,7 +18,7 @@ Les mises à jour sont ensuite proposées directement dans l'application. Relanc
 
 ## Ce que fait l'application
 
-Cinq onglets dans la barre du haut : **Ordinateur**, **Jeux**, **Réseau**, **Trafic** et **Overlay**. Dans la même barre : une **barre de recherche** (Ctrl + K) qui propose les réglages au fil de la frappe, fautes de frappe comprises, et emmène directement au bon endroit ; et une **roue crantée** qui ouvre les **Paramètres** (Général, Jeux, Réseau et vie privée, Mises à jour, Aide avec « Signaler un problème »).
+Cinq onglets dans la barre du haut : **Ordinateur**, **Jeux**, **Réseau**, **Trafic** et **Overlay**. Dans la même barre : une **barre de recherche** (Ctrl + K) qui propose les réglages au fil de la frappe, fautes de frappe comprises, et emmène directement au bon endroit ; et une **roue crantée** qui ouvre les **Paramètres** (Général, Jeux, Réseau et vie privée, Thème, Mises à jour, Aide avec « Signaler un problème »). Cinq thèmes : Néon, Crépuscule, Terminal, Rétro 8 bits et Dresseur.
 
 ### Overlay
 

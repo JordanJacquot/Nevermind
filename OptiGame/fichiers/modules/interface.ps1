@@ -4,7 +4,8 @@
 # ---------------------------------------------------------------------------
 # Interface (la fenêtre est décrite dans interface.xaml)
 # ---------------------------------------------------------------------------
-[xml]$Xaml = [IO.File]::ReadAllText((Join-Path $ModulesDir 'interface.xaml'), [Text.Encoding]::UTF8)
+# Couleurs traduites dans le thème choisi (themes.ps1) avant le chargement
+[xml]$Xaml = Convert-ThemeXaml ([IO.File]::ReadAllText((Join-Path $ModulesDir 'interface.xaml'), [Text.Encoding]::UTF8))
 
 $Window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $Xaml))
 $ui = @{}
@@ -290,6 +291,7 @@ function Get-Brush([string]$Hex) {
         'card-hover' { return $Window.FindResource('CardHoverBg') }
         'card-border' { return $Window.FindResource('CardBorder') }
     }
+    if ($Hex.StartsWith('#')) { $Hex = ConvertTo-ThemeHex $Hex }
     [System.Windows.Media.BrushConverter]::new().ConvertFromString($Hex)
 }
 function New-Thickness($l, $t, $r, $b) { [System.Windows.Thickness]::new($l, $t, $r, $b) }

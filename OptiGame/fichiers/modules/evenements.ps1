@@ -227,6 +227,7 @@ $Window.Add_ContentRendered({
     if ($script:TopSettings) { $script:TopSettings.Add_Click({ Invoke-Safe { Show-Settings } }) }
     try { Initialize-TopBarFit } catch { Write-Log "Barre du haut: $_" }
     try { Initialize-Search } catch { Write-Log "Recherche: $_" }
+    try { Add-ThemeDecor } catch { Write-Log "Décor du thème: $_" }
     try { Start-StartupLoader } catch { Write-Log "Chargement: $_" }
     # Premières tâches derrière l'écran de chargement : l'app n'apparaît qu'une fois prête
     $t0 = Get-Date
@@ -284,7 +285,7 @@ $Window.Add_ContentRendered({
             Step-UI; [void]$script:StartGaps.Seen.Add('Update-FpsHotkey'); Update-FpsHotkey
             if (Get-Setting 'NetWatch' $false) { Set-NetWatch $true }
         }
-        Set-StartupStep 'C''est prêt !' 100
+        Set-StartupStep (Get-ThemeText 'Ready') 100
         $script:StartGapTimer.Stop(); $script:StartGaps = $null; $script:Starting = $false
         Write-Log "Démarrage terminé en $([math]::Round(((Get-Date) - $t0).TotalSeconds, 1)) s"
     } finally {

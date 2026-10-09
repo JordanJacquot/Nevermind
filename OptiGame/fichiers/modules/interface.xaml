@@ -342,6 +342,7 @@
           </RadialGradientBrush>
         </Rectangle.Fill>
       </Rectangle>
+      <Grid x:Name="BackdropDeco" IsHitTestVisible="False" ClipToBounds="True"/>
     </Grid>
 
     <!-- Bandeau « nouvelle version disponible » -->
@@ -1170,6 +1171,7 @@
                 </StackPanel>
                 <StackPanel x:Name="SetGames" Visibility="Collapsed"/>
                 <StackPanel x:Name="SetNetwork" Visibility="Collapsed"/>
+                <StackPanel x:Name="SetTheme" Visibility="Collapsed"/>
                 <StackPanel x:Name="SetUpdates" Visibility="Collapsed">
 <Border Style="{StaticResource Card}" Margin="0,0,0,12" Padding="18,16">
               <DockPanel>

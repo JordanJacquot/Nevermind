@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    Nevermind 1.0.62
+    Nevermind 1.0.63
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -11,7 +11,7 @@
 #>
 param([switch]$Uninstall, [switch]$Demarrage)   # -Demarrage : lancé avec Windows, réduit près de l'horloge
 
-$AppVersion = '1.0.62'
+$AppVersion = '1.0.63'
 $UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -134,7 +134,7 @@ if (-not $env:OPTIGAME_TEST -and -not $Uninstall -and -not $Demarrage) {
 # ---------------------------------------------------------------------------
 $AppDir = $PSScriptRoot
 $ModulesDir = Join-Path $AppDir 'modules'
-$missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'optimisations.ps1', 'systeme.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'reseau-avance.ps1', 'carte-reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'assistance.ps1', 'jeu.ps1', 'diagnostic-fps.ps1', 'trafic.ps1', 'microsoft.ps1', 'lag.ps1', 'bibliotheque.ps1', 'parametres.ps1', 'recherche.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
+$missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'optimisations.ps1', 'systeme.ps1', 'themes.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'reseau-avance.ps1', 'carte-reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'assistance.ps1', 'jeu.ps1', 'diagnostic-fps.ps1', 'trafic.ps1', 'microsoft.ps1', 'lag.ps1', 'bibliotheque.ps1', 'parametres.ps1', 'recherche.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
 if ($missing) {
     [System.Windows.MessageBox]::Show("Des fichiers de Nevermind sont manquants :`n`n$($missing -join ', ')`n`nRetélécharge Nevermind et remplace tout le dossier.", 'OptiGame', 'OK', 'Error') | Out-Null
     exit
@@ -143,7 +143,7 @@ if ($missing) {
 # Fonctions natives (écrans, souris, barre de titre sombre)
 Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $ModulesDir 'natif.cs'), [Text.Encoding]::UTF8))
 
-foreach ($ogModule in 'donnees', 'optimisations', 'systeme') { . (Join-Path $ModulesDir "$ogModule.ps1") }
+foreach ($ogModule in 'donnees', 'optimisations', 'systeme', 'themes') { . (Join-Path $ModulesDir "$ogModule.ps1") }
 
 if ($Uninstall) {
     Invoke-Uninstall

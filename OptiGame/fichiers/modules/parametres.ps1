@@ -7,6 +7,7 @@ $SettingsTabs = @(
     @{ Id = 'general'; Label = 'Général'; Glyph = 0xE80F; Panel = 'SetGeneral'; Sub = 'Raccourci, lancement au démarrage et visite guidée.' },
     @{ Id = 'jeux'; Label = 'Jeux'; Glyph = 0xE7FC; Panel = 'SetGames'; Sub = 'Ce que Nevermind fait pendant que tu joues.' },
     @{ Id = 'reseau'; Label = 'Réseau et vie privée'; Glyph = 0xE72E; Panel = 'SetNetwork'; Sub = 'Surveillance du réseau et ce qui est envoyé sur Internet.' },
+    @{ Id = 'theme'; Label = 'Thème'; Glyph = 0xE790; Panel = 'SetTheme'; Sub = 'Change les couleurs et l''ambiance de Nevermind.' },
     @{ Id = 'maj'; Label = 'Mises à jour'; Glyph = 0xE895; Panel = 'SetUpdates'; Sub = 'Version de Nevermind et nouveautés.' },
     @{ Id = 'aide'; Label = 'Aide'; Glyph = 0xE897; Panel = 'SetHelp'; Sub = 'Un souci, une question ? C''est par ici.' }
 )
@@ -118,6 +119,8 @@ function Build-SettingsPanels {
     [void]$p.Children.Add((New-SettingAction 'Visite guidée' 'Les bases de Nevermind en 3 étapes.' 'Revoir la visite' { Hide-Settings; Invoke-Safe { Show-Tour } }))
     [void]$p.Children.Add((New-SettingAction 'Rechercher un réglage' 'Tape ce que tu cherches dans la barre en haut (ou Ctrl + K) : un clic t''y emmène.' 'Ouvrir la recherche' { Hide-Settings; Focus-Search }))
     $ui.SettingsVersion.Text = "Nevermind $AppVersion"
+    $script:ThemePick = $ThemeId
+    Build-ThemePanel
 }
 
 function Set-SettingsTab([string]$Id) {
@@ -213,4 +216,169 @@ function Initialize-TopBarFit {
     }
     $Window.Add_SizeChanged({ try { Update-TopBarFit } catch {} })
     Update-TopBarFit
+}
+
+# ---------------------------------------------------------------------------
+# Onglet « Thème » : 5 cartes avec un aperçu dessiné dans les couleurs de chaque thème
+# ---------------------------------------------------------------------------
+function New-RawGradient([string[]]$Hex, [double]$X2 = 1, [double]$Y2 = 1) {
+    $b = New-Object System.Windows.Media.LinearGradientBrush
+    $b.StartPoint = [System.Windows.Point]::new(0, 0); $b.EndPoint = [System.Windows.Point]::new($X2, $Y2)
+    for ($i = 0; $i -lt $Hex.Count; $i++) {
+        [void]$b.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString($Hex[$i]), $i / [math]::Max(1, $Hex.Count - 1)))
+    }
+    $b
+}
+
+# Mini fenêtre Nevermind dans les couleurs d'un thème (sans passer par la traduction du thème actuel)
+function New-ThemePreview([string]$Id) {
+    $c = { param($h) ConvertTo-ThemeHex $h $Id }
+    $th = $AppThemes[$Id]
+    $g = New-Object System.Windows.Controls.Grid
+    $g.Height = 118
+    $bg = New-Object System.Windows.Controls.Border
+    $bg.CornerRadius = [System.Windows.CornerRadius]::new(12)
+    $bg.Background = New-RawGradient @((& $c '#0C0920'), (& $c '#06050F'))
+    $bg.ClipToBounds = $true
+    $cv = New-Object System.Windows.Controls.Canvas
+    foreach ($blob in @(@($th.P, 10, -30), @($th.T, 200, 50))) {
+        $e = New-Object System.Windows.Shapes.Ellipse
+        $e.Width = 140; $e.Height = 120
+        $rb = New-Object System.Windows.Media.RadialGradientBrush
+        [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#55' + $blob[0].Substring(1)), 0))
+        [void]$rb.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#00' + $blob[0].Substring(1)), 1))
+        $e.Fill = $rb
+        [System.Windows.Controls.Canvas]::SetLeft($e, $blob[1]); [System.Windows.Controls.Canvas]::SetTop($e, $blob[2])
+        [void]$cv.Children.Add($e)
+    }
+    # Barre du haut : logo, onglet choisi en dégradé, deux onglets
+    $bar = New-Object System.Windows.Controls.Border
+    $bar.Width = 236; $bar.Height = 22; $bar.CornerRadius = [System.Windows.CornerRadius]::new(8)
+    $bar.Background = New-RawBrush '#18FFFFFF'; $bar.BorderBrush = New-RawGradient @(('#88' + $th.P.Substring(1)), ('#88' + $th.T.Substring(1))) 1 0; $bar.BorderThickness = [System.Windows.Thickness]::new(1)
+    [System.Windows.Controls.Canvas]::SetLeft($bar, 10); [System.Windows.Controls.Canvas]::SetTop($bar, 8)
+    $bs = New-Object System.Windows.Controls.StackPanel
+    $bs.Orientation = 'Horizontal'; $bs.Margin = [System.Windows.Thickness]::new(6, 0, 0, 0); $bs.VerticalAlignment = 'Center'
+    $logo = New-Object System.Windows.Controls.TextBlock
+    $logo.Text = 'N'; $logo.FontWeight = 'Black'; $logo.FontSize = 11; $logo.Foreground = [System.Windows.Media.Brushes]::White
+    $logo.Margin = [System.Windows.Thickness]::new(0, 0, 8, 0); $logo.VerticalAlignment = 'Center'
+    [void]$bs.Children.Add($logo)
+    $pill = New-Object System.Windows.Controls.Border
+    $pill.Width = 44; $pill.Height = 12; $pill.CornerRadius = [System.Windows.CornerRadius]::new(6)
+    $pill.Background = New-RawGradient @($th.P, $th.S) 1 0
+    [void]$bs.Children.Add($pill)
+    foreach ($k in 1..3) {
+        $o = New-Object System.Windows.Controls.Border
+        $o.Width = 26; $o.Height = 5; $o.CornerRadius = [System.Windows.CornerRadius]::new(3); $o.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
+        $o.Background = New-RawBrush (& $c '#668E88A8')
+        [void]$bs.Children.Add($o)
+    }
+    $bar.Child = $bs
+    [void]$cv.Children.Add($bar)
+    # Deux anneaux et une carte « À faire »
+    $x = 12
+    foreach ($ring in @(@($th.P, $th.S), @($th.T, $th.S))) {
+        $tr = New-Object System.Windows.Shapes.Ellipse
+        $tr.Width = 44; $tr.Height = 44; $tr.StrokeThickness = 5; $tr.Stroke = New-RawBrush '#22FFFFFF'
+        [System.Windows.Controls.Canvas]::SetLeft($tr, $x); [System.Windows.Controls.Canvas]::SetTop($tr, 44)
+        [void]$cv.Children.Add($tr)
+        $arc = New-Object System.Windows.Shapes.Path
+        $arc.Data = [System.Windows.Media.Geometry]::Parse('M 22,2.5 A 19.5,19.5 0 1 1 3.4,27.9')
+        $arc.Stroke = New-RawGradient @($ring[0], $ring[1]); $arc.StrokeThickness = 5; $arc.StrokeStartLineCap = 'Round'; $arc.StrokeEndLineCap = 'Round'
+        $arc.Effect = New-Object System.Windows.Media.Effects.DropShadowEffect -Property @{ Color = [System.Windows.Media.ColorConverter]::ConvertFromString($ring[0]); BlurRadius = 10; ShadowDepth = 0; Opacity = 0.8 }
+        [System.Windows.Controls.Canvas]::SetLeft($arc, $x); [System.Windows.Controls.Canvas]::SetTop($arc, 44)
+        [void]$cv.Children.Add($arc)
+        $x += 54
+    }
+    $todo = New-Object System.Windows.Controls.Border
+    $todo.Width = 116; $todo.Height = 56; $todo.CornerRadius = [System.Windows.CornerRadius]::new(9)
+    $todo.Background = New-RawGradient @(('#33' + $th.P.Substring(1)), ('#33' + $th.T.Substring(1)))
+    $todo.BorderBrush = New-RawGradient @(('#AA' + $th.P.Substring(1)), ('#AA' + $th.T.Substring(1))); $todo.BorderThickness = [System.Windows.Thickness]::new(1)
+    $ts = New-Object System.Windows.Controls.StackPanel
+    $ts.Margin = [System.Windows.Thickness]::new(8, 7, 8, 0)
+    $t1 = New-Object System.Windows.Controls.Border
+    $t1.Width = 30; $t1.Height = 4; $t1.HorizontalAlignment = 'Left'; $t1.Background = New-RawBrush $th.P
+    $t2 = New-Object System.Windows.Controls.Border
+    $t2.Width = 80; $t2.Height = 7; $t2.HorizontalAlignment = 'Left'; $t2.Margin = [System.Windows.Thickness]::new(0, 6, 0, 0); $t2.Background = [System.Windows.Media.Brushes]::White; $t2.CornerRadius = [System.Windows.CornerRadius]::new(3)
+    $t3 = New-Object System.Windows.Controls.Border
+    $t3.Width = 40; $t3.Height = 11; $t3.HorizontalAlignment = 'Left'; $t3.Margin = [System.Windows.Thickness]::new(0, 7, 0, 0); $t3.CornerRadius = [System.Windows.CornerRadius]::new(6)
+    $t3.Background = New-RawGradient @($th.P, $th.S) 1 0
+    foreach ($y in $t1, $t2, $t3) { [void]$ts.Children.Add($y) }
+    $todo.Child = $ts
+    [System.Windows.Controls.Canvas]::SetLeft($todo, 122); [System.Windows.Controls.Canvas]::SetTop($todo, 42)
+    [void]$cv.Children.Add($todo)
+    $bg.Child = $cv
+    [void]$g.Children.Add($bg)
+    $g
+}
+
+function Build-ThemePanel {
+    $p = $ui.SetTheme
+    $p.Children.Clear()
+    if (-not $script:ThemePick) { $script:ThemePick = $ThemeId }
+    $grid = New-Object System.Windows.Controls.Primitives.UniformGrid
+    $grid.Columns = 2
+    foreach ($id in @($AppThemes.Keys)) {
+        $th = $AppThemes[$id]
+        $sel = $id -eq $script:ThemePick
+        $card = New-Object System.Windows.Controls.Border
+        $card.CornerRadius = [System.Windows.CornerRadius]::new(18)
+        $card.Padding = New-Thickness 10 10 10 12
+        $card.Margin = New-Thickness 0 0 12 12
+        $card.Background = Get-Brush $(if ($sel) { '#18FFFFFF' } else { '#0AFFFFFF' })
+        $w = if ($sel) { 2 } else { 1 }
+        $card.BorderThickness = New-Thickness $w $w $w $w
+        # Contour aux couleurs du thème de la carte (pas du thème actuel)
+        $card.BorderBrush = if ($sel) { New-RawGradient @($th.P, $th.S) } else { Get-Brush '#1CFFFFFF' }
+        if ($sel) { $card.Effect = New-Object System.Windows.Media.Effects.DropShadowEffect -Property @{ Color = [System.Windows.Media.ColorConverter]::ConvertFromString($th.P); BlurRadius = 18; ShadowDepth = 0; Opacity = 0.45 } }
+        $card.Cursor = [System.Windows.Input.Cursors]::Hand
+        $sp = New-Object System.Windows.Controls.StackPanel
+        [void]$sp.Children.Add((New-ThemePreview $id))
+        $nm = New-Object System.Windows.Controls.StackPanel
+        $nm.Orientation = 'Horizontal'; $nm.Margin = New-Thickness 2 10 0 0
+        $title = New-Text $th.Name 14.5 '#FFFFFF' -Bold
+        if ($th.Font) { $title.FontFamily = New-Object System.Windows.Media.FontFamily $th.Font }
+        [void]$nm.Children.Add($title)
+        if ($id -eq $ThemeId) {
+            $badge = New-Object System.Windows.Controls.Border
+            $badge.CornerRadius = [System.Windows.CornerRadius]::new(8); $badge.Padding = New-Thickness 8 1 8 2; $badge.Margin = New-Thickness 10 2 0 0
+            $badge.Background = New-RawBrush ('#33' + $th.P.Substring(1))
+            $bt = New-Text 'Actuel' 11 '#FFFFFF' -Semi
+            $badge.Child = $bt
+            [void]$nm.Children.Add($badge)
+        }
+        [void]$sp.Children.Add($nm)
+        $d = New-Text $th.Desc 11.5 '#8E88A8'
+        $d.Margin = New-Thickness 2 3 0 0
+        [void]$sp.Children.Add($d)
+        $card.Child = $sp
+        $card.Tag = $id
+        $card.Add_MouseLeftButtonUp({ param($s, $e) $script:ThemePick = [string]$s.Tag; Build-ThemePanel })
+        [void]$grid.Children.Add($card)
+    }
+    [void]$p.Children.Add($grid)
+
+    # Bas : appliquer (redémarre Nevermind, le thème s'applique au chargement de la fenêtre)
+    $foot = New-Grid @('*', 'Auto')
+    $foot.Margin = New-Thickness 0 4 12 8
+    $changed = $script:ThemePick -ne $ThemeId
+    $msg = if ($changed) { "« $($AppThemes[$script:ThemePick].Name) » s'applique en relançant Nevermind (quelques secondes). Tes réglages ne changent pas." } else { 'Choisis un thème pour le voir en grand : Nevermind se relance pour l''appliquer.' }
+    $mt = New-Text $msg 12 '#A6A1BC'
+    $mt.VerticalAlignment = 'Center'
+    Add-ToGrid $foot $mt 0
+    if ($changed) {
+        $b = New-Button 'Appliquer et relancer' 'BtnPrimary'
+        $b.Margin = New-Thickness 16 0 0 0
+        $b.Add_Click({ Invoke-Safe { Set-AppTheme $script:ThemePick } })
+        Add-ToGrid $foot $b 1
+    }
+    [void]$p.Children.Add($foot)
+}
+
+function Set-AppTheme([string]$Id) {
+    if (-not $AppThemes.Contains($Id)) { return }
+    Set-Setting 'Theme' $Id
+    Write-Log "Thème : $Id"
+    if ($env:OPTIGAME_TEST) { Set-Status "Thème « $($AppThemes[$Id].Name) » choisi (copie de test : pas de relance)."; return }
+    $script:Relaunch = Join-Path $AppDir 'OptiGame.ps1'
+    $Window.Close()
 }

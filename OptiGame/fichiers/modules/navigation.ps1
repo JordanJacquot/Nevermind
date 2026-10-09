@@ -394,7 +394,8 @@ function Set-HubStat([int]$Index, [string]$Text, [string]$Color) {
 function Update-Hub {
     $a = $script:LastAnalysis
     $info = if ($a) { $a.Info } else { @{} }
-    $ui.HubHello.Text = "Salut $(Get-FirstName)"
+    $fn = Get-FirstName
+    $ui.HubHello.Text = (Get-ThemeText 'Hello') -f $(if ($ThemeId -eq 'terminal') { $fn.ToLower() } else { $fn })
 
     # Phrase de résumé sous le bonjour
     $fd = Get-HubFindings $a

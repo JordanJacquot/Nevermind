@@ -90,7 +90,7 @@ $script:T.Run.Add_Tick({
             Test-Step 'Accueil Ordinateur' {
                 Assert-Test ($ui.HubCards.Children.Count -eq 3) "$($ui.HubCards.Children.Count) familles au lieu de 3"
                 Assert-Test ($script:HubStats.Count -eq 8) "seulement $($script:HubStats.Count) outils"
-                Assert-Test ($ui.HubHello.Text -like 'Salut *') 'pas de bonjour'
+                Assert-Test ($ui.HubHello.Text -like ((Get-ThemeText 'Hello') -f '*')) "bonjour : $($ui.HubHello.Text)"
                 Assert-Test ($ui.HubTodoPanel.Children.Count -ge 2) 'carte « À faire » vide'
                 "3 familles, 8 outils, « $($ui.HubHello.Text) »"
             }
@@ -650,7 +650,7 @@ $script:T.Run.Add_Tick({
                     Set-SettingsTab $t.Id; Wait-TestMs 150
                     Assert-Test ($ui[$t.Panel].Visibility -eq 'Visible' -and $ui[$t.Panel].Children.Count) "onglet $($t.Label) vide"
                     $seen += $t.Label
-                    if ($t.Id -in 'jeux', 'aide') { Save-TestShot "parametres-$($t.Id)" }
+                    if ($t.Id -in 'jeux', 'aide', 'theme') { Save-TestShot "parametres-$($t.Id)" }
                 }
                 # Un réglage changé ici est à jour sur sa page (jaquettes : sans effet de bord)
                 $old = Test-CoversOnline
@@ -679,6 +679,32 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($tabsRight -le $searchLeft) "onglets jusqu'à $([int]$tabsRight) px, recherche à $([int]$searchLeft) px"
                 Show-Page $HubIndex
                 "$($seen.Count) onglets ($($seen -join ', ')), réglage synchronisé avec sa page, Échap ferme, barre du haut tenue à $([int]$Window.MinWidth) px"
+            }
+            Test-Step 'Thèmes (5 choix)' {
+                Assert-Test ($AppThemes.Count -eq 5) "$($AppThemes.Count) thèmes"
+                $raw = [IO.File]::ReadAllText((Join-Path $ModulesDir 'interface.xaml'), [Text.Encoding]::UTF8)
+                foreach ($id in @($AppThemes.Keys)) {
+                    $th = $AppThemes[$id]
+                    Assert-Test ((ConvertTo-ThemeHex '#00E5FF' $id) -eq $th.P) "$id : cyan traduit en $(ConvertTo-ThemeHex '#00E5FF' $id)"
+                    foreach ($st in '#22D37A', '#F5A524', '#F04438', '#4EA8FF', '#FFFFFF') { Assert-Test ((ConvertTo-ThemeHex $st $id) -eq $st) "$id : couleur d'état $st changée" }
+                    # La fenêtre complète se charge dans chaque thème
+                    $w = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml](Convert-ThemeXaml $raw $id))))
+                    Assert-Test ($null -ne $w) "$id : fenêtre non chargée"
+                    $w.Close()
+                }
+                # Onglet Thème : 5 cartes, choisir une autre affiche « Appliquer et relancer »
+                Show-Settings 'theme'; Wait-TestMs 300
+                $cards = @($ui.SetTheme.Children[0].Children)
+                Assert-Test ($cards.Count -eq 5) "$($cards.Count) cartes de thème"
+                $other = @($AppThemes.Keys | Where-Object { $_ -ne $ThemeId })[2]
+                $script:ThemePick = $other; Build-ThemePanel
+                Assert-Test ([bool](Find-PageElement $ui.SetTheme 'Appliquer et relancer')) 'pas de bouton pour appliquer'
+                Save-TestShot 'parametres-theme-choix'
+                $old = Get-Setting 'Theme' 'neon'
+                Set-AppTheme $other
+                Assert-Test ((Get-Setting 'Theme' '') -eq $other -and $ui.SettingsOverlay.Visibility -eq 'Visible') 'thème non enregistré (ou la copie de test s''est fermée)'
+                Set-Setting 'Theme' $old; $script:ThemePick = $null; Hide-Settings
+                "$(($AppThemes.Values | ForEach-Object { $_.Name }) -join ', ') : fenêtre chargée dans chacun, couleurs d'état intactes"
             }
             Test-Step 'Signaler un problème (Paramètres, Aide)' {
                 Show-ReportPanel; $script:ReportBox.Text = 'Le jeu rame depuis la mise à jour'; Wait-TestMs 400; Save-TestShot 'signaler'; Hide-TestPanel
