@@ -968,7 +968,8 @@ function Initialize-PackFooter {
     $frames = Get-SheetFrames $f.File $f.Frames
     $img = New-Object System.Windows.Controls.Image
     $img.Source = $frames[0]; $img.Height = $f.Height; $img.Stretch = 'Uniform'
-    [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'NearestNeighbor')
+    # Pixels bruts à la taille d'origine ou agrandi ; lissage de qualité si le dessin est réduit (sinon pixels irréguliers)
+    [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, $(if ($f.Height -ge $frames[0].PixelHeight) { 'NearestNeighbor' } else { 'HighQuality' }))
     $ui.FooterArt.Child = $img
     $ui.FooterArt.Visibility = 'Visible'
     $ui.StatusBar.Padding = New-Thickness 36 2 36 6
