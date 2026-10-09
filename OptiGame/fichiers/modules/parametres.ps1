@@ -119,7 +119,7 @@ function Build-SettingsPanels {
     [void]$p.Children.Add((New-SettingAction 'Visite guidée' 'Les bases de Nevermind en 3 étapes.' 'Revoir la visite' { Hide-Settings; Invoke-Safe { Show-Tour } }))
     [void]$p.Children.Add((New-SettingAction 'Rechercher un réglage' 'Tape ce que tu cherches dans la barre en haut (ou Ctrl + K) : un clic t''y emmène.' 'Ouvrir la recherche' { Hide-Settings; Focus-Search }))
     $ui.SettingsVersion.Text = "Nevermind $AppVersion"
-    $script:ThemePick = $ThemeId
+    $script:ThemePick = Get-CurrentThemeKey
     Build-ThemePanel
 }
 
@@ -311,15 +311,26 @@ function New-ThemePreview([string]$Id) {
     $g
 }
 
+function Get-CurrentThemeKey { if ($ThemePack) { "pack:$($ThemePack.Id)" } else { $ThemeId } }
+
+# Les choix de l'onglet : les 5 thèmes de base puis les packs installés sur ce PC
+function Get-ThemeChoices {
+    $list = @(foreach ($id in @($AppThemes.Keys)) { $t = $AppThemes[$id]; @{ Key = $id; Base = $id; Name = $t.Name; Desc = $t.Desc; Font = $t.Font; Pack = $null } })
+    foreach ($pk in @(Get-ThemePacks)) { $list += @{ Key = "pack:$($pk.Id)"; Base = $pk.Base; Name = $pk.Name; Desc = $pk.Desc; Font = $AppThemes[$pk.Base].Font; Pack = $pk } }
+    $list
+}
+
 function Build-ThemePanel {
     $p = $ui.SetTheme
     $p.Children.Clear()
-    if (-not $script:ThemePick) { $script:ThemePick = $ThemeId }
+    $current = Get-CurrentThemeKey
+    if (-not $script:ThemePick) { $script:ThemePick = $current }
+    $choices = @(Get-ThemeChoices)
     $grid = New-Object System.Windows.Controls.Primitives.UniformGrid
     $grid.Columns = 2
-    foreach ($id in @($AppThemes.Keys)) {
-        $th = $AppThemes[$id]
-        $sel = $id -eq $script:ThemePick
+    foreach ($ch in $choices) {
+        $th = $AppThemes[$ch.Base]
+        $sel = $ch.Key -eq $script:ThemePick
         $card = New-Object System.Windows.Controls.Border
         $card.CornerRadius = [System.Windows.CornerRadius]::new(18)
         $card.Padding = New-Thickness 10 10 10 12
@@ -332,26 +343,38 @@ function Build-ThemePanel {
         if ($sel) { $card.Effect = New-Object System.Windows.Media.Effects.DropShadowEffect -Property @{ Color = [System.Windows.Media.ColorConverter]::ConvertFromString($th.P); BlurRadius = 18; ShadowDepth = 0; Opacity = 0.45 } }
         $card.Cursor = [System.Windows.Input.Cursors]::Hand
         $sp = New-Object System.Windows.Controls.StackPanel
-        [void]$sp.Children.Add((New-ThemePreview $id))
+        $pv = New-ThemePreview $ch.Base
+        # Pack : son personnage (1re image de l'écran de chargement) posé sur l'aperçu
+        if ($ch.Pack -and $ch.Pack.Loader) {
+            try {
+                $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+                $bi.BeginInit(); $bi.UriSource = New-Object Uri $ch.Pack.Loader.File; $bi.DecodePixelHeight = 160; $bi.CacheOption = 'OnLoad'; $bi.EndInit()
+                $fw = [int]($bi.PixelWidth / $ch.Pack.Loader.Frames)
+                $im = New-Object System.Windows.Controls.Image
+                $im.Source = New-Object System.Windows.Media.Imaging.CroppedBitmap $bi, ([System.Windows.Int32Rect]::new(0, 0, $fw, $bi.PixelHeight))
+                $im.Height = 70; $im.HorizontalAlignment = 'Right'; $im.VerticalAlignment = 'Bottom'; $im.Margin = New-Thickness 0 0 8 6
+                [void]$pv.Children.Add($im)
+            } catch {}
+        }
+        [void]$sp.Children.Add($pv)
         $nm = New-Object System.Windows.Controls.StackPanel
         $nm.Orientation = 'Horizontal'; $nm.Margin = New-Thickness 2 10 0 0
-        $title = New-Text $th.Name 14.5 '#FFFFFF' -Bold
-        if ($th.Font) { $title.FontFamily = New-Object System.Windows.Media.FontFamily $th.Font }
+        $title = New-Text $ch.Name 14.5 '#FFFFFF' -Bold
+        if ($ch.Font) { $title.FontFamily = New-Object System.Windows.Media.FontFamily $ch.Font }
         [void]$nm.Children.Add($title)
-        if ($id -eq $ThemeId) {
+        foreach ($tag in @($(if ($ch.Pack) { 'Pack' }), $(if ($ch.Key -eq $current) { 'Actuel' })) | Where-Object { $_ }) {
             $badge = New-Object System.Windows.Controls.Border
-            $badge.CornerRadius = [System.Windows.CornerRadius]::new(8); $badge.Padding = New-Thickness 8 1 8 2; $badge.Margin = New-Thickness 10 2 0 0
+            $badge.CornerRadius = [System.Windows.CornerRadius]::new(8); $badge.Padding = New-Thickness 8 1 8 2; $badge.Margin = New-Thickness 8 2 0 0
             $badge.Background = New-RawBrush ('#33' + $th.P.Substring(1))
-            $bt = New-Text 'Actuel' 11 '#FFFFFF' -Semi
-            $badge.Child = $bt
+            $badge.Child = New-Text $tag 11 '#FFFFFF' -Semi
             [void]$nm.Children.Add($badge)
         }
         [void]$sp.Children.Add($nm)
-        $d = New-Text $th.Desc 11.5 '#8E88A8'
+        $d = New-Text $ch.Desc 11.5 '#8E88A8'
         $d.Margin = New-Thickness 2 3 0 0
         [void]$sp.Children.Add($d)
         $card.Child = $sp
-        $card.Tag = $id
+        $card.Tag = $ch.Key
         $card.Add_MouseLeftButtonUp({ param($s, $e) $script:ThemePick = [string]$s.Tag; Build-ThemePanel })
         [void]$grid.Children.Add($card)
     }
@@ -360,8 +383,9 @@ function Build-ThemePanel {
     # Bas : appliquer (redémarre Nevermind, le thème s'applique au chargement de la fenêtre)
     $foot = New-Grid @('*', 'Auto')
     $foot.Margin = New-Thickness 0 4 12 8
-    $changed = $script:ThemePick -ne $ThemeId
-    $msg = if ($changed) { "« $($AppThemes[$script:ThemePick].Name) » s'applique en relançant Nevermind (quelques secondes). Tes réglages ne changent pas." } else { 'Choisis un thème pour le voir en grand : Nevermind se relance pour l''appliquer.' }
+    $changed = $script:ThemePick -ne $current
+    $pickName = @($choices | Where-Object { $_.Key -eq $script:ThemePick })[0].Name
+    $msg = if ($changed) { "« $pickName » s'applique en relançant Nevermind (quelques secondes). Tes réglages ne changent pas." } else { 'Choisis un thème pour le voir en grand : Nevermind se relance pour l''appliquer.' }
     $mt = New-Text $msg 12 '#A6A1BC'
     $mt.VerticalAlignment = 'Center'
     Add-ToGrid $foot $mt 0
@@ -372,13 +396,35 @@ function Build-ThemePanel {
         Add-ToGrid $foot $b 1
     }
     [void]$p.Children.Add($foot)
+
+    # Packs : images perso (même de personnages connus), gardés sur ce PC seulement
+    $pk = New-SettingAction 'Packs de thème' "Un pack ajoute ses images (personnage au chargement...). Il reste sur ce PC : pour le partager, envoie le zip à tes potes." 'Importer un pack' {
+        Invoke-Safe {
+            $dlg = New-Object Microsoft.Win32.OpenFileDialog
+            $dlg.Title = 'Choisis le pack de thème (.zip)'; $dlg.Filter = 'Pack de thème (*.zip)|*.zip'
+            if (-not $dlg.ShowDialog($Window)) { return }
+            $id = Import-ThemePack $dlg.FileName
+            $script:ThemePick = "pack:$id"
+            Build-ThemePanel
+            Set-Status "Pack « $((Get-ThemePack $id).Name) » ajouté : clique sur « Appliquer et relancer »."
+        }
+    }
+    $pk.Margin = New-Thickness 0 6 12 8
+    $open = New-Button 'Ouvrir le dossier'
+    $open.Margin = New-Thickness 10 0 0 0; $open.VerticalAlignment = 'Center'
+    $open.Add_Click({ New-Item -ItemType Directory -Force -Path $PacksDir | Out-Null; Open-Url $PacksDir })
+    $g = $pk.Child
+    $g.ColumnDefinitions.Add((New-Object System.Windows.Controls.ColumnDefinition -Property @{ Width = [System.Windows.GridLength]::Auto }))
+    Add-ToGrid $g $open 2
+    [void]$p.Children.Add($pk)
 }
 
 function Set-AppTheme([string]$Id) {
-    if (-not $AppThemes.Contains($Id)) { return }
+    if ($Id -like 'pack:*') { if (-not (Get-ThemePack $Id.Substring(5))) { return } }
+    elseif (-not $AppThemes.Contains($Id)) { return }
     Set-Setting 'Theme' $Id
     Write-Log "Thème : $Id"
-    if ($env:OPTIGAME_TEST) { Set-Status "Thème « $($AppThemes[$Id].Name) » choisi (copie de test : pas de relance)."; return }
+    if ($env:OPTIGAME_TEST) { Set-Status "Thème « $Id » choisi (copie de test : pas de relance)."; return }
     $script:Relaunch = Join-Path $AppDir 'OptiGame.ps1'
     $Window.Close()
 }

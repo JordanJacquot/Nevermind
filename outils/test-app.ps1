@@ -695,7 +695,7 @@ $script:T.Run.Add_Tick({
                 # Onglet Thème : 5 cartes, choisir une autre affiche « Appliquer et relancer »
                 Show-Settings 'theme'; Wait-TestMs 300
                 $cards = @($ui.SetTheme.Children[0].Children)
-                Assert-Test ($cards.Count -eq 5) "$($cards.Count) cartes de thème"
+                Assert-Test ($cards.Count -eq @(Get-ThemeChoices).Count -and $cards.Count -ge 5) "$($cards.Count) cartes de thème"
                 $other = @($AppThemes.Keys | Where-Object { $_ -ne $ThemeId })[2]
                 $script:ThemePick = $other; Build-ThemePanel
                 Assert-Test ([bool](Find-PageElement $ui.SetTheme 'Appliquer et relancer')) 'pas de bouton pour appliquer'
@@ -705,6 +705,56 @@ $script:T.Run.Add_Tick({
                 Assert-Test ((Get-Setting 'Theme' '') -eq $other -and $ui.SettingsOverlay.Visibility -eq 'Visible') 'thème non enregistré (ou la copie de test s''est fermée)'
                 Set-Setting 'Theme' $old; $script:ThemePick = $null; Hide-Settings
                 "$(($AppThemes.Values | ForEach-Object { $_.Name }) -join ', ') : fenêtre chargée dans chacun, couleurs d'état intactes"
+            }
+            Test-Step 'Packs de thème (image perso, chargement)' {
+                Add-Type -AssemblyName System.Drawing
+                $work = Join-Path $DataDir 'essai-pack'; New-Item -ItemType Directory -Force -Path $work | Out-Null
+                # GIF sur fond blanc : un rond jaune bordé de noir, avec un point blanc au milieu (comme le reflet d'un oeil)
+                $bmp = New-Object System.Drawing.Bitmap 120, 90
+                $g = [System.Drawing.Graphics]::FromImage($bmp); $g.Clear([System.Drawing.Color]::White)
+                $g.FillEllipse([System.Drawing.Brushes]::Black, 30, 15, 60, 60); $g.FillEllipse([System.Drawing.Brushes]::Gold, 34, 19, 52, 52); $g.FillRectangle([System.Drawing.Brushes]::Black, 55, 40, 12, 12); $g.FillRectangle([System.Drawing.Brushes]::White, 58, 43, 5, 5); $g.Dispose()
+                $gif = Join-Path $work 'perso.gif'; $bmp.Save($gif, [System.Drawing.Imaging.ImageFormat]::Gif); $bmp.Dispose()
+                $src = Join-Path $work 'src'; New-Item -ItemType Directory -Force -Path $src | Out-Null
+                $info = Convert-GifToSheet $gif (Join-Path $src 'chargement.png') 100
+                $sheet = New-Object System.Drawing.Bitmap (Join-Path $src 'chargement.png')
+                $corner = $sheet.GetPixel(0, 0).A; $mid = $sheet.GetPixel([int]($sheet.Width / 2), [int]($sheet.Height / 2)); $sw = $sheet.Width; $sheet.Dispose()
+                Assert-Test ($info.Frames -eq 1 -and $info.Height -eq 100) "planche : $($info.Frames) image(s), hauteur $($info.Height)"
+                Assert-Test ($corner -eq 0) 'le fond blanc n''a pas été retiré'
+                Assert-Test ($mid.A -eq 255 -and $mid.R -gt 200 -and $mid.G -gt 200 -and $mid.B -gt 200) "le point blanc entouré de noir a été effacé ($($mid.A), $($mid.R))"
+                Assert-Test ($sw -lt 120) "image non recadrée sur le personnage ($sw px)"
+                [IO.File]::WriteAllText((Join-Path $src 'pack.json'), (@{ Name = 'Pack d''essai'; Desc = 'Test'; Base = 'arcade'; Hello = 'Coucou {0}'; Loader = @{ File = 'chargement.png'; Frames = 1; Delay = 80 } } | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding($false)))
+                $zip = Join-Path $work 'essai.zip'
+                Add-Type -AssemblyName System.IO.Compression.FileSystem
+                if (Test-Path -LiteralPath $zip) { [IO.File]::Delete($zip) }
+                [IO.Compression.ZipFile]::CreateFromDirectory($src, $zip)
+                if ($PacksDir -notlike "$DataDir*") { $script:PacksDir = Join-Path $DataDir 'packs'; $PacksDir = $script:PacksDir }   # jamais dans les vrais packs
+                $id = Import-ThemePack $zip
+                $pk = Get-ThemePack $id
+                Assert-Test ($pk -and $pk.Name -eq 'Pack d''essai' -and $pk.Base -eq 'arcade' -and $pk.Loader) 'pack importé illisible'
+                # Onglet Thème : le pack apparaît après les 5 thèmes, avec son badge
+                Show-Settings 'theme'; Wait-TestMs 300
+                $cards = @($ui.SetTheme.Children[0].Children)
+                Assert-Test (@($cards | Where-Object { $_.Tag -eq "pack:$id" }).Count -eq 1 -and $cards[4].Tag -eq 'rubis') "$($cards.Count) cartes, pack d'essai absent"
+                Save-TestShot 'parametres-theme-pack'
+                Set-AppTheme "pack:$id"
+                Assert-Test ((Get-Setting 'Theme' '') -eq "pack:$id") 'pack non choisi'
+                Set-Setting 'Theme' 'neon'; $script:ThemePick = $null; Hide-Settings
+                # Écran de chargement du pack : le personnage court sur la barre et avance avec elle
+                $oldPack = $ThemePack; $script:ThemePack = $pk; $ThemePack = $pk
+                try {
+                    $ui.StartupOverlay.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null); $ui.StartupOverlay.Opacity = 1; $ui.StartupOverlay.Visibility = 'Visible'
+                    Start-StartupLoader
+                    Assert-Test ($script:Loader.Kind -eq 'sprite') 'écran de chargement du pack non utilisé'
+                    $x0 = [System.Windows.Controls.Canvas]::GetLeft($script:Loader.Img)
+                    Set-LoaderProgress 80; Wait-TestMs 900
+                    $x1 = [System.Windows.Controls.Canvas]::GetLeft($script:Loader.Img)
+                    Assert-Test ($x1 -gt $x0 + 100 -and $script:Loader.Text.Text -eq '80 %') "personnage de $x0 à $x1, texte $($script:Loader.Text.Text)"
+                    Save-TestShot 'chargement-pack'
+                } finally {
+                    Stop-StartupLoader; $ui.StartupOverlay.Visibility = 'Collapsed'
+                    $script:ThemePack = $oldPack; $ThemePack = $oldPack
+                }
+                "GIF détouré (reflet gardé), zip importé, carte « Pack » dans Thème, personnage qui avance avec la barre"
             }
             Test-Step 'Signaler un problème (Paramètres, Aide)' {
                 Show-ReportPanel; $script:ReportBox.Text = 'Le jeu rame depuis la mise à jour'; Wait-TestMs 400; Save-TestShot 'signaler'; Hide-TestPanel
@@ -726,7 +776,8 @@ $script:T.Run.Add_Tick({
                 $ui.StartupOverlay.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null); $ui.StartupOverlay.Opacity = 1; $ui.StartupOverlay.Visibility = 'Visible'
                 foreach ($zp in [System.Windows.Media.ScaleTransform]::ScaleXProperty, [System.Windows.Media.ScaleTransform]::ScaleYProperty) { $ui.StartupZoom.BeginAnimation($zp, $null) }
                 Start-StartupLoader
-                Assert-Test ($ui.StartupLoaderHost.Children.Count -eq 1 -and $script:Loader.Loops.Count -ge 4 -and $script:Loader.Mark -and $script:Loader.GlitchTimer.IsEnabled) 'chargement animé (logo Nevermind) absent'
+                if ($ThemePack -and $ThemePack.Loader) { Assert-Test ($script:Loader.Kind -eq 'sprite' -and $script:Loader.GlitchTimer.IsEnabled) 'chargement du pack absent' }
+                else { Assert-Test ($ui.StartupLoaderHost.Children.Count -eq 1 -and $script:Loader.Loops.Count -ge 4 -and $script:Loader.Mark -and $script:Loader.GlitchTimer.IsEnabled) 'chargement animé (logo Nevermind) absent' }
                 Set-StartupStep 'Recherche de tes jeux...' 72; $ui.StartupDetail.Text = 'Calcul: Fichiers temporaires (utilisateur)...'; Wait-TestMs 1200; Save-TestShot 'chargement'
                 $gt = $script:Loader.GlitchTimer
                 Stop-StartupLoader

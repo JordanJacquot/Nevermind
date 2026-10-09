@@ -27,11 +27,115 @@ $AppThemes = [ordered]@{
 }
 
 # Thème choisi (la copie de test peut en forcer un pour les captures)
-$ThemeId = [string](Get-Setting 'Theme' 'neon')
-$ThemeId = @{ retro = 'arcade'; dresseur = 'rubis' }[$ThemeId], $ThemeId | Where-Object { $_ } | Select-Object -First 1   # anciens noms (1.0.63)
-if ($env:OPTIGAME_TEST -and $env:OPTIGAME_THEME) { $ThemeId = $env:OPTIGAME_THEME }
+$ThemeSetting = [string](Get-Setting 'Theme' 'neon')
+if ($env:OPTIGAME_TEST -and $env:OPTIGAME_THEME) { $ThemeSetting = $env:OPTIGAME_THEME }
+$ThemeId = @{ retro = 'arcade'; dresseur = 'rubis' }[$ThemeSetting], $ThemeSetting | Where-Object { $_ } | Select-Object -First 1   # anciens noms (1.0.63)
 if (-not $AppThemes.Contains($ThemeId)) { $ThemeId = 'neon' }
 $Theme = $AppThemes[$ThemeId]
+
+# ---------------------------------------------------------------------------
+# Packs de thème : un dossier (ou un zip à importer) hors de l'app, avec pack.json et ses images.
+# Ils restent sur le PC (dossier des données de Nevermind) et ne passent jamais par GitHub :
+# on peut y mettre ses propres images, même de personnages qui ne nous appartiennent pas, pour un usage privé.
+#
+# pack.json :
+#   Name, Desc        nom et description affichés dans Paramètres, Thème
+#   Base              thème de couleurs utilisé (neon, crepuscule, terminal, arcade, rubis)
+#   Hello, Ready      bonjour de l'accueil (« {0} » = prénom) et fin du chargement (facultatifs)
+#   Loader            écran de chargement : { File = planche PNG (images côte à côte), Frames, Delay (ms), Flip }
+# ---------------------------------------------------------------------------
+$PacksDir = Join-Path $DataDir 'packs'
+if ($env:OPTIGAME_TEST -and $env:OPTIGAME_PACKS) { $PacksDir = $env:OPTIGAME_PACKS }
+
+function Get-ThemePack([string]$Id) {
+    $dir = Join-Path $PacksDir $Id
+    $f = Join-Path $dir 'pack.json'
+    if (-not (Test-Path -LiteralPath $f)) { return $null }
+    try { $j = Get-Content -LiteralPath $f -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Write-Log "Pack $Id illisible : $_"; return $null }
+    $p = @{ Id = $Id; Dir = $dir; Name = [string]$j.Name; Desc = [string]$j.Desc; Base = [string]$j.Base; Hello = [string]$j.Hello; Ready = [string]$j.Ready; Loader = $null }
+    if (-not $p.Name) { $p.Name = $Id }
+    if (-not $AppThemes.Contains($p.Base)) { $p.Base = 'neon' }
+    if ($j.Loader -and $j.Loader.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Loader.File)))) {
+        $p.Loader = @{ File = (Join-Path $dir ([string]$j.Loader.File)); Frames = [math]::Max(1, [int]$j.Loader.Frames); Delay = [math]::Max(40, [int]$j.Loader.Delay); Flip = [bool]$j.Loader.Flip }
+    }
+    $p
+}
+
+function Get-ThemePacks {
+    if (-not (Test-Path -LiteralPath $PacksDir)) { return @() }
+    @(Get-ChildItem -LiteralPath $PacksDir -Directory | ForEach-Object { Get-ThemePack $_.Name } | Where-Object { $_ })
+}
+
+# Thème choisi « pack:<dossier> » : les couleurs de son thème de base, ses textes et son écran de chargement
+$ThemePack = $null
+if ($ThemeSetting -like 'pack:*') {
+    $ThemePack = Get-ThemePack $ThemeSetting.Substring(5)
+    if ($ThemePack) { $ThemeId = $ThemePack.Base; $Theme = $AppThemes[$ThemeId] }
+}
+
+# Un GIF (fond clair accepté) devient une planche PNG transparente, images côte à côte, toutes à la même hauteur.
+function Convert-GifToSheet([string]$Gif, [string]$OutPng, [int]$Height = 160) {
+    Add-Type -AssemblyName System.Drawing
+    $img = [System.Drawing.Image]::FromFile($Gif)
+    try {
+        $fd = New-Object System.Drawing.Imaging.FrameDimension $img.FrameDimensionsList[0]
+        $n = $img.GetFrameCount($fd)
+        $delay = 100
+        try { $pi = $img.GetPropertyItem(0x5100); $delay = [math]::Max(20, 10 * [BitConverter]::ToInt32($pi.Value, 0)) } catch {}
+        $frames = @(); $box = $null
+        for ($i = 0; $i -lt $n; $i++) {
+            [void]$img.SelectActiveFrame($fd, $i)
+            $bmp = New-Object System.Drawing.Bitmap $img.Width, $img.Height, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+            $g = [System.Drawing.Graphics]::FromImage($bmp); $g.DrawImage($img, 0, 0, $img.Width, $img.Height); $g.Dispose()
+            $rect = New-Object System.Drawing.Rectangle 0, 0, $bmp.Width, $bmp.Height
+            $data = $bmp.LockBits($rect, 'ReadWrite', $bmp.PixelFormat)
+            $px = New-Object byte[] ($data.Stride * $bmp.Height)
+            [Runtime.InteropServices.Marshal]::Copy($data.Scan0, $px, 0, $px.Length)
+            [void][SpriteTools]::RemoveLightBackground($px, $bmp.Width, $bmp.Height, 215, 28)
+            [Runtime.InteropServices.Marshal]::Copy($px, 0, $data.Scan0, $px.Length)
+            $bmp.UnlockBits($data)
+            $b = [SpriteTools]::OpaqueBounds($px, $bmp.Width, $bmp.Height)
+            if ($b) { $box = if ($box) { @([math]::Min($box[0], $b[0]), [math]::Min($box[1], $b[1]), [math]::Max($box[2], $b[2]), [math]::Max($box[3], $b[3])) } else { $b } }
+            $frames += $bmp
+        }
+    } finally { $img.Dispose() }
+    if (-not $box) { throw 'Image vide après le détourage.' }
+    $cw = $box[2] - $box[0]; $ch = $box[3] - $box[1]
+    $fw = [int][math]::Round($cw * $Height / $ch)
+    $sheet = New-Object System.Drawing.Bitmap ($fw * $frames.Count), $Height, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $g = [System.Drawing.Graphics]::FromImage($sheet)
+    $g.InterpolationMode = 'HighQualityBicubic'; $g.PixelOffsetMode = 'HighQuality'; $g.CompositingQuality = 'HighQuality'
+    for ($i = 0; $i -lt $frames.Count; $i++) {
+        $g.DrawImage($frames[$i], (New-Object System.Drawing.Rectangle ($i * $fw), 0, $fw, $Height), (New-Object System.Drawing.Rectangle $box[0], $box[1], $cw, $ch), 'Pixel')
+        $frames[$i].Dispose()
+    }
+    $g.Dispose()
+    $sheet.Save($OutPng, [System.Drawing.Imaging.ImageFormat]::Png)
+    $sheet.Dispose()
+    @{ Frames = $frames.Count; Delay = $delay; Width = $fw; Height = $Height }
+}
+
+# Pack (zip contenant pack.json) ajouté dans le dossier des packs ; renvoie son identifiant
+function Import-ThemePack([string]$Zip) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $tmp = Join-Path $env:TEMP ("nevermind-pack-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    [IO.Compression.ZipFile]::ExtractToDirectory($Zip, $tmp)
+    $json = @(Get-ChildItem -LiteralPath $tmp -Recurse -Filter 'pack.json' | Select-Object -First 1)
+    if (-not $json.Count) { throw 'Ce zip ne contient pas de pack.json : ce n''est pas un pack de thème Nevermind.' }
+    $src = $json[0].DirectoryName
+    $id = ([IO.Path]::GetFileNameWithoutExtension($Zip) -replace '[^\w\-]', '-').ToLower()
+    $dest = Join-Path $PacksDir $id
+    New-Item -ItemType Directory -Force -Path $dest | Out-Null
+    foreach ($f in Get-ChildItem -LiteralPath $src -Recurse -File) {
+        $rel = $f.FullName.Substring($src.Length + 1)
+        $to = Join-Path $dest $rel
+        New-Item -ItemType Directory -Force -Path (Split-Path $to -Parent) | Out-Null
+        Copy-Item -LiteralPath $f.FullName -Destination $to -Force
+    }
+    try { [IO.Directory]::Delete($tmp, $true) } catch {}
+    if (-not (Get-ThemePack $id)) { throw 'Le pack.json de ce pack est illisible.' }
+    $id
+}
 
 # Attention : PowerShell ne distingue pas $R de $r, d'où des noms différents pour les valeurs 0 à 1
 function ConvertTo-Hsl([int]$Red, [int]$Green, [int]$Blue) {
@@ -99,7 +203,7 @@ function Convert-ThemeXaml([string]$Text, [string]$Id = $ThemeId) {
     $Text
 }
 
-function Get-ThemeText([string]$Key) { [string]$Theme[$Key] }
+function Get-ThemeText([string]$Key) { if ($ThemePack -and $ThemePack[$Key]) { [string]$ThemePack[$Key] } else { [string]$Theme[$Key] } }
 
 # ---------------------------------------------------------------------------
 # Décor de fond propre au thème (discret, derrière tout, ne capte jamais la souris)

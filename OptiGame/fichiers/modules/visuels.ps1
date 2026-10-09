@@ -734,6 +734,10 @@ function New-LoaderSpinner($Canvas, [double]$C, [double]$R, [double]$Sweep, [str
 function Start-StartupLoader {
     $lh = $ui.StartupLoaderHost
     if (-not $lh) { return }
+    # Pack de thème avec son propre écran de chargement (personnage qui court)
+    if ($ThemePack -and $ThemePack.Loader) {
+        try { Start-SpriteLoader; return } catch { Write-Log "Chargement du pack : $_" }
+    }
     $lh.Children.Clear()
     $S = 260.0; $C = 130.0
     $script:Loader = @{ Loops = (New-Object System.Collections.ArrayList); Shown = 0.0 }
@@ -813,6 +817,10 @@ function Start-StartupLoader {
 function Set-LoaderProgress([double]$Pct) {
     $L = $script:Loader
     if (-not $L) { return }
+    if ($L.Kind -eq 'sprite') {
+        Start-Anim { param($k, $s) if ($script:Loader -and $script:Loader.Kind -eq 'sprite') { Set-SpriteLoaderPos ($s.From + ($s.To - $s.From) * $k) } } @{ From = $L.Shown; To = $Pct } 700
+        return
+    }
     Start-NexoGlitch $L.Mark $null 300
     Start-Anim {
         param($k, $s)
@@ -832,4 +840,72 @@ function Stop-StartupLoader {
     if ($L.GlitchTimer) { $L.GlitchTimer.Stop() }
     $script:Loader = $null
     $ui.StartupLoaderHost.Children.Clear()
+}
+# Écran de chargement d'un pack de thème : le personnage du pack court au-dessus d'une barre
+# et avance avec la progression (planche PNG : images côte à côte, lues une à une).
+function Start-SpriteLoader {
+    $lh = $ui.StartupLoaderHost
+    $L = $ThemePack.Loader
+    $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+    $bi.BeginInit(); $bi.UriSource = New-Object Uri $L.File; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
+    $fw = [int]($bi.PixelWidth / $L.Frames); $fh = $bi.PixelHeight
+    $frames = @(for ($i = 0; $i -lt $L.Frames; $i++) { $c = New-Object System.Windows.Media.Imaging.CroppedBitmap $bi, ([System.Windows.Int32Rect]::new($i * $fw, 0, $fw, $fh)); $c.Freeze(); $c })
+    $W = 400.0; $barY = 168.0; $sh = 120.0; $sw = $sh * $fw / $fh
+    $lh.Children.Clear()
+    $lh.Width = $W; $lh.Height = 210
+    $cv = New-Object System.Windows.Controls.Canvas
+    $cv.Width = $W; $cv.Height = 210
+    # Ombre sous le personnage, puis le personnage
+    $shadow = New-Object System.Windows.Shapes.Ellipse
+    $shadow.Width = $sw * 0.6; $shadow.Height = 8; $shadow.Fill = Get-Brush '#55000000'
+    [System.Windows.Controls.Canvas]::SetTop($shadow, $barY - 7)
+    [void]$cv.Children.Add($shadow)
+    $img = New-Object System.Windows.Controls.Image
+    $img.Width = $sw; $img.Height = $sh; $img.Source = $frames[0]
+    if ($L.Flip) { $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5); $img.RenderTransform = New-Object System.Windows.Media.ScaleTransform -1, 1 }
+    [System.Windows.Controls.Canvas]::SetTop($img, $barY - $sh + 4)
+    [void]$cv.Children.Add($img)
+    # Barre : piste translucide et remplissage aux couleurs du thème
+    $track = New-Object System.Windows.Controls.Border
+    $track.Width = $W; $track.Height = 14; $track.CornerRadius = [System.Windows.CornerRadius]::new(7)
+    $track.Background = Get-Brush '#1EFFFFFF'; $track.BorderBrush = Get-Brush '#26FFFFFF'; $track.BorderThickness = New-Thickness 1 1 1 1
+    [System.Windows.Controls.Canvas]::SetTop($track, $barY)
+    [void]$cv.Children.Add($track)
+    $fill = New-Object System.Windows.Controls.Border
+    $fill.Width = 14; $fill.Height = 14; $fill.CornerRadius = [System.Windows.CornerRadius]::new(7)
+    $fill.Background = $Window.FindResource('AccentBg')
+    $fill.Effect = New-Glow '#00E5FF' 14 0.7
+    [System.Windows.Controls.Canvas]::SetTop($fill, $barY)
+    [void]$cv.Children.Add($fill)
+    $txt = New-Text '0 %' 15 '#FFFFFF' -Bold
+    $txt.Width = $W; $txt.TextAlignment = 'Center'
+    $txt.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
+    [System.Windows.Controls.Canvas]::SetTop($txt, $barY + 22)
+    [void]$cv.Children.Add($txt)
+    [void]$lh.Children.Add($cv)
+    $script:Loader = @{ Kind = 'sprite'; Loops = (New-Object System.Collections.ArrayList); Shown = 0.0; Img = $img; Shadow = $shadow; Fill = $fill; Text = $txt; Frames = $frames; Frame = 0; W = $W; SpriteW = $sw }
+    Set-SpriteLoaderPos 0
+    # Les images de la course défilent en boucle
+    $t = New-Object System.Windows.Threading.DispatcherTimer
+    $t.Interval = [TimeSpan]::FromMilliseconds($L.Delay)
+    $t.Add_Tick({
+        $S = $script:Loader
+        if (-not $S -or $S.Kind -ne 'sprite') { return }
+        $S.Frame = ($S.Frame + 1) % $S.Frames.Count
+        $S.Img.Source = $S.Frames[$S.Frame]
+    })
+    $t.Start()
+    $script:Loader.GlitchTimer = $t
+}
+
+# Position du personnage et longueur de la barre pour un pourcentage
+function Set-SpriteLoaderPos([double]$V) {
+    $S = $script:Loader
+    $S.Shown = $V
+    $w = [math]::Max(14.0, $S.W * $V / 100)
+    $S.Fill.Width = $w
+    $x = [math]::Max(0.0, [math]::Min($S.W - $S.SpriteW, $w - $S.SpriteW * 0.7))
+    [System.Windows.Controls.Canvas]::SetLeft($S.Img, $x)
+    [System.Windows.Controls.Canvas]::SetLeft($S.Shadow, $x + $S.SpriteW * 0.2)
+    $S.Text.Text = '{0:N0} %' -f $V
 }

@@ -1878,3 +1878,45 @@ public static class LagMon
         return outp.ToArray();
     }
 }
+// Packs de thème : détourage d'un sprite sur fond clair (GIF trouvé sur Internet, souvent sans transparence)
+public static class SpriteTools
+{
+    // Pixels BGRA. Efface le fond clair et peu coloré relié aux bords de l'image (remplissage depuis les bords) :
+    // les zones claires entourées par le contour du personnage (reflet dans l'oeil...) restent intactes.
+    public static int RemoveLightBackground(byte[] px, int w, int h, int minLevel, int maxSpread)
+    {
+        bool[] seen = new bool[w * h];
+        Stack<int> todo = new Stack<int>();
+        for (int x = 0; x < w; x++) { todo.Push(x); todo.Push((h - 1) * w + x); }
+        for (int y = 0; y < h; y++) { todo.Push(y * w); todo.Push(y * w + w - 1); }
+        int cleared = 0;
+        while (todo.Count > 0)
+        {
+            int i = todo.Pop();
+            if (i < 0 || i >= w * h || seen[i]) continue;
+            seen[i] = true;
+            int o = i * 4;
+            int b = px[o], g = px[o + 1], r = px[o + 2], a = px[o + 3];
+            int mn = Math.Min(r, Math.Min(g, b)), mx = Math.Max(r, Math.Max(g, b));
+            if (a != 0 && (mn < minLevel || mx - mn > maxSpread)) continue;
+            px[o + 3] = 0; cleared++;
+            int x0 = i % w;
+            if (x0 > 0) todo.Push(i - 1);
+            if (x0 < w - 1) todo.Push(i + 1);
+            if (i >= w) todo.Push(i - w);
+            if (i < w * (h - 1)) todo.Push(i + w);
+        }
+        return cleared;
+    }
+
+    // Rectangle des pixels visibles : x0, y0, x1, y1 (x1 et y1 exclus), ou null si l'image est vide
+    public static int[] OpaqueBounds(byte[] px, int w, int h)
+    {
+        int x0 = w, y0 = h, x1 = -1, y1 = -1;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                if (px[(y * w + x) * 4 + 3] > 16) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+        if (x1 < 0) return null;
+        return new int[] { x0, y0, x1 + 1, y1 + 1 };
+    }
+}

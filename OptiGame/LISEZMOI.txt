@@ -1,4 +1,4 @@
-﻿Nevermind 1.0.64
+﻿Nevermind 1.0.65
 Analyse et optimisation gaming pour Windows 10 et 11
 =====================================================
 
@@ -220,6 +220,10 @@ PARAMÈTRES (roue crantée en haut à droite)
   (orange, rose et or), Terminal (vert phosphore, police de code), Arcade
   (jaune, rouge et bleu sur bleu nuit) et Rubis (rouge, jaune et bleu sur gris).
   Nevermind se relance quelques secondes pour appliquer le thème.
+  Packs de thème : un pack ajoute ses propres images (par exemple un personnage
+  qui court pendant le chargement). « Importer un pack » prend un zip ; le pack
+  reste sur ce PC (dossier des données de Nevermind). Pour le partager, envoie
+  le zip à tes potes.
   Mises à jour : « Recevoir les versions bêta » pour tester les nouveautés avant
   tout le monde.
   Aide : « Signaler un problème » crée un fichier sur ton bureau (journal de
