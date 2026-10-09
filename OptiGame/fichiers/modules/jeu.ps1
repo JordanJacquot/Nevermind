@@ -941,7 +941,8 @@ function New-OverlayPanelCard([string]$Title, [string]$Text, [string]$Color) {
     $dot.Width = 9; $dot.Height = 9; $dot.Fill = Get-Brush $Color; $dot.Effect = New-Glow $Color 10 0.9
     $dot.VerticalAlignment = 'Center'; $dot.Margin = New-Thickness 0 1 10 0
     [void]$head.Children.Add($dot)
-    [void]$head.Children.Add((New-Text $Title 15 '#FFFFFF' -Bold))
+    $ht = New-Text $Title 15 '#FFFFFF' -Bold; Set-PackFont $ht
+    [void]$head.Children.Add($ht)
     [void]$sp.Children.Add($head)
     if ($Text) {
         $d = New-Text $Text 12 '#8E88A8'

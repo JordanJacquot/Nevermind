@@ -754,7 +754,21 @@ $script:T.Run.Add_Tick({
                     Stop-StartupLoader; $ui.StartupOverlay.Visibility = 'Collapsed'
                     $script:ThemePack = $oldPack; $ThemePack = $oldPack
                 }
-                "GIF détouré (reflet gardé), zip importé, carte « Pack » dans Thème, personnage qui avance avec la barre"
+                # Police de pack : la fenêtre entière se charge avec (titres, onglets, boutons), et en mode « tout »
+                $oldFont = $PackFont; $oldPack2 = $ThemePack
+                try {
+                    $script:PackFont = 'file:///C:/Windows/Fonts/#Consolas'; $PackFont = $script:PackFont
+                    foreach ($scope in 'titres', 'tout') {
+                        $script:ThemePack = @{ FontScope = $scope }; $ThemePack = $script:ThemePack
+                        $raw = [IO.File]::ReadAllText((Join-Path $ModulesDir 'interface.xaml'), [Text.Encoding]::UTF8)
+                        $w = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader ([xml](Convert-ThemeXaml $raw $ThemeId))))
+                        Assert-Test ($null -ne $w) "fenêtre non chargée avec la police du pack ($scope)"
+                        $w.Close()
+                    }
+                    $tb = New-Text 'Test' 14; Set-PackFont $tb
+                    Assert-Test ([string]$tb.FontFamily -like '*Consolas*') "police non posée : $($tb.FontFamily)"
+                } finally { $script:PackFont = $oldFont; $PackFont = $oldFont; $script:ThemePack = $oldPack2; $ThemePack = $oldPack2 }
+                "GIF détouré (reflet gardé), zip importé, carte « Pack » dans Thème, personnage qui avance avec la barre, police du pack chargée"
             }
             Test-Step 'Signaler un problème (Paramètres, Aide)' {
                 Show-ReportPanel; $script:ReportBox.Text = 'Le jeu rame depuis la mise à jour'; Wait-TestMs 400; Save-TestShot 'signaler'; Hide-TestPanel

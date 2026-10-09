@@ -483,6 +483,7 @@ function New-SectionTitle([string]$Text) {
     $r1 = New-Object System.Windows.Documents.Run '●  '
     $r1.Foreground = Get-Brush $NexoCyan
     $r2 = New-Object System.Windows.Documents.Run $Text.ToUpper()
+    Set-PackFont $title
     $r2.Foreground = Get-Brush '#8E88A8'
     $title.Inlines.Add($r1); $title.Inlines.Add($r2)
     $title.Margin = New-Thickness 0 16 0 2
@@ -880,6 +881,7 @@ function Start-SpriteLoader {
     $txt = New-Text '0 %' 15 '#FFFFFF' -Bold
     $txt.Width = $W; $txt.TextAlignment = 'Center'
     $txt.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
+    Set-PackFont $txt 0.85
     [System.Windows.Controls.Canvas]::SetTop($txt, $barY + 22)
     [void]$cv.Children.Add($txt)
     [void]$lh.Children.Add($cv)

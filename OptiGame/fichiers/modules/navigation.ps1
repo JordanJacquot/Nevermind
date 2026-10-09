@@ -69,6 +69,7 @@ function New-NeonRing([string]$Label, [double]$Value, [string[]]$Grad, [int]$Del
     $num = New-Text '0' 30 '#FFFFFF' -Bold
     $num.HorizontalAlignment = 'Center'
     $num.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
+    Set-PackFont $num 0.7
     $u = New-Text 'sur 100' 11 '#8E88A8'
     $u.HorizontalAlignment = 'Center'; $u.Margin = New-Thickness 0 -4 0 0
     [void]$center.Children.Add($num); [void]$center.Children.Add($u)
@@ -128,7 +129,8 @@ function Build-Hub {
         $dot.Effect = New-Glow $fam.Color 12 0.9
         $dot.VerticalAlignment = 'Center'; $dot.Margin = New-Thickness 0 1 10 0
         [void]$head.Children.Add($dot)
-        [void]$head.Children.Add((New-Text $fam.Title 16 '#FFFFFF' -Bold))
+        $ft = New-Text $fam.Title 16 '#FFFFFF' -Bold; Set-PackFont $ft
+        [void]$head.Children.Add($ft)
         [void]$sp.Children.Add($head)
         $sub = New-Text $fam.Sub 12 '#8E88A8'
         $sub.Margin = New-Thickness 28 2 0 12
@@ -157,7 +159,8 @@ function Build-Hub {
             Add-ToGrid $g $ic 0
             $txt = New-Object System.Windows.Controls.StackPanel
             $txt.VerticalAlignment = 'Center'; $txt.Margin = New-Thickness 12 0 8 0
-            [void]$txt.Children.Add((New-Text $pg.Title 14.5 '#FFFFFF' -Semi))
+            $rt = New-Text $pg.Title 14.5 '#FFFFFF' -Semi; Set-PackFont $rt
+            [void]$txt.Children.Add($rt)
             $stat = New-Text ' ' 12 $fam.Color -Semi
             $stat.TextTrimming = 'CharacterEllipsis'; $stat.TextWrapping = 'NoWrap'
             [void]$txt.Children.Add($stat)
@@ -243,6 +246,7 @@ function Set-HubCardLook([string]$Look, $Art) {
 function New-HubTag([string]$Text, [string]$Color) {
     $t = New-Text $Text 11.5 $Color -Bold
     $t.FontFamily = New-Object System.Windows.Media.FontFamily $MonoFont
+    Set-PackFont $t 0.85
     $t
 }
 
@@ -371,6 +375,7 @@ function Update-HubTodo($A) {
     Set-HubCardLook $(if ($art) { 'game' } else { 'todo' }) $art
     [void]$p.Children.Add($tag)
     $t = New-Text $title 22 '#FFFFFF' -Bold
+    Set-PackFont $t
     $t.Margin = New-Thickness 0 8 0 0; $t.TextWrapping = 'Wrap'; $t.MaxWidth = 460; $t.HorizontalAlignment = 'Left'
     [void]$p.Children.Add($t)
     if ($detail) {

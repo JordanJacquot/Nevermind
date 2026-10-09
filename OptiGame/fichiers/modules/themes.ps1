@@ -43,6 +43,7 @@ $Theme = $AppThemes[$ThemeId]
 #   Base              thème de couleurs utilisé (neon, crepuscule, terminal, arcade, rubis)
 #   Hello, Ready      bonjour de l'accueil (« {0} » = prénom) et fin du chargement (facultatifs)
 #   Loader            écran de chargement : { File = planche PNG (images côte à côte), Frames, Delay (ms), Flip }
+#   Font, FontScope   police du pack (fichier .ttf) : sur les titres, onglets, boutons et chiffres (« titres »), ou partout (« tout »)
 # ---------------------------------------------------------------------------
 $PacksDir = Join-Path $DataDir 'packs'
 if ($env:OPTIGAME_TEST -and $env:OPTIGAME_PACKS) { $PacksDir = $env:OPTIGAME_PACKS }
@@ -52,7 +53,11 @@ function Get-ThemePack([string]$Id) {
     $f = Join-Path $dir 'pack.json'
     if (-not (Test-Path -LiteralPath $f)) { return $null }
     try { $j = Get-Content -LiteralPath $f -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Write-Log "Pack $Id illisible : $_"; return $null }
-    $p = @{ Id = $Id; Dir = $dir; Name = [string]$j.Name; Desc = [string]$j.Desc; Base = [string]$j.Base; Hello = [string]$j.Hello; Ready = [string]$j.Ready; Loader = $null }
+    $p = @{ Id = $Id; Dir = $dir; Name = [string]$j.Name; Desc = [string]$j.Desc; Base = [string]$j.Base; Hello = [string]$j.Hello; Ready = [string]$j.Ready; Loader = $null; Font = $null; FontScope = 'titres' }
+    if ($j.Font -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Font)))) {
+        $p.Font = Join-Path $dir ([string]$j.Font)
+        if ([string]$j.FontScope -eq 'tout') { $p.FontScope = 'tout' }
+    }
     if (-not $p.Name) { $p.Name = $Id }
     if (-not $AppThemes.Contains($p.Base)) { $p.Base = 'neon' }
     if ($j.Loader -and $j.Loader.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Loader.File)))) {
@@ -71,6 +76,26 @@ $ThemePack = $null
 if ($ThemeSetting -like 'pack:*') {
     $ThemePack = Get-ThemePack $ThemeSetting.Substring(5)
     if ($ThemePack) { $ThemeId = $ThemePack.Base; $Theme = $AppThemes[$ThemeId] }
+}
+
+# Police du pack, utilisable partout comme un nom de police (« file:///dossier/#Nom, police de secours »)
+$PackFont = $null
+if ($ThemePack -and $ThemePack.Font) {
+    try {
+        $gt = New-Object System.Windows.Media.GlyphTypeface (New-Object Uri $ThemePack.Font)
+        $fam = @($gt.FamilyNames.Values)[0]
+        $PackFont = 'file:///' + ($ThemePack.Dir -replace '\\', '/') + '/#' + $fam
+    } catch { Write-Log "Police du pack illisible : $_" }
+}
+
+# Texte en police du pack, net (une police pixel floutée par le lissage perd tout son charme)
+# La police pixel est bien plus large qu'une police normale : le texte est réduit d'autant (Scale)
+function Set-PackFont($El, [double]$Scale = 0.82) {
+    if (-not $PackFont -or -not $El) { return }
+    if ($Scale -ne 1 -and $El.FontSize) { $El.FontSize = [math]::Round($El.FontSize * $Scale) }
+    $El.FontFamily = New-Object System.Windows.Media.FontFamily "$PackFont, Segoe UI Variable Display, Segoe UI"
+    [System.Windows.Media.TextOptions]::SetTextRenderingMode($El, 'Aliased')
+    [System.Windows.Media.TextOptions]::SetTextFormattingMode($El, 'Display')
 }
 
 # Un GIF (fond clair accepté) devient une planche PNG transparente, images côte à côte, toutes à la même hauteur.
@@ -195,7 +220,24 @@ function ConvertTo-ThemeHex([string]$Hex, [string]$Id = $ThemeId) {
 }
 
 # Texte de la fenêtre (interface.xaml) traduit avant d'être chargé
+# Police du pack dans la fenêtre : titres (style H1, H2, mot « Nevermind » du chargement) ;
+# avec FontScope « tout », toute l'app
+function Add-PackFontXaml([string]$Text) {
+    $spec = [Security.SecurityElement]::Escape("$PackFont, Segoe UI Variable Display, Segoe UI")
+    $crisp = '<Setter Property="TextOptions.TextRenderingMode" Value="Aliased"/><Setter Property="TextOptions.TextFormattingMode" Value="Display"/>'
+    $Text = $Text.Replace('Segoe UI Variable Display, Segoe UI', $spec)
+    # (pas les boutons : la police pixel, bien plus large, couperait leur texte)
+    foreach ($style in '<Style x:Key="H2" TargetType="TextBlock">') {
+        $Text = $Text.Replace($style, $style + '<Setter Property="FontFamily" Value="' + $spec + '"/>' + $crisp)
+    }
+    # H1 a déjà sa police (remplacée juste au-dessus) : seulement le rendu net
+    $Text = $Text.Replace('<Style x:Key="H1" TargetType="TextBlock">', '<Style x:Key="H1" TargetType="TextBlock">' + $crisp)
+    if ($ThemePack.FontScope -eq 'tout') { $Text = $Text.Replace('Segoe UI Variable Text, Segoe UI', $spec) }
+    $Text
+}
+
 function Convert-ThemeXaml([string]$Text, [string]$Id = $ThemeId) {
+    if ($PackFont -and $Id -eq $ThemeId) { $Text = Add-PackFontXaml $Text }
     if ($Id -eq 'neon') { return $Text }
     $th = $AppThemes[$Id]
     $Text = [regex]::Replace($Text, '(?<![&\w])#([0-9A-Fa-f]{8}|[0-9A-Fa-f]{6})(?![0-9A-Fa-f])', { param($m) ConvertTo-ThemeHex $m.Value $Id })
