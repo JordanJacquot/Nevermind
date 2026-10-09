@@ -8,6 +8,20 @@ $DataDir    = Join-Path $env:LOCALAPPDATA 'OptiGame'
 $BackupFile = Join-Path $DataDir 'sauvegarde.json'
 $LogFile    = Join-Path $DataDir 'journal.txt'
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
+# Journal gardé petit : au delà de 1 Mo, les anciennes lignes passent dans journal-ancien.txt.
+# Un gros fichier rouvert à chaque ligne écrite fait attendre la fenêtre (l'antivirus le relit à chaque fois).
+try {
+    $logInfo = New-Object IO.FileInfo $LogFile
+    if ($logInfo.Exists -and $logInfo.Length -gt 1MB) {
+        $logLines = [IO.File]::ReadAllLines($LogFile, [Text.Encoding]::UTF8)
+        if ($logLines.Count -gt 3000) {
+            $cut = $logLines.Count - 3000
+            [IO.File]::WriteAllLines((Join-Path $DataDir 'journal-ancien.txt'), [string[]]$logLines[0..($cut - 1)], (New-Object Text.UTF8Encoding($false)))
+            [IO.File]::WriteAllLines($LogFile, [string[]]$logLines[$cut..($logLines.Count - 1)], (New-Object Text.UTF8Encoding($false)))
+        }
+        $logLines = $null
+    }
+} catch {}
 
 function Write-Log([string]$Message) {
     $line = "$(Get-Date -Format s) $Message`r`n"

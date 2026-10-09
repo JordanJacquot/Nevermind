@@ -175,7 +175,7 @@ function Update-NetScanInfo {
     $ui.NetScanInfo.Children.Clear()
     $net = Get-ActiveNet
     if (-not $net) { [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Connexion' 'Aucune' 'bad')); return }
-    $ipInfo = if ($net.Ip) { @{ IPAddress = $net.Ip; PrefixLength = [int]$net.Prefix } } else { $null }
+    $ipInfo = if ($net.Ip) { @{ IPAddress = [string]@($net.Ip)[0]; PrefixLength = [int]@($net.Prefix)[0] } } else { $null }
     if ($net.Wifi) {
         $w = netsh wlan show interfaces 2>$null
         $ssid = ($w | Where-Object { $_ -match '^\s+SSID\s+:\s+(.+)$' } | Select-Object -First 1) -replace '^\s+SSID\s+:\s+', ''
@@ -307,7 +307,7 @@ function Invoke-NetworkScan {
     if ($script:NetScanning) { return }
     $net = Get-ActiveNet
     if (-not $net) { Show-Message 'Aucune connexion réseau détectée.'; return }
-    $ipInfo = if ($net.Ip) { @{ IPAddress = $net.Ip; PrefixLength = [int]$net.Prefix } } else { $null }
+    $ipInfo = if ($net.Ip) { @{ IPAddress = [string]@($net.Ip)[0]; PrefixLength = [int]@($net.Prefix)[0] } } else { $null }
     if (-not $ipInfo) { Show-Message 'Impossible de lire l''adresse de ce PC.'; return }
     $ips = @(Get-SubnetIps $ipInfo.IPAddress $ipInfo.PrefixLength)
     $script:NetScanning = $true
@@ -503,7 +503,7 @@ function Invoke-NetWatch {
     if ($script:NetScanning -or $script:TestRunning) { return }
     $net = Get-ActiveNet
     if (-not $net -or -not $net.Ip) { return }
-    $ips = @(Get-SubnetIps $net.Ip ([int]$net.Prefix))
+    $ips = @(Get-SubnetIps $net.Ip ([int]@($net.Prefix)[0]))
     $script:NetScanning = $true
     try {
         [OGNative]::Cancel = $false; [OGNative]::Found = 0; [OGNative]::Progress = 0

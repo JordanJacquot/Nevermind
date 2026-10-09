@@ -270,7 +270,43 @@ $DeviceStartup = '\b(Logitech|LGHUB|Razer|Corsair|iCUE|SteelSeries|HyperX|NGENUI
 $HostExes = '^(rundll32|cmd|powershell|pwsh|wscript|cscript|conhost|explorer|mshta)\.exe$'
 
 # Icône d'un programme, prête pour l'interface.
+# Infos des programmes (nom, éditeur, icône) lues en arrière plan : ouvrir un .exe réveille souvent l'antivirus,
+# ce qui figeait la fenêtre jusqu'à 2 s pendant le chargement. Gardées pour toute la session.
+$ExeFactsWork = {
+    param($list)
+    Add-Type -AssemblyName System.Drawing
+    foreach ($x in $list) {
+        $r = @{ Exe = $x.Exe; Company = ''; Product = ''; Desc = ''; IconExe = $x.Exe; Png = $null }
+        try { $vi = [Diagnostics.FileVersionInfo]::GetVersionInfo($x.Exe); $r.Company = ([string]$vi.CompanyName).Trim(); $r.Product = ([string]$vi.ProductName).Trim(); $r.Desc = ([string]$vi.FileDescription).Trim() } catch {}
+        # Applis lancées par un petit programme de mise à jour (Discord...) : l'icône de la vraie appli
+        if ($x.Cmd -match '--processStart\s+"?([^"\s]+\.exe)') {
+            $real = Get-ChildItem -LiteralPath (Split-Path $x.Exe -Parent) -Filter $matches[1] -Recurse -Depth 2 -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if ($real) { $r.IconExe = $real.FullName }
+        }
+        try {
+            $ic = [System.Drawing.Icon]::ExtractAssociatedIcon($r.IconExe)
+            if ($ic) { $bmp = $ic.ToBitmap(); $ms = New-Object IO.MemoryStream; $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png); $r.Png = $ms.ToArray(); $ms.Dispose(); $bmp.Dispose(); $ic.Dispose() }
+        } catch {}
+        $r
+    }
+}
+
+function Update-ExeFacts($Items) {
+    if (-not $script:ExeFacts) { $script:ExeFacts = @{} }
+    $todo = @($Items | Where-Object { $_.Exe -and -not $script:ExeFacts.ContainsKey(([string]$_.Exe).ToLower()) } | ForEach-Object { @{ Exe = [string]$_.Exe; Cmd = [string]$_.Commande } })
+    if (-not $todo.Count) { return }
+    foreach ($r in @(Invoke-Async $ExeFactsWork $todo)) { if ($r -and $r.Exe) { $script:ExeFacts[([string]$r.Exe).ToLower()] = $r } }
+}
+
 function Get-ExeIcon([string]$Exe) {
+    $f = if ($script:ExeFacts -and $Exe) { $script:ExeFacts[$Exe.ToLower()] } else { $null }
+    if ($f -and $f.Png) {
+        try {
+            $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+            $bi.BeginInit(); $bi.StreamSource = New-Object IO.MemoryStream (, [byte[]]$f.Png); $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
+            return $bi
+        } catch {}
+    }
     try {
         $ic = [System.Drawing.Icon]::ExtractAssociatedIcon($Exe)
         if (-not $ic) { return $null }
@@ -286,11 +322,11 @@ function Get-ExeIcon([string]$Exe) {
 function Get-StartupInfo($Item) {
     $name = $Item.Nom; $company = ''
     $isHost = [IO.Path]::GetFileName($Item.Exe) -match $HostExes
+    $facts = if ($script:ExeFacts -and $Item.Exe) { $script:ExeFacts[([string]$Item.Exe).ToLower()] } else { $null }
     try {
-        $vi = [Diagnostics.FileVersionInfo]::GetVersionInfo($Item.Exe)
-        $company = ([string]$vi.CompanyName).Trim()
+        if ($facts) { $company = $facts.Company; $prod = $facts.Product; $desc = $facts.Desc }
+        else { $vi = [Diagnostics.FileVersionInfo]::GetVersionInfo($Item.Exe); $company = ([string]$vi.CompanyName).Trim(); $prod = ([string]$vi.ProductName).Trim(); $desc = ([string]$vi.FileDescription).Trim() }
         if (-not $isHost) {
-            $prod = ([string]$vi.ProductName).Trim(); $desc = ([string]$vi.FileDescription).Trim()
             if ($prod -and $prod.Length -le 40 -and $prod -notmatch 'Windows.*(Operating System|Système)') { $name = $prod }
             elseif ($desc -and $desc.Length -le 50) { $name = $desc }
         }
@@ -313,7 +349,8 @@ function Get-StartupInfo($Item) {
     }
     # Applis lancées par un petit programme de mise à jour (Discord...) : on prend l'icône de la vraie appli.
     $iconExe = $Item.Exe
-    if ($Item.Commande -match '--processStart\s+"?([^"\s]+\.exe)') {
+    if ($facts) { $iconExe = $facts.IconExe }
+    elseif ($Item.Commande -match '--processStart\s+"?([^"\s]+\.exe)') {
         $real = Get-ChildItem -LiteralPath (Split-Path $Item.Exe -Parent) -Filter $matches[1] -Recurse -Depth 2 -File -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if ($real) { $iconExe = $real.FullName }
@@ -333,7 +370,9 @@ function Update-StartupCount {
 
 function Update-StartupList {
     $order = @{ safe = 0; choice = 1; keep = 2 }
-    $script:StartupEntries = @(Get-StartupItems | ForEach-Object { Get-StartupInfo $_ } |
+    $startItems = @(Get-StartupItems)
+    Update-ExeFacts $startItems
+    $script:StartupEntries = @($startItems | ForEach-Object { Get-StartupInfo $_ } |
         Sort-Object @{ Expression = { -not $_.Item.Enabled } }, @{ Expression = { $order[$_.Advice.Kind] } }, @{ Expression = { $_.Name } })
     $panel = $ui.StartupPanel
     $panel.Children.Clear()

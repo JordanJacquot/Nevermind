@@ -139,7 +139,7 @@ $ui.BtnSelectAll.Add_Click({
     foreach ($r in $script:TweakRows) { if ($r.CheckBox.IsEnabled) { $r.CheckBox.IsChecked = ($r.Tweak.Recommended -ne $false) } }
 })
 $ui.BtnApply.Add_Click({ Invoke-Safe { Invoke-ApplyTweaks } })
-$ui.BtnRefreshStartup.Add_Click({ Invoke-Safe { Update-StartupList } })
+$ui.BtnRefreshStartup.Add_Click({ Invoke-Safe { Clear-StartupItemsCache; Update-StartupList } })
 $ui.BtnDisableStartup.Add_Click({ Invoke-Safe { Disable-RecommendedStartup } })
 $ui.BtnPing.Add_Click({ Invoke-Safe { Invoke-NetTest } })
 $ui.BtnDnsApply.Add_Click({ Invoke-Safe { Set-Dns $ui.DnsCombo.SelectedIndex } })

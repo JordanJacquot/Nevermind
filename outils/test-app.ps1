@@ -693,15 +693,17 @@ $script:T.Run.Add_Tick({
                     Assert-Test ($moved -and $rest) "logo animé du pack : lancé $moved, retour au repos $rest"
                 } elseif ($script:LogoMark.Pack -and $script:LogoMark.Glow) {
                     # Logo d'un pack en Dofus : il lévite et brille, puis revient au repos
-                    Start-PackLogoShake; Wait-TestMs 200
-                    $moved = $null -ne $script:LogoMark.Img.Effect
+                    # Relevé pendant l'animation (un seul instant peut tomber pile au mauvais moment)
+                    Start-PackLogoShake; $moved = $false
+                    for ($k = 0; $k -lt 15 -and -not $moved; $k++) { Wait-TestMs 40; $moved = $null -ne $script:LogoMark.Img.Effect -or [math]::Abs([double]$script:LogoMark.Move.Y) -gt 0.5 }
                     Wait-TestMs 3200
                     $rest = $null -eq $script:LogoMark.Img.Effect -and $script:LogoMark.Move.Y -eq 0
                     Assert-Test ($moved -and $rest) "logo du pack : lévitation $moved, retour au repos $rest"
                 } elseif ($script:LogoMark.Pack) {
                     # Logo d'un pack : la balle se secoue puis revient droite
-                    Start-PackLogoShake; Wait-TestMs 150
-                    $moved = [math]::Abs($script:LogoMark.Rot.Angle) -gt 1
+                    # Angle relevé plusieurs fois : la balle peut repasser par zéro pile au moment d'un seul relevé
+                    Start-PackLogoShake; $moved = $false
+                    for ($k = 0; $k -lt 15 -and -not $moved; $k++) { Wait-TestMs 25; $moved = [math]::Abs($script:LogoMark.Rot.Angle) -gt 1 }
                     Wait-TestMs 700
                     $rest = [math]::Abs($script:LogoMark.Rot.Angle) -lt 0.01
                     Assert-Test ($moved -and $rest) "logo du pack : secoué $moved, retour au repos $rest"

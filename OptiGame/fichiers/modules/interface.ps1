@@ -89,7 +89,9 @@ function Invoke-Safe([scriptblock]$Action) {
     try { & $Action }
     catch {
         Write-Log "ERREUR: $($_.Exception.Message) $($_.InvocationInfo.PositionMessage)"
-        Show-Message "Oups, quelque chose s'est mal passé:`n`n$($_.Exception.Message)" 'Warning'
+        # Fichier et ligne en petit : une capture d'écran suffit pour retrouver le bug
+        $where = if ($_.InvocationInfo -and $_.InvocationInfo.ScriptName) { "`n`n($([IO.Path]::GetFileName($_.InvocationInfo.ScriptName)), ligne $($_.InvocationInfo.ScriptLineNumber))" } else { '' }
+        Show-Message "Oups, quelque chose s'est mal passé:`n`n$($_.Exception.Message)$where" 'Warning'
         Set-Status 'Une erreur est survenue.'
     }
     finally { Set-Busy $false }

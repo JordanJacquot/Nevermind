@@ -278,7 +278,17 @@ function Resolve-StartupExe([string]$Command) {
     $exe
 }
 
+# Liste gardée 10 s : le chargement la demande 4 fois de suite (analyse, page Démarrage, Sécurité), 0,2 s chacune
 function Get-StartupItems {
+    $c = $script:StartupItemsCache
+    if ($c -and ((Get-Date) - $c.At).TotalSeconds -lt 10) { return $c.Items }
+    $items = @(Read-StartupItems)
+    $script:StartupItemsCache = @{ At = Get-Date; Items = $items }
+    $items
+}
+function Clear-StartupItemsCache { $script:StartupItemsCache = $null }
+
+function Read-StartupItems {
     foreach ($s in $StartupSources) {
         if (-not $s.Path -or -not (Test-Path -LiteralPath $s.Path)) { continue }
         $entries = @()
@@ -494,6 +504,7 @@ function Get-GpuPreference([string]$Exe) {
 $SafeStartup = '\b(Blitz|Discord|Steam|Epic ?Games|EpicGamesLauncher|Spotify|OneDrive|Teams|Skype|EADesktop|EA app|Origin|Battle\.net|Ubisoft|Uplay|GOG Galaxy|GalaxyClient|Riot ?Client|Overwolf|Medal|Zoom|WhatsApp|Telegram|Messenger|CCleaner|MicrosoftEdgeAutoLaunch|Opera|Brave|Adobe Creative Cloud|CCXProcess|AdobeGCInvoker)\b|MicrosoftEdgeAutoLaunch|\bEA\b|EALauncher'
 
 function Set-StartupState($Item, [bool]$Enable) {
+    Clear-StartupItemsCache
     $first = if ($Enable) { 2 } else { 3 }
     Set-Reg $Item.Approved $Item.ValueName ([byte[]]@($first, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)) 'Binary'
 }

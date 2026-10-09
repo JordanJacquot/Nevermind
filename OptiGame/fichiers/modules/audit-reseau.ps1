@@ -429,15 +429,15 @@ function Update-NetAuditCard {
         $ui.NetAuditText.Text = 'Vérifie la sécurité de ton Wi-Fi, de ta box, de tes appareils et de ce PC. Tu obtiens une note, un rapport clair et des corrections en un clic.'
         return
     }
-    $col = Get-AuditColor ([int]$s.Score)
+    $col = Get-AuditColor ([int]@($s.Score)[0])
     $ui.NetAuditScore.Text = "$($s.Score)"
     $ui.NetAuditScore.Foreground = Get-Brush $col
     $ui.NetAuditScoreBox.BorderBrush = Get-Brush $col
     $parts = @()
-    if ([int]$s.Bad) { $parts += "$($s.Bad) à corriger" }
-    if ([int]$s.Warn) { $parts += "$($s.Warn) à surveiller" }
+    if ([int]@($s.Bad)[0]) { $parts += "$($s.Bad) à corriger" }
+    if ([int]@($s.Warn)[0]) { $parts += "$($s.Warn) à surveiller" }
     $detail = if ($parts.Count) { $parts -join ', ' } else { 'rien à corriger' }
-    $ui.NetAuditText.Text = "$(Get-AuditLabel ([int]$s.Score)). Dernier audit le $($s.Date) : $detail."
+    $ui.NetAuditText.Text = "$(Get-AuditLabel ([int]@($s.Score)[0])). Dernier audit le $($s.Date) : $detail."
     $ui.BtnNetAudit.Content = 'Relancer l''audit'
     $ui.BtnNetAuditView.Visibility = if ($script:NetAudit) { 'Visible' } else { 'Collapsed' }
 }

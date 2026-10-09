@@ -8,14 +8,32 @@ $MpCmd = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
 $script:SecButtons = New-Object System.Collections.ArrayList
 
 # État de l'antivirus et des protections de Windows.
-function Get-ProtectionStatus {
+# Lecture de fond lancée dès l'ouverture de l'app (OptiGame.ps1), en même temps que l'analyse du PC :
+# elle tourne pendant que la fenêtre attend, au lieu de la faire hoqueter pendant qu'elle construit les pages.
+function Start-ProtectionPrefetch {
+    $ps = [PowerShell]::Create()
+    $ps.RunspacePool = $script:Pool
+    [void]$ps.AddScript($SecDataWork.ToString()).AddArgument((Get-ProtectionArgs))
+    $script:SecPrefetch = @{ PS = $ps; Handle = $ps.BeginInvoke() }
+}
+
+function Get-ProtectionArgs {
     $riskDirs = @($env:TEMP, "$env:SystemDrive\Users\Public", $env:ProgramData, $env:APPDATA, $env:LOCALAPPDATA)
-    $arg = @{
+    @{
         UserDirs = @((Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'), [Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('MyDocuments'))
         Folders = @(Get-SuspectFolders); StartupExes = @(Get-StartupItems | Where-Object { $_.Enabled } | ForEach-Object { $_.Exe })
         RiskDirs = $riskDirs; Temp = $env:TEMP; Public = "$env:SystemDrive\Users\Public"; OwnTask = $AutoStartTask; OwnScript = (Join-Path $AppDir 'OptiGame.ps1')
     }
-    $d = Invoke-Async $SecDataWork $arg | Select-Object -First 1
+}
+
+function Get-ProtectionStatus {
+    $d = $null
+    if ($script:SecPrefetch) {
+        $pf = $script:SecPrefetch; $script:SecPrefetch = $null
+        Wait-Handle $pf.Handle
+        try { $d = @($pf.PS.EndInvoke($pf.Handle))[0] } catch { $d = $null } finally { $pf.PS.Dispose() }
+    }
+    if (-not $d) { $d = Invoke-Async $SecDataWork (Get-ProtectionArgs) | Select-Object -First 1 }
     $off = @($d.FirewallOff)
     @{
         Mp = $d.Mp; OtherAv = @($d.OtherAv); FirewallOff = $off; Firewall = -not $off.Count
