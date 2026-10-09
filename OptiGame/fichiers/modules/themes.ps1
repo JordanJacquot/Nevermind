@@ -145,7 +145,8 @@ function Set-PackFont($El, [double]$Scale = 0.82) {
 }
 
 # Un GIF (fond clair accepté) devient une planche PNG transparente, images côte à côte, toutes à la même hauteur.
-function Convert-GifToSheet([string]$Gif, [string]$OutPng, [int]$Height = 160) {
+# CropBottom : pixels du bas de chaque image à ignorer (un texte incrusté sous le personnage, par exemple)
+function Convert-GifToSheet([string]$Gif, [string]$OutPng, [int]$Height = 160, [int]$CropBottom = 0) {
     Add-Type -AssemblyName System.Drawing
     $img = [System.Drawing.Image]::FromFile($Gif)
     try {
@@ -163,6 +164,7 @@ function Convert-GifToSheet([string]$Gif, [string]$OutPng, [int]$Height = 160) {
             $data = $bmp.LockBits($rect, 'ReadWrite', $bmp.PixelFormat)
             $px = New-Object byte[] ($data.Stride * $bmp.Height)
             [Runtime.InteropServices.Marshal]::Copy($data.Scan0, $px, 0, $px.Length)
+            if ($CropBottom -gt 0) { for ($q = ($bmp.Height - $CropBottom) * $data.Stride; $q -lt $px.Length; $q += 4) { $px[$q + 3] = 0 } }
             # Fond : la couleur du coin de l'image (blanc, damier gris, mauve...), ou rien s'il est déjà transparent
             if ($px[3] -ne 0) { [void][SpriteTools]::RemoveBackgroundColor($px, $bmp.Width, $bmp.Height, $px[2], $px[1], $px[0], 60) }
             [void][SpriteTools]::RemoveLightBackground($px, $bmp.Width, $bmp.Height, 215, 28)
