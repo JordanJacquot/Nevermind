@@ -583,13 +583,22 @@ $script:T.Run.Add_Tick({
             Test-Step 'Identité Nevermind (nom, logo animé, couleurs)' {
                 Assert-Test ($Window.Title -eq 'Nevermind') "titre de la fenêtre : $($Window.Title)"
                 Assert-Test ($script:LogoMark -and $script:LogoWord -and $script:LogoWord.Text.Text -eq 'Nevermind') 'logo de la barre de gauche absent'
-                # Un saut de glitch déplace les calques puis les remet au repos
-                while ($script:LogoMark.Busy) { Wait-TestMs 100 }   # un saut automatique en cours
-                Start-NexoGlitch $script:LogoMark $script:LogoWord 1500
-                $moved = $script:LogoMark.Busy
-                Wait-TestMs 1900
-                $rest = [math]::Abs($script:LogoMark.Cyan.RenderTransform.X - $script:LogoMark.Rest[0] * $script:LogoMark.Size) -lt 0.01 -and -not $script:LogoMark.Busy
-                Assert-Test ($moved -and $rest) "glitch : en cours $moved, retour au repos $rest"
+                if ($script:LogoMark.Pack) {
+                    # Logo d'un pack : la balle se secoue puis revient droite
+                    Start-PackLogoShake; Wait-TestMs 150
+                    $moved = [math]::Abs($script:LogoMark.Rot.Angle) -gt 1
+                    Wait-TestMs 700
+                    $rest = [math]::Abs($script:LogoMark.Rot.Angle) -lt 0.01
+                    Assert-Test ($moved -and $rest) "logo du pack : secoué $moved, retour au repos $rest"
+                } else {
+                    # Un saut de glitch déplace les calques puis les remet au repos
+                    while ($script:LogoMark.Busy) { Wait-TestMs 100 }   # un saut automatique en cours
+                    Start-NexoGlitch $script:LogoMark $script:LogoWord 1500
+                    $moved = $script:LogoMark.Busy
+                    Wait-TestMs 1900
+                    $rest = [math]::Abs($script:LogoMark.Cyan.RenderTransform.X - $script:LogoMark.Rest[0] * $script:LogoMark.Size) -lt 0.01 -and -not $script:LogoMark.Busy
+                    Assert-Test ($moved -and $rest) "glitch : en cours $moved, retour au repos $rest"
+                }
                 # Plus aucun « OptiGame » visible dans la fenêtre (hors chemins de fichiers)
                 $seen = @()
                 foreach ($i in 0..($ui.Tabs.Items.Count - 1)) {

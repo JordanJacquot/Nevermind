@@ -685,6 +685,9 @@ function Start-NexoGlitch($Mark, $Word = $null, [int]$Ms = 360) {
 # Logo de la barre de gauche : saute au survol et de temps en temps (toutes les 6 à 12 s)
 function Initialize-NexoLogo($MarkHost, $WordHost) {
     if (-not $MarkHost -or -not $WordHost) { return }
+    if ($ThemePack -and $ThemePack.Logo) {
+        try { Initialize-PackLogo $MarkHost $WordHost; return } catch { Write-Log "Logo du pack : $_" }
+    }
     $script:LogoMark = New-NexoMark 30
     $script:LogoWord = New-NexoWord 22
     $MarkHost.Child = $script:LogoMark.Root
@@ -910,4 +913,42 @@ function Set-SpriteLoaderPos([double]$V) {
     [System.Windows.Controls.Canvas]::SetLeft($S.Img, $x)
     [System.Windows.Controls.Canvas]::SetLeft($S.Shadow, $x + $S.SpriteW * 0.2)
     $S.Text.Text = '{0:N0} %' -f $V
+}
+
+# Logo d'un pack de thème (image) : il se secoue au survol et de temps en temps, comme une balle qui hésite
+function Initialize-PackLogo($MarkHost, $WordHost) {
+    $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+    $bi.BeginInit(); $bi.UriSource = New-Object Uri $ThemePack.Logo; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
+    $img = New-Object System.Windows.Controls.Image
+    $img.Source = $bi; $img.Stretch = 'Uniform'
+    [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'HighQuality')
+    $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.85)
+    $rot = New-Object System.Windows.Media.RotateTransform 0
+    $img.RenderTransform = $rot
+    $MarkHost.Background = [System.Windows.Media.Brushes]::Transparent
+    $MarkHost.Padding = New-Thickness 2 2 2 2
+    $MarkHost.Child = $img
+    $script:LogoMark = @{ Pack = $true; Img = $img; Rot = $rot }
+    $script:LogoWord = New-NexoWord 22
+    $WordHost.Children.Clear(); [void]$WordHost.Children.Add($script:LogoWord.Root)
+    $shake = { Start-PackLogoShake }
+    $MarkHost.Add_MouseEnter($shake); $WordHost.Add_MouseEnter($shake)
+    $script:LogoTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $script:LogoTimer.Interval = [TimeSpan]::FromSeconds(7)
+    $script:LogoTimer.Add_Tick({
+        param($s, $e)
+        $s.Interval = [TimeSpan]::FromSeconds((Get-Random -Minimum 6 -Maximum 13))
+        if ($Window.IsVisible -and $Window.IsActive) { Start-PackLogoShake }
+    })
+    $script:LogoTimer.Start()
+}
+
+function Start-PackLogoShake {
+    $m = $script:LogoMark
+    if (-not $m -or -not $m.Pack) { return }
+    $a = New-Object System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames
+    foreach ($k in @(@(0, 0), @(110, -22), @(240, 18), @(360, -12), @(470, 6), @(580, 0))) {
+        [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.EasingDoubleKeyFrame ([double]$k[1]), ([System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::FromMilliseconds($k[0])))))
+    }
+    $m.Rot.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
 }

@@ -43,6 +43,7 @@ $Theme = $AppThemes[$ThemeId]
 #   Base              thème de couleurs utilisé (neon, crepuscule, terminal, arcade, rubis)
 #   Hello, Ready      bonjour de l'accueil (« {0} » = prénom) et fin du chargement (facultatifs)
 #   Loader            écran de chargement : { File = planche PNG (images côte à côte), Frames, Delay (ms), Flip }
+#   Logo              image à la place du N de Nevermind (PNG transparent, carré), qui se secoue de temps en temps
 #   Font, FontScope   police du pack (fichier .ttf) : sur les titres, onglets, boutons et chiffres (« titres »), ou partout (« tout »)
 # ---------------------------------------------------------------------------
 $PacksDir = Join-Path $DataDir 'packs'
@@ -54,6 +55,7 @@ function Get-ThemePack([string]$Id) {
     if (-not (Test-Path -LiteralPath $f)) { return $null }
     try { $j = Get-Content -LiteralPath $f -Raw -Encoding UTF8 | ConvertFrom-Json } catch { Write-Log "Pack $Id illisible : $_"; return $null }
     $p = @{ Id = $Id; Dir = $dir; Name = [string]$j.Name; Desc = [string]$j.Desc; Base = [string]$j.Base; Hello = [string]$j.Hello; Ready = [string]$j.Ready; Loader = $null; Font = $null; FontScope = 'titres' }
+    $p.Logo = if ($j.Logo -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Logo)))) { Join-Path $dir ([string]$j.Logo) } else { $null }
     if ($j.Font -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Font)))) {
         $p.Font = Join-Path $dir ([string]$j.Font)
         if ([string]$j.FontScope -eq 'tout') { $p.FontScope = 'tout' }
