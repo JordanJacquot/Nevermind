@@ -78,6 +78,9 @@ function Get-ThemePack([string]$Id) {
         }
     }
     $p.LogoGlow = [string]$j.LogoGlow
+    # Fond d'écran : image derrière toute l'app, sous un voile sombre (BackgroundOpacity = visibilité de l'image, 0 à 1)
+    $p.Background = if ($j.Background -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Background)))) { Join-Path $dir ([string]$j.Background) } else { $null }
+    $p.BackgroundOpacity = if ($j.BackgroundOpacity) { [math]::Min(1.0, [math]::Max(0.05, [double]$j.BackgroundOpacity)) } else { 0.35 }
     $p.LogoFrames = [math]::Max(1, [int]$j.LogoFrames); $p.LogoDelay = [math]::Max(30, [int]$j.LogoDelay)
     $p.Logo = if ($j.Logo -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Logo)))) { Join-Path $dir ([string]$j.Logo) } else { $null }
     if ($j.Font -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Font)))) {
@@ -348,6 +351,18 @@ function Add-ThemeDecor {
     $d = $ui.BackdropDeco
     if (-not $d) { return }
     $d.Children.Clear()
+    # Fond d'écran d'un pack : l'image, puis un voile sombre qui garde le texte lisible
+    if ($ThemePack -and $ThemePack.Background) {
+        $bi = New-Object System.Windows.Media.Imaging.BitmapImage
+        $bi.BeginInit(); $bi.UriSource = New-Object Uri $ThemePack.Background; $bi.DecodePixelWidth = 1920; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
+        $img = New-Object System.Windows.Controls.Image
+        $img.Source = $bi; $img.Stretch = 'UniformToFill'; $img.HorizontalAlignment = 'Center'; $img.VerticalAlignment = 'Center'
+        $img.Opacity = $ThemePack.BackgroundOpacity
+        [void]$d.Children.Add($img)
+        $veil = New-Object System.Windows.Shapes.Rectangle
+        $veil.Fill = New-RawGradient @('#99000000', '#33000000', '#AA000000') 0 1
+        [void]$d.Children.Add($veil)
+    }
     switch ($Theme.Decor) {
         'terminal' {
             # Lignes de balayage d'un vieil écran et une invite de commande dans le coin
