@@ -81,6 +81,10 @@ function Get-ThemePack([string]$Id) {
     # Fond d'écran : image derrière toute l'app, sous un voile sombre (BackgroundOpacity = visibilité de l'image, 0 à 1)
     $p.Background = if ($j.Background -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Background)))) { Join-Path $dir ([string]$j.Background) } else { $null }
     $p.BackgroundOpacity = if ($j.BackgroundOpacity) { [math]::Min(1.0, [math]::Max(0.05, [double]$j.BackgroundOpacity)) } else { 0.35 }
+    # Coin auquel l'image reste collée quand la fenêtre la recadre ("bas-droite", "haut", "gauche"...), centrée par défaut
+    $al = ([string]$j.BackgroundAlign).ToLowerInvariant()
+    $p.BackgroundAlignX = if ($al -match 'droite') { 'Right' } elseif ($al -match 'gauche') { 'Left' } else { 'Center' }
+    $p.BackgroundAlignY = if ($al -match 'bas') { 'Bottom' } elseif ($al -match 'haut') { 'Top' } else { 'Center' }
     $p.LogoFrames = [math]::Max(1, [int]$j.LogoFrames); $p.LogoDelay = [math]::Max(30, [int]$j.LogoDelay)
     $p.Logo = if ($j.Logo -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Logo)))) { Join-Path $dir ([string]$j.Logo) } else { $null }
     if ($j.Font -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Font)))) {
@@ -357,9 +361,10 @@ function Add-ThemeDecor {
     if ($ThemePack -and $ThemePack.Background) {
         $bi = New-Object System.Windows.Media.Imaging.BitmapImage
         $bi.BeginInit(); $bi.UriSource = New-Object Uri $ThemePack.Background; $bi.DecodePixelWidth = 1920; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
-        $img = New-Object System.Windows.Controls.Image
-        $img.Source = $bi; $img.Stretch = 'UniformToFill'; $img.HorizontalAlignment = 'Center'; $img.VerticalAlignment = 'Center'
-        $img.Opacity = $ThemePack.BackgroundOpacity
+        $brush = New-Object System.Windows.Media.ImageBrush $bi
+        $brush.Stretch = 'UniformToFill'; $brush.AlignmentX = $ThemePack.BackgroundAlignX; $brush.AlignmentY = $ThemePack.BackgroundAlignY
+        $img = New-Object System.Windows.Shapes.Rectangle
+        $img.Fill = $brush; $img.Opacity = $ThemePack.BackgroundOpacity
         [void]$d.Children.Add($img)
         $veil = New-Object System.Windows.Shapes.Rectangle
         $veil.Fill = New-RawGradient @('#99000000', '#33000000', '#AA000000') 0 1
