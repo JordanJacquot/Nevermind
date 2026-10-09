@@ -1126,7 +1126,7 @@
         <Border.RenderTransform><ScaleTransform x:Name="SettingsZoom" ScaleX="1" ScaleY="1" CenterX="430" CenterY="290"/></Border.RenderTransform>
         <Grid>
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="236"/>
+            <ColumnDefinition Width="262"/>
             <ColumnDefinition Width="*"/>
           </Grid.ColumnDefinitions>
           <!-- Colonne des onglets -->

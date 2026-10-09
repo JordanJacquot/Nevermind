@@ -360,13 +360,16 @@ function Build-ThemePanel {
         $nm = New-Object System.Windows.Controls.StackPanel
         $nm.Orientation = 'Horizontal'; $nm.Margin = New-Thickness 2 10 0 0
         $title = New-Text $ch.Name 14.5 '#FFFFFF' -Bold
+        $title.VerticalAlignment = 'Center'
         if ($ch.Font) { $title.FontFamily = New-Object System.Windows.Media.FontFamily $ch.Font }
         [void]$nm.Children.Add($title)
         foreach ($tag in @($(if ($ch.Pack) { 'Pack' }), $(if ($ch.Key -eq $current) { 'Actuel' })) | Where-Object { $_ }) {
             $badge = New-Object System.Windows.Controls.Border
-            $badge.CornerRadius = [System.Windows.CornerRadius]::new(8); $badge.Padding = New-Thickness 8 1 8 2; $badge.Margin = New-Thickness 8 2 0 0
+            $badge.CornerRadius = [System.Windows.CornerRadius]::new(8); $badge.Padding = New-Thickness 8 2 8 2; $badge.Margin = New-Thickness 8 0 0 0
+            $badge.VerticalAlignment = 'Center'
             $badge.Background = New-RawBrush ('#33' + $th.P.Substring(1))
-            $badge.Child = New-Text $tag 11 '#FFFFFF' -Semi
+            $bt = New-Text $tag 11 '#FFFFFF' -Semi; $bt.VerticalAlignment = 'Center'
+            $badge.Child = $bt
             [void]$nm.Children.Add($badge)
         }
         [void]$sp.Children.Add($nm)

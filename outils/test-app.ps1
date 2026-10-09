@@ -745,7 +745,7 @@ $script:T.Run.Add_Tick({
                 Show-Settings 'theme'; Wait-TestMs 300
                 $cards = @($ui.SetTheme.Children[0].Children)
                 Assert-Test (@($cards | Where-Object { $_.Tag -eq "pack:$id" }).Count -eq 1 -and $cards[4].Tag -eq 'rubis') "$($cards.Count) cartes, pack d'essai absent"
-                Save-TestShot 'parametres-theme-pack'
+                $ui.SettingsScroll.ScrollToEnd(); Wait-TestMs 200; Save-TestShot 'parametres-theme-pack'
                 Set-AppTheme "pack:$id"
                 Assert-Test ((Get-Setting 'Theme' '') -eq "pack:$id") 'pack non choisi'
                 Set-Setting 'Theme' 'neon'; $script:ThemePick = $null; Hide-Settings
