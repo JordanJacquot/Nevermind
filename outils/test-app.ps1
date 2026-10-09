@@ -478,6 +478,14 @@ $script:T.Run.Add_Tick({
                     Assert-Test ([MouseHook]::Running) 'écoute de la souris non lancée'
                     Unregister-OrgHotkeys
                     Assert-Test (-not [MouseHook]::Running) 'écoute de la souris toujours active'
+                    # Touche déjà réservée par un autre programme : signalée dans la page au lieu d'échouer en silence
+                    $hMain = (New-Object System.Windows.Interop.WindowInteropHelper $Window).EnsureHandle()
+                    [void][OGNative]::AddHotKey($hMain, 7999, 3, 0x7A)
+                    try {
+                        (Get-OrgConfig).Hotkeys.P8 = 'Ctrl+Alt+F11'
+                        Register-OrgHotkeys; Unregister-OrgHotkeys; Build-OrgPanel
+                        Assert-Test ($script:OrgKeyFailed.ContainsKey('P8') -and [bool](Find-PageElement $ui.OrgPanel 'Déjà prise par un autre programme : choisis en une autre.')) 'touche déjà prise non signalée'
+                    } finally { [OGNative]::RemoveHotKey($hMain, 7999); (Get-OrgConfig).Hotkeys.P8 = 'F8'; $script:OrgKeyFailed = @{} }
                     # Barre flottante : un bouton par perso connecté
                     Show-OrgBar; Wait-TestMs 300
                     Assert-Test ($script:OrgBar.Items.Count -eq 3 -and $script:OrgBar.Win.IsVisible) "barre : $($script:OrgBar.Items.Count) boutons"
@@ -498,7 +506,7 @@ $script:T.Run.Add_Tick({
                     # Retour à la bibliothèque
                     $ui.BtnLibOrganizer.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Button]::ClickEvent))); Wait-TestMs 200
                     Assert-Test ($ui.LibBody.Visibility -eq 'Visible' -and $ui.LibTitle.Text -eq 'Mes jeux') 'bibliothèque non revenue'
-                    "titres lus, logos de classe, ordre retenu, suivant / précédent / touche par perso, touche et bouton de souris capturés, barre de $nBar persos"
+                    "titres lus, logos de classe, ordre retenu, suivant / précédent / touche par perso, touche et bouton de souris capturés, touche déjà prise signalée, barre de $nBar persos"
                 } finally {
                     $script:OrgFake = $null; $script:OrgFakeFg = $null; $script:OrgCapture = $null
                     try { Stop-OrgWatch } catch {}

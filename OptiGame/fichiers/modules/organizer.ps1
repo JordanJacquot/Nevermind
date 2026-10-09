@@ -190,18 +190,29 @@ function Register-OrgHotkeys {
             [System.Windows.Interop.HwndSource]::FromHwnd($h).AddHook($script:OrgHook)
         }
         $script:OrgKeyIds = @{}
+        if (-not $script:OrgKeyFailed) { $script:OrgKeyFailed = @{} }
+        $failed = $script:OrgKeyFailed
+        $before = $failed.Count
         [MouseHook]::Clear()
         $mouse = $false
         $actions = @('Next', 'Prev') + @(1..$OrgMaxKeys | ForEach-Object { "P$_" })
         foreach ($a in $actions) {
             $id = if ($a -eq 'Next') { $OrgHotkeyBase } elseif ($a -eq 'Prev') { $OrgHotkeyBase + 1 } else { $OrgHotkeyBase + 10 + [int]$a.Substring(1) }
             $ms = ConvertTo-OrgMouse $c.Hotkeys[$a]
-            if ($ms) { [MouseHook]::Bind($ms.Mods, $ms.Button, $id); $script:OrgKeyIds[$id] = $a; $mouse = $true; continue }
+            if ($ms) { [MouseHook]::Bind($ms.Mods, $ms.Button, $id); $script:OrgKeyIds[$id] = $a; $mouse = $true; $failed.Remove($a); continue }
             $hk = ConvertTo-OrgHotkey $c.Hotkeys[$a]
-            if (-not $hk) { continue }
-            if ([OGNative]::AddHotKey($h, $id, [uint32]$hk.Mods, [uint32]$hk.Vk)) { $script:OrgKeyIds[$id] = $a }
+            if (-not $hk) { $failed.Remove($a); continue }
+            # Touche déjà réservée par un autre programme (Discord, logiciel du clavier, overlay...) : Windows la refuse
+            if ([OGNative]::AddHotKey($h, $id, [uint32]$hk.Mods, [uint32]$hk.Vk)) { $script:OrgKeyIds[$id] = $a; $failed.Remove($a) } else { $failed[$a] = $c.Hotkeys[$a] }
         }
-        if ($mouse -and -not [MouseHook]::Start($h)) { Write-Log 'Organizer : boutons de souris indisponibles (écoute refusée par Windows).' }
+        if ($mouse -and -not [MouseHook]::Start($h)) {
+            Write-Log 'Organizer : boutons de souris indisponibles (écoute refusée par Windows).'
+            foreach ($a in $actions) { if (ConvertTo-OrgMouse $c.Hotkeys[$a]) { $failed[$a] = $c.Hotkeys[$a] } }
+        }
+        # Journal : seulement quand le résultat change (pas à chaque retour dans Dofus)
+        $sum = "$($script:OrgKeyIds.Count) pris$(if ($failed.Count) { ", refusés : $(($failed.Keys | Sort-Object | ForEach-Object { "$_ = $($failed[$_])" }) -join ', ')" })"
+        if ($sum -ne $script:OrgKeysLog) { $script:OrgKeysLog = $sum; Write-Log "Organizer : Dofus devant, raccourcis $sum" }
+        if ($failed.Count -ne $before -and $script:OrgViewOn) { Build-OrgPanel }
         $script:OrgKeysHandle = $h
         $script:OrgKeysOn = $true
     } catch { Write-Log "Organizer, raccourcis : $_" }
@@ -244,6 +255,10 @@ function Update-OrgWatch([switch]$Full) {
         foreach ($x in $list) { if ($x.Online) { $script:OrgHwnds[[int64]$x.Hwnd] = $true; if ($x.Pid) { $script:OrgPids[[int]$x.Pid] = $true } } }
         if ($sig -ne $script:OrgSig) {
             $script:OrgSig = $sig
+            # Journal : ce que l'organizer voit (aide à comprendre un souci sur le PC d'un pote)
+            $seen = @($list | Where-Object { $_.Online } | ForEach-Object { "$(if ($_.Name) { $_.Name } else { 'connexion' })$(if ($_.Class) { " ($($_.Class))" }) pid $($_.Pid)" })
+            Write-Log "Organizer : $($seen.Count) fenêtre(s) Dofus$(if ($seen.Count) { " : $($seen -join ', ')" })"
+            if ($null -eq $script:OrgFake) { foreach ($w in @(Get-DofusWindows)) { if (-not $script:OrgTitles) { $script:OrgTitles = @{} }; if (-not $script:OrgTitles.ContainsKey($w.Title)) { $script:OrgTitles[$w.Title] = $true; Write-Log "Organizer : titre vu « $($w.Title) »" } } }
             if ($script:OrgViewOn -and -not $script:OrgDragging) { Build-OrgPanel }
             $script:OrgBarSig = $null
         }
@@ -571,8 +586,12 @@ function Set-OrgCapturedKey([string]$Text) {
 function New-OrgKeyRow([string]$Label, [string]$Action) {
     $g = New-Grid @('*', 'Auto')
     $g.Margin = New-Thickness 0 0 0 8
-    $l = New-Text $Label 13 '#EEEBF7' -Semi
+    $l = New-Object System.Windows.Controls.StackPanel
     $l.VerticalAlignment = 'Center'
+    [void]$l.Children.Add((New-Text $Label 13 '#EEEBF7' -Semi))
+    if ($script:OrgKeyFailed -and $script:OrgKeyFailed.ContainsKey($Action) -and $script:OrgKeyFailed[$Action] -eq (Get-OrgConfig).Hotkeys[$Action]) {
+        [void]$l.Children.Add((New-Text 'Déjà prise par un autre programme : choisis en une autre.' 11.5 $Colors.bad))
+    }
     Add-ToGrid $g $l 0
     Add-ToGrid $g (New-OrgKeyButton $Action) 1
     $g
