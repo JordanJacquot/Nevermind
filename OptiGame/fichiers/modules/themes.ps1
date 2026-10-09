@@ -124,7 +124,8 @@ function Convert-GifToSheet([string]$Gif, [string]$OutPng, [int]$Height = 160) {
         $fd = New-Object System.Drawing.Imaging.FrameDimension $img.FrameDimensionsList[0]
         $n = $img.GetFrameCount($fd)
         $delay = 100
-        try { $pi = $img.GetPropertyItem(0x5100); $delay = [math]::Max(20, 10 * [BitConverter]::ToInt32($pi.Value, 0)) } catch {}
+        # Durée la plus courante des images (la première dure souvent plus longtemps que les autres)
+        try { $pi = $img.GetPropertyItem(0x5100); $ds = @(for ($k = 0; $k + 3 -lt $pi.Value.Length; $k += 4) { [BitConverter]::ToInt32($pi.Value, $k) }); $delay = [math]::Max(20, 10 * [int](($ds | Group-Object | Sort-Object Count -Descending | Select-Object -First 1).Name)) } catch {}
         $frames = @(); $box = $null
         for ($i = 0; $i -lt $n; $i++) {
             [void]$img.SelectActiveFrame($fd, $i)
