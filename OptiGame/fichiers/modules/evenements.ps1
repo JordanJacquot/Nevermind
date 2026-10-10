@@ -54,6 +54,19 @@ if (-not $env:OPTIGAME_TEST) {
     $script:ShowWatch.Start()
 }
 
+# Croix (ou Alt + F4) : on demande avant de quitter. Les fermetures voulues (Quitter près de l'horloge,
+# mise à jour, changement de thème) et l'arrêt du PC passent sans question.
+[Microsoft.Win32.SystemEvents]::add_SessionEnding({ $script:AllowClose = $true })
+$Window.Add_Closing({
+    param($s, $e)
+    if ($script:AllowClose -or $env:OPTIGAME_TEST) { return }
+    $e.Cancel = $true
+    $choice = ''
+    try { $choice = Show-QuitDialog } catch { Write-Log "Fenêtre Quitter : $_"; $choice = 'quit' }
+    if ($choice -eq 'quit') { $script:AllowClose = $true; $null = $Window.Dispatcher.BeginInvoke([Action]{ $Window.Close() }) }
+    elseif ($choice -eq 'tray') { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } }
+})
+
 $Window.Add_Closed({
     $script:Closing = $true
     try { if ($script:ShowWatch) { $script:ShowWatch.Stop() } } catch {}

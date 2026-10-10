@@ -1277,6 +1277,42 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($txt -notmatch [regex]::Escape($env:USERNAME)) 'le nom d''utilisateur apparaît'
                 "$($names.Count) fichiers"
             }
+            Test-Step 'Fenêtre Quitter (croix)' {
+                # La fenêtre est modale : un minuteur la regarde, la capture puis clique à la place de l'utilisateur
+                $script:QuitSeen = $null
+                $qt = New-Object System.Windows.Threading.DispatcherTimer
+                $qt.Interval = [TimeSpan]::FromMilliseconds(500)
+                $qt.Add_Tick({
+                    param($s, $e)
+                    $s.Stop()
+                    $d = $script:QuitDialog
+                    if (-not $d) { return }
+                    try {
+                        $c = $d.Content; $c.UpdateLayout()
+                        $script:QuitSeen = @{ Ask = [bool](Find-PageElement $c 'Voulez-vous vraiment quitter ?'); Quit = [bool](Find-PageElement $c 'Quitter'); Tray = [bool](Find-PageElement $c 'Réduire') }
+                        $qw = [int]$c.ActualWidth + 28; $qh = [int]$c.ActualHeight + 28
+                        $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap($qw, $qh, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32)
+                        $rtb.Render($c)
+                        $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder; $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
+                        $fs = [IO.File]::Create((Join-Path $script:T.Dir 'captures\quitter.png')); $enc.Save($fs); $fs.Close()
+                        $b = Find-PageElement $c 'Réduire'
+                        $b.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Button]::ClickEvent)))
+                    } catch { Write-Log "Test fenêtre Quitter : $_" }
+                    finally { if ($script:QuitDialog) { $script:QuitDialog.Close() } }
+                })
+                $qt.Start()
+                $r = Show-QuitDialog
+                Assert-Test ($script:QuitSeen -and $script:QuitSeen.Ask -and $script:QuitSeen.Quit -and $script:QuitSeen.Tray) "fenêtre : $(if ($script:QuitSeen) { ($script:QuitSeen.GetEnumerator() | ForEach-Object { "$($_.Key) $($_.Value)" }) -join ', ' } else { 'pas affichée' })"
+                Assert-Test ($r -eq 'tray') "choix : $r au lieu de Réduire"
+                # Échap : rien ne se passe
+                $qt2 = New-Object System.Windows.Threading.DispatcherTimer
+                $qt2.Interval = [TimeSpan]::FromMilliseconds(400)
+                $qt2.Add_Tick({ param($s, $e) $s.Stop(); if ($script:QuitDialog) { $script:QuitDialog.Close() } })
+                $qt2.Start()
+                $r2 = Show-QuitDialog
+                Assert-Test (-not $r2) "Échap ou fermeture : $r2"
+                'question posée, Quitter et Réduire proposés, Réduire choisi, fermeture sans choix sans effet'
+            }
             Test-Step 'Réduire dans la zone de notification' {
                 $Window.WindowState = 'Minimized'; Wait-TestMs 500
                 Assert-Test (-not $Window.IsVisible) 'la fenêtre reste dans la barre des tâches'

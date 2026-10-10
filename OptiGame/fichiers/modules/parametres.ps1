@@ -430,5 +430,6 @@ function Set-AppTheme([string]$Id) {
     Write-Log "Thème : $Id"
     if ($env:OPTIGAME_TEST) { Set-Status "Thème « $Id » choisi (copie de test : pas de relance)."; return }
     $script:Relaunch = Join-Path $AppDir 'OptiGame.ps1'
+    $script:AllowClose = $true
     $Window.Close()
 }

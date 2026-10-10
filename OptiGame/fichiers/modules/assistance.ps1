@@ -180,7 +180,7 @@ function Get-TrayIcon {
         $ni.Text = 'Nevermind'
         $menu = New-Object System.Windows.Forms.ContextMenuStrip
         [void]$menu.Items.Add('Ouvrir Nevermind', $null, { Show-MainWindow })
-        [void]$menu.Items.Add('Quitter', $null, { $Window.Close() })
+        [void]$menu.Items.Add('Quitter', $null, { $script:AllowClose = $true; $Window.Close() })
         $ni.ContextMenuStrip = $menu
         $ni.Add_MouseClick({ param($s, $e) if ([string]$e.Button -eq 'Left') { Show-MainWindow } })
         $ni.Add_BalloonTipClicked({
@@ -191,6 +191,56 @@ function Get-TrayIcon {
         $script:NotifyIcon = $ni
     }
     $script:NotifyIcon
+}
+
+# Croix de la fenêtre : « Voulez-vous vraiment quitter ? », Quitter ou Réduire près de l'horloge.
+# Renvoie 'quit', 'tray' ou '' (Échap ou clic à côté : on ne fait rien).
+function Show-QuitDialog {
+    $d = New-Object System.Windows.Window
+    $d.WindowStyle = 'None'; $d.AllowsTransparency = $true; $d.ResizeMode = 'NoResize'
+    $d.Background = [System.Windows.Media.Brushes]::Transparent
+    $d.SizeToContent = 'WidthAndHeight'; $d.ShowInTaskbar = $false; $d.Title = 'Nevermind'
+    if ($Window.IsVisible) { $d.Owner = $Window; $d.WindowStartupLocation = 'CenterOwner' } else { $d.WindowStartupLocation = 'CenterScreen' }
+    $d.Resources = $Window.Resources
+    $d.FontFamily = $Window.FontFamily
+    $card = New-Object System.Windows.Controls.Border
+    $card.Width = 380
+    $card.CornerRadius = [System.Windows.CornerRadius]::new($(if (($PackFont -and $ThemePack.FontPixel) -or $Theme.Decor -eq 'terminal') { 4 } else { 20 }))
+    $card.Background = Get-Brush '#F20B0820'
+    $card.BorderBrush = New-LinearBrush @('#9900E5FF', '#22FFFFFF', '#99FF2EB5') 0 0 1 1
+    $card.BorderThickness = New-Thickness 1 1 1 1
+    $card.Padding = New-Thickness 26 22 26 22
+    $card.Margin = New-Thickness 14 14 14 14
+    $card.Effect = New-Glow '#00E5FF' 24 0.35
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $t = New-Text 'Quitter Nevermind ?' 18 '#FFFFFF' -Bold
+    Set-PackFont $t
+    [void]$sp.Children.Add($t)
+    $q = New-Text 'Voulez-vous vraiment quitter ?' 13.5 '#EEEBF7'
+    $q.Margin = New-Thickness 0 10 0 0
+    [void]$sp.Children.Add($q)
+    $h = New-Text 'En réduisant, Nevermind reste ouvert près de l''horloge : mode jeu, compteur de FPS et organizer continuent.' 12 '#8E88A8'
+    $h.Margin = New-Thickness 0 6 0 0
+    [void]$sp.Children.Add($h)
+    $row = New-Object System.Windows.Controls.StackPanel
+    $row.Orientation = 'Horizontal'; $row.HorizontalAlignment = 'Right'; $row.Margin = New-Thickness 0 20 0 0
+    $bTray = New-Button 'Réduire' 'BtnSecondary'
+    $bTray.Margin = New-Thickness 0 0 10 0
+    $bQuit = New-Button 'Quitter' 'BtnPrimary'
+    $script:QuitChoice = ''
+    $bTray.Add_Click({ $script:QuitChoice = 'tray'; $script:QuitDialog.Close() })
+    $bQuit.Add_Click({ $script:QuitChoice = 'quit'; $script:QuitDialog.Close() })
+    [void]$row.Children.Add($bTray); [void]$row.Children.Add($bQuit)
+    [void]$sp.Children.Add($row)
+    $card.Child = $sp
+    $d.Content = $card
+    $d.Add_KeyDown({ param($s, $e) if ($e.Key -eq 'Escape') { $s.Close() } elseif ($e.Key -eq 'Return') { $script:QuitChoice = 'quit'; $s.Close() } })
+    $d.Add_MouseLeftButtonDown({ param($s, $e) try { $s.DragMove() } catch {} })
+    $script:QuitDialog = $d
+    $d.Add_ContentRendered({ $script:QuitButtons = @($bTray, $bQuit); [void]$bQuit.Focus() })
+    [void]$d.ShowDialog()
+    $script:QuitDialog = $null
+    $script:QuitChoice
 }
 
 # Fenêtre réduite : elle quitte la barre des tâches et reste près de l'horloge.

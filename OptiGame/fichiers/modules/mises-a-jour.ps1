@@ -119,6 +119,7 @@ function Install-Update {
     }
     Write-Log "Mise à jour installée: $AppVersion -> $($rel.Version)"
     $script:Relaunch = Join-Path $appRoot 'fichiers\OptiGame.ps1'
+    $script:AllowClose = $true
     $Window.Close()
 }
 
