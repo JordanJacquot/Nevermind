@@ -1277,6 +1277,21 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($txt -notmatch [regex]::Escape($env:USERNAME)) 'le nom d''utilisateur apparaît'
                 "$($names.Count) fichiers"
             }
+            Test-Step 'Logo : retour à l''accueil' {
+                Show-Page $GamesIndex; Wait-TestMs 200
+                $lw = $ui.Tabs.Template.FindName('LogoWordHost', $ui.Tabs)
+                $me = New-Object System.Windows.Input.MouseButtonEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0, [System.Windows.Input.MouseButton]::Left)
+                $me.RoutedEvent = [System.Windows.UIElement]::MouseLeftButtonUpEvent
+                $lw.RaiseEvent($me); Wait-TestMs 200
+                Assert-Test ($ui.Tabs.SelectedIndex -eq $HubIndex) "page $($ui.Tabs.SelectedIndex) après le clic sur le nom au lieu de l'accueil"
+                Show-Page $NetIndex; Wait-TestMs 200
+                $lm = $ui.Tabs.Template.FindName('LogoMarkHost', $ui.Tabs)
+                $me2 = New-Object System.Windows.Input.MouseButtonEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0, [System.Windows.Input.MouseButton]::Left)
+                $me2.RoutedEvent = [System.Windows.UIElement]::MouseLeftButtonUpEvent
+                $lm.RaiseEvent($me2); Wait-TestMs 200
+                Assert-Test ($ui.Tabs.SelectedIndex -eq $HubIndex) "page $($ui.Tabs.SelectedIndex) après le clic sur le logo au lieu de l'accueil"
+                'nom et logo ramènent à l''accueil'
+            }
             Test-Step 'Fenêtre Quitter (croix)' {
                 # La fenêtre est modale : un minuteur la regarde, la capture puis clique à la place de l'utilisateur
                 $script:QuitSeen = $null

@@ -239,6 +239,13 @@ $Window.Add_ContentRendered({
     if ($ui.VersionText) { $ui.VersionText.Text = "Nevermind $AppVersion" }
     # Logo Nevermind animé (le N et le mot « glitchent » au survol et de temps en temps)
     try { Initialize-NexoLogo $ui.Tabs.Template.FindName('LogoMarkHost', $ui.Tabs) $ui.Tabs.Template.FindName('LogoWordHost', $ui.Tabs) } catch { Write-Log "Logo: $_" }
+    # Clic sur le logo ou le nom Nevermind (en haut à gauche) : retour à l'accueil
+    foreach ($ln in 'LogoMarkHost', 'LogoWordHost') {
+        $lh = $ui.Tabs.Template.FindName($ln, $ui.Tabs)
+        if (-not $lh) { continue }
+        $lh.ToolTip = 'Retour à l''accueil'
+        $lh.Add_MouseLeftButtonUp({ Invoke-Safe { try { Hide-Settings } catch {}; if ($script:OrgViewOn) { Show-OrgView $false }; Show-Page $HubIndex } })
+    }
     $script:NavBar = $ui.Tabs.Template.FindName('NavBar', $ui.Tabs)
     $script:NavCrumb = $ui.Tabs.Template.FindName('NavCrumb', $ui.Tabs)
     $back = $ui.Tabs.Template.FindName('NavBack', $ui.Tabs)
