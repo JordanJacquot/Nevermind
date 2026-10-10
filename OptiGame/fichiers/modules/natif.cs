@@ -2069,3 +2069,53 @@ public static class MouseHook
         return CallNextHookEx(hook, code, wParam, lParam);
     }
 }
+
+// Identité de Nevermind dans la barre des tâches : sans elle, Windows range la fenêtre avec PowerShell
+// (icône de PowerShell). Identité propre + infos d'épinglage (une épingle relance Nevermind.exe avec son icône).
+public static class AppIdentity
+{
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern int SetCurrentProcessExplicitAppUserModelID(string id);
+    [DllImport("shell32.dll")] static extern int SHGetPropertyStoreForWindow(IntPtr hwnd, ref Guid iid, out IPropStore store);
+    [DllImport("ole32.dll")] static extern int PropVariantClear(ref PropVar pv);
+
+    [StructLayout(LayoutKind.Sequential)] struct PropKey { public Guid fmtid; public int pid; }
+    [StructLayout(LayoutKind.Explicit)] struct PropVar { [FieldOffset(0)] public short vt; [FieldOffset(8)] public IntPtr p; [FieldOffset(16)] public IntPtr p2; }
+
+    [Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IPropStore
+    {
+        [PreserveSig] int GetCount(out int count);
+        [PreserveSig] int GetAt(int index, out PropKey key);
+        [PreserveSig] int GetValue(ref PropKey key, out PropVar value);
+        [PreserveSig] int SetValue(ref PropKey key, ref PropVar value);
+        [PreserveSig] int Commit();
+    }
+
+    static readonly Guid AppModel = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+
+    public static bool SetProcessAppId(string id) { return SetCurrentProcessExplicitAppUserModelID(id) == 0; }
+
+    static void Set(IPropStore s, int pid, string value)
+    {
+        if (string.IsNullOrEmpty(value)) return;
+        var k = new PropKey { fmtid = AppModel, pid = pid };
+        var v = new PropVar { vt = 31, p = Marshal.StringToCoTaskMemUni(value) };
+        try { s.SetValue(ref k, ref v); } finally { PropVariantClear(ref v); }
+    }
+
+    // pid 5 : identité ; 2 : commande de relance ; 3 : icône ; 4 : nom affiché
+    public static bool SetWindow(IntPtr hwnd, string id, string relaunch, string icon, string name)
+    {
+        var iid = new Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99");
+        IPropStore s;
+        if (SHGetPropertyStoreForWindow(hwnd, ref iid, out s) != 0 || s == null) return false;
+        try
+        {
+            Set(s, 5, id);
+            if (!string.IsNullOrEmpty(relaunch)) { Set(s, 2, relaunch); Set(s, 3, icon); Set(s, 4, name); }
+            s.Commit();
+            return true;
+        }
+        finally { Marshal.ReleaseComObject(s); }
+    }
+}

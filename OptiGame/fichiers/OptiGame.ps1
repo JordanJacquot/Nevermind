@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    Nevermind 1.0.92
+    Nevermind 1.0.93
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -11,7 +11,7 @@
 #>
 param([switch]$Uninstall, [switch]$Demarrage)   # -Demarrage : lancé avec Windows, réduit près de l'horloge
 
-$AppVersion = '1.0.92'
+$AppVersion = '1.0.93'
 $UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -105,6 +105,7 @@ if (-not $env:OPTIGAME_TEST -and -not $Uninstall -and -not $Demarrage) {
         $Splash = New-Object System.Windows.Window
         $Splash.WindowStyle = 'None'; $Splash.ResizeMode = 'NoResize'; $Splash.WindowStartupLocation = 'CenterScreen'
         $Splash.Width = 360; $Splash.Height = 190; $Splash.Title = 'Nevermind'
+        $Splash.ShowInTaskbar = $false   # pas de bouton PowerShell dans la barre des tâches pendant le chargement
         $Splash.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#110F19')
         $Splash.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#2E2843'); $Splash.BorderThickness = 1
         $sp = New-Object System.Windows.Controls.StackPanel
@@ -142,6 +143,9 @@ if ($missing) {
 
 # Fonctions natives (écrans, souris, barre de titre sombre)
 Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $ModulesDir 'natif.cs'), [Text.Encoding]::UTF8))
+# Identité propre dans la barre des tâches (sinon l'app est rangée avec PowerShell, avec son icône)
+$AppUserModelId = 'JordanJacquot.Nevermind'
+try { [void][AppIdentity]::SetProcessAppId($AppUserModelId) } catch {}
 
 foreach ($ogModule in 'donnees', 'optimisations', 'systeme', 'themes') { . (Join-Path $ModulesDir "$ogModule.ps1") }
 

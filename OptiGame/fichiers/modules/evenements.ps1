@@ -16,6 +16,12 @@ if (Test-Path $IconPath) {
 
 $Window.Add_SourceInitialized({
     $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
+    # Barre des tâches : bouton Nevermind avec son icône, et une épingle qui relance Nevermind.exe (pas PowerShell)
+    try {
+        $exe = Join-Path (Split-Path $AppDir -Parent) 'Nevermind.exe'
+        $relaunch = if (Test-Path -LiteralPath $exe) { "`"$exe`"" } else { '' }
+        [void][AppIdentity]::SetWindow($h, $AppUserModelId, $relaunch, "$IconPath,0", 'Nevermind')
+    } catch { Write-Log "Barre des tâches : $_" }
     try { [OGNative]::SetDarkTitleBar($h) } catch {}
     # Windows 11 : fond « Mica » (le fond d'écran, flouté et teinté, transparaît derrière l'app)
     if ($script:Build -ge 22621 -and (Get-Setting 'Mica' $true)) {
