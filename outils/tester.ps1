@@ -5,10 +5,11 @@
 #   .\outils\tester.ps1              test rapide (toutes les pages)
 #   .\outils\tester.ps1 -Complet     + scan du réseau, fiche d'un appareil et audit de sécurité
 #   .\outils\tester.ps1 -Captures    + captures d'écran dans _test\captures
+#   .\outils\tester.ps1 -Hote        l'app tourne dans Nevermind.exe (moteur PowerShell hébergé), comme chez les utilisateurs
 #
 # Code de sortie : 0 si tout est bon, 1 sinon.
 
-param([switch]$Complet, [switch]$Captures, [int]$Delai = 300)
+param([switch]$Complet, [switch]$Captures, [switch]$Hote, [int]$Delai = 300)
 $ErrorActionPreference = 'Stop'
 $racine = Split-Path $PSScriptRoot -Parent
 $source = Join-Path $racine 'OptiGame\fichiers'
@@ -49,7 +50,18 @@ Edit-File $main "`$Window.Show()`r`n[System.Windows.Threading.Dispatcher]::Run()
 Write-Host "Test de Nevermind$(if ($Complet) { ' (complet)' }) en cours, patiente..."
 $env:OPTIGAME_TEST = '1'   # pas d'écran de chargement pendant le test
 $err = Join-Path $test 'erreurs.txt'
-$p = Start-Process powershell.exe -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$main`"" -PassThru -WindowStyle Hidden -RedirectStandardError $err
+if ($Hote) {
+    # Même lanceur que chez les utilisateurs, sans la demande de droits administrateur (test lancé tel quel)
+    $manif = Join-Path $test 'lanceur-test.manifest'
+    [IO.File]::WriteAllText($manif, ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'lanceur.manifest'), [Text.Encoding]::UTF8) -replace 'requireAdministrator', 'asInvoker'), $utf8)
+    $sma = @(Get-ChildItem (Join-Path $env:windir 'Microsoft.NET\assembly\GAC_MSIL\System.Management.Automation') -Recurse -Filter 'System.Management.Automation.dll' | Select-Object -First 1)[0].FullName
+    $exe = Join-Path $app 'Nevermind.exe'
+    & (Join-Path $env:windir 'Microsoft.NET\Framework64\v4.0.30319\csc.exe') /nologo /target:winexe /platform:anycpu "/win32manifest:$manif" /reference:System.Windows.Forms.dll "/reference:$sma" "/out:$exe" (Join-Path $PSScriptRoot 'lanceur.cs') | Out-Null
+    if (-not (Test-Path -LiteralPath $exe)) { Write-Host 'ÉCHEC : le lanceur ne compile pas.' -ForegroundColor Red; exit 1 }
+    $p = Start-Process $exe -PassThru
+} else {
+    $p = Start-Process powershell.exe -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$main`"" -PassThru -WindowStyle Hidden -RedirectStandardError $err
+}
 if (-not $p.WaitForExit($Delai * 1000)) { $p.Kill(); Write-Host "ÉCHEC : l'app ne s'est pas terminée en $Delai s." -ForegroundColor Red; exit 1 }
 
 $ok = $true

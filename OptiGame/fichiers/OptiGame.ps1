@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    Nevermind 1.0.93
+    Nevermind 1.0.94
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -11,7 +11,7 @@
 #>
 param([switch]$Uninstall, [switch]$Demarrage)   # -Demarrage : lancé avec Windows, réduit près de l'horloge
 
-$AppVersion = '1.0.93'
+$AppVersion = '1.0.94'
 $UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -61,11 +61,16 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
     }
 }
 
+# Nevermind.exe : le programme qui fait tourner l'app (le Gestionnaire des tâches affiche « Nevermind », pas PowerShell)
+$AppExe = Join-Path (Split-Path $PSScriptRoot -Parent) 'Nevermind.exe'
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     try {
-        Start-Process -FilePath 'powershell.exe' -Verb RunAs -ErrorAction Stop -ArgumentList @(
-            @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"") + @(if ($Uninstall) { '-Uninstall' }))
+        if ((Test-Path -LiteralPath $AppExe) -and -not $Uninstall) { Start-Process -FilePath $AppExe -Verb RunAs -ErrorAction Stop }
+        else {
+            Start-Process -FilePath 'powershell.exe' -Verb RunAs -ErrorAction Stop -ArgumentList @(
+                @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"") + @(if ($Uninstall) { '-Uninstall' }))
+        }
     } catch {
         [System.Windows.MessageBox]::Show(
             "Nevermind a besoin des droits administrateur pour modifier les réglages de Windows.`n`nRelance l'application et clique sur « Oui » quand Windows le demande.",
@@ -86,6 +91,9 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
     }
     try { if (Test-Path -LiteralPath $ShowRequest) { [IO.File]::Delete($ShowRequest) } } catch {}
 }
+
+# Anciens programmes mis de côté par la dernière mise à jour (ils tournaient pendant qu'on les remplaçait)
+try { foreach ($o in @(Get-ChildItem -LiteralPath (Split-Path $PSScriptRoot -Parent) -Filter '*.exe.old' -File -ErrorAction SilentlyContinue)) { try { [IO.File]::Delete($o.FullName) } catch {} } } catch {}
 
 # Retire la marque « téléchargé depuis Internet » des fichiers de Nevermind, pour que
 # Windows n'affiche plus d'avertissement aux lancements suivants.
@@ -186,5 +194,7 @@ $Window.Show()
 if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
     # Libère la place avant de relancer, sinon la nouvelle version croirait que Nevermind est déjà ouvert
     if ($script:InstanceMutex) { try { $script:InstanceMutex.ReleaseMutex() } catch {}; $script:InstanceMutex.Dispose(); $script:InstanceMutex = $null }
-    Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"")
+    $relExe = Join-Path (Split-Path (Split-Path $script:Relaunch -Parent) -Parent) 'Nevermind.exe'
+    if (Test-Path -LiteralPath $relExe) { Start-Process -FilePath $relExe }
+    else { Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"") }
 }

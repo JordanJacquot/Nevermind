@@ -3,7 +3,7 @@
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
 # Programmes du système qu'on ne propose jamais de fermer.
-$SystemProcs = '^(System|Idle|Registry|Memory Compression|smss|csrss|wininit|winlogon|services|lsass|svchost|dwm|explorer|fontdrvhost|sihost|ctfmon|conhost|audiodg|spoolsv|SearchHost|StartMenuExperienceHost|ShellExperienceHost|RuntimeBroker|TextInputHost|dllhost|WmiPrvSE|MsMpEng|NisSrv|SecurityHealthService|SgrmBroker|powershell|PresentMon|nvcontainer|NVDisplay\.Container|amdfendrsr|atiesrxx|atieclxx|steam|steamwebhelper|EpicGamesLauncher|EasyAntiCheat.*|BEService|vgc|vgk)$'
+$SystemProcs = '^(System|Idle|Registry|Memory Compression|smss|csrss|wininit|winlogon|services|lsass|svchost|dwm|explorer|fontdrvhost|sihost|ctfmon|conhost|audiodg|spoolsv|SearchHost|StartMenuExperienceHost|ShellExperienceHost|RuntimeBroker|TextInputHost|dllhost|WmiPrvSE|MsMpEng|NisSrv|SecurityHealthService|SgrmBroker|powershell|Nevermind|PresentMon|nvcontainer|NVDisplay\.Container|amdfendrsr|atiesrxx|atieclxx|steam|steamwebhelper|EpicGamesLauncher|EasyAntiCheat.*|BEService|vgc|vgk)$'
 $Browsers = '^(chrome|msedge|firefox|opera|brave|vivaldi)$'
 
 # ---------------------------------------------------------------------------

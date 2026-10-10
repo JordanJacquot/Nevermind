@@ -16,6 +16,8 @@ $icones  = Join-Path $PSScriptRoot 'icones'
 $csc     = Join-Path $env:windir 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $source  = Join-Path $PSScriptRoot 'lanceur.cs'
 $manif   = Join-Path $PSScriptRoot 'lanceur.manifest'
+# Moteur PowerShell hébergé dans Nevermind.exe (celui de Windows, toujours présent)
+$sma     = @(Get-ChildItem (Join-Path $env:windir 'Microsoft.NET\assembly\GAC_MSIL\System.Management.Automation') -Recurse -Filter 'System.Management.Automation.dll' | Select-Object -First 1)[0].FullName
 
 & (Join-Path $PSScriptRoot 'icone.ps1') -OutDir $icones | Out-Null
 New-Item -ItemType Directory -Force -Path $fich | Out-Null
@@ -23,7 +25,7 @@ Copy-Item (Join-Path $icones 'OptiGame.ico') (Join-Path $fich 'OptiGame.ico') -F
 
 function Build-Exe([string]$Out, [string]$Icon, [string]$Define) {
     $opts = @('/nologo', '/target:winexe', '/optimize+', '/platform:anycpu', "/win32icon:$Icon", "/win32manifest:$manif",
-              '/reference:System.Windows.Forms.dll', "/out:$Out")
+              '/reference:System.Windows.Forms.dll', "/reference:$sma", "/out:$Out")
     if ($Define) { $opts += "/define:$Define" }
     & $csc @opts $source
     if ($LASTEXITCODE) { throw "Échec de compilation de $Out" }

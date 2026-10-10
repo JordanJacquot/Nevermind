@@ -264,6 +264,8 @@ $SecDataWork = {
             $argsTxt = [string]$act.Arguments
             # Lancement de Nevermind au démarrage : notre propre tâche (même nom, même commande, script de Nevermind présent), pas une menace.
             # Le dossier de l'app peut avoir bougé (autre copie, mise à jour) : on vérifie la forme exacte de la commande, pas le chemin.
+            if ($a.OwnTask -and $t2.TaskName -eq $a.OwnTask -and $t2.TaskPath -eq '\' -and $exe -match '\\Nevermind\.exe$' -and $argsTxt -eq '-Demarrage' -and
+                (Test-Path -LiteralPath (Join-Path (Split-Path $exe -Parent) 'fichiers\OptiGame.ps1'))) { continue }
             if ($a.OwnTask -and $t2.TaskName -eq $a.OwnTask -and $t2.TaskPath -eq '\' -and $exe -match '\\WindowsPowerShell\\v1\.0\\powershell\.exe$' -and
                 $argsTxt -match '^-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "([^"]+\\fichiers\\OptiGame\.ps1)" -Demarrage$' -and
                 ($Matches[1] -eq $a.OwnScript -or (Test-Path -LiteralPath $Matches[1]))) { continue }

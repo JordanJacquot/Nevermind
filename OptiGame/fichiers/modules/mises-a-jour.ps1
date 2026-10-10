@@ -91,6 +91,13 @@ function Install-Update {
         if ((Test-Path -LiteralPath $dest) -and (Get-FileHash -LiteralPath $dest).Hash -eq (Get-FileHash -LiteralPath $f.FullName).Hash) { continue }
         try {
             New-Item -ItemType Directory -Force -Path (Split-Path $dest -Parent) | Out-Null
+            # Nevermind.exe est en cours d'exécution (c'est lui qui fait tourner l'app) : Windows interdit de l'écraser,
+            # mais autorise de le renommer. L'ancien est mis de côté (.old), effacé au prochain lancement.
+            if ($dest -like '*.exe' -and (Test-Path -LiteralPath $dest)) {
+                $old = "$dest.old"
+                try { if (Test-Path -LiteralPath $old) { [IO.File]::Delete($old) } } catch {}
+                try { [IO.File]::Move($dest, $old) } catch {}
+            }
             Copy-Item -LiteralPath $f.FullName -Destination $dest -Force -ErrorAction Stop
             Unblock-File -LiteralPath $dest -ErrorAction SilentlyContinue
         } catch { $errors += "$($f.Name): $($_.Exception.Message)" }

@@ -241,7 +241,9 @@ function Set-AutoStart([bool]$On) {
     }
     $ps1 = Join-Path $AppDir 'OptiGame.ps1'
     $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $act = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1`" -Demarrage" -WorkingDirectory $env:USERPROFILE
+    $exe = Join-Path (Split-Path $AppDir -Parent) 'Nevermind.exe'
+    $act = if (Test-Path -LiteralPath $exe) { New-ScheduledTaskAction -Execute "`"$exe`"" -Argument '-Demarrage' -WorkingDirectory $env:USERPROFILE }
+           else { New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1`" -Demarrage" -WorkingDirectory $env:USERPROFILE }
     $trg = New-ScheduledTaskTrigger -AtLogOn -User $user
     $trg.Delay = 'PT15S'   # laisse Windows finir d'ouvrir la session
     $pr = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
@@ -258,7 +260,7 @@ function Get-TaskInfo([string[]]$Names) {
         param($names)
         foreach ($n in $names) {
             $t = Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($t) { @{ Name = $n; Args = [string]@($t.Actions)[0].Arguments } }
+            if ($t) { @{ Name = $n; Args = [string]@($t.Actions)[0].Arguments; Exe = ([string]@($t.Actions)[0].Execute).Trim('"') } }
         }
     } ([string[]]$Names) | Where-Object { $_ })
 }
@@ -298,7 +300,10 @@ function Update-AutoStartPath {
     $t = @(Get-TaskInfo @($AutoStartTask))[0]
     if (-not $t) { return }
     $ps1 = Join-Path $AppDir 'OptiGame.ps1'
-    if ($t.Args -notlike "*`"$ps1`"*") {
+    $exe = Join-Path (Split-Path $AppDir -Parent) 'Nevermind.exe'
+    # La tâche doit lancer Nevermind.exe de ce dossier (les anciennes lançaient PowerShell avec le script)
+    $ok = if (Test-Path -LiteralPath $exe) { $t.Exe -eq $exe -and $t.Args -eq '-Demarrage' } else { $t.Args -like "*`"$ps1`"*" }
+    if (-not $ok) {
         try { Set-AutoStart $true; Write-Log "Démarrage automatique : chemin mis à jour ($ps1)" } catch { Write-Log "Démarrage automatique : $_" }
     }
 }
