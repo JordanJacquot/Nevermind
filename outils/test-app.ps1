@@ -627,7 +627,9 @@ $script:T.Run.Add_Tick({
                 $d = Join-Path $DataDir 'essai-nettoyage'
                 $out = Join-Path $DataDir 'essai-hors-nettoyage'
                 foreach ($x in $d, $out) { New-Item -ItemType Directory -Force -Path $x | Out-Null }
-                New-Item -ItemType Directory -Force -Path "$d\sous" | Out-Null
+                New-Item -ItemType Directory -Force -Path "$d\sous", "$d\claude" | Out-Null
+                # Dossier de travail de Claude Code : exclu, jamais compté ni supprimé
+                [IO.File]::WriteAllBytes("$d\claude\discussion.tmp", (New-Object byte[] 9000)); [IO.File]::SetLastWriteTime("$d\claude\discussion.tmp", (Get-Date).AddDays(-3))
                 [IO.File]::WriteAllBytes("$d\gros.tmp", (New-Object byte[] 300000))
                 [IO.File]::WriteAllBytes("$d\sous\petit.tmp", (New-Object byte[] 2000))
                 [IO.File]::WriteAllBytes("$d\utilise.tmp", (New-Object byte[] 5000))
@@ -637,9 +639,9 @@ $script:T.Run.Add_Tick({
                 foreach ($x in "$d\gros.tmp", "$d\sous\petit.tmp", "$d\utilise.tmp", "$out\a-garder.txt") { [IO.File]::SetLastWriteTime($x, (Get-Date).AddDays(-3)) }
                 # Un lien dans le dossier vers un autre dossier : il ne doit pas être suivi
                 New-Item -ItemType Junction -Path "$d\lien" -Target $out | Out-Null
-                $target = @{ Titre = 'Dossier d''essai'; Paths = @($d) }
+                $target = @{ Titre = 'Dossier d''essai'; Paths = @($d); Exclude = @('claude') }
                 $script:T.Step = 'nettoyage : liste'
-                $info = Invoke-Async $CleanListScript @{ Paths = $target.Paths; Top = 300 } | Select-Object -First 1
+                $info = Invoke-Async $CleanListScript @{ Paths = $target.Paths; Top = 300; Exclude = $target.Exclude } | Select-Object -First 1
                 Assert-Test ($info.Count -eq 3 -and [string]$info.Top[0][0] -like '*gros.tmp') "analyse : $($info.Count) fichiers (attendu 3, le lien ignoré) ; sur le disque : $(@(Get-ChildItem -LiteralPath $d -Recurse -Force -File -ErrorAction SilentlyContinue).Count) ; résultat : $(if ($info) { ($info.Keys -join '/') + ' taille ' + $info.Size } else { 'aucun' })"
                 $script:T.Step = 'nettoyage : fenêtre fichiers'; Show-CleanFiles $target $info; Wait-TestMs 500; Save-TestShot 'nettoyage-fichiers'; Hide-TestPanel
                 $lock = [IO.File]::Open("$d\utilise.tmp", 'Open', 'Read', 'None')
@@ -647,12 +649,27 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($r.Deleted -eq 2 -and $r.Skipped -eq 1) "nettoyage : $($r.Deleted) supprimés, $($r.Skipped) laissés (attendu 2 et 1)"
                 Assert-Test (Test-Path "$out\a-garder.txt") 'un fichier hors du dossier a été supprimé en suivant un lien'
                 Assert-Test (Test-Path "$d\recent.tmp") 'un fichier de moins de 24 h a été supprimé'
+                Assert-Test (Test-Path "$d\claude\discussion.tmp") 'le dossier de travail de Claude a été nettoyé'
                 Assert-Test (-not (Test-Path "$d\sous")) 'dossier vide non supprimé'
                 $log = Get-Content -LiteralPath $r.File -Raw -Encoding UTF8
                 Assert-Test ($log -match '\[SUPPRIMÉ\].*gros\.tmp' -and $log -match '\[LAISSÉ\].*utilise\.tmp') 'journal incomplet'
                 [IO.Directory]::Delete("$d\lien")
                 # Vraie analyse de la page (lecture seule)
                 $script:T.Step = 'nettoyage : page'; Show-Page 4; $script:T.Step = 'nettoyage : analyse page'; Invoke-CleanScan; Set-Busy $false; Wait-TestMs 500; Save-TestShot 'nettoyage-analyse'
+                # Claude : catégorie à part, jamais cochée d'office ; les temporaires ne passent pas par son dossier
+                Assert-Test ((@($CleanTargets | Where-Object { $_.Id -eq 'claude' })[0].Default -eq $false) -and (@($CleanTargets | Where-Object { $_.Id -eq 'temp' })[0].Exclude -contains 'claude')) 'Claude pas protégé'
+                $cr = @($script:CleanRows | Where-Object { $_.Id -eq 'claude' })[0]
+                if ($cr) { Assert-Test (-not $cr.CheckBox.IsChecked) 'Fichiers de travail de Claude cochés d''office' }
+                # Clic sur une carte : coche ou décoche, total mis à jour
+                $r0 = @($script:CleanRows | Where-Object { $_.CheckBox.IsEnabled })[0]
+                if ($r0) {
+                    $was = [bool]$r0.CheckBox.IsChecked; $btn0 = [string]$ui.BtnClean.Content
+                    $me = New-Object System.Windows.Input.MouseButtonEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0, [System.Windows.Input.MouseButton]::Left)
+                    $me.RoutedEvent = [System.Windows.UIElement]::MouseLeftButtonUpEvent
+                    $r0.Card.RaiseEvent($me); Wait-TestMs 100
+                    Assert-Test ([bool]$r0.CheckBox.IsChecked -ne $was -and [string]$ui.BtnClean.Content -ne $btn0) "carte : coché $($r0.CheckBox.IsChecked), bouton « $($ui.BtnClean.Content) »"
+                    $r0.CheckBox.IsChecked = $was; $script:CleanChoice.Remove($r0.Id); Update-CleanSelection
+                }
                 "3 fichiers vus (lien et fichier récent ignorés), 2 supprimés, 1 laissé car utilisé, journal $(Split-Path $r.File -Leaf)"
             }
             Test-Step 'Tâches planifiées lues en arrière plan' {

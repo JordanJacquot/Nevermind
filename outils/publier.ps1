@@ -90,6 +90,13 @@ foreach ($f in Get-ChildItem -LiteralPath $app -Recurse -File) {
     # Fichier identique : rien à copier (et il peut être en cours d'utilisation, comme PresentMon pendant une partie).
     if ((Test-Path -LiteralPath $dest) -and (Get-FileHash -LiteralPath $dest).Hash -eq (Get-FileHash -LiteralPath $f.FullName).Hash) { continue }
     New-Item -ItemType Directory -Force -Path (Split-Path $dest -Parent) | Out-Null
+    # Nevermind.exe ouvert (l'app tourne dedans) : Windows interdit de l'écraser mais autorise de le renommer.
+    # L'ancien est mis de côté (.old) et effacé au prochain lancement de Nevermind.
+    if ($dest -like '*.exe' -and (Test-Path -LiteralPath $dest)) {
+        $old = "$dest.old"
+        try { if (Test-Path -LiteralPath $old) { [IO.File]::Delete($old) } } catch {}
+        try { [IO.File]::Move($dest, $old) } catch {}
+    }
     try { Copy-Item -LiteralPath $f.FullName -Destination $dest -Force -ErrorAction Stop }
     catch { Write-Host "Copie impossible (fichier utilisé ?) : $dest" -ForegroundColor Yellow }
 }

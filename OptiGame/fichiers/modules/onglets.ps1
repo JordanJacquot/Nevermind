@@ -607,41 +607,90 @@ function Invoke-CleanScan {
     $panel = $ui.CleanPanel
     $panel.Children.Clear()
     $script:CleanRows = @()
-    $total = 0
+    if (-not $script:CleanChoice) { $script:CleanChoice = @{} }
     foreach ($c in $CleanTargets) {
-        Set-Status "Calcul: $($c.Titre)..."
-        $info = Invoke-Async $CleanListScript @{ Paths = $c.Paths; Top = 300 } | Select-Object -First 1
+        if ($c.Optional -and -not (Test-Path -LiteralPath $c.Paths[0])) { continue }
+        Set-Status "Calcul : $($c.Titre)..."
+        $info = Invoke-Async $CleanListScript @{ Paths = $c.Paths; Top = 300; Exclude = $c.Exclude } | Select-Object -First 1
         $size = if ($info) { [double]$info.Size } else { 0.0 }
         $count = if ($info) { [int]$info.Count } else { 0 }
-        $total += $size
+        $empty = -not $count
+        $id = if ($c.Id) { $c.Id } else { $c.Titre }
+        $on = if ($script:CleanChoice.ContainsKey($id)) { $script:CleanChoice[$id] } else { $c.Default -ne $false }
+
+        # Une carte par catégorie : titre, ce que c'est, taille, interrupteur. Toute la carte est cliquable.
         $card = New-Card
-        $g = New-Grid @('*', 'Auto', 'Auto', 'Auto')
-        $cb = New-Object System.Windows.Controls.CheckBox
-        $cb.Content = $c.Titre
-        $cb.FontSize = Get-UiFontSize 14
-        $cb.IsChecked = $size -gt 0
-        $cb.VerticalContentAlignment = 'Center'
-        Add-ToGrid $g $cb 0
-        $nb = New-Text "$count fichier$(if ($count -gt 1) {'s'})" 12.5 '#655E7E'
-        $nb.VerticalAlignment = 'Center'; $nb.Margin = New-Thickness 12 0 16 0
-        Add-ToGrid $g $nb 1
-        $sz = New-Text (Format-Size $size) 14 $(if ($size -gt 500MB) { $Colors.warn } else { '#A6A1BC' }) -Semi
-        $sz.VerticalAlignment = 'Center'
-        Add-ToGrid $g $sz 2
+        $card.Padding = New-Thickness 18 14 18 14
+        $card.Cursor = if ($empty) { [System.Windows.Input.Cursors]::Arrow } else { [System.Windows.Input.Cursors]::Hand }
+        if ($empty) { $card.Opacity = 0.55 }
+        $g = New-Grid @('*', 'Auto', 'Auto')
+        $left = New-Object System.Windows.Controls.StackPanel
+        $head = New-Object System.Windows.Controls.WrapPanel
+        $tt = New-Text $c.Titre 15 '#FFFFFF' -Semi
+        $tt.Margin = New-Thickness 0 0 10 0; $tt.VerticalAlignment = 'Center'
+        Set-PackFont $tt
+        [void]$head.Children.Add($tt)
+        $badge = if ($empty) { New-Badge 'Déjà propre' $Colors.ok } elseif ($c.Warn) { New-Badge 'À garder si tu utilises Claude' $Colors.warn } else { New-Badge 'Sans risque' $Colors.ok }
+        $badge.VerticalAlignment = 'Center'
+        [void]$head.Children.Add($badge)
+        [void]$left.Children.Add($head)
+        $d = New-Text $c.Desc 12.5 '#A6A1BC'
+        $d.Margin = New-Thickness 0 4 0 0
+        [void]$left.Children.Add($d)
         if ($count) {
             $vb = New-Button 'Voir les fichiers'
-            $vb.Margin = New-Thickness 16 0 0 0; $vb.VerticalAlignment = 'Center'
+            $vb.HorizontalAlignment = 'Left'; $vb.Margin = New-Thickness 0 10 0 0
             $vb.Tag = @{ Target = $c; Info = $info }
             $vb.Add_Click({ param($s, $e) $x = $s.Tag; Invoke-Safe { Show-CleanFiles $x.Target $x.Info } })
-            Add-ToGrid $g $vb 3
+            [void]$left.Children.Add($vb)
         }
+        Add-ToGrid $g $left 0
+        $right = New-Object System.Windows.Controls.StackPanel
+        $right.VerticalAlignment = 'Center'; $right.Margin = New-Thickness 20 0 18 0
+        $sz = New-Text $(if ($empty) { '0' } else { Format-Size $size }) 18 $(if ($size -gt 500MB) { $Colors.warn } else { '#FFFFFF' }) -Bold
+        $sz.HorizontalAlignment = 'Right'
+        [void]$right.Children.Add($sz)
+        $nb = New-Text "$count fichier$(if ($count -gt 1) {'s'})" 11.5 '#8E88A8'
+        $nb.HorizontalAlignment = 'Right'
+        [void]$right.Children.Add($nb)
+        Add-ToGrid $g $right 1
+        $sw = New-Object System.Windows.Controls.CheckBox
+        $sw.Style = $Window.FindResource('Switch')
+        $sw.VerticalAlignment = 'Center'
+        $sw.IsChecked = [bool]($on -and -not $empty)
+        $sw.IsEnabled = -not $empty
+        $sw.ToolTip = 'Activé = sera nettoyé'
+        Add-ToGrid $g $sw 2
         $card.Child = $g
+        $row = @{ Id = $id; Target = $c; CheckBox = $sw; Size = $size; Card = $card }
+        $sw.Tag = $row
+        $sw.Add_Click({ param($s, $e) $r = $s.Tag; $script:CleanChoice[$r.Id] = [bool]$s.IsChecked; Update-CleanSelection })
+        $card.Tag = $row
+        if (-not $empty) {
+            $card.Add_MouseLeftButtonUp({
+                param($s, $e)
+                # Clic sur la carte (pas sur l'interrupteur ni sur un bouton) : coche ou décoche
+                $x = $e.OriginalSource
+                while ($x -and $x -ne $s) { if ($x -is [System.Windows.Controls.Primitives.ButtonBase]) { return }; $x = if ($x -is [System.Windows.Media.Visual]) { [System.Windows.Media.VisualTreeHelper]::GetParent($x) } else { $x.Parent } }
+                $r = $s.Tag; $r.CheckBox.IsChecked = -not [bool]$r.CheckBox.IsChecked
+                $script:CleanChoice[$r.Id] = [bool]$r.CheckBox.IsChecked
+                Update-CleanSelection
+            })
+        }
         [void]$panel.Children.Add($card)
-        $script:CleanRows += @{ Target = $c; CheckBox = $cb; Size = $size }
+        $script:CleanRows += $row
     }
     Add-LastCleanInfo
-    $ui.CleanTotal.Text = "$(Format-Size $total) peuvent être libérés."
+    Update-CleanSelection
     Set-Status 'Analyse du nettoyage terminée.'
+}
+
+# Total coché, affiché en direct dans le titre et sur le bouton
+function Update-CleanSelection {
+    $all = 0.0; $sel = 0.0
+    foreach ($r in @($script:CleanRows)) { $all += $r.Size; if ($r.CheckBox.IsChecked) { $sel += $r.Size } }
+    $ui.CleanTotal.Text = if (-not $all) { 'Rien à nettoyer : ton PC est déjà propre.' } else { "$(Format-Size $sel) à libérer sur $(Format-Size $all) possibles." }
+    $ui.BtnClean.Content = if ($sel -gt 0) { "Nettoyer $(Format-Size $sel)" } else { 'Nettoyer la sélection' }
 }
 
 # Dernier nettoyage : résumé et bouton pour ouvrir son journal
@@ -712,7 +761,7 @@ function Show-CleanFiles($Target, $Info) {
 
 function Invoke-Clean {
     $sel = @($script:CleanRows | Where-Object { $_.CheckBox.IsChecked })
-    if (-not $sel.Count) { Show-Message "Clique d'abord sur Analyser, puis coche ce que tu veux nettoyer."; return }
+    if (-not $sel.Count) { Show-Message "Clique d'abord sur Analyser, puis active ce que tu veux nettoyer."; return }
     Set-Busy $true
     $r = Invoke-CleanTargets @($sel | ForEach-Object { $_.Target })
     Invoke-CleanScan

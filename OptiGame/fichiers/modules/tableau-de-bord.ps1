@@ -48,7 +48,7 @@ $BiosConfirm = "Le PC va redémarrer directement dans le BIOS dans 10 secondes.`
 $BiosDone = 'Redémarrage dans le BIOS dans 10 secondes...'
 
 function Invoke-CleanAll {
-    [void](Invoke-CleanTargets $CleanTargets)
+    [void](Invoke-CleanTargets @($CleanTargets | Where-Object { $_.Default -ne $false }))   # les catégories à garder (Claude) ne partent jamais d'office
 }
 
 function Get-DriverLink([string]$Name) {

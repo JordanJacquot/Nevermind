@@ -19,13 +19,23 @@ $DnsChoices = @(
 # ---------------------------------------------------------------------------
 # Nettoyage
 # ---------------------------------------------------------------------------
+# Catégories du nettoyage. Desc : ce que c'est, en une phrase. Default $false : décochée au départ (à garder le plus souvent).
+# Exclude : sous dossiers jamais touchés (le dossier de travail de Claude Code est dans les temporaires de l'utilisateur).
 $CleanTargets = @(
-    @{ Titre = 'Fichiers temporaires (utilisateur)'; Paths = @($env:TEMP) },
-    @{ Titre = 'Fichiers temporaires (Windows)'; Paths = @("$env:windir\Temp") },
-    @{ Titre = 'Fichiers de mises à jour Windows déjà installées'; Paths = @("$env:windir\SoftwareDistribution\Download") },
-    @{ Titre = "Cache d'optimisation de la distribution"; Paths = @("$env:windir\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache") },
-    @{ Titre = "Rapports d'erreurs Windows"; Paths = @("$env:ProgramData\Microsoft\Windows\WER\ReportArchive", "$env:ProgramData\Microsoft\Windows\WER\ReportQueue") },
-    @{ Titre = 'Anciens rapports de plantage (minidumps)'; Paths = @("$env:windir\Minidump") }
+    @{ Id = 'temp'; Titre = 'Fichiers temporaires'; Paths = @($env:TEMP); Exclude = @('claude')
+       Desc = 'Restes laissés par tes programmes et les installations. Ce qui a moins de 24 h ou sert encore est gardé.' },
+    @{ Id = 'claude'; Titre = 'Fichiers de travail de Claude'; Paths = @("$env:TEMP\claude"); Default = $false; Warn = $true; Optional = $true
+       Desc = 'Captures, scripts et téléchargements des discussions Claude Code. Tes discussions ne sont pas effacées, mais une discussion en cours peut encore en avoir besoin : garde les si tu travailles avec Claude.' },
+    @{ Id = 'wintemp'; Titre = 'Fichiers temporaires de Windows'; Paths = @("$env:windir\Temp")
+       Desc = 'Restes laissés par Windows et les programmes installés pour tout le PC.' },
+    @{ Id = 'wu'; Titre = 'Mises à jour Windows déjà installées'; Paths = @("$env:windir\SoftwareDistribution\Download")
+       Desc = 'Fichiers téléchargés par Windows Update, inutiles une fois les mises à jour installées.' },
+    @{ Id = 'do'; Titre = 'Partage des mises à jour'; Paths = @("$env:windir\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache")
+       Desc = 'Morceaux de mises à jour que Windows garde pour les partager avec d''autres PC. Windows les retélécharge au besoin.' },
+    @{ Id = 'wer'; Titre = 'Rapports d''erreurs'; Paths = @("$env:ProgramData\Microsoft\Windows\WER\ReportArchive", "$env:ProgramData\Microsoft\Windows\WER\ReportQueue")
+       Desc = 'Rapports créés quand une appli plante, déjà envoyés ou inutiles.' },
+    @{ Id = 'dump'; Titre = 'Rapports d''écran bleu'; Paths = @("$env:windir\Minidump")
+       Desc = 'Créés lors d''un écran bleu. Utiles seulement pour comprendre un écran bleu récent.' }
 )
 
 # Parcours d'un dossier sans suivre les liens (jonctions, liens symboliques) : on ne sort jamais du dossier prévu.
@@ -34,10 +44,15 @@ function Get-CleanFiles([string]$Root, $Dirs) {
     foreach ($e in @(Get-ChildItem -LiteralPath $Root -Force -ErrorAction SilentlyContinue)) {
         if ($e.PSIsContainer) {
             if ($e.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+            if ($script:CleanSkip -and $script:CleanSkip.ContainsKey($e.FullName.ToLower())) { continue }   # dossier protégé (Claude...)
             if ($null -ne $Dirs) { [void]$Dirs.Add($e.FullName) }
             Get-CleanFiles $e.FullName $Dirs
         } elseif ($e.LastWriteTime -lt $script:CleanBefore) { $e }
     }
+}
+function Set-CleanSkip($Paths, $Exclude) {
+    $script:CleanSkip = @{}
+    foreach ($p in @($Paths)) { foreach ($x in @($Exclude | Where-Object { $_ })) { $script:CleanSkip[(Join-Path $p $x).ToLower()] = $true } }
 }
 # Fichiers de moins de 24 h laissés : une installation ou un programme en cours peut encore s'en servir
 $script:CleanBefore = (Get-Date).AddDays(-1)
@@ -47,6 +62,7 @@ $script:CleanBefore = (Get-Date).AddDays(-1)
 $CleanListScript = [scriptblock]::Create($CleanWalk + @'
 
 $a = $args[0]
+Set-CleanSkip $a.Paths $a.Exclude
 $sum = 0.0; $n = 0
 $list = New-Object System.Collections.Generic.List[object]
 foreach ($p in $a.Paths) {
@@ -60,7 +76,8 @@ $top = @($list | Sort-Object { $_[1] } -Descending | Select-Object -First $a.Top
 # Nettoyage d'une catégorie, fichier par fichier, avec une ligne de journal pour chacun
 $CleanScript = [scriptblock]::Create($CleanWalk + @'
 
-$paths = $args[0]
+$paths = $args[0].Paths
+Set-CleanSkip $paths $args[0].Exclude
 $log = New-Object System.Collections.Generic.List[string]
 $freed = 0.0; $del = 0; $skip = 0; $err = 0
 $fmt = { param($b) if ($b -ge 1GB) { '{0:N1} Go' -f ($b / 1GB) } elseif ($b -ge 1MB) { '{0:N1} Mo' -f ($b / 1MB) } else { '{0:N0} Ko' -f [math]::Max(1, [math]::Ceiling($b / 1KB)) } }
@@ -101,7 +118,7 @@ function Invoke-CleanTargets([array]$Targets) {
     $tot = @{ Freed = 0.0; Deleted = 0; Skipped = 0; Errors = 0 }
     foreach ($t in $Targets) {
         Set-Status "Nettoyage: $($t.Titre)..."
-        $r = Invoke-Async $CleanScript $t.Paths | Select-Object -First 1
+        $r = Invoke-Async $CleanScript @{ Paths = $t.Paths; Exclude = $t.Exclude } | Select-Object -First 1
         $lines.Add('')
         $lines.Add("== $($t.Titre) ($($t.Paths -join ', ')) ==")
         if (-not $r) { $lines.Add('(rien à nettoyer)'); continue }
