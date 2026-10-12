@@ -18,7 +18,7 @@ $GameModeApps = @(
     @{ Id = 'ea'; Name = 'EA app'; Proc = '^EADesktop$'; On = $false },
     @{ Id = 'ubisoft'; Name = 'Ubisoft Connect'; Proc = '^(UbisoftConnect|upc)$'; On = $false }
 )
-# Noms d'exécutables trop courants pour identifier un jeu à coup sûr.
+# Noms d'exécutables trop courants pour identifier un jeu à coup sûr (« bf6 » de Battlefield 6 reste reconnu : 3 lettres suffisent, le chemin est vérifié).
 $GenericExe = '^(game|launcher|start|play|client|main|app|run|win64|win32|bin)$'
 
 function Get-GameModeSelection {
@@ -38,7 +38,7 @@ function Update-GameCache {
     foreach ($g in $script:Games) {
         foreach ($e in @($g.Exes)) {
             $base = [IO.Path]::GetFileNameWithoutExtension($e).ToLower()
-            if ($base.Length -lt 4 -or $base -match $GenericExe) { continue }
+            if ($base.Length -lt 3 -or $base -match $GenericExe) { continue }
             if (-not $script:GameIndex.ContainsKey($base)) { $script:GameIndex[$base] = @{ Game = $g.Name; Exes = @(); Source = $g.Source; ByPath = @{} } }
             $script:GameIndex[$base].Exes += $e.ToLower()
             # Deux jeux avec le même nom d'exécutable (Dofus et Dofus 2) : reconnus par leur dossier
@@ -68,7 +68,7 @@ function Add-CustomGame([string]$Exe, [string]$Name) {
         $Name = @([string]$vi.ProductName, [string]$vi.FileDescription, [IO.Path]::GetFileNameWithoutExtension($Exe)) | Where-Object { $_ -and $_.Trim() -and $_.Length -lt 60 } | Select-Object -First 1
     }
     $base = [IO.Path]::GetFileNameWithoutExtension($Exe).ToLower()
-    if ($base.Length -lt 4 -or $base -match $GenericExe) {
+    if ($base.Length -lt 3 -or $base -match $GenericExe) {
         Show-Message "Le nom « $([IO.Path]::GetFileName($Exe)) » est trop courant pour reconnaître le jeu à coup sûr.`n`nChoisis plutôt le programme qui porte le nom du jeu (souvent dans un sous dossier comme Binaries\Win64)." 'Warning'
         return
     }
