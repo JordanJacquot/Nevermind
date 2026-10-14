@@ -312,11 +312,11 @@ function New-ThemePreview([string]$Id) {
     $g
 }
 
-# Copie gérée par Mindset : les réglages communs à la suite (pour Nevermind, le thème) se règlent dans Mindset.
+# Copie gérée par Mindset : les réglages communs à la suite (pour Nevermind, le thème, packs de la suite compris) se règlent dans Mindset.
 # Mindset lit %LOCALAPPDATA%\Mindset\afficher-page.txt à son lancement (ou quand on le relance, il se ramène devant).
 # Son dossier vient du registre (clé de désinstallation, écrite par un administrateur), jamais d'un fichier modifiable,
 # et il est lancé par l'Explorateur : sans les droits administrateur de Nevermind.
-$ManagedThemeText = 'Le thème se règle dans Mindset, pour toute la suite.'
+$ManagedThemeText = 'Le thème se règle dans Mindset, pour toute la suite (thèmes personnalisés compris).'
 function Open-MindsetSettings {
     $dir = ''
     try { $dir = ([string](Get-ItemProperty -LiteralPath 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Mindset' -Name InstallLocation -ErrorAction Stop).InstallLocation).Trim().Trim('"') } catch {}
@@ -334,19 +334,8 @@ function Open-MindsetSettings {
 
 function Get-CurrentThemeKey { if ($ThemePack) { "pack:$($ThemePack.Id)" } else { $ThemeId } }
 
-# Les choix de l'onglet : les 5 thèmes de base puis les packs installés sur ce PC.
-# Copie gérée par Mindset : les 5 thèmes se choisissent dans Mindset, pour toute la suite. Restent les packs propres à
-# Nevermind (s'il y en a), plus une carte « Thème de Mindset » pour revenir au thème de la suite.
+# Les choix de l'onglet : les 5 thèmes de base puis les packs installés sur ce PC
 function Get-ThemeChoices {
-    if ($Managed) {
-        $packs = @(Get-ThemePacks)
-        if (-not $packs.Count) { return @() }
-        $id = (Read-Suite).Theme
-        if (-not $id) { $id = if ($ThemePack) { 'neon' } else { $ThemeId } }
-        $list = @(@{ Key = $id; Base = $id; Name = "Thème de Mindset ($($AppThemes[$id].Name))"; Desc = 'Le thème choisi dans Mindset pour toute la suite.'; Font = $AppThemes[$id].Font; Pack = $null })
-        foreach ($pk in $packs) { $list += @{ Key = "pack:$($pk.Id)"; Base = $pk.Base; Name = $pk.Name; Desc = $pk.Desc; Font = $AppThemes[$pk.Base].Font; Pack = $pk } }
-        return $list
-    }
     $list = @(foreach ($id in @($AppThemes.Keys | Where-Object { -not $AppThemes[$_].Pack })) { $t = $AppThemes[$id]; @{ Key = $id; Base = $id; Name = $t.Name; Desc = $t.Desc; Font = $t.Font; Pack = $null } })
     foreach ($pk in @(Get-ThemePacks)) { $list += @{ Key = "pack:$($pk.Id)"; Base = $pk.Base; Name = $pk.Name; Desc = $pk.Desc; Font = $AppThemes[$pk.Base].Font; Pack = $pk } }
     $list
@@ -355,16 +344,16 @@ function Get-ThemeChoices {
 function Build-ThemePanel {
     $p = $ui.SetTheme
     $p.Children.Clear()
-    $current = Get-CurrentThemeKey
-    if (-not $script:ThemePick) { $script:ThemePick = $current }
-    # Copie gérée : le thème commun à la suite se règle dans Mindset
+    # Copie gérée : le thème de la suite (thèmes personnalisés compris) se choisit uniquement dans Mindset
     if ($Managed) {
         $mc = New-SettingAction 'Thème de la suite' $ManagedThemeText 'Ouvrir les réglages de Mindset' { Invoke-Safe { Open-MindsetSettings } }
-        $mc.Margin = New-Thickness 0 0 12 18
+        $mc.Margin = New-Thickness 0 0 12 12
         [void]$p.Children.Add($mc)
+        return
     }
+    $current = Get-CurrentThemeKey
+    if (-not $script:ThemePick) { $script:ThemePick = $current }
     $choices = @(Get-ThemeChoices)
-    if ($Managed -and $choices.Count) { [void]$p.Children.Add((New-SettingGroup 'Packs de thème de Nevermind')) }
     $grid = New-Object System.Windows.Controls.Primitives.UniformGrid
     $grid.Columns = 2
     foreach ($ch in $choices) {
@@ -420,15 +409,14 @@ function Build-ThemePanel {
         $card.Add_MouseLeftButtonUp({ param($s, $e) $script:ThemePick = [string]$s.Tag; Build-ThemePanel })
         [void]$grid.Children.Add($card)
     }
-    if ($choices.Count) { [void]$p.Children.Add($grid) }
+    [void]$p.Children.Add($grid)
 
     # Bas : appliquer (redémarre Nevermind, le thème s'applique au chargement de la fenêtre)
-    if ($choices.Count) {
     $foot = New-Grid @('*', 'Auto')
     $foot.Margin = New-Thickness 0 4 12 8
     $changed = $script:ThemePick -ne $current
     $pickName = @($choices | Where-Object { $_.Key -eq $script:ThemePick })[0].Name
-    $msg = if ($changed) { "« $pickName » s'applique en relançant Nevermind (quelques secondes). Tes réglages ne changent pas." } elseif ($Managed) { 'Choisis un pack pour le voir en grand : Nevermind se relance pour l''appliquer.' } else { 'Choisis un thème pour le voir en grand : Nevermind se relance pour l''appliquer.' }
+    $msg = if ($changed) { "« $pickName » s'applique en relançant Nevermind (quelques secondes). Tes réglages ne changent pas." } else { 'Choisis un thème pour le voir en grand : Nevermind se relance pour l''appliquer.' }
     $mt = New-Text $msg 12 '#A6A1BC'
     $mt.VerticalAlignment = 'Center'
     Add-ToGrid $foot $mt 0
@@ -439,10 +427,8 @@ function Build-ThemePanel {
         Add-ToGrid $foot $b 1
     }
     [void]$p.Children.Add($foot)
-    }
 
     # Packs : juste les deux boutons
-    if ($Managed -and -not $choices.Count) { [void]$p.Children.Add((New-SettingGroup 'Packs de thème de Nevermind')) }
     $pk = New-Object System.Windows.Controls.StackPanel
     $pk.Orientation = 'Horizontal'; $pk.Margin = New-Thickness 0 6 12 8
     $imp = New-Button 'Importer un pack'

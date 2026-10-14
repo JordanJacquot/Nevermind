@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    Nevermind 1.0.101
+    Nevermind 1.0.102
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -12,7 +12,7 @@
 #>
 param([switch]$Uninstall, [switch]$Demarrage)   # -Demarrage : lancé avec Windows, réduit près de l'horloge
 
-$AppVersion = '1.0.101'
+$AppVersion = '1.0.102'
 $UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -34,13 +34,15 @@ function Get-FullDir([string]$Path) {
     ''
 }
 
-# Ce qui nous concerne dans suite.json : le thème (seulement s'il est connu) et le dossier de Nevermind
+# Ce qui nous concerne dans suite.json : le thème (un des 5 thèmes, ou « pack:<id> » : un pack de la suite que Mindset
+# installe dans les packs de Nevermind ; l'id ne sert qu'à nommer ce dossier, d'où la liste blanche stricte) et le
+# dossier de Nevermind
 function Read-Suite {
     $s = @{ Theme = $null; Dir = '' }
     try {
         if (-not [IO.File]::Exists($SuiteFile)) { return $s }
         $j = [IO.File]::ReadAllText($SuiteFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
-        if ($j.theme -is [string] -and $j.theme -cin $SuiteThemes) { $s.Theme = [string]$j.theme }
+        if ($j.theme -is [string] -and ($j.theme -cin $SuiteThemes -or $j.theme -cmatch '\Apack:[a-z0-9-]{1,40}\z')) { $s.Theme = [string]$j.theme }
         if ($j.applis -and $j.applis.nevermind -is [string]) { $s.Dir = Get-FullDir $j.applis.nevermind }
     } catch {}
     $s

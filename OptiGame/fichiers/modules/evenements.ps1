@@ -54,7 +54,8 @@ if (-not $env:OPTIGAME_TEST) {
     $script:ShowWatch.Start()
 }
 # Géré par Mindset : le thème de la suite changé ailleurs (Mindset, Evermind) est suivi. Toutes les 2,5 s, seule la
-# date du fichier est lue ; il n'est relu que si elle a changé. Nouveau thème : enregistré, puis Nevermind se relance
+# date du fichier est lue ; il n'est relu que si elle a changé. Nouveau thème (un des 5, ou un pack de la suite
+# installé par Mindset dans les packs de Nevermind) : enregistré, puis Nevermind se relance
 # (comme un changement de thème ici). Pas de boucle : après la relance, son thème est celui de la suite.
 if ($Managed -and -not $env:OPTIGAME_TEST) {
     $script:SuiteWatch = New-Object System.Windows.Threading.DispatcherTimer
@@ -66,7 +67,14 @@ if ($Managed -and -not $env:OPTIGAME_TEST) {
         if ($script:Starting -or $script:WaitFrames.Count -or $script:GameSession -or $script:LagSession) { return }
         $script:SuiteStamp = $stamp
         $t = (Read-Suite).Theme
-        if ($t -and -not $ThemePack -and $t -cne $ThemeId) {
+        if ($t -and $t -cne (Get-CurrentThemeKey)) {
+            # Pack de la suite pas (encore) installé ou illisible : thème actuel gardé, noté une fois au journal, et
+            # suite.json relu au passage suivant (le pack peut arriver juste après)
+            if ($t -like 'pack:*' -and -not (Get-ThemePack $t.Substring(5))) {
+                if ($script:SuitePackMissing -cne $t) { $script:SuitePackMissing = $t; Write-Log "Thème de la suite changé dans Mindset : $t absent ou illisible dans $PacksDir, thème actuel gardé" }
+                $script:SuiteStamp = [datetime]::MinValue
+                return
+            }
             Write-Log "Thème de la suite changé dans Mindset : $t"
             Invoke-Safe { Set-AppTheme $t }
         }

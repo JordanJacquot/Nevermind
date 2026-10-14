@@ -28,12 +28,6 @@ $AppThemes = [ordered]@{
 
 # Thème choisi (la copie de test peut en forcer un pour les captures)
 $ThemeSetting = [string](Get-Setting 'Theme' 'neon')
-# Géré par Mindset : le thème de la suite (sauf si un pack est choisi), enregistré comme thème de Nevermind
-if ($Managed -and $Suite.Theme -and $ThemeSetting -notlike 'pack:*' -and $ThemeSetting -cne $Suite.Theme) {
-    $ThemeSetting = $Suite.Theme
-    Set-Setting 'Theme' $ThemeSetting
-    Write-Log "Thème de la suite (Mindset) : $ThemeSetting"
-}
 if ($env:OPTIGAME_TEST -and $env:OPTIGAME_THEME) { $ThemeSetting = $env:OPTIGAME_THEME }
 $ThemeId = @{ retro = 'arcade'; dresseur = 'rubis' }[$ThemeSetting], $ThemeSetting | Where-Object { $_ } | Select-Object -First 1   # anciens noms (1.0.63)
 if (-not $AppThemes.Contains($ThemeId)) { $ThemeId = 'neon' }
@@ -119,6 +113,19 @@ function Get-ThemePack([string]$Id) {
 function Get-ThemePacks {
     if (-not (Test-Path -LiteralPath $PacksDir)) { return @() }
     @(Get-ChildItem -LiteralPath $PacksDir -Directory | ForEach-Object { Get-ThemePack $_.Name } | Where-Object { $_ })
+}
+
+# Géré par Mindset : le thème de la suite, enregistré comme thème de Nevermind. Un des 5 thèmes, ou « pack:<id> » :
+# un pack de la suite, que Mindset installe dans les packs de Nevermind. Pack absent ou illisible : le thème actuel reste.
+if ($Managed -and $Suite.Theme -and $ThemeSetting -cne $Suite.Theme -and -not ($env:OPTIGAME_TEST -and $env:OPTIGAME_THEME)) {
+    if ($Suite.Theme -like 'pack:*' -and -not (Get-ThemePack $Suite.Theme.Substring(5))) {
+        Write-Log "Thème de la suite (Mindset) : $($Suite.Theme) absent ou illisible dans $PacksDir, thème actuel gardé ($ThemeSetting)"
+    } else {
+        $ThemeSetting = $Suite.Theme
+        Set-Setting 'Theme' $ThemeSetting
+        Write-Log "Thème de la suite (Mindset) : $ThemeSetting"
+        if ($AppThemes.Contains($ThemeSetting)) { $ThemeId = $ThemeSetting; $Theme = $AppThemes[$ThemeId] }
+    }
 }
 
 # Thème choisi « pack:<dossier> » : les couleurs de son thème de base, ses textes et son écran de chargement

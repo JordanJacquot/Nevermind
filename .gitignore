@@ -23,3 +23,12 @@
 
 # Anciens lanceurs mis de côté pendant une mise à jour (effacés au lancement suivant)
 *.exe.old
+
+# Thèmes personnalisés (images protégées) : jamais sur GitHub
+Thème-*/
+Theme-*/
+Thème-*.zip
+Theme-*.zip
+packs/
+pack.json
+pack-*.json
