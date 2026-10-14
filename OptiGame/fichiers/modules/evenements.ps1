@@ -66,8 +66,19 @@ function Update-EmbedState {
     if ($on) {
         $script:WindowMin = @($Window.MinWidth, $Window.MinHeight)
         $Window.MinWidth = 0; $Window.MinHeight = 0
-    } elseif ($script:WindowMin) {
-        $Window.MinWidth = $script:WindowMin[0]; $Window.MinHeight = $script:WindowMin[1]
+        # Lancée cachée près de l'horloge (-Demarrage) puis montrée par Mindset de l'extérieur : pour WPF elle est toujours
+        # cachée et sa zone resterait noire. On la montre pour de bon, sans l'activer (elle reste dans Mindset).
+        if ($Window.WindowState -eq 'Minimized') { $Window.WindowState = 'Normal' }
+        if (-not $Window.IsVisible) {
+            $act = $Window.ShowActivated
+            $Window.ShowActivated = $false
+            $Window.Show()
+            $Window.ShowActivated = $act
+        }
+    } else {
+        if ($script:WindowMin) { $Window.MinWidth = $script:WindowMin[0]; $Window.MinHeight = $script:WindowMin[1] }
+        # Décrochée, Mindset la cache lui-même : WPF l'apprend ici, et l'icône près de l'horloge permet de la rouvrir
+        if ($Window.IsVisible -and -not [EmbedInfo]::IsShown($h)) { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } }
     }
     Write-Log $(if ($on) { 'Fenêtre affichée dans Mindset' } else { 'Fenêtre décrochée de Mindset' })
     try { Update-TopBarFit } catch {}
@@ -406,7 +417,8 @@ $Window.Add_ContentRendered({
             try { Stop-StartupLoader } catch {}
             $t = $script:StartupThen; $script:StartupThen = $null
             $Window.ShowInTaskbar = $true
-            try { Hide-ToTray } catch { Write-Log "Réduction: $_" }
+            # (déjà accrochée dans Mindset pendant le chargement : elle y reste affichée)
+            if (-not $script:Embedded) { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } }
             & $t
         } else { Hide-StartupOverlay }
     }

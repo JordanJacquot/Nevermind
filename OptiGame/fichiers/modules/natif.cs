@@ -2127,6 +2127,7 @@ public static class EmbedInfo
     [DllImport("user32.dll")] static extern IntPtr GetWindowLongPtr(IntPtr h, int index);   // 64 bits seulement
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int index);
     [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr h);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
     const int GWL_STYLE = -16;
     const long WS_CHILD = 0x40000000;
 
@@ -2136,4 +2137,7 @@ public static class EmbedInfo
         long style = IntPtr.Size == 8 ? GetWindowLongPtr(h, GWL_STYLE).ToInt64() : GetWindowLong(h, GWL_STYLE);
         return (style & WS_CHILD) != 0 || GetParent(h) != IntPtr.Zero;
     }
+
+    // Visible pour Windows (Mindset montre et cache la fenêtre lui-même, sans que WPF le sache toujours)
+    public static bool IsShown(IntPtr h) { return h != IntPtr.Zero && IsWindowVisible(h); }
 }

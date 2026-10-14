@@ -1465,6 +1465,50 @@ $script:T.Run.Add_Tick({
             }
             "accrochée à 960 x 700 pixels (tailles minimales à 0), demande d'affichage sans effet, décrochée : $($before -join ' x ') rétablis"
         }
+        Test-Step 'Accrochée dans Mindset après un lancement caché' {
+            # Comme un lancement -Demarrage : réduite puis cachée près de l'horloge. Mindset l'accroche et la montre lui-même
+            # (SW_RESTORE) : sa zone ne doit pas rester noire. Puis il la décroche et la cache (SW_HIDE) : l'icône la rouvre.
+            if (-not ('OGTest.TestEmbed2' -as [type])) {
+                Add-Type -Name TestEmbed2 -Namespace OGTest -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+'@
+            }
+            $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
+            $style0 = [OGTest.TestEmbed]::GetWindowLongPtr($h, -16).ToInt64()
+            $Window.WindowState = 'Minimized'; Wait-TestMs 200
+            Assert-Test (-not $Window.IsVisible) 'fenêtre pas cachée près de l''horloge au départ'
+            $parentForm = New-Object System.Windows.Forms.Form
+            $parentForm.StartPosition = 'Manual'; $parentForm.Location = New-Object System.Drawing.Point(-6000, 0); $parentForm.Size = New-Object System.Drawing.Size(1000, 760); $parentForm.ShowInTaskbar = $false
+            $parentForm.Show()
+            try {
+                $style = ($style0 -band (-bnot (0x00C00000L -bor 0x00040000L -bor 0x80000000L -bor 0x80000L -bor 0x20000L -bor 0x10000L))) -bor 0x40000000L -bor 0x10000000L
+                [void][OGTest.TestEmbed]::SetWindowLongPtr($h, -16, [IntPtr]$style)
+                [void][OGTest.TestEmbed]::SetParent($h, $parentForm.Handle)
+                [void][OGTest.TestEmbed2]::ShowWindow($h, 9)
+                [void][OGTest.TestEmbed]::SetWindowPos($h, [IntPtr]::Zero, 0, 0, 960, 700, 0x0004 -bor 0x0020 -bor 0x0040)
+                Update-EmbedState; Wait-TestMs 800
+                Assert-Test ($script:Embedded -and $Window.IsVisible -and $Window.WindowState -eq 'Normal') "accrochée : visible $($Window.IsVisible), état $($Window.WindowState)"
+                # Zone noire = WPF croit la fenêtre toujours cachée et ne la dessine pas (IsVisible faux après SW_RESTORE venu
+                # de l'extérieur, vérifié à part). Une fenêtre enfant hors écran ne se capture pas avec PrintWindow : on vérifie
+                # donc l'état de WPF et le dessin de la fenêtre.
+                Save-TestShot 'mindset-apres-demarrage'
+                # Décrochée et cachée par Mindset : WPF le sait, l'icône près de l'horloge la rouvre
+                [void][OGTest.TestEmbed]::SetParent($h, [IntPtr]::Zero)
+                [void][OGTest.TestEmbed]::SetWindowLongPtr($h, -16, [IntPtr]($style0 -band (-bnot 0x10000000L)))
+                [void][OGTest.TestEmbed2]::ShowWindow($h, 0)
+                Update-EmbedState; Wait-TestMs 200
+                Assert-Test (-not $script:Embedded -and -not $Window.IsVisible -and (Get-TrayIcon).Visible) "décrochée : visible $($Window.IsVisible), icône $((Get-TrayIcon).Visible)"
+                Show-MainWindow; Wait-TestMs 300
+                Assert-Test ($Window.IsVisible -and [EmbedInfo]::IsShown($h)) 'pas rouverte par l''icône près de l''horloge'
+            } finally {
+                if ([OGTest.TestEmbed]::GetParent($h) -ne [IntPtr]::Zero) { [void][OGTest.TestEmbed]::SetParent($h, [IntPtr]::Zero); [void][OGTest.TestEmbed]::SetWindowLongPtr($h, -16, [IntPtr]$style0) }
+                $parentForm.Close(); $parentForm.Dispose()
+                if (-not $Window.IsVisible) { Show-MainWindow }
+                $Window.WindowState = 'Normal'; $Window.Left = -5000; $Window.Top = 0; $Window.Width = 1120; $Window.Height = 900
+                try { Update-EmbedState } catch {}
+            }
+            "montrée par WPF sans être activée, décrochée puis rouverte par l'icône"
+        }
         Test-Step 'Fermeture demandée par Mindset' {
             # La fenêtre ne doit pas se fermer ici : chaque fermeture est notée puis annulée, et tout est remis comme avant
             $closes = New-Object System.Collections.ArrayList
