@@ -394,6 +394,24 @@ function Set-HubStat([int]$Index, [string]$Text, [string]$Color) {
     if ($Color) { $t.Foreground = Get-Brush $Color }
 }
 
+# Copie gérée par Mindset : un petit résumé pour la carte de Nevermind dans l'accueil de Mindset (etat.json, dans le
+# dossier de données). Que du texte et des nombres : Mindset l'affiche et n'exécute jamais rien qui en vient.
+function Write-EtatMindset($A) {
+    if (-not $Managed -or -not $A) { return }
+    $fd = Get-HubFindings $A
+    $top = if ($fd.Important.Count) { $fd.Important[0] } elseif ($fd.Manual.Count) { $fd.Manual[0] } else { $null }
+    $etat = [ordered]@{
+        Version = 1; Score = [int]$A.Score
+        Protection = $(if ($null -ne $script:SecurityScore) { [int]$script:SecurityScore } else { $null })
+        AFaire = $(if ($top) { [string]$top.Titre } else { '' }); Urgent = [bool]($top -and $top.Status -eq 'bad')
+        NbAFaire = $fd.Important.Count + $fd.Manual.Count
+    }
+    $cle = $etat | ConvertTo-Json -Compress
+    if ($cle -eq $script:EtatMindsetEcrit) { return }   # (rien de neuf : pas d'écriture)
+    $etat.Maj = Get-Date -Format s
+    try { [IO.File]::WriteAllText((Join-Path $DataDir 'etat.json'), ($etat | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding $false)); $script:EtatMindsetEcrit = $cle } catch {}
+}
+
 function Update-Hub {
     $a = $script:LastAnalysis
     $info = if ($a) { $a.Info } else { @{} }
@@ -422,6 +440,7 @@ function Update-Hub {
         [void]$ui.HubGaugeSec.Children.Add((New-Text 'Protection...' 13 '#8E88A8'))
     }
     Update-HubTodo $a
+    Write-EtatMindset $a
 
     # Le PC en une ligne, discrète, sous les familles
     $specs = @(foreach ($k in 'Processeur', 'Carte graphique', 'Mémoire') { if ($info[$k]) { [string]$info[$k] } })
