@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    Nevermind 1.0.99
+    Nevermind 1.0.100
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -12,7 +12,7 @@
 #>
 param([switch]$Uninstall, [switch]$Demarrage)   # -Demarrage : lancé avec Windows, réduit près de l'horloge
 
-$AppVersion = '1.0.99'
+$AppVersion = '1.0.100'
 $UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -59,16 +59,29 @@ function Test-InstanceRunning {
     }
 }
 
-# Dossier des données. Copie gérée : %LOCALAPPDATA%\Mindset\Nevermind. Au premier lancement, l'ancien dossier y est
-# renommé d'un coup (même disque : rien n'est copié, rien ne peut rester à moitié déplacé). S'il est utilisé
-# (fichier ouvert, autre Nevermind encore ouvert dessus), on garde l'ancien pour cette fois et on réessaie au suivant.
+# Dossier des données. Copie gérée : déduit de l'emplacement du programme (dossier protégé, jamais d'un fichier
+# modifiable) : <X>:\Mindset\Programmes\Nevermind donne <X>:\Mindset\Donnees\Nevermind (Mindset installé sur un autre
+# disque), sinon %LOCALAPPDATA%\Mindset\Nevermind. Même règle dans le lanceur (DossierDonnees, lanceur.cs).
+# Au premier lancement, l'ancien dossier y est renommé d'un coup (même disque : rien n'est copié, rien ne peut rester
+# à moitié déplacé). S'il est utilisé (fichier ouvert, autre Nevermind encore ouvert dessus), ou sur un autre disque
+# (c'est alors Mindset qui copie les données avant de lancer Nevermind), on garde l'ancien pour cette fois.
 $OldDataDir = Join-Path $env:LOCALAPPDATA 'OptiGame'
 $DataDirNote = $null   # noté au journal dès qu'il est prêt (après donnees.ps1)
+function Get-ManagedDataDir {
+    $p = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent   # parent du dossier de Nevermind.exe
+    $m = Split-Path $p -Parent
+    if ($m -and (Split-Path $p -Leaf) -eq 'Programmes' -and (Split-Path $m -Leaf) -eq 'Mindset') { return [IO.Path]::Combine($m, 'Donnees\Nevermind') }
+    Join-Path $env:LOCALAPPDATA 'Mindset\Nevermind'
+}
 function Resolve-DataDir {
     if (-not $Managed) { return $OldDataDir }
-    $new = Join-Path $env:LOCALAPPDATA 'Mindset\Nevermind'
+    $new = Get-ManagedDataDir
     if ([IO.Directory]::Exists($new) -or -not [IO.Directory]::Exists($OldDataDir)) { return $new }
     if ($Uninstall -or (Test-InstanceRunning)) { return $OldDataDir }
+    if ([IO.Path]::GetPathRoot($new) -ne [IO.Path]::GetPathRoot($OldDataDir)) {
+        $script:DataDirNote = "Données : $OldDataDir est sur un autre disque que $new, rien n'est copié (Mindset s'en charge), l'ancien dossier est gardé pour cette fois"
+        return $OldDataDir
+    }
     try {
         New-Item -ItemType Directory -Force -Path (Split-Path $new) -ErrorAction Stop | Out-Null
         # Directory.Move et pas Move-Item : quand un fichier est ouvert, Move-Item crée quand même le nouveau dossier

@@ -22,16 +22,27 @@ using System.Windows.Forms;
 
 static class Lanceur
 {
-    // Dossier des données, même règle que Resolve-DataDir (OptiGame.ps1) : %LOCALAPPDATA%\Mindset\Nevermind si
-    // %LOCALAPPDATA%\Mindset\suite.json note cette copie comme celle de Mindset (et que l'ancien dossier a été renommé),
-    // sinon %LOCALAPPDATA%\OptiGame. Le dossier lu dans suite.json ne sert qu'à comparer.
+    // Dossier des données, même règle que Resolve-DataDir (OptiGame.ps1) : si %LOCALAPPDATA%\Mindset\suite.json note
+    // cette copie comme celle de Mindset (et que l'ancien dossier a été renommé), <X>:\Mindset\Donnees\Nevermind pour un
+    // programme dans <X>:\Mindset\Programmes\Nevermind, sinon %LOCALAPPDATA%\Mindset\Nevermind ; autrement
+    // %LOCALAPPDATA%\OptiGame. Le dossier lu dans suite.json ne sert qu'à comparer.
+    static string DossierGere(string racine, string local)
+    {
+        string p = Path.GetDirectoryName(Path.GetFullPath(racine).TrimEnd('\\'));
+        string m = p != null ? Path.GetDirectoryName(p) : null;
+        if (m != null && string.Equals(Path.GetFileName(p), "Programmes", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(Path.GetFileName(m), "Mindset", StringComparison.OrdinalIgnoreCase))
+            return Path.Combine(Path.Combine(m, "Donnees"), "Nevermind");
+        return Path.Combine(Path.Combine(local, "Mindset"), "Nevermind");
+    }
+
     static string DossierDonnees(string racine)
     {
         string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         string ancien = Path.Combine(local, "OptiGame");
         try
         {
-            string nouveau = Path.Combine(Path.Combine(local, "Mindset"), "Nevermind");
+            string nouveau = DossierGere(racine, local);
             var suite = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(Path.Combine(Path.Combine(local, "Mindset"), "suite.json"))) as Dictionary<string, object>;
             object applis, dossier;
             if (suite != null && suite.TryGetValue("applis", out applis) && applis is Dictionary<string, object> &&
