@@ -20,3 +20,6 @@
 /Désinstaller OptiGame.exe
 /Désinstaller Nexo.exe
 /Désinstaller Nevermind.exe
+
+# Anciens lanceurs mis de côté pendant une mise à jour (effacés au lancement suivant)
+*.exe.old
