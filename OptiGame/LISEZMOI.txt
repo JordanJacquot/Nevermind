@@ -4,15 +4,15 @@ Analyse et optimisation gaming pour Windows 10 et 11
 
 INSTALLATION
 ------------
-1. Clic droit sur le zip > Extraire tout.
-2. Dans le dossier extrait, double clique sur « Nevermind.exe »
-   (l'icône avec la jauge verte).
-3. Clique sur « Oui » quand Windows demande l'autorisation.
-
-La première fois seulement, Windows peut afficher « Windows a protégé votre
-ordinateur » : clique sur « Informations complémentaires » puis « Exécuter
-quand même ». C'est normal pour un programme qui ne vient pas du Microsoft
-Store. Nevermind se débloque ensuite tout seul : plus d'avertissement après.
+Nevermind s'installe et se met à jour avec Mindset, le portail de la suite :
+  https://github.com/JordanJacquot/Mindset/releases/latest
+1. Installe Mindset, puis installe Nevermind depuis Mindset.
+2. Ouvre Nevermind depuis Mindset ou son raccourci, et clique sur « Oui »
+   quand Windows demande l'autorisation.
+Tu avais déjà Nevermind ? Mindset reprend ta copie avec tes réglages, ta
+sauvegarde et tes données : rien n'est perdu. Une copie qui n'est pas gérée
+par Mindset ne s'ouvre plus et propose d'installer Mindset (la désinstallation
+marche toujours).
 
 MES JEUX
 La section « Jeux » (menu de gauche) liste tous tes jeux installés, quel que
@@ -210,10 +210,9 @@ OVERLAY (onglet en haut)
   transparence). Ctrl + Maj + F lance la mesure sur un jeu non reconnu.
 
 PARAMÈTRES (roue crantée en haut à droite)
-  Général : « Raccourci et démarrage » crée un raccourci Nevermind sur ton
-  bureau, et peut lancer Nevermind à chaque démarrage du PC. Il reste alors
+  Général : Nevermind peut se lancer à chaque démarrage du PC. Il reste alors
   réduit près de l'horloge (mode jeu, mesure des FPS) et Windows ne demande pas
-  d'autorisation.
+  d'autorisation. Le raccourci sur le bureau est créé par Mindset.
   Jeux : mesure des FPS, mesure du lag, mode jeu, jaquettes depuis Internet.
   Réseau et vie privée : alerte nouvel appareil, identification des serveurs.
   Thème : 5 ambiances pour toute l'app. Néon (celui de base), Crépuscule
@@ -224,8 +223,8 @@ PARAMÈTRES (roue crantée en haut à droite)
   qui court pendant le chargement). « Importer un pack » prend un zip ; le pack
   reste sur ce PC (dossier des données de Nevermind). Pour le partager, envoie
   le zip à tes potes.
-  Mises à jour : « Recevoir les versions bêta » pour tester les nouveautés avant
-  tout le monde.
+  Mises à jour : elles passent par Mindset, qui vérifie la signature de chaque
+  version avant de l'installer.
   Aide : « Signaler un problème » crée un fichier sur ton bureau (journal de
   l'app et configuration du PC, sans tes fichiers ni ton nom) à envoyer à la
   personne qui t'a donné Nevermind.
@@ -240,11 +239,10 @@ SÉCURITÉ
   correct. Sans réponse (écran noir), elle revient seule à l'ancien réglage
   au bout de 15 secondes.
 - Chaque réglage modifié est sauvegardé avant d'être changé
-  (dans %LOCALAPPDATA%\OptiGame\sauvegarde.json).
+  (dans %LOCALAPPDATA%\Mindset\Nevermind\sauvegarde.json).
 - Un point de restauration Windows est créé avant les optimisations
   (case cochée par défaut).
-- L'application ne se connecte à Internet que pour : vérifier les mises à jour
-  (GitHub), les tests de ping et de débit, afficher ton adresse Internet,
+- L'application ne se connecte à Internet que pour : les tests de ping et de débit, afficher ton adresse Internet,
   connaître le dernier pilote NVIDIA, télécharger la liste des fabricants
   d'appareils réseau (IEEE), mesurer le lag en ligne (pings vers ta box, ton
   fournisseur et le serveur du jeu) et identifier les serveurs sans nom dans
@@ -255,4 +253,4 @@ SÉCURITÉ
 - Le code est lisible : ouvre les fichiers du dossier fichiers\modules avec le
   Bloc-notes pour vérifier.
 
-En cas de problème, le journal est dans %LOCALAPPDATA%\OptiGame\journal.txt
+En cas de problème, le journal est dans %LOCALAPPDATA%\Mindset\Nevermind\journal.txt

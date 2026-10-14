@@ -89,6 +89,104 @@ $DataDir = Resolve-DataDir
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Drawing, System.Windows.Forms
 
 # ---------------------------------------------------------------------------
+# Nevermind s'utilise avec Mindset
+# ---------------------------------------------------------------------------
+# Une copie qui n'est pas gérée par Mindset ne s'ouvre plus : une petite fenêtre propose d'installer (ou d'ouvrir)
+# Mindset, qui reprend cette copie avec ses réglages et ses données. Contrôlé avant tout le reste : pas de demande
+# des droits administrateur, pas de verrou, rien ne démarre (ni minuteries, ni icône près de l'horloge, ni overlay).
+# Restent possibles : la désinstallation (elle remet les réglages de Windows comme avant) et les dossiers de travail
+# (dossier .git à la racine de la copie ou juste au-dessus). La copie de test n'est bloquée qu'avec OPTIGAME_TEST_BLOCAGE
+# (s'il finit par .png, la fenêtre s'y enregistre en image puis se ferme : capture pour vérifier son allure).
+$MindsetUrl = 'https://github.com/JordanJacquot/Mindset/releases/latest'
+$MindsetExe = Join-Path $(if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }) 'Mindset\Mindset\Mindset.exe'
+
+function Test-WorkCopy {
+    $root = Split-Path $PSScriptRoot -Parent
+    foreach ($d in @($root, (Split-Path $root -Parent))) { if ($d -and (Test-Path -LiteralPath (Join-Path $d '.git'))) { return $true } }
+    $false
+}
+
+function Show-MindsetRequired {
+    $hasMindset = Test-Path -LiteralPath $MindsetExe
+    $xaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Nevermind" Width="480" SizeToContent="Height" WindowStyle="None" ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
+        Background="#110F19" BorderBrush="#2E2843" BorderThickness="1" FontFamily="Segoe UI Variable Text, Segoe UI">
+  <Window.Resources>
+    <Style x:Key="Btn" TargetType="Button">
+      <Setter Property="Foreground" Value="#E6E1F5"/><Setter Property="FontSize" Value="13"/><Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Padding" Value="18,9"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Background" Value="#14FFFFFF"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="b" CornerRadius="12" Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}" BorderBrush="#2EFFFFFF" BorderThickness="1">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Opacity" Value="0.85"/></Trigger></ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+  <StackPanel Margin="28,26,28,24">
+    <DockPanel>
+      <Image x:Name="Logo" DockPanel.Dock="Left" Width="44" Height="44" Margin="0,0,16,0" VerticalAlignment="Top"/>
+      <StackPanel>
+        <TextBlock Text="Nevermind s'utilise maintenant avec Mindset" Foreground="White" FontSize="18" FontWeight="Bold" TextWrapping="Wrap"
+                   FontFamily="Segoe UI Variable Display, Segoe UI"/>
+        <TextBlock Text="Installe Mindset, le portail de la suite : il reprend cette copie avec tes réglages et tes données, rien n'est perdu."
+                   Foreground="#A6A1BC" FontSize="13" TextWrapping="Wrap" Margin="0,8,0,0" LineHeight="19"/>
+      </StackPanel>
+    </DockPanel>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,24,0,0">
+      <Button x:Name="BtnClose" Style="{StaticResource Btn}" Content="Fermer" Margin="0,0,10,0" IsCancel="True"/>
+      <Button x:Name="BtnMain" Style="{StaticResource Btn}" Foreground="#08060F" IsDefault="True">
+        <Button.Background>
+          <LinearGradientBrush StartPoint="0,0" EndPoint="1,0"><GradientStop Color="#00E5FF" Offset="0"/><GradientStop Color="#B04BFF" Offset="1"/></LinearGradientBrush>
+        </Button.Background>
+      </Button>
+    </StackPanel>
+  </StackPanel>
+</Window>
+'@
+    $w = [Windows.Markup.XamlReader]::Parse($xaml)
+    $main = $w.FindName('BtnMain')
+    $main.Content = if ($hasMindset) { 'Ouvrir Mindset' } else { 'Télécharger Mindset' }
+    $ico = Join-Path $PSScriptRoot 'OptiGame.ico'
+    if (Test-Path -LiteralPath $ico) {
+        try {
+            $frames = [System.Windows.Media.Imaging.BitmapDecoder]::Create((New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))), 'None', 'OnLoad').Frames
+            $w.FindName('Logo').Source = $frames | Sort-Object PixelWidth | Where-Object { $_.PixelWidth -ge 48 } | Select-Object -First 1
+            $w.Icon = $frames | Sort-Object PixelWidth | Where-Object { $_.PixelWidth -ge 32 } | Select-Object -First 1
+        } catch {}
+    }
+    $w.Add_MouseLeftButtonDown({ try { $w.DragMove() } catch {} })
+    $w.FindName('BtnClose').Add_Click({ $w.Close() })
+    $main.Add_Click({
+        # Par l'Explorateur : Mindset (ou le navigateur) s'ouvre sans les droits administrateur de ce lancement
+        $target = if ($hasMindset) { $MindsetExe } else { $MindsetUrl }
+        try { Start-Process -FilePath (Join-Path $env:windir 'explorer.exe') -ArgumentList "`"$target`"" -ErrorAction Stop } catch {}
+        $w.Close()
+    })
+    if ("$env:OPTIGAME_TEST_BLOCAGE" -like '*.png') {
+        $w.Add_ContentRendered({
+            $bmp = New-Object System.Windows.Media.Imaging.RenderTargetBitmap ([int]$w.ActualWidth), ([int]$w.ActualHeight), 96, 96, 'Pbgra32'
+            $bmp.Render($w)
+            $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
+            $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($bmp))
+            $fs = [IO.File]::Create($env:OPTIGAME_TEST_BLOCAGE); try { $enc.Save($fs) } finally { $fs.Dispose() }
+            $w.Close()
+        })
+    }
+    [void]$w.ShowDialog()
+}
+
+if (-not $Managed -and -not $Uninstall -and -not (Test-WorkCopy) -and (-not $env:OPTIGAME_TEST -or $env:OPTIGAME_TEST_BLOCAGE)) {
+    Show-MindsetRequired
+    exit
+}
+
+# ---------------------------------------------------------------------------
 # Une seule fenêtre : si Nevermind tourne déjà (même caché près de l'horloge), on le ramène devant
 # ---------------------------------------------------------------------------
 # La fenêtre ouverte a les droits administrateur : ce lancement-ci ne peut pas lui envoyer de signal
@@ -135,10 +233,12 @@ $AppExe = Join-Path (Split-Path $PSScriptRoot -Parent) 'Nevermind.exe'
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     try {
-        if ((Test-Path -LiteralPath $AppExe) -and -not $Uninstall) { Start-Process -FilePath $AppExe -Verb RunAs -ErrorAction Stop }
-        else {
+        # (Nevermind.exe démarre sans droits : c'est ici qu'ils sont demandés, une fois les contrôles ci-dessus passés)
+        if ((Test-Path -LiteralPath $AppExe) -and -not $Uninstall) {
+            if ($Demarrage) { Start-Process -FilePath $AppExe -Verb RunAs -ArgumentList '-Demarrage' -ErrorAction Stop } else { Start-Process -FilePath $AppExe -Verb RunAs -ErrorAction Stop }
+        } else {
             Start-Process -FilePath 'powershell.exe' -Verb RunAs -ErrorAction Stop -ArgumentList @(
-                @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"") + @(if ($Uninstall) { '-Uninstall' }))
+                @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"") + @(if ($Uninstall) { '-Uninstall' }) + @(if ($Demarrage) { '-Demarrage' }))
         }
     } catch {
         [System.Windows.MessageBox]::Show(

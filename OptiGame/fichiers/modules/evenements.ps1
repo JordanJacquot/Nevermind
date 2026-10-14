@@ -251,8 +251,6 @@ $ui.Tabs.Add_SelectionChanged({
 })
 $ui.BtnUpdate.Add_Click({ Invoke-Safe { Install-Update } })
 $ui.BtnUpdateLater.Add_Click({ $ui.UpdateBanner.Visibility = 'Collapsed' })
-$ui.BtnSuiteGet.Add_Click({ Open-Url $MindsetUrl })
-$ui.BtnSuiteLater.Add_Click({ Invoke-Safe { Hide-SuiteBanner } })
 Initialize-Suite
 $ui.BtnCheckUpdate.Add_Click({
     if ($script:PendingUpdate) { Invoke-Safe { Install-Update } } else { Invoke-Safe { Invoke-UpdateCheck -Manual } }

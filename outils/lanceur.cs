@@ -1,6 +1,7 @@
 // Lanceur de Nevermind : exécute fichiers\OptiGame.ps1 DANS son propre processus (moteur PowerShell hébergé),
 // pour que le Gestionnaire des tâches et la barre des tâches affichent « Nevermind » avec son icône, pas « Windows PowerShell ».
-// Les droits administrateur sont demandés par le manifeste (une seule fenêtre de confirmation de Windows).
+// Il démarre sans droits (manifeste « asInvoker ») : OptiGame.ps1 se relance lui-même en administrateur après ses
+// premiers contrôles (copie gérée par Mindset, Nevermind déjà ouvert), une seule fenêtre de confirmation de Windows.
 // Compilé deux fois par construire.ps1 : Nevermind.exe et Désinstaller Nevermind.exe (symbole UNINSTALL).
 using System;
 using System.Collections.Generic;

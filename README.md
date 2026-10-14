@@ -6,15 +6,15 @@ Nevermind vérifie la santé de ton PC (processeur, carte graphique, mémoire, d
 
 ## Télécharger
 
-1. Va dans [Releases](../../releases/latest) et télécharge **OptiGame.zip** (le fichier garde l'ancien nom de l'app pour que les versions déjà installées se mettent à jour toutes seules).
-2. Clic droit sur le zip > **Extraire tout**.
-3. Double clique sur **Nevermind.exe** et accepte la demande d'autorisation de Windows.
+Nevermind s'installe avec **Mindset**, le portail de la suite : [télécharger Mindset](https://github.com/JordanJacquot/Mindset/releases/latest).
 
-La première fois, Windows peut afficher « Windows a protégé votre ordinateur » : clique sur « Informations complémentaires » puis « Exécuter quand même ».
+1. Installe Mindset, puis installe Nevermind depuis Mindset (un clic, Mindset s'occupe du téléchargement).
+2. Ouvre Nevermind depuis Mindset ou depuis son raccourci, et accepte la demande d'autorisation de Windows.
+3. Tu avais déjà Nevermind ? Mindset reprend ta copie avec tes réglages, ta sauvegarde et tes données : rien n'est perdu.
 
-Dans la page **Sauvegarde**, « Raccourci et démarrage » crée un raccourci sur le bureau et peut lancer Nevermind à chaque démarrage du PC (réduit près de l'horloge, sans demande d'autorisation de Windows).
+Mindset installe les mises à jour (chaque version est signée et vérifiée avant d'être installée) et crée le raccourci sur le bureau. Une copie de Nevermind qui n'est pas gérée par Mindset ne s'ouvre plus : elle propose d'installer Mindset (« Désinstaller Nevermind.exe » marche toujours, pour remettre les réglages de Windows comme avant).
 
-Les mises à jour sont ensuite proposées directement dans l'application. Relancer Nevermind alors qu'il est déjà ouvert (même caché près de l'horloge) ramène simplement sa fenêtre.
+Dans **Paramètres > Général**, Nevermind peut se lancer à chaque démarrage du PC (réduit près de l'horloge, sans demande d'autorisation de Windows). Relancer Nevermind alors qu'il est déjà ouvert (même caché près de l'horloge) ramène simplement sa fenêtre.
 
 ## Ce que fait l'application
 
@@ -130,7 +130,7 @@ Tester (copie isolée de l'app, hors écran, rien n'est modifié sur le PC) :
 .\outils\tester.ps1 -Captures    # + captures d'écran dans _test\captures
 ```
 
-Publier une mise à jour (vérifie la syntaxe, les tirets et lance le test avant) :
+Publier une mise à jour (vérifie la syntaxe, les tirets et lance le test avant ; le zip est signé avec la clé de la suite, `..\Mindset\outils\signer.ps1`) :
 
 ```
 .\outils\publier.ps1 -Version 1.1 -Notes "Ce qui change"

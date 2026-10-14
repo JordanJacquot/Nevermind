@@ -1,9 +1,8 @@
 ﻿# Publie une nouvelle version de Nevermind sur GitHub.
-# Les apps déjà installées la proposent ensuite au lancement (bandeau « Nouvelle version disponible »).
+# Mindset la propose ensuite et l'installe (OptiGame.zip et sa signature OptiGame.zip.sig, vérifiée avant installation).
 #
 #   .\outils\publier.ps1 -Version 1.1 -Notes "Ce qui change dans cette version"
-#   .\outils\publier.ps1 -Version 1.2 -Notes "..." -Beta    version bêta : seuls ceux qui ont activé
-#                                                         « Recevoir les versions bêta » la reçoivent
+#   .\outils\publier.ps1 -Version 1.2 -Notes "..." -Beta    version bêta (marquée « préversion » sur GitHub)
 #
 # Avant de publier, le script vérifie la syntaxe de tous les fichiers, l'absence de tirets
 # cadratins et lance le test automatique (outils\tester.ps1). -SansTest saute le test (urgence).

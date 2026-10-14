@@ -345,7 +345,6 @@
       <Grid x:Name="BackdropDeco" IsHitTestVisible="False" ClipToBounds="True"/>
     </Grid>
 
-    <StackPanel>
     <!-- Bandeau « nouvelle version disponible » -->
     <Border x:Name="UpdateBanner" Visibility="Collapsed" Background="#0C2230" BorderBrush="#00E5FF" BorderThickness="0,0,0,1" Padding="18,10">
       <DockPanel>
@@ -359,18 +358,6 @@
         </StackPanel>
       </DockPanel>
     </Border>
-    <!-- Bandeau « Nevermind fait maintenant partie de Mindset » (copie autonome, Mindset pas encore installé) -->
-    <Border x:Name="SuiteBanner" Visibility="Collapsed" Background="#1A1030" BorderBrush="#B04BFF" BorderThickness="0,0,0,1" Padding="18,10">
-      <DockPanel>
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-          <Button x:Name="BtnSuiteLater" Style="{StaticResource BtnSecondary}" Content="Plus tard" Margin="0,0,10,0"/>
-          <Button x:Name="BtnSuiteGet" Style="{StaticResource BtnPrimary}" Content="Télécharger Mindset"/>
-        </StackPanel>
-        <Ellipse DockPanel.Dock="Left" Width="9" Height="9" Fill="#B04BFF" Margin="0,0,10,0" VerticalAlignment="Center"/>
-        <TextBlock Foreground="White" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,16,0" Text="Nevermind fait maintenant partie de Mindset, le portail de la suite. Installe Mindset pour tout retrouver au même endroit."/>
-      </DockPanel>
-    </Border>
-    </StackPanel>
 
     <TabControl x:Name="Tabs" Grid.Row="1" TabStripPlacement="Top" Background="Transparent" BorderThickness="0">
       <TabControl.Template>

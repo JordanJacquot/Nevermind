@@ -183,28 +183,14 @@ function Set-BetaChannel([bool]$On) {
 # ---------------------------------------------------------------------------
 # Mindset, le portail de la suite
 # ---------------------------------------------------------------------------
-$MindsetUrl = 'https://github.com/JordanJacquot/Mindset/releases/latest'
-
 # Copie gérée : pas de bouton de mise à jour ni de versions bêta (Mindset installe les versions), pas de raccourci
 # sur le bureau (Mindset le crée). Le lancement au démarrage reste ici : Nevermind demande les droits administrateur,
 # seule sa tâche planifiée peut l'ouvrir au démarrage sans demande de Windows.
-# Copie autonome : bandeau « Nevermind fait maintenant partie de Mindset », sauf si Mindset est déjà sur le PC
-# ou si l'utilisateur a choisi « Plus tard » il y a moins de 7 jours.
+# (Une copie non gérée ne s'ouvre pas, sauf un dossier de travail : voir le début d'OptiGame.ps1.)
 function Initialize-Suite {
-    if ($Managed) {
-        $ui.BtnCheckUpdate.Visibility = 'Collapsed'
-        $ui.ChkBeta.Parent.Visibility = 'Collapsed'
-        $ui.UpdateStatus.Text = "Version $AppVersion. Les mises à jour de Nevermind passent par Mindset : ouvre Mindset pour les installer."
-        $ui.BtnShortcut.Visibility = 'Collapsed'
-        return
-    }
-    if ([IO.File]::Exists($SuiteFile)) { return }
-    $until = [string](Get-Setting 'MindsetBannerUntil' '')
-    try { if ($until -and (Get-Date) -lt [datetime]::Parse($until, [Globalization.CultureInfo]::InvariantCulture)) { return } } catch {}
-    $ui.SuiteBanner.Visibility = 'Visible'
-}
-
-function Hide-SuiteBanner {
-    $ui.SuiteBanner.Visibility = 'Collapsed'
-    Set-Setting 'MindsetBannerUntil' (Get-Date).AddDays(7).ToString('s')
+    if (-not $Managed) { return }
+    $ui.BtnCheckUpdate.Visibility = 'Collapsed'
+    $ui.ChkBeta.Parent.Visibility = 'Collapsed'
+    $ui.UpdateStatus.Text = "Version $AppVersion. Les mises à jour de Nevermind passent par Mindset : ouvre Mindset pour les installer."
+    $ui.BtnShortcut.Visibility = 'Collapsed'
 }

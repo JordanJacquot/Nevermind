@@ -4,8 +4,9 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- L'app tourne dans ce programme (moteur PowerShell hébergé) : il demande lui-même les droits administrateur -->
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false"/>
+        <!-- Démarre sans droits : OptiGame.ps1 vérifie d'abord que la copie est gérée par Mindset (sinon simple message,
+             sans demande de Windows), puis se relance lui-même en administrateur (une seule demande de Windows) -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
       </requestedPrivileges>
     </security>
   </trustInfo>
