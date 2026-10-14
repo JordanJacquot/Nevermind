@@ -68,7 +68,7 @@ if ($Managed -and -not $env:OPTIGAME_TEST) {
         $t = (Read-Suite).Theme
         if ($t -and -not $ThemePack -and $t -cne $ThemeId) {
             Write-Log "Thème de la suite changé dans Mindset : $t"
-            Invoke-Safe { Set-AppTheme $t -FromSuite }
+            Invoke-Safe { Set-AppTheme $t }
         }
     })
     $script:SuiteWatch.Start()

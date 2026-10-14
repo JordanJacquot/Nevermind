@@ -86,6 +86,8 @@ $SearchEntries = @(
 )
 # Géré par Mindset : raccourci du bureau et versions bêta passent par lui (cachés dans Paramètres)
 if ($Managed) { $SearchEntries = @($SearchEntries | Where-Object { $_.T -notin 'Raccourci sur le bureau', 'Versions bêta' }) }
+# Géré par Mindset : le thème mène à la ligne « Le thème se règle dans Mindset » (Paramètres, Thème)
+if ($Managed) { foreach ($e in $SearchEntries) { if ($e.Tab -eq 'theme') { $e.A = $ManagedThemeText } } }
 # Suggestions quand la barre est vide
 $SearchStarters = @('Compteur de FPS à l''écran (overlay)', 'Mes FPS ne sont pas normaux', 'Lag en ligne', 'Nettoyage du disque', 'Lancer Nevermind au démarrage du PC', 'Ce que Windows envoie à Microsoft')
 
