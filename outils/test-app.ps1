@@ -1416,6 +1416,55 @@ $script:T.Run.Add_Tick({
             $gap = [int]$script:T.MaxGap
             Add-TestResult 'Fluidité' ($gap -lt 3000) "plus long blocage de la fenêtre : $gap ms (étape « $($script:T.GapStep) ») ; tâches répétées les plus lentes : $(($script:T.Slow.GetEnumerator() | Sort-Object Value -Descending | ForEach-Object { "$($_.Key) $($_.Value) ms" }) -join ', ')"
         }
+        Test-Step 'Affiché dans la fenêtre de Mindset' {
+            # Comme Mindset : la fenêtre devient une fenêtre enfant d'une autre (SetParent, styles), à 960 x 700 pixels
+            if (-not ('OGTest.TestEmbed' -as [type])) {
+                Add-Type -Name TestEmbed -Namespace OGTest -MemberDefinition @'
+[DllImport("user32.dll")] public static extern IntPtr SetParent(IntPtr child, IntPtr parent);
+[DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr h);
+[DllImport("user32.dll")] public static extern IntPtr GetWindowLongPtr(IntPtr h, int index);
+[DllImport("user32.dll")] public static extern IntPtr SetWindowLongPtr(IntPtr h, int index, IntPtr value);
+[DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+'@
+            }
+            $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
+            $before = @($Window.MinWidth, $Window.MinHeight)
+            $style0 = [OGTest.TestEmbed]::GetWindowLongPtr($h, -16).ToInt64()
+            $parentForm = New-Object System.Windows.Forms.Form
+            $parentForm.StartPosition = 'Manual'; $parentForm.Location = New-Object System.Drawing.Point(-6000, 0); $parentForm.Size = New-Object System.Drawing.Size(1000, 760); $parentForm.ShowInTaskbar = $false
+            $parentForm.Show()
+            try {
+                Show-Page $HubIndex
+                $style = ($style0 -band (-bnot (0x00C00000L -bor 0x00040000L -bor 0x80000000L -bor 0x80000L -bor 0x20000L -bor 0x10000L))) -bor 0x40000000L
+                [void][OGTest.TestEmbed]::SetWindowLongPtr($h, -16, [IntPtr]$style)
+                [void][OGTest.TestEmbed]::SetParent($h, $parentForm.Handle)
+                [void][OGTest.TestEmbed]::SetWindowPos($h, [IntPtr]::Zero, 0, 0, 960, 700, 0x0004 -bor 0x0020 -bor 0x0040)
+                Update-EmbedState; Wait-TestMs 400
+                $px = [int]($Window.ActualWidth * [System.Windows.PresentationSource]::FromVisual($Window).CompositionTarget.TransformToDevice.M11)
+                Assert-Test ($script:Embedded -and $Window.MinWidth -eq 0 -and $Window.MinHeight -eq 0) "accrochée : MinWidth $($Window.MinWidth), MinHeight $($Window.MinHeight)"
+                Assert-Test ([math]::Abs($px - 960) -le 4) "largeur dans Mindset : $px pixels au lieu de 960"
+                Save-TestShot 'mindset-accroche'
+                Show-Settings 'general'; Wait-TestMs 300; Save-TestShot 'mindset-accroche-parametres'; Hide-Settings
+                # Plus petite taille prévue dans Mindset
+                [void][OGTest.TestEmbed]::SetWindowPos($h, [IntPtr]::Zero, 0, 0, 900, 640, 0x0004)
+                Wait-TestMs 300; Save-TestShot 'mindset-accroche-900'
+                # Demande d'affichage pendant qu'elle est dans Mindset : elle y reste
+                [IO.File]::WriteAllText($ShowRequest, '1'); Watch-Requests
+                Assert-Test (-not [IO.File]::Exists($ShowRequest) -and [OGTest.TestEmbed]::GetParent($h) -eq $parentForm.Handle -and $script:Embedded) 'sortie de Mindset par une demande d''affichage'
+                # Décrochée : valeurs d'origine
+                [void][OGTest.TestEmbed]::SetParent($h, [IntPtr]::Zero)
+                [void][OGTest.TestEmbed]::SetWindowLongPtr($h, -16, [IntPtr]$style0)
+                [void][OGTest.TestEmbed]::SetWindowPos($h, [IntPtr]::Zero, -5000, 0, 1120, 900, 0x0004 -bor 0x0020)
+                Update-EmbedState; Wait-TestMs 300
+                Assert-Test (-not $script:Embedded -and $Window.MinWidth -eq $before[0] -and $Window.MinHeight -eq $before[1]) "décrochée : MinWidth $($Window.MinWidth), MinHeight $($Window.MinHeight)"
+            } finally {
+                if ([OGTest.TestEmbed]::GetParent($h) -ne [IntPtr]::Zero) { [void][OGTest.TestEmbed]::SetParent($h, [IntPtr]::Zero); [void][OGTest.TestEmbed]::SetWindowLongPtr($h, -16, [IntPtr]$style0) }
+                $parentForm.Close(); $parentForm.Dispose()
+                $Window.Left = -5000; $Window.Top = 0
+                try { Update-EmbedState } catch {}
+            }
+            "accrochée à 960 x 700 pixels (tailles minimales à 0), demande d'affichage sans effet, décrochée : $($before -join ' x ') rétablis"
+        }
         Test-Step 'Fermeture demandée par Mindset' {
             # La fenêtre ne doit pas se fermer ici : chaque fermeture est notée puis annulée, et tout est remis comme avant
             $closes = New-Object System.Collections.ArrayList

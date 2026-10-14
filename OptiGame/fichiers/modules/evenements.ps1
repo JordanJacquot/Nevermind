@@ -55,8 +55,27 @@ function Invoke-RequestedQuit {
     $Window.Close()
 }
 
+# Affiché dans Mindset : Mindset accroche la fenêtre dans sa zone centrale (fenêtre enfant) et la décroche à tout
+# moment. Accrochée, elle n'a plus de taille minimale (Mindset choisit sa taille) ; décrochée, tout redevient comme avant.
+# Lu toutes les 600 ms (Watch-Requests) : un crochet sur les messages de la fenêtre ferait passer chaque message par PowerShell.
+function Update-EmbedState {
+    $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
+    $on = [EmbedInfo]::IsEmbedded($h)
+    if ($on -eq [bool]$script:Embedded) { return }
+    $script:Embedded = $on
+    if ($on) {
+        $script:WindowMin = @($Window.MinWidth, $Window.MinHeight)
+        $Window.MinWidth = 0; $Window.MinHeight = 0
+    } elseif ($script:WindowMin) {
+        $Window.MinWidth = $script:WindowMin[0]; $Window.MinHeight = $script:WindowMin[1]
+    }
+    Write-Log $(if ($on) { 'Fenêtre affichée dans Mindset' } else { 'Fenêtre décrochée de Mindset' })
+    try { Update-TopBarFit } catch {}
+}
+
 # Demandes déposées par un autre programme : afficher la fenêtre (nouveau lancement de Nevermind) ou fermer (Mindset)
 function Watch-Requests {
+    try { Update-EmbedState } catch {}
     if ([IO.File]::Exists($QuitRequest)) {
         try { [IO.File]::Delete($QuitRequest) } catch {}
         if (-not $script:QuitAsked) { $script:QuitAsked = Get-Date; Write-Log 'Fermeture demandée par Mindset' }
@@ -64,7 +83,8 @@ function Watch-Requests {
     if ($script:QuitAsked) { Invoke-RequestedQuit; return }
     if ([IO.File]::Exists($ShowRequest)) {
         try { [IO.File]::Delete($ShowRequest) } catch {}
-        try { Show-MainWindow } catch { Write-Log "Affichage: $_" }
+        # Affichée dans Mindset : c'est lui qui la montre, on ne touche pas à son état (elle sortirait de Mindset)
+        if (-not $script:Embedded) { try { Show-MainWindow } catch { Write-Log "Affichage: $_" } }
     }
 }
 # Un nouveau lancement de Nevermind demande d'afficher cette fenêtre (elle peut être cachée près de l'horloge)

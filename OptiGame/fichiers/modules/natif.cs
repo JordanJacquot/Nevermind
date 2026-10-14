@@ -2119,3 +2119,21 @@ public static class AppIdentity
         finally { Marshal.ReleaseComObject(s); }
     }
 }
+
+// Nevermind affiché dans la fenêtre de Mindset : Mindset fait de la fenêtre principale une fenêtre enfant de sa
+// zone centrale (SetParent, style WS_CHILD). Lu régulièrement par evenements.ps1 (Update-EmbedState).
+public static class EmbedInfo
+{
+    [DllImport("user32.dll")] static extern IntPtr GetWindowLongPtr(IntPtr h, int index);   // 64 bits seulement
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int index);
+    [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr h);
+    const int GWL_STYLE = -16;
+    const long WS_CHILD = 0x40000000;
+
+    public static bool IsEmbedded(IntPtr h)
+    {
+        if (h == IntPtr.Zero) return false;
+        long style = IntPtr.Size == 8 ? GetWindowLongPtr(h, GWL_STYLE).ToInt64() : GetWindowLong(h, GWL_STYLE);
+        return (style & WS_CHILD) != 0 || GetParent(h) != IntPtr.Zero;
+    }
+}
