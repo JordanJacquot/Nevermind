@@ -28,10 +28,42 @@ $AppThemes = [ordered]@{
 
 # Thème choisi (la copie de test peut en forcer un pour les captures)
 $ThemeSetting = [string](Get-Setting 'Theme' 'neon')
+# Géré par Mindset : le thème de la suite (sauf si un pack est choisi), enregistré comme thème de Nevermind
+if ($Managed -and $Suite.Theme -and $ThemeSetting -notlike 'pack:*' -and $ThemeSetting -cne $Suite.Theme) {
+    $ThemeSetting = $Suite.Theme
+    Set-Setting 'Theme' $ThemeSetting
+    Write-Log "Thème de la suite (Mindset) : $ThemeSetting"
+}
 if ($env:OPTIGAME_TEST -and $env:OPTIGAME_THEME) { $ThemeSetting = $env:OPTIGAME_THEME }
 $ThemeId = @{ retro = 'arcade'; dresseur = 'rubis' }[$ThemeSetting], $ThemeSetting | Where-Object { $_ } | Select-Object -First 1   # anciens noms (1.0.63)
 if (-not $AppThemes.Contains($ThemeId)) { $ThemeId = 'neon' }
 $Theme = $AppThemes[$ThemeId]
+
+# Copie gérée par Mindset : un des 5 thèmes choisi dans Nevermind devient celui de toute la suite (suite.json).
+# Le fichier est relu et seuls « theme » et « modifie » changent : le reste (applis...) est gardé tel quel.
+# Écrit à côté puis remplacé d'un coup : une appli qui le lit au même moment ne voit jamais un fichier à moitié écrit.
+function Write-SuiteTheme([string]$Id) {
+    if (-not $Managed -or $Id -cnotin $SuiteThemes) { return }
+    if ($env:OPTIGAME_TEST -and -not $env:OPTIGAME_SUITE) { return }   # jamais le vrai fichier pendant un test
+    $tmp = "$SuiteFile.tmp"
+    try {
+        $j = [IO.File]::ReadAllText($SuiteFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        if ($j -isnot [pscustomobject]) { throw 'contenu inattendu' }
+        $j | Add-Member -NotePropertyName theme -NotePropertyValue $Id -Force
+        $j | Add-Member -NotePropertyName modifie -NotePropertyValue (Get-Date).ToString('s') -Force
+        $bytes = (New-Object Text.UTF8Encoding $false).GetBytes(($j | ConvertTo-Json -Depth 8))
+        # Fichier neuf (CreateNew) : jamais d'écriture à travers un .tmp laissé là par un autre programme
+        if ([IO.File]::Exists($tmp)) { [IO.File]::Delete($tmp) }
+        $fs = New-Object IO.FileStream $tmp, 'CreateNew', 'Write'
+        try { $fs.Write($bytes, 0, $bytes.Length) } finally { $fs.Dispose() }
+        Move-Item -LiteralPath $tmp -Destination $SuiteFile -Force -ErrorAction Stop
+        $script:SuiteStamp = [IO.File]::GetLastWriteTimeUtc($SuiteFile)   # notre propre écriture ne relance pas l'app
+        Write-Log "Thème de la suite écrit pour Mindset : $Id"
+    } catch {
+        Write-Log "suite.json : écriture du thème impossible ($($_.Exception.Message))"
+        try { if ([IO.File]::Exists($tmp)) { [IO.File]::Delete($tmp) } } catch {}
+    }
+}
 
 # ---------------------------------------------------------------------------
 # Packs de thème : un dossier (ou un zip à importer) hors de l'app, avec pack.json et ses images.

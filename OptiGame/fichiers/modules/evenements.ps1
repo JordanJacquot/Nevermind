@@ -53,6 +53,26 @@ if (-not $env:OPTIGAME_TEST) {
     })
     $script:ShowWatch.Start()
 }
+# Géré par Mindset : le thème de la suite changé ailleurs (Mindset, Evermind) est suivi. Toutes les 2,5 s, seule la
+# date du fichier est lue ; il n'est relu que si elle a changé. Nouveau thème : enregistré, puis Nevermind se relance
+# (comme un changement de thème ici). Pas de boucle : après la relance, son thème est celui de la suite.
+if ($Managed -and -not $env:OPTIGAME_TEST) {
+    $script:SuiteWatch = New-Object System.Windows.Threading.DispatcherTimer
+    $script:SuiteWatch.Interval = [TimeSpan]::FromMilliseconds(2500)
+    $script:SuiteWatch.Add_Tick({
+        $stamp = try { [IO.File]::GetLastWriteTimeUtc($SuiteFile) } catch { $script:SuiteStamp }
+        if ($stamp -eq $script:SuiteStamp -or $script:AllowClose) { return }
+        # Chargement, action en cours, partie en cours : on attendra le prochain passage (date non retenue)
+        if ($script:Starting -or $script:WaitFrames.Count -or $script:GameSession -or $script:LagSession) { return }
+        $script:SuiteStamp = $stamp
+        $t = (Read-Suite).Theme
+        if ($t -and -not $ThemePack -and $t -cne $ThemeId) {
+            Write-Log "Thème de la suite changé dans Mindset : $t"
+            Invoke-Safe { Set-AppTheme $t -FromSuite }
+        }
+    })
+    $script:SuiteWatch.Start()
+}
 
 # Croix (ou Alt + F4) : on demande avant de quitter. Les fermetures voulues (Quitter près de l'horloge,
 # mise à jour, changement de thème) et l'arrêt du PC passent sans question.
@@ -70,6 +90,7 @@ $Window.Add_Closing({
 $Window.Add_Closed({
     $script:Closing = $true
     try { if ($script:ShowWatch) { $script:ShowWatch.Stop() } } catch {}
+    try { if ($script:SuiteWatch) { $script:SuiteWatch.Stop() } } catch {}
     $Live.Run = $false
     if ($script:LiveTimer) { $script:LiveTimer.Stop() }
     try { Stop-FpsTarget } catch { Write-Log "Fermeture, mesure des FPS: $_" }
@@ -230,6 +251,9 @@ $ui.Tabs.Add_SelectionChanged({
 })
 $ui.BtnUpdate.Add_Click({ Invoke-Safe { Install-Update } })
 $ui.BtnUpdateLater.Add_Click({ $ui.UpdateBanner.Visibility = 'Collapsed' })
+$ui.BtnSuiteGet.Add_Click({ Open-Url $MindsetUrl })
+$ui.BtnSuiteLater.Add_Click({ Invoke-Safe { Hide-SuiteBanner } })
+Initialize-Suite
 $ui.BtnCheckUpdate.Add_Click({
     if ($script:PendingUpdate) { Invoke-Safe { Install-Update } } else { Invoke-Safe { Invoke-UpdateCheck -Manual } }
 })

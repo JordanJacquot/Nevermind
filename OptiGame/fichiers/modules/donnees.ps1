@@ -4,7 +4,8 @@
 # ---------------------------------------------------------------------------
 # Données et sauvegarde
 # ---------------------------------------------------------------------------
-$DataDir    = Join-Path $env:LOCALAPPDATA 'OptiGame'
+# $DataDir : choisi tout au début d'OptiGame.ps1 (Resolve-DataDir) : %LOCALAPPDATA%\OptiGame, ou
+# %LOCALAPPDATA%\Mindset\Nevermind quand Nevermind est géré par Mindset. Tous les fichiers de l'app passent par lui.
 $BackupFile = Join-Path $DataDir 'sauvegarde.json'
 $LogFile    = Join-Path $DataDir 'journal.txt'
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null

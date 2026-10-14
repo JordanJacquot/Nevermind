@@ -261,6 +261,7 @@ function Update-ShortcutCard {
     $has = Test-DesktopShortcut
     $ui.BtnShortcut.Content = if ($has) { 'Recréer le raccourci' } else { 'Créer le raccourci' }
     $ui.ShortcutStatus.Text = if ($has) { 'Le raccourci Nevermind est sur ton bureau.' } else { 'Mets Nevermind sur ton bureau pour l''ouvrir en un double clic.' }
+    if ($Managed) { $ui.ShortcutStatus.Text = 'Le raccourci sur le bureau est géré par Mindset.' }   # bouton caché (Initialize-Suite)
     # Lire les tâches planifiées prend environ 0,3 s : pendant le chargement, en arrière plan pour ne pas figer l'animation
     $ui.ChkAutoStart.IsChecked = if ($script:Starting) {
         [bool](@(Invoke-Async { param($n) [bool](Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue) } $AutoStartTask)[-1])
@@ -268,6 +269,7 @@ function Update-ShortcutCard {
 }
 
 function Invoke-CreateShortcut {
+    if ($Managed) { return }   # Mindset crée le raccourci de la copie qu'il gère
     New-DesktopShortcut
     Update-ShortcutCard
     Set-Status 'Raccourci Nevermind créé sur le bureau.'

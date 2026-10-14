@@ -25,7 +25,7 @@ Copy-Item (Join-Path $icones 'OptiGame.ico') (Join-Path $fich 'OptiGame.ico') -F
 
 function Build-Exe([string]$Out, [string]$Icon, [string]$Define) {
     $opts = @('/nologo', '/target:winexe', '/optimize+', '/platform:anycpu', "/win32icon:$Icon", "/win32manifest:$manif",
-              '/reference:System.Windows.Forms.dll', "/reference:$sma", "/out:$Out")
+              '/reference:System.Windows.Forms.dll', '/reference:System.Web.Extensions.dll', "/reference:$sma", "/out:$Out")
     if ($Define) { $opts += "/define:$Define" }
     & $csc @opts $source
     if ($LASTEXITCODE) { throw "Échec de compilation de $Out" }

@@ -299,7 +299,8 @@ function Invoke-NameMigration {
     foreach ($old in $OldAppNames) {
         try {
             $oldLnk = Get-DesktopShortcutPath $old
-            if ((Get-ShortcutTarget $oldLnk) -eq (Join-Path $root "$old.exe")) {
+            # (copie gérée par Mindset : c'est lui qui crée le raccourci, on n'en crée jamais)
+            if (-not $Managed -and (Get-ShortcutTarget $oldLnk) -eq (Join-Path $root "$old.exe")) {
                 New-DesktopShortcut
                 [IO.File]::Delete($oldLnk)
                 Write-Log "Nevermind : raccourci « $old » du bureau remplacé"
@@ -359,6 +360,7 @@ function Invoke-Uninstall {
         (Join-Path $root 'LISEZMOI.txt'),
         (Join-Path $here 'OptiGame.ps1'),
         (Join-Path $here 'OptiGame.ico'),
+        (Join-Path $here 'cle-publique.xml'),
         (Join-Path $here 'Lancer Nevermind (secours).bat'),
         (Join-Path $here 'Désinstaller Nevermind (secours).bat'),
         (Join-Path $here 'Lancer OptiGame (secours).bat'),

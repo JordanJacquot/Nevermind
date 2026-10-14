@@ -6,6 +6,7 @@
 
 # Fichiers générés par outils/construire.ps1
 /OptiGame.zip
+/OptiGame.zip.sig
 /OptiGame/*.exe
 /outils/icones/
 

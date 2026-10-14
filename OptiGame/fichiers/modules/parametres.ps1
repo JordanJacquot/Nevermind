@@ -423,12 +423,15 @@ function Build-ThemePanel {
     [void]$p.Children.Add($pk)
 }
 
-function Set-AppTheme([string]$Id) {
+# FromSuite : thème changé dans Mindset (suite.json surveillé), déjà écrit pour la suite
+function Set-AppTheme([string]$Id, [switch]$FromSuite) {
     if ($Id -like 'pack:*') { if (-not (Get-ThemePack $Id.Substring(5))) { return } }
     elseif (-not $AppThemes.Contains($Id)) { return }
     Set-Setting 'Theme' $Id
     Write-Log "Thème : $Id"
+    if (-not $FromSuite) { Write-SuiteTheme $Id }   # copie gérée par Mindset : toute la suite suit (sans effet sinon)
     if ($env:OPTIGAME_TEST) { Set-Status "Thème « $Id » choisi (copie de test : pas de relance)."; return }
+    $script:RelaunchHidden = -not $Window.IsVisible   # caché près de l'horloge : il y retourne après la relance
     $script:Relaunch = Join-Path $AppDir 'OptiGame.ps1'
     $script:AllowClose = $true
     $Window.Close()

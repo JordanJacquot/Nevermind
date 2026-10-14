@@ -20,7 +20,8 @@ $GetReleaseScript = {
         if (-not $r) { return @{ Error = 'Aucune version publiée.' } }
         $asset = @($r.assets | Where-Object { $_.name -eq 'OptiGame.zip' }) | Select-Object -First 1
         if (-not $asset) { return @{ Error = 'Aucun fichier OptiGame.zip dans la dernière version publiée.' } }
-        @{ Version = ([string]$r.tag_name -replace '^[vV]', ''); Url = [string]$asset.browser_download_url; Beta = [bool]$r.prerelease; Notes = [string]$r.body }
+        $sig = @($r.assets | Where-Object { $_.name -eq 'OptiGame.zip.sig' }) | Select-Object -First 1
+        @{ Version = ([string]$r.tag_name -replace '^[vV]', ''); Url = [string]$asset.browser_download_url; SigUrl = [string]$sig.browser_download_url; Beta = [bool]$r.prerelease; Notes = [string]$r.body }
     } catch { @{ Error = $_.Exception.Message } }
 }
 
@@ -37,7 +38,25 @@ function Test-NewerVersion([string]$Remote, [string]$Local) {
     try { return ([version]$Remote -gt [version]$Local) } catch { return $false }
 }
 
+# Signature d'un zip publié (OptiGame.zip.sig : RSA 3072, SHA-256), vérifiée avec la clé publique livrée avec
+# Nevermind (fichiers\cle-publique.xml, la même que Mindset). Un zip sans signature valide n'est jamais installé,
+# même s'il vient bien de GitHub : quelqu'un qui volerait l'accès au compte GitHub ne pourrait pas faire installer un faux.
+# Même logique que Test-Signature dans Mindset (signature.ps1).
+$PublicKeyFile = Join-Path $AppDir 'cle-publique.xml'
+function Test-Signature([byte[]]$Donnees, [byte[]]$Signature, [string]$ClePublique) {
+    if (-not $Donnees -or -not $Signature -or -not (Test-Path -LiteralPath $ClePublique)) { return $false }
+    $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider
+    try {
+        $rsa.FromXmlString([IO.File]::ReadAllText($ClePublique, [Text.Encoding]::UTF8))
+        if ($rsa.KeySize -lt 3072 -or -not $rsa.PublicOnly) { return $false }
+        $rsa.VerifyData($Donnees, [System.Security.Cryptography.CryptoConfig]::MapNameToOID('SHA256'), $Signature)
+    } catch { $false }
+    finally { $rsa.Dispose() }
+}
+
 function Invoke-UpdateCheck([switch]$Manual) {
+    # Géré par Mindset : c'est lui qui installe les mises à jour de Nevermind, pas de vérification ici
+    if ($Managed) { $ui.UpdateStatus.Text = "Version $AppVersion. Les mises à jour de Nevermind passent par Mindset : ouvre Mindset pour les installer."; return }
     $ui.UpdateStatus.Text = 'Recherche d''une nouvelle version...'
     $r = Invoke-Async $GetReleaseScript @{ Repo = $UpdateRepo; Beta = [bool](Get-Setting 'Beta' $false) } | Select-Object -First 1
     if (-not $r -or $r.Error) {
@@ -60,23 +79,45 @@ function Invoke-UpdateCheck([switch]$Manual) {
 
 function Install-Update {
     $rel = $script:PendingUpdate
-    if (-not $rel) { return }
+    if (-not $rel -or $Managed) { return }   # copie gérée : Mindset s'en occupe
     if (-not (Confirm-Action "Installer la version $($rel.Version) de Nevermind ?`n`nL'app va se fermer, se mettre à jour puis se relancer. Tes réglages et ta sauvegarde sont conservés.")) { return }
+    $refused = "La version $($rel.Version) n'a pas été installée : sa signature numérique est {0}.`n`nPar sécurité, Nevermind n'installe que les versions signées par son auteur. Rien n'a été modifié sur ton PC.`n`nRéessaie plus tard, ou installe Mindset pour recevoir les mises à jour."
+    if (-not $rel.SigUrl) {
+        Write-Log "Mise à jour $($rel.Version) refusée : pas de signature (OptiGame.zip.sig) dans la version publiée"
+        Show-Message ($refused -f 'absente') 'Warning'
+        return
+    }
     Set-Busy $true
     $ui.UpdateBanner.Visibility = 'Collapsed'
     Set-Status "Téléchargement de la version $($rel.Version)..."
     $tmp = Join-Path $env:TEMP "OptiGame-maj-$(Get-Random)"
+    $zip = Join-Path $tmp 'OptiGame.zip'
+    # Le zip et sa signature d'abord : rien n'est extrait avant que la signature soit vérifiée
     $res = Invoke-Async {
         param($a)
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             New-Item -ItemType Directory -Force -Path $a.Dir | Out-Null
-            $zip = Join-Path $a.Dir 'OptiGame.zip'
-            Invoke-WebRequest -Uri $a.Url -OutFile $zip -UseBasicParsing -Headers @{ 'User-Agent' = 'OptiGame' } -TimeoutSec 120
-            Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $a.Dir 'x') -Force
+            Invoke-WebRequest -Uri $a.Url -OutFile $a.Zip -UseBasicParsing -Headers @{ 'User-Agent' = 'OptiGame' } -TimeoutSec 120
+            Invoke-WebRequest -Uri $a.SigUrl -OutFile "$($a.Zip).sig" -UseBasicParsing -Headers @{ 'User-Agent' = 'OptiGame' } -TimeoutSec 30
             'OK'
         } catch { $_.Exception.Message }
-    } @{ Url = $rel.Url; Dir = $tmp } | Select-Object -First 1
+    } @{ Url = $rel.Url; SigUrl = $rel.SigUrl; Dir = $tmp; Zip = $zip } | Select-Object -First 1
+    if ("$res" -eq 'OK') {
+        $signed = $false
+        try { $signed = Test-Signature ([IO.File]::ReadAllBytes($zip)) ([IO.File]::ReadAllBytes("$zip.sig")) $PublicKeyFile } catch {}
+        if (-not $signed) {
+            Write-Log "Mise à jour $($rel.Version) refusée : signature invalide"
+            try { [IO.Directory]::Delete($tmp, $true) } catch {}
+            Show-Message ($refused -f 'fausse ou illisible') 'Warning'
+            Set-Status 'Mise à jour annulée.'
+            return
+        }
+        $res = Invoke-Async {
+            param($a)
+            try { Expand-Archive -LiteralPath $a.Zip -DestinationPath (Join-Path $a.Dir 'x') -Force; 'OK' } catch { $_.Exception.Message }
+        } @{ Dir = $tmp; Zip = $zip } | Select-Object -First 1
+    }
     $src = Join-Path $tmp 'x\OptiGame'
     if ("$res" -ne 'OK' -or -not (Test-Path -LiteralPath (Join-Path $src 'fichiers\OptiGame.ps1'))) {
         Write-Log "Échec de la mise à jour: $res"
@@ -137,4 +178,33 @@ function Set-BetaChannel([bool]$On) {
     Set-Setting 'Beta' $On
     Set-Status $(if ($On) { 'Versions bêta activées.' } else { 'Versions bêta désactivées.' })
     Invoke-UpdateCheck -Manual
+}
+
+# ---------------------------------------------------------------------------
+# Mindset, le portail de la suite
+# ---------------------------------------------------------------------------
+$MindsetUrl = 'https://github.com/JordanJacquot/Mindset/releases/latest'
+
+# Copie gérée : pas de bouton de mise à jour ni de versions bêta (Mindset installe les versions), pas de raccourci
+# sur le bureau (Mindset le crée). Le lancement au démarrage reste ici : Nevermind demande les droits administrateur,
+# seule sa tâche planifiée peut l'ouvrir au démarrage sans demande de Windows.
+# Copie autonome : bandeau « Nevermind fait maintenant partie de Mindset », sauf si Mindset est déjà sur le PC
+# ou si l'utilisateur a choisi « Plus tard » il y a moins de 7 jours.
+function Initialize-Suite {
+    if ($Managed) {
+        $ui.BtnCheckUpdate.Visibility = 'Collapsed'
+        $ui.ChkBeta.Parent.Visibility = 'Collapsed'
+        $ui.UpdateStatus.Text = "Version $AppVersion. Les mises à jour de Nevermind passent par Mindset : ouvre Mindset pour les installer."
+        $ui.BtnShortcut.Visibility = 'Collapsed'
+        return
+    }
+    if ([IO.File]::Exists($SuiteFile)) { return }
+    $until = [string](Get-Setting 'MindsetBannerUntil' '')
+    try { if ($until -and (Get-Date) -lt [datetime]::Parse($until, [Globalization.CultureInfo]::InvariantCulture)) { return } } catch {}
+    $ui.SuiteBanner.Visibility = 'Visible'
+}
+
+function Hide-SuiteBanner {
+    $ui.SuiteBanner.Visibility = 'Collapsed'
+    Set-Setting 'MindsetBannerUntil' (Get-Date).AddDays(7).ToString('s')
 }

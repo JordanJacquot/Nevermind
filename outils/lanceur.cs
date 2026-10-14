@@ -3,11 +3,13 @@
 // Les droits administrateur sont demandés par le manifeste (une seule fenêtre de confirmation de Windows).
 // Compilé deux fois par construire.ps1 : Nevermind.exe et Désinstaller Nevermind.exe (symbole UNINSTALL).
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
 using System.Reflection;
 using System.Threading;
+using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Nevermind")]
@@ -19,6 +21,28 @@ using System.Windows.Forms;
 
 static class Lanceur
 {
+    // Dossier des données, même règle que Resolve-DataDir (OptiGame.ps1) : %LOCALAPPDATA%\Mindset\Nevermind si
+    // %LOCALAPPDATA%\Mindset\suite.json note cette copie comme celle de Mindset (et que l'ancien dossier a été renommé),
+    // sinon %LOCALAPPDATA%\OptiGame. Le dossier lu dans suite.json ne sert qu'à comparer.
+    static string DossierDonnees(string racine)
+    {
+        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string ancien = Path.Combine(local, "OptiGame");
+        try
+        {
+            string nouveau = Path.Combine(Path.Combine(local, "Mindset"), "Nevermind");
+            var suite = new JavaScriptSerializer().DeserializeObject(File.ReadAllText(Path.Combine(Path.Combine(local, "Mindset"), "suite.json"))) as Dictionary<string, object>;
+            object applis, dossier;
+            if (suite != null && suite.TryGetValue("applis", out applis) && applis is Dictionary<string, object> &&
+                ((Dictionary<string, object>)applis).TryGetValue("nevermind", out dossier) && dossier is string && Path.IsPathRooted((string)dossier) &&
+                string.Equals(Path.GetFullPath((string)dossier).TrimEnd('\\'), Path.GetFullPath(racine).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) &&
+                (Directory.Exists(nouveau) || !Directory.Exists(ancien)))
+                return nouveau;
+        }
+        catch { }
+        return ancien;
+    }
+
     [STAThread]
     static int Main(string[] args)
     {
@@ -73,7 +97,7 @@ static class Lanceur
                 detail += "\n\n(" + Path.GetFileName(re.ErrorRecord.InvocationInfo.ScriptName) + ", ligne " + re.ErrorRecord.InvocationInfo.ScriptLineNumber + ")";
             try
             {
-                string log = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OptiGame");
+                string log = DossierDonnees(dossier);
                 Directory.CreateDirectory(log);
                 File.AppendAllText(Path.Combine(log, "journal.txt"), DateTime.Now.ToString("s") + " ERREUR au lancement : " + detail.Replace("\n", " ") + "\r\n");
             }

@@ -45,6 +45,12 @@ try { [void][xml][IO.File]::ReadAllText((Join-Path $app 'fichiers\modules\interf
 $tirets = Get-ChildItem -LiteralPath $racine -Recurse -File -Include '*.ps1', '*.cs', '*.xaml', '*.txt', '*.md', '*.bat' |
     Where-Object { $_.FullName -notmatch '\\(\.git|_test)\\' } | Select-String -Pattern '[\u2013\u2014]'
 foreach ($t in $tirets) { $problemes += "Tiret cadratin : $($t.Path) ligne $($t.LineNumber)" }
+# Clé publique livrée avec Nevermind : la même que celle de Mindset, sinon les copies autonomes refuseraient la mise à jour
+$cle = Join-Path $app 'fichiers\cle-publique.xml'
+$cleMindset = Join-Path (Split-Path $racine -Parent) 'Mindset\Mindset\fichiers\cle-publique.xml'
+if (-not (Test-Path -LiteralPath $cle) -or -not (Test-Path -LiteralPath $cleMindset) -or (Get-FileHash -LiteralPath $cle).Hash -ne (Get-FileHash -LiteralPath $cleMindset).Hash) {
+    $problemes += "Clé publique : OptiGame\fichiers\cle-publique.xml absente ou différente de celle de Mindset ($cleMindset)"
+}
 if ($problemes) {
     $problemes | ForEach-Object { Write-Host $_ -ForegroundColor Red }
     throw 'Publication annulée : corrige les points ci dessus.'
@@ -68,8 +74,13 @@ $l = [IO.File]::ReadAllText($lisez, [Text.Encoding]::UTF8)
 $l = [regex]::Replace($l, '^(OptiGame|Nexo|Nevermind) [\d\.]+', "Nevermind $Version")
 [IO.File]::WriteAllText($lisez, $l, $utf8)
 
-# 2. Construction des .exe et du zip
+# 2. Construction des .exe et du zip, puis sa signature (Mindset et Nevermind refusent un zip sans signature valide).
+# signer.ps1 s'arrête sur une erreur s'il ne peut pas signer : la publication est alors annulée avant tout envoi.
 & (Join-Path $PSScriptRoot 'construire.ps1')
+$zip = Join-Path $racine 'OptiGame.zip'
+Remove-Item -LiteralPath "$zip.sig" -ErrorAction SilentlyContinue   # jamais l'ancienne signature d'un autre zip
+& (Join-Path (Split-Path $racine -Parent) 'Mindset\outils\signer.ps1') -Fichier $zip
+if (-not (Test-Path -LiteralPath "$zip.sig")) { throw 'Publication annulée : le zip n''a pas pu être signé.' }
 
 # 3. Envoi sur GitHub et création de la version
 Push-Location $racine
@@ -79,7 +90,7 @@ try {
     Invoke-Native git @('tag', "v$Version")
     Invoke-Native git @('push', 'origin', 'HEAD', '--tags')
     if (-not $Notes) { $Notes = "Nevermind $Version" }
-    $ghArgs = @('release', 'create', "v$Version", (Join-Path $racine 'OptiGame.zip'), '--title', "Nevermind $Version$(if ($Beta) { ' (bêta)' })", '--notes', $Notes)
+    $ghArgs = @('release', 'create', "v$Version", $zip, "$zip.sig", '--title', "Nevermind $Version$(if ($Beta) { ' (bêta)' })", '--notes', $Notes)
     if ($Beta) { $ghArgs += '--prerelease' }
     Invoke-Native gh $ghArgs
 } finally { Pop-Location }

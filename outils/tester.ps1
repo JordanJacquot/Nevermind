@@ -24,7 +24,8 @@ foreach ($d in $app, $donnees, (Join-Path $test 'captures')) {
 }
 New-Item -ItemType Directory -Force -Path $donnees, (Join-Path $test 'captures') | Out-Null
 Copy-Item -LiteralPath $source -Destination (Join-Path $app 'fichiers') -Recurse
-$vrai = Join-Path $env:LOCALAPPDATA 'OptiGame'
+$vrai = @((Join-Path $env:LOCALAPPDATA 'Mindset\Nevermind'), (Join-Path $env:LOCALAPPDATA 'OptiGame') | Where-Object { Test-Path -LiteralPath $_ })[0]
+if (-not $vrai) { $vrai = Join-Path $env:LOCALAPPDATA 'OptiGame' }
 foreach ($f in 'fabricants.txt', 'appareils.json') {
     if (Test-Path -LiteralPath (Join-Path $vrai $f)) { Copy-Item -LiteralPath (Join-Path $vrai $f) -Destination $donnees }
 }
@@ -41,7 +42,7 @@ $main = Join-Path $app 'fichiers\OptiGame.ps1'
 # Pas de demande de droits admin (le test est lancé depuis une console déjà admin ou non)
 Edit-File $main '(?s)if \(-not \$principal\.IsInRole.*?\n\}\r?\n' '' -Regex
 # Données à part
-Edit-File (Join-Path $app 'fichiers\modules\donnees.ps1') "`$DataDir    = Join-Path `$env:LOCALAPPDATA 'OptiGame'" "`$DataDir    = '$donnees'"
+Edit-File $main "`$DataDir = Resolve-DataDir" "`$DataDir = '$donnees'"
 # Code de test à la place de l'ouverture normale de la fenêtre
 $code = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-app.ps1'), [Text.Encoding]::UTF8) -replace "`r?`n", "`r`n"
 $code = $code.Replace('__TEST__', $test).Replace('$__COMPLET__', $(if ($Complet) { '$true' } else { '$false' })).Replace('$__CAPTURES__', $(if ($Captures) { '$true' } else { '$false' }))
@@ -56,7 +57,7 @@ if ($Hote) {
     [IO.File]::WriteAllText($manif, ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'lanceur.manifest'), [Text.Encoding]::UTF8) -replace 'requireAdministrator', 'asInvoker'), $utf8)
     $sma = @(Get-ChildItem (Join-Path $env:windir 'Microsoft.NET\assembly\GAC_MSIL\System.Management.Automation') -Recurse -Filter 'System.Management.Automation.dll' | Select-Object -First 1)[0].FullName
     $exe = Join-Path $app 'Nevermind.exe'
-    & (Join-Path $env:windir 'Microsoft.NET\Framework64\v4.0.30319\csc.exe') /nologo /target:winexe /platform:anycpu "/win32manifest:$manif" /reference:System.Windows.Forms.dll "/reference:$sma" "/out:$exe" (Join-Path $PSScriptRoot 'lanceur.cs') | Out-Null
+    & (Join-Path $env:windir 'Microsoft.NET\Framework64\v4.0.30319\csc.exe') /nologo /target:winexe /platform:anycpu "/win32manifest:$manif" /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll "/reference:$sma" "/out:$exe" (Join-Path $PSScriptRoot 'lanceur.cs') | Out-Null
     if (-not (Test-Path -LiteralPath $exe)) { Write-Host 'ÉCHEC : le lanceur ne compile pas.' -ForegroundColor Red; exit 1 }
     $p = Start-Process $exe -PassThru
 } else {

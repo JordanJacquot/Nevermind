@@ -84,6 +84,8 @@ $SearchEntries = @(
     @{ T = 'Ce que Windows envoie à Microsoft'; P = 'trafic'; A = 'Ce que Windows envoie à Microsoft'; K = 'telemetrie microsoft vie privee identifiant confidentialite diagnostic'; Do = { Show-WindowsPrivacy } },
     @{ T = 'Bloquer Internet à un programme'; P = 'trafic'; A = 'Ce qui sort de ton PC'; K = 'pare feu bloquer internet firewall programme' }
 )
+# Géré par Mindset : raccourci du bureau et versions bêta passent par lui (cachés dans Paramètres)
+if ($Managed) { $SearchEntries = @($SearchEntries | Where-Object { $_.T -notin 'Raccourci sur le bureau', 'Versions bêta' }) }
 # Suggestions quand la barre est vide
 $SearchStarters = @('Compteur de FPS à l''écran (overlay)', 'Mes FPS ne sont pas normaux', 'Lag en ligne', 'Nettoyage du disque', 'Lancer Nevermind au démarrage du PC', 'Ce que Windows envoie à Microsoft')
 

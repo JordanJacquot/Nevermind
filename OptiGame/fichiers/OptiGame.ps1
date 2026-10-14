@@ -4,6 +4,7 @@
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
+    (%LOCALAPPDATA%\Mindset\Nevermind quand Nevermind est géré par Mindset)
     et peut être annulé depuis l'onglet Sauvegarde.
 
     OptiGame.ps1 -Demarrage  s'ouvre réduit près de l'horloge (lancement avec Windows).
@@ -15,6 +16,74 @@ $AppVersion = '1.0.98'
 $UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
+# Mindset (le portail de la suite) et dossier des données
+# ---------------------------------------------------------------------------
+# Mindset écrit %LOCALAPPDATA%\Mindset\suite.json : le thème de la suite et le dossier de chaque appli qu'il gère.
+# Nevermind est « géré par Mindset » quand le dossier noté pour lui est celui de cette copie : ses données vont
+# alors dans %LOCALAPPDATA%\Mindset\Nevermind, il suit le thème de la suite, et Mindset s'occupe des mises à jour,
+# du raccourci et du lancement au démarrage. Sinon, rien ne change.
+# Sécurité : Nevermind tourne en administrateur et ce fichier est modifiable par n'importe quel programme de
+# l'utilisateur. On n'y accepte qu'un nom de thème connu, et le dossier n'y sert qu'à comparer avec le nôtre.
+$SuiteFile = Join-Path $env:LOCALAPPDATA 'Mindset\suite.json'
+if ($env:OPTIGAME_TEST -and $env:OPTIGAME_SUITE) { $SuiteFile = $env:OPTIGAME_SUITE }   # la copie de test peut simuler Mindset
+$SuiteThemes = @('neon', 'crepuscule', 'terminal', 'arcade', 'rubis')
+
+# Chemin complet sans « \ » final, pour comparer deux dossiers (vide s'il n'est pas valable)
+function Get-FullDir([string]$Path) {
+    try { if ($Path -and [IO.Path]::IsPathRooted($Path)) { return [IO.Path]::GetFullPath($Path).TrimEnd('\') } } catch {}
+    ''
+}
+
+# Ce qui nous concerne dans suite.json : le thème (seulement s'il est connu) et le dossier de Nevermind
+function Read-Suite {
+    $s = @{ Theme = $null; Dir = '' }
+    try {
+        if (-not [IO.File]::Exists($SuiteFile)) { return $s }
+        $j = [IO.File]::ReadAllText($SuiteFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        if ($j.theme -is [string] -and $j.theme -cin $SuiteThemes) { $s.Theme = [string]$j.theme }
+        if ($j.applis -and $j.applis.nevermind -is [string]) { $s.Dir = Get-FullDir $j.applis.nevermind }
+    } catch {}
+    $s
+}
+
+$SuiteStamp = try { [IO.File]::GetLastWriteTimeUtc($SuiteFile) } catch { [datetime]::MinValue }   # surveillé ensuite (evenements.ps1)
+$Suite = Read-Suite
+$Managed = [bool]($Suite.Dir -and $Suite.Dir -eq (Get-FullDir (Split-Path $PSScriptRoot -Parent)))   # -eq ignore la casse
+
+# Nevermind déjà ouvert ? (accès refusé au verrou = il existe, mais appartient à la fenêtre lancée en administrateur)
+function Test-InstanceRunning {
+    try { $probe = [System.Threading.Mutex]::OpenExisting('Local\OptiGame-Instance'); $probe.Dispose(); return $true }
+    catch {
+        $inner = $_.Exception; while ($inner.InnerException) { $inner = $inner.InnerException }
+        return ($inner -is [System.UnauthorizedAccessException])
+    }
+}
+
+# Dossier des données. Copie gérée : %LOCALAPPDATA%\Mindset\Nevermind. Au premier lancement, l'ancien dossier y est
+# renommé d'un coup (même disque : rien n'est copié, rien ne peut rester à moitié déplacé). S'il est utilisé
+# (fichier ouvert, autre Nevermind encore ouvert dessus), on garde l'ancien pour cette fois et on réessaie au suivant.
+$OldDataDir = Join-Path $env:LOCALAPPDATA 'OptiGame'
+$DataDirNote = $null   # noté au journal dès qu'il est prêt (après donnees.ps1)
+function Resolve-DataDir {
+    if (-not $Managed) { return $OldDataDir }
+    $new = Join-Path $env:LOCALAPPDATA 'Mindset\Nevermind'
+    if ([IO.Directory]::Exists($new) -or -not [IO.Directory]::Exists($OldDataDir)) { return $new }
+    if ($Uninstall -or (Test-InstanceRunning)) { return $OldDataDir }
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path $new) -ErrorAction Stop | Out-Null
+        # Directory.Move et pas Move-Item : quand un fichier est ouvert, Move-Item crée quand même le nouveau dossier
+        # (vide), qui serait pris au lancement suivant pour le bon. Directory.Move renomme tout, ou rien.
+        [IO.Directory]::Move($OldDataDir, $new)
+        $script:DataDirNote = "Données déplacées : $OldDataDir -> $new (Nevermind est géré par Mindset)"
+        return $new
+    } catch {
+        $script:DataDirNote = "Données : $OldDataDir n'a pas pu être renommé en $new, l'ancien dossier est gardé pour cette fois ($($_.Exception.Message))"
+        return $OldDataDir
+    }
+}
+$DataDir = Resolve-DataDir
+
+# ---------------------------------------------------------------------------
 # Droits administrateur
 # ---------------------------------------------------------------------------
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Drawing, System.Windows.Forms
@@ -24,7 +93,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Sys
 # ---------------------------------------------------------------------------
 # La fenêtre ouverte a les droits administrateur : ce lancement-ci ne peut pas lui envoyer de signal
 # direct, il dépose donc une « demande d'affichage » qu'elle surveille.
-$ShowRequest = Join-Path $env:LOCALAPPDATA 'OptiGame\afficher.demande'
+$ShowRequest = Join-Path $DataDir 'afficher.demande'
 function Send-ShowRequest {
     try {
         New-Item -ItemType Directory -Force -Path (Split-Path $ShowRequest) | Out-Null
@@ -156,6 +225,7 @@ $AppUserModelId = 'JordanJacquot.Nevermind'
 try { [void][AppIdentity]::SetProcessAppId($AppUserModelId) } catch {}
 
 foreach ($ogModule in 'donnees', 'optimisations', 'systeme', 'themes') { . (Join-Path $ModulesDir "$ogModule.ps1") }
+if ($DataDirNote) { Write-Log $DataDirNote }
 
 if ($Uninstall) {
     Invoke-Uninstall
@@ -195,6 +265,8 @@ if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
     # Libère la place avant de relancer, sinon la nouvelle version croirait que Nevermind est déjà ouvert
     if ($script:InstanceMutex) { try { $script:InstanceMutex.ReleaseMutex() } catch {}; $script:InstanceMutex.Dispose(); $script:InstanceMutex = $null }
     $relExe = Join-Path (Split-Path (Split-Path $script:Relaunch -Parent) -Parent) 'Nevermind.exe'
-    if (Test-Path -LiteralPath $relExe) { Start-Process -FilePath $relExe }
-    else { Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"") }
+    # Relancé pendant qu'il était caché près de l'horloge (thème changé dans Mindset) : il y retourne
+    $relArgs = @(if ($script:RelaunchHidden) { '-Demarrage' })
+    if (Test-Path -LiteralPath $relExe) { if ($relArgs) { Start-Process -FilePath $relExe -ArgumentList $relArgs } else { Start-Process -FilePath $relExe } }
+    else { Start-Process -FilePath 'powershell.exe' -ArgumentList (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"") + $relArgs) }
 }
