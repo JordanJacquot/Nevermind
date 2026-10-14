@@ -290,7 +290,7 @@ function Invoke-NameMigration {
     foreach ($task in $OldAutoStartTasks) {
         try {
             if ($found -contains $task) {
-                Set-AutoStart $true
+                if (-not (Test-DemarrageParMindset)) { Set-AutoStart $true }
                 Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction Stop
                 Write-Log "Nevermind : tâche de démarrage « $task » renommée"
             }
@@ -315,6 +315,7 @@ function Invoke-NameMigration {
 
 # Dossier de Nevermind déplacé ou renommé : la tâche de démarrage suit
 function Update-AutoStartPath {
+    if (Test-DemarrageParMindset) { return }   # (Mindset s'en occupe : sa tâche a été reprise, on ne la recrée pas)
     $t = @(Get-TaskInfo @($AutoStartTask))[0]
     if (-not $t) { return }
     $ps1 = Join-Path $AppDir 'OptiGame.ps1'

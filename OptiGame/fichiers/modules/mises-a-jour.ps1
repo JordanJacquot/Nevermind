@@ -184,13 +184,24 @@ function Set-BetaChannel([bool]$On) {
 # Mindset, le portail de la suite
 # ---------------------------------------------------------------------------
 # Copie gérée : pas de bouton de mise à jour ni de versions bêta (Mindset installe les versions), pas de raccourci
-# sur le bureau (Mindset le crée). Le lancement au démarrage reste ici : Nevermind demande les droits administrateur,
-# seule sa tâche planifiée peut l'ouvrir au démarrage sans demande de Windows.
+# sur le bureau (Mindset le crée). Le lancement au démarrage passe par Mindset quand il est administrateur (sa tâche
+# « \Mindset\Mindset (démarrage) » lance Nevermind selon l'interrupteur « S'ouvre avec Mindset ») ; sinon il reste ici :
+# seule la tâche planifiée de Nevermind peut l'ouvrir au démarrage sans demande de Windows.
 # (Une copie non gérée ne s'ouvre pas, sauf un dossier de travail : voir le début d'OptiGame.ps1.)
+function Test-DemarrageParMindset {
+    if (-not $Managed) { return $false }
+    if ($null -eq $script:DemarrageParMindset) {
+        & "$env:SystemRoot\System32\schtasks.exe" /Query /TN '\Mindset\Mindset (démarrage)' 2>$null | Out-Null
+        $script:DemarrageParMindset = ($LASTEXITCODE -eq 0)
+    }
+    $script:DemarrageParMindset
+}
+
 function Initialize-Suite {
     if (-not $Managed) { return }
     $ui.BtnCheckUpdate.Visibility = 'Collapsed'
     $ui.ChkBeta.Parent.Visibility = 'Collapsed'
     $ui.UpdateStatus.Text = "Version $AppVersion. Les mises à jour de Nevermind passent par Mindset : ouvre Mindset pour les installer."
-    $ui.BtnShortcut.Visibility = 'Collapsed'
+    if (Test-DemarrageParMindset) { $ui.AutoStartRow.Visibility = 'Collapsed'; Update-ShortcutCard }
+    else { $ui.BtnShortcut.Visibility = 'Collapsed' }
 }

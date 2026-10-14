@@ -317,16 +317,17 @@ function New-ThemePreview([string]$Id) {
 # Son dossier vient du registre (clé de désinstallation, écrite par un administrateur), jamais d'un fichier modifiable,
 # et il est lancé par l'Explorateur : sans les droits administrateur de Nevermind.
 $ManagedThemeText = 'Le thème se règle dans Mindset, pour toute la suite (thèmes personnalisés compris).'
-function Open-MindsetSettings {
+function Open-MindsetSettings([string]$Page = 'apparence') {
     $dir = ''
     try { $dir = ([string](Get-ItemProperty -LiteralPath 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Mindset' -Name InstallLocation -ErrorAction Stop).InstallLocation).Trim().Trim('"') } catch {}
     $exe = if ($dir -and [IO.Path]::IsPathRooted($dir)) { Join-Path $dir 'Mindset.exe' } else { '' }
     if (-not $exe -or -not (Test-Path -LiteralPath $exe -PathType Leaf)) {
         Write-Log "Mindset introuvable (registre : « $dir »)"
-        Show-Message "Mindset est introuvable sur ce PC. Ouvre-le depuis son raccourci pour changer le thème de la suite." 'Warning'
+        Show-Message "Mindset est introuvable sur ce PC. Ouvre-le depuis son raccourci pour changer ce réglage de la suite." 'Warning'
         return
     }
-    try { [IO.File]::WriteAllText((Join-Path (Split-Path $SuiteFile) 'afficher-page.txt'), 'parametres:apparence', (New-Object Text.UTF8Encoding $false)) }
+    if ($Page -notin 'general', 'apparence', 'son') { $Page = 'general' }
+    try { [IO.File]::WriteAllText((Join-Path (Split-Path $SuiteFile) 'afficher-page.txt'), "parametres:$Page", (New-Object Text.UTF8Encoding $false)) }
     catch { Write-Log "Mindset, page à ouvrir : $($_.Exception.Message)" }
     Open-Url $exe
     Set-Status 'Réglages de Mindset ouverts.'

@@ -1169,7 +1169,7 @@
                 <StackPanel>
                   <TextBlock Style="{StaticResource H2}" Text="Raccourci et démarrage"/>
                   <TextBlock x:Name="ShortcutStatus" Style="{StaticResource Sub}" Text="Mets Nevermind sur ton bureau pour l'ouvrir en un double clic."/>
-                  <DockPanel Margin="0,12,0,0">
+                  <DockPanel x:Name="AutoStartRow" Margin="0,12,0,0">
                     <CheckBox x:Name="ChkAutoStart" DockPanel.Dock="Left" Style="{StaticResource Switch}" VerticalAlignment="Center"/>
                     <TextBlock Text="Lancer Nevermind au démarrage du PC (il reste réduit près de l'horloge, sans demande d'autorisation, pour le mode jeu et la mesure des FPS)" Foreground="#A6A1BC" FontSize="12.5" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
                   </DockPanel>
