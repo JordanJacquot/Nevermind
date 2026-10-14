@@ -1416,15 +1416,47 @@ $script:T.Run.Add_Tick({
             $gap = [int]$script:T.MaxGap
             Add-TestResult 'Fluidité' ($gap -lt 3000) "plus long blocage de la fenêtre : $gap ms (étape « $($script:T.GapStep) ») ; tâches répétées les plus lentes : $(($script:T.Slow.GetEnumerator() | Sort-Object Value -Descending | ForEach-Object { "$($_.Key) $($_.Value) ms" }) -join ', ')"
         }
+        Test-Step 'Fermeture demandée par Mindset' {
+            # La fenêtre ne doit pas se fermer ici : chaque fermeture est notée puis annulée, et tout est remis comme avant
+            $closes = New-Object System.Collections.ArrayList
+            $guard = [System.ComponentModel.CancelEventHandler]{ param($s, $e) [void]$closes.Add([bool]$script:AllowClose); $e.Cancel = $true }
+            $Window.Add_Closing($guard)
+            try {
+                # Action en cours : elle a 3,5 s pour finir, puis la fermeture se fait quand même
+                $script:Starting = $true
+                [IO.File]::WriteAllText($QuitRequest, '1234')
+                Watch-Requests
+                Assert-Test (-not [IO.File]::Exists($QuitRequest)) 'demande non supprimée'
+                Assert-Test ($script:QuitAsked -and -not $closes.Count) 'fermée pendant une action en cours'
+                $script:QuitAsked = (Get-Date).AddSeconds(-4)
+                Watch-Requests
+                Assert-Test ($closes.Count -eq 1 -and $closes[0]) 'pas fermée après 3,5 s d''action en cours'
+                $script:Starting = $false; $script:AllowClose = $false; $script:QuitAsked = $null
+                # Rien en cours : fermeture tout de suite, sans la question de la croix
+                [IO.File]::WriteAllText($QuitRequest, '1234')
+                Watch-Requests
+                Assert-Test ($closes.Count -eq 2 -and $closes[1]) 'pas fermée tout de suite'
+                $logged = @(Get-Content -LiteralPath $LogFile -Encoding UTF8 | Where-Object { $_ -match 'Fermeture demandée par Mindset$' }).Count
+                Assert-Test ($logged -eq 2) "journal : $logged ligne(s)"
+            } finally {
+                $Window.Remove_Closing($guard)
+                $script:Starting = $false; $script:AllowClose = $false; $script:QuitAsked = $null
+                try { [IO.File]::Delete($QuitRequest) } catch {}
+            }
+            'attend la fin d''une action en cours (3,5 s au plus), puis ferme sans question'
+        }
         $errs = @()
         if (Test-Path -LiteralPath $LogFile) { $errs = @(Get-Content -LiteralPath $LogFile -Encoding UTF8 | Where-Object { $_ -match 'ERREUR|Échec' }) }
         Add-TestResult 'Journal sans erreur' (-not $errs.Count) ($errs -join ' | ')
     } catch {
         Add-TestResult 'Déroulement du test' $false "$($_.Exception.Message) $($_.InvocationInfo.PositionMessage)"
     }
+    # Fin du test : fermeture par une vraie demande de Mindset (tester.ps1 vérifie ensuite que l'app s'est terminée)
+    try { [IO.File]::WriteAllText($QuitRequest, '1234'); Watch-Requests } catch {}
+    Add-TestResult 'Fin du test par une demande de Mindset' ([bool]$script:AllowClose -and -not [IO.File]::Exists($QuitRequest)) 'fenêtre fermée par quitter.demande'
     @{ Resultats = @($script:T.Res); Messages = @($script:T.Msgs) } | ConvertTo-Json -Depth 4 |
         Set-Content -LiteralPath (Join-Path $script:T.Dir 'resultats.json') -Encoding UTF8
-    $Window.Close()
+    if (-not $script:AllowClose) { $Window.Close() }   # secours : le test se termine toujours
 })
 $script:T.Run.Start()
 $Window.Show()

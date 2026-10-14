@@ -41,16 +41,37 @@ $Window.Add_StateChanged({
     if ($Window.WindowState -eq 'Minimized') { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } }
     else { $script:StateBeforeTray = [string]$Window.WindowState }
 })
+# Mindset quitté : il demande la fermeture (quitter.demande) et attend 6 s. Nevermind quitte comme par « Quitter »
+# près de l'horloge (overlay arrêté, minuteries, icône retirée), sans la question de la croix.
+# Une action en cours (optimisation, nettoyage...) a 3,5 s pour finir ; au delà, on ferme quand même : la sauvegarde
+# est écrite avant chaque réglage modifié, elle reste juste (« Tout annuler » remet tout comme avant).
+function Invoke-RequestedQuit {
+    if ($script:AllowClose) { return }
+    $busy = [bool]($script:Starting -or $script:WaitFrames.Count -or $Window.Cursor)
+    if ($busy -and ((Get-Date) - $script:QuitAsked).TotalSeconds -lt 3.5) { return }
+    if ($busy) { Write-Log 'Fermeture demandée par Mindset : action encore en cours, fermeture quand même' }
+    try { if ($script:QuitDialog) { $script:QuitDialog.Close() } } catch {}
+    $script:AllowClose = $true
+    $Window.Close()
+}
+
+# Demandes déposées par un autre programme : afficher la fenêtre (nouveau lancement de Nevermind) ou fermer (Mindset)
+function Watch-Requests {
+    if ([IO.File]::Exists($QuitRequest)) {
+        try { [IO.File]::Delete($QuitRequest) } catch {}
+        if (-not $script:QuitAsked) { $script:QuitAsked = Get-Date; Write-Log 'Fermeture demandée par Mindset' }
+    }
+    if ($script:QuitAsked) { Invoke-RequestedQuit; return }
+    if ([IO.File]::Exists($ShowRequest)) {
+        try { [IO.File]::Delete($ShowRequest) } catch {}
+        try { Show-MainWindow } catch { Write-Log "Affichage: $_" }
+    }
+}
 # Un nouveau lancement de Nevermind demande d'afficher cette fenêtre (elle peut être cachée près de l'horloge)
 if (-not $env:OPTIGAME_TEST) {
     $script:ShowWatch = New-Object System.Windows.Threading.DispatcherTimer
     $script:ShowWatch.Interval = [TimeSpan]::FromMilliseconds(600)
-    $script:ShowWatch.Add_Tick({
-        if ([IO.File]::Exists($ShowRequest)) {
-            try { [IO.File]::Delete($ShowRequest) } catch {}
-            try { Show-MainWindow } catch { Write-Log "Affichage: $_" }
-        }
-    })
+    $script:ShowWatch.Add_Tick({ Watch-Requests })
     $script:ShowWatch.Start()
 }
 # Géré par Mindset : le thème de la suite changé ailleurs (Mindset, Evermind) est suivi. Toutes les 2,5 s, seule la

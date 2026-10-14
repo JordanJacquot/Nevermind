@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    Nevermind 1.0.102
+    Nevermind 1.0.103
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -12,7 +12,7 @@
 #>
 param([switch]$Uninstall, [switch]$Demarrage)   # -Demarrage : lancé avec Windows, réduit près de l'horloge
 
-$AppVersion = '1.0.102'
+$AppVersion = '1.0.103'
 $UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
@@ -207,6 +207,8 @@ if (-not $Managed -and -not $Uninstall -and -not (Test-WorkCopy) -and (-not $env
 # La fenêtre ouverte a les droits administrateur : ce lancement-ci ne peut pas lui envoyer de signal
 # direct, il dépose donc une « demande d'affichage » qu'elle surveille.
 $ShowRequest = Join-Path $DataDir 'afficher.demande'
+# Même principe dans l'autre sens : Mindset, quand on le quitte, dépose une « demande de fermeture » (evenements.ps1)
+$QuitRequest = Join-Path $DataDir 'quitter.demande'
 function Send-ShowRequest {
     try {
         New-Item -ItemType Directory -Force -Path (Split-Path $ShowRequest) | Out-Null
@@ -274,6 +276,8 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
         if (-not $got) { if (-not $Demarrage) { Send-ShowRequest }; exit }
     }
     try { if (Test-Path -LiteralPath $ShowRequest) { [IO.File]::Delete($ShowRequest) } } catch {}
+    # Vieille demande de fermeture (Mindset quitté pendant que Nevermind était fermé) : elle ne vaut pas pour ce lancement
+    try { if (Test-Path -LiteralPath $QuitRequest) { [IO.File]::Delete($QuitRequest) } } catch {}
 }
 
 # Anciens programmes mis de côté par la dernière mise à jour (ils tournaient pendant qu'on les remplaçait)
