@@ -1782,7 +1782,8 @@ public static class NetFlow
                 {
                     if (f.LastIn != 0)
                     {
-                        double gap = (ts - f.LastIn) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                        // (horodatage en heure système, FILETIME : 100 ns ; Windows le convertit pour le lecteur temps réel)
+                        double gap = (ts - f.LastIn) / 10000.0;
                         // Au delà de 3 s, c'est une pause (menu, chargement), pas un à-coup en pleine partie
                         if (gap < 3000)
                         {
@@ -1803,8 +1804,10 @@ public static class NetFlow
     public static string[] Snapshot()
     {
         var outp = new List<string>();
-        long now = System.Diagnostics.Stopwatch.GetTimestamp();
-        double f = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+        // Les événements sont datés en heure système (FILETIME, 100 ns) : l'âge du dernier paquet se compte dans la même
+        // horloge (avant : l'horloge QPC, d'où des âges de -13 milliards de ms et le serveur du jeu jamais retenu)
+        long now = DateTime.UtcNow.ToFileTimeUtc();
+        double f = 1.0 / 10000.0;
         lock (sync)
         {
             foreach (var x in flows.Values)
