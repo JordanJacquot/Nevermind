@@ -110,6 +110,8 @@ function Test-GameRunning {
     $procs = @([Diagnostics.Process]::GetProcesses() | Where-Object { $script:GameIndex.ContainsKey($_.ProcessName.ToLower()) })
     foreach ($p in $procs) {
         $path = try { [string]$p.Path } catch { '' }
+        # Jeu protégé par un anti-triche (Rocket League et EasyAntiCheat) : .Path reste vide, le droit de lecture minimal suffit
+        if (-not $path) { try { $path = [string][TrafficMon]::GetProcessPath($p.Id) } catch {} }
         $info = $script:GameIndex[$p.ProcessName.ToLower()]
         if ($path -and $info -and $info.Exes -contains $path.ToLower()) {
             $name = if ($info.ByPath -and $info.ByPath[$path.ToLower()]) { $info.ByPath[$path.ToLower()] } else { $info.Game }
@@ -549,6 +551,7 @@ function Start-FpsTarget([int]$ProcId, [string]$Name, [string]$Exe) {
     if ($script:FpsTarget) { Stop-FpsTarget }
     if (-not (Start-FpsMesure $ProcId)) { Write-Log "Mesure des FPS: $([FrameMon]::LastError)"; return }
     $path = try { [string](Get-Process -Id $ProcId -ErrorAction Stop).Path } catch { '' }
+    if (-not $path) { try { $path = [string][TrafficMon]::GetProcessPath($ProcId) } catch {} }   # (anti-triche)
     $script:FpsTarget = @{ Pid = $ProcId; Name = $Name; Key = $Exe.ToLower(); Start = Get-Date; Series = (New-Object System.Collections.ArrayList); Ticks = 0; Exclusive = $false; Warned = $false
         Path = $path; Sys = (New-Object System.Collections.ArrayList); ProcCpu = @{}; ProcMem = @{}; ProcSeconds = 0.0; PrevProc = $null; PrevProcTime = $null; OnBattery = $false }
     if (Test-FpsOverlay) { Show-FpsOverlay }
