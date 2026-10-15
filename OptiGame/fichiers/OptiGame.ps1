@@ -394,7 +394,10 @@ $script:CleanRows = @()
 $script:PingResults = @()
 # Lancé avec Windows : la fenêtre se prépare sans s'afficher, puis reste près de l'horloge
 $script:StartHidden = [bool]$Demarrage
-if ($script:StartHidden) { $Window.ShowInTaskbar = $false; $Window.ShowActivated = $false; $Window.WindowState = 'Minimized' }
+# Lancé caché (par Mindset, ou avec Windows) : la fenêtre se prépare hors de l'écran, sans bouton dans la barre des tâches.
+# (Réduite, Windows la montrait en petit bandeau en bas à gauche de l'écran, dont la croix ouvrait la question de fermeture
+# derrière Mindset et bloquait le chargement.)
+if ($script:StartHidden) { $Window.ShowInTaskbar = $false; $Window.ShowActivated = $false; $Window.WindowStartupLocation = 'Manual'; $Window.Left = -32000; $Window.Top = -32000 }
 try { Start-AideFond } catch { Write-Log "Aide : $_" }
 Write-Log "Démarrage Nevermind $AppVersion (Windows build $($script:Build), langue $((Get-UICulture).Name), PowerShell $($PSVersionTable.PSVersion))$(if ($Demarrage) { ', lancé avec Windows' })"
 $Window.Show()

@@ -424,7 +424,15 @@ $Window.Add_ContentRendered({
             $t = $script:StartupThen; $script:StartupThen = $null
             $Window.ShowInTaskbar = $true
             # (déjà accrochée dans Mindset pendant le chargement : elle y reste affichée)
-            if (-not $script:Embedded) { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } }
+            if (-not $script:Embedded) {
+                try { Hide-ToTray } catch { Write-Log "Réduction: $_" }
+                # Préparée hors de l'écran (OptiGame.ps1) : une fois cachée, elle reprend sa place au centre de l'écran
+                if ($Window.Left -le -30000) {
+                    $wa = [System.Windows.SystemParameters]::WorkArea
+                    $Window.Left = $wa.Left + [math]::Max(0.0, ($wa.Width - $Window.Width) / 2)
+                    $Window.Top = $wa.Top + [math]::Max(0.0, ($wa.Height - $Window.Height) / 2)
+                }
+            }
             & $t
         } else { Hide-StartupOverlay }
     }
