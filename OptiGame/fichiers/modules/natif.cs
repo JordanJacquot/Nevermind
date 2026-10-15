@@ -2141,3 +2141,53 @@ public static class EmbedInfo
     // Visible pour Windows (Mindset montre et cache la fenêtre lui-même, sans que WPF le sache toujours)
     public static bool IsShown(IntPtr h) { return h != IntPtr.Zero && IsWindowVisible(h); }
 }
+
+// Échange avec l'Aide (la partie de Nevermind qui tourne en administrateur, NevermindAide.ps1) : une demande JSON par
+// connexion sur le canal réservé à l'utilisateur. Nevermind vérifie d'abord que c'est bien Nevermind.exe de son
+// dossier qui répond (ExeAttendu), pour ne jamais envoyer ses demandes à un programme qui aurait pris le nom du canal.
+public static class AideClient
+{
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool WaitNamedPipe(string name, uint timeout);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetNamedPipeServerProcessId(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint pid);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int flags, System.Text.StringBuilder name, ref int size);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+
+    public static string ExeAttendu = "";
+
+    public static string Nom() { return "Nevermind-Aide-" + System.Security.Principal.WindowsIdentity.GetCurrent().User.Value; }
+
+    static string Chemin(int pid)
+    {
+        IntPtr h = OpenProcess(0x1000, false, pid);
+        if (h == IntPtr.Zero) return "";
+        try { var sb = new System.Text.StringBuilder(1024); int n = sb.Capacity; return QueryFullProcessImageName(h, 0, sb, ref n) ? sb.ToString() : ""; }
+        finally { CloseHandle(h); }
+    }
+
+    // L'Aide écoute-t-elle ? (sans s'y connecter)
+    public static bool Joignable(int ms) { return WaitNamedPipe(@"\\.\pipe\" + Nom(), (uint)Math.Max(1, ms)); }
+
+    // Envoie une demande et renvoie la réponse (une ligne JSON). Lève une erreur si l'Aide ne répond pas ou n'est pas la bonne.
+    public static string Appeler(string demande, int connexionMs, int reponseMs)
+    {
+        using (var c = new System.IO.Pipes.NamedPipeClientStream(".", Nom(), System.IO.Pipes.PipeDirection.InOut,
+                   System.IO.Pipes.PipeOptions.None, System.Security.Principal.TokenImpersonationLevel.Anonymous))
+        {
+            c.Connect(connexionMs);
+            uint pid;
+            string serveur = GetNamedPipeServerProcessId(c.SafePipeHandle, out pid) ? Chemin((int)pid) : "";
+            if (!string.Equals(serveur, ExeAttendu, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Le programme qui répond à la place de l'Aide n'est pas Nevermind (" + (serveur == "" ? "inconnu" : serveur) + ").");
+            var enc = new System.Text.UTF8Encoding(false);
+            var ecrivain = new System.IO.StreamWriter(c, enc, 65536, true);
+            ecrivain.WriteLine(demande);
+            ecrivain.Flush();
+            var lecteur = new System.IO.StreamReader(c, enc, false, 65536, true);
+            var lecture = System.Threading.Tasks.Task.Run(() => lecteur.ReadLine());
+            if (!lecture.Wait(reponseMs)) throw new TimeoutException("L'Aide n'a pas répondu à temps.");
+            if (lecture.Result == null) throw new InvalidOperationException("L'Aide a coupé l'échange sans répondre.");
+            return lecture.Result;
+        }
+    }
+}

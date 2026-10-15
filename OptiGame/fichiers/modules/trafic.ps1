@@ -329,17 +329,12 @@ function Block-TrafficApp($App) {
     $svc = @($App.Services | Where-Object { $_ })
     # Un service Windows partage svchost.exe avec d'autres (DNS, réseau...) : la règle vise ce service seulement
     $targets = if ($svc.Count) { @($svc | ForEach-Object { @{ Service = $_.Name } }) } else { @(@{}) }
-    foreach ($t in $targets) {
-        foreach ($dir in 'Outbound', 'Inbound') {
-            $p = @{ DisplayName = $name; Direction = $dir; Program = $App.Path; Action = 'Block'; Profile = 'Any'; ErrorAction = 'Stop' }
-            if ($t.Service) { $p.Service = $t.Service }
-            New-NetFirewallRule @p | Out-Null
-        }
-    }
+    # Règles créées par l'Aide (une par service Windows visé, sinon pour le programme entier)
+    [void](Invoke-Aide 'pare-feu.bloquer' @{ Nom = $name; Programme = [string]$App.Path; Services = @($targets | Where-Object { $_.Service } | ForEach-Object { [string]$_.Service }) })
     [void](Add-History "Internet bloqué pour $($App.Title)" @($App.Path) @(@{ Type = 'fw'; Name = $name }))
     # Les programmes de Windows ne sont pas fermés (ils font tourner d'autres choses)
     $sys = $svc.Count -or $App.Path -like "$env:windir\*"
-    if (-not $sys) { Get-Process -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -eq $App.Path } catch { $false } } | ForEach-Object { try { $_.Kill() } catch {} } }
+    if (-not $sys) { try { Stop-ProgrammeChemin ([string]$App.Path) } catch { Write-Log "Trafic : $($App.Path) non fermé ($($_.Exception.Message))" } }
     Set-Status "$($App.Title) ne peut plus accéder à Internet."
     Show-Message "« $($App.Title) » est bloqué$(if (-not $sys) { ' et a été fermé' }).`n`nPour annuler : page Sauvegarde, historique, « Annuler »."
 }

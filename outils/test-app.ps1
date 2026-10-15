@@ -1509,6 +1509,107 @@ $script:T.Run.Add_Tick({
             }
             "montrée par WPF sans être activée, décrochée puis rouverte par l'icône"
         }
+        Test-Step 'Aide : liste stricte' {
+            # Vérifié sans rien faire (-Verifier). Acceptées : toutes les demandes que Nevermind fait vraiment.
+            $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options'
+            $acceptees = @(
+                @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Nom = 'HwSchMode'; Valeur = 2; Type = 'DWord' }),
+                @('reg.effacer', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Nom = 'HwSchMode' }),
+                @('reg.ecrire', @{ Cle = $DoPath; Nom = 'DownloadMode'; Valeur = 0; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization'; Nom = 'DOPercentageMaxBackgroundBandwidth'; Valeur = 10; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization'; Nom = 'DODownloadMode'; Valeur = 0; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = $DiagKey; Nom = 'AllowTelemetry'; Valeur = 1; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = $DiagPolicyKey; Nom = 'AllowTelemetry'; Valeur = 1; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore'; Nom = 'SystemRestorePointCreationFrequency'; Valeur = 0; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'; Nom = 'fDenyTSConnections'; Valeur = 1; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Valeur = 1; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = "$IfeoPath\RocketLeague.exe\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 3; Type = 'DWord' }),
+                @('reg.effacer', @{ Cle = "$IfeoPath\RocketLeague.exe\PerfOptions"; Nom = 'CpuPriorityClass' }),
+                @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
+                @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\StartupFolder"; Nom = 'Truc.lnk'; Valeur = @(2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
+                @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Disabled'; Arreter = $true }),
+                @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Automatic'; Lancer = $true }),
+                @('pare-feu.bloquer', @{ Nom = 'OptiGame : bloque Bloc-notes'; Programme = "$env:windir\notepad.exe"; Services = @() }),
+                @('pare-feu.debloquer', @{ Nom = 'OptiGame : bloque Bloc-notes' }),
+                @('pare-feu.debloquer-tout', @{}),
+                @('pare-feu.activer', @{}),
+                @('restauration.creer', @{ Description = 'Nevermind' }),
+                @('restauration.creer', @{ Description = 'Nevermind (manuel)' }),
+                @('antivirus.retirer-exclusions', @{ Elements = @('C:\Jeux\truc.exe') }),
+                @('wifi.manuel', @{ Profils = @('Freebox-Invite', 'Gare SNCF') }),
+                @('smb1.couper', @{ Client = $true }),
+                @('nettoyage.lister', @{ Id = 'wintemp'; Top = 300 }),
+                @('nettoyage.lancer', @{ Id = 'dump' }),
+                @('processus.fermer', @{ Nom = 'chrome' })
+            )
+            $carte = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' })[0]
+            if ($carte) {
+                foreach ($choix in $DnsChoices) { $acceptees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @($choix) }) }
+                $acceptees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('192.168.1.254') })
+            }
+            # Chaque catégorie du nettoyage confiée à l'Aide existe dans sa liste à elle
+            foreach ($c in @($CleanTargets | Where-Object { $_.Aide })) { $acceptees += , @('nettoyage.lancer', @{ Id = $c.Id }) }
+            $refusees = @(
+                @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'; Nom = 'Pirate'; Valeur = 'C:\x.exe'; Type = 'String' }),
+                @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Valeur = 0; Type = 'DWord' }),
+                @('reg.effacer', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA' }),
+                @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'; Nom = 'fDenyTSConnections'; Valeur = 0; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = "$IfeoPath\RocketLeague.exe"; Nom = 'Debugger'; Valeur = 'cmd.exe'; Type = 'String' }),
+                @('reg.ecrire', @{ Cle = "$IfeoPath\lsass.exe\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 3; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = "$IfeoPath\..\Run\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 3; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Nom = 'HwSchMode'; Valeur = 9; Type = 'DWord' }),
+                @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(3, 0); Type = 'Binary' }),
+                @('service.regler', @{ Nom = 'WinDefend'; Demarrage = 'Disabled' }),
+                @('pare-feu.bloquer', @{ Nom = 'OptiGame : bloque X'; Programme = "$env:windir\System32\svchost.exe"; Services = @('wuauserv') }),
+                @('pare-feu.bloquer', @{ Nom = 'OptiGame : bloque X'; Programme = "$env:ProgramFiles\Windows Defender\MpCmdRun.exe" }),
+                @('pare-feu.bloquer', @{ Nom = 'Règle quelconque'; Programme = "$env:windir\notepad.exe" }),
+                @('pare-feu.debloquer', @{ Nom = 'Core Networking - DNS (UDP-Out)' }),
+                @('restauration.creer', @{ Description = 'autre chose' }),
+                @('nettoyage.lancer', @{ Id = 'C:\Users' }),
+                @('processus.fermer', @{ Nom = 'MsMpEng' }),
+                @('processus.fermer', @{ Chemin = "$env:windir\explorer.exe" }),
+                @('wifi.manuel', @{ Profils = @('a" b') }),
+                @('inconnue', @{})
+            )
+            if ($carte) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('6.6.6.6') }) }
+            foreach ($a in $acceptees) {
+                try { [void](Invoke-AideAction $a[0] $a[1] -Verifier) } catch { throw "refusé à tort : $($a[0]) $(ConvertTo-Json $a[1] -Compress) ($($_.Exception.Message))" }
+            }
+            foreach ($a in $refusees) {
+                $refus = $false
+                try { [void](Invoke-AideAction $a[0] $a[1] -Verifier) } catch { $refus = $true }
+                Assert-Test $refus "accepté à tort : $($a[0]) $(ConvertTo-Json $a[1] -Compress)"
+            }
+            "$($acceptees.Count) demandes acceptées, $($refusees.Count) refusées"
+        }
+
+        Test-Step 'Aide : échange par le canal (sans droits)' {
+            # Une vraie Aide, lancée sans droits (elle ne peut rien modifier), à qui Nevermind parle par Invoke-Aide
+            $psExe = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe"
+            $aide = Start-Process $psExe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $AppDir 'NevermindAide.ps1')`"", '-Parent', $PID -WindowStyle Hidden -PassThru
+            $avant = [AideClient]::ExeAttendu
+            try {
+                $fin = (Get-Date).AddSeconds(20)
+                while ((Get-Date) -lt $fin -and -not [AideClient]::Joignable(100)) { Start-Sleep -Milliseconds 100 }
+                Assert-Test ([AideClient]::Joignable(100)) 'l''Aide n''écoute pas après 20 s'
+                [AideClient]::ExeAttendu = $psExe
+                $b = Invoke-Aide 'aide.bonjour'
+                Assert-Test ($b.Version -eq $AideVersion -and -not $b.Admin) "réponse : $(ConvertTo-Json $b -Compress)"
+                $msg = ''
+                try { [void](Invoke-Aide 'reg.ecrire' @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Valeur = 0; Type = 'DWord' }) } catch { $msg = $_.Exception.Message }
+                Assert-Test ($msg -match 'garde ce réglage') "refus attendu, reçu : $msg"
+                # Une Aide qui n'est pas celle de cette copie n'est pas écoutée
+                [AideClient]::ExeAttendu = 'C:\ailleurs\Nevermind.exe'
+                $msg = ''
+                try { [void](Invoke-Aide 'aide.bonjour') } catch { $msg = $_.Exception.Message }
+                Assert-Test ($msg -match 'pas Nevermind') "programme étranger accepté : $msg"
+            } finally {
+                [AideClient]::ExeAttendu = $avant
+                try { $aide.Kill() } catch {}
+            }
+            'réponse, refus de la liste stricte et refus d''une fausse Aide'
+        }
+
         Test-Step 'Fermeture demandée par Mindset' {
             # La fenêtre ne doit pas se fermer ici : chaque fermeture est notée puis annulée, et tout est remis comme avant
             $closes = New-Object System.Collections.ArrayList

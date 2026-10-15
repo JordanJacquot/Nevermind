@@ -26,86 +26,37 @@ $CleanTargets = @(
        Desc = 'Restes laissés par tes programmes et les installations. Ce qui a moins de 24 h ou sert encore est gardé.' },
     @{ Id = 'claude'; Titre = 'Fichiers de travail de Claude'; Paths = @("$env:TEMP\claude"); Default = $false; Warn = $true; Optional = $true
        Desc = 'Captures, scripts et téléchargements des discussions Claude Code. Tes discussions ne sont pas effacées, mais une discussion en cours peut encore en avoir besoin : garde les si tu travailles avec Claude.' },
-    @{ Id = 'wintemp'; Titre = 'Fichiers temporaires de Windows'; Paths = @("$env:windir\Temp")
+    # Dossiers de Windows : lus et vidés par l'Aide, qui a sa propre liste de dossiers (aide-actions.ps1, $AideNettoyage)
+    @{ Id = 'wintemp'; Titre = 'Fichiers temporaires de Windows'; Paths = $AideNettoyage['wintemp']; Aide = $true
        Desc = 'Restes laissés par Windows et les programmes installés pour tout le PC.' },
-    @{ Id = 'wu'; Titre = 'Mises à jour Windows déjà installées'; Paths = @("$env:windir\SoftwareDistribution\Download")
+    @{ Id = 'wu'; Titre = 'Mises à jour Windows déjà installées'; Paths = $AideNettoyage['wu']; Aide = $true
        Desc = 'Fichiers téléchargés par Windows Update, inutiles une fois les mises à jour installées.' },
-    @{ Id = 'do'; Titre = 'Partage des mises à jour'; Paths = @("$env:windir\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache")
+    @{ Id = 'do'; Titre = 'Partage des mises à jour'; Paths = $AideNettoyage['do']; Aide = $true
        Desc = 'Morceaux de mises à jour que Windows garde pour les partager avec d''autres PC. Windows les retélécharge au besoin.' },
-    @{ Id = 'wer'; Titre = 'Rapports d''erreurs'; Paths = @("$env:ProgramData\Microsoft\Windows\WER\ReportArchive", "$env:ProgramData\Microsoft\Windows\WER\ReportQueue")
+    @{ Id = 'wer'; Titre = 'Rapports d''erreurs'; Paths = $AideNettoyage['wer']; Aide = $true
        Desc = 'Rapports créés quand une appli plante, déjà envoyés ou inutiles.' },
-    @{ Id = 'dump'; Titre = 'Rapports d''écran bleu'; Paths = @("$env:windir\Minidump")
+    @{ Id = 'dump'; Titre = 'Rapports d''écran bleu'; Paths = $AideNettoyage['dump']; Aide = $true
        Desc = 'Créés lors d''un écran bleu. Utiles seulement pour comprendre un écran bleu récent.' }
 )
 
-# Parcours d'un dossier sans suivre les liens (jonctions, liens symboliques) : on ne sort jamais du dossier prévu.
-$CleanWalk = @'
-function Get-CleanFiles([string]$Root, $Dirs) {
-    foreach ($e in @(Get-ChildItem -LiteralPath $Root -Force -ErrorAction SilentlyContinue)) {
-        if ($e.PSIsContainer) {
-            if ($e.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
-            if ($script:CleanSkip -and $script:CleanSkip.ContainsKey($e.FullName.ToLower())) { continue }   # dossier protégé (Claude...)
-            if ($null -ne $Dirs) { [void]$Dirs.Add($e.FullName) }
-            Get-CleanFiles $e.FullName $Dirs
-        } elseif ($e.LastWriteTime -lt $script:CleanBefore) { $e }
-    }
-}
-function Set-CleanSkip($Paths, $Exclude) {
-    $script:CleanSkip = @{}
-    foreach ($p in @($Paths)) { foreach ($x in @($Exclude | Where-Object { $_ })) { $script:CleanSkip[(Join-Path $p $x).ToLower()] = $true } }
-}
-# Fichiers de moins de 24 h laissés : une installation ou un programme en cours peut encore s'en servir
-$script:CleanBefore = (Get-Date).AddDays(-1)
-'@
+# $CleanWalk, $CleanListScript et $CleanScript (parcours sans suivre les liens, analyse, nettoyage) sont dans
+# aide-actions.ps1 : l'Aide s'en sert aussi pour les dossiers de Windows.
 
-# Analyse d'une catégorie : nombre de fichiers, taille totale et les plus gros (pour « Voir les fichiers »)
-$CleanListScript = [scriptblock]::Create($CleanWalk + @'
-
-$a = $args[0]
-Set-CleanSkip $a.Paths $a.Exclude
-$sum = 0.0; $n = 0
-$list = New-Object System.Collections.Generic.List[object]
-foreach ($p in $a.Paths) {
-    if (-not (Test-Path -LiteralPath $p)) { continue }
-    foreach ($f in (Get-CleanFiles $p $null)) { $sum += $f.Length; $n++; $list.Add(@($f.FullName, [double]$f.Length, $f.LastWriteTime)) }
+# Analyse d'une catégorie (taille, nombre, les plus gros fichiers), sur place ou par l'Aide. $null si impossible.
+function Get-CleanInfo($Target, [int]$Top = 300) {
+    if (-not $Target.Aide) { return (Invoke-Async $CleanListScript @{ Paths = $Target.Paths; Top = $Top; Exclude = $Target.Exclude } | Select-Object -First 1) }
+    try { $r = Invoke-Aide 'nettoyage.lister' @{ Id = $Target.Id; Top = $Top } }
+    catch { Write-Log "Nettoyage ($($Target.Id)) : $($_.Exception.Message)"; return $null }
+    # Dates envoyées en ticks par l'Aide
+    @{ Size = [double]$r.Size; Count = [int]$r.Count; Top = @(@($r.Top) | ForEach-Object { , @([string]$_[0], [double]$_[1], [datetime][long]$_[2]) }) }
 }
-$top = @($list | Sort-Object { $_[1] } -Descending | Select-Object -First $a.Top)
-@{ Size = $sum; Count = $n; Top = $top }
-'@)
 
-# Nettoyage d'une catégorie, fichier par fichier, avec une ligne de journal pour chacun
-$CleanScript = [scriptblock]::Create($CleanWalk + @'
-
-$paths = $args[0].Paths
-Set-CleanSkip $paths $args[0].Exclude
-$log = New-Object System.Collections.Generic.List[string]
-$freed = 0.0; $del = 0; $skip = 0; $err = 0
-$fmt = { param($b) if ($b -ge 1GB) { '{0:N1} Go' -f ($b / 1GB) } elseif ($b -ge 1MB) { '{0:N1} Mo' -f ($b / 1MB) } else { '{0:N0} Ko' -f [math]::Max(1, [math]::Ceiling($b / 1KB)) } }
-foreach ($p in $paths) {
-    if (-not (Test-Path -LiteralPath $p)) { continue }
-    $dirs = New-Object System.Collections.Generic.List[string]
-    foreach ($f in @(Get-CleanFiles $p $dirs)) {
-        $len = [double]$f.Length
-        try {
-            if ($f.Attributes -band [IO.FileAttributes]::ReadOnly) { $f.Attributes = [IO.FileAttributes]::Normal }
-            [IO.File]::Delete($f.FullName)
-            $freed += $len; $del++
-            $log.Add("[SUPPRIMÉ] $($f.FullName) - $(& $fmt $len)")
-        } catch [System.UnauthorizedAccessException] {
-            $err++; $log.Add("[REFUSÉ]   $($f.FullName) - $(& $fmt $len) - Accès refusé")
-        } catch [System.IO.IOException] {
-            $skip++; $log.Add("[LAISSÉ]   $($f.FullName) - $(& $fmt $len) - Fichier utilisé par un programme")
-        } catch {
-            $err++; $log.Add("[REFUSÉ]   $($f.FullName) - $(& $fmt $len) - $($_.Exception.Message)")
-        }
-    }
-    # Dossiers restés vides : du plus profond au moins profond (le dossier de départ reste)
-    foreach ($d in @($dirs | Sort-Object { $_.Length } -Descending)) {
-        try { if (-not [IO.Directory]::EnumerateFileSystemEntries($d).GetEnumerator().MoveNext()) { [IO.Directory]::Delete($d) } } catch {}
-    }
+# Nettoyage d'une catégorie, sur place ou par l'Aide : { Freed, Deleted, Skipped, Errors, Log }
+function Invoke-CleanOne($Target) {
+    if (-not $Target.Aide) { return (Invoke-Async $CleanScript @{ Paths = $Target.Paths; Exclude = $Target.Exclude } | Select-Object -First 1) }
+    try { Invoke-Aide 'nettoyage.lancer' @{ Id = $Target.Id } 900000 }
+    catch { @{ Freed = 0.0; Deleted = 0; Skipped = 0; Errors = 1; Log = @("[REFUSÉ]   $($_.Exception.Message)") } }
 }
-@{ Freed = $freed; Deleted = $del; Skipped = $skip; Errors = $err; Log = $log.ToArray() }
-'@)
 
 # Nettoie les catégories et écrit le journal (dossier « nettoyage » des données de Nevermind, 10 derniers gardés)
 function Invoke-CleanTargets([array]$Targets) {
@@ -118,7 +69,7 @@ function Invoke-CleanTargets([array]$Targets) {
     $tot = @{ Freed = 0.0; Deleted = 0; Skipped = 0; Errors = 0 }
     foreach ($t in $Targets) {
         Set-Status "Nettoyage: $($t.Titre)..."
-        $r = Invoke-Async $CleanScript @{ Paths = $t.Paths; Exclude = $t.Exclude } | Select-Object -First 1
+        $r = Invoke-CleanOne $t
         $lines.Add('')
         $lines.Add("== $($t.Titre) ($($t.Paths -join ', ')) ==")
         if (-not $r) { $lines.Add('(rien à nettoyer)'); continue }
@@ -149,7 +100,7 @@ function Format-Size([double]$Bytes) {
 # ---------------------------------------------------------------------------
 function Restore-AllSettings {
     $errors = @()
-    try { Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction Stop } catch { $errors += "Pare-feu: $($_.Exception.Message)" }
+    try { if (@(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue).Count) { [void](Invoke-Aide 'pare-feu.debloquer-tout') } } catch { $errors += "Pare-feu: $($_.Exception.Message)" }
     foreach ($e in @($script:Backup.Registry.Values)) {
         try {
             if ($e.Existed) {
@@ -168,10 +119,8 @@ function Restore-AllSettings {
     # Services arrêtés par Nevermind (télémétrie) : état d'origine
     foreach ($l in @(Get-Setting 'SvcOriginal' @())) {
         $x = ([string]$l) -split '\|'
-        try {
-            Set-Service -Name $x[0] -StartupType $x[1] -ErrorAction Stop
-            if ($x[2] -eq 'True') { Start-Service -Name $x[0] -ErrorAction Stop }
-        } catch { $errors += "Service $($x[0]): $($_.Exception.Message)" }
+        try { [void](Invoke-Aide 'service.regler' @{ Nom = $x[0]; Demarrage = $x[1]; Lancer = ($x[2] -eq 'True') }) }
+        catch { $errors += "Service $($x[0]): $($_.Exception.Message)" }
     }
     Set-Setting 'SvcOriginal' @()
     # Réglages « batterie » changés pour l'onduleur
@@ -191,8 +140,7 @@ function Restore-AllSettings {
     foreach ($k in @($script:Backup.Dns.Keys)) {
         try {
             $v = $script:Backup.Dns[$k]
-            if ($v) { Set-DnsClientServerAddress -InterfaceIndex ([int]$k) -ServerAddresses @($v -split '[,\s]+' | Where-Object { $_ }) -ErrorAction Stop }
-            else { Set-DnsClientServerAddress -InterfaceIndex ([int]$k) -ResetServerAddresses -ErrorAction Stop }
+            [void](Invoke-Aide 'dns.regler' @{ Index = [int]$k; Serveurs = @(([string]$v) -split '[,\s]+' | Where-Object { $_ }) })
         } catch { $errors += "DNS: $($_.Exception.Message)" }
     }
     foreach ($k in @($script:Backup.Displays.Keys)) {
@@ -342,10 +290,16 @@ function Invoke-Uninstall {
     if ([System.Windows.MessageBox]::Show($q, 'Désinstaller Nevermind', 'YesNo', 'Question') -ne 'Yes') { return }
 
     $errors = @()
+    # L'Aide ouverte garderait Nevermind.exe : on la ferme (le désinstalleur, lui, a les droits et fait tout lui-même)
+    $exeAide = Join-Path (Get-AppRoot) 'NevermindAide.exe'
+    foreach ($p in @(Get-Process -Name 'NevermindAide' -ErrorAction SilentlyContinue)) { try { if ($p.Path -eq $exeAide) { $p.Kill(); [void]$p.WaitForExit(3000) } } catch {} }
     if ($n) { $errors += Restore-AllSettings }
     try { Remove-Item -LiteralPath $DataDir -Recurse -Force -ErrorAction Stop } catch { $errors += "Données: $($_.Exception.Message)" }
     try { Set-AutoStart $false } catch { $errors += "Démarrage automatique: $($_.Exception.Message)" }
     foreach ($task in $OldAutoStartTasks) { try { if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction Stop } } catch {} }
+    # L'Aide : sa tâche planifiée (créée par Mindset) et ce qu'elle retenait (DNS d'origine)
+    try { Unregister-ScheduledTask -TaskPath '\Mindset\' -TaskName 'Nevermind (aide)' -Confirm:$false -ErrorAction SilentlyContinue } catch {}
+    try { Remove-Item -LiteralPath $AideMemoire -Recurse -Force -ErrorAction SilentlyContinue } catch {}
     if (Test-DesktopShortcut) { try { [IO.File]::Delete((Get-DesktopShortcutPath)) } catch {} }
 
     # Fichiers de l'application: uniquement ceux livrés avec Nevermind, jamais le reste du dossier.
@@ -354,12 +308,14 @@ function Invoke-Uninstall {
     $files = @(
         (Join-Path $root 'Nevermind.exe'),
         (Join-Path $root 'Désinstaller Nevermind.exe'),
+        (Join-Path $root 'NevermindAide.exe'),
         (Join-Path $root 'OptiGame.exe'),
         (Join-Path $root 'Désinstaller OptiGame.exe'),
         (Join-Path $root 'Nexo.exe'),
         (Join-Path $root 'Désinstaller Nexo.exe'),
         (Join-Path $root 'LISEZMOI.txt'),
         (Join-Path $here 'OptiGame.ps1'),
+        (Join-Path $here 'NevermindAide.ps1'),
         (Join-Path $here 'OptiGame.ico'),
         (Join-Path $here 'cle-publique.xml'),
         (Join-Path $here 'Lancer Nevermind (secours).bat'),

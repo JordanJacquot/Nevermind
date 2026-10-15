@@ -250,10 +250,7 @@ $ui.BtnUndo.Add_Click({ Invoke-Safe { Invoke-UndoAll } })
 $ui.BtnRestorePoint.Add_Click({
     Invoke-Safe {
         Set-Busy $true
-        $r = Invoke-Async {
-            try { Checkpoint-Computer -Description 'Nevermind (manuel)' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; 'OK' }
-            catch { $_.Exception.Message }
-        }
+        $r = try { [void](Invoke-Aide 'restauration.creer' @{ Description = 'Nevermind (manuel)' } 600000); 'OK' } catch { $_.Exception.Message }
         if ("$r" -eq 'OK') { Set-Status 'Point de restauration créé.'; Show-Message 'Point de restauration créé.' }
         else { Show-Message "Impossible de créer le point de restauration:`n`n$r`n`nLa protection du système est peut-être désactivée (Panneau de configuration > Système > Protection du système)." 'Warning' }
     }

@@ -206,7 +206,7 @@ function Get-FpsDiagnosis($S) {
         $acts = @($heavy | Select-Object -First 2 | ForEach-Object {
             @{ Label = "Fermer $($_.Name)"; NoRefresh = $true; Arg = $_.Name
                Confirm = "Fermer tous les $($_.Name) ?$(if ($_.Name -match $Browsers) { "`n`nTes onglets seront proposés à la réouverture du navigateur." }) Si tu as du travail pas enregistré dedans, ferme le toi même."
-               Script = { param($n) Get-Process -Name $n -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Set-Status "$n fermé." } } })
+               Script = { param($n) Stop-ProgrammeNom $n; Set-Status "$n fermé." } } })
         Add-DiagItem $items 'warn' "La mémoire vive était presque pleine ($([int]$d.Ram) %)" 'Quand elle est pleine, Windows déplace des données sur le disque et le jeu saccade.' @($heavy | ForEach-Object { "$($_.Name) : $([math]::Round($_.MB / 1024, 1)) Go" }) $acts
     }
     $bg = @($d.Top | Where-Object { $_.Name -notmatch '^(System|Idle|dwm|audiodg|MsMpEng|csrss)$' -and $_.Pct -ge 4 })
@@ -215,7 +215,7 @@ function Get-FpsDiagnosis($S) {
         foreach ($p in @($bg | Where-Object { $_.Name -notmatch $SystemProcs } | Select-Object -First 2)) {
             $acts += @{ Label = "Fermer $($p.Name)"; NoRefresh = $true; Arg = $p.Name
                 Confirm = "Fermer tous les $($p.Name) ? Si tu as du travail pas enregistré dedans, ferme le toi même."
-                Script = { param($n) Get-Process -Name $n -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; Set-Status "$n fermé." } }
+                Script = { param($n) Stop-ProgrammeNom $n; Set-Status "$n fermé." } }
         }
         if (-not $d.GameMode) {
             $acts += @{ Label = 'Activer le mode jeu'; NoRefresh = $true; Script = { Set-Setting 'GameMode' $true; Update-GameWatch; Build-GameModeCard; Set-Status 'Mode jeu automatique activé : les applis cochées seront fermées pendant tes parties.' } }

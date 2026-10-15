@@ -1,8 +1,9 @@
-// Lanceur de Nevermind : exécute fichiers\OptiGame.ps1 DANS son propre processus (moteur PowerShell hébergé),
+﻿// Lanceur de Nevermind : exécute fichiers\OptiGame.ps1 DANS son propre processus (moteur PowerShell hébergé),
 // pour que le Gestionnaire des tâches et la barre des tâches affichent « Nevermind » avec son icône, pas « Windows PowerShell ».
 // Il démarre sans droits (manifeste « asInvoker ») : OptiGame.ps1 se relance lui-même en administrateur après ses
 // premiers contrôles (copie gérée par Mindset, Nevermind déjà ouvert), une seule fenêtre de confirmation de Windows.
-// Compilé deux fois par construire.ps1 : Nevermind.exe et Désinstaller Nevermind.exe (symbole UNINSTALL).
+// Compilé trois fois par construire.ps1 : Nevermind.exe, Désinstaller Nevermind.exe (symbole UNINSTALL) et
+// NevermindAide.exe (symbole AIDE : la partie administrateur, fichiers\NevermindAide.ps1).
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -79,6 +80,33 @@ static class Lanceur
 #endif
         bool demarrage = false;
         foreach (string a in args) { if (a.Trim('-', '/').Equals("Demarrage", StringComparison.OrdinalIgnoreCase)) demarrage = true; }
+
+#if AIDE
+        // NevermindAide.exe : la partie administrateur de Nevermind (fichiers\NevermindAide.ps1), lancée par la tâche
+        // « \Mindset\Nevermind (aide) ». Programme à part : Mindset et le Gestionnaire des tâches ne la confondent pas
+        // avec Nevermind. Sans fenêtre ; en cas de problème, rien n'est écrit (dossier modifiable sans droits).
+        {
+            try
+            {
+                Directory.SetCurrentDirectory(Environment.GetFolderPath(Environment.SpecialFolder.System));
+                InitialSessionState issAide = InitialSessionState.CreateDefault();
+                issAide.ExecutionPolicy = Microsoft.PowerShell.ExecutionPolicy.Bypass;
+                using (Runspace rsAide = RunspaceFactory.CreateRunspace(issAide))
+                {
+                    rsAide.Open();
+                    using (PowerShell psAide = PowerShell.Create())
+                    {
+                        psAide.Runspace = rsAide;
+                        psAide.AddCommand(Path.Combine(Path.Combine(dossier, "fichiers"), "NevermindAide.ps1"));
+                        psAide.Invoke();
+                    }
+                }
+            }
+            catch { Environment.Exit(1); }
+            Environment.Exit(0);   // aucun fil laissé par l'Aide ne garde le processus ouvert
+            return 0;
+        }
+#endif
 
         try
         {

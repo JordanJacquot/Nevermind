@@ -218,10 +218,7 @@ function New-RestorePoint {
     Set-Status 'Création du point de restauration (ça peut prendre une minute)...'
     # Windows refuse sinon plus d'un point de restauration par 24 h.
     Set-Reg 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' 'SystemRestorePointCreationFrequency' 0
-    $r = Invoke-Async {
-        try { Checkpoint-Computer -Description 'Nevermind' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop; 'OK' }
-        catch { $_.Exception.Message }
-    }
+    $r = try { [void](Invoke-Aide 'restauration.creer' @{ Description = 'Nevermind' } 600000); 'OK' } catch { $_.Exception.Message }
     if ("$r" -eq 'OK') { Set-Status 'Point de restauration créé.'; return $true }
     Write-Log "Point de restauration: $r"
     Confirm-Action ("Impossible de créer le point de restauration.`n`nMotif: $r`n`n" +
@@ -589,9 +586,7 @@ function Set-Dns([int]$Choice) {
     $prev = [string](Get-RegValue "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($script:Net.Guid)" 'NameServer')
     $dnsLog = @(@{ Type = 'dns'; IfIndex = $idx; Guid = [string]$script:Net.Guid; Servers = @($prev -split '[,\s]+' | Where-Object { $_ }) })
     $servers = $DnsChoices[$Choice]
-    if ($servers.Count) { Set-DnsClientServerAddress -InterfaceIndex $idx -ServerAddresses $servers -ErrorAction Stop }
-    else { Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop }
-    Clear-DnsClientCache
+    [void](Invoke-Aide 'dns.regler' @{ Index = $idx; Serveurs = @($servers) })
     $script:Net = Get-ActiveNet
     Update-NetInfo
     Update-BackupSummary
@@ -611,7 +606,7 @@ function Invoke-CleanScan {
     foreach ($c in $CleanTargets) {
         if ($c.Optional -and -not (Test-Path -LiteralPath $c.Paths[0])) { continue }
         Set-Status "Calcul : $($c.Titre)..."
-        $info = Invoke-Async $CleanListScript @{ Paths = $c.Paths; Top = 300; Exclude = $c.Exclude } | Select-Object -First 1
+        $info = Get-CleanInfo $c 300
         $size = if ($info) { [double]$info.Size } else { 0.0 }
         $count = if ($info) { [int]$info.Count } else { 0 }
         $empty = -not $count

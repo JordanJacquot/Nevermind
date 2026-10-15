@@ -4,6 +4,7 @@
 #   OptiGame\
 #     Nevermind.exe                             <- à lancer (icône Nevermind)
 #     Désinstaller Nevermind.exe                <- désinstallation propre
+#     NevermindAide.exe                         <- la partie administrateur (lancée par la tâche que crée Mindset)
 #     LISEZMOI.txt
 #     fichiers\OptiGame.ps1, OptiGame.ico, lanceurs de secours (.bat)
 #     fichiers\modules\                    <- le code découpé par partie
@@ -32,6 +33,7 @@ function Build-Exe([string]$Out, [string]$Icon, [string]$Define) {
 }
 Build-Exe (Join-Path $app 'Nevermind.exe') (Join-Path $icones 'OptiGame.ico') ''
 Build-Exe (Join-Path $app 'Désinstaller Nevermind.exe') (Join-Path $icones 'OptiGame-desinstaller.ico') 'UNINSTALL'
+Build-Exe (Join-Path $app 'NevermindAide.exe') (Join-Path $icones 'OptiGame.ico') 'AIDE'
 
 foreach ($old in 'OptiGame.exe', 'Désinstaller OptiGame.exe', 'Nexo.exe', 'Désinstaller Nexo.exe') { $p = Join-Path $app $old; if (Test-Path -LiteralPath $p) { [IO.File]::Delete($p) } }
 $zip = Join-Path $racine 'OptiGame.zip'

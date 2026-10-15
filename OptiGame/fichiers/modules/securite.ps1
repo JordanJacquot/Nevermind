@@ -99,13 +99,13 @@ function Get-SecurityChecks($S) {
             Detail = 'Ces dossiers ou programmes ne sont jamais analysés. Si tu ne les as pas ajoutés toi même (ou un jeu que tu connais), c''est suspect : les virus s''ajoutent souvent eux mêmes en exclusion.'
             Items = $S.Exclusions
             Actions = @(@{ Label = 'Retirer les exclusions'; Confirm = 'Retirer toutes les exclusions de Microsoft Defender ? Ces éléments seront de nouveau analysés.'; Arg = $S.Exclusions
-                           Script = { param($a) foreach ($x in $a) { Remove-MpPreference -ExclusionPath $x -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $x -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionExtension $x -ErrorAction SilentlyContinue } } }) })
+                           Script = { param($a) [void](Invoke-Aide 'antivirus.retirer-exclusions' @{ Elements = @($a) }) } }) })
     }
 
     # Pare-feu et contrôle des comptes
     if (-not $S.Firewall) {
         [void]$list.Add(@{ Status = 'bad'; Title = 'Pare-feu désactivé'; Detail = "Le pare-feu de Windows est coupé ($($S.FirewallOff -join ', ')) : ton PC est exposé sur le réseau."
-            Actions = @(@{ Label = 'Réactiver le pare-feu'; Confirm = 'Réactiver le pare-feu de Windows sur tous les réseaux ?'; Script = { Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled True } }) })
+            Actions = @(@{ Label = 'Réactiver le pare-feu'; Confirm = 'Réactiver le pare-feu de Windows sur tous les réseaux ?'; Script = { [void](Invoke-Aide 'pare-feu.activer') } }) })
     }
     if (-not $S.Uac) {
         [void]$list.Add(@{ Status = 'bad'; Title = 'Contrôle des comptes désactivé'; Detail = 'Les programmes peuvent modifier Windows sans te demander la permission. Il faut le réactiver (redémarrage nécessaire).'

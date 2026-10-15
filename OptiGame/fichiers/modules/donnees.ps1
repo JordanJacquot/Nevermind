@@ -156,13 +156,22 @@ function Open-RegKey([string]$Path, [bool]$Create) {
     $hive.OpenSubKey($sub, $true)
 }
 
+# Réglage de l'utilisateur (HKCU) : Nevermind l'écrit lui-même. Le reste (réglages du PC) passe par l'Aide (aide-client.ps1).
+function Test-RegUtilisateur([string]$Path) { ($Path -replace '^Registry::', '') -match '^(HKCU:|HKEY_CURRENT_USER)' }
+
 # Écrit ou supprime une valeur, noms spéciaux compris (crochets, antislashs).
 function Write-RegValue([string]$Path, [string]$Name, $Value, [string]$Kind) {
+    if (-not (Test-RegUtilisateur $Path)) {
+        $v = if ($Value -is [byte[]]) { [int[]]$Value } else { $Value }
+        [void](Invoke-Aide 'reg.ecrire' @{ Cle = $Path; Nom = $Name; Valeur = $v; Type = $Kind })
+        return
+    }
     $k = Open-RegKey $Path $true
     try { $k.SetValue($Name, $Value, [Microsoft.Win32.RegistryValueKind]$Kind) } finally { $k.Close() }
 }
 
 function Remove-RegValue([string]$Path, [string]$Name) {
+    if (-not (Test-RegUtilisateur $Path)) { [void](Invoke-Aide 'reg.effacer' @{ Cle = $Path; Nom = $Name }); return }
     $k = Open-RegKey $Path $false
     if ($k) { try { $k.DeleteValue($Name, $false) } finally { $k.Close() } }
 }

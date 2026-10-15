@@ -70,8 +70,7 @@ function Set-ServiceOff([string]$Name) {
     $orig = @(Get-Setting 'SvcOriginal' @())
     if (-not @($orig | Where-Object { ([string]$_ -split '\|')[0] -eq $Name }).Count) { Set-Setting 'SvcOriginal' @($orig + "$Name|$start|$run") }
     if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'svc'; Name = $Name; StartType = $start; Running = $run }) }
-    Set-Service -Name $Name -StartupType Disabled -ErrorAction Stop
-    if ($run) { Stop-Service -Name $Name -Force -ErrorAction Stop }
+    [void](Invoke-Aide 'service.regler' @{ Nom = $Name; Demarrage = 'Disabled'; Arreter = $run })
 }
 
 # Réglages qui envoient des données à Microsoft en plus du minimum.

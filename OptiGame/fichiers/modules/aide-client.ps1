@@ -1,0 +1,104 @@
+﻿# Nevermind : demander à l'Aide ce que Nevermind ne peut pas faire sans les droits administrateur.
+# Chargé par OptiGame.ps1 après systeme.ps1 (Get-AppExe) et aide-actions.ps1.
+#
+# L'Aide (NevermindAide.ps1) est lancée par la tâche planifiée « \Mindset\Nevermind (aide) », que Mindset crée quand il
+# installe Nevermind : pas de demande de Windows. Elle ne fait que ce qui est dans aide-actions.ps1.
+# Tant que Nevermind tourne lui-même en administrateur, il fait la demande lui-même (même liste stricte) quand l'Aide ne
+# répond pas : une installation dont la tâche manque continue de marcher.
+
+$AideTache = '\Mindset\Nevermind (aide)'
+$AideFichierActions = Join-Path $ModulesDir 'aide-actions.ps1'
+$script:EstAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+# Seule l'Aide de cette copie de Nevermind est écoutée (vérifié par AideClient à chaque échange)
+[AideClient]::ExeAttendu = Join-Path (Get-AppRoot) 'NevermindAide.exe'
+# La copie de test ne réveille jamais la vraie Aide (celle de la copie installée)
+if ($env:OPTIGAME_TEST) { $script:AideSansTache = $true }
+
+# En arrière plan : réveille l'Aide si besoin (sa tâche planifiée), envoie la demande, rapporte la réponse.
+# Sans réponse et avec les droits administrateur, Nevermind fait la demande lui-même.
+$AideTravail = {
+    param($x)
+    $rep = $null; $voie = ''; $erreur = ''
+    try {
+        if ($x.SurPlace) { throw 'désinstallation' }
+        if (-not [AideClient]::Joignable(200) -and $x.Lancer) {
+            $null = & "$env:SystemRoot\System32\schtasks.exe" /Run /TN $x.Tache 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                $fin = (Get-Date).AddSeconds(20)
+                while ((Get-Date) -lt $fin -and -not [AideClient]::Joignable(200)) { Start-Sleep -Milliseconds 150 }
+            } else { $erreur = 'pas de tâche pour l''Aide' }
+        }
+        if ([AideClient]::Joignable(200)) { $rep = [AideClient]::Appeler($x.Demande, 3000, $x.Delai); $voie = 'aide' }
+        elseif (-not $erreur) { $erreur = 'l''Aide ne répond pas' }
+    } catch {
+        $erreur = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
+    }
+    if (-not $rep -and $x.Admin) {
+        $voie = 'local'
+        try {
+            . $x.Actions
+            $d = $x.Demande | ConvertFrom-Json
+            $r = Invoke-AideAction ([string]$d.a) $d.p
+            $rep = ConvertTo-Json -InputObject @{ ok = $true; r = $r } -Depth 8 -Compress
+        } catch { $rep = ConvertTo-Json -InputObject @{ ok = $false; e = $_.Exception.Message } -Compress }
+    }
+    @{ Reponse = $rep; Voie = $voie; Erreur = $erreur }
+}
+
+# Fait faire une action de la liste de l'Aide et renvoie son résultat. Une demande refusée ou ratée lève une erreur
+# avec le message de l'Aide, comme le faisait la commande de Windows avant.
+function Invoke-Aide([string]$Action, $Parametres = @{}, [int]$Delai = 120000) {
+    $x = @{
+        Demande = (ConvertTo-Json -InputObject @{ a = $Action; p = $Parametres } -Depth 8 -Compress)
+        Tache = $AideTache; Lancer = -not $script:AideSansTache; Admin = $script:EstAdmin; Actions = $AideFichierActions; Delai = $Delai
+        SurPlace = -not (Get-Command Wait-Handle -ErrorAction SilentlyContinue)
+    }
+    # Pendant la désinstallation (en administrateur, sans fenêtre ni Invoke-Async), Nevermind fait tout lui-même sur place :
+    # réveiller l'Aide la laisserait tenir Nevermind.exe, qu'il faut supprimer
+    $o = if (-not $x.SurPlace) { Invoke-Async $AideTravail $x | Select-Object -First 1 } else { & $AideTravail $x }
+    if ($o.Erreur -like 'pas de tâche*') { $script:AideSansTache = $true }
+    if ($o.Voie -ne $script:AideVoie) {
+        $script:AideVoie = $o.Voie
+        Write-Log "Aide : $(switch ($o.Voie) { 'aide' { 'les actions administrateur passent par l''Aide' } 'local' { "Nevermind fait lui-même les actions administrateur ($($o.Erreur))" } default { "indisponible ($($o.Erreur))" } })"
+    }
+    if (-not $o.Reponse) {
+        Write-Log "Aide : $Action impossible ($($o.Erreur))"
+        throw "Nevermind a besoin de son Aide pour ça, mais elle ne répond pas ($($o.Erreur)). Ouvre Mindset et mets Nevermind à jour."
+    }
+    $j = $o.Reponse | ConvertFrom-Json
+    if (-not $j.ok) { Write-Log "Aide : $Action refusé ou raté : $($j.e)"; throw [string]$j.e }
+    $j.r
+}
+
+# Réveille l'Aide au lancement (en arrière plan) : la première action ne l'attend pas
+function Start-AideFond {
+    if (-not (Get-Command Wait-Handle -ErrorAction SilentlyContinue) -or $script:AideSansTache) { return }
+    $ps = [PowerShell]::Create()
+    if ($script:BgPool) { $ps.RunspacePool = $script:BgPool }
+    [void]$ps.AddScript({
+        param($t)
+        if ([AideClient]::Joignable(50)) { return }
+        $null = & "$env:SystemRoot\System32\schtasks.exe" /Run /TN $t 2>&1
+    }.ToString()).AddArgument($AideTache)
+    [void]$ps.BeginInvoke()
+}
+
+# Ferme tous les programmes d'un nom : ceux de l'utilisateur sur place, ceux lancés en administrateur par l'Aide
+function Stop-ProgrammeNom([string]$Nom) {
+    $reste = 0
+    foreach ($p in @(Get-Process -Name $Nom -ErrorAction SilentlyContinue)) { try { $p.Kill() } catch { $reste++ } }
+    if ($reste) { [void](Invoke-Aide 'processus.fermer' @{ Nom = $Nom }) }
+}
+
+# Même chose pour un programme précis (son chemin). Sans droits, le chemin d'un programme lancé en administrateur est
+# illisible : ceux-là aussi passent par l'Aide.
+function Stop-ProgrammeChemin([string]$Chemin) {
+    $reste = 0
+    foreach ($p in @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($Chemin)) -ErrorAction SilentlyContinue)) {
+        $pc = $null; try { $pc = $p.Path } catch {}
+        if (-not $pc) { $reste++; continue }
+        if ($pc -ne $Chemin) { continue }
+        try { $p.Kill() } catch { $reste++ }
+    }
+    if ($reste) { [void](Invoke-Aide 'processus.fermer' @{ Chemin = $Chemin }) }
+}

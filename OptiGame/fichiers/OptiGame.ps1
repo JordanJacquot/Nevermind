@@ -331,7 +331,7 @@ if (-not $env:OPTIGAME_TEST -and -not $Uninstall -and -not $Demarrage) {
 # ---------------------------------------------------------------------------
 $AppDir = $PSScriptRoot
 $ModulesDir = Join-Path $AppDir 'modules'
-$missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'optimisations.ps1', 'systeme.ps1', 'themes.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'reseau-avance.ps1', 'carte-reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'assistance.ps1', 'jeu.ps1', 'diagnostic-fps.ps1', 'trafic.ps1', 'microsoft.ps1', 'lag.ps1', 'bibliotheque.ps1', 'organizer.ps1', 'parametres.ps1', 'recherche.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
+$missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'aide-actions.ps1', 'aide-client.ps1', 'optimisations.ps1', 'systeme.ps1', 'themes.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'reseau-avance.ps1', 'carte-reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'assistance.ps1', 'jeu.ps1', 'diagnostic-fps.ps1', 'trafic.ps1', 'microsoft.ps1', 'lag.ps1', 'bibliotheque.ps1', 'organizer.ps1', 'parametres.ps1', 'recherche.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
 if ($missing) {
     [System.Windows.MessageBox]::Show("Des fichiers de Nevermind sont manquants :`n`n$($missing -join ', ')`n`nRetélécharge Nevermind et remplace tout le dossier.", 'OptiGame', 'OK', 'Error') | Out-Null
     exit
@@ -343,7 +343,7 @@ Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $ModulesDir 'natif.c
 $AppUserModelId = 'JordanJacquot.Nevermind'
 try { [void][AppIdentity]::SetProcessAppId($AppUserModelId) } catch {}
 
-foreach ($ogModule in 'donnees', 'optimisations', 'systeme', 'themes') { . (Join-Path $ModulesDir "$ogModule.ps1") }
+foreach ($ogModule in 'donnees', 'aide-actions', 'optimisations', 'systeme', 'aide-client', 'themes') { . (Join-Path $ModulesDir "$ogModule.ps1") }
 if ($DataDirNote) { Write-Log $DataDirNote }
 
 if ($Uninstall) {
@@ -377,6 +377,7 @@ $script:PingResults = @()
 # Lancé avec Windows : la fenêtre se prépare sans s'afficher, puis reste près de l'horloge
 $script:StartHidden = [bool]$Demarrage
 if ($script:StartHidden) { $Window.ShowInTaskbar = $false; $Window.ShowActivated = $false; $Window.WindowState = 'Minimized' }
+try { Start-AideFond } catch { Write-Log "Aide : $_" }
 Write-Log "Démarrage Nevermind $AppVersion (Windows build $($script:Build), langue $((Get-UICulture).Name), PowerShell $($PSVersionTable.PSVersion))$(if ($Demarrage) { ', lancé avec Windows' })"
 $Window.Show()
 [System.Windows.Threading.Dispatcher]::Run()

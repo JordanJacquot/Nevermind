@@ -502,15 +502,14 @@ function Undo-RunLog($Log) {
                     $r = [OGNative]::SetRefreshRate($e.Device, $e.Hz)
                     if ($r -ne 0) { throw "Écran $($e.Device): fréquence non restaurée (code $r)" }
                 }
-                'fw' { Remove-NetFirewallRule -DisplayName $e.Name -ErrorAction Stop }
+                'fw' { [void](Invoke-Aide 'pare-feu.debloquer' @{ Nom = [string]$e.Name }) }
                 'pcfg' {
                     if ($null -ne $e.Ac) { powercfg /setacvalueindex SCHEME_CURRENT $SubBattery $e.Guid ([int]$e.Ac) | Out-Null }
                     if ($null -ne $e.Dc) { powercfg /setdcvalueindex SCHEME_CURRENT $SubBattery $e.Guid ([int]$e.Dc) | Out-Null }
                     powercfg /setactive SCHEME_CURRENT | Out-Null
                 }
                 'svc' {
-                    Set-Service -Name $e.Name -StartupType $e.StartType -ErrorAction Stop
-                    if ($e.Running) { Start-Service -Name $e.Name -ErrorAction Stop }
+                    [void](Invoke-Aide 'service.regler' @{ Nom = [string]$e.Name; Demarrage = [string]$e.StartType; Lancer = [bool]$e.Running })
                 }
                 'dns' {
                     # Le numéro de la carte réseau peut changer (redémarrage, câble changé de port) : on la retrouve par son identifiant.
@@ -520,9 +519,7 @@ function Undo-RunLog($Log) {
                         if (-not $ad) { throw 'La carte réseau de ce réglage n''existe plus sur ce PC.' }
                         $idx = $ad.ifIndex
                     }
-                    if (@($e.Servers).Count) { Set-DnsClientServerAddress -InterfaceIndex $idx -ServerAddresses @($e.Servers) -ErrorAction Stop }
-                    else { Set-DnsClientServerAddress -InterfaceIndex $idx -ResetServerAddresses -ErrorAction Stop }
-                    Clear-DnsClientCache
+                    [void](Invoke-Aide 'dns.regler' @{ Index = [int]$idx; Serveurs = @($e.Servers | Where-Object { $_ }) })
                     $script:Net = Get-ActiveNet
                 }
             }

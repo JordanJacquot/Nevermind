@@ -182,7 +182,7 @@ function Get-NetAuditChecks($R, $Devs, $Net) {
         Add-AuditCheck $list 'warn' 'wifi' "Connexion automatique à $(& $plural $openAuto.Count 'Wi-Fi ouvert' 'Wi-Fi ouverts')" 'Ton PC se reconnecte tout seul à ces réseaux sans protection. Un pirate peut créer un faux Wi-Fi avec le même nom pour espionner ta connexion.' $openAuto @(
             @{ Label = 'Passer en connexion manuelle'; Arg = $openAuto; After = $rerun
                Confirm = 'Ces Wi-Fi ne se connecteront plus automatiquement. Tu pourras toujours t''y connecter en cliquant dessus. Continuer ?'
-               Script = { param($names) foreach ($n in $names) { netsh wlan set profileparameter "name=$n" connectionmode=manual | Out-Null } } })
+               Script = { param($names) [void](Invoke-Aide 'wifi.manuel' @{ Profils = @($names) }) } })
     } elseif ($profiles.Count) {
         Add-AuditCheck $list 'ok' 'wifi' 'Aucun Wi-Fi ouvert en connexion automatique' "$(& $plural $profiles.Count 'Wi-Fi mémorisé' 'Wi-Fi mémorisés') sur ce PC, tous protégés ou en connexion manuelle."
     }
@@ -270,7 +270,7 @@ function Get-NetAuditChecks($R, $Devs, $Net) {
     $pc = $R.Pc
     if (@($pc.FirewallOff).Count) {
         Add-AuditCheck $list 'bad' 'pc' 'Pare-feu de Windows désactivé' "Il est coupé sur : $(@($pc.FirewallOff) -join ', '). Ton PC accepte alors toutes les connexions venant du réseau." $null @(
-            @{ Label = 'Réactiver le pare-feu'; After = $rerun; Confirm = 'Réactiver le pare-feu de Windows sur tous les réseaux ?'; Script = { Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled True } })
+            @{ Label = 'Réactiver le pare-feu'; After = $rerun; Confirm = 'Réactiver le pare-feu de Windows sur tous les réseaux ?'; Script = { [void](Invoke-Aide 'pare-feu.activer') } })
     } else {
         Add-AuditCheck $list 'ok' 'pc' 'Pare-feu de Windows activé' 'Il bloque les connexions non voulues vers ce PC.'
     }
@@ -280,11 +280,8 @@ function Get-NetAuditChecks($R, $Devs, $Net) {
                Confirm = 'Désactiver SMBv1 ? Un redémarrage peut être nécessaire. Seuls de très vieux appareils (NAS ou imprimantes d''avant 2010) pourraient ne plus accéder à ce PC.'
                Script = {
                    param($client)
-                   Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force -Confirm:$false -ErrorAction SilentlyContinue
-                   if ($client) {
-                       Set-Status 'Désactivation de SMBv1...'
-                       [void](Invoke-Async { Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -ErrorAction SilentlyContinue | Out-Null })
-                   }
+                   Set-Status 'Désactivation de SMBv1...'
+                   [void](Invoke-Aide 'smb1.couper' @{ Client = [bool]$client } 900000)
                } })
     } else {
         Add-AuditCheck $list 'ok' 'pc' 'SMBv1 désactivé' 'L''ancienne version du partage de fichiers (faille WannaCry) est coupée.'
