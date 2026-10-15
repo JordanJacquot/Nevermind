@@ -93,9 +93,18 @@ function Watch-Requests {
     }
     if ($script:QuitAsked) { Invoke-RequestedQuit; return }
     if ([IO.File]::Exists($ShowRequest)) {
+        $demande = ''
+        try { $demande = ([IO.File]::ReadAllText($ShowRequest)).Trim() } catch {}
         try { [IO.File]::Delete($ShowRequest) } catch {}
+        # Clic sur une bulle que Mindset a montrée pour Nevermind : ce qu'elle annonçait. Seul un numéro donné par
+        # Show-Notify est accepté : rien de ce qui est écrit dans ce fichier n'est exécuté.
+        if ($demande -match '^notif:([0-9a-f]{12})$' -and $script:NotifyActions -and $script:NotifyActions.ContainsKey($Matches[1])) {
+            $aFaire = $script:NotifyActions[$Matches[1]]   # (pas « $action » : c'est le paramètre d'Invoke-Safe, qui se rappellerait lui-même)
+            $script:NotifyActions.Remove($Matches[1])
+            Invoke-Safe { & $aFaire }
+        }
         # Affichée dans Mindset : c'est lui qui la montre, on ne touche pas à son état (elle sortirait de Mindset)
-        if (-not $script:Embedded) { try { Show-MainWindow } catch { Write-Log "Affichage: $_" } }
+        elseif (-not $script:Embedded) { try { Show-MainWindow } catch { Write-Log "Affichage: $_" } }
     }
 }
 # Un nouveau lancement de Nevermind demande d'afficher cette fenêtre (elle peut être cachée près de l'horloge)

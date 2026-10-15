@@ -52,6 +52,24 @@ $SuiteStamp = try { [IO.File]::GetLastWriteTimeUtc($SuiteFile) } catch { [dateti
 $Suite = Read-Suite
 $Managed = [bool]($Suite.Dir -and $Suite.Dir -eq (Get-FullDir (Split-Path $PSScriptRoot -Parent)))   # -eq ignore la casse
 
+# Géré par Mindset, Nevermind ne s'affiche que dans Mindset. Lancé à la main (Mindset, lui, le lance caché avec -Demarrage
+# puis l'accroche dans son onglet), ou une fenêtre à montrer : Mindset s'ouvre sur l'onglet de Nevermind.
+# Mindset vient du registre (clé de désinstallation, écrite par un administrateur), jamais d'un fichier modifiable, et il
+# est lancé par l'Explorateur, sans les droits de Nevermind. $false si Mindset est introuvable (Nevermind s'ouvre seul).
+function Open-DansMindset {
+    $dir = ''
+    try { $dir = ([string](Get-ItemProperty -LiteralPath 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Mindset' -Name InstallLocation -ErrorAction Stop).InstallLocation).Trim().Trim('"') } catch {}
+    $exe = if ($dir -and [IO.Path]::IsPathRooted($dir)) { Join-Path $dir 'Mindset.exe' } else { '' }
+    if (-not $exe -or -not (Test-Path -LiteralPath $exe -PathType Leaf)) { return $false }
+    try {
+        [void][IO.Directory]::CreateDirectory((Split-Path $SuiteFile))
+        [IO.File]::WriteAllText((Join-Path (Split-Path $SuiteFile) 'afficher-page.txt'), 'appli:nevermind', (New-Object Text.UTF8Encoding $false))
+        Start-Process -FilePath (Join-Path $env:windir 'explorer.exe') -ArgumentList "`"$exe`"" -ErrorAction Stop
+        $true
+    } catch { $false }
+}
+if ($Managed -and -not $Demarrage -and -not $Uninstall -and -not $env:OPTIGAME_TEST) { if (Open-DansMindset) { exit } }
+
 # Nevermind déjà ouvert ? (accès refusé au verrou = il existe, mais appartient à la fenêtre lancée en administrateur)
 function Test-InstanceRunning {
     try { $probe = [System.Threading.Mutex]::OpenExisting('Local\OptiGame-Instance'); $probe.Dispose(); return $true }
@@ -386,7 +404,7 @@ if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
     if ($script:InstanceMutex) { try { $script:InstanceMutex.ReleaseMutex() } catch {}; $script:InstanceMutex.Dispose(); $script:InstanceMutex = $null }
     $relExe = Join-Path (Split-Path (Split-Path $script:Relaunch -Parent) -Parent) 'Nevermind.exe'
     # Relancé pendant qu'il était caché près de l'horloge (thème changé dans Mindset) : il y retourne
-    $relArgs = @(if ($script:RelaunchHidden) { '-Demarrage' })
+    $relArgs = @(if ($script:RelaunchHidden -or $Managed) { '-Demarrage' })   # (géré par Mindset : relancé caché, Mindset le raccroche)
     if (Test-Path -LiteralPath $relExe) { if ($relArgs) { Start-Process -FilePath $relExe -ArgumentList $relArgs } else { Start-Process -FilePath $relExe } }
     else { Start-Process -FilePath 'powershell.exe' -ArgumentList (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"") + $relArgs) }
 }

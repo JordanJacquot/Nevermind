@@ -1623,6 +1623,34 @@ $script:T.Run.Add_Tick({
             'réponse, refus de la liste stricte et refus d''une fausse Aide'
         }
 
+        Test-Step 'Alertes passées par Mindset (géré par Mindset)' {
+            # Géré par Mindset : pas d'icône près de l'horloge, l'alerte va à Mindset, et son clic revient ici
+            $vraiGere = $Managed; $script:AlerteFaite = $false
+            # (le test remplace Show-Notify pour compter les messages : la vraie, celle d'assistance.ps1, est reprise ici seulement)
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $ModulesDir 'assistance.ps1'), [ref]$null, [ref]$null)
+            . ([scriptblock]::Create($ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Show-Notify' }, $true).Extent.Text))
+            $f = Join-Path $DataDir 'notification.demande'
+            try {
+                $Managed = $true
+                Show-Notify 'Nouvel appareil sur ton réseau' 'Test : clique pour voir.' { $script:AlerteFaite = $true }
+                Assert-Test (Test-Path -LiteralPath $f) 'notification.demande absente'
+                $j = [IO.File]::ReadAllText($f, [Text.Encoding]::UTF8) | ConvertFrom-Json
+                Assert-Test ($j.titre -eq 'Nouvel appareil sur ton réseau' -and $j.id -match '^[0-9a-f]{12}$') "contenu : $(ConvertTo-Json $j -Compress)"
+                # Mindset a montré la bulle, l'utilisateur clique : Mindset écrit « notif:<id> » dans afficher.demande
+                [IO.File]::WriteAllText($ShowRequest, 'notif:000000000000')
+                Watch-Requests
+                Assert-Test (-not $script:AlerteFaite) 'un numéro inconnu a déclenché une action'
+                [IO.File]::WriteAllText($ShowRequest, "notif:$($j.id)")
+                Watch-Requests
+                Assert-Test $script:AlerteFaite 'le clic sur la bulle n''a pas fait l''action annoncée'
+                Assert-Test (-not $script:NotifyIcon -or -not $script:NotifyIcon.Visible) 'icône de Nevermind près de l''horloge alors que Mindset le gère'
+            } finally {
+                $Managed = $vraiGere
+                foreach ($x in $f, $ShowRequest) { try { [IO.File]::Delete($x) } catch {} }
+            }
+            'alerte écrite pour Mindset, clic renvoyé et action faite, numéro inconnu refusé'
+        }
+
         Test-Step 'Fermeture demandée par Mindset' {
             # La fenêtre ne doit pas se fermer ici : chaque fermeture est notée puis annulée, et tout est remis comme avant
             $closes = New-Object System.Collections.ArrayList

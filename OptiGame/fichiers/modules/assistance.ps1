@@ -163,6 +163,8 @@ function Start-Unelevated([string]$Path, [string]$Arguments) {
 
 # Réaffiche la fenêtre (cachée quand elle a été réduite).
 function Show-MainWindow {
+    # Géré par Mindset et pas (encore) accroché : c'est Mindset qui l'affiche, dans son onglet
+    if ($Managed -and -not $script:Embedded -and -not $env:OPTIGAME_TEST -and (Open-DansMindset)) { return }
     try {
         if (-not $Window.IsVisible) { $Window.Show() }
         if ($script:Embedded) { return }   # affichée dans Mindset : la montrer dans sa zone suffit, sans changer son état
@@ -246,6 +248,7 @@ function Show-QuitDialog {
 
 # Fenêtre réduite : elle quitte la barre des tâches et reste près de l'horloge.
 function Hide-ToTray {
+    if ($Managed) { $Window.Hide(); return }   # (géré par Mindset : pas d'icône à Nevermind près de l'horloge, c'est celle de Mindset)
     $ni = Get-TrayIcon
     $ni.Visible = $true
     $Window.Hide()
@@ -297,6 +300,17 @@ function Set-AutoStartFromUi([bool]$On) {
 
 function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) {
     if ($script:Closing) { Write-Log "$Title : $Text"; return }   # l'app se ferme : la bulle disparaîtrait aussitôt
+    if ($Managed) {
+        # Géré par Mindset : la bulle est montrée par Mindset, sur son icône (notification.demande). Un clic dessus revient
+        # ici par afficher.demande (« notif:<numéro> ») pour faire ce qu'elle annonçait (Watch-Requests).
+        $id = [guid]::NewGuid().ToString('N').Substring(0, 12)
+        if (-not $script:NotifyActions) { $script:NotifyActions = @{} }
+        if ($OnClick) { $script:NotifyActions[$id] = $OnClick }
+        try { [IO.File]::WriteAllText((Join-Path $DataDir 'notification.demande'), (ConvertTo-Json -InputObject @{ titre = $Title; texte = $Text; id = $id } -Compress), (New-Object Text.UTF8Encoding $false)) }
+        catch { Write-Log "Notification impossible: $_" }
+        Set-Status "$Title : $Text"
+        return
+    }
     $script:NotifyAction = $OnClick
     try {
         [void](Get-TrayIcon)
