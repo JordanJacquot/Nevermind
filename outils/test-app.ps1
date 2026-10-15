@@ -1543,6 +1543,7 @@ $script:T.Run.Add_Tick({
                 @('processus.fermer', @{ Nom = 'chrome' }),
                 @('lecture.pc', @{}),
                 @('lecture.securite', @{}),
+                @('lecture.taches', @{}),
                 @('lecture.chemins', @{ Pids = @('4', '1234', '56789') }),
                 @('fps.demarrer', @{ Pid = "$PID" }),
                 @('fps.lire', @{}),

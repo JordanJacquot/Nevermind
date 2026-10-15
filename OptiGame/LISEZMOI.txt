@@ -7,8 +7,8 @@ INSTALLATION
 Nevermind s'installe et se met à jour avec Mindset, le portail de la suite :
   https://github.com/JordanJacquot/Mindset/releases/latest
 1. Installe Mindset, puis installe Nevermind depuis Mindset.
-2. Ouvre Nevermind depuis Mindset ou son raccourci, et clique sur « Oui »
-   quand Windows demande l'autorisation.
+2. Ouvre Nevermind dans Mindset (son onglet à gauche). Windows ne demande
+   aucune autorisation : Nevermind tourne sans les droits administrateur.
 Tu avais déjà Nevermind ? Mindset reprend ta copie avec tes réglages, ta
 sauvegarde et tes données : rien n'est perdu. Une copie qui n'est pas gérée
 par Mindset ne s'ouvre plus et propose d'installer Mindset (la désinstallation
@@ -34,9 +34,9 @@ Rien à installer : l'application utilise PowerShell, déjà présent dans Windo
 Le dossier « fichiers » contient l'application elle même : ne le supprime pas.
 
 POURQUOI WINDOWS OU L'ANTIVIRUS PEUVENT RÂLER
-Nevermind.exe n'est pas « signé » (un certificat payant chez Microsoft), et il
-lance PowerShell avec les droits administrateur pour modifier les réglages de
-Windows. C'est exactement ce que surveillent les antivirus, donc certains
+Nevermind.exe n'est pas « signé » (un certificat payant chez Microsoft), et sa
+petite partie NevermindAide.exe modifie les réglages de Windows avec les droits
+administrateur. C'est exactement ce que surveillent les antivirus, donc certains
 peuvent le signaler par prudence, même si le programme est sain. Tout le code
 est lisible dans le dossier « fichiers » (voir SÉCURITÉ plus bas).
 Si ton antivirus bloque Nevermind.exe :
@@ -63,8 +63,8 @@ L'application a deux grandes sections, dans le menu à gauche :
     PC vers ta box, ta box vers ton fournisseur, Internet, le serveur du jeu)
     et t'explique d'où vient le lag : Wi-Fi, téléchargement en arrière plan,
     box ou fournisseur, serveur trop loin ou qui a des soucis, VPN. Avec des
-    conseils concrets et des corrections annulables. En administrateur, il
-    repère le vrai serveur du jeu (même en UDP).
+    conseils concrets et des corrections annulables. Il repère le vrai
+    serveur du jeu (même en UDP), sauf si l'anti-triche du jeu l'en empêche.
   - Trafic : ce qui sort de ton PC. Quels programmes communiquent avec
     Internet, avec quels sites, combien ils envoient et reçoivent, en direct.
     Nevermind signale ce qui est anormal (programme non signé caché dans un
@@ -210,9 +210,8 @@ OVERLAY (onglet en haut)
   transparence). Ctrl + Maj + F lance la mesure sur un jeu non reconnu.
 
 PARAMÈTRES (roue crantée en haut à droite)
-  Général : Nevermind peut se lancer à chaque démarrage du PC. Il reste alors
-  réduit près de l'horloge (mode jeu, mesure des FPS) et Windows ne demande pas
-  d'autorisation. Le raccourci sur le bureau est créé par Mindset.
+  Général : le lancement avec Windows se règle dans Mindset (« S'ouvre avec
+  Mindset » sur la carte de Nevermind). Le raccourci est créé par Mindset.
   Jeux : mesure des FPS, mesure du lag, mode jeu, jaquettes depuis Internet.
   Réseau et vie privée : alerte nouvel appareil, identification des serveurs.
   Thème : 5 ambiances pour toute l'app. Néon (celui de base), Crépuscule
@@ -232,6 +231,14 @@ PARAMÈTRES (roue crantée en haut à droite)
 
 SÉCURITÉ
 --------
+- Nevermind tourne sans les droits administrateur. Ce qui en a besoin (réglages
+  de Windows, nettoyage de Windows, mesure des FPS et du réseau) passe par
+  Nevermind Aide (NevermindAide.exe), lancée sans demande de Windows par une
+  tâche que Mindset crée. Elle ne fait que les actions d'une liste stricte
+  (fichiers\modules\aide-actions.ps1) et refuse tout ce qui affaiblirait la
+  sécurité du PC (couper le pare-feu ou le contrôle des comptes, rallumer le
+  Bureau à distance, ajouter une exclusion à l'antivirus...). Elle s'arrête
+  quand Nevermind est fermé.
 - Aucune modification n'est faite sans que tu cliques sur un bouton.
 - Après chaque correction, le bouton « Revenir en arrière » annule exactement
   ce qui vient d'être fait.

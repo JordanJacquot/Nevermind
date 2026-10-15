@@ -849,7 +849,7 @@ function Update-TrafficView {
     $mins = [int]((Get-Date) - $st.Started).TotalMinutes
     $script:TrafficSince.Text = "depuis $(if ($mins -lt 1) { 'moins d''une minute' } else { "$mins min" })"
     if (-not $script:TrafficCountersOk -and $st.Ticks -gt 2 -and @($st.Conns.Values).Count) {
-        $script:TrafficCounters.Text = 'Windows refuse de compter les données (Nevermind doit être lancé en administrateur) : seules les connexions sont affichées.'
+        $script:TrafficCounters.Text = 'Windows refuse de compter les données (l''Aide de Nevermind ne répond pas : mets Nevermind à jour dans Mindset) : seules les connexions sont affichées.'
         $script:TrafficCounters.Visibility = 'Visible'
     } else { $script:TrafficCounters.Visibility = 'Collapsed' }
     # Alertes : reconstruites seulement si elles changent (sinon les boutons clignoteraient)

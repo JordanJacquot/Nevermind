@@ -1703,7 +1703,7 @@ public static class NetFlow
                 Marshal.FreeHGlobal(props); props = NewProps();
                 r = StartTraceW(out sessionHandle, Session, props);
             }
-            if (r != 0) { LastError = r == 5 ? "droits administrateur nécessaires" : "StartTrace " + r; return false; }
+            if (r != 0) { LastError = r == 5 ? "accès refusé (droits administrateur, ou anti-triche d'un jeu en cours)" : "StartTrace " + r; return false; }
             r = EnableTraceEx2(sessionHandle, ref Provider, 1, 5, 0x30, 0, 0, IntPtr.Zero);
             if (r != 0) { LastError = "EnableTrace " + r; Stop(); return false; }
         }

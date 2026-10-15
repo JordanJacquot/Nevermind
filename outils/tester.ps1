@@ -39,8 +39,7 @@ function Edit-File([string]$Path, [string]$Old, [string]$New, [switch]$Regex) {
     [IO.File]::WriteAllText($Path, $c, $utf8)
 }
 $main = Join-Path $app 'fichiers\OptiGame.ps1'
-# Pas de demande de droits admin (le test est lancé depuis une console déjà admin ou non)
-Edit-File $main '(?s)if \(-not \$principal\.IsInRole.*?\n\}\r?\n' '' -Regex
+# (Nevermind ne demande plus les droits administrateur, sauf pour se désinstaller : rien à retirer pour le test)
 # Données à part
 Edit-File $main "`$DataDir = Resolve-DataDir" "`$DataDir = '$donnees'"
 # Code de test à la place de l'ouverture normale de la fenêtre

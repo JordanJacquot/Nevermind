@@ -231,6 +231,7 @@ function Get-TaskInfo([string[]]$Names) {
 }
 
 function Invoke-NameMigration {
+    if ($Managed) { return }   # (copie de Mindset : installée par lui sous ce nom, dans un dossier protégé)
     $root = Get-AppRoot
     $newExe = Get-AppExe
     if (-not (Test-Path -LiteralPath $newExe)) { return }   # pas encore de Nevermind.exe (copie de développement)
@@ -263,7 +264,7 @@ function Invoke-NameMigration {
 
 # Dossier de Nevermind déplacé ou renommé : la tâche de démarrage suit
 function Update-AutoStartPath {
-    if (Test-DemarrageParMindset) { return }   # (Mindset s'en occupe : sa tâche a été reprise, on ne la recrée pas)
+    if ($Managed -or (Test-DemarrageParMindset)) { return }   # (le démarrage avec Windows passe par Mindset)   # (Mindset s'en occupe : sa tâche a été reprise, on ne la recrée pas)
     $t = @(Get-TaskInfo @($AutoStartTask))[0]
     if (-not $t) { return }
     $ps1 = Join-Path $AppDir 'OptiGame.ps1'

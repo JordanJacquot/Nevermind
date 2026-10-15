@@ -351,7 +351,7 @@ function Get-LagDiagnosis($R) {
         } else {
             $isp = if ($R.Isp) { " ($($R.Isp))" } else { '' }
             $tips = @('Regarde si quelqu''un de la maison regarde une vidéo, télécharge ou sauvegarde en ligne pendant tes parties.', 'Redémarre ta box : débranche la 30 secondes.', 'Fais le test « Latence en charge » de la page Tests : il montre si ta box gère mal les gros téléchargements.', "Si ça dure plusieurs jours, contacte ton fournisseur$isp avec ces chiffres.")
-            if (-not $R.Etw) { $tips += 'Lance Nevermind en administrateur : il pourra voir si un programme de ce PC télécharge pendant tes parties.' }
+            if (-not $R.Etw) { $tips += 'Windows a refusé la trace réseau pendant cette partie (souvent l''anti-triche du jeu) : Nevermind n''a pas pu voir si un programme de ce PC téléchargeait.' }
             $f += @{ Status = $rS; Title = 'Ta connexion Internet sature ou décroche'
                 Detail = "Ton PC et ta box communiquent bien, mais le ping vers Internet a des pics (jusqu'à $(Format-Ms $ref.P95), $($ref.Loss) % perdus). Soit un autre appareil de la maison utilise beaucoup la connexion, soit ta box ou ton fournisseur a un souci."
                 Tips = $tips }
@@ -384,7 +384,7 @@ function Get-LagDiagnosis($R) {
     # 5. Serveur non repéré
     if (-not $R.Quick -and -not $R.Server) {
         $f += @{ Status = 'info'; Title = 'Serveur du jeu non repéré'
-            Detail = $(if ($R.Etw) { 'Le jeu n''a pas échangé assez avec un serveur pour que Nevermind le reconnaisse (menu, partie hors ligne ?).' } else { 'Lance Nevermind en administrateur : il pourra repérer le serveur du jeu (même en UDP) et vérifier s''il est loin.' }) }
+            Detail = $(if ($R.Etw) { 'Le jeu n''a pas échangé assez avec un serveur pour que Nevermind le reconnaisse (menu, partie hors ligne ?).' } else { 'Windows a refusé la trace réseau pendant cette partie (souvent l''anti-triche du jeu) : Nevermind n''a pas pu repérer le serveur du jeu en UDP.' }) }
     }
     if (-not @($f | Where-Object { $_.Status -in 'bad', 'warn' }).Count) {
         $parts = @(); if ($gw -and -not $gw.Dead) { $parts += "box $(Format-Ms $gw.Med)" }; if ($ref -and -not $ref.Dead) { $parts += "Internet $(Format-Ms $ref.Med)" }; if ($srv -and -not $srv.Dead) { $parts += "serveur $(Format-Ms $srv.Med)" }

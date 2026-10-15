@@ -22,7 +22,7 @@ $UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées le
 # Nevermind est « géré par Mindset » quand le dossier noté pour lui est celui de cette copie : ses données vont
 # alors dans %LOCALAPPDATA%\Mindset\Nevermind, il suit le thème de la suite, et Mindset s'occupe des mises à jour,
 # du raccourci et du lancement au démarrage. Sinon, rien ne change.
-# Sécurité : Nevermind tourne en administrateur et ce fichier est modifiable par n'importe quel programme de
+# Sécurité : ce fichier est modifiable par n'importe quel programme de
 # l'utilisateur. On n'y accepte qu'un nom de thème connu, et le dossier n'y sert qu'à comparer avec le nôtre.
 $SuiteFile = Join-Path $env:LOCALAPPDATA 'Mindset\suite.json'
 if ($env:OPTIGAME_TEST -and $env:OPTIGAME_SUITE) { $SuiteFile = $env:OPTIGAME_SUITE }   # la copie de test peut simuler Mindset
@@ -265,19 +265,16 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
 
 # Nevermind.exe : le programme qui fait tourner l'app (le Gestionnaire des tâches affiche « Nevermind », pas PowerShell)
 $AppExe = Join-Path (Split-Path $PSScriptRoot -Parent) 'Nevermind.exe'
+# Nevermind tourne sans les droits administrateur : ce qui en a besoin passe par son Aide (NevermindAide.exe, lancée par la
+# tâche que Mindset crée, sans demande de Windows ; liste stricte dans modules\aide-actions.ps1).
+# Seule la désinstallation les demande (une fois) : elle remet tous les réglages de Windows comme avant et retire l'Aide.
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+if ($Uninstall -and -not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     try {
-        # (Nevermind.exe démarre sans droits : c'est ici qu'ils sont demandés, une fois les contrôles ci-dessus passés)
-        if ((Test-Path -LiteralPath $AppExe) -and -not $Uninstall) {
-            if ($Demarrage) { Start-Process -FilePath $AppExe -Verb RunAs -ArgumentList '-Demarrage' -ErrorAction Stop } else { Start-Process -FilePath $AppExe -Verb RunAs -ErrorAction Stop }
-        } else {
-            Start-Process -FilePath 'powershell.exe' -Verb RunAs -ErrorAction Stop -ArgumentList @(
-                @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"") + @(if ($Uninstall) { '-Uninstall' }) + @(if ($Demarrage) { '-Demarrage' }))
-        }
+        Start-Process -FilePath 'powershell.exe' -Verb RunAs -ErrorAction Stop -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"", '-Uninstall')
     } catch {
         [System.Windows.MessageBox]::Show(
-            "Nevermind a besoin des droits administrateur pour modifier les réglages de Windows.`n`nRelance l'application et clique sur « Oui » quand Windows le demande.",
+            "La désinstallation de Nevermind a besoin des droits administrateur pour remettre les réglages de Windows comme avant.`n`nRelance-la et clique sur « Oui » quand Windows le demande.",
             'Nevermind', 'OK', 'Warning') | Out-Null
     }
     exit
@@ -286,7 +283,9 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 # Instance unique (lancement direct en administrateur, ou deux clics très rapprochés)
 if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
     $mutexNew = $false
-    $script:InstanceMutex = New-Object System.Threading.Mutex($true, 'Local\OptiGame-Instance', [ref]$mutexNew)
+    # (une ancienne version encore ouverte en administrateur garde un verrou que ce lancement ne peut pas ouvrir : elle est déjà là)
+    try { $script:InstanceMutex = New-Object System.Threading.Mutex($true, 'Local\OptiGame-Instance', [ref]$mutexNew) }
+    catch { if (-not $Demarrage) { Send-ShowRequest }; exit }
     if (-not $mutexNew) {
         # Ancienne version encore en train de se fermer (relance après une mise à jour) : elle libère la place sous peu
         $got = $false

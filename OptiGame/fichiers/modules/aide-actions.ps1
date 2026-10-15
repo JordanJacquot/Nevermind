@@ -486,6 +486,14 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             return 'ok'
         }
 
+        # Tâches planifiées (hors Microsoft, actives) : sans droits, Windows peut en cacher. Nom, dossier, programme, arguments.
+        'lecture.taches' {
+            if ($Verifier) { return 'ok' }
+            return , @(foreach ($t in @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Microsoft\*' -and $_.State -ne 'Disabled' })) {
+                foreach ($act in @($t.Actions)) { @{ Nom = [string]$t.TaskName; Chemin = [string]$t.TaskPath; Exe = [string]$act.Execute; Args = [string]$act.Arguments } }
+            })
+        }
+
         # Emplacement de programmes en cours (services, programmes lancés en administrateur), pour Trafic
         'lecture.chemins' {
             $ids = @(Get-AideListe $P 'Pids')

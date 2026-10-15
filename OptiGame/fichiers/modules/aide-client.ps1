@@ -133,6 +133,18 @@ function Add-AideLectureSecurite($D) {
     $D.Threats = @(@($l.Menaces) | Where-Object { $_ } | ForEach-Object { [pscustomobject]@{ ThreatID = $_.ThreatID; ThreatName = $_.ThreatName; SeverityID = $_.SeverityID; IsActive = [bool]$_.IsActive } })
     $D.Active = @($D.Threats | Where-Object { $_.IsActive })
     $D.Detections = @(@($l.Detections) | Where-Object { $_ } | ForEach-Object { [pscustomobject]@{ ThreatID = $_.ThreatID; ThreatStatusID = $_.ThreatStatusID; InitialDetectionTime = [datetime][long]$_.Quand; Resources = @($_.Resources) } })
+    # Tâches planifiées : l'Aide les voit toutes ; mêmes contrôles que $SecDataWork (commande cachée, programme dans un
+    # dossier temporaire ou public)
+    try {
+        $tmp = $env:TEMP; $pub = "$env:SystemDrive\Users\Public"
+        $D.Tasks = @(foreach ($t2 in @(Invoke-Aide 'lecture.taches' @{} 60000 | Where-Object { $_ })) {
+            $exe = [Environment]::ExpandEnvironmentVariables([string]$t2.Exe).Trim('"')
+            $argsTxt = [string]$t2.Args
+            $cachee = $exe -match '(powershell|pwsh|cmd|wscript|cscript|mshta)(\.exe)?$' -and $argsTxt -match '(-enc|-encodedcommand|frombase64|downloadstring|downloadfile|invoke-expression|\biex\b|-w(indowstyle)?\s+h(idden)?|http)'
+            $risque = $exe -like "$tmp*" -or $exe -like "$pub*"
+            if ($cachee -or $risque) { @{ Name = [string]$t2.Nom; Path = [string]$t2.Chemin; Cmd = "$exe $argsTxt".Trim(); Bad = $cachee } }
+        })
+    } catch { Write-Log "Aide : tâches planifiées non lues ($($_.Exception.Message))" }
 }
 
 # ---------------------------------------------------------------------------
