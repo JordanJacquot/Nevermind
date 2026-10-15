@@ -1540,7 +1540,10 @@ $script:T.Run.Add_Tick({
                 @('smb1.couper', @{ Client = $true }),
                 @('nettoyage.lister', @{ Id = 'wintemp'; Top = 300 }),
                 @('nettoyage.lancer', @{ Id = 'dump' }),
-                @('processus.fermer', @{ Nom = 'chrome' })
+                @('processus.fermer', @{ Nom = 'chrome' }),
+                @('lecture.pc', @{}),
+                @('lecture.securite', @{}),
+                @('lecture.chemins', @{ Pids = @('4', '1234', '56789') })
             )
             $carte = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' })[0]
             if ($carte) {
@@ -1569,6 +1572,8 @@ $script:T.Run.Add_Tick({
                 @('processus.fermer', @{ Nom = 'MsMpEng' }),
                 @('processus.fermer', @{ Chemin = "$env:windir\explorer.exe" }),
                 @('wifi.manuel', @{ Profils = @('a" b') }),
+                @('lecture.chemins', @{ Pids = @('12; Remove-Item C:\') }),
+                @('lecture.chemins', @{ Pids = @(1..501 | ForEach-Object { "$_" }) }),
                 @('inconnue', @{})
             )
             if ($carte) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('6.6.6.6') }) }
@@ -1595,6 +1600,14 @@ $script:T.Run.Add_Tick({
                 [AideClient]::ExeAttendu = $psExe
                 $b = Invoke-Aide 'aide.bonjour'
                 Assert-Test ($b.Version -eq $AideVersion -and -not $b.Admin) "réponse : $(ConvertTo-Json $b -Compress)"
+                # Lectures par le canal : réponse bien formée, fusion sans erreur dans les données de l'analyse
+                $l = Invoke-Aide 'lecture.pc'
+                Assert-Test ($null -ne $l.Fiabilite -and $null -ne $l.TpmOk) "lecture.pc : $(ConvertTo-Json $l -Compress -Depth 4)"
+                $faux = @{ SecureBoot = $null; TpmOk = $false; Disks = @(@{ Disk = [pscustomobject]@{ DeviceId = '0' }; Rel = $null }) }
+                $vraiAdmin = $script:EstAdmin; $script:EstAdmin = $false
+                try { Add-AideLecturePc $faux; $sec = @{ Exclusions = @(); Threats = @(); Active = @(); Detections = @() }; Add-AideLectureSecurite $sec } finally { $script:EstAdmin = $vraiAdmin }
+                $ch = Invoke-Aide 'lecture.chemins' @{ Pids = @("$PID") }
+                Assert-Test ([string]$ch.PSObject.Properties["$PID"].Value -like '*powershell.exe') "lecture.chemins : $(ConvertTo-Json $ch -Compress)"
                 $msg = ''
                 try { [void](Invoke-Aide 'reg.ecrire' @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Valeur = 0; Type = 'DWord' }) } catch { $msg = $_.Exception.Message }
                 Assert-Test ($msg -match 'garde ce réglage') "refus attendu, reçu : $msg"

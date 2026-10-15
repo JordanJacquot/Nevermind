@@ -11,6 +11,7 @@ $AideFichierActions = Join-Path $ModulesDir 'aide-actions.ps1'
 $script:EstAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 # Seule l'Aide de cette copie de Nevermind est écoutée (vérifié par AideClient à chaque échange)
 [AideClient]::ExeAttendu = Join-Path (Get-AppRoot) 'NevermindAide.exe'
+[AideClient]::Suffixe = Get-AideSuffixe (Get-AppRoot)
 # La copie de test ne réveille jamais la vraie Aide (celle de la copie installée)
 if ($env:OPTIGAME_TEST) { $script:AideSansTache = $true }
 
@@ -81,6 +82,57 @@ function Start-AideFond {
         $null = & "$env:SystemRoot\System32\schtasks.exe" /Run /TN $t 2>&1
     }.ToString()).AddArgument($AideTache)
     [void]$ps.BeginInvoke()
+}
+
+# ---------------------------------------------------------------------------
+# Lectures réservées aux administrateurs : l'Aide complète ce que Nevermind n'a pas pu lire lui-même.
+# En administrateur, Nevermind garde ses propres valeurs ; si l'Aide tourne déjà, il note ce qu'elle a vu (pour comparer).
+# ---------------------------------------------------------------------------
+function Get-AideLecture([string]$Action, $Parametres = @{}) {
+    if ($script:EstAdmin -and -not [AideClient]::Joignable(1)) { return $null }
+    try { Invoke-Aide $Action $Parametres 60000 } catch { $null }
+}
+
+# Analyse du PC ($AnalysisDataWork) : Secure Boot, puce TPM et santé des disques
+function Add-AideLecturePc($Data) {
+    if (-not $Data) { return }
+    $l = Get-AideLecture 'lecture.pc'
+    if (-not $l) { return }
+    $faits = @()
+    if ($null -eq $Data.SecureBoot -and $null -ne $l.SecureBoot) { $Data.SecureBoot = [bool]$l.SecureBoot; $faits += 'Secure Boot' }
+    if (-not $Data.TpmOk -and $l.TpmOk) { $Data.TpmOk = $true; $Data.Tpm = $l.Tpm; $faits += 'TPM' }
+    $n = 0
+    foreach ($dd in @($Data.Disks)) {
+        if (-not $dd -or $dd.Rel) { continue }
+        $f = $l.Fiabilite.PSObject.Properties[[string]$dd.Disk.DeviceId]
+        if ($f) { $dd.Rel = $f.Value; $n++ }
+    }
+    if ($n) { $faits += "santé de $n disque(s)" }
+    $vu = "Secure Boot $($l.SecureBoot), TPM $($l.TpmOk), $(@($l.Fiabilite.PSObject.Properties).Count) disque(s)"
+    Write-Log "Aide : lecture du PC $(if ($faits.Count) { "complétée ($($faits -join ', '))" } else { "reçue, rien à compléter ($vu)" })"
+}
+
+# Santé d'un disque (tuile des tests) : l'objet de Get-StorageReliabilityCounter, ou $null
+function Get-AideFiabiliteDisque([string]$Id) {
+    $l = Get-AideLecture 'lecture.pc'
+    if (-not $l) { return $null }
+    $f = $l.Fiabilite.PSObject.Properties[$Id]
+    if ($f) { $f.Value } else { $null }
+}
+
+# Page Sécurité ($SecDataWork) : exclusions, menaces et détections de l'antivirus
+function Add-AideLectureSecurite($D) {
+    if (-not $D) { return }
+    $l = Get-AideLecture 'lecture.securite'
+    if (-not $l) { return }
+    if ($script:EstAdmin) {
+        Write-Log "Aide : lecture de l'antivirus reçue ($(@($l.Exclusions | Where-Object { $_ }).Count) exclusion(s), $(@($l.Menaces | Where-Object { $_ }).Count) menace(s), $(@($l.Detections | Where-Object { $_ }).Count) détection(s) ; Nevermind en a lu $(@($D.Exclusions).Count), $(@($D.Threats).Count), $(@($D.Detections).Count))"
+        return
+    }
+    $D.Exclusions = @($l.Exclusions | Where-Object { $_ })
+    $D.Threats = @(@($l.Menaces) | Where-Object { $_ } | ForEach-Object { [pscustomobject]@{ ThreatID = $_.ThreatID; ThreatName = $_.ThreatName; SeverityID = $_.SeverityID; IsActive = [bool]$_.IsActive } })
+    $D.Active = @($D.Threats | Where-Object { $_.IsActive })
+    $D.Detections = @(@($l.Detections) | Where-Object { $_ } | ForEach-Object { [pscustomobject]@{ ThreatID = $_.ThreatID; ThreatStatusID = $_.ThreatStatusID; InitialDetectionTime = [datetime][long]$_.Quand; Resources = @($_.Resources) } })
 }
 
 # Ferme tous les programmes d'un nom : ceux de l'utilisateur sur place, ceux lancés en administrateur par l'Aide

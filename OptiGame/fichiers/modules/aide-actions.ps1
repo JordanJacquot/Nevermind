@@ -8,7 +8,10 @@
 # distance, couper le contrôle des comptes ou le pare-feu, ajouter une exclusion à l'antivirus, mettre un DNS inconnu,
 # bloquer Internet à l'antivirus ou à Windows Update.
 
-$AideVersion = 1
+$AideVersion = 2
+# Santé d'un disque (Get-StorageReliabilityCounter) : les champs dont Nevermind se sert
+$AideChampsDisque = @('Temperature', 'TemperatureMax', 'Wear', 'PowerOnHours', 'StartStopCycleCount', 'ReadErrorsCorrected', 'ReadErrorsUncorrected',
+                      'WriteErrorsUncorrected', 'ReadLatencyMax', 'WriteLatencyMax')
 $AideMemoire = 'HKLM:\SOFTWARE\Mindset\Nevermind\Aide'   # ce que l'Aide retient elle-même (modifiable seulement en administrateur)
 
 # Programmes de Windows et de l'antivirus : jamais fermés, jamais bloqués, jamais de priorité changée
@@ -39,6 +42,14 @@ $AideRegles = @(
     @{ Motif = '^HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\(Run|Run32|StartupFolder)$'
        NomMotif = '^[^\x00-\x1f]{1,260}$'; Type = 'Binary'; Longueur = 12; Premier = @(2, 3, 6, 7); Effacer = $true }
 )
+
+# Nom du canal et du verrou de l'Aide : propres à l'utilisateur et au dossier de cette copie de Nevermind (une copie de
+# test ne parle jamais à l'Aide de la copie installée, et chacune a la sienne)
+function Get-AideSuffixe([string]$Racine) {
+    $dossier = ([IO.Path]::GetFullPath($Racine).TrimEnd('\')).ToLowerInvariant()
+    $o = [Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($dossier))
+    -join ($o[0..5] | ForEach-Object { $_.ToString('x2') })
+}
 
 # Un paramètre d'une demande (table ou objet lu dans du JSON)
 function Get-AideParam($P, [string]$Nom) {
@@ -376,10 +387,57 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             return 'ok'
         }
 
-        'antivirus.exclusions' {
+        # --- Lectures : ce que Windows ne montre qu'à un administrateur. Seulement des textes et des nombres en retour.
+
+        # Secure Boot, puce TPM, santé de chaque disque (températures, usure, erreurs)
+        'lecture.pc' {
             if ($Verifier) { return 'ok' }
-            $pref = Get-MpPreference -ErrorAction Stop
-            return , @(@($pref.ExclusionPath) + @($pref.ExclusionProcess) + @($pref.ExclusionExtension) | Where-Object { $_ -and $_ -notmatch '^N/A' } | ForEach-Object { [string]$_ })
+            $r = @{ SecureBoot = $null; TpmOk = $false; Tpm = $null; Fiabilite = @{} }
+            try { $r.SecureBoot = [bool](Confirm-SecureBootUEFI -ErrorAction Stop) } catch {}
+            try {
+                $t = @(Get-CimInstance -Namespace 'root\cimv2\security\microsofttpm' -ClassName Win32_Tpm -OperationTimeoutSec 3 -ErrorAction Stop)
+                $r.TpmOk = $true
+                if ($t.Count) { $r.Tpm = @{ SpecVersion = [string]$t[0].SpecVersion } }
+            } catch {}
+            foreach ($d in @(Get-PhysicalDisk -ErrorAction SilentlyContinue)) {
+                $rel = $null
+                try { $rel = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}
+                if (-not $rel) { continue }
+                $champs = @{}
+                foreach ($n in $AideChampsDisque) { if ($null -ne $rel.$n) { $champs[$n] = [double]$rel.$n } }
+                $r.Fiabilite[[string]$d.DeviceId] = $champs
+            }
+            return $r
+        }
+
+        # Antivirus : exclusions, menaces connues et dernières détections
+        'lecture.securite' {
+            if ($Verifier) { return 'ok' }
+            $r = @{ Exclusions = @(); Menaces = @(); Detections = @() }
+            try {
+                $pref = Get-MpPreference -ErrorAction Stop
+                $r.Exclusions = @(@($pref.ExclusionPath) + @($pref.ExclusionProcess) + @($pref.ExclusionExtension) | Where-Object { $_ -and $_ -notmatch '^N/A' } | ForEach-Object { [string]$_ })
+            } catch {}
+            try { $r.Menaces = @(Get-MpThreat -ErrorAction Stop | ForEach-Object { @{ ThreatID = [string]$_.ThreatID; ThreatName = [string]$_.ThreatName; SeverityID = [int]$_.SeverityID; IsActive = [bool]$_.IsActive } }) } catch {}
+            try {
+                $r.Detections = @(Get-MpThreatDetection -ErrorAction Stop | Sort-Object InitialDetectionTime -Descending | Select-Object -First 15 | ForEach-Object {
+                    @{ ThreatID = [string]$_.ThreatID; ThreatStatusID = [int]$_.ThreatStatusID; Quand = [long]([datetime]$_.InitialDetectionTime).Ticks; Resources = @(@($_.Resources) | ForEach-Object { [string]$_ }) }
+                })
+            } catch {}
+            return $r
+        }
+
+        # Emplacement de programmes en cours (services, programmes lancés en administrateur), pour Trafic
+        'lecture.chemins' {
+            $ids = @(Get-AideListe $P 'Pids')
+            if (-not $ids.Count -or $ids.Count -gt 500 -or @($ids | Where-Object { $_ -notmatch '^\d{1,9}$' }).Count) { throw 'Demande refusée : liste de processus non valable.' }
+            if ($Verifier) { return 'ok' }
+            $voulus = @{}; foreach ($i in $ids) { $voulus[[int]$i] = $true }
+            $r = @{}
+            foreach ($pr in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
+                if ($voulus.ContainsKey([int]$pr.ProcessId) -and $pr.ExecutablePath) { $r[[string]$pr.ProcessId] = [string]$pr.ExecutablePath }
+            }
+            return $r
         }
 
         'wifi.manuel' {

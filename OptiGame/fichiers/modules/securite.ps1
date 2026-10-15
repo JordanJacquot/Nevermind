@@ -34,6 +34,7 @@ function Get-ProtectionStatus {
         try { $d = @($pf.PS.EndInvoke($pf.Handle))[0] } catch { $d = $null } finally { $pf.PS.Dispose() }
     }
     if (-not $d) { $d = Invoke-Async $SecDataWork (Get-ProtectionArgs) | Select-Object -First 1 }
+    try { Add-AideLectureSecurite $d } catch { Write-Log "Aide : lecture de l'antivirus ($_)" }
     $off = @($d.FirewallOff)
     @{
         Mp = $d.Mp; OtherAv = @($d.OtherAv); FirewallOff = $off; Firewall = -not $off.Count

@@ -28,6 +28,24 @@ function New-TrafficState {
        Started = Get-Date; Ticks = 0; Notified = @{}; AlertKeys = ''; Owner = @{}; OwnerMiss = @{}; LookupDone = @{}; LookupTries = @{}; LookupJob = $null }
 }
 
+# Sans droits, Windows cache l'emplacement des services et des programmes lancés en administrateur : l'Aide le lit pour
+# les nouveaux processus, en une seule demande par passage (Get-TrafficApp le prend ensuite dans AidePaths).
+function Request-TrafficAidePaths($Lignes) {
+    $st = $script:Traffic
+    if ($script:EstAdmin -or -not [AideClient]::Joignable(1)) { return }
+    if (-not $st.AidePaths) { $st.AidePaths = @{} }
+    $nouveaux = @(@(foreach ($l in $Lignes) {
+        $p = [int](([string]$l) -split '\|')[0]
+        if ($p -gt 4 -and -not $st.Pids.ContainsKey($p) -and -not $st.AidePaths.ContainsKey($p)) { $p }
+    }) | Select-Object -Unique)
+    if (-not $nouveaux.Count) { return }
+    foreach ($p in $nouveaux) { $st.AidePaths[$p] = '' }
+    try {
+        $r = Invoke-Aide 'lecture.chemins' @{ Pids = @($nouveaux | ForEach-Object { [string]$_ }) } 15000
+        foreach ($pr in @($r.PSObject.Properties)) { $st.AidePaths[[int]$pr.Name] = [string]$pr.Value }
+    } catch { Write-Log "Trafic : emplacements non lus par l'Aide ($($_.Exception.Message))" }
+}
+
 # Programme d'un processus (plusieurs processus du même programme, comme Chrome, sont regroupés).
 function Get-TrafficApp([int]$ProcId) {
     $st = $script:Traffic
@@ -41,6 +59,7 @@ function Get-TrafficApp([int]$ProcId) {
     $name = if ($ProcId -eq 4) { 'System' } elseif ($pname) { $pname } else { "Programme $ProcId" }
     $path = ''
     if ($ProcId -gt 4) { try { $path = [string][TrafficMon]::GetProcessPath($ProcId) } catch {} }
+    if (-not $path -and $st.AidePaths) { $path = [string]$st.AidePaths[$ProcId] }
     $svc = if ($name -eq 'svchost') { @(Get-SvcNames $ProcId) } else { @() }
     $key = if ($ProcId -eq $PID) { 'optigame' } elseif ($svc.Count) { 'svc:' + (($svc | ForEach-Object { $_.Name.ToLower() }) -join ',') } elseif ($path) { $path.ToLower() } else { "nom:$($name.ToLower())" }
     if (-not $st.Apps.ContainsKey($key)) {
@@ -85,12 +104,15 @@ function Update-Traffic {
             $a = $st.Apps[$st.Pids[$procId]]
             if ($a) { $a.Pids.Remove($procId) }
             $st.Pids.Remove($procId)
+            if ($st.AidePaths) { $st.AidePaths.Remove($procId) }
         }
     }
     Update-TrafficDns
     $now = Get-Date
     $seen = @{}
-    foreach ($l in @([TrafficMon]::Tcp())) {
+    $tcp = @([TrafficMon]::Tcp())
+    Request-TrafficAidePaths $tcp
+    foreach ($l in $tcp) {
         $x = ([string]$l) -split '\|'
         if ($x.Count -lt 7) { continue }
         $procId = [int]$x[0]; $remote = $x[1]; $rport = [int]$x[2]
@@ -130,7 +152,9 @@ function Update-Traffic {
     }
     # UDP : seulement « ce programme en utilise » (Windows ne donne pas les destinations UDP)
     if ($st.Ticks % 5 -eq 1) {
-        foreach ($l in @([TrafficMon]::Udp())) { $procId = [int](($l -split '\|')[0]); if ($procId -gt 4) { $st.Apps[(Get-TrafficApp $procId)].Udp = $true } }
+        $udp = @([TrafficMon]::Udp())
+        Request-TrafficAidePaths $udp
+        foreach ($l in $udp) { $procId = [int](($l -split '\|')[0]); if ($procId -gt 4) { $st.Apps[(Get-TrafficApp $procId)].Udp = $true } }
     }
     Update-TrafficSignatures
     try { Update-ServerLookups } catch { Write-Log "Serveurs: $_" }

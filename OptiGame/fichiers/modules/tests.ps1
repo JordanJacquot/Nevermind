@@ -384,6 +384,7 @@ function Show-DiskHealth($Tile, $Ctx) {
     $body = $ui.TestBody
     $rel = $null
     $rel = $pd.Rel
+    if (-not $rel) { try { $rel = Get-AideFiabiliteDisque ([string]$Ctx.Id) } catch {} }
     $status = 'ok'; $notes = @()
     switch ([string]$d.HealthStatus) {
         'Warning'   { $status = 'warn'; $notes += 'Le disque signale lui même un problème.' }

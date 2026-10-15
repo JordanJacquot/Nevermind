@@ -2154,8 +2154,9 @@ public static class AideClient
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
 
     public static string ExeAttendu = "";
+    public static string Suffixe = "";   // propre au dossier de cette copie (Get-AideSuffixe, aide-actions.ps1)
 
-    public static string Nom() { return "Nevermind-Aide-" + System.Security.Principal.WindowsIdentity.GetCurrent().User.Value; }
+    public static string Nom() { return "Nevermind-Aide-" + System.Security.Principal.WindowsIdentity.GetCurrent().User.Value + (Suffixe == "" ? "" : "-" + Suffixe); }
 
     static string Chemin(int pid)
     {

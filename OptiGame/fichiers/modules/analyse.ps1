@@ -205,6 +205,7 @@ function Invoke-Analysis {
     } else {
         $data = Invoke-Async $AnalysisDataWork $env:SystemDrive | Select-Object -First 1
     }
+    try { Add-AideLecturePc $data } catch { Write-Log "Aide : lecture du PC ($_)" }
     $script:AnalysisData = $data
     $os = $data.OS
     $script:Build = [int]$os.BuildNumber

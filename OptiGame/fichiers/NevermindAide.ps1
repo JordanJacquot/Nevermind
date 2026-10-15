@@ -54,12 +54,13 @@ public static class AideTuyau
 
 # Une seule Aide à la fois
 $creee = $false
-$verrou = New-Object System.Threading.Mutex($true, 'Local\Nevermind-Aide', [ref]$creee)
+$Suffixe = Get-AideSuffixe $Racine
+$verrou = New-Object System.Threading.Mutex($true, "Local\Nevermind-Aide-$Suffixe", [ref]$creee)
 if (-not $creee) { exit }
 
 $moi = [Security.Principal.WindowsIdentity]::GetCurrent()
 $admin = (New-Object Security.Principal.WindowsPrincipal($moi)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$NomTuyau = "Nevermind-Aide-$($moi.User.Value)"
+$NomTuyau = "Nevermind-Aide-$($moi.User.Value)-$Suffixe"
 
 # Droits du canal : l'utilisateur lit et écrit, les administrateurs (l'Aide) créent les connexions, le réseau est refusé.
 # L'utilisateur sans droits ne peut donc pas ouvrir lui-même un faux canal à ce nom tant que l'Aide tourne.
@@ -77,7 +78,7 @@ function New-Tuyau {
 # Une demande : lue, vérifiée et faite dans un fil à part (une analyse antivirus ne bloque pas les autres demandes)
 $Traitement = {
     param($c)
-    . $c.Actions
+    if (-not (Get-Command Invoke-AideAction -ErrorAction SilentlyContinue)) { . $c.Actions }
     $t = $c.Tuyau
     $resume = ''
     try {
