@@ -73,14 +73,6 @@ static class Lanceur
             return 1;
         }
 
-#if UNINSTALL
-        bool uninstall = true;
-#else
-        bool uninstall = false;
-#endif
-        bool demarrage = false;
-        foreach (string a in args) { if (a.Trim('-', '/').Equals("Demarrage", StringComparison.OrdinalIgnoreCase)) demarrage = true; }
-
 #if AIDE
         // NevermindAide.exe : la partie administrateur de Nevermind (fichiers\NevermindAide.ps1), lancée par la tâche
         // « \Mindset\Nevermind (aide) ». Programme à part : Mindset et le Gestionnaire des tâches ne la confondent pas
@@ -106,7 +98,14 @@ static class Lanceur
             Environment.Exit(0);   // aucun fil laissé par l'Aide ne garde le processus ouvert
             return 0;
         }
+#else
+#if UNINSTALL
+        bool uninstall = true;
+#else
+        bool uninstall = false;
 #endif
+        bool demarrage = false;
+        foreach (string a in args) { if (a.Trim('-', '/').Equals("Demarrage", StringComparison.OrdinalIgnoreCase)) demarrage = true; }
 
         try
         {
@@ -146,5 +145,6 @@ static class Lanceur
             return 1;
         }
         return 0;
+#endif
     }
 }

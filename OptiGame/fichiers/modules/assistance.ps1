@@ -374,6 +374,13 @@ function Export-ProblemReport([string]$Dest, [string]$Description) {
         if (Test-Path -LiteralPath $LogFile) {
             Set-Content -LiteralPath (Join-Path $tmp 'journal.txt') -Value (& $mask ((Get-Content -LiteralPath $LogFile -Encoding UTF8 -Tail 400) -join "`r`n")) -Encoding UTF8
         }
+        # Journal de l'Aide (gardé en mémoire par elle, 200 lignes) : seulement si elle tourne, sans la réveiller pour ça
+        if ([AideClient]::Joignable(1)) {
+            try {
+                $lignesAide = @(Invoke-Aide 'aide.journal' @{} 10000 | ForEach-Object { [string]$_ })
+                Set-Content -LiteralPath (Join-Path $tmp 'journal-aide.txt') -Value (& $mask ($lignesAide -join "`r`n")) -Encoding UTF8
+            } catch {}
+        }
         foreach ($n in 'sauvegarde.json', 'historique.json', 'parametres.json', 'ignores.json') {
             $p = Join-Path $DataDir $n
             if (Test-Path -LiteralPath $p) { Set-Content -LiteralPath (Join-Path $tmp $n) -Value (& $mask (Get-Content -LiteralPath $p -Raw -Encoding UTF8)) -Encoding UTF8 }

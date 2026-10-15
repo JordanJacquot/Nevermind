@@ -146,8 +146,8 @@ $Traitement = {
             try {
                 $d = $ligne | ConvertFrom-Json
                 $action = [string]$d.a
-                # Le journal de l'Aide, pour celui de Nevermind (sans compter cette demande-ci)
-                if ($action -eq 'aide.journal') { $r = @($c.Lignes.ToArray()); $c.Lignes.Clear() }
+                # Le journal de l'Aide (« Signaler un problème » de Nevermind), sans compter cette demande-ci ; il est gardé
+                if ($action -eq 'aide.journal') { $r = @($c.Lignes.ToArray()) }
                 else { $r = Invoke-AideAction $action $d.p }
                 $rep = @{ ok = $true; r = $r }
                 $resume = if ($action -ne 'aide.journal') { "$action : fait" }
