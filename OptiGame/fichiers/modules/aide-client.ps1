@@ -135,6 +135,61 @@ function Add-AideLectureSecurite($D) {
     $D.Detections = @(@($l.Detections) | Where-Object { $_ } | ForEach-Object { [pscustomobject]@{ ThreatID = $_.ThreatID; ThreatStatusID = $_.ThreatStatusID; InitialDetectionTime = [datetime][long]$_.Quand; Resources = @($_.Resources) } })
 }
 
+# ---------------------------------------------------------------------------
+# Mesures en continu (FPS, compteurs du trafic, trace réseau du lag) : par l'Aide quand elle répond, sinon sur place.
+# Sans droits, l'Aide est réveillée au besoin (Invoke-Aide) ; en administrateur, Nevermind ne l'attend pas.
+# ---------------------------------------------------------------------------
+function Test-MesuresAide {
+    if ([AideClient]::Joignable(1)) { return $true }
+    if ($script:EstAdmin) { return $false }
+    # (sans réponse, nouvel essai dans une minute : Trafic demande toutes les 2 s)
+    if ($script:MesuresAideEchec -and ((Get-Date) - $script:MesuresAideEchec).TotalSeconds -lt 60) { return $false }
+    try { [void](Invoke-Aide 'aide.bonjour' @{} 10000); $script:MesuresAideEchec = $null; return $true } catch { $script:MesuresAideEchec = Get-Date; return $false }
+}
+
+# FPS d'un jeu (FrameMon) : $true si la mesure a démarré
+function Start-FpsMesure([int]$ProcId) {
+    if (Test-MesuresAide) {
+        if ([FrameMon]::StartRemote($ProcId)) { Write-Log "Mesure des FPS : par l'Aide"; return $true }
+        Write-Log "Mesure des FPS par l'Aide impossible : $([FrameMon]::LastError)"
+    }
+    [FrameMon]::Start($PresentMonExe, $ProcId)
+}
+
+# Connexions TCP avec leurs octets (Trafic, lag) ; $script:TrafficCountersOk : Windows compte-t-il les octets ?
+function Get-TrafficTcp {
+    if (Test-MesuresAide) {
+        try {
+            $r = Invoke-Aide 'trafic.tcp' @{} 15000
+            $script:TrafficCountersOk = [bool]$r.CompteursOk
+            if (-not $script:TrafficAideNote) { $script:TrafficAideNote = $true; Write-Log "Trafic : compteurs lus par l'Aide (comptage $(if ($r.CompteursOk) { 'actif' } else { 'refusé' }))" }
+            return @($r.Lignes | Where-Object { $_ } | ForEach-Object { [string]$_ })
+        } catch { Write-Log "Trafic : compteurs non lus par l'Aide ($($_.Exception.Message))" }
+    }
+    $l = @([TrafficMon]::Tcp())
+    $script:TrafficCountersOk = [bool][TrafficMon]::CountersOk
+    $l
+}
+
+# Trace réseau (lag en ligne) : 'aide', 'local' ou '' si elle n'a pas démarré
+function Start-FluxReseau {
+    if (Test-MesuresAide) {
+        try { [void](Invoke-Aide 'flux.demarrer' @{} 20000); Write-Log "Lag : trace réseau par l'Aide"; return 'aide' }
+        catch { Write-Log "Lag : trace réseau par l'Aide impossible ($($_.Exception.Message))" }
+    }
+    try { if ([NetFlow]::Start()) { return 'local' }; Write-Log "Lag: repérage du serveur limité ($([NetFlow]::LastError))" } catch { Write-Log "Lag: $_" }
+    ''
+}
+function Get-FluxReseau([string]$Ou) {
+    if ($Ou -eq 'aide') { return @(Invoke-Aide 'flux.lire' @{} 15000 | Where-Object { $_ } | ForEach-Object { [string]$_ }) }
+    if ($Ou -eq 'local') { return @([NetFlow]::Snapshot()) }
+    @()
+}
+function Stop-FluxReseau([string]$Ou) {
+    if ($Ou -eq 'aide') { try { [void](Invoke-Aide 'flux.arreter' @{} 15000) } catch {} }
+    elseif ($Ou -eq 'local') { try { [NetFlow]::Stop() } catch {} }
+}
+
 # Ferme tous les programmes d'un nom : ceux de l'utilisateur sur place, ceux lancés en administrateur par l'Aide
 function Stop-ProgrammeNom([string]$Nom) {
     $reste = 0

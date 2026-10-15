@@ -767,8 +767,45 @@ public static class FrameMon
     // Vrai quand le jeu n'est pas au premier plan : ces images ne comptent pas (le jeu tourne au ralenti en fond).
     public static volatile bool Paused;
 
-    public static bool Running { get { var p = proc; return p != null && !p.HasExited; } }
+    public static bool Running { get { if (remoteOn) return remoteAlive; var p = proc; return p != null && !p.HasExited; } }
     public static int Frames { get { lock (sync) { return all.Count; } } }
+
+    // Mesure par l'Aide (Nevermind sans les droits administrateur que PresentMon demande) : c'est elle qui lance PresentMon,
+    // ses lignes arrivent ici toutes les 250 ms (« fps.lire ») et sont comptées comme d'habitude (Feed).
+    // « #ERR <texte> » : une erreur de PresentMon ; « #FIN » : PresentMon s'est arrêté.
+    static volatile bool remoteOn, remoteAlive;
+    public static bool Remote { get { return remoteOn; } }
+
+    public static bool StartRemote(int pid)
+    {
+        Stop();
+        Reset();
+        try { AideClient.Texte("fps.demarrer", "{\"Pid\":" + pid + "}", 15000); }
+        catch (Exception ex) { LastError = ex.Message; return false; }
+        remoteOn = true; remoteAlive = true;
+        var th = new System.Threading.Thread(() =>
+        {
+            int rates = 0;
+            while (remoteOn && remoteAlive)
+            {
+                System.Threading.Thread.Sleep(250);
+                if (!remoteOn) break;
+                string t;
+                try { t = AideClient.Texte("fps.lire", "{}", 5000); rates = 0; }
+                catch (Exception ex) { LastError = ex.Message; if (++rates >= 20) remoteAlive = false; continue; }
+                foreach (string l in t.Split('\n'))
+                {
+                    if (l.Length == 0) continue;
+                    if (l == "#FIN") remoteAlive = false;
+                    else if (l.StartsWith("#ERR ")) LastError = l.Substring(5);
+                    else Feed(l);
+                }
+            }
+        });
+        th.IsBackground = true;
+        th.Start();
+        return true;
+    }
 
     public static void Reset()
     {
@@ -811,6 +848,11 @@ public static class FrameMon
 
     public static void Stop()
     {
+        if (remoteOn)
+        {
+            remoteOn = false; remoteAlive = false;
+            try { AideClient.Texte("fps.arreter", "{}", 8000); } catch { }
+        }
         var p = proc;
         proc = null;
         if (p == null) return;
@@ -2190,5 +2232,19 @@ public static class AideClient
             if (lecture.Result == null) throw new InvalidOperationException("L'Aide a coupé l'échange sans répondre.");
             return lecture.Result;
         }
+    }
+
+    // Une demande dont la réponse est un texte (les lignes de PresentMon relayées par l'Aide), depuis n'importe quel fil.
+    // $Parametres est déjà en JSON. Lève une erreur avec le message de l'Aide si elle refuse.
+    public static string Texte(string action, string parametres, int reponseMs)
+    {
+        string rep = Appeler("{\"a\":\"" + action + "\",\"p\":" + parametres + "}", 2000, reponseMs);
+        if (!System.Text.RegularExpressions.Regex.IsMatch(rep, "\"ok\"\\s*:\\s*true"))
+        {
+            var e = System.Text.RegularExpressions.Regex.Match(rep, "\"e\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+            throw new InvalidOperationException(e.Success ? System.Text.RegularExpressions.Regex.Unescape(e.Groups[1].Value) : "L'Aide a refusé.");
+        }
+        var r = System.Text.RegularExpressions.Regex.Match(rep, "\"r\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+        return r.Success ? System.Text.RegularExpressions.Regex.Unescape(r.Groups[1].Value) : "";
     }
 }

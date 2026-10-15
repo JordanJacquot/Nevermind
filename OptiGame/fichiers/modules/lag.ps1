@@ -36,14 +36,14 @@ function Start-LagSession([string]$Game, [int]$ProcId, [int]$Seconds = 0) {
     if (-not $script:Net) { $script:Net = Get-ActiveNet }
     $net = $script:Net
     $gw = if ($net -and $net.Gateway -and $net.Gateway -ne '0.0.0.0') { [string]$net.Gateway } else { '' }
-    $etw = $false
-    try { $etw = [NetFlow]::Start(); if (-not $etw) { Write-Log "Lag: repérage du serveur limité ($([NetFlow]::LastError))" } } catch { Write-Log "Lag: $_" }
+    $flux = Start-FluxReseau   # (par l'Aide, ou sur place en administrateur)
+    $etw = [bool]$flux
     [LagMon]::Start(500)
     $t = @{}
     if ($gw) { $t.gw = [LagMon]::Add($gw) }
     $t.ref = [LagMon]::Add('1.1.1.1')
     $s = @{ Game = $Game; Pid = $ProcId; Start = Get-Date; Seconds = $Seconds; Gw = $gw; Wifi = [bool]($net -and $net.Wifi); Adapter = $(if ($net) { "$($net.Name) $($net.Desc)" } else { '' })
-        Etw = $etw; T = $t; Isp = ''; IspOwner = $null; Server = $null; Ticks = 0; Prev = @{}; Names = @{}; Bg = (New-Object System.Collections.ArrayList)
+        Etw = $etw; Flux = $flux; T = $t; Isp = ''; IspOwner = $null; Server = $null; Ticks = 0; Prev = @{}; Names = @{}; Bg = (New-Object System.Collections.ArrayList)
         Signal = @(); Band = ''; Channel = ''; TraceJob = $null; SrvJob = $null; OwnerJob = $null; Gaps = 0; MaxGap = 0; GapBase = $null }
     # Chemin vers Internet en arrière plan : le premier routeur public est celui du fournisseur
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
@@ -97,7 +97,7 @@ function Update-LagSession {
     }
     # Réseau par programme (droits admin) : serveur du jeu et téléchargements en arrière plan
     $flows = @()
-    if ($s.Etw) { try { $flows = @([NetFlow]::Snapshot()) } catch {} }
+    if ($s.Etw) { try { $flows = @(Get-FluxReseau $s.Flux) } catch {} }
     $perPid = @{}
     $best = $null
     foreach ($l in $flows) {
@@ -113,7 +113,7 @@ function Update-LagSession {
     }
     # Sans les droits admin : la connexion TCP du jeu (serveur de connexion, souvent dans la même région)
     if (-not $s.Etw -and $s.Pid -and -not $s.Server -and $s.Ticks -ge 3) {
-        foreach ($l in @([TrafficMon]::Tcp())) {
+        foreach ($l in @(Get-TrafficTcp)) {
             $x = ([string]$l) -split '\|'
             if ([int]$x[0] -eq $s.Pid -and -not (Test-PrivateIp $x[1])) { $best = @{ Ip = $x[1]; Port = [int]$x[2]; Proto = 'tcp'; Pk = 0; Gaps = 0; MaxGap = 0 }; break }
         }
@@ -236,7 +236,7 @@ function Stop-LagSession {
     if ($script:LagTimer) { $script:LagTimer.Stop() }
     if (-not $s) { return }
     [LagMon]::Stop()
-    if ($s.Etw) { try { [NetFlow]::Stop() } catch {} }
+    if ($s.Etw) { Stop-FluxReseau $s.Flux }
     foreach ($j in @($s.TraceJob, $s.SrvJob)) { if ($j) { try { [void]$j.PS.BeginStop($null, $null) } catch {} } }
     Receive-LagOwners
     $dur = ((Get-Date) - $s.Start).TotalSeconds

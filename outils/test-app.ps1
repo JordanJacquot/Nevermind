@@ -1543,7 +1543,14 @@ $script:T.Run.Add_Tick({
                 @('processus.fermer', @{ Nom = 'chrome' }),
                 @('lecture.pc', @{}),
                 @('lecture.securite', @{}),
-                @('lecture.chemins', @{ Pids = @('4', '1234', '56789') })
+                @('lecture.chemins', @{ Pids = @('4', '1234', '56789') }),
+                @('fps.demarrer', @{ Pid = "$PID" }),
+                @('fps.lire', @{}),
+                @('fps.arreter', @{}),
+                @('trafic.tcp', @{}),
+                @('flux.demarrer', @{}),
+                @('flux.lire', @{}),
+                @('flux.arreter', @{})
             )
             $carte = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' })[0]
             if ($carte) {
@@ -1573,6 +1580,8 @@ $script:T.Run.Add_Tick({
                 @('processus.fermer', @{ Chemin = "$env:windir\explorer.exe" }),
                 @('wifi.manuel', @{ Profils = @('a" b') }),
                 @('lecture.chemins', @{ Pids = @('12; Remove-Item C:\') }),
+                @('fps.demarrer', @{ Pid = '4' }),
+                @('fps.demarrer', @{ Pid = '1234; calc' }),
                 @('lecture.chemins', @{ Pids = @(1..501 | ForEach-Object { "$_" }) }),
                 @('inconnue', @{})
             )
@@ -1611,6 +1620,23 @@ $script:T.Run.Add_Tick({
                 $msg = ''
                 try { [void](Invoke-Aide 'reg.ecrire' @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Valeur = 0; Type = 'DWord' }) } catch { $msg = $_.Exception.Message }
                 Assert-Test ($msg -match 'garde ce réglage') "refus attendu, reçu : $msg"
+                # Mesures en continu par l'Aide (sans droits : Windows refuse de compter, de tracer et à PresentMon,
+                # mais les demandes, les réponses et les erreurs font tout le trajet)
+                $tcp = Invoke-Aide 'trafic.tcp' @{} 60000
+                Assert-Test (@($tcp.Lignes).Count -gt 0 -and $tcp.CompteursOk -eq $false) "trafic.tcp : $(@($tcp.Lignes).Count) ligne(s), comptage $($tcp.CompteursOk)"
+                $msg = ''
+                try { [void](Invoke-Aide 'flux.demarrer') } catch { $msg = $_.Exception.Message }
+                Assert-Test ($msg -match 'Trace réseau refusée') "flux.demarrer : $msg"
+                $vraiAdmin2 = $script:EstAdmin; $script:EstAdmin = $false
+                try {
+                    Assert-Test ([FrameMon]::StartRemote($PID)) "fps.demarrer : $([FrameMon]::LastError)"
+                    Assert-Test ([FrameMon]::Remote) 'mesure des FPS pas passée par l''Aide'
+                    $fin = (Get-Date).AddSeconds(15)
+                    while ((Get-Date) -lt $fin -and [FrameMon]::Running) { Start-Sleep -Milliseconds 200 }
+                    Assert-Test (-not [FrameMon]::Running -and [FrameMon]::LastError) "PresentMon dans l'Aide : toujours en cours ou sans erreur ($([FrameMon]::LastError))"
+                    $errFps = [FrameMon]::LastError
+                } finally { [FrameMon]::Stop(); $script:EstAdmin = $vraiAdmin2 }
+                Assert-Test (-not [FrameMon]::Remote) 'mesure des FPS par l''Aide pas arrêtée'
                 # Une Aide qui n'est pas celle de cette copie n'est pas écoutée
                 [AideClient]::ExeAttendu = 'C:\ailleurs\Nevermind.exe'
                 $msg = ''
@@ -1620,7 +1646,7 @@ $script:T.Run.Add_Tick({
                 [AideClient]::ExeAttendu = $avant
                 try { $aide.Kill() } catch {}
             }
-            'réponse, refus de la liste stricte et refus d''une fausse Aide'
+            "réponse, lectures, mesures (trafic : $(@($tcp.Lignes).Count) connexions ; PresentMon : « $errFps »), refus de la liste stricte et d'une fausse Aide"
         }
 
         Test-Step 'Alertes passées par Mindset (géré par Mindset)' {

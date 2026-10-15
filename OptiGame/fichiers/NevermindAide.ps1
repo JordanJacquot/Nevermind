@@ -50,6 +50,61 @@ public static class AideTuyau
         finally { CloseHandle(h); }
     }
 }
+
+// Mesure des FPS pour Nevermind (PresentMon demande les droits administrateur) : PresentMon tourne ici, ses lignes sont
+// gardées jusqu'à ce que Nevermind les lise (« fps.lire »), 20 000 au plus. « #ERR » : une erreur, « #FIN » : arrêté.
+public static class AideFps
+{
+    static System.Diagnostics.Process proc;
+    static string exePm = "";
+    static readonly System.Collections.Concurrent.ConcurrentQueue<string> lignes = new System.Collections.Concurrent.ConcurrentQueue<string>();
+    static volatile bool fin;
+
+    public static void Start(string exe, int pid)
+    {
+        Stop();
+        string x; while (lignes.TryDequeue(out x)) { }
+        fin = false; exePm = exe;
+        var psi = new System.Diagnostics.ProcessStartInfo(exe,
+            "--process_id " + pid + " --output_stdout --no_console_stats --stop_existing_session --session_name OptiGame --terminate_on_proc_exit");
+        psi.UseShellExecute = false; psi.CreateNoWindow = true;
+        psi.RedirectStandardOutput = true; psi.RedirectStandardError = true;
+        var p = new System.Diagnostics.Process();
+        p.StartInfo = psi;
+        p.EnableRaisingEvents = true;
+        p.OutputDataReceived += (s, e) => { if (e.Data == null) return; lignes.Enqueue(e.Data); string y; while (lignes.Count > 20000 && lignes.TryDequeue(out y)) { } };
+        p.ErrorDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) lignes.Enqueue("#ERR " + e.Data); };
+        p.Exited += (s, e) => { fin = true; };
+        p.Start();
+        p.BeginOutputReadLine();
+        p.BeginErrorReadLine();
+        proc = p;
+    }
+
+    public static string Lire()
+    {
+        var sb = new StringBuilder();
+        string l; int n = 0;
+        while (n < 5000 && lignes.TryDequeue(out l)) { sb.Append(l).Append('\n'); n++; }
+        if (fin && lignes.IsEmpty) sb.Append("#FIN\n");
+        return sb.ToString();
+    }
+
+    public static void Stop()
+    {
+        var p = proc; proc = null;
+        if (p == null) return;
+        try { if (!p.HasExited) p.Kill(); } catch { }
+        try { p.Dispose(); } catch { }
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(exePm, "--terminate_existing_session --session_name OptiGame");
+            psi.UseShellExecute = false; psi.CreateNoWindow = true;
+            using (var t = System.Diagnostics.Process.Start(psi)) { t.WaitForExit(3000); }
+        }
+        catch { }
+    }
+}
 '@
 
 # Une seule Aide à la fois
@@ -169,6 +224,9 @@ try {
     Write-AideLog "Erreur de l'Aide : $($_.Exception.Message)"
 } finally {
     try { $tuyau.Dispose() } catch {}
+    # Mesures en cours : PresentMon et la trace réseau s'arrêtent avec l'Aide
+    try { [AideFps]::Stop() } catch {}
+    try { if (('NetFlow' -as [type]) -and [NetFlow]::Running) { [NetFlow]::Stop() } } catch {}
     Write-AideLog 'Aide arrêtée (Nevermind fermé)'
     try { $verrou.ReleaseMutex() } catch {}
     # Les fils du groupe gardent sinon Nevermind.exe ouvert

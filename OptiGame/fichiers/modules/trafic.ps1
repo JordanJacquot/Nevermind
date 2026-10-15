@@ -110,7 +110,7 @@ function Update-Traffic {
     Update-TrafficDns
     $now = Get-Date
     $seen = @{}
-    $tcp = @([TrafficMon]::Tcp())
+    $tcp = @(Get-TrafficTcp)
     Request-TrafficAidePaths $tcp
     foreach ($l in $tcp) {
         $x = ([string]$l) -split '\|'
@@ -848,7 +848,7 @@ function Update-TrafficView {
     $script:TrafficStats.Alerts.Foreground = Get-Brush $(if ($serious) { $Colors.warn } else { $Colors.ok })
     $mins = [int]((Get-Date) - $st.Started).TotalMinutes
     $script:TrafficSince.Text = "depuis $(if ($mins -lt 1) { 'moins d''une minute' } else { "$mins min" })"
-    if (-not [TrafficMon]::CountersOk -and $st.Ticks -gt 2 -and @($st.Conns.Values).Count) {
+    if (-not $script:TrafficCountersOk -and $st.Ticks -gt 2 -and @($st.Conns.Values).Count) {
         $script:TrafficCounters.Text = 'Windows refuse de compter les données (Nevermind doit être lancé en administrateur) : seules les connexions sont affichées.'
         $script:TrafficCounters.Visibility = 'Visible'
     } else { $script:TrafficCounters.Visibility = 'Collapsed' }

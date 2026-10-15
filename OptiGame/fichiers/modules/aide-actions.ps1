@@ -13,6 +13,14 @@ $AideVersion = 2
 $AideChampsDisque = @('Temperature', 'TemperatureMax', 'Wear', 'PowerOnHours', 'StartStopCycleCount', 'ReadErrorsCorrected', 'ReadErrorsUncorrected',
                       'WriteErrorsUncorrected', 'ReadLatencyMax', 'WriteLatencyMax')
 $AideMemoire = 'HKLM:\SOFTWARE\Mindset\Nevermind\Aide'   # ce que l'Aide retient elle-même (modifiable seulement en administrateur)
+$AideDossierModules = $PSScriptRoot   # (dossier protégé de Nevermind : natif.cs et PresentMon y sont lus)
+
+# Les mesureurs de Nevermind (natif.cs : compteurs TCP, trace réseau), chargés dans l'Aide à la première mesure
+function Initialize-AideNatif {
+    if ('TrafficMon' -as [type]) { return }
+    try { Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $AideDossierModules 'natif.cs'), [Text.Encoding]::UTF8)) }
+    catch { if (-not ('TrafficMon' -as [type])) { throw } }   # (une autre demande l'a chargé au même moment)
+}
 
 # Programmes de Windows et de l'antivirus : jamais fermés, jamais bloqués, jamais de priorité changée
 $AideExesProteges = '^(csrss|lsass|lsaiso|smss|wininit|winlogon|services|svchost|System|Registry|Idle|MsMpEng|NisSrv|MpCmdRun|MpDefenderCoreService|SecurityHealthService|SecurityHealthSystray|SgrmBroker|dwm|explorer|fontdrvhost|sihost|ctfmon|conhost|audiodg|spoolsv|taskhostw|RuntimeBroker|TrustedInstaller|TiWorker|wuauclt|MoUsoCoreWorker|Nevermind|Mindset)(\.exe)?$'
@@ -425,6 +433,57 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
                 })
             } catch {}
             return $r
+        }
+
+        # --- Mesures en continu : l'Aide les fait tourner, Nevermind lit les résultats ---
+
+        # FPS d'un jeu : PresentMon (celui du dossier de Nevermind) sur ce processus seulement ; ses lignes sont relayées telles quelles
+        'fps.demarrer' {
+            $idJeu = 0
+            if (-not [int]::TryParse([string](Get-AideParam $P 'Pid'), [ref]$idJeu) -or $idJeu -le 4) { throw 'Demande refusée : processus non valable.' }
+            if (-not (Get-Process -Id $idJeu -ErrorAction SilentlyContinue)) { throw "Le jeu n'est plus lancé." }
+            if ($Verifier) { return 'ok' }
+            if (-not ('AideFps' -as [type])) { throw 'La mesure des FPS se fait seulement dans l''Aide.' }
+            $pm = Join-Path (Split-Path $AideDossierModules -Parent) 'outils-tiers\PresentMon.exe'
+            if (-not (Test-Path -LiteralPath $pm)) { throw 'PresentMon est absent du dossier de Nevermind.' }
+            [AideFps]::Start($pm, $idJeu)
+            return 'ok'
+        }
+        'fps.lire' {
+            if ($Verifier) { return 'ok' }
+            if (-not ('AideFps' -as [type])) { return "#FIN`n" }
+            return [AideFps]::Lire()
+        }
+        'fps.arreter' {
+            if ($Verifier) { return 'ok' }
+            if ('AideFps' -as [type]) { [AideFps]::Stop() }
+            return 'ok'
+        }
+
+        # Connexions TCP avec les octets envoyés et reçus de chacune (Windows ne compte qu'à la demande d'un administrateur)
+        'trafic.tcp' {
+            if ($Verifier) { return 'ok' }
+            Initialize-AideNatif
+            $l = @([TrafficMon]::Tcp() | ForEach-Object { [string]$_ })
+            return @{ Lignes = $l; CompteursOk = [bool][TrafficMon]::CountersOk }
+        }
+
+        # Trace réseau de Windows (chaque échange, UDP compris) : le vrai serveur du jeu pendant « Lag en ligne »
+        'flux.demarrer' {
+            if ($Verifier) { return 'ok' }
+            Initialize-AideNatif
+            if (-not [NetFlow]::Start()) { throw "Trace réseau refusée par Windows : $([NetFlow]::LastError)" }
+            return 'ok'
+        }
+        'flux.lire' {
+            if ($Verifier) { return 'ok' }
+            if (-not ('NetFlow' -as [type]) -or -not [NetFlow]::Running) { throw 'La trace réseau ne tourne pas.' }
+            return , @([NetFlow]::Snapshot() | ForEach-Object { [string]$_ })
+        }
+        'flux.arreter' {
+            if ($Verifier) { return 'ok' }
+            if (('NetFlow' -as [type]) -and [NetFlow]::Running) { [NetFlow]::Stop() }
+            return 'ok'
         }
 
         # Emplacement de programmes en cours (services, programmes lancés en administrateur), pour Trafic

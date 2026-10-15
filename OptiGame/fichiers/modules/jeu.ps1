@@ -547,7 +547,7 @@ function Set-OverlayPosition([int]$ProcId) {
 function Start-FpsTarget([int]$ProcId, [string]$Name, [string]$Exe) {
     if (-not (Test-Path -LiteralPath $PresentMonExe)) { Set-Status 'Mesure des FPS indisponible : PresentMon est absent du dossier de l''app.'; return }
     if ($script:FpsTarget) { Stop-FpsTarget }
-    if (-not [FrameMon]::Start($PresentMonExe, $ProcId)) { Write-Log "Mesure des FPS: $([FrameMon]::LastError)"; return }
+    if (-not (Start-FpsMesure $ProcId)) { Write-Log "Mesure des FPS: $([FrameMon]::LastError)"; return }
     $path = try { [string](Get-Process -Id $ProcId -ErrorAction Stop).Path } catch { '' }
     $script:FpsTarget = @{ Pid = $ProcId; Name = $Name; Key = $Exe.ToLower(); Start = Get-Date; Series = (New-Object System.Collections.ArrayList); Ticks = 0; Exclusive = $false; Warned = $false
         Path = $path; Sys = (New-Object System.Collections.ArrayList); ProcCpu = @{}; ProcMem = @{}; ProcSeconds = 0.0; PrevProc = $null; PrevProcTime = $null; OnBattery = $false }
