@@ -584,7 +584,8 @@ function Stop-FpsTarget {
     try { $diag = Get-FpsDiagData $t $busy } catch { Write-Log "Diagnostic FPS: $_" }
     $saved = Save-FpsSession $t $s $diag
     Build-FpsPanel
-    $open = { Show-Page 1; Set-GamingSubPage 'fps'; Show-FpsSession $saved.Id }.GetNewClosure()
+    # (pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind, « Show-Page » introuvable au clic)
+    $open = [scriptblock]::Create("Show-Page 1; Set-GamingSubPage 'fps'; Show-FpsSession '$([string]$saved.Id -replace "'", "''")'")
     if ($saved -and (Test-FpsProblem $saved)) {
         Show-Notify "Partie terminée : $($t.Name)" ('{0:N0} FPS en moyenne, avec des chutes. Nevermind a regardé d''où ça vient : clique ici pour voir et corriger.' -f $s[0]) $open
     } else {
@@ -601,7 +602,7 @@ function Update-FpsTarget {
     [FrameMon]::Paused = -not $front
     $t.Ticks++
     # Anti-triche qui refuse la mesure une fois le jeu lancé : retenu, elle sera lancée avant lui la prochaine fois
-    if (-not $t.Refus -and [FrameMon]::Frames -eq 0 -and (Test-FpsRefus ([FrameMon]::LastError))) {
+    if (-not $t.Refus -and [FrameMon]::Frames -eq 0 -and ([FrameMon]::Remote -or $script:EstAdmin) -and (Test-FpsRefus ([FrameMon]::LastError))) {
         $t.Refus = $true
         Add-FpsVeilleJeu $t.Key
         Set-Status "$($t.Name) : l'anti-triche du jeu bloque la mesure des FPS une fois le jeu lancé. À la prochaine partie, Nevermind la démarrera avant le jeu."

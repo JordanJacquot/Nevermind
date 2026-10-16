@@ -18,7 +18,73 @@ function Get-LagSessions {
             foreach ($s in $arr) { [void]$script:LagSessions.Add($s) }
         }
     } catch { Write-Log "Lag: historique illisible ($_)" }
+    # Anciennes mesures (avant 1.0.119) : le serveur de connexion TCP était pris pour le serveur de la partie
+    # (« Le serveur du jeu est loin » à tort). Leur diagnostic est refait une fois.
+    $refaits = 0
+    foreach ($s in $script:LagSessions) {
+        if ((Test-LagConnexionOnly $s) -and @($s.Diag.Findings | Where-Object { $_.Title -in 'Le serveur du jeu est loin', 'Le serveur du jeu avait des soucis' }).Count) {
+            try { Set-LagDiag $s; $refaits++ } catch { Write-Log "Lag: diagnostic non refait ($_)" }
+        }
+    }
+    if ($refaits) { Write-Log "Lag: $refaits ancienne(s) mesure(s) corrigée(s) (serveur de connexion pris pour le serveur de la partie)"; Save-LagSessions }
     $script:LagSessions.ToArray()
+}
+
+# Seul le serveur de connexion du jeu (TCP) a été vu : Windows a refusé la trace réseau qui montre le vrai serveur
+# de la partie (UDP). Sa distance ne dit rien de celle du serveur de la partie.
+function Test-LagConnexionOnly($R) { [bool]($R.Server -and [string]$R.Server.Proto -eq 'tcp' -and -not $R.Etw) }
+
+# Diagnostic gardé dans la mesure, sans les blocs de code des actions (recréés à l'affichage)
+function Set-LagDiag($R) {
+    $d = Get-LagDiagnosis $R
+    $diag = @{ Level = $d.Level; Title = $d.Title; Findings = @($d.Findings | ForEach-Object { @{ Status = $_.Status; Title = $_.Title; Detail = $_.Detail; Tips = @($_.Tips); Actions = @(@($_.Actions) | Where-Object { $_ } | ForEach-Object { @{ Label = $_.Label } }) } }) }
+    if ($R -is [hashtable]) { $R.Diag = $diag } else { $R.Diag = ($diag | ConvertTo-Json -Depth 6 | ConvertFrom-Json) }
+}
+
+# Où se trouve un serveur : « Frankfurt am Main, Allemagne », « Allemagne » ou ''
+function Format-ServerPlace($Server) {
+    if (-not $Server -or -not $Server.Pays) { return '' }
+    $pays = Format-Country ([string]$Server.Pays)
+    if ($Server.Ville) { "$($Server.Ville), $pays" } else { $pays }
+}
+
+# Pays et ville d'un serveur, d'après l'annuaire public ipinfo.io (seule l'adresse du serveur est envoyée)
+$ServerGeoWork = {
+    param($ip)
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    try {
+        $req = [Net.HttpWebRequest]::Create("https://ipinfo.io/$ip/json")
+        $req.Timeout = 8000; $req.ReadWriteTimeout = 8000; $req.UserAgent = 'Nevermind'; $req.Accept = 'application/json'
+        $resp = $req.GetResponse()
+        try { $o = (New-Object IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8)).ReadToEnd() | ConvertFrom-Json } finally { $resp.Close() }
+        if ($o.bogon -or -not $o.country) { return @{ Ip = $ip; Pays = ''; Ville = '' } }
+        @{ Ip = $ip; Pays = ([string]$o.country).ToUpper(); Ville = [string]$o.city }
+    } catch { @{ Ip = $ip; Erreur = $_.Exception.Message } }
+}
+
+function Start-LagGeoLookup($S) {
+    $ip = [string]$S.Server.Ip
+    if (-not $script:LagGeo) { $script:LagGeo = @{} }
+    if ($script:LagGeo.ContainsKey($ip)) { $g = $script:LagGeo[$ip]; $S.Server.Pays = $g.Pays; $S.Server.Ville = $g.Ville; return }
+    if (-not (Get-Setting 'TrafficLookup' $true)) { return }
+    $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
+    [void]$ps.AddScript($ServerGeoWork.ToString()).AddArgument($ip)
+    $S.GeoJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
+}
+
+function Receive-LagGeo($S) {
+    if (-not $S.GeoJob) { return }
+    $r = Get-JobResult $S.GeoJob
+    if ($null -eq $r) { return }
+    $S.GeoJob = $null
+    $g = @($r)[0]
+    if (-not $g -or $g.Erreur) { Write-Log "Lag: pays du serveur inconnu ($(if ($g) { $g.Erreur }))"; return }
+    if (-not $script:LagGeo) { $script:LagGeo = @{} }
+    $script:LagGeo[[string]$g.Ip] = @{ Pays = $g.Pays; Ville = $g.Ville }
+    if ($S.Server -and $S.Server.Ip -eq $g.Ip) {
+        $S.Server.Pays = $g.Pays; $S.Server.Ville = $g.Ville
+        if ($g.Pays) { Write-Log "Lag: serveur $($g.Ip) situé à $(Format-ServerPlace $S.Server)" }
+    }
 }
 
 function Save-LagSessions {
@@ -38,13 +104,18 @@ function Start-LagSession([string]$Game, [int]$ProcId, [int]$Seconds = 0) {
     $gw = if ($net -and $net.Gateway -and $net.Gateway -ne '0.0.0.0') { [string]$net.Gateway } else { '' }
     $flux = Start-FluxReseau   # (par l'Aide, ou sur place en administrateur)
     $etw = [bool]$flux
+    # Anti-triche qui refuse la trace une fois le jeu lancé : elle sera lancée avant lui la prochaine fois
+    if (-not $etw -and $ProcId -and (Test-FpsRefus $script:FluxErreur)) {
+        $pn = try { (Get-Process -Id $ProcId -ErrorAction Stop).ProcessName } catch { '' }
+        if ($pn) { Add-FpsVeilleJeu $pn }
+    }
     [LagMon]::Start(500)
     $t = @{}
     if ($gw) { $t.gw = [LagMon]::Add($gw) }
     $t.ref = [LagMon]::Add('1.1.1.1')
     $s = @{ Game = $Game; Pid = $ProcId; Start = Get-Date; Seconds = $Seconds; Gw = $gw; Wifi = [bool]($net -and $net.Wifi); Adapter = $(if ($net) { "$($net.Name) $($net.Desc)" } else { '' })
         Etw = $etw; Flux = $flux; T = $t; Isp = ''; IspOwner = $null; Server = $null; Ticks = 0; Prev = @{}; Names = @{}; Bg = (New-Object System.Collections.ArrayList)
-        Signal = @(); Band = ''; Channel = ''; TraceJob = $null; SrvJob = $null; OwnerJob = $null; Gaps = 0; MaxGap = 0; GapBase = $null }
+        Signal = @(); Band = ''; Channel = ''; TraceJob = $null; SrvJob = $null; OwnerJob = $null; GeoJob = $null; Gaps = 0; MaxGap = 0; GapBase = $null }
     # Chemin vers Internet en arrière plan : le premier routeur public est celui du fournisseur
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
     [void]$ps.AddScript('param($h) [LagMon]::TraceRoute($h, 10, 800)').AddArgument('1.1.1.1')
@@ -86,6 +157,7 @@ function Update-LagSession {
     $s.Ticks++
     $elapsed = ((Get-Date) - $s.Start).TotalSeconds
     Receive-LagOwners
+    Receive-LagGeo $s
     # Premier routeur du fournisseur
     if ($s.TraceJob) {
         $r = Get-JobResult $s.TraceJob
@@ -120,10 +192,11 @@ function Update-LagSession {
     }
     if ($best) {
         if (-not $s.Server -or ($s.Server.Ip -ne $best.Ip -and $s.Ticks % 15 -eq 0)) {
-            $s.Server = @{ Ip = $best.Ip; Port = $best.Port; Proto = $best.Proto; Ping = $null; Proxy = '' }
+            $s.Server = @{ Ip = $best.Ip; Port = $best.Port; Proto = $best.Proto; Ping = $null; Proxy = ''; Pays = ''; Ville = '' }
             $s.T.srv = [LagMon]::Add($best.Ip)
             $s.GapBase = $best.Gaps
             Start-LagOwnerLookup $best.Ip
+            Start-LagGeoLookup $s
         }
         if ($s.Server.Ip -eq $best.Ip -and $null -ne $s.GapBase) { $s.Gaps = $best.Gaps - $s.GapBase; $s.MaxGap = [math]::Max($s.MaxGap, $best.MaxGap) }
     }
@@ -239,6 +312,8 @@ function Stop-LagSession {
     if ($s.Etw) { Stop-FluxReseau $s.Flux }
     foreach ($j in @($s.TraceJob, $s.SrvJob)) { if ($j) { try { [void]$j.PS.BeginStop($null, $null) } catch {} } }
     Receive-LagOwners
+    # Pays du serveur (l'annuaire répond en moins d'une seconde, bien avant la fin d'une partie : pas d'attente ici)
+    Receive-LagGeo $s
     $dur = ((Get-Date) - $s.Start).TotalSeconds
     if ($dur -lt $(if ($s.Seconds -gt 0) { 6 } else { 60 })) { Update-LagLive; return }
     $step = [math]::Max(1.0, [math]::Ceiling($dur / 240))
@@ -268,7 +343,7 @@ function Stop-LagSession {
         Wifi = $s.Wifi; Vpn = [bool]($s.Adapter -match '(?i)vpn|wireguard|openvpn|tap-windows|nord|proton|mullvad|surfshark|expressvpn|tunnel')
         Signal = $(if ($s.Signal.Count) { ($s.Signal | Measure-Object -Minimum).Minimum } else { $null }); SignalAvg = $(if ($s.Signal.Count) { [math]::Round(($s.Signal | Measure-Object -Average).Average) } else { $null })
         Band = $s.Band; Channel = $s.Channel; Etw = $s.Etw
-        Server = $(if ($s.Server) { @{ Ip = $s.Server.Ip; Port = $s.Server.Port; Proto = $s.Server.Proto; ViaProxy = [bool]$s.Server.ViaProxy; Owner = $(if ($srvOwner) { Get-OwnerLabel $srvOwner } else { '' }) } } else { $null })
+        Server = $(if ($s.Server) { @{ Ip = $s.Server.Ip; Port = $s.Server.Port; Proto = $s.Server.Proto; ViaProxy = [bool]$s.Server.ViaProxy; Owner = $(if ($srvOwner) { Get-OwnerLabel $srvOwner } else { '' }); Pays = [string]$s.Server.Pays; Ville = [string]$s.Server.Ville } } else { $null })
         Isp = $(if ($ispOwner) { Get-OwnerLabel $ispOwner } else { '' })
         Stats = @{}; Step = $step; Series = $series
         Spikes = $(if ($main) { $main.Spikes.Count } else { 0 }); LocalSpikes = $local; BgSpikes = $bgHit
@@ -276,9 +351,7 @@ function Stop-LagSession {
         Gaps = $s.Gaps; MaxGap = $s.MaxGap
     }
     foreach ($k in $stats.Keys) { $x = $stats[$k]; $rec.Stats[$k] = @{ Med = $x.Med; P95 = $x.P95; Jit = $x.Jit; Loss = $x.Loss; Max = $x.Max; Dead = $x.Dead; N = $x.N; Spikes = $x.Spikes.Count } }
-    # Diagnostic gardé sans les blocs de code des actions (recréés à l'affichage)
-    $d = Get-LagDiagnosis $rec
-    $rec.Diag = @{ Level = $d.Level; Title = $d.Title; Findings = @($d.Findings | ForEach-Object { @{ Status = $_.Status; Title = $_.Title; Detail = $_.Detail; Tips = @($_.Tips); Actions = @(@($_.Actions) | Where-Object { $_ } | ForEach-Object { @{ Label = $_.Label } }) } }) }
+    Set-LagDiag $rec
     if (-not $rec.Quick -and -not $rec.Server -and $rec.Diag.Level -eq 'ok') {
         Write-Log "Lag: $($s.Game) sans serveur en ligne repéré et connexion stable, mesure non gardée"
         Update-LagLive
@@ -288,9 +361,10 @@ function Stop-LagSession {
     $null = Get-LagSessions
     [void]$script:LagSessions.Add($obj)
     Save-LagSessions
-    Write-Log "Lag: $($s.Game), $([int]($dur / 60)) min, $($rec.Diag.Title)"
+    Write-Log "Lag: $($s.Game), $([int]($dur / 60)) min, $($rec.Diag.Title)$(if ($rec.Server -and $rec.Server.Pays) { ", serveur $(if (Test-LagConnexionOnly $rec) { 'de connexion ' })situé à $(Format-ServerPlace $rec.Server)" })"
     Request-LagPanel
-    $open = { Show-Page 1; Set-GamingSubPage 'lag'; Show-LagSession $obj.Id }.GetNewClosure()
+    # (pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind, « Show-Page » introuvable au clic)
+    $open = [scriptblock]::Create("Show-Page 1; Set-GamingSubPage 'lag'; Show-LagSession '$([string]$obj.Id -replace "'", "''")'")
     if ($rec.Quick) { if (-not $script:TestRunning) { Show-LagSession $obj.Id } }
     else { Show-Notify "Connexion pendant $($s.Game)" "$($rec.Diag.Title). Clique pour voir le détail." $open }
 }
@@ -359,15 +433,23 @@ function Get-LagDiagnosis($R) {
     }
     # 3. Le serveur du jeu
     $owner = if ($R.Server -and $R.Server.Owner) { $R.Server.Owner } else { 'un hébergeur inconnu' }
-    if ($srv -and -not $srv.Dead -and $ref -and -not $ref.Dead) {
+    $lieu = Format-ServerPlace $R.Server
+    $connexion = Test-LagConnexionOnly $R
+    if ($connexion) {
+        # Seul le serveur de connexion a été vu : sa distance ne dit rien du serveur de la partie
+        $f += @{ Status = 'info'; Title = 'Serveur de la partie non repéré'
+            Detail = "Windows a refusé la trace réseau pendant cette partie (l'anti-triche du jeu) : Nevermind n'a vu que le serveur de connexion du jeu ($owner$(if ($lieu) { ", situé à $lieu" }), $(if ($srv -and -not $srv.Dead) { "$(Format-Ms $srv.Med) de ping" } else { 'sans réponse au ping' })). Il gère ton compte et les menus, pas forcément la partie : son éloignement ne veut pas dire que tes parties se jouent loin."
+            Tips = @('Laisse Nevermind ouvert avant de lancer le jeu : la trace réseau démarre alors avant l''anti-triche et le vrai serveur de la partie est repéré.') }
+    }
+    elseif ($srv -and -not $srv.Dead -and $ref -and -not $ref.Dead) {
         if ($srv.Med -gt 70 -and $srv.Med - $ref.Med -gt 45) {
             $f += @{ Status = 'warn'; Title = 'Le serveur du jeu est loin'
-                Detail = "Le serveur appartient à $owner : $(Format-Ms $srv.Med) de ping, alors qu'Internet répond en $(Format-Ms $ref.Med) depuis chez toi. Ce délai vient de la distance, pas de ta connexion."
+                Detail = "Le serveur appartient à $owner$(if ($lieu) { " et se trouve à $lieu" }) : $(Format-Ms $srv.Med) de ping, alors qu'Internet répond en $(Format-Ms $ref.Med) depuis chez toi. Ce délai vient de la distance, pas de ta connexion."
                 Tips = @('Dans les options du jeu, choisis une région de serveurs plus proche (Europe, France).', 'Si tu joues avec des amis loin de toi, le jeu peut choisir un serveur entre vous.') }
         }
         if ($sS -in 'bad', 'warn' -and $rS -eq 'ok' -and $gS -notin 'bad', 'warn') {
             $f += @{ Status = 'warn'; Title = 'Le serveur du jeu avait des soucis'
-                Detail = "Ta connexion était stable, mais le ping vers le serveur ($owner) variait beaucoup : pics à $(Format-Ms $srv.P95), $($srv.Loss) % perdus. Le problème est du côté du serveur ou de la route jusqu'à lui."
+                Detail = "Ta connexion était stable, mais le ping vers le serveur ($owner$(if ($lieu) { ", $lieu" })) variait beaucoup : pics à $(Format-Ms $srv.P95), $($srv.Loss) % perdus. Le problème est du côté du serveur ou de la route jusqu'à lui."
                 Tips = @('Change de serveur ou de région si le jeu le permet.', 'Regarde si d''autres joueurs signalent des soucis (réseaux sociaux du jeu).') }
         }
     }
@@ -387,7 +469,7 @@ function Get-LagDiagnosis($R) {
             Detail = $(if ($R.Etw) { 'Le jeu n''a pas échangé assez avec un serveur pour que Nevermind le reconnaisse (menu, partie hors ligne ?).' } else { 'Windows a refusé la trace réseau pendant cette partie (souvent l''anti-triche du jeu) : Nevermind n''a pas pu repérer le serveur du jeu en UDP.' }) }
     }
     if (-not @($f | Where-Object { $_.Status -in 'bad', 'warn' }).Count) {
-        $parts = @(); if ($gw -and -not $gw.Dead) { $parts += "box $(Format-Ms $gw.Med)" }; if ($ref -and -not $ref.Dead) { $parts += "Internet $(Format-Ms $ref.Med)" }; if ($srv -and -not $srv.Dead) { $parts += "serveur $(Format-Ms $srv.Med)" }
+        $parts = @(); if ($gw -and -not $gw.Dead) { $parts += "box $(Format-Ms $gw.Med)" }; if ($ref -and -not $ref.Dead) { $parts += "Internet $(Format-Ms $ref.Med)" }; if ($srv -and -not $srv.Dead -and -not $connexion) { $parts += "serveur $(Format-Ms $srv.Med)$(if ($lieu) { " ($lieu)" })" }
         $f = @(@{ Status = 'ok'; Title = 'Ta connexion était stable'; Detail = "Ping : $($parts -join ', '), sans pic ni perte notable. Si le jeu saccadait, ça vient plutôt de tes FPS (onglet Mes parties)." }) + $f
     }
     $lvl = if (@($f | Where-Object { $_.Status -eq 'bad' }).Count) { 'bad' } elseif (@($f | Where-Object { $_.Status -eq 'warn' }).Count) { 'warn' } else { 'ok' }
@@ -418,7 +500,10 @@ function Update-LagLive {
 
 function Get-LagSessionLine($S) {
     $p = @()
-    foreach ($k in 'gw', 'ref', 'srv') { $x = $S.Stats.$k; if ($x -and -not $x.Dead) { $p += "$(@{ gw = 'Box'; ref = 'Internet'; srv = 'Serveur' }[$k]) $(Format-Ms $x.Med)" } }
+    $conn = Test-LagConnexionOnly $S
+    foreach ($k in 'gw', 'ref', 'srv') { $x = $S.Stats.$k; if ($x -and -not $x.Dead) { $p += "$(@{ gw = 'Box'; ref = 'Internet'; srv = $(if ($conn) { 'Serveur de connexion' } else { 'Serveur' }) }[$k]) $(Format-Ms $x.Med)" } }
+    $lieu = Format-ServerPlace $S.Server
+    if ($lieu) { $p += "serveur $(if ($conn) { 'de connexion ' })situé à $lieu" }
     $p -join ', '
 }
 
@@ -583,7 +668,7 @@ function Show-LagSession([string]$Id) {
         @('gw', 'Ton PC vers ta box', $(if ($s.Wifi) { "Wi-Fi$(if ($s.Band) { " $($s.Band)" })$(if ($null -ne $s.Signal) { ", signal $($s.SignalAvg) % (au plus bas $($s.Signal) %)" })" } else { 'Câble Ethernet' })),
         @('isp', 'Ta box vers ton fournisseur', $(if ($s.Isp) { $s.Isp } else { 'Premier routeur de ton fournisseur' })),
         @('ref', 'Internet', 'Serveur de référence (Cloudflare, 1.1.1.1)'),
-        @('srv', 'Serveur du jeu', $(if ($s.Server) { "$(if ($s.Server.Owner) { $s.Server.Owner } else { $s.Server.Ip }), $($s.Server.Proto.ToUpper()) port $($s.Server.Port)$(if ($s.Server.ViaProxy) { ', mesuré au dernier routeur (le serveur ne répond pas au ping)' })" } else { 'Non repéré' }))
+        @('srv', $(if (Test-LagConnexionOnly $s) { 'Serveur de connexion du jeu' } else { 'Serveur du jeu' }), $(if ($s.Server) { "$(if ($s.Server.Owner) { $s.Server.Owner } else { $s.Server.Ip })$(if (Format-ServerPlace $s.Server) { ", situé à $(Format-ServerPlace $s.Server)" }), $($s.Server.Proto.ToUpper()) port $($s.Server.Port)$(if ($s.Server.ViaProxy) { ', mesuré au dernier routeur (le serveur ne répond pas au ping)' })" } else { 'Non repéré' }))
     )
     foreach ($seg in $segs) {
         $x = $s.Stats.($seg[0])
@@ -622,7 +707,7 @@ function Show-LagSession([string]$Id) {
     [void]$body.Children.Add((New-SectionTitle 'LE PING PENDANT LA MESURE'))
     [void]$body.Children.Add((New-LagChart $s))
 
-    [void]$body.Children.Add((New-SectionTitle 'CE QUE NEXO A TROUVÉ'))
+    [void]$body.Children.Add((New-SectionTitle 'CE QUE NEVERMIND A TROUVÉ'))
     foreach ($fd in @($s.Diag.Findings)) {
         $acts = @()
         foreach ($a in @($fd.Actions)) {
@@ -635,7 +720,7 @@ function Show-LagSession([string]$Id) {
         $c.Margin = New-Thickness 0 6 0 0
         [void]$body.Children.Add($c)
     }
-    $n = New-Text "Pings envoyés deux fois par seconde vers chaque étape. « Variation » : de combien le ping change d'un envoi à l'autre (au dessus de 10 ms, ça se sent en jeu). « Pics » : 95 % des pings étaient en dessous. $(if (-not $s.Etw) { 'Sans les droits administrateur, le serveur du jeu est repéré par sa connexion TCP seulement.' })" 11.5 '#655E7E'
+    $n = New-Text "Pings envoyés deux fois par seconde vers chaque étape. « Variation » : de combien le ping change d'un envoi à l'autre (au dessus de 10 ms, ça se sent en jeu). « Pics » : 95 % des pings étaient en dessous. $(if (-not $s.Etw) { 'Windows a refusé la trace réseau pendant cette mesure : seul le serveur de connexion du jeu (TCP) était visible.' }) Le pays d'un serveur vient de l'annuaire public ipinfo.io (seule l'adresse du serveur est envoyée)." 11.5 '#655E7E'
     $n.Margin = New-Thickness 0 12 0 0
     [void]$body.Children.Add($n)
 }

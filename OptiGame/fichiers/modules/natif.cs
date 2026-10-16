@@ -1803,6 +1803,19 @@ public static class NetFlow
         catch { }
     }
 
+    // Veille avant un jeu (« flux.veiller ») : la trace tourne longtemps avant la partie, les connexions sans paquet
+    // depuis maxAgeSec secondes sont oubliées (au delà de 20 000 connexions, plus aucune n'est ajoutée)
+    public static void Purge(int maxAgeSec)
+    {
+        long lim = DateTime.UtcNow.ToFileTimeUtc() - (long)maxAgeSec * 10000000L;
+        lock (sync)
+        {
+            var old = new List<string>();
+            foreach (var kv in flows) if (kv.Value.LastAny < lim) old.Add(kv.Key);
+            foreach (var k in old) flows.Remove(k);
+        }
+    }
+
     // « pid|proto|ip|port|paquets envoyés|paquets reçus|octets envoyés|octets reçus|trous>100ms|trous>250ms|plus long trou ms|ms depuis le dernier paquet »
     public static string[] Snapshot()
     {

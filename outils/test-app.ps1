@@ -751,7 +751,7 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($null -ne $script:Search) 'barre de recherche non branchée'
                 $cases = @(
                     @('compteur discret', 'Style du compteur*'), @('netoyage', 'Nettoyage*'), @('demarage pc', 'Lancer Nevermind au démarrage*'),
-                    @('raccourci bureau', 'Raccourci sur le bureau'), @('telemetrie', 'Ce que Windows envoie*'), @('ping', '*'), @('position overlay', 'Position du compteur'), @('organiseur dofus', 'Organizer Dofus*'), @('faux positif', 'Approuver un point*')
+                    @('raccourci bureau', 'Raccourci sur le bureau'), @('telemetrie', 'Ce que Windows envoie*'), @('ping', '*'), @('position overlay', 'Position du compteur'), @('organiseur dofus', 'Organizer Dofus*'), @('faux positif', 'Approuver un point*'), @('pays serveur', 'Pays du serveur du jeu*')
                 )
                 foreach ($c in $cases) {
                     $r = @(Find-Settings $c[0])
@@ -1266,6 +1266,39 @@ $script:T.Run.Add_Tick({
                 } finally { Set-Setting 'FpsVeille' $avantVeille }
                 'BF6 guetté, refus reconnus, jeu bloquant retenu'
             }
+            Test-Step 'Lag en ligne : pays du serveur et serveur de connexion' {
+                $base = @{ Quick = $false; Seconds = 600; Wifi = $false; Vpn = $false; Gaps = 0; MaxGap = 0; Spikes = 0; LocalSpikes = 0; BgSpikes = 0; BgApps = @()
+                    Stats = @{ gw = @{ Med = 1; P95 = 2; Jit = 0.3; Loss = 0; Dead = $false }; ref = @{ Med = 10; P95 = 12; Jit = 1; Loss = 0; Dead = $false }; srv = @{ Med = 93; P95 = 96; Jit = 1; Loss = 0; Dead = $false } } }
+                # Serveur de la partie (UDP, trace réseau) loin : signalé, avec son pays
+                $udp = $base.Clone(); $udp.Etw = $true; $udp.Server = @{ Ip = '3.3.3.3'; Proto = 'udp'; Port = 3659; Owner = 'Amazon'; Pays = 'US'; Ville = 'Ashburn' }
+                $d1 = Get-LagDiagnosis $udp
+                $loin = @($d1.Findings | Where-Object { $_.Title -eq 'Le serveur du jeu est loin' })[0]
+                Assert-Test ($loin -and $loin.Detail -like '*Ashburn, États-Unis*') "serveur loin sans son pays : $($loin.Detail)"
+                # Seul le serveur de connexion (TCP, trace refusée) : pas de « serveur loin »
+                $tcp = $base.Clone(); $tcp.Etw = $false; $tcp.Server = @{ Ip = '34.233.116.25'; Proto = 'tcp'; Port = 443; Owner = 'Amazon'; Pays = 'US'; Ville = 'Ashburn' }
+                $d2 = Get-LagDiagnosis $tcp
+                Assert-Test (-not @($d2.Findings | Where-Object { $_.Title -eq 'Le serveur du jeu est loin' }).Count) 'serveur de connexion pris pour le serveur de la partie'
+                Assert-Test (@($d2.Findings | Where-Object { $_.Title -eq 'Serveur de la partie non repéré' }).Count -and $d2.Level -eq 'ok') "diagnostic : $($d2.Title)"
+                Assert-Test ((Get-LagSessionLine ([pscustomobject]$tcp)) -like '*Serveur de connexion 93 ms*situé à Ashburn, États-Unis*') "ligne : $(Get-LagSessionLine ([pscustomobject]$tcp))"
+                # Ancienne mesure enregistrée avec le mauvais diagnostic : refaite au chargement
+                $vieux = $tcp.Clone(); $vieux.Server = @{ Ip = '34.233.116.25'; Proto = 'tcp'; Port = 443; Owner = 'Amazon' }
+                $vieux.Diag = @{ Level = 'warn'; Title = 'Le serveur du jeu est loin'; Findings = @(@{ Status = 'warn'; Title = 'Le serveur du jeu est loin'; Detail = 'x'; Tips = @(); Actions = @() }) }
+                $vieux.Id = 'essai'; $vieux.Date = (Get-Date).ToString('o'); $vieux.Game = 'Essai'
+                $avantLag = if (Test-Path $LagFile) { [IO.File]::ReadAllText($LagFile) } else { $null }
+                try {
+                    [IO.File]::WriteAllText($LagFile, (ConvertTo-Json -InputObject @($vieux) -Depth 8))
+                    $script:LagSessions = $null
+                    $relu = @(Get-LagSessions)[0]
+                    Assert-Test ($relu.Diag.Title -ne 'Le serveur du jeu est loin' -and $relu.Diag.Level -eq 'ok') "ancienne mesure non corrigée : $($relu.Diag.Title)"
+                } finally {
+                    if ($null -ne $avantLag) { [IO.File]::WriteAllText($LagFile, $avantLag) } else { Remove-Item -LiteralPath $LagFile -ErrorAction SilentlyContinue }
+                    $script:LagSessions = $null
+                }
+                # Vrai annuaire (ipinfo.io) : pays de 1.1.1.1
+                $g = & $ServerGeoWork '1.1.1.1'
+                Assert-Test ($g.Pays -match '^[A-Z]{2}$' -or $g.Erreur) "réponse de l'annuaire : $(ConvertTo-Json $g -Compress)"
+                "serveur loin avec son pays, serveur de connexion reconnu, ancienne mesure corrigée, annuaire : $(if ($g.Erreur) { "injoignable ($($g.Erreur))" } else { "1.1.1.1 en $(Format-Country $g.Pays)" })"
+            }
             Test-Step 'Page Sécurité' {
                 $ui.Tabs.SelectedIndex = 6; Wait-TestMs 800; Save-TestShot 'securite'
                 Assert-Test ($null -ne $script:SecurityScore) 'pas de note de protection'
@@ -1581,6 +1614,7 @@ $script:T.Run.Add_Tick({
                 @('fps.arreter', @{}),
                 @('fps.veiller', @{ Noms = @('bf6.exe') }),
                 @('fps.veiller', @{ Noms = @('bf6.exe', 'Cyberpunk2077.exe', 'cod (2).exe') }),
+                @('flux.veiller', @{}),
                 @('trafic.tcp', @{}),
                 @('flux.demarrer', @{}),
                 @('flux.lire', @{}),

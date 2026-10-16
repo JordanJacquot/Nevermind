@@ -104,7 +104,7 @@ function Build-SettingsPanels {
             Set-Status $(if ($on) { 'Surveillance du réseau activée.' } else { 'Surveillance du réseau désactivée.' })
         }
     }))
-    [void]$p.Children.Add((New-SettingSwitch 'Identifier les serveurs sans nom' 'Page Trafic : cherche à qui appartient une adresse inconnue dans l''annuaire public rdap.org. Seule l''adresse du serveur est envoyée.' ([bool](Get-Setting 'TrafficLookup' $true)) {
+    [void]$p.Children.Add((New-SettingSwitch 'Identifier les serveurs sans nom' 'Page Trafic : cherche à qui appartient une adresse inconnue dans l''annuaire public rdap.org. Lag en ligne : cherche aussi le pays du serveur du jeu (ipinfo.io). Seule l''adresse du serveur est envoyée.' ([bool](Get-Setting 'TrafficLookup' $true)) {
         param($s, $e) $on = [bool]$s.IsChecked
         Set-Setting 'TrafficLookup' $on
         if ($script:TrafficLookupSwitch) { $script:TrafficLookupSwitch.IsChecked = $on }

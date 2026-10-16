@@ -489,6 +489,15 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             if (-not [NetFlow]::Start()) { throw "Trace réseau refusée par Windows : $([NetFlow]::LastError)" }
             return 'ok'
         }
+        # Veille avant un jeu dont l'anti-triche refuse une trace démarrée après lui : la trace tourne déjà quand la
+        # partie commence (flux.demarrer la reprend). Redemandée toutes les 30 s : les vieilles connexions sont oubliées.
+        'flux.veiller' {
+            if ($Verifier) { return 'ok' }
+            Initialize-AideNatif
+            if ([NetFlow]::Running) { [NetFlow]::Purge(120); return 'ok' }
+            if (-not [NetFlow]::Start()) { throw "Trace réseau refusée par Windows : $([NetFlow]::LastError)" }
+            return 'ok'
+        }
         'flux.lire' {
             if ($Verifier) { return 'ok' }
             if (-not ('NetFlow' -as [type]) -or -not [NetFlow]::Running) { throw 'La trace réseau ne tourne pas.' }

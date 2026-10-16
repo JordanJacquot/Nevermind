@@ -77,7 +77,8 @@ $SearchEntries = @(
     @{ T = 'Prévenir si un nouvel appareil se connecte'; P = 'reseau'; A = 'Appareils connectés'; K = 'alerte nouvel appareil intrus surveillance notification' },
     # Trafic
     @{ T = 'Ce qui sort de ton PC'; P = 'trafic'; A = 'Ce qui sort de ton PC'; K = 'trafic internet donnees envoyees programmes connexions espion' },
-    @{ T = 'Identifier les serveurs sans nom'; P = 'trafic'; A = 'Identifier les serveurs sans nom'; K = 'rdap annuaire serveur ip proprietaire' },
+    @{ T = 'Identifier les serveurs sans nom'; P = 'trafic'; A = 'Identifier les serveurs sans nom'; K = 'rdap annuaire serveur ip proprietaire ipinfo' },
+    @{ T = 'Pays du serveur du jeu (Lag en ligne)'; P = 'parametres'; Tab = 'reseau'; A = 'Identifier les serveurs sans nom'; K = 'pays localisation serveur jeu lag ping ou se trouve geolocalisation ipinfo' },
     @{ T = 'Thème (couleurs de l''app)'; P = 'parametres'; Tab = 'theme'; K = 'theme couleur couleurs apparence design da sombre terminal arcade rubis crepuscule neon skin' },
     @{ T = 'Paramètres de Nevermind'; P = 'parametres'; Tab = 'general'; K = 'parametres reglages options configuration roue engrenage settings' },
     @{ T = 'Signaler un problème'; P = 'parametres'; Tab = 'aide'; A = 'Signaler un problème'; K = 'bug souci erreur rapport envoyer probleme aide' },
@@ -277,18 +278,21 @@ function Open-SearchEntry($E) {
     if ($page -eq $GamesIndex) { Show-OrgView ([bool]$E.Org) }
     if ($E.Game) { $ui.LibSearch.Text = ''; $script:LibFilter = 'Tous'; Update-LibraryView; Set-LibrarySelection $E.Game }
     Set-Status "$($E.T) : $($E.Where)"
-    $anchor = [string]$E.A
-    $after = $E.Do
-    # Une fois la page affichée et mise en page
+    # Une fois la page affichée et mise en page. (Pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind
+    # quand il tourne dans Nevermind.exe ; la demande attend dans $script:SearchPending.)
+    $script:SearchPending = @{ Page = $page; Anchor = [string]$E.A; After = $E.Do }
     $null = $Window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Loaded, [Action]{
+        $d = $script:SearchPending
+        $script:SearchPending = $null
+        if (-not $d) { return }
         try {
-            if ($anchor) {
-                $el = Find-PageElement $ui.Tabs.Items[$page].Content $anchor
+            if ($d.Anchor) {
+                $el = Find-PageElement $ui.Tabs.Items[$d.Page].Content $d.Anchor
                 if ($el) { Show-Highlight $el }
             }
-            if ($after) { Invoke-Safe $after }
+            if ($d.After) { Invoke-Safe $d.After }
         } catch { Write-Log "Recherche: $_" }
-    }.GetNewClosure())
+    })
 }
 
 # Texte d'un TextBlock, même fait de plusieurs morceaux colorés (son .Text est alors vide)

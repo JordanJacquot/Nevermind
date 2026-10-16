@@ -170,7 +170,8 @@ function Start-FpsMesure([int]$ProcId) {
 
 # Jeux dont l'anti-triche refuse une mesure démarrée après leur lancement (BF6 et EA Javelin), mais laisse tourner
 # celle qui existait avant : l'Aide lance PresentMon en veille sur le nom de leur programme, et la mesure du jeu la
-# reprend (fps.demarrer répond « rattachee »). Nevermind retient aussi les jeux qu'il voit refuser (réglage FpsVeille).
+# reprend (fps.demarrer répond « rattachee »). Même chose pour la trace réseau de « Lag en ligne » (flux.veiller), qui
+# montre le vrai serveur de la partie. Nevermind retient aussi les jeux qu'il voit refuser (réglage FpsVeille).
 $FpsVeilleConnus = @('bf6.exe')
 function Get-FpsVeilleJeux { @(@($FpsVeilleConnus) + @(Get-Setting 'FpsVeille' @()) | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() } | Select-Object -Unique) }
 
@@ -192,18 +193,26 @@ function Update-FpsVeille {
     if ($v -and $v.H.IsCompleted) {
         $script:FpsVeilleTache = $null
         $r = try { [string]@($v.PS.EndInvoke($v.H))[0] } catch { $_.Exception.Message } finally { $v.PS.Dispose() }
-        $etat = if ($r) { "veille impossible ($r)" } else { "en veille avant $($v.Noms -join ', ')" }
+        $etat = if ($r) { "veille impossible ($r)" } else { "en veille avant $($v.Noms -join ', ') ($($v.Quoi))" }
         if ($etat -ne $script:FpsVeilleEtat) { $script:FpsVeilleEtat = $etat; Write-Log "Mesure des FPS : $etat" }
     }
-    if ($script:FpsVeilleTache -or -not (Test-FpsMeasure) -or $script:FpsTarget) { return }
+    $fps = (Test-FpsMeasure) -and -not $script:FpsTarget
+    $flux = (Test-LagMeasure) -and -not $script:LagSession
+    if ($script:FpsVeilleTache -or -not ($fps -or $flux)) { return }
     if ($script:FpsVeilleDemande -and ((Get-Date) - $script:FpsVeilleDemande).TotalSeconds -lt 30) { return }
     $script:FpsVeilleDemande = Get-Date
     $noms = @(Get-FpsVeilleJeux | Where-Object { -not [Diagnostics.Process]::GetProcessesByName(($_ -replace '\.exe$', '')).Length })
     if (-not $noms.Count -or -not [AideClient]::Joignable(1)) { return }
     $ps = [PowerShell]::Create()
     if ($script:BgPool) { $ps.RunspacePool = $script:BgPool }
-    [void]$ps.AddScript({ param($j) try { [void][AideClient]::Texte('fps.veiller', $j, 15000); '' } catch { $_.Exception.Message } }.ToString()).AddArgument((ConvertTo-Json -InputObject @{ Noms = $noms } -Compress))
-    $script:FpsVeilleTache = @{ PS = $ps; H = $ps.BeginInvoke(); Noms = $noms }
+    [void]$ps.AddScript({
+        param($j, $fps, $flux)
+        $err = @()
+        if ($fps) { try { [void][AideClient]::Texte('fps.veiller', $j, 15000) } catch { $err += "FPS : $($_.Exception.Message)" } }
+        if ($flux) { try { [void][AideClient]::Texte('flux.veiller', '{}', 15000) } catch { $err += "trace réseau : $($_.Exception.Message)" } }
+        $err -join ' ; '
+    }.ToString()).AddArgument((ConvertTo-Json -InputObject @{ Noms = $noms } -Compress)).AddArgument($fps).AddArgument($flux)
+    $script:FpsVeilleTache = @{ PS = $ps; H = $ps.BeginInvoke(); Noms = $noms; Quoi = @($(if ($fps) { 'FPS' }), $(if ($flux) { 'trace réseau' }) | Where-Object { $_ }) -join ' et ' }
 }
 
 # Connexions TCP avec leurs octets (Trafic, lag) ; $script:TrafficCountersOk : Windows compte-t-il les octets ?
@@ -223,9 +232,11 @@ function Get-TrafficTcp {
 
 # Trace réseau (lag en ligne) : 'aide', 'local' ou '' si elle n'a pas démarré
 function Start-FluxReseau {
+    # (refus de l'Aide, en administrateur : seul celui là peut venir d'un anti-triche)
+    $script:FluxErreur = ''
     if (Test-MesuresAide) {
         try { [void](Invoke-Aide 'flux.demarrer' @{} 20000); Write-Log "Lag : trace réseau par l'Aide"; return 'aide' }
-        catch { Write-Log "Lag : trace réseau par l'Aide impossible ($($_.Exception.Message))" }
+        catch { $script:FluxErreur = $_.Exception.Message; Write-Log "Lag : trace réseau par l'Aide impossible ($($_.Exception.Message))" }
     }
     try { if ([NetFlow]::Start()) { return 'local' }; Write-Log "Lag: repérage du serveur limité ($([NetFlow]::LastError))" } catch { Write-Log "Lag: $_" }
     ''

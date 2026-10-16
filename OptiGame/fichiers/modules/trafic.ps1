@@ -340,8 +340,9 @@ function Test-TrafficAlerts {
         if ($al.Level -eq 'info' -or $st.Notified.ContainsKey($al.App.Key)) { continue }
         $st.Notified[$al.App.Key] = $true
         Write-Log "Trafic anormal: $($al.App.Name) ($($al.App.Path)) : $($al.Why -join ' ; ')"
-        $k = $al.App.Key
-        Show-Notify "Activité réseau à vérifier : $($al.App.Title)" "$($al.Why[0]). Clique pour voir." ({ Show-Page $TrafficIndex; Show-TrafficApp $k }.GetNewClosure())
+        # (pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind, « Show-Page » introuvable au clic)
+        $open = [scriptblock]::Create("Show-Page `$TrafficIndex; Show-TrafficApp '$([string]$al.App.Key -replace "'", "''")'")
+        Show-Notify "Activité réseau à vérifier : $($al.App.Title)" "$($al.Why[0]). Clique pour voir." $open
     }
 }
 
@@ -723,7 +724,7 @@ function Build-TrafficPage {
     $lk.Margin = New-Thickness 0 12 0 0
     $lkt = New-Object System.Windows.Controls.StackPanel
     [void]$lkt.Children.Add((New-Text 'Identifier les serveurs sans nom' 13 '#FFFFFF' -Semi))
-    [void]$lkt.Children.Add((New-Text 'Cherche à qui appartient chaque adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public des adresses Internet (rdap.org). Seule l''adresse du serveur est envoyée.' 11.5 '#A6A1BC'))
+    [void]$lkt.Children.Add((New-Text 'Cherche à qui appartient chaque adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public des adresses Internet (rdap.org). Lag en ligne s''en sert aussi pour le pays du serveur du jeu (ipinfo.io). Seule l''adresse du serveur est envoyée.' 11.5 '#A6A1BC'))
     Add-ToGrid $lk $lkt 0
     $sw = New-Object System.Windows.Controls.CheckBox
     $sw.Style = $Window.FindResource('Switch')
