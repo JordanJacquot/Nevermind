@@ -1251,6 +1251,21 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($ui.TestsPanel.Children.Count -ge 4) "seulement $($ui.TestsPanel.Children.Count) tuiles"
                 "$($ui.TestsPanel.Children.Count) tuiles"
             }
+            Test-Step 'FPS : jeux dont l''anti-triche bloque la mesure' {
+                Assert-Test ((Get-FpsVeilleJeux) -contains 'bf6.exe') 'BF6 absent des jeux guettés'
+                Assert-Test (Test-FpsRefus 'error: failed to start trace session: access denied.') 'refus de PresentMon non reconnu'
+                Assert-Test (Test-FpsRefus 'PresentMon requires either administrative privileges or to be run by a user in the "Performance Log Users" user group.') 'refus (Performance Log Users) non reconnu'
+                Assert-Test (-not (Test-FpsRefus 'L''Aide n''a pas répondu à temps.')) 'simple panne prise pour un refus'
+                $avantVeille = @(Get-Setting 'FpsVeille' @())
+                try {
+                    Add-FpsVeilleJeu 'JeuEssai'
+                    $script:Settings = $null
+                    Assert-Test ((Get-FpsVeilleJeux) -contains 'jeuessai.exe') 'jeu bloquant non retenu après relecture'
+                    Add-FpsVeilleJeu 'jeuessai.exe'
+                    Assert-Test (@(Get-FpsVeilleJeux | Where-Object { $_ -eq 'jeuessai.exe' }).Count -eq 1) 'jeu retenu deux fois'
+                } finally { Set-Setting 'FpsVeille' $avantVeille }
+                'BF6 guetté, refus reconnus, jeu bloquant retenu'
+            }
             Test-Step 'Page Sécurité' {
                 $ui.Tabs.SelectedIndex = 6; Wait-TestMs 800; Save-TestShot 'securite'
                 Assert-Test ($null -ne $script:SecurityScore) 'pas de note de protection'
@@ -1564,6 +1579,8 @@ $script:T.Run.Add_Tick({
                 @('fps.demarrer', @{ Pid = "$PID" }),
                 @('fps.lire', @{}),
                 @('fps.arreter', @{}),
+                @('fps.veiller', @{ Noms = @('bf6.exe') }),
+                @('fps.veiller', @{ Noms = @('bf6.exe', 'Cyberpunk2077.exe', 'cod (2).exe') }),
                 @('trafic.tcp', @{}),
                 @('flux.demarrer', @{}),
                 @('flux.lire', @{}),
@@ -1599,6 +1616,11 @@ $script:T.Run.Add_Tick({
                 @('lecture.chemins', @{ Pids = @('12; Remove-Item C:\') }),
                 @('fps.demarrer', @{ Pid = '4' }),
                 @('fps.demarrer', @{ Pid = '1234; calc' }),
+                @('fps.veiller', @{ Noms = @() }),
+                @('fps.veiller', @{ Noms = @('C:\Jeux\bf6.exe') }),
+                @('fps.veiller', @{ Noms = @('bf6.exe" --output_file C:\x.csv "a.exe') }),
+                @('fps.veiller', @{ Noms = @('notepad') }),
+                @('fps.veiller', @{ Noms = @(1..11 | ForEach-Object { "jeu$_.exe" }) }),
                 @('lecture.chemins', @{ Pids = @(1..501 | ForEach-Object { "$_" }) }),
                 @('inconnue', @{})
             )
@@ -1654,6 +1676,14 @@ $script:T.Run.Add_Tick({
                     $errFps = [FrameMon]::LastError
                 } finally { [FrameMon]::Stop(); $script:EstAdmin = $vraiAdmin2 }
                 Assert-Test (-not [FrameMon]::Remote) 'mesure des FPS par l''Aide pas arrêtée'
+                # Veille avant un jeu (anti-triche) : demande acceptée par le canal ; sans droits, PresentMon s'arrête tout de
+                # suite, donc la mesure suivante ne s'y rattache pas et repart sur le jeu
+                Assert-Test ((Invoke-Aide 'fps.veiller' @{ Noms = @('notepad.exe') }) -eq 'ok') 'fps.veiller refusé'
+                Start-Sleep -Milliseconds 1500
+                $vraiAdmin3 = $script:EstAdmin; $script:EstAdmin = $false
+                try {
+                    Assert-Test ([FrameMon]::StartRemote($PID) -and -not [FrameMon]::Attached) "rattachée à une veille arrêtée : $([FrameMon]::LastError)"
+                } finally { [FrameMon]::Stop(); $script:EstAdmin = $vraiAdmin3 }
                 # Une Aide qui n'est pas celle de cette copie n'est pas écoutée
                 [AideClient]::ExeAttendu = 'C:\ailleurs\Nevermind.exe'
                 $msg = ''

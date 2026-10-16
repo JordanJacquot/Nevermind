@@ -775,12 +775,15 @@ public static class FrameMon
     // « #ERR <texte> » : une erreur de PresentMon ; « #FIN » : PresentMon s'est arrêté.
     static volatile bool remoteOn, remoteAlive;
     public static bool Remote { get { return remoteOn; } }
+    // Vrai quand la mesure a repris la veille lancée par l'Aide avant le jeu (anti-triche qui refuse une mesure après lui)
+    public static bool Attached;
 
     public static bool StartRemote(int pid)
     {
         Stop();
         Reset();
-        try { AideClient.Texte("fps.demarrer", "{\"Pid\":" + pid + "}", 15000); }
+        Attached = false;
+        try { Attached = AideClient.Texte("fps.demarrer", "{\"Pid\":" + pid + "}", 15000) == "rattachee"; }
         catch (Exception ex) { LastError = ex.Message; return false; }
         remoteOn = true; remoteAlive = true;
         var th = new System.Threading.Thread(() =>

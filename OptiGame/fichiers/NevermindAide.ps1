@@ -53,38 +53,84 @@ public static class AideTuyau
 
 // Mesure des FPS pour Nevermind (PresentMon demande les droits administrateur) : PresentMon tourne ici, ses lignes sont
 // gardées jusqu'à ce que Nevermind les lise (« fps.lire »), 20 000 au plus. « #ERR » : une erreur, « #FIN » : arrêté.
+// Veille (« fps.veiller ») : certains anti-triche (BF6) refusent toute nouvelle mesure une fois le jeu lancé, mais
+// laissent tourner celle qui existait avant. PresentMon est alors lancé avant le jeu, sur le nom de son programme, et
+// la mesure du jeu (« fps.demarrer ») s'y rattache au lieu de repartir de zéro.
 public static class AideFps
 {
     static System.Diagnostics.Process proc;
     static string exePm = "";
     static readonly System.Collections.Concurrent.ConcurrentQueue<string> lignes = new System.Collections.Concurrent.ConcurrentQueue<string>();
     static volatile bool fin;
+    static volatile string entete;          // première ligne de PresentMon (noms des colonnes), redonnée au rattachement
+    static string[] veille = new string[0];  // programmes guettés (minuscules), vide hors veille
+    static volatile bool rattachee, donnerEntete;
 
     public static void Start(string exe, int pid)
     {
+        rattachee = true;
+        Lancer(exe, "--process_id " + pid + " --terminate_on_proc_exit");
+    }
+
+    // Guette ces programmes (« bf6.exe ») avant leur lancement. Déjà en veille sur les mêmes : rien à faire.
+    public static void Veiller(string exe, string[] noms)
+    {
+        var tri = (string[])noms.Clone(); Array.Sort(tri, StringComparer.OrdinalIgnoreCase);
+        if (EnVeille() && string.Join("|", tri) == string.Join("|", veille)) return;
+        var args = new StringBuilder();
+        foreach (var n in tri) args.Append("--process_name \"").Append(n).Append("\" ");
+        rattachee = false;
+        Lancer(exe, args.ToString().Trim());
+        veille = tri;
+    }
+
+    // Veille en cours, pas encore prise par un jeu
+    public static bool EnVeille() { var p = proc; return veille.Length > 0 && !rattachee && p != null && !fin; }
+
+    // Le jeu (son programme) est-il guetté par la veille en cours ? Si oui, la mesure s'y rattache.
+    public static bool Rattacher(string nom)
+    {
+        if (!EnVeille() || Array.IndexOf(veille, nom.ToLowerInvariant()) < 0) return false;
+        donnerEntete = entete != null;
+        rattachee = true;
+        return true;
+    }
+
+    public static string Guettes() { return EnVeille() ? string.Join(", ", veille) : ""; }
+
+    static void Lancer(string exe, string cible)
+    {
         Stop();
         string x; while (lignes.TryDequeue(out x)) { }
-        fin = false; exePm = exe;
+        fin = false; exePm = exe; entete = null;
         var psi = new System.Diagnostics.ProcessStartInfo(exe,
-            "--process_id " + pid + " --output_stdout --no_console_stats --stop_existing_session --session_name OptiGame --terminate_on_proc_exit");
+            cible + " --output_stdout --no_console_stats --stop_existing_session --session_name OptiGame");
         psi.UseShellExecute = false; psi.CreateNoWindow = true;
         psi.RedirectStandardOutput = true; psi.RedirectStandardError = true;
         var p = new System.Diagnostics.Process();
         p.StartInfo = psi;
         p.EnableRaisingEvents = true;
-        p.OutputDataReceived += (s, e) => { if (e.Data == null) return; lignes.Enqueue(e.Data); string y; while (lignes.Count > 20000 && lignes.TryDequeue(out y)) { } };
-        p.ErrorDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data)) lignes.Enqueue("#ERR " + e.Data); };
-        p.Exited += (s, e) => { fin = true; };
-        p.Start();
+        // (un PresentMon arrêté peut encore parler après le lancement du suivant : on ne garde que le PresentMon en cours)
+        p.OutputDataReceived += (s, e) =>
+        {
+            if (e.Data == null || !ReferenceEquals(proc, s)) return;
+            if (entete == null) { entete = e.Data; if (!rattachee) return; }
+            lignes.Enqueue(e.Data); string y; while (lignes.Count > 20000 && lignes.TryDequeue(out y)) { }
+        };
+        p.ErrorDataReceived += (s, e) => { if (!string.IsNullOrEmpty(e.Data) && ReferenceEquals(proc, s)) lignes.Enqueue("#ERR " + e.Data); };
+        p.Exited += (s, e) => { if (ReferenceEquals(proc, s)) fin = true; };
+        proc = p;
+        try { p.Start(); } catch { proc = null; throw; }
         p.BeginOutputReadLine();
         p.BeginErrorReadLine();
-        proc = p;
     }
 
     public static string Lire()
     {
         var sb = new StringBuilder();
         string l; int n = 0;
+        // Première lecture après un rattachement : les noms des colonnes d'abord
+        if (donnerEntete) { donnerEntete = false; var e = entete; if (e != null) sb.Append(e).Append('\n'); }
         while (n < 5000 && lignes.TryDequeue(out l)) { sb.Append(l).Append('\n'); n++; }
         if (fin && lignes.IsEmpty) sb.Append("#FIN\n");
         return sb.ToString();
@@ -92,6 +138,7 @@ public static class AideFps
 
     public static void Stop()
     {
+        veille = new string[0];
         var p = proc; proc = null;
         if (p == null) return;
         try { if (!p.HasExited) p.Kill(); } catch { }

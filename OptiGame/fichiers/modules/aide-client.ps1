@@ -162,10 +162,48 @@ function Test-MesuresAide {
 # FPS d'un jeu (FrameMon) : $true si la mesure a démarré
 function Start-FpsMesure([int]$ProcId) {
     if (Test-MesuresAide) {
-        if ([FrameMon]::StartRemote($ProcId)) { Write-Log "Mesure des FPS : par l'Aide"; return $true }
+        if ([FrameMon]::StartRemote($ProcId)) { Write-Log "Mesure des FPS : par l'Aide$(if ([FrameMon]::Attached) { ', reprise de la veille lancée avant le jeu' })"; return $true }
         Write-Log "Mesure des FPS par l'Aide impossible : $([FrameMon]::LastError)"
     }
     [FrameMon]::Start($PresentMonExe, $ProcId)
+}
+
+# Jeux dont l'anti-triche refuse une mesure démarrée après leur lancement (BF6 et EA Javelin), mais laisse tourner
+# celle qui existait avant : l'Aide lance PresentMon en veille sur le nom de leur programme, et la mesure du jeu la
+# reprend (fps.demarrer répond « rattachee »). Nevermind retient aussi les jeux qu'il voit refuser (réglage FpsVeille).
+$FpsVeilleConnus = @('bf6.exe')
+function Get-FpsVeilleJeux { @(@($FpsVeilleConnus) + @(Get-Setting 'FpsVeille' @()) | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLowerInvariant() } | Select-Object -Unique) }
+
+function Add-FpsVeilleJeu([string]$Exe) {
+    $e = $Exe.ToLowerInvariant()
+    if ($e -notlike '*.exe') { $e += '.exe' }
+    if ((Get-FpsVeilleJeux) -contains $e) { return }
+    Set-Setting 'FpsVeille' @(@(Get-Setting 'FpsVeille' @()) + $e)
+    Write-Log "Mesure des FPS : $e refuse une mesure démarrée après lui, elle sera lancée avant lui la prochaine fois"
+}
+
+# Refus de Windows (anti-triche) : message de PresentMon (« access denied... Performance Log Users ») ou de l'Aide
+function Test-FpsRefus([string]$Err) { $Err -match 'access denied|accès refusé|Performance Log Users' }
+
+# Hors partie, toutes les 5 s (Test-GameRunning) : veille demandée à l'Aide au plus toutes les 30 s (elle ne relance
+# rien si elle guette déjà les mêmes jeux). Pas pour un jeu déjà ouvert : la mesure serait refusée.
+function Update-FpsVeille {
+    $v = $script:FpsVeilleTache
+    if ($v -and $v.H.IsCompleted) {
+        $script:FpsVeilleTache = $null
+        $r = try { [string]@($v.PS.EndInvoke($v.H))[0] } catch { $_.Exception.Message } finally { $v.PS.Dispose() }
+        $etat = if ($r) { "veille impossible ($r)" } else { "en veille avant $($v.Noms -join ', ')" }
+        if ($etat -ne $script:FpsVeilleEtat) { $script:FpsVeilleEtat = $etat; Write-Log "Mesure des FPS : $etat" }
+    }
+    if ($script:FpsVeilleTache -or -not (Test-FpsMeasure) -or $script:FpsTarget) { return }
+    if ($script:FpsVeilleDemande -and ((Get-Date) - $script:FpsVeilleDemande).TotalSeconds -lt 30) { return }
+    $script:FpsVeilleDemande = Get-Date
+    $noms = @(Get-FpsVeilleJeux | Where-Object { -not [Diagnostics.Process]::GetProcessesByName(($_ -replace '\.exe$', '')).Length })
+    if (-not $noms.Count -or -not [AideClient]::Joignable(1)) { return }
+    $ps = [PowerShell]::Create()
+    if ($script:BgPool) { $ps.RunspacePool = $script:BgPool }
+    [void]$ps.AddScript({ param($j) try { [void][AideClient]::Texte('fps.veiller', $j, 15000); '' } catch { $_.Exception.Message } }.ToString()).AddArgument((ConvertTo-Json -InputObject @{ Noms = $noms } -Compress))
+    $script:FpsVeilleTache = @{ PS = $ps; H = $ps.BeginInvoke(); Noms = $noms }
 }
 
 # Connexions TCP avec leurs octets (Trafic, lag) ; $script:TrafficCountersOk : Windows compte-t-il les octets ?

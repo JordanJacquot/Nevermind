@@ -8,7 +8,7 @@
 # distance, couper le contrôle des comptes ou le pare-feu, ajouter une exclusion à l'antivirus, mettre un DNS inconnu,
 # bloquer Internet à l'antivirus ou à Windows Update.
 
-$AideVersion = 2
+$AideVersion = 3
 # Santé d'un disque (Get-StorageReliabilityCounter) : les champs dont Nevermind se sert
 $AideChampsDisque = @('Temperature', 'TemperatureMax', 'Wear', 'PowerOnHours', 'StartStopCycleCount', 'ReadErrorsCorrected', 'ReadErrorsUncorrected',
                       'WriteErrorsUncorrected', 'ReadLatencyMax', 'WriteLatencyMax')
@@ -444,9 +444,23 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             if (-not (Get-Process -Id $idJeu -ErrorAction SilentlyContinue)) { throw "Le jeu n'est plus lancé." }
             if ($Verifier) { return 'ok' }
             if (-not ('AideFps' -as [type])) { throw 'La mesure des FPS se fait seulement dans l''Aide.' }
+            # Jeu guetté par la veille (lancée avant lui) : la mesure continue sur celle là
+            $nomJeu = try { "$((Get-Process -Id $idJeu -ErrorAction Stop).ProcessName).exe" } catch { '' }
+            if ($nomJeu -and [AideFps]::Rattacher($nomJeu)) { return 'rattachee' }
             $pm = Join-Path (Split-Path $AideDossierModules -Parent) 'outils-tiers\PresentMon.exe'
             if (-not (Test-Path -LiteralPath $pm)) { throw 'PresentMon est absent du dossier de Nevermind.' }
             [AideFps]::Start($pm, $idJeu)
+            return 'ok'
+        }
+        # Veille avant le lancement de jeux dont l'anti-triche refuse une mesure démarrée après eux : noms de programmes seulement
+        'fps.veiller' {
+            $noms = @(Get-AideListe $P 'Noms' | ForEach-Object { ([string]$_).ToLowerInvariant() } | Select-Object -Unique)
+            if (-not $noms.Count -or $noms.Count -gt 10 -or @($noms | Where-Object { $_ -notmatch '^[a-z0-9][a-z0-9 ._()-]{0,60}\.exe$' }).Count) { throw 'Demande refusée : noms de programmes non valables.' }
+            if ($Verifier) { return 'ok' }
+            if (-not ('AideFps' -as [type])) { throw 'La mesure des FPS se fait seulement dans l''Aide.' }
+            $pm = Join-Path (Split-Path $AideDossierModules -Parent) 'outils-tiers\PresentMon.exe'
+            if (-not (Test-Path -LiteralPath $pm)) { throw 'PresentMon est absent du dossier de Nevermind.' }
+            [AideFps]::Veiller($pm, [string[]]$noms)
             return 'ok'
         }
         'fps.lire' {

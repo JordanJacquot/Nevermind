@@ -105,6 +105,7 @@ function Test-GameRunning {
         if (-not (Get-Process -Id $script:GameSession.Pid -ErrorAction SilentlyContinue)) { Stop-GameSession }
         return
     }
+    try { Update-FpsVeille } catch { Write-Log "Mesure des FPS (veille) : $_" }
     if (-not $script:GameIndex -or -not $script:GameIndex.Count) { return }
     # Une seule lecture des programmes ouverts (demander chaque jeu par son nom coûtait jusqu'à 0,8 s toutes les 5 s)
     $procs = @([Diagnostics.Process]::GetProcesses() | Where-Object { $script:GameIndex.ContainsKey($_.ProcessName.ToLower()) })
@@ -599,6 +600,12 @@ function Update-FpsTarget {
     $front = [OGNative]::GetForegroundPid() -eq $t.Pid
     [FrameMon]::Paused = -not $front
     $t.Ticks++
+    # Anti-triche qui refuse la mesure une fois le jeu lancé : retenu, elle sera lancée avant lui la prochaine fois
+    if (-not $t.Refus -and [FrameMon]::Frames -eq 0 -and (Test-FpsRefus ([FrameMon]::LastError))) {
+        $t.Refus = $true
+        Add-FpsVeilleJeu $t.Key
+        Set-Status "$($t.Name) : l'anti-triche du jeu bloque la mesure des FPS une fois le jeu lancé. À la prochaine partie, Nevermind la démarrera avant le jeu."
+    }
     if ($t.Ticks % 10 -eq 0) {
         $v = [FrameMon]::Sample()
         if ($v -gt 0) { [void]$t.Series.Add([math]::Round($v, 1)) }
@@ -617,7 +624,8 @@ function Update-FpsTarget {
     if (-not $o.Win.IsVisible) { Set-OverlayPosition $t.Pid; $o.Win.Show() }
     $l = [FrameMon]::Live()
     if ([FrameMon]::Frames -eq 0) {
-        if (((Get-Date) - $t.Start).TotalSeconds -gt 8) { $o.Fps.Text = '?'; if ($o.Sub) { $o.Sub.Text = 'Aucune image reçue pour le moment.' } }
+        if ($t.Refus) { $o.Fps.Text = '?'; if ($o.Sub) { $o.Sub.Text = 'Bloqué par l''anti-triche : mesure à la prochaine partie' } }
+        elseif (((Get-Date) - $t.Start).TotalSeconds -gt 8) { $o.Fps.Text = '?'; if ($o.Sub) { $o.Sub.Text = 'Aucune image reçue pour le moment.' } }
         return
     }
     $o.Fps.Text = '{0:N0}' -f $l[0]
