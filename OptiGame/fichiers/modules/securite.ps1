@@ -74,10 +74,35 @@ function Get-SuspectFolders {
     ) | Where-Object { $_.Path -and (Test-Path -LiteralPath $_.Path) }
 }
 
+# Éléments reconnus par l'utilisateur (« C'est moi ») : ils ne comptent plus dans les points à vérifier
+# ni dans le niveau de protection. La clé contient le chemin ou la commande exacte : si un virus
+# modifie un élément approuvé, il ne correspond plus et redevient suspect.
+function Get-SecTrusted { @(@(Get-Setting 'SecuriteApprouves' @()) | Where-Object { $_ -and $_.Key }) }
+
+function Save-SecTrusted([array]$Entries) {
+    Set-Setting 'SecuriteApprouves' @($Entries | ForEach-Object { @{ Key = [string]$_.Key; Text = [string]$_.Text; Kind = [string]$_.Kind } })
+}
+
+function Add-SecTrusted([array]$Entries) {
+    $all = @(Get-SecTrusted)
+    foreach ($e in $Entries) { if (-not @($all | Where-Object { $_.Key -eq $e.Key }).Count) { $all += $e } }
+    Save-SecTrusted $all
+    Write-Log "Sécurité : approuvé par l'utilisateur : $(($Entries | ForEach-Object { $_.Text }) -join ' | ')"
+}
+
+function Remove-SecTrusted([string]$Key) {
+    Save-SecTrusted @(Get-SecTrusted | Where-Object { $_.Key -ne $Key })
+}
+
+function New-TrustEntry([string]$Kind, [string]$Key, [string]$Text) { @{ Kind = $Kind; Key = $Key; Text = $Text } }
+
 # Recherche des points suspects. Retourne une liste de constats avec actions possibles.
+# Les constats faits d'éléments (Trust, aligné sur Items) proposent « C'est moi » sur chaque élément.
 function Get-SecurityChecks($S) {
     $list = New-Object System.Collections.ArrayList
     $mp = $S.Mp
+    $trusted = @{}
+    foreach ($t in Get-SecTrusted) { $trusted[[string]$t.Key] = $true }
 
     # Antivirus
     if ($mp -and $mp.AMRunningMode -eq 'Normal') {
@@ -95,11 +120,13 @@ function Get-SecurityChecks($S) {
     }
 
     # Exclusions de l'antivirus
-    if ($S.Exclusions.Count) {
-        [void]$list.Add(@{ Status = 'warn'; Title = "$($S.Exclusions.Count) élément$(if ($S.Exclusions.Count -gt 1) {'s'}) exclu$(if ($S.Exclusions.Count -gt 1) {'s'}) de l'antivirus"
+    $excl = @($S.Exclusions | Where-Object { -not $trusted["exclusion|$_"] })
+    if ($excl.Count) {
+        $trust = @($excl | ForEach-Object { New-TrustEntry 'Exclusion de l''antivirus' "exclusion|$_" $_ })
+        [void]$list.Add(@{ Status = 'warn'; Title = "$($excl.Count) élément$(if ($excl.Count -gt 1) {'s'}) exclu$(if ($excl.Count -gt 1) {'s'}) de l'antivirus"
             Detail = 'Ces dossiers ou programmes ne sont jamais analysés. Si tu ne les as pas ajoutés toi même (ou un jeu que tu connais), c''est suspect : les virus s''ajoutent souvent eux mêmes en exclusion.'
-            Items = $S.Exclusions
-            Actions = @(@{ Label = 'Retirer les exclusions'; Confirm = 'Retirer toutes les exclusions de Microsoft Defender ? Ces éléments seront de nouveau analysés.'; Arg = $S.Exclusions
+            Items = @($trust | ForEach-Object { $_.Text }); Trust = $trust
+            Actions = @(@{ Label = 'Retirer les exclusions'; Confirm = 'Retirer ces exclusions de Microsoft Defender ? Ces éléments seront de nouveau analysés.'; Arg = $excl
                            Script = { param($a) [void](Invoke-Aide 'antivirus.retirer-exclusions' @{ Elements = @($a) }) } }) })
     }
 
@@ -118,10 +145,12 @@ function Get-SecurityChecks($S) {
     $hosts = Join-Path $env:windir 'System32\drivers\etc\hosts'
     $entries = @()
     try { $entries = @(Get-Content -LiteralPath $hosts -ErrorAction Stop | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -notmatch '^#' -and $_ -notmatch '\s(localhost|localhost\.localdomain|broadcasthost)$' -and $_ -notmatch '^(127\.0\.0\.1|::1)\s+localhost' }) } catch {}
+    $entries = @($entries | Where-Object { -not $trusted["hosts|$_"] })
     if ($entries.Count) {
+        $trust = @($entries | ForEach-Object { New-TrustEntry 'Ligne du fichier hosts' "hosts|$_" $_ })
         [void]$list.Add(@{ Status = 'warn'; Title = "Fichier hosts modifié ($($entries.Count) ligne$(if ($entries.Count -gt 1) {'s'}))"
             Detail = 'Ce fichier peut rediriger des sites vers d''autres adresses. Des logiciels l''utilisent pour bloquer la pub, mais un virus peut s''en servir pour t''envoyer vers de faux sites.'
-            Items = $entries
+            Items = @($trust | ForEach-Object { $_.Text }); Trust = $trust
             Actions = @(@{ Label = 'Ouvrir le fichier'; Arg = $hosts; Script = { param($a) Start-Process 'notepad.exe' -ArgumentList "`"$a`"" } }) })
     }
 
@@ -131,57 +160,65 @@ function Get-SecurityChecks($S) {
     $pac = [string](Get-RegValue $inet 'AutoConfigURL')
     if ($proxyOn -or $pac) {
         $what = if ($pac) { "script $pac" } else { [string](Get-RegValue $inet 'ProxyServer') }
+    }
+    if (($proxyOn -or $pac) -and -not $trusted["proxy|$what"]) {
         [void]$list.Add(@{ Status = 'warn'; Title = 'Un proxy détourne ta navigation'; Detail = "Tout ton trafic web passe par : $what. Si tu ne l'as pas configuré toi même (VPN, travail), c'est suspect."
+            Trust = @(New-TrustEntry 'Proxy' "proxy|$what" $what)
             Actions = @(@{ Label = 'Paramètres du proxy'; Script = { Open-Url 'ms-settings:network-proxy' } }) })
     }
     Update-UI
 
     # Fichiers piégés (double extension, scripts) dans les dossiers de l'utilisateur
-    $double = @($S.Double); $scripts = @($S.Scripts)
+    $double = @($S.Double | Where-Object { -not $trusted["fichier|$_"] }); $scripts = @($S.Scripts | Where-Object { -not $trusted["fichier|$_"] })
     if ($double.Count) {
+        $trust = @($double | ForEach-Object { New-TrustEntry 'Fichier' "fichier|$_" $_ })
         [void]$list.Add(@{ Status = 'bad'; Title = "$($double.Count) fichier$(if ($double.Count -gt 1) {'s'}) déguisé$(if ($double.Count -gt 1) {'s'})"
             Detail = 'Un nom comme « facture.pdf.exe » fait croire à un document, mais c''est un programme. C''est la ruse la plus courante des virus : ne l''ouvre surtout pas.'
-            Items = $double
+            Items = $double; Trust = $trust
             Actions = @(@{ Label = 'Analyser avec Defender'; Arg = $double; Script = { param($a) Invoke-DefenderScan 'CustomScan' $a 'Analyse des fichiers déguisés' } },
                         @{ Label = 'Ouvrir l''emplacement'; Arg = $double[0]; Script = { param($a) Start-Process 'explorer.exe' -ArgumentList "/select,`"$a`"" } }) })
     }
     if ($scripts.Count) {
+        $trust = @($scripts | ForEach-Object { New-TrustEntry 'Fichier' "fichier|$_" $_ })
         [void]$list.Add(@{ Status = 'warn'; Title = "$($scripts.Count) script$(if ($scripts.Count -gt 1) {'s'}) dans tes téléchargements"
             Detail = 'Ces types de fichiers (.vbs, .js, .hta, .scr...) servent rarement à autre chose qu''à installer des virus quand ils viennent d''Internet. Si tu ne sais pas d''où ils viennent, supprime les.'
-            Items = $scripts
+            Items = $scripts; Trust = $trust
             Actions = @(@{ Label = 'Analyser avec Defender'; Arg = $scripts; Script = { param($a) Invoke-DefenderScan 'CustomScan' $a 'Analyse des scripts téléchargés' } },
                         @{ Label = 'Ouvrir l''emplacement'; Arg = $scripts[0]; Script = { param($a) Start-Process 'explorer.exe' -ArgumentList "/select,`"$a`"" } }) })
     }
     Update-UI
 
     # Programmes non signés cachés dans des dossiers à risque
-    $hidden = @($S.Hidden)
+    $hidden = @($S.Hidden | Where-Object { -not $trusted["fichier|$_"] })
     if ($hidden.Count) {
+        $trust = @($hidden | ForEach-Object { New-TrustEntry 'Programme' "fichier|$_" $_ })
         [void]$list.Add(@{ Status = 'warn'; Title = "$($hidden.Count) programme$(if ($hidden.Count -gt 1) {'s'}) non signé$(if ($hidden.Count -gt 1) {'s'}) dans des dossiers à risque"
             Detail = 'Ces programmes sont posés directement dans des dossiers où les virus aiment se cacher, et aucun éditeur ne les a signés. Ce n''est pas forcément grave (vieux installeurs...), mais ça vaut une analyse.'
-            Items = $hidden
+            Items = $hidden; Trust = $trust
             Actions = @(@{ Label = 'Analyser avec Defender'; Arg = $hidden; Script = { param($a) Invoke-DefenderScan 'CustomScan' $a 'Analyse des programmes cachés' } },
                         @{ Label = 'Ouvrir l''emplacement'; Arg = $hidden[0]; Script = { param($a) Start-Process 'explorer.exe' -ArgumentList "/select,`"$a`"" } }) })
     }
 
     # Programmes au démarrage placés dans des dossiers à risque ou non signés
-    $susStart = @(Get-StartupItems | Where-Object { $_.Enabled -and ($S.SusStart -contains $_.Exe) })
+    $susStart = @(Get-StartupItems | Where-Object { $_.Enabled -and ($S.SusStart -contains $_.Exe) -and -not $trusted["demarrage|$($_.Nom)|$($_.Exe)"] })
     if ($susStart.Count) {
+        $trust = @($susStart | ForEach-Object { New-TrustEntry 'Programme au démarrage' "demarrage|$($_.Nom)|$($_.Exe)" "$($_.Nom)  :  $($_.Exe)" })
         [void]$list.Add(@{ Status = 'warn'; Title = "$($susStart.Count) programme$(if ($susStart.Count -gt 1) {'s'}) au démarrage à vérifier"
             Detail = 'Ils se lancent avec Windows et ne sont pas signés par un éditeur, ou sont rangés dans un dossier inhabituel. Si tu ne les reconnais pas, analyse les et désactive les.'
-            Items = @($susStart | ForEach-Object { "$($_.Nom)  :  $($_.Exe)" })
+            Items = @($trust | ForEach-Object { $_.Text }); Trust = $trust
             Actions = @(@{ Label = 'Analyser avec Defender'; Arg = @($susStart | ForEach-Object { $_.Exe }); Script = { param($a) Invoke-DefenderScan 'CustomScan' $a 'Analyse des programmes au démarrage' } },
                         @{ Label = 'Désactiver au démarrage'; Arg = $susStart; Confirm = 'Désactiver ces programmes au démarrage ? Ils restent installés.'; Script = { param($a) foreach ($i in $a) { Set-StartupState $i $false }; Update-StartupList } }) })
     }
     Update-UI
 
     # Tâches planifiées suspectes
-    $susTasks = @($S.Tasks)
+    $susTasks = @($S.Tasks | Where-Object { -not $trusted["tache|$($_.Path)$($_.Name)|$($_.Cmd)"] })
     if ($susTasks.Count) {
+        $trust = @($susTasks | ForEach-Object { New-TrustEntry 'Tâche planifiée' "tache|$($_.Path)$($_.Name)|$($_.Cmd)" "$($_.Name)  :  $($_.Cmd)" })
         $bad = [bool]($susTasks | Where-Object { $_.Bad })
         [void]$list.Add(@{ Status = $(if ($bad) { 'bad' } else { 'warn' }); Title = "$($susTasks.Count) tâche$(if ($susTasks.Count -gt 1) {'s'}) planifiée$(if ($susTasks.Count -gt 1) {'s'}) suspecte$(if ($susTasks.Count -gt 1) {'s'})"
             Detail = 'Ces tâches lancent en cachette des commandes qui téléchargent ou exécutent du code, ou des programmes rangés dans des dossiers temporaires. C''est une technique classique des virus pour revenir après chaque redémarrage.'
-            Items = @($susTasks | ForEach-Object { "$($_.Name)  :  $($_.Cmd)" })
+            Items = @($trust | ForEach-Object { $_.Text }); Trust = $trust
             Actions = @(@{ Label = 'Désactiver ces tâches'; Arg = $susTasks; Confirm = 'Désactiver ces tâches planifiées ? Tu pourras les réactiver dans le Planificateur de tâches.'
                            Script = { param($a) foreach ($x in $a) { Disable-ScheduledTask -TaskName $x.Name -TaskPath $x.Path -ErrorAction SilentlyContinue | Out-Null } } },
                         @{ Label = 'Planificateur de tâches'; Script = { Start-Process 'taskschd.msc' } }) })
@@ -229,11 +266,23 @@ function New-SecurityCard($Check) {
         $box.Margin = New-Thickness 24 10 0 0
         $items = New-Object System.Windows.Controls.StackPanel
         $shown = if ($Check.ShowAll) { @($Check.Items) } else { @($Check.Items | Select-Object -First 5) }
+        # Un bouton « C'est moi » par élément quand il y en a plusieurs (sinon celui des actions suffit)
+        $perItem = @($Check.Trust).Count -gt 1 -and @($Check.Trust).Count -eq @($Check.Items).Count
+        $n = 0
         foreach ($i in $shown) {
             $t2 = New-Text ([string]$i) 12 '#D3CDE3'
             if ($Check.ShowAll) { $t2.TextWrapping = 'Wrap' } else { $t2.TextTrimming = 'CharacterEllipsis'; $t2.TextWrapping = 'NoWrap'; $t2.ToolTip = [string]$i }
             $t2.Margin = New-Thickness 0 2 0 2
-            [void]$items.Children.Add($t2)
+            if ($perItem) {
+                $line = New-Grid @('*', 'Auto')
+                $t2.VerticalAlignment = 'Center'
+                Add-ToGrid $line $t2 0
+                $ib = New-TrustButton 'C''est moi' @($Check.Trust[$n]) 'Marquer cet élément comme sûr ? Il ne comptera plus dans le niveau de protection. S''il change (autre commande, autre fichier), Nevermind le signalera de nouveau.'
+                $ib.Margin = New-Thickness 10 2 0 2
+                Add-ToGrid $line $ib 1
+                [void]$items.Children.Add($line)
+            } else { [void]$items.Children.Add($t2) }
+            $n++
         }
         if (-not $Check.ShowAll -and @($Check.Items).Count -gt 5) { [void]$items.Children.Add((New-Text "et $(@($Check.Items).Count - 5) autre(s)..." 12 '#655E7E')) }
         $box.Child = $items
@@ -262,8 +311,72 @@ function New-SecurityCard($Check) {
             [void]$wp.Children.Add($b)
             $first = $false
         }
+        if (@($Check.Trust).Count) {
+            $cnt = @($Check.Trust).Count
+            $tb = New-TrustButton $(if ($cnt -gt 1) { 'C''est moi, tout est OK' } else { 'C''est moi, c''est OK' }) @($Check.Trust) $(if ($cnt -gt 1) { "Marquer ces $cnt éléments comme sûrs ? Ils ne compteront plus dans le niveau de protection. S'ils changent (autre commande, autre fichier), Nevermind les signalera de nouveau." } else { 'Marquer cet élément comme sûr ? Il ne comptera plus dans le niveau de protection. S''il change (autre commande, autre fichier), Nevermind le signalera de nouveau.' })
+            $tb.Padding = New-Thickness 14 6 14 6; $tb.FontSize = 13
+            $tb.Margin = New-Thickness 0 0 8 0
+            [void]$wp.Children.Add($tb)
+        }
         [void]$sp.Children.Add($wp)
     }
+    $card.Child = $sp
+    $card
+}
+
+# Bouton qui marque des éléments comme sûrs (« C'est moi ») puis revérifie.
+function New-TrustButton([string]$Label, [array]$Entries, [string]$Confirm) {
+    $b = New-Button $Label 'BtnSecondary'
+    $b.Padding = New-Thickness 10 3 10 3; $b.FontSize = 11.5
+    $b.ToolTip = 'Tu sais d''où ça vient (c''est toi qui l''as mis en place) : Nevermind arrête de le compter comme suspect.'
+    $b.Tag = @{ E = $Entries; C = $Confirm }
+    $b.Add_Click({
+        param($s, $e)
+        if (-not (Confirm-Action $s.Tag.C)) { return }
+        Invoke-Safe { Add-SecTrusted $s.Tag.E; if (-not $script:ScanRunning) { Update-SecurityTab } }
+    })
+    $b
+}
+
+# Carte des éléments approuvés, avec de quoi revenir en arrière.
+function New-TrustedCard {
+    $all = @(Get-SecTrusted)
+    $card = New-Card
+    $card.Padding = New-Thickness 18 14 18 14
+    $sp = New-Object System.Windows.Controls.StackPanel
+    $head = New-Grid @('Auto', '*')
+    $ic = New-Text '✓' 14 $Colors.info -Bold
+    $ic.Margin = New-Thickness 0 0 12 0; $ic.VerticalAlignment = 'Top'
+    Add-ToGrid $head $ic 0
+    $txt = New-Object System.Windows.Controls.StackPanel
+    [void]$txt.Children.Add((New-Text "$($all.Count) élément$(if ($all.Count -gt 1) {'s'}) approuvé$(if ($all.Count -gt 1) {'s'}) par toi" 14.5 '#FFFFFF' -Semi))
+    $d = New-Text 'Tu as indiqué que c''est toi qui les as mis en place : ils ne baissent plus le niveau de protection. Retire les si tu changes d''avis.' 12.5 '#A6A1BC'
+    $d.Margin = New-Thickness 0 3 0 0
+    [void]$txt.Children.Add($d)
+    Add-ToGrid $head $txt 1
+    [void]$sp.Children.Add($head)
+    $box = New-Object System.Windows.Controls.Border
+    $box.Background = Get-Brush '#10131A'
+    $box.CornerRadius = [System.Windows.CornerRadius]::new(8)
+    $box.Padding = New-Thickness 12 8 12 8
+    $box.Margin = New-Thickness 26 10 0 0
+    $items = New-Object System.Windows.Controls.StackPanel
+    foreach ($t in $all) {
+        $line = New-Grid @('*', 'Auto')
+        $t2 = New-Text "$($t.Kind)  :  $($t.Text)" 12 '#D3CDE3'
+        $t2.TextTrimming = 'CharacterEllipsis'; $t2.TextWrapping = 'NoWrap'; $t2.ToolTip = [string]$t.Text; $t2.VerticalAlignment = 'Center'
+        Add-ToGrid $line $t2 0
+        $rb = New-Button 'Retirer' 'BtnSecondary'
+        $rb.Padding = New-Thickness 10 3 10 3; $rb.FontSize = 11.5
+        $rb.Margin = New-Thickness 10 2 0 2
+        $rb.ToolTip = 'Nevermind le signalera de nouveau s''il est toujours là.'
+        $rb.Tag = [string]$t.Key
+        $rb.Add_Click({ param($s, $e) Invoke-Safe { Remove-SecTrusted $s.Tag; if (-not $script:ScanRunning) { Update-SecurityTab } } })
+        Add-ToGrid $line $rb 1
+        [void]$items.Children.Add($line)
+    }
+    $box.Child = $items
+    [void]$sp.Children.Add($box)
     $card.Child = $sp
     $card
 }
@@ -342,6 +455,7 @@ function Update-SecurityTab {
         $ok.Child = $row
         [void]$ui.SecChecks.Children.Add($ok)
     }
+    if (@(Get-SecTrusted).Count) { [void]$ui.SecChecks.Children.Add((New-TrustedCard)) }
     $ui.SecChecksSummary.Text = if ($checks.Count) { "$($checks.Count) point$(if ($checks.Count -gt 1) {'s'}) à vérifier" } else { 'Tout est propre' }
 
     # Historique

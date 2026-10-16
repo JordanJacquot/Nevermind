@@ -751,7 +751,7 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($null -ne $script:Search) 'barre de recherche non branchée'
                 $cases = @(
                     @('compteur discret', 'Style du compteur*'), @('netoyage', 'Nettoyage*'), @('demarage pc', 'Lancer Nevermind au démarrage*'),
-                    @('raccourci bureau', 'Raccourci sur le bureau'), @('telemetrie', 'Ce que Windows envoie*'), @('ping', '*'), @('position overlay', 'Position du compteur'), @('organiseur dofus', 'Organizer Dofus*')
+                    @('raccourci bureau', 'Raccourci sur le bureau'), @('telemetrie', 'Ce que Windows envoie*'), @('ping', '*'), @('position overlay', 'Position du compteur'), @('organiseur dofus', 'Organizer Dofus*'), @('faux positif', 'Approuver un point*')
                 )
                 foreach ($c in $cases) {
                     $r = @(Find-Settings $c[0])
@@ -1254,7 +1254,23 @@ $script:T.Run.Add_Tick({
             Test-Step 'Page Sécurité' {
                 $ui.Tabs.SelectedIndex = 6; Wait-TestMs 800; Save-TestShot 'securite'
                 Assert-Test ($null -ne $script:SecurityScore) 'pas de note de protection'
-                "protection $($script:SecurityScore) sur 100"
+                # « C'est moi » : une tâche approuvée sort des points à vérifier, revient si sa commande change
+                $fake = @{ Mp = $null; OtherAv = @('Essai'); Exclusions = @(); Double = @(); Scripts = @(); Hidden = @(); SusStart = @()
+                           Tasks = @(@{ Name = 'Essai Nevermind'; Path = ''; Cmd = 'powershell -w hidden -c essai'; Bad = $true }) }
+                $taskCheck = { param($S) @(Get-SecurityChecks $S | Where-Object { $_.Title -like '*planifiée*' }) }
+                $c1 = @(& $taskCheck $fake)
+                Assert-Test ($c1.Count -eq 1 -and @($c1[0].Trust).Count -eq 1) 'tâche d''essai non signalée'
+                Add-SecTrusted $c1[0].Trust
+                $script:Settings = $null
+                Assert-Test (-not @(& $taskCheck $fake).Count) 'tâche approuvée toujours signalée (après relecture des préférences)'
+                Assert-Test ($null -ne (New-TrustedCard)) 'carte des éléments approuvés non construite'
+                $fake.Tasks[0].Cmd = 'powershell -w hidden -c autre'
+                Assert-Test (@(& $taskCheck $fake).Count -eq 1) 'commande modifiée non signalée'
+                Remove-SecTrusted $c1[0].Trust[0].Key
+                Assert-Test (-not @(Get-SecTrusted).Count) 'élément approuvé non retiré'
+                $card = New-SecurityCard $c1[0]
+                Assert-Test ($null -ne $card) 'carte non construite'
+                "protection $($script:SecurityScore) sur 100, approbation vérifiée"
             }
             Test-Step 'Page Réseau (sans scan automatique)' {
                 $ui.Tabs.SelectedIndex = $NetIndex; Wait-TestMs 1000; Save-TestShot 'reseau'

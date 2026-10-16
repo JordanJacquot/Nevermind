@@ -59,6 +59,7 @@ $SearchEntries = @(
     @{ T = 'Analyser un dossier'; P = 6; A = 'Analyser un dossier'; K = 'virus dossier fichier scan' },
     @{ T = 'Mettre à jour l''antivirus'; P = 6; A = 'Mettre à jour la base'; K = 'defender definitions signatures antivirus' },
     @{ T = 'Niveau de protection'; P = 6; A = 'Points à vérifier'; K = 'protection securite score pare feu' },
+    @{ T = 'Approuver un point à vérifier (c''est moi)'; P = 6; A = 'Points à vérifier'; K = 'approuver ok confiance faux positif ignorer autoriser tache planifiee suspecte' },
     # Sauvegarde
     @{ T = 'Tout annuler'; P = 7; A = 'Annuler les changements de Nevermind'; K = 'annuler restaurer revenir arriere defaire' },
     @{ T = 'Historique des changements'; P = 7; A = 'Historique des changements'; K = 'historique annuler changement' },
