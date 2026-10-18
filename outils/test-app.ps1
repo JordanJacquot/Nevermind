@@ -1702,7 +1702,8 @@ $script:T.Run.Add_Tick({
                 $vraiAdmin = $script:EstAdmin; $script:EstAdmin = $false
                 try { Add-AideLecturePc $faux; $sec = @{ Exclusions = @(); Threats = @(); Active = @(); Detections = @() }; Add-AideLectureSecurite $sec } finally { $script:EstAdmin = $vraiAdmin }
                 $ch = Invoke-Aide 'lecture.chemins' @{ Pids = @("$PID") }
-                Assert-Test ([string]$ch.PSObject.Properties["$PID"].Value -like '*powershell.exe') "lecture.chemins : $(ConvertTo-Json $ch -Compress)"
+                # (powershell.exe, ou Nevermind.exe quand le test tourne dans le lanceur : tester.ps1 -Hote)
+                Assert-Test ([string]$ch.PSObject.Properties["$PID"].Value -match '\\(powershell|Nevermind)\.exe$') "lecture.chemins : $(ConvertTo-Json $ch -Compress)"
                 $msg = ''
                 try { [void](Invoke-Aide 'reg.ecrire' @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Valeur = 0; Type = 'DWord' }) } catch { $msg = $_.Exception.Message }
                 Assert-Test ($msg -match 'garde ce réglage') "refus attendu, reçu : $msg"
@@ -1816,4 +1817,5 @@ $script:T.Run.Add_Tick({
 $script:T.Run.Start()
 $Window.Show()
 [System.Windows.Threading.Dispatcher]::Run()
-[Environment]::Exit(0)
+# (pas de sortie forcée ici : comme chez les utilisateurs, le processus doit se terminer tout seul après la fermeture ;
+# tester.ps1 vérifie qu'il le fait en moins de 10 s. Un Environment.Exit ici avait caché un Nevermind.exe resté en vie.)

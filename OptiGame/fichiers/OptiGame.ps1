@@ -71,6 +71,12 @@ function Open-DansMindset {
 if ($Managed -and -not $Demarrage -and -not $Uninstall -and -not $env:OPTIGAME_TEST) { if (Open-DansMindset) { exit } }
 
 # Nevermind déjà ouvert ? (accès refusé au verrou = il existe, mais appartient à la fenêtre lancée en administrateur)
+# Ligne du journal écrite avant le chargement des modules (Write-Log n'existe pas encore) : un lancement abandonné
+# doit laisser une trace, sinon Mindset affiche seulement « n'a pas pu s'ouvrir »
+function Write-LaunchNote([string]$Text) {
+    try { [IO.File]::AppendAllText((Join-Path $DataDir 'journal.txt'), "$(Get-Date -Format s) $Text (processus $PID)`r`n", (New-Object Text.UTF8Encoding($false))) } catch {}
+}
+
 function Test-InstanceRunning {
     try { $probe = [System.Threading.Mutex]::OpenExisting('Local\OptiGame-Instance'); $probe.Dispose(); return $true }
     catch {
@@ -244,7 +250,15 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
         $inner = $_.Exception; while ($inner.InnerException) { $inner = $inner.InnerException }
         if ($inner -is [System.UnauthorizedAccessException]) { $alreadyRunning = $true }
     }
-    if ($alreadyRunning -and $Demarrage) { exit }   # déjà ouvert : le lancement avec Windows n'a rien à faire
+    if ($alreadyRunning -and $Demarrage) {
+        # Lancé caché (Mindset lance toujours Nevermind ainsi pour l'afficher dans son onglet) alors qu'un Nevermind est
+        # encore là : souvent l'ancien qui finit de se fermer. On lui laisse 5 s pour libérer la place et on continue s'il
+        # disparaît. Avant, ce lancement s'arrêtait aussitôt et Mindset attendait une fenêtre qui ne venait jamais.
+        $gone = $false
+        for ($i = 0; $i -lt 25; $i++) { Start-Sleep -Milliseconds 200; if (-not (Test-InstanceRunning)) { $gone = $true; break } }
+        if (-not $gone) { Write-LaunchNote 'Lancement caché abandonné : un autre Nevermind est encore ouvert après 5 s'; exit }
+        $alreadyRunning = $false
+    }
     if ($alreadyRunning) {
         Send-ShowRequest
         # Relance après une mise à jour : l'ancienne version est en train de se fermer. On attend un peu :
@@ -289,8 +303,11 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
     if (-not $mutexNew) {
         # Ancienne version encore en train de se fermer (relance après une mise à jour) : elle libère la place sous peu
         $got = $false
-        try { $got = $script:InstanceMutex.WaitOne(3000) } catch [System.Threading.AbandonedMutexException] { $got = $true }
-        if (-not $got) { if (-not $Demarrage) { Send-ShowRequest }; exit }
+        try { $got = $script:InstanceMutex.WaitOne(5000) } catch [System.Threading.AbandonedMutexException] { $got = $true }
+        if (-not $got) {
+            if (-not $Demarrage) { Send-ShowRequest } else { Write-LaunchNote 'Lancement caché abandonné : la place n''a pas été libérée en 5 s' }
+            exit
+        }
     }
     try { if (Test-Path -LiteralPath $ShowRequest) { [IO.File]::Delete($ShowRequest) } } catch {}
     # Vieille demande de fermeture (Mindset quitté pendant que Nevermind était fermé) : elle ne vaut pas pour ce lancement
@@ -410,3 +427,8 @@ if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
     if (Test-Path -LiteralPath $relExe) { if ($relArgs) { Start-Process -FilePath $relExe -ArgumentList $relArgs } else { Start-Process -FilePath $relExe } }
     else { Start-Process -FilePath 'powershell.exe' -ArgumentList (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"") + $relArgs) }
 }
+# Fin de Nevermind : le verrou est rendu tout de suite (Mindset peut rouvrir Nevermind sans attendre la fin du processus),
+# et les groupes de fils de fond sont fermés : ouverts, ils gardaient Nevermind.exe en vie sans fenêtre après la fermeture.
+# (Le lanceur termine ensuite le processus quoi qu'il arrive, Environment.Exit dans lanceur.cs.)
+if ($script:InstanceMutex) { try { $script:InstanceMutex.ReleaseMutex() } catch {}; try { $script:InstanceMutex.Dispose() } catch {}; $script:InstanceMutex = $null }
+foreach ($fils in @($script:Pool, $script:BgPool)) { if ($fils) { try { [void]$fils.BeginClose($null, $null) } catch {} } }

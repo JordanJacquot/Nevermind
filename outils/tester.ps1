@@ -62,10 +62,19 @@ if ($Hote) {
 } else {
     $p = Start-Process powershell.exe -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$main`"" -PassThru -WindowStyle Hidden -RedirectStandardError $err
 }
-if (-not $p.WaitForExit($Delai * 1000)) { $p.Kill(); Write-Host "ÉCHEC : l'app ne s'est pas terminée en $Delai s." -ForegroundColor Red; exit 1 }
+$json = Join-Path $test 'resultats.json'
+# Le processus doit disparaître tout seul peu après la fermeture de la fenêtre (résultats écrits juste avant) : un
+# Nevermind.exe resté en vie sans fenêtre garde le verrou, et Mindset ne peut plus le rouvrir
+$fin = (Get-Date).AddSeconds($Delai)
+while (-not $p.HasExited -and (Get-Date) -lt $fin -and -not (Test-Path -LiteralPath $json)) { Start-Sleep -Milliseconds 250 }
+$resteEnVie = $false
+if (-not $p.HasExited -and (Test-Path -LiteralPath $json)) {
+    if (-not $p.WaitForExit(10000)) { $resteEnVie = $true; $p.Kill() }
+}
+if (-not $p.HasExited -and -not $resteEnVie -and -not $p.WaitForExit([math]::Max(0, [int]($fin - (Get-Date)).TotalMilliseconds))) { $p.Kill(); Write-Host "ÉCHEC : l'app ne s'est pas terminée en $Delai s." -ForegroundColor Red; exit 1 }
 
 $ok = $true
-$json = Join-Path $test 'resultats.json'
+if ($resteEnVie) { Write-Host 'ÉCHEC  Sortie du processus                 toujours en vie 10 s après la fermeture de la fenêtre (arrêté de force)' -ForegroundColor Red; $ok = $false }
 if (-not (Test-Path -LiteralPath $json)) {
     Write-Host 'ÉCHEC : aucun résultat, l''app a planté avant la fin du test.' -ForegroundColor Red
     $ok = $false

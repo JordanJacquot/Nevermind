@@ -127,6 +127,11 @@ static class Lanceur
                     ps.Invoke();
                 }
             }
+            // Comme pour l'Aide : aucun fil de fond ne garde le processus ouvert une fois l'app fermée. Les groupes de fils
+            // d'OptiGame.ps1 (RunspacePool) restés ouverts gardaient Nevermind.exe en vie sans fenêtre, avec son verrou :
+            // Mindset ne pouvait plus le rouvrir. OptiGame.ps1 les ferme ; ceci reste en filet de sécurité.
+            // (La relance après une mise à jour est déjà faite par le script, avant ce point.)
+            Environment.Exit(0);
         }
         catch (Exception e)
         {
@@ -142,7 +147,7 @@ static class Lanceur
             }
             catch { }
             MessageBox.Show("Nevermind n'a pas pu démarrer :\n\n" + detail, "Nevermind", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return 1;
+            Environment.Exit(1);   // (même raison : des fils de fond déjà lancés garderaient le processus ouvert)
         }
         return 0;
 #endif
