@@ -59,7 +59,7 @@ function Build-SettingsPanels {
     $p = $ui.SetGames
     $p.Children.Clear()
     [void]$p.Children.Add((New-SettingGroup 'Pendant la partie'))
-    [void]$p.Children.Add((New-SettingSwitch 'Mesurer mes FPS quand je joue' 'Moyenne, chutes et courbe de chaque partie, gardées dans Mes parties.' (Test-FpsMeasure) {
+    [void]$p.Children.Add((New-SettingSwitch 'Mesurer mes FPS quand je joue' 'Moyenne, chutes et courbe de chaque partie, gardées dans Jeux, Perf. In Game.' (Test-FpsMeasure) {
         param($s, $e) $on = [bool]$s.IsChecked
         Invoke-Safe { Set-FpsMeasure $on }
     }))

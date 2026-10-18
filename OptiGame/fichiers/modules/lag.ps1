@@ -364,7 +364,7 @@ function Stop-LagSession {
     Write-Log "Lag: $($s.Game), $([int]($dur / 60)) min, $($rec.Diag.Title)$(if ($rec.Server -and $rec.Server.Pays) { ", serveur $(if (Test-LagConnexionOnly $rec) { 'de connexion ' })situé à $(Format-ServerPlace $rec.Server)" })"
     Request-LagPanel
     # (pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind, « Show-Page » introuvable au clic)
-    $open = [scriptblock]::Create("Show-Page 1; Set-GamingSubPage 'lag'; Show-LagSession '$([string]$obj.Id -replace "'", "''")'")
+    $open = [scriptblock]::Create("Show-PerfPage 'lag'; Show-LagSession '$([string]$obj.Id -replace "'", "''")'")
     if ($rec.Quick) { if (-not $script:TestRunning) { Show-LagSession $obj.Id } }
     else { Show-Notify "Connexion pendant $($s.Game)" "$($rec.Diag.Title). Clique pour voir le détail." $open }
 }
@@ -470,7 +470,7 @@ function Get-LagDiagnosis($R) {
     }
     if (-not @($f | Where-Object { $_.Status -in 'bad', 'warn' }).Count) {
         $parts = @(); if ($gw -and -not $gw.Dead) { $parts += "box $(Format-Ms $gw.Med)" }; if ($ref -and -not $ref.Dead) { $parts += "Internet $(Format-Ms $ref.Med)" }; if ($srv -and -not $srv.Dead -and -not $connexion) { $parts += "serveur $(Format-Ms $srv.Med)$(if ($lieu) { " ($lieu)" })" }
-        $f = @(@{ Status = 'ok'; Title = 'Ta connexion était stable'; Detail = "Ping : $($parts -join ', '), sans pic ni perte notable. Si le jeu saccadait, ça vient plutôt de tes FPS (onglet Mes parties)." }) + $f
+        $f = @(@{ Status = 'ok'; Title = 'Ta connexion était stable'; Detail = "Ping : $($parts -join ', '), sans pic ni perte notable. Si le jeu saccadait, ça vient plutôt de tes FPS (Perf. In Game, onglet FPS)." }) + $f
     }
     $lvl = if (@($f | Where-Object { $_.Status -eq 'bad' }).Count) { 'bad' } elseif (@($f | Where-Object { $_.Status -eq 'warn' }).Count) { 'warn' } else { 'ok' }
     @{ Level = $lvl; Title = @($f | Where-Object { $_.Status -eq $lvl })[0].Title; Findings = $f }

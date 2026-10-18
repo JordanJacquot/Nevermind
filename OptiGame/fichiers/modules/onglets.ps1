@@ -96,11 +96,39 @@ function Start-Live {
 # ---------------------------------------------------------------------------
 # Onglet gaming
 # ---------------------------------------------------------------------------
-# Sous-onglets d'Optimisation gaming, appelés par leur nom (Set-GamingSubPage 'lag')
+# Pastilles de sous-onglets (Optimisation gaming, Jeux, Perf. In Game) : $OnClick reçoit le numéro de la pastille
+function New-PillTabs($HostPanel, [string[]]$Labels, [scriptblock]$OnClick) {
+    $tabs = @()
+    for ($i = 0; $i -lt $Labels.Count; $i++) {
+        $b = New-Object System.Windows.Controls.Border
+        $b.CornerRadius = [System.Windows.CornerRadius]::new(16)
+        $b.Padding = New-Thickness 16 7 16 7
+        $b.Margin = New-Thickness 0 0 8 0
+        $b.Cursor = [System.Windows.Input.Cursors]::Hand
+        $t = New-Text $Labels[$i] 13 '#D3CDE3' -Semi
+        $t.TextWrapping = 'NoWrap'
+        $b.Child = $t
+        $b.Tag = @{ I = $i; Do = $OnClick }
+        $b.Add_MouseLeftButtonUp({ param($s, $e) $x = $s.Tag; Invoke-Safe { & $x.Do ([int]$x.I) } })
+        [void]$HostPanel.Children.Add($b)
+        $tabs += $b
+    }
+    , $tabs
+}
+
+# La pastille choisie prend le dégradé
+function Set-PillTabs($Tabs, [int]$Index) {
+    for ($i = 0; $i -lt @($Tabs).Count; $i++) {
+        $b = $Tabs[$i]
+        $b.Background = if ($i -eq $Index) { $Window.FindResource('AccentBg') } else { Get-Brush '#16FFFFFF' }
+        $b.Child.Foreground = Get-Brush $(if ($i -eq $Index) { '#07060C' } else { '#D3CDE3' })
+    }
+}
+
+# Sous-onglets d'Optimisation gaming, appelés par leur nom (Set-GamingSubPage 'mode').
+# Les FPS et le lag de chaque partie sont dans la page Jeux, sous-onglet Perf. In Game (Show-PerfPage 'lag').
 $GamingSubPages = @(
     @{ Id = 'tweaks'; Label = 'Réglages Windows'; Page = 'GPageTweaks' },
-    @{ Id = 'fps'; Label = 'Mes parties'; Page = 'GPageFps' },
-    @{ Id = 'lag'; Label = 'Lag en ligne'; Page = 'GPageLag' },
     @{ Id = 'mode'; Label = 'Mode jeu'; Page = 'GPageMode' },
     @{ Id = 'profiles'; Label = 'Profils par jeu'; Page = 'GPageProfiles' }
 )
@@ -109,44 +137,80 @@ function Set-GamingSubPage($Page) {
     $Index = if ($Page -is [string]) { [array]::IndexOf(@($GamingSubPages | ForEach-Object { $_.Id }), $Page) } else { [int]$Page }
     if ($Index -lt 0) { $Index = 0 }
     $pages = @($GamingSubPages | ForEach-Object { $ui[$_.Page] })
-    for ($i = 0; $i -lt $pages.Count; $i++) {
-        $pages[$i].Visibility = if ($i -eq $Index) { 'Visible' } else { 'Collapsed' }
-        $b = $script:GTabs[$i]
-        if ($b) {
-            $b.Background = if ($i -eq $Index) { $Window.FindResource('AccentBg') } else { Get-Brush '#16FFFFFF' }
-            $b.Child.Foreground = Get-Brush $(if ($i -eq $Index) { '#07060C' } else { '#D3CDE3' })
-        }
-    }
+    for ($i = 0; $i -lt $pages.Count; $i++) { $pages[$i].Visibility = if ($i -eq $Index) { 'Visible' } else { 'Collapsed' } }
+    if ($script:GTabs) { Set-PillTabs $script:GTabs $Index }
     $script:GamingSubPage = $GamingSubPages[$Index].Id
-    if ($script:GamingSubPage -eq 'lag' -and $script:LagPanelDirty) { $script:LagPanelDirty = $false; Build-LagPanel }
-}
-
-# Fin d'une partie : la page Lag n'est refaite tout de suite que si elle est à l'écran (0,5 s), sinon à sa prochaine ouverture
-function Request-LagPanel {
-    if ($ui.Tabs.SelectedIndex -eq 1 -and $script:GamingSubPage -eq 'lag' -and $Window.IsVisible) { $script:LagPanelDirty = $false; Build-LagPanel }
-    else { $script:LagPanelDirty = $true }
 }
 
 function Build-GamingTabs {
     if ($script:GTabs) { return }
-    $script:GTabs = @()
-    $i = 0
-    foreach ($label in @($GamingSubPages | ForEach-Object { $_.Label })) {
-        $b = New-Object System.Windows.Controls.Border
-        $b.CornerRadius = [System.Windows.CornerRadius]::new(16)
-        $b.Padding = New-Thickness 16 7 16 7
-        $b.Margin = New-Thickness 0 0 8 0
-        $b.Cursor = [System.Windows.Input.Cursors]::Hand
-        $t = New-Text $label 13 '#D3CDE3' -Semi
-        $t.TextWrapping = 'NoWrap'
-        $b.Child = $t
-        $b.Tag = $i
-        $b.Add_MouseLeftButtonUp({ param($s, $e) Set-GamingSubPage ([int]$s.Tag) })
-        [void]$ui.GamingTabs.Children.Add($b)
-        $script:GTabs += $b
-        $i++
-    }
+    $script:GTabs = New-PillTabs $ui.GamingTabs @($GamingSubPages | ForEach-Object { $_.Label }) { param($i) Set-GamingSubPage $i }
     Set-GamingSubPage 0
+}
+
+# ---------------------------------------------------------------------------
+# Page Jeux : Bibliothèque (et l'Organizer Dofus) ou Perf. In Game (FPS et lag de chaque partie)
+# ---------------------------------------------------------------------------
+$GamesViews = @(
+    @{ Id = 'lib'; Label = 'Bibliothèque' },
+    @{ Id = 'perf'; Label = 'Perf. In Game' }
+)
+$PerfSubPages = @(
+    @{ Id = 'fps'; Label = 'FPS'; Page = 'GPageFps' },
+    @{ Id = 'lag'; Label = 'Lag en ligne'; Page = 'GPageLag' }
+)
+
+function Build-GamesTabs {
+    if ($script:GamesTabsUi) { return }
+    $script:GamesTabsUi = New-PillTabs $ui.GamesTabs @($GamesViews | ForEach-Object { $_.Label }) { param($i) Set-GamesView $GamesViews[$i].Id }
+    $script:PerfTabsUi = New-PillTabs $ui.PerfTabs @($PerfSubPages | ForEach-Object { $_.Label }) { param($i) Set-PerfSubPage $PerfSubPages[$i].Id }
+    # (deuxième niveau : pastilles plus petites, pour qu'on voie qu'elles sont dans Perf. In Game)
+    foreach ($b in $script:PerfTabsUi) { $b.Padding = New-Thickness 13 5 13 5; $b.CornerRadius = [System.Windows.CornerRadius]::new(13); $b.Child.FontSize = 12 }
+    Set-PerfSubPage 'fps'
+    Set-GamesView 'lib'
+}
+
+function Set-GamesView([string]$Id) {
+    Build-GamesTabs
+    $i = [math]::Max(0, [array]::IndexOf(@($GamesViews | ForEach-Object { $_.Id }), $Id))
+    $script:GamesView = $GamesViews[$i].Id
+    Set-PillTabs $script:GamesTabsUi $i
+    $perf = $script:GamesView -eq 'perf'
+    $ui.PerfView.Visibility = if ($perf) { 'Visible' } else { 'Collapsed' }
+    $ui.LibButtons.Visibility = if ($perf) { 'Collapsed' } else { 'Visible' }
+    if ($perf) {
+        foreach ($n in 'LibToolbar', 'LibBody', 'OrgScroll') { $ui[$n].Visibility = 'Collapsed' }
+        $ui.LibTitle.Text = 'Perf. In Game'
+        $ui.LibSub.Text = 'Tes FPS et ta connexion pendant chaque partie : ce qui ralentit, et comment le corriger.'
+        if ($script:PerfSubPage -eq 'lag' -and $script:LagPanelDirty) { $script:LagPanelDirty = $false; Build-LagPanel }
+    } else {
+        # (la bibliothèque ou l'Organizer Dofus, comme avant le passage par Perf. In Game)
+        Show-OrgView ([bool]$script:OrgViewOn)
+    }
+}
+
+function Set-PerfSubPage([string]$Id) {
+    Build-GamesTabs
+    $i = [math]::Max(0, [array]::IndexOf(@($PerfSubPages | ForEach-Object { $_.Id }), $Id))
+    $script:PerfSubPage = $PerfSubPages[$i].Id
+    Set-PillTabs $script:PerfTabsUi $i
+    for ($k = 0; $k -lt $PerfSubPages.Count; $k++) { $ui[$PerfSubPages[$k].Page].Visibility = if ($k -eq $i) { 'Visible' } else { 'Collapsed' } }
+    if ($script:PerfSubPage -eq 'lag' -and $script:LagPanelDirty) { $script:LagPanelDirty = $false; Build-LagPanel }
+}
+
+# Ouvre Jeux > Perf. In Game > FPS ou Lag en ligne
+function Show-PerfPage([string]$Id) {
+    Show-Page $GamesIndex
+    Set-GamesView 'perf'
+    Set-PerfSubPage $Id
+}
+
+function Test-PerfShown([string]$Id) { $ui.Tabs.SelectedIndex -eq $GamesIndex -and $script:GamesView -eq 'perf' -and $script:PerfSubPage -eq $Id }
+
+# Fin d'une partie : la page Lag n'est refaite tout de suite que si elle est à l'écran (0,5 s), sinon à sa prochaine ouverture
+function Request-LagPanel {
+    if ((Test-PerfShown 'lag') -and $Window.IsVisible) { $script:LagPanelDirty = $false; Build-LagPanel }
+    else { $script:LagPanelDirty = $true }
 }
 
 function Build-GamingTab {

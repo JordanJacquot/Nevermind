@@ -236,7 +236,16 @@ $script:T.Run.Add_Tick({
                 $sess = @((& $mk $lc.AddDays(-2) 110 70), (& $mk $lc.AddDays(-1) 114 74), (& $mk $lc.AddMinutes(5) 121 88), (& $mk $lc.AddMinutes(50) 125 90))
                 ConvertTo-Json -InputObject $sess | Set-Content -LiteralPath $FpsFile -Encoding UTF8
                 Build-FpsPanel
-                $ui.Tabs.SelectedIndex = 1; Set-GamingSubPage 'fps'; Wait-TestMs 500; Save-TestShot 'mes-parties'
+                Show-PerfPage 'fps'; Wait-TestMs 500; Save-TestShot 'mes-parties'
+                # FPS et lag ne sont plus dans Optimisation gaming, mais dans Jeux > Perf. In Game
+                Assert-Test (-not @($GamingSubPages | Where-Object { $_.Id -in 'fps', 'lag' }).Count) 'FPS ou lag encore dans Optimisation gaming'
+                Assert-Test ($ui.Tabs.SelectedIndex -eq $GamesIndex -and $ui.PerfView.Visibility -eq 'Visible' -and $ui.GPageFps.Visibility -eq 'Visible' -and $ui.LibBody.Visibility -eq 'Collapsed') 'Perf. In Game > FPS non affiché'
+                Assert-Test ($ui.LibTitle.Text -eq 'Perf. In Game' -and $ui.LibButtons.Visibility -eq 'Collapsed') "titre : $($ui.LibTitle.Text)"
+                Set-PerfSubPage 'lag'
+                Assert-Test ($ui.GPageLag.Visibility -eq 'Visible' -and $ui.GPageFps.Visibility -eq 'Collapsed') 'sous-onglet Lag en ligne non affiché'
+                Set-GamesView 'lib'
+                Assert-Test ($ui.PerfView.Visibility -eq 'Collapsed' -and $ui.LibBody.Visibility -eq 'Visible' -and $ui.LibTitle.Text -eq 'Mes jeux') 'retour à la bibliothèque raté'
+                Show-PerfPage 'fps'; Wait-TestMs 300
                 Assert-Test ($ui.FpsPanel.Children.Count -ge 5) "panneau incomplet ($($ui.FpsPanel.Children.Count) éléments)"
                 # Fiche d'une partie (clic sur la ligne la plus récente)
                 $rowCard = @($ui.FpsPanel.Children | Where-Object { $_.Tag -is [string] })[0]
@@ -248,6 +257,10 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($ui.TestOverlay.Visibility -eq 'Visible') 'la fiche de la partie ne s''ouvre pas'
                 $ui.TestScroll.ScrollToEnd(); Wait-TestMs 300; Save-TestShot 'fiche-partie-bas'
                 Hide-TestPanel
+                # Ouvrir l'Organizer depuis Perf. In Game ramène la page Jeux sur Bibliothèque (rien ne reste par dessus)
+                Show-OrgView $true
+                Assert-Test ($script:GamesView -eq 'lib' -and $ui.PerfView.Visibility -eq 'Collapsed' -and $ui.OrgScroll.Visibility -eq 'Visible') 'Perf. In Game reste affiché sous l''Organizer'
+                Show-OrgView $false
                 Set-GamingSubPage 'tweaks'
                 "$hk, overlay, arrêt propre et comparaison OK"
             }
@@ -751,7 +764,7 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($null -ne $script:Search) 'barre de recherche non branchée'
                 $cases = @(
                     @('compteur discret', 'Style du compteur*'), @('netoyage', 'Nettoyage*'), @('demarage pc', 'Lancer Nevermind au démarrage*'),
-                    @('raccourci bureau', 'Raccourci sur le bureau'), @('telemetrie', 'Ce que Windows envoie*'), @('ping', '*'), @('position overlay', 'Position du compteur'), @('organiseur dofus', 'Organizer Dofus*'), @('faux positif', 'Approuver un point*'), @('pays serveur', 'Pays du serveur du jeu*')
+                    @('raccourci bureau', 'Raccourci sur le bureau'), @('telemetrie', 'Ce que Windows envoie*'), @('ping', '*'), @('position overlay', 'Position du compteur'), @('organiseur dofus', 'Organizer Dofus*'), @('faux positif', 'Approuver un point*'), @('pays serveur', 'Pays du serveur du jeu*'), @('lag en ligne', 'Lag en ligne')
                 )
                 foreach ($c in $cases) {
                     $r = @(Find-Settings $c[0])
@@ -1145,7 +1158,7 @@ $script:T.Run.Add_Tick({
                 $last = @(Get-LagSessions)[-1]
                 Assert-Test (@(Get-LagSessions).Count -eq $n0 + 1 -and $last.Stats.ref.Med -gt 0) 'mesure réelle non enregistrée'
                 Wait-TestMs 800; Save-TestShot 'lag-mesure'; Hide-TestPanel
-                Show-Page 1; Set-GamingSubPage 'lag'; Wait-TestMs 500; Save-TestShot 'lag'
+                Show-PerfPage 'lag'; Wait-TestMs 500; Save-TestShot 'lag'
                 "5 situations reconnues ; vraie mesure : box $(Format-Ms $last.Stats.gw.Med), fournisseur $(if ($last.Isp) { $last.Isp } elseif ($last.Stats.isp) { Format-Ms $last.Stats.isp.Med } else { 'non trouvé' }), Internet $(Format-Ms $last.Stats.ref.Med)"
             }
             Test-Step 'Trafic : ce qui sort du PC' {

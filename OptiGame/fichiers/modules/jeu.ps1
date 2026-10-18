@@ -585,7 +585,7 @@ function Stop-FpsTarget {
     $saved = Save-FpsSession $t $s $diag
     Build-FpsPanel
     # (pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind, « Show-Page » introuvable au clic)
-    $open = [scriptblock]::Create("Show-Page 1; Set-GamingSubPage 'fps'; Show-FpsSession '$([string]$saved.Id -replace "'", "''")'")
+    $open = [scriptblock]::Create("Show-PerfPage 'fps'; Show-FpsSession '$([string]$saved.Id -replace "'", "''")'")
     if ($saved -and (Test-FpsProblem $saved)) {
         Show-Notify "Partie terminée : $($t.Name)" ('{0:N0} FPS en moyenne, avec des chutes. Nevermind a regardé d''où ça vient : clique ici pour voir et corriger.' -f $s[0]) $open
     } else {
@@ -641,7 +641,7 @@ function Update-FpsTarget {
 # Ctrl+Maj+F : lance ou arrête la mesure sur le jeu au premier plan, quel que soit son launcher.
 function Switch-FpsManual {
     if (-not (Test-FpsMeasure)) {
-        Show-Notify 'Mesure des FPS désactivée' 'Active la dans Nevermind, page Optimisation gaming, onglet Mes parties.'
+        Show-Notify 'Mesure des FPS désactivée' 'Active la dans Nevermind : page Jeux, Perf. In Game, FPS.'
         return
     }
     if ($script:FpsTarget) {

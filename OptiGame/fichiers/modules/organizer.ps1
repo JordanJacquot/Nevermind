@@ -506,6 +506,14 @@ function Update-OrgBar {
 # Page : bouton « Organizer Dofus » de la page Jeux
 # ---------------------------------------------------------------------------
 function Show-OrgView([bool]$On) {
+    # La bibliothèque et l'Organizer sont dans le sous-onglet Bibliothèque de la page Jeux : on y revient (sans passer
+    # par Set-GamesView, qui appelle cette fonction)
+    if ($script:GamesView -eq 'perf') {
+        $script:GamesView = 'lib'
+        if ($script:GamesTabsUi) { Set-PillTabs $script:GamesTabsUi 0 }
+        $ui.PerfView.Visibility = 'Collapsed'
+        $ui.LibButtons.Visibility = 'Visible'
+    }
     $script:OrgViewOn = $On
     $lib = if ($On) { 'Collapsed' } else { 'Visible' }
     foreach ($n in 'LibToolbar', 'LibBody', 'BtnLibRefresh', 'BtnLibAdd') { if ($ui[$n]) { $ui[$n].Visibility = $lib } }
@@ -724,6 +732,6 @@ function Build-OrgPanel {
 
 # Au démarrage : l'organizer reprend s'il était actif
 if ((Get-OrgConfig).On) { $null = $Window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::ApplicationIdle, [Action]{ try { Start-OrgWatch } catch { Write-Log "Organizer : $_" } }) }
-$ui.BtnLibOrganizer.Add_Click({ Invoke-Safe { Show-OrgView (-not $script:OrgViewOn) } })
+$ui.BtnLibOrganizer.Add_Click({ Invoke-Safe { Show-OrgView (-not $script:OrgViewOn) } })   # (bouton visible dans la Bibliothèque seulement)
 $Window.Add_PreviewKeyDown({ param($s, $e) if ($script:OrgCapture) { try { Receive-OrgKey $e } catch { Write-Log "Organizer : $_" } } })
 $Window.Add_PreviewMouseDown({ param($s, $e) if ($script:OrgCapture) { try { Receive-OrgMouse $e } catch { Write-Log "Organizer : $_" } } })

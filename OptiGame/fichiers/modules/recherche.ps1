@@ -9,15 +9,15 @@ $SearchEntries = @(
     # Optimisation gaming
     @{ T = 'Réglages Windows pour les jeux'; P = 1; S = 'tweaks'; A = 'Cocher le recommandé'; K = 'tweaks optimiser optimisation fps appliquer recommande gagner performances' },
     @{ T = 'Point de restauration avant les réglages'; P = 1; S = 'tweaks'; A = 'Point de restauration avant (recommandé)'; K = 'securite sauvegarde avant' },
-    @{ T = 'Mesurer mes FPS'; P = 1; S = 'fps'; A = 'Mesurer mes FPS quand je joue'; K = 'fps images par seconde presentmon mesure partie framerate' },
-    @{ T = 'Mes parties (historique des FPS)'; P = 1; S = 'fps'; A = 'Mesurer mes FPS quand je joue'; K = 'historique parties fps moyenne bas avant apres comparaison' },
-    @{ T = 'Mes FPS ne sont pas normaux'; P = 1; S = 'fps'; A = 'Mes FPS ne sont pas normaux : trouver pourquoi'; K = 'diagnostic fps rame saccades chutes freeze lent' },
+    @{ T = 'Mesurer mes FPS'; P = 'jeux'; Perf = 'fps'; A = 'Mesurer mes FPS quand je joue'; K = 'fps images par seconde presentmon mesure partie framerate' },
+    @{ T = 'Mes parties (historique des FPS)'; P = 'jeux'; Perf = 'fps'; A = 'Mesurer mes FPS quand je joue'; K = 'historique parties fps moyenne bas avant apres comparaison' },
+    @{ T = 'Mes FPS ne sont pas normaux'; P = 'jeux'; Perf = 'fps'; A = 'Mes FPS ne sont pas normaux : trouver pourquoi'; K = 'diagnostic fps rame saccades chutes freeze lent' },
     @{ T = 'Raccourci Ctrl+Maj+F (mesure manuelle)'; P = 'overlay'; A = 'Raccourci Ctrl + Maj + F'; K = 'raccourci clavier hotkey touche mesure manuelle autre jeu' },
     @{ T = 'Compteur de FPS à l''écran (overlay)'; P = 'overlay'; A = 'Afficher le compteur pendant la partie'; K = 'overlay compteur afficher ecran osd fps' },
     @{ T = 'Style du compteur : complet ou discret'; P = 'overlay'; A = 'Style du compteur'; K = 'overlay discret petit transparent semi transparence taille apparence' },
     @{ T = 'Position du compteur'; P = 'overlay'; A = 'Position du compteur'; K = 'overlay coin haut bas gauche droite emplacement deplacer' },
-    @{ T = 'Lag en ligne'; P = 1; S = 'lag'; A = 'Mesurer ma connexion quand je joue'; K = 'lag ping latence serveur jeu connexion partie online' },
-    @{ T = 'Tester ma connexion pour le jeu (30 s)'; P = 1; S = 'lag'; A = 'Tester ma connexion maintenant (30 s)'; K = 'test lag ping latence' },
+    @{ T = 'Lag en ligne'; P = 'jeux'; Perf = 'lag'; A = 'Mesurer ma connexion quand je joue'; K = 'lag ping latence serveur jeu connexion partie online' },
+    @{ T = 'Tester ma connexion pour le jeu (30 s)'; P = 'jeux'; Perf = 'lag'; A = 'Tester ma connexion maintenant (30 s)'; K = 'test lag ping latence' },
     @{ T = 'Mode jeu : fermer des applis pendant que je joue'; P = 1; S = 'mode'; A = 'Fermer des applis pendant que je joue'; K = 'mode jeu fermer applis discord chrome navigateur' },
     @{ T = 'Profils par jeu'; P = 1; S = 'profiles'; K = 'priorite haute carte graphique puissante gpu profil jeu' },
     @{ T = 'Ajouter un jeu (non reconnu)'; P = 1; S = 'profiles'; A = 'Ajouter un jeu'; K = 'ajouter jeu manquant detecte reconnu ubisoft ea gog battlenet riot xbox autre launcher itch emulateur' },
@@ -143,7 +143,8 @@ function Get-SearchIndex {
 }
 
 function Get-SearchWhere($E) {
-    $sub = if ($E.S) { ' › ' + (@($GamingSubPages | Where-Object { $_.Id -eq $E.S })[0]).Label } else { '' }
+    $sub = if ($E.S) { ' › ' + (@($GamingSubPages | Where-Object { $_.Id -eq $E.S })[0]).Label }
+           elseif ($E.Perf) { ' › Perf. In Game › ' + (@($PerfSubPages | Where-Object { $_.Id -eq $E.Perf })[0]).Label } else { '' }
     switch ($E.P) {
         'reseau' { 'Réseau' }
         'jeux' { 'Jeux' }
@@ -275,7 +276,8 @@ function Open-SearchEntry($E) {
     $page = switch ($E.P) { 'reseau' { $NetIndex } 'trafic' { $TrafficIndex } 'overlay' { $OverlayIndex } 'jeux' { $GamesIndex } default { [int]$E.P } }
     Show-Page $page
     if ($E.S) { Build-GamingTabs; Set-GamingSubPage $E.S }
-    if ($page -eq $GamesIndex) { Show-OrgView ([bool]$E.Org) }
+    if ($E.Perf) { Show-PerfPage $E.Perf }
+    elseif ($page -eq $GamesIndex) { Set-GamesView 'lib'; Show-OrgView ([bool]$E.Org) }
     if ($E.Game) { $ui.LibSearch.Text = ''; $script:LibFilter = 'Tous'; Update-LibraryView; Set-LibrarySelection $E.Game }
     Set-Status "$($E.T) : $($E.Where)"
     # Une fois la page affichée et mise en page. (Pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind
