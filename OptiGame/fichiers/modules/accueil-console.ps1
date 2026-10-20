@@ -210,7 +210,94 @@ function Update-NavBarKit {
     $i = $ui.Tabs.SelectedIndex
     $sur = $i -ne $HubIndex
     $script:NavBar.Visibility = if ($sur) { 'Visible' } else { 'Collapsed' }
+    if ($script:Kit.BoutonRetour) { $script:Kit.BoutonRetour.Visibility = $script:NavBar.Visibility }
     if ($sur) { $script:NavCrumb.Text = $(if ($PageNames[$i]) { $PageNames[$i] } else { $KitNomsPages[$i] }) }
+}
+
+# ---------------------------------------------------------------------------
+# L'habillage des pages habituelles, pour qu'elles ressemblent à l'accueil console (en attendant de passer au kit)
+# ---------------------------------------------------------------------------
+# Le fond : le sol en grille qui file vers l'horizon et les étoiles de l'accueil, dessinés une fois (rien d'animé)
+function New-FondConsole {
+    $p = [System.Windows.Media.ColorConverter]::ConvertFromString((ConvertTo-ThemeHex '#00E5FF'))
+    $s = [System.Windows.Media.ColorConverter]::ConvertFromString((ConvertTo-ThemeHex '#B04BFF'))
+    $g = New-Object System.Windows.Media.DrawingGroup
+    # (un cadre transparent de 1600 x 900 : le dessin garde ses proportions)
+    $cadre = New-Object System.Windows.Media.GeometryDrawing ([System.Windows.Media.Brushes]::Transparent), $null, ([System.Windows.Media.RectangleGeometry]::new([System.Windows.Rect]::new(0, 0, 1600, 900)))
+    $g.Children.Add($cadre)
+    # Les étoiles (toujours les mêmes : le dessin ne change pas d'une ouverture à l'autre)
+    $hasard = New-Object System.Random 7
+    $etoiles = New-Object System.Windows.Media.GeometryGroup
+    for ($i = 0; $i -lt 170; $i++) {
+        $r = 0.6 + $hasard.NextDouble() * 1.1
+        $etoiles.Children.Add([System.Windows.Media.EllipseGeometry]::new([System.Windows.Point]::new($hasard.NextDouble() * 1600, $hasard.NextDouble() * 520), $r, $r))
+    }
+    $ce = [System.Windows.Media.Color]::FromArgb(150, [byte](($p.R + 255 * 2) / 3), [byte](($p.G + 255 * 2) / 3), [byte](($p.B + 255 * 2) / 3))
+    $g.Children.Add((New-Object System.Windows.Media.GeometryDrawing (New-Object System.Windows.Media.SolidColorBrush $ce), $null, $etoiles))
+    # Le sol : des lignes qui partent vers l'horizon, et des traverses de plus en plus serrées au loin
+    $h = 560.0; $bas = 900.0; $cx = 800.0
+    $sol = New-Object System.Windows.Media.GeometryGroup
+    for ($x = -3200; $x -le 4800; $x += 160) { $sol.Children.Add([System.Windows.Media.LineGeometry]::new([System.Windows.Point]::new($cx + ($x - $cx) * 0.06, $h), [System.Windows.Point]::new($x, $bas))) }
+    for ($z = 1.0; $z -le 16; $z += 1) { $y = $h + ($bas - $h) / $z; $sol.Children.Add([System.Windows.Media.LineGeometry]::new([System.Windows.Point]::new(0, $y), [System.Windows.Point]::new(1600, $y))) }
+    $trait = New-Object System.Windows.Media.Pen (New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromArgb(70, $s.R, $s.G, $s.B))), 1.2
+    $g.Children.Add((New-Object System.Windows.Media.GeometryDrawing $null, $trait, $sol))
+    $g.Freeze()
+    $pinceau = New-Object System.Windows.Media.DrawingBrush $g
+    $pinceau.Stretch = 'UniformToFill'; $pinceau.AlignmentY = 'Bottom'
+    $rect = New-Object System.Windows.Shapes.Rectangle
+    $rect.Fill = $pinceau; $rect.IsHitTestVisible = $false
+    # Le sol s'efface vers l'horizon
+    $masque = New-Object System.Windows.Media.LinearGradientBrush
+    $masque.StartPoint = '0,0'; $masque.EndPoint = '0,1'
+    foreach ($a in @(@(0.0, 255), @(0.55, 255), @(0.64, 60), @(1.0, 255))) { $masque.GradientStops.Add((New-Object System.Windows.Media.GradientStop ([System.Windows.Media.Color]::FromArgb([byte]$a[1], 0, 0, 0)), $a[0])) }
+    $rect.OpacityMask = $masque
+    $rect.CacheMode = New-Object System.Windows.Media.BitmapCache
+    $rect
+}
+
+function Initialize-HabillageConsole {
+    # Le fond, sous le décor d'un thème perso
+    $fond = $ui.Backdrop
+    $i = $fond.Children.IndexOf($ui.BackdropDeco)
+    $fond.Children.Insert([math]::Max(0, $i), (New-FondConsole))
+    # L'en-tête des pages : le logo, « Nevermind › Page », comme sur l'accueil (le grand titre de la page fait doublon)
+    $nav = $script:NavBar
+    if ($nav -and $script:NavCrumb) {
+        $nav.Children.Clear()
+        $logo = New-Object System.Windows.Controls.Image
+        $logo.Source = New-Object System.Windows.Media.Imaging.BitmapImage (New-Object Uri (Join-Path $UiDir 'logo.png'))
+        $logo.Width = 40; $logo.Height = 40; $logo.Margin = New-Thickness 0 0 14 0
+        [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($logo, 'HighQuality')
+        [void]$nav.Children.Add($logo)
+        $nom = New-Text 'Nevermind' 21 '#A9A3C9' -Semi; $nom.VerticalAlignment = 'Center'
+        [void]$nav.Children.Add($nom)
+        $sep = New-Text '›' 21 '#6F6894'; $sep.Margin = New-Thickness 12 0 12 2; $sep.VerticalAlignment = 'Center'
+        [void]$nav.Children.Add($sep)
+        $script:NavCrumb.FontSize = 21; $script:NavCrumb.FontWeight = 'Bold'; $script:NavCrumb.Foreground = Get-Brush '#FFFFFF'
+        [void]$nav.Children.Add($script:NavCrumb)
+        Set-PackFont $nom; Set-PackFont $script:NavCrumb
+    }
+    $h1 = $Window.FindResource('H1')
+    foreach ($item in $ui.Tabs.Items) {
+        $c = $item.Content
+        $tete = if ($c -is [System.Windows.Controls.Panel] -and $c.Children.Count) { $c.Children[0] } else { $null }
+        if ($tete -is [System.Windows.Controls.StackPanel] -and $tete.Children.Count -and $tete.Children[0].Style -eq $h1) { $tete.Children[0].Visibility = 'Collapsed' }
+    }
+    # En bas à droite : « B Retour », comme sur l'accueil (cliquable)
+    $dock = $ui.StatusText.Parent
+    $b = New-Object System.Windows.Controls.StackPanel
+    $b.Orientation = 'Horizontal'; $b.Cursor = [System.Windows.Input.Cursors]::Hand; $b.Margin = New-Thickness 18 0 0 0; $b.Background = [System.Windows.Media.Brushes]::Transparent
+    $rond = New-Object System.Windows.Controls.Border
+    $rond.Width = 26; $rond.Height = 26; $rond.CornerRadius = [System.Windows.CornerRadius]::new(13); $rond.Background = Get-Brush '#ECEAF7'
+    $lettre = New-Text 'B' 13 '#14102A' -Bold; $lettre.HorizontalAlignment = 'Center'; $lettre.VerticalAlignment = 'Center'
+    $rond.Child = $lettre
+    [void]$b.Children.Add($rond)
+    $t = New-Text 'Retour' 15 '#ECEAF7'; $t.Margin = New-Thickness 8 0 0 0; $t.VerticalAlignment = 'Center'
+    [void]$b.Children.Add($t)
+    $b.Add_MouseLeftButtonUp({ if ($ui.Tabs.SelectedIndex -ne $HubIndex -and -not (Test-PanneauOuvert)) { if ($script:OrgViewOn) { Show-OrgView $false }; Show-Page $HubIndex } })
+    [System.Windows.Controls.DockPanel]::SetDock($b, 'Right')
+    $dock.Children.Insert(0, $b)
+    $script:Kit.BoutonRetour = $b
 }
 
 function Initialize-AccueilConsole {
@@ -239,6 +326,7 @@ function Initialize-AccueilConsole {
     if ($barre) { $barre.Visibility = 'Collapsed' }
     $back = $ui.Tabs.Template.FindName('NavBack', $ui.Tabs)
     if ($back) { $back.Content = '←  Accueil' }
+    try { Initialize-HabillageConsole } catch { Write-Log "Habillage console : $_" }
     Update-NavBarKit
     $ui.Tabs.Add_SelectionChanged({ param($s, $e) if ($e.OriginalSource -eq $ui.Tabs) { Update-NavBarKit; Update-EcranKitVisible } })
     # Échap sur une page : retour à l'accueil (avant les autres touches ; un panneau ouvert se ferme d'abord comme avant)

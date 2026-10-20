@@ -6,17 +6,18 @@
   <Window.Resources>
     <!-- Thème Nevermind : cartes en verre sombre, accent cyan et magenta (couleurs du logo) ; le vert ne dit plus que « tout va bien » -->
     <!-- Panneaux en verre : translucides au dessus des lueurs du fond, bord clair en haut à gauche -->
-    <LinearGradientBrush x:Key="CardBg" StartPoint="0,0" EndPoint="1,1">
-      <GradientStop Color="#17FFFFFF" Offset="0"/>
-      <GradientStop Color="#08FFFFFF" Offset="1"/>
+    <!-- (les plaques du kit d'écrans de la suite : sombres, bord net, comme l'accueil console) -->
+    <LinearGradientBrush x:Key="CardBg" StartPoint="0,0" EndPoint="0,1">
+      <GradientStop Color="#D8171336" Offset="0"/>
+      <GradientStop Color="#D0100D26" Offset="1"/>
     </LinearGradientBrush>
-    <LinearGradientBrush x:Key="CardHoverBg" StartPoint="0,0" EndPoint="1,1">
-      <GradientStop Color="#22FFFFFF" Offset="0"/>
-      <GradientStop Color="#0EFFFFFF" Offset="1"/>
+    <LinearGradientBrush x:Key="CardHoverBg" StartPoint="0,0" EndPoint="0,1">
+      <GradientStop Color="#E8261F52" Offset="0"/>
+      <GradientStop Color="#E01A1640" Offset="1"/>
     </LinearGradientBrush>
-    <LinearGradientBrush x:Key="CardBorder" StartPoint="0,0" EndPoint="1,1">
-      <GradientStop Color="#40FFFFFF" Offset="0"/>
-      <GradientStop Color="#0AFFFFFF" Offset="1"/>
+    <LinearGradientBrush x:Key="CardBorder" StartPoint="0,0" EndPoint="0,1">
+      <GradientStop Color="#FF342C62" Offset="0"/>
+      <GradientStop Color="#FF231E46" Offset="1"/>
     </LinearGradientBrush>
     <!-- Dégradé de la marque Nevermind : cyan vers violet -->
     <LinearGradientBrush x:Key="AccentBg" StartPoint="0,0" EndPoint="1,0">
