@@ -2267,3 +2267,18 @@ public static class AideClient
         return r.Success ? System.Text.RegularExpressions.Regex.Unescape(r.Groups[1].Value) : "";
     }
 }
+
+// L'écran façon console (vue.ps1) : la fenêtre est-elle vraiment à l'écran ? Visible avec tous ses parents (Mindset cache
+// le cadre qui la contient, pas elle), et la fenêtre principale (la sienne, ou Mindset) pas réduite
+public static class VueNatif
+{
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    public static bool EstRegardee(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || !IsWindowVisible(hwnd)) return false;
+        IntPtr racine = GetAncestor(hwnd, 2);
+        return !IsIconic(racine != IntPtr.Zero ? racine : hwnd);
+    }
+}

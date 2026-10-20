@@ -385,7 +385,7 @@ if ($Uninstall) {
     exit
 }
 
-foreach ($ogModule in 'interface', 'tableau-de-bord', 'analyse', 'onglets', 'visuels', 'tests', 'securite', 'navigation', 'reseau', 'reseau-avance', 'carte-reseau', 'audit-reseau', 'mises-a-jour', 'assistance', 'jeu', 'diagnostic-fps', 'trafic', 'microsoft', 'lag', 'bibliotheque', 'organizer', 'parametres', 'recherche', 'evenements') { . (Join-Path $ModulesDir "$ogModule.ps1") }
+foreach ($ogModule in 'interface', 'tableau-de-bord', 'analyse', 'onglets', 'visuels', 'tests', 'securite', 'navigation', 'reseau', 'reseau-avance', 'carte-reseau', 'audit-reseau', 'mises-a-jour', 'assistance', 'jeu', 'diagnostic-fps', 'trafic', 'microsoft', 'lag', 'bibliotheque', 'organizer', 'parametres', 'recherche', 'vue', 'accueil-console', 'evenements') { . (Join-Path $ModulesDir "$ogModule.ps1") }
 
 # ---------------------------------------------------------------------------
 # Lancement

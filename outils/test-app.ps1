@@ -794,12 +794,21 @@ $script:T.Run.Add_Tick({
                 "$($cases.Count) recherches justes (fautes de frappe comprises), suggestions affichées, arrivée sur Overlay et dans les Paramètres"
             }
             Test-Step 'Paramètres (roue crantée)' {
-                Assert-Test ($null -ne $script:TopSettings -and $script:TopSettings.IsVisible) 'roue crantée absente en haut'
                 Assert-Test ($null -eq $ui.Tabs.Template.FindName('TopReport', $ui.Tabs)) 'bouton Signaler encore dans la barre'
-                Show-Page 6; Wait-TestMs 300
-                Assert-Test $script:TopSettings.IsVisible 'roue absente sur une page intérieure'
-                $script:TopSettings.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))); Wait-TestMs 400
-                Assert-Test ($ui.SettingsOverlay.Visibility -eq 'Visible') 'la roue n''ouvre pas les Paramètres'
+                if ($script:Kit.Actif) {
+                    # Accueil console : plus de barre du haut, les Paramètres s'ouvrent par le bouton rond de l'accueil
+                    Show-Page $HubIndex; Wait-TestMs 300
+                    & $script:Vue.Actions['parametres'] $null 'accueil'; Wait-TestMs 400
+                    Assert-Test ($ui.SettingsOverlay.Visibility -eq 'Visible') 'le bouton Paramètres de l''accueil n''ouvre pas les Paramètres'
+                    Wait-TestMs 400
+                    Assert-Test ($ui.EcranKit.Visibility -ne 'Visible') 'l''accueil console reste par-dessus les Paramètres'
+                } else {
+                    Assert-Test ($null -ne $script:TopSettings -and $script:TopSettings.IsVisible) 'roue crantée absente en haut'
+                    Show-Page 6; Wait-TestMs 300
+                    Assert-Test $script:TopSettings.IsVisible 'roue absente sur une page intérieure'
+                    $script:TopSettings.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))); Wait-TestMs 400
+                    Assert-Test ($ui.SettingsOverlay.Visibility -eq 'Visible') 'la roue n''ouvre pas les Paramètres'
+                }
                 Save-TestShot 'parametres-general'
                 $seen = @()
                 foreach ($t in $SettingsTabs) {

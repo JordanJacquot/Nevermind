@@ -1,0 +1,315 @@
+﻿# Nevermind : l'écran de l'appli, dessiné par le kit de la suite (dossier « ui », affiché par WebView2).
+#
+# L'appli ne dessine rien elle-même : elle décrit ce qu'il faut montrer (Send-Vue, voir ui\kit.js pour le détail) et
+# reçoit les gestes de l'utilisateur sous forme d'actions (Register-ActionVue). La page est locale, hors connexion
+# (hôte virtuel https://nevermind.local/ sur le dossier « ui », toute autre adresse refusée).
+#
+# Économie : cachée (réduite, autre page de Mindset), la vue est masquée et la page s'arrête (plus de 3D, plus de
+# minuteries) ; au bout d'une minute cachée, WebView2 est mise en veille (TrySuspendAsync), et se réveille au retour.
+# Sans WebView2 (très rare : Windows 11 l'a toujours), un message explique quoi faire au lieu d'un écran vide.
+# Chargé par OptiGame.ps1 avant accueil-console.ps1, qui crée l'écran (Initialize-AccueilConsole).
+
+$EnTest      = [bool]$env:OPTIGAME_TEST
+$AppNom      = 'Nevermind'
+$UiDir       = Join-Path $AppDir 'ui'
+$Webview2Dir = Join-Path $AppDir 'lib\webview2'
+$HoteVue     = 'nevermind.local'
+$script:Vue  = @{ Controle = $null; Pret = $false; Etat = $null; Actions = @{}; CacheeDepuis = $null; EnVeille = $false; Images = @{} }
+
+# WebView2 est-elle possible ici ? ($null si oui, sinon la raison)
+function Test-VuePossible {
+    foreach ($f in 'Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.Wpf.dll', 'WebView2Loader.dll') { if (-not (Test-Path -LiteralPath (Join-Path $Webview2Dir $f))) { return "fichier manquant : $f" } }
+    if (-not (Test-Path -LiteralPath (Join-Path $UiDir 'index.html'))) { return 'fichier manquant : ui\index.html' }
+    try {
+        if (-not $script:WebView2Charge) {   # (une seule fois : WebView2 refuse ensuite de changer de dossier)
+            Add-Type -Path (Join-Path $Webview2Dir 'Microsoft.Web.WebView2.Core.dll')
+            Add-Type -Path (Join-Path $Webview2Dir 'Microsoft.Web.WebView2.Wpf.dll')
+            [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::SetLoaderDllFolderPath($Webview2Dir)
+            $script:WebView2Charge = $true
+        }
+        $v = [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::GetAvailableBrowserVersionString()
+        if (-not $v) { return 'WebView2 absent de ce PC' }
+        Write-Log "Écran : WebView2 $v"
+    } catch { return "WebView2 indisponible ($($_.Exception.Message))" }
+    $null
+}
+
+# Crée l'écran dans $Hote (un Grid de interface.xaml)
+function Initialize-Vue($Hote) {
+    $raison = if ($script:VueVerifiee) { $null } else { Test-VuePossible }
+    if ($raison) {
+        Write-Log "Écran impossible : $raison"
+        $t = New-Text "$AppNom ne peut pas s'afficher sur ce PC.`n`nIl lui manque un composant de Windows (WebView2). Ouvre Mindset et réinstalle $AppNom, ou fais les mises à jour de Windows." 16
+        $t.TextWrapping = 'Wrap'; $t.TextAlignment = 'Center'; $t.Margin = '60'; $t.VerticalAlignment = 'Center'
+        $Hote.Children.Add($t) | Out-Null
+        return
+    }
+    $vue = New-Object Microsoft.Web.WebView2.Wpf.WebView2
+    $vue.DefaultBackgroundColor = [System.Drawing.ColorTranslator]::FromHtml((ConvertTo-ThemeHex '#06050F'))   # (pas d'éclair blanc à l'allumage)
+    $cp = New-Object Microsoft.Web.WebView2.Wpf.CoreWebView2CreationProperties
+    $cp.UserDataFolder = Join-Path $DataDir 'ecran-webview'
+    $vue.CreationProperties = $cp
+    $vue.Add_CoreWebView2InitializationCompleted({
+        param($s, $e)
+        if (-not $e.IsSuccess) { Write-Log "Écran : initialisation refusée ($($e.InitializationException.Message))"; return }
+        try {
+            $c = $s.CoreWebView2
+            $r = $c.Settings
+            $r.AreDevToolsEnabled = [bool]$env:OPTIGAME_DEV; $r.AreDefaultContextMenusEnabled = $false; $r.IsZoomControlEnabled = $false
+            $r.AreBrowserAcceleratorKeysEnabled = $false; $r.IsStatusBarEnabled = $false; $r.IsPasswordAutosaveEnabled = $false; $r.IsGeneralAutofillEnabled = $false
+            $c.SetVirtualHostNameToFolderMapping($HoteVue, $UiDir, [Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind]::Deny)
+            # Les images et la police d'un thème perso : son dossier, en lecture seule, sous https://theme.local/
+            # Les images de l'appli (dossier « images » à côté de ui, s'il existe) : https://images.local/<fichier>
+            $imagesDir = Join-Path $AppDir 'images'
+            if (Test-Path -LiteralPath $imagesDir) { $c.SetVirtualHostNameToFolderMapping('images.local', $imagesDir, [Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind]::Allow) }
+            if ($ThemePack -and $ThemePack.Dir) { $c.SetVirtualHostNameToFolderMapping('theme.local', $ThemePack.Dir, [Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind]::Allow) }
+            # Seul l'écran de l'appli s'affiche : toute autre adresse, et toute nouvelle fenêtre, est refusée
+            $c.Add_NavigationStarting({ param($s2, $e2) if (-not $e2.Uri.StartsWith("https://$HoteVue/")) { $e2.Cancel = $true; Write-Log "Écran : navigation refusée ($($e2.Uri))" } })
+            $c.Add_NewWindowRequested({ param($s2, $e2) $e2.Handled = $true })
+            # Une image ailleurs sur le PC, déclarée par l'appli (Get-ImageVue) : servie seulement si son jeton est connu
+            $c.AddWebResourceRequestedFilter('https://fichier.local/*', [Microsoft.Web.WebView2.Core.CoreWebView2WebResourceContext]::Image)
+            $c.Add_WebResourceRequested({
+                param($s2, $e2)
+                $jeton = [IO.Path]::GetFileName(([uri]$e2.Request.Uri).AbsolutePath)
+                $f = $script:Vue.Images[$jeton]
+                $type = @{ '.png' = 'image/png'; '.jpg' = 'image/jpeg'; '.jpeg' = 'image/jpeg'; '.gif' = 'image/gif'; '.webp' = 'image/webp'; '.bmp' = 'image/bmp' }[[IO.Path]::GetExtension([string]$f).ToLowerInvariant()]
+                if ($f -and $type -and [IO.File]::Exists($f)) {
+                    try { $flux = New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($f)); $e2.Response = $s2.Environment.CreateWebResourceResponse($flux, 200, 'OK', "Content-Type: $type"); return } catch {}
+                }
+                $e2.Response = $s2.Environment.CreateWebResourceResponse($null, 404, 'Not Found', '')
+            })
+            $c.Add_WebMessageReceived({ param($s2, $e2) try { Receive-MessageVue $e2.WebMessageAsJson } catch { Write-Log "Écran : message ignoré ($_)" } })
+            $c.Add_ProcessFailed({ param($s2, $e2) Write-Log "Écran : processus arrêté ($($e2.ProcessFailedKind)), rechargement"; $script:Vue.Pret = $false; try { $s2.Reload() } catch {} })
+            $c.Navigate("https://$HoteVue/index.html")
+        } catch { Write-Log "Écran : réglage impossible ($($_.Exception.Message))" }
+    })
+    # Recréée après une fermeture (Close-Vue) : l'image de l'écran prise avant reste affichée jusqu'à ce que la page
+    # soit prête (pas d'écran vide pendant les 2 secondes de démarrage)
+    if ($script:Vue.Instantane) {
+        $img = New-Object System.Windows.Controls.Image
+        $img.Source = $script:Vue.Instantane; $img.Stretch = 'Fill'
+        $Hote.Children.Add($img) | Out-Null
+        $script:Vue.Image = $img
+        $vue.Visibility = 'Hidden'
+    }
+    $Hote.Children.Add($vue) | Out-Null
+    $script:Vue.Controle = $vue
+    # Le clavier (flèches, Entrée, Échap) va à l'écran dès que la fenêtre est active ou affichée dans Mindset
+    if (-not $script:VueBranchee) { $script:VueBranchee = $true; $Window.Add_Activated({ try { [void]$script:Vue.Controle.Focus() } catch {} }) }
+    $vue.Add_IsVisibleChanged({ param($s, $e) if ($e.NewValue) { try { [void]$s.Focus() } catch {} } })
+    # (WebView2 ne démarre qu'une fois la boucle d'affichage lancée)
+    [void]$Window.Dispatcher.BeginInvoke([action]{
+        try { [void]$script:Vue.Controle.EnsureCoreWebView2Async() } catch { Write-Log "Écran : démarrage impossible ($($_.Exception.Message))" }
+    }, [System.Windows.Threading.DispatcherPriority]::Background)
+
+    # Regardée ou non (vérifié toutes les 0,4 s : ça ne coûte rien) : cachée, la vue est masquée (la page le sait et
+    # s'arrête), puis mise en veille au bout d'une minute ; regardée à nouveau, elle revient tout de suite
+    if (-not $script:VueVeille) {
+        $script:VueVeille = New-Object System.Windows.Threading.DispatcherTimer
+        $script:VueVeille.Interval = [TimeSpan]::FromMilliseconds(400)
+        $script:VueVeille.Add_Tick({ try { if ($script:Vue.Controle) { Update-VeilleVue } } catch {} })
+    }
+    $script:VueVeille.Start()
+}
+
+# Fermer l'écran tout à fait (WebView2 libérée) : une WebView2 présente dans la fenêtre fige les grosses animations
+# WPF de l'appli (mesuré dans Nevermind : la carte du réseau figée 6 à 9 s). L'appli la ferme quand elle n'en a pas
+# besoin et la recrée ensuite (Initialize-Vue) : environ 2 s, cachées par l'image de l'écran prise avant.
+# $false tant que l'image de l'écran n'est pas finie (réessayer un peu plus tard).
+function Close-Vue {
+    $v = $script:Vue.Controle
+    if (-not $v) { return $true }
+    $cap = $script:Vue.Capture
+    if ($cap -and -not $cap.Tache.IsCompleted -and ((Get-Date) - $cap.Debut).TotalSeconds -lt 1) { return $false }
+    if ($cap) { Save-InstantaneVue }
+    $script:Vue.Controle = $null; $script:Vue.Pret = $false; $script:Vue.CacheeDepuis = $null; $script:Vue.EnVeille = $false
+    try { $script:VueVeille.Stop() } catch {}
+    try { $v.Parent.Children.Remove($v) } catch {}
+    if ($script:Vue.Image) { try { $script:Vue.Image.Parent.Children.Remove($script:Vue.Image) } catch {}; $script:Vue.Image = $null }
+    try { $v.Dispose() } catch {}
+    Write-Log 'Écran fermé (recréé au retour)'
+    $true
+}
+
+# L'image de l'écran, prise juste avant un geste qui peut le faire quitter (une action envoyée par la page)
+function Start-InstantaneVue {
+    $c = $script:Vue.Controle.CoreWebView2
+    if (-not $c -or -not $script:Vue.Pret -or ($script:Vue.Capture -and -not $script:Vue.Capture.Tache.IsCompleted)) { return }
+    try {
+        $f = New-Object IO.MemoryStream
+        $script:Vue.Capture = @{ Flux = $f; Debut = Get-Date; Tache = $c.CapturePreviewAsync([Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat]::Png, $f) }
+    } catch { $script:Vue.Capture = $null }
+}
+function Save-InstantaneVue {
+    $cap = $script:Vue.Capture; $script:Vue.Capture = $null
+    if (-not $cap -or -not $cap.Tache.IsCompleted -or $cap.Tache.IsFaulted -or -not $cap.Flux.Length) { return }
+    try {
+        $cap.Flux.Position = 0
+        $b = New-Object System.Windows.Media.Imaging.BitmapImage
+        $b.BeginInit(); $b.StreamSource = $cap.Flux; $b.CacheOption = 'OnLoad'; $b.EndInit(); $b.Freeze()
+        $script:Vue.Instantane = $b
+    } catch {} finally { $cap.Flux.Dispose() }
+}
+
+function Update-VeilleVue {
+    $v = $script:Vue.Controle
+    $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
+    $regardee = [VueNatif]::EstRegardee($h)
+    if ($regardee) {
+        if (-not $script:Vue.CacheeDepuis) { return }
+        $script:Vue.CacheeDepuis = $null
+        if ($script:Vue.EnVeille) { try { $v.CoreWebView2.Resume() } catch {}; $script:Vue.EnVeille = $false }
+        $v.Visibility = 'Visible'
+        [void]$v.Focus()
+        Write-Log 'Écran : de nouveau à l''écran'
+        return
+    }
+    if (-not $script:Vue.CacheeDepuis) {
+        $script:Vue.CacheeDepuis = Get-Date
+        $v.Visibility = 'Hidden'   # (WebView2 le dit à la page : plus de 3D, plus de minuteries)
+        Write-Log 'Écran : caché, en pause'
+        return
+    }
+    if (-not $script:Vue.EnVeille -and $v.CoreWebView2 -and ((Get-Date) - $script:Vue.CacheeDepuis).TotalSeconds -ge 60) {
+        try { [void]$v.CoreWebView2.TrySuspendAsync(); $script:Vue.EnVeille = $true; Write-Log 'Écran : en veille' } catch {}
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Parler à l'écran
+# ---------------------------------------------------------------------------
+function Send-OrdreVue($Objet) {
+    $c = $script:Vue.Controle.CoreWebView2
+    if (-not $c -or -not $script:Vue.Pret) { return }
+    if ($script:Vue.EnVeille) { try { $c.Resume() } catch {}; $script:Vue.EnVeille = $false }
+    try { $c.PostWebMessageAsJson(($Objet | ConvertTo-Json -Depth 12 -Compress)) } catch { Write-Log "Écran : envoi impossible ($_)" }
+}
+
+# Ce qu'il faut montrer (accueil, pages...) : voir ui\kit.js. Gardé, et renvoyé si l'écran se recharge.
+# Le thème de la suite et la connexion sont ajoutés ici, l'appli n'a pas à s'en occuper.
+function Send-Vue($Etat) {
+    if (-not $Etat.Contains('theme')) { $Etat.theme = Get-ThemeVue }
+    if (-not $Etat.Contains('couleurs')) { $c = Get-CouleursVue; if ($c) { $Etat.couleurs = $c } }
+    if (-not $Etat.Contains('connexion')) { $Etat.connexion = Get-ConnexionVue }
+    if (-not $Etat.Contains('pack')) { $p = Get-PackVue; if ($p) { $Etat.pack = $p } }
+    $script:Vue.Etat = $Etat
+    Send-OrdreVue $Etat
+}
+# Une image n'importe où sur le PC (jaquette d'un jeu, photo) : son adresse pour l'écran (https://fichier.local/<jeton>).
+# Seuls les fichiers déclarés ainsi sont servis, et seulement des images.
+function Get-ImageVue([string]$Chemin) {
+    if (-not $Chemin) { return $null }
+    $cle = $Chemin.ToLowerInvariant()
+    foreach ($p in $script:Vue.Images.GetEnumerator()) { if ($p.Value.ToLowerInvariant() -eq $cle) { return "https://fichier.local/$($p.Key)" } }
+    $jeton = ([guid]::NewGuid().ToString('N')) + [IO.Path]::GetExtension($Chemin).ToLowerInvariant()
+    $script:Vue.Images[$jeton] = $Chemin
+    "https://fichier.local/$jeton"
+}
+function Show-MessageVue([string]$Texte, [switch]$Bravo) { Send-OrdreVue @{ kit = 'message'; texte = $Texte; bravo = [bool]$Bravo } }
+function Open-EcranVue([string]$Ecran) { Send-OrdreVue @{ kit = 'aller'; ecran = $Ecran } }
+
+# Le thème de la suite pour l'écran : un des 5 thèmes ; un thème perso garde le nom de sa base et donne ses couleurs
+function Get-ThemeVue { if ($AppThemes.Keys -contains $ThemeId -and $ThemeId -notlike 'pack-*') { $ThemeId } else { 'neon' } }
+function Get-CouleursVue {
+    if ($ThemeId -notlike 'pack-*') { return $null }
+    $t = [ordered]@{}
+    foreach ($p in @{ P = '00E5FF'; S = 'B04BFF'; T = 'FF2EB5'; fond = '06050F'; fond2 = '0C0920' }.GetEnumerator()) { $t[$p.Key] = ConvertTo-ThemeHex "#$($p.Value)" }
+    $t
+}
+
+# Les images d'un thème perso pour l'écran (themes.ps1, Get-ThemePack) : fond, logo, mascotte, dessin du bas, police,
+# phrase d'accueil. Les fichiers sont servis depuis le dossier du thème (https://theme.local/, voir Initialize-Vue).
+function Get-PackVue {
+    $t = $ThemePack
+    if (-not $t) { return $null }
+    $u = { param($f) 'https://theme.local/' + [uri]::EscapeDataString([IO.Path]::GetFileName([string]$f)) }
+    $p = [ordered]@{}
+    if ($t.Logo) { $p.logo = @{ url = (& $u $t.Logo); images = $t.LogoFrames; delai = $t.LogoDelay; lueur = $t.LogoGlow } }
+    if ($t.Background) {
+        $p.fond = @{ url = (& $u $t.Background); opacite = $t.BackgroundOpacity
+            x = @{ Left = 'gauche'; Right = 'droite' }[[string]$t.BackgroundAlignX]; y = @{ Top = 'haut'; Bottom = 'bas' }[[string]$t.BackgroundAlignY] }
+    }
+    if ($t.Mascotte) { $p.mascotte = @{ url = (& $u $t.Mascotte.File); images = $t.Mascotte.Frames; delai = $t.Mascotte.Delay; miroir = $t.Mascotte.Flip } }
+    if ($t.Footer -and $t.Footer.File) { $p.bas = @{ url = (& $u $t.Footer.File); images = $t.Footer.Frames; delai = $t.Footer.Delay; hauteur = $t.Footer.Height } }
+    elseif ($t.Footer -and $t.Footer.Files) { $p.bas = @{ url = (& $u @($t.Footer.Files)[0]); images = 1; hauteur = $t.Footer.Height } }
+    if ($t.Font) { $p.police = @{ url = (& $u $t.Font); partout = ($t.FontScope -eq 'tout'); pixel = [bool]$t.FontPixel } }
+    $p
+}
+
+# Câble, Wi-Fi ou rien : une carte réseau active avec une passerelle (relu au plus toutes les 30 secondes)
+$script:ConnexionVue = @{ Valeur = 'aucune'; Lue = [datetime]::MinValue }
+function Get-ConnexionVue {
+    if (((Get-Date) - $script:ConnexionVue.Lue).TotalSeconds -lt 30) { return $script:ConnexionVue.Valeur }
+    $v = 'aucune'
+    try {
+        foreach ($n in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+            if ($n.OperationalStatus -ne 'Up' -or $n.NetworkInterfaceType -in 'Loopback', 'Tunnel') { continue }
+            if (-not @($n.GetIPProperties().GatewayAddresses | Where-Object { $_.Address.ToString() -notin '0.0.0.0', '::' }).Count) { continue }
+            if ($n.NetworkInterfaceType -eq 'Wireless80211') { $v = 'wifi' } else { $v = 'cable'; break }   # (le câble l'emporte)
+        }
+    } catch {}
+    $script:ConnexionVue = @{ Valeur = $v; Lue = Get-Date }
+    $v
+}
+
+# ---------------------------------------------------------------------------
+# Les gestes de l'utilisateur
+# ---------------------------------------------------------------------------
+# Register-ActionVue 'analyser' { param($Valeur, $Ecran) ... }   l'id d'une tuile, d'un bouton, d'une bascule, d'un champ...
+# Register-ActionVue '*' { param($Id, $Valeur, $Ecran) ... }      toutes les autres
+function Register-ActionVue([string]$Id, [scriptblock]$Action) { $script:Vue.Actions[$Id] = $Action }
+
+function Receive-MessageVue([string]$Json) {
+    $m = $Json | ConvertFrom-Json
+    switch ([string]$m.type) {
+        'pret' {
+            $script:Vue.Pret = $true
+            Write-Log 'Écran prêt'
+            if ($script:Vue.Image) {   # (recréée : la vraie page remplace l'image, le temps qu'elle se dessine)
+                $script:VueDevoiler = New-Object System.Windows.Threading.DispatcherTimer
+                $script:VueDevoiler.Interval = [TimeSpan]::FromMilliseconds(250)
+                $script:VueDevoiler.Add_Tick({
+                    param($s) $s.Stop()
+                    if ($script:Vue.Controle) { $script:Vue.Controle.Visibility = 'Visible'; [void]$script:Vue.Controle.Focus() }
+                    if ($script:Vue.Image) { try { $script:Vue.Image.Parent.Children.Remove($script:Vue.Image) } catch {}; $script:Vue.Image = $null }
+                })
+                $script:VueDevoiler.Start()
+            }
+            if (-not $script:Vue.CacheeDepuis) { [void]$script:Vue.Controle.Focus() }   # (le clavier, si elle est déjà à l'écran)
+            if ($script:Vue.Etat) { Send-OrdreVue $script:Vue.Etat }
+            if ($EnTest -and $env:OPTIGAME_ECRAN) { Open-EcranVue $env:OPTIGAME_ECRAN }   # (tests : capture d'une page)
+            if ($script:Vue.Actions['pret']) { & $script:Vue.Actions['pret'] $null $null }
+        }
+        'erreur' { Write-Log "Écran : erreur ($([string]$m.texte))" }
+        'menu' {   # Retour depuis l'accueil : dans Mindset, retour à la console
+            if ($script:Vue.Actions['menu']) { & $script:Vue.Actions['menu'] $null $null }
+            elseif ($script:Embedded) { Request-MenuMindset }
+        }
+        'action' {
+            $id = [string]$m.id
+            if ($id -notmatch '^[\w:.-]{1,60}$') { Write-Log "Écran : action refusée ($id)"; return }
+            Start-InstantaneVue   # (si ce geste quitte l'écran, son image servira au retour)
+            if ($script:Vue.Actions[$id]) { & $script:Vue.Actions[$id] $m.valeur ([string]$m.ecran) }
+            elseif ($script:Vue.Actions['*']) { & $script:Vue.Actions['*'] $id $m.valeur ([string]$m.ecran) }
+            else { Write-Log "Écran : action sans suite ($id)" }
+        }
+    }
+}
+
+# Test automatique : image de l'écran (WebView2 se dessine à part : la capture de la fenêtre WPF ne la voit pas)
+function Save-CaptureVue([string]$Fichier, [scriptblock]$Ensuite) {
+    $c = $script:Vue.Controle.CoreWebView2
+    if (-not $c) { if ($Ensuite) { & $Ensuite $false }; return }
+    $flux = [IO.File]::Create($Fichier)
+    $tache = $c.CapturePreviewAsync([Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat]::Png, $flux)
+    $t = New-Object System.Windows.Threading.DispatcherTimer
+    $t.Interval = [TimeSpan]::FromMilliseconds(150)
+    $t.Tag = @{ Flux = $flux; Tache = $tache; Ensuite = $Ensuite }
+    $t.Add_Tick({
+        param($s)
+        if (-not $s.Tag.Tache.IsCompleted) { return }
+        $s.Stop(); $s.Tag.Flux.Dispose()
+        if ($s.Tag.Ensuite) { & $s.Tag.Ensuite (-not $s.Tag.Tache.IsFaulted) }
+    })
+    $t.Start()
+}

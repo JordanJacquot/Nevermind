@@ -388,6 +388,7 @@ function Update-HubTodo($A) {
 }
 
 function Set-HubStat([int]$Index, [string]$Text, [string]$Color) {
+    if ($script:Kit) { $script:Kit.Stats[$Index] = @{ T = $Text; C = $Color } }   # (l'accueil console, accueil-console.ps1)
     $t = $script:HubStats[$Index]
     if (-not $t) { return }
     $t.Text = $Text
@@ -466,4 +467,5 @@ function Update-Hub {
     Set-HubStat 4 'Libère de la place'
     $nb = Get-BackupCount
     Set-HubStat 7 $(if ($nb) { "$nb réglage$(if ($nb -gt 1) {'s'}) modifié$(if ($nb -gt 1) {'s'})" } else { 'Rien de modifié' })
+    try { Update-EcranNevermind } catch { Write-Log "Accueil console : $_" }
 }

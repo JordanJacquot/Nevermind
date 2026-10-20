@@ -369,7 +369,7 @@
               <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             <!-- Barre du haut en verre -->
-            <Border Margin="20,14,20,0" Height="60" CornerRadius="22" Background="#14FFFFFF" BorderThickness="1">
+            <Border x:Name="BarreHaut" Margin="20,14,20,0" Height="60" CornerRadius="22" Background="#14FFFFFF" BorderThickness="1">
               <Border.BorderBrush>
                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
                   <GradientStop Color="#7000E5FF" Offset="0"/>
@@ -1122,6 +1122,9 @@
     </Border>
 
     <!-- Paramètres (roue crantée en haut à droite) : un onglet par famille de réglages -->
+    <!-- L'accueil façon console (kit de la suite, accueil-console.ps1) : par-dessus tout, seulement sur l'accueil -->
+    <Grid x:Name="EcranKit" Grid.RowSpan="3" Visibility="Collapsed"/>
+
     <Grid x:Name="SettingsOverlay" Grid.RowSpan="3" Visibility="Collapsed">
       <Border x:Name="SettingsBackdrop" Background="#C8060410"/>
       <Border x:Name="SettingsBox" Width="860" Height="580" Margin="24" CornerRadius="26" BorderThickness="1" VerticalAlignment="Center" HorizontalAlignment="Center">

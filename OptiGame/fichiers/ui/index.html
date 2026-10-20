@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appli</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<div id="cadre">
+  <div id="fond3d" aria-hidden="true"></div>
+  <div id="decor" aria-hidden="true"></div>
+  <header class="haut" id="haut"><div class="titre-app"><span id="logoHote"></span><span id="titreTexte"></span></div>
+    <div id="mascotte" aria-hidden="true"></div><div class="etat" id="etatHaut"></div></header>
+  <main id="ecran"></main>
+  <footer class="bas"><div class="bas-g"><span id="dessinBas" aria-hidden="true"></span><span id="basG"></span></div>
+    <div class="aides"><button type="button" class="aide" id="aideB"><i>B</i>Retour</button><button type="button" class="aide" id="aideA"><i>A</i>OK</button></div></footer>
+</div>
+<div id="bulle" role="status" aria-live="polite"></div>
+<script type="importmap">{ "imports": { "three": "./three/three.module.js" } }</script>
+<script src="kit.js"></script>
+<script type="module" src="fond3d.js"></script>
+</body>
+</html>
