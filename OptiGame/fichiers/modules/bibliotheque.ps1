@@ -143,7 +143,18 @@ function Get-HeroFile($Game) {
     $null
 }
 
-# Fil séparé : pour chaque jeu, la boutique Steam (identifiant connu ou recherche par nom), puis Wikipédia
+# Les jeux qui ne sont pas sur Steam et que Wikipédia ne montre que par leur logo : les images officielles de l'éditeur
+# (League of Legends : Data Dragon, le service d'images de Riot ; les autres : le site officiel du jeu). La clé est le nom
+# du jeu en minuscules, sans espaces ni signes. Une adresse qui ne répond plus : on passe à la recherche habituelle.
+$OfficialArt = @{
+    'valorant'         = @{ Cover = 'https://cmsassets.rgpub.io/sanity/images/dsfx7636/news/015a083717e9687de8a741cfceddb836775b5f9f-616x822.png?w=616&fm=jpg&q=85' }
+    'leagueoflegends'  = @{ Cover = 'https://ddragon.leagueoflegends.com/cdn/img/champion/loading/Jinx_0.jpg'; Hero = 'https://ddragon.leagueoflegends.com/cdn/img/champion/splash/Jinx_0.jpg' }
+    'teamfighttactics' = @{ Cover = 'https://cmsassets.rgpub.io/sanity/images/dsfx7636/news/3b0ebb24308884cb9a4c05ab433ec804ee401081-3840x1458.png?h=900&fm=jpg&q=85'; Hero = 'https://cmsassets.rgpub.io/sanity/images/dsfx7636/news/3b0ebb24308884cb9a4c05ab433ec804ee401081-3840x1458.png?w=1920&fm=jpg&q=85' }
+}
+function Get-OfficialArtKey([string]$Name) { (($Name -replace '[®™©]', '').ToLowerInvariant() -replace '[^a-z0-9]', '') }
+
+# Fil séparé : pour chaque jeu, les images officielles s'il en a, sinon la boutique Steam (identifiant connu ou recherche
+# par nom), puis Wikipédia
 $CoverWork = {
     param($a)
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -169,6 +180,12 @@ $CoverWork = {
         $res = @{ Name = $g.Name; Cover = ''; Hero = ''; Logo = ''; Net = $true }
         $clean = ($g.Name -replace '[®™©]', '').Trim()
         $id = $g.AppId
+        $off = if ($a.Officiel) { $a.Officiel[(($clean).ToLowerInvariant() -replace '[^a-z0-9]', '')] }
+        if ($off) {
+            if ($off.Cover) { $f = Join-Path $a.Dir "$key-officiel.jpg"; if (& $get $off.Cover $f) { $res.Cover = $f } }
+            if ($off.Hero) { $h = Join-Path $a.Dir "$key-officiel-banniere.jpg"; if (& $get $off.Hero $h) { $res.Hero = $h } }
+            if ($res.Cover) { $res; continue }
+        }
         if (-not $id) {
             try {
                 $j = Invoke-RestMethod -Uri "https://store.steampowered.com/api/storesearch/?term=$([uri]::EscapeDataString($clean))&l=french&cc=FR" -TimeoutSec 10 -UserAgent 'OptiGame' -ErrorAction Stop
@@ -222,11 +239,12 @@ function Start-CoverDownload {
     $todo = @(Get-LibraryGames | Where-Object {
         $c = $idx[$_.Name]
         -not (Get-SteamArt $_ 'library_600x900.jpg') -and -not (Get-SteamArt $_ 'library_capsule.jpg') -and -not ($_.Art -and $_.Art.Cover) -and
-        (-not $c -or (-not $c.Cover -and $c.Date -and ((Get-Date) - [datetime]$c.Date).TotalDays -gt 7) -or ($c.Cover -and -not (Test-Path -LiteralPath $c.Cover)))
+        (-not $c -or (-not $c.Cover -and $c.Date -and ((Get-Date) - [datetime]$c.Date).TotalDays -gt 7) -or ($c.Cover -and -not (Test-Path -LiteralPath $c.Cover)) -or
+         (-not $c.Cover -and $OfficialArt.ContainsKey((Get-OfficialArtKey $_.Name))))   # (images officielles connues : sans attendre)
     } | ForEach-Object { @{ Name = [string]$_.Name; AppId = [string]$_.AppId } })
     if (-not $todo.Count) { return }
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
-    [void]$ps.AddScript($CoverWork.ToString()).AddArgument(@{ Games = $todo; Dir = $CoverDir })
+    [void]$ps.AddScript($CoverWork.ToString()).AddArgument(@{ Games = $todo; Dir = $CoverDir; Officiel = $OfficialArt })
     $script:CoverJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
     if (-not $script:CoverTimer) {
         $script:CoverTimer = New-Object System.Windows.Threading.DispatcherTimer
