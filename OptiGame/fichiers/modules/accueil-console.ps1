@@ -13,9 +13,9 @@
 # Chargé par OptiGame.ps1 après vue.ps1 ; Initialize-AccueilConsole est appelé par evenements.ps1.
 
 $script:Kit = @{ Actif = $false; Fiches = @(); Constats = @(); Resultats = @(); Recherche = ''; Stats = @{}; Envoye = ''; Geste = [datetime]::MinValue
-    PagesLourdes = @('optimisation')
+    PagesLourdes = @('optimisation', 'jeux', 'jeu')
     # Les pages déjà passées au kit (les autres ouvrent encore la page d'avant)
-    PagesKit = @('pc', 'tableau', 'perf', 'optimisation', 'demarrage', 'nettoyage', 'protection', 'securite', 'connexion', 'sauvegarde') }
+    PagesKit = @('pc', 'tableau', 'perf', 'optimisation', 'demarrage', 'nettoyage', 'protection', 'securite', 'connexion', 'sauvegarde', 'jeux', 'jeu', 'overlay', 'trafic') }
 
 # ---------------------------------------------------------------------------
 # Ce que montre l'écran
@@ -57,11 +57,12 @@ function Get-EcranNevermind {
 
     # Les pages : chaque groupe vient de son fichier (ecran-*.ps1) ; une page qui échoue n'empêche pas les autres
     $pages = [ordered]@{}
-    foreach ($groupe in 'Get-PagesPc', 'Get-PagesPerf', 'Get-PagesProtection', 'Get-PagesDivers') {
+    foreach ($groupe in 'Get-PagesPc', 'Get-PagesPerf', 'Get-PagesProtection', 'Get-PagesJeux', 'Get-PagesDivers') {
         $chrono = [Diagnostics.Stopwatch]::StartNew()
         try { $p = & $groupe; foreach ($k in $p.Keys) { $pages[$k] = $p[$k] } } catch { Write-Log "Écran, $groupe : $($_.Exception.Message) $($_.InvocationInfo.PositionMessage)" }
         if ($chrono.ElapsedMilliseconds -gt 120) { Write-Log "Écran : $groupe en $($chrono.ElapsedMilliseconds) ms" }
     }
+    if ($script:Kit.Panneau) { $pages.panneau = $script:Kit.Panneau }
     if ($script:Kit.Fiche) { $pages.fiche = $script:Kit.Fiche }
 
     [ordered]@{
@@ -166,14 +167,15 @@ function Register-ActionsNevermind {
     # Retour (B) sur une page qui le demande : la fiche se ferme comme avec son bouton
     Register-ActionVue 'retour' { param($Valeur, $Ecran)
         if ($Ecran -eq 'fiche' -and $script:SheetMode -ne 'display') { if ($ui.SheetClose.Visibility -eq 'Visible') { Invoke-BoutonKit 'SheetClose' } else { Close-Sheet } }
+        elseif ($Ecran -eq 'panneau' -and $ui.BtnTestClose.IsEnabled) { Invoke-BoutonKit 'BtnTestClose' }
     }
     # Après chaque geste : l'écran à jour (et les messages de Nevermind des secondes qui suivent s'affichent)
     Register-ActionVue 'apres' { param($Id, $Ecran) $script:Kit.Geste = Get-Date; try { Update-EcranNevermind } catch { Write-Log "Écran : $_" } }
     Register-ActionsPc
-    foreach ($f in 'Register-ActionsPerf', 'Register-ActionsProtection', 'Register-ActionsDivers') { if (Get-Command $f -ErrorAction SilentlyContinue) { & $f } }
+    foreach ($f in 'Register-ActionsPerf', 'Register-ActionsProtection', 'Register-ActionsPanneau', 'Register-ActionsJeux', 'Register-ActionsDivers') { if (Get-Command $f -ErrorAction SilentlyContinue) { & $f } }
     Register-ActionVue '*' { param($Id, $Valeur, $Ecran)
         if ($Id -match '^(?:clic|coche):(\w{1,40})$') { Invoke-BoutonKit $Matches[1] $Valeur; return }
-        foreach ($f in 'Invoke-ActionPerf', 'Invoke-ActionProtection', 'Invoke-ActionDivers') { if ((Get-Command $f -ErrorAction SilentlyContinue) -and (& $f $Id $Valeur)) { return } }
+        foreach ($f in 'Invoke-ActionPerf', 'Invoke-ActionProtection', 'Invoke-ActionPanneau', 'Invoke-ActionJeux', 'Invoke-ActionDivers') { if ((Get-Command $f -ErrorAction SilentlyContinue) -and (& $f $Id $Valeur)) { return } }
         if ($Id -match '^page:(\d+)$') { Open-PageKit ([int]$Matches[1]) '' $(if ($Ecran -and $Ecran -ne 'accueil') { $Ecran }); return }
         if ($Id -match '^fiche:(\d+)$') { $f = $script:Kit.Fiches[[int]$Matches[1]]; if ($f) { Invoke-Safe { Open-Sheet @($f) } }; return }
         if ($Id -match '^constat:(\d+)$') { $f = $script:Kit.Constats[[int]$Matches[1]]; if ($f) { Invoke-Safe { Open-Sheet @($f) } }; return }
@@ -227,9 +229,9 @@ function Set-Status([string]$Text) {
 # ---------------------------------------------------------------------------
 # Quand montrer l'écran
 # ---------------------------------------------------------------------------
-# Les panneaux de l'interface d'avant encore utilisés (la fiche, elle, est montrée dans l'écran)
+# Les panneaux de l'interface d'avant encore utilisés (la fiche et le panneau de détail, eux, sont montrés dans l'écran)
 function Test-PanneauOuvert {
-    foreach ($n in 'SettingsOverlay', 'NetMapOverlay', 'TestOverlay', 'StartupOverlay') { if ($ui[$n] -and $ui[$n].Visibility -eq 'Visible') { return $true } }
+    foreach ($n in 'SettingsOverlay', 'NetMapOverlay', 'StartupOverlay') { if ($ui[$n] -and $ui[$n].Visibility -eq 'Visible') { return $true } }
     $false
 }
 # Sur l'accueil (page d'avant n° HubIndex), rien par-dessus : l'écran est montré. Un panneau d'avant le cache seulement.
@@ -239,7 +241,7 @@ function Update-EcranKitVisible {
     if (-not $script:Kit.Actif) { return }
     $surAccueil = $ui.Tabs.SelectedIndex -eq $HubIndex
     $voir = $surAccueil -and -not (Test-PanneauOuvert)
-    $fermer = ($ui.StartupOverlay.Visibility -ne 'Visible') -and (-not $surAccueil -or $ui.NetMapOverlay.Visibility -eq 'Visible' -or $ui.TestOverlay.Visibility -eq 'Visible')   # (pas pendant le chargement)
+    $fermer = ($ui.StartupOverlay.Visibility -ne 'Visible') -and (-not $surAccueil -or $ui.NetMapOverlay.Visibility -eq 'Visible')   # (pas pendant le chargement)
     if ($voir -and -not $script:Vue.Controle) { Initialize-Vue $ui.EcranKit; $script:Kit.Envoye = '' }
     $v = if ($voir) { 'Visible' } else { 'Collapsed' }
     if ($ui.EcranKit.Visibility -ne $v) {
@@ -247,7 +249,7 @@ function Update-EcranKitVisible {
         if ($voir) { Update-EcranNevermind }
     }
     if ($fermer -and $script:Vue.Controle) { [void](Close-Vue) }
-    if ($voir) { Update-FicheKit }
+    if ($voir) { Update-FicheKit; Update-PanneauKit }
 }
 
 # Les pages d'avant : plus d'onglets en haut, mais « ← Accueil » et le nom de la page

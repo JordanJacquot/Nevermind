@@ -395,7 +395,7 @@
       }
       case 'apercu': {
         const coins = ['haut-gauche', 'haut-droite', 'bas-gauche', 'bas-droite'];
-        return `<div class="apercu"><div class="scene-jeu">${coins.map((c) => `<button type="button" class="coin f ${c}${c === b.coin ? ' choisi' : ''}" data-k="c:${c}" data-action="${esc(b.id)}" data-valeur="${c}" aria-label="Mettre le compteur ${c.replace('-', ' à ')}">${c === b.coin ? `<span class="compteur ${esc(b.style || 'complet')}"><b>${esc(b.fps ?? 144)}<small>FPS</small></b>${b.style === 'discret' ? '' : `<i>${esc(b.detail || '1 % bas 118 · moy. 139')}</i>`}</span>` : '<span class="placer">Placer ici</span>'}</button>`).join('')}</div>${b.legende ? `<p class="legende">${esc(b.legende)}</p>` : ''}</div>`;
+        return `<div class="apercu"><div class="scene-jeu">${coins.map((c) => `<button type="button" class="coin f ${c}${c === b.coin ? ' choisi' : ''}" data-k="c:${c}" data-action="${esc(b.id)}" data-valeur="${c}" aria-label="Mettre le compteur ${c.replace('-', ' à ')}">${c === b.coin ? `<span class="compteur ${esc(b.style || 'complet')}"><b>${esc(b.fps ?? 144)}<small>FPS</small></b>${b.style === 'discret' || !b.detail ? '' : `<i>${esc(b.detail)}</i>`}</span>` : '<span class="placer">Placer ici</span>'}</button>`).join('')}</div>${b.legende ? `<p class="legende">${esc(b.legende)}</p>` : ''}</div>`;
       }
       case 'etapes': return `<ol class="etapes">${(b.elements || []).map((x) => `<li class="${x.fait ? 'fait' : ''}">${esc(x.texte)}</li>`).join('')}</ol>`;
       case 'mois': {
