@@ -2189,7 +2189,16 @@ public static class EmbedInfo
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int index);
     [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr h);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SetProp(IntPtr h, string nom, IntPtr valeur);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr RemoveProp(IntPtr h, string nom);
     const int GWL_STYLE = -16;
+
+    // « Mindset.BarrePropre » sur la fenêtre : l'appli a sa propre barre (Menu, Fermer), Mindset cache alors la sienne
+    public static void BarrePropre(IntPtr h, bool oui)
+    {
+        if (h == IntPtr.Zero) return;
+        if (oui) SetProp(h, "Mindset.BarrePropre", new IntPtr(1)); else RemoveProp(h, "Mindset.BarrePropre");
+    }
     const long WS_CHILD = 0x40000000;
 
     public static bool IsEmbedded(IntPtr h)

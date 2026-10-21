@@ -219,7 +219,6 @@ function Get-PagesPerf {
         $l = @{ type = 'ligne'; texte = [string]$c.Titre; note = [string]$c.Desc; valeur = $(if ($vide) { '0' } else { Format-Size $r.Size }); ton = $(if ($r.Size -gt 500MB) { 'attention' } else { '' }) }
         if ($vide) { $l.etiquette = 'Déjà propre'; $l.ton = 'ok'; $l.fait = $true } else {
             $l.case = @{ id = 'nett'; valeur = "$k"; oui = [bool]$r.CheckBox.IsChecked }
-            if ($c.Warn) { $l.etiquette = 'À garder si tu utilises Claude'; $l.ton = 'attention' }
             $l.bouton = @{ id = "nett-voir:$k"; texte = 'Voir'; style = 'second' }
         }
         $l

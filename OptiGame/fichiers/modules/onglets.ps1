@@ -692,7 +692,7 @@ function Invoke-CleanScan {
         $tt.Margin = New-Thickness 0 0 10 0; $tt.VerticalAlignment = 'Center'
         Set-PackFont $tt
         [void]$head.Children.Add($tt)
-        $badge = if ($empty) { New-Badge 'Déjà propre' $Colors.ok } elseif ($c.Warn) { New-Badge 'À garder si tu utilises Claude' $Colors.warn } else { New-Badge 'Sans risque' $Colors.ok }
+        $badge = if ($empty) { New-Badge 'Déjà propre' $Colors.ok } else { New-Badge 'Sans risque' $Colors.ok }
         $badge.VerticalAlignment = 'Center'
         [void]$head.Children.Add($badge)
         [void]$left.Children.Add($head)

@@ -147,6 +147,7 @@
     internet: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
     fleche: '<path d="M9 5l7 7-7 7"/>',
     retour: '<path d="M15 5l-7 7 7 7"/>',
+    croix: '<path d="M6 6l12 12M18 6 6 18"/>',
     coche: '<path d="M5 12l5 5 9-10"/>',
   };
   window.kitIcones = I;   // (plasma.js dessine les icônes des tuiles avec)

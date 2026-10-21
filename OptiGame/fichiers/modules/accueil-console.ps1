@@ -84,6 +84,11 @@ function Get-EcranNevermind {
                 @{ id = 'recherche'; nom = 'Rechercher'; icone = 'loupe'; couleur = 'S' }
                 @{ id = 'parametres'; nom = 'Paramètres'; icone = 'reglages'; couleur = 'doux' }
                 @{ id = 'aide'; nom = 'Aide'; icone = 'aide'; couleur = 'T' }
+                # Dans Mindset, une seule barre : la nôtre, avec le retour au menu de Mindset et Fermer
+                if ($script:Embedded) {
+                    @{ id = 'menu'; nom = 'Menu de Mindset'; icone = 'maison'; couleur = 'S' }
+                    @{ id = 'fermer'; nom = 'Fermer Nevermind'; icone = 'croix'; couleur = 'doux' }
+                }
             )
         }
         pages = $pages
@@ -171,6 +176,8 @@ function Register-ActionsNevermind {
         if ($script:Vue.Etat) { $script:Vue.Etat.Remove('focus'); $script:Vue.Etat.Remove('ecran') }
     }
     Register-ActionVue 'menu' { param($Valeur, $Ecran) if ($script:Embedded) { Request-MenuMindset } }
+    # (comme la croix de la fenêtre : sa règle habituelle s'applique, Quitter ou Réduire)
+    Register-ActionVue 'fermer' { param($Valeur, $Ecran) Invoke-Safe { $Window.Close() } }
     # Les pages lourdes (profils par jeu...) ne sont préparées qu'à l'écran : en y arrivant, l'écran est refait
     Register-ActionVue 'ecran' { param($Id, $Rien) if ($script:Kit.PagesLourdes -contains $Id) { try { Update-EcranNevermind } catch { Write-Log "Écran : $_" } } }
     # Retour (B) sur une page qui le demande : la fiche se ferme comme avec son bouton

@@ -63,6 +63,9 @@ function Update-EmbedState {
     $on = [EmbedInfo]::IsEmbedded($h)
     if ($on -eq [bool]$script:Embedded) { return }
     $script:Embedded = $on
+    # La barre de Mindset cède la place à celle de la console (Menu et Fermer y sont), et les icônes du haut changent
+    try { [EmbedInfo]::BarrePropre($h, ($on -and $script:Kit -and $script:Kit.Actif)) } catch {}
+    if ($on -and $script:Kit -and $script:Kit.Actif) { try { Update-EcranNevermind } catch {} }
     if ($on) {
         $script:WindowMin = @($Window.MinWidth, $Window.MinHeight)
         $Window.MinWidth = 0; $Window.MinHeight = 0

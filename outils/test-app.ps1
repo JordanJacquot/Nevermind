@@ -815,6 +815,7 @@ $script:T.Run.Add_Tick({
                             $n = @($p.blocs | Where-Object { $_ }).Count + @($p.onglets | Where-Object { $_ }).Count + @($p.sections | Where-Object { $_ }).Count
                             if (-not $p.titre -or -not $n) { $vides += $id } else { $nb++ }
                             [void](ConvertTo-Json -InputObject $p -Depth 16 -Compress)
+                            Wait-TestMs 60   # (une page à la fois, comme entre deux clics : la fenêtre respire entre deux)
                         }
                     } finally { $script:Vue.Ecran = $avant }
                     Assert-Test (-not $vides.Count) "pages vides : $($vides -join ', ')"
