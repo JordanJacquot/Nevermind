@@ -13,9 +13,9 @@
 # Chargé par OptiGame.ps1 après vue.ps1 ; Initialize-AccueilConsole est appelé par evenements.ps1.
 
 $script:Kit = @{ Actif = $false; Fiches = @(); Constats = @(); Resultats = @(); Recherche = ''; Stats = @{}; Envoye = ''; Geste = [datetime]::MinValue
-    PagesLourdes = @('optimisation', 'jeux', 'jeu')
+    PagesLourdes = @('optimisation', 'jeux', 'jeu', 'tests')
     # Les pages déjà passées au kit (les autres ouvrent encore la page d'avant)
-    PagesKit = @('pc', 'tableau', 'perf', 'optimisation', 'demarrage', 'nettoyage', 'protection', 'securite', 'connexion', 'sauvegarde', 'jeux', 'jeu', 'overlay', 'trafic', 'reseau') }
+    PagesKit = @('pc', 'tableau', 'perf', 'optimisation', 'demarrage', 'nettoyage', 'protection', 'securite', 'connexion', 'sauvegarde', 'jeux', 'jeu', 'overlay', 'trafic', 'reseau', 'tests', 'recherche', 'parametres', 'aide') }
 
 # ---------------------------------------------------------------------------
 # Ce que montre l'écran
@@ -128,6 +128,18 @@ function Show-Page([int]$Index) {
     }
     & $script:KitShowPage $Index
 }
+# Les Paramètres d'avant (menu de l'icône près de l'horloge...) : la page du kit
+$script:KitShowSettings = ${function:Show-Settings}
+function Show-Settings([string]$Tab = 'general') {
+    if ($script:Kit.Actif) {
+        $id = if ($Tab -eq 'aide') { 'aide' } else { 'parametres' }
+        $script:Kit.RetourEcran = $id
+        & $script:KitShowPage $HubIndex
+        if ($script:Vue.Pret) { Open-EcranVue $id }
+        return
+    }
+    & $script:KitShowSettings $Tab
+}
 $script:KitFindingAction = ${function:Invoke-FindingAction}
 function Invoke-FindingAction([string]$Target) {
     if ($Target -like 'tab:*') { Show-Page ([int]$Target.Substring(4)); return }
@@ -145,12 +157,6 @@ function Invoke-BoutonKit([string]$Nom, $Valeur) {
 }
 function Register-ActionsNevermind {
     Register-ActionVue 'analyser' { param($Valeur, $Ecran) Show-MessageVue 'Analyse de ton PC lancée'; Invoke-Safe { Invoke-Analysis } }
-    Register-ActionVue 'parametres' { param($Valeur, $Ecran) Invoke-Safe { Show-Settings } }
-    Register-ActionVue 'aide' { param($Valeur, $Ecran) Invoke-Safe { Show-Settings 'aide' } }
-    Register-ActionVue 'jeux' { param($Valeur, $Ecran) Open-PageKit $GamesIndex 'jeux' }
-    Register-ActionVue 'reseau' { param($Valeur, $Ecran) Open-PageKit $NetIndex 'reseau' }
-    Register-ActionVue 'trafic' { param($Valeur, $Ecran) Open-PageKit $TrafficIndex 'trafic' }
-    Register-ActionVue 'overlay' { param($Valeur, $Ecran) Open-PageKit $OverlayIndex 'overlay' }
     Register-ActionVue 'recherche' { param($Valeur, $Ecran)
         $q = ([string]$Valeur).Trim()
         $script:Kit.Recherche = $q

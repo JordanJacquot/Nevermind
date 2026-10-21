@@ -442,17 +442,16 @@ $TourSteps = @(
     @{ Title = 'Bienvenue dans Nevermind'; Lines = @(
         'Nevermind analyse ton PC et le règle pour que tes jeux tournent au mieux.',
         'Rien n''est modifié sans ton accord : chaque changement passe par un bouton sur lequel tu cliques.') },
-    @{ Title = 'Ton score'; Lines = @(
-        'Sur l''accueil « Ordinateur », la note Optimisation montre ce qui freine tes jeux.',
-        'Ouvre le Tableau de bord pour voir chaque point : clique dessus, lis la fiche, puis « Exécuter » pour que l''app le corrige.',
-        'La section Jeux réunit tous tes jeux : double clique pour jouer, et optimise chaque jeu depuis sa fiche.',
-        'La section Réseau scanne les appareils de ta maison et vérifie leur sécurité.') },
+    @{ Title = 'Les modules'; Lines = @(
+        'L''accueil montre tes modules : fais les défiler à la souris ou aux flèches, puis clique sur celui que tu veux ouvrir.',
+        'Ton PC et Performances montrent ce qui freine tes jeux : clique sur un point, lis la fiche, puis « Exécuter » pour que l''app le corrige.',
+        'Jeux réunit tous tes jeux : tu les lances et tu optimises chacun depuis sa fiche.',
+        'Réseau scanne les appareils de ta maison et vérifie leur sécurité.') },
     @{ Title = 'Tout est annulable'; Lines = @(
         'Chaque changement est sauvegardé avant d''être fait.',
         'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde garde l''historique : tu peux annuler n''importe quel changement.',
-        'La roue crantée, en haut à droite, ouvre les Paramètres : raccourci sur le bureau, lancement au démarrage, mises à jour, et « Signaler un problème » dans l''onglet Aide.',
-        'Un réglage introuvable ? Tape-le dans la barre de recherche en haut (ou Ctrl + K) : un clic t''y emmène.',
-        'L''onglet Overlay règle ton compteur de FPS par dessus le jeu.') }
+        'En haut à droite : la loupe trouve un réglage (ou Ctrl + K), la roue crantée ouvre les Paramètres, et le point d''interrogation l''Aide, avec « Signaler un problème ».',
+        'Le logo Nevermind, en haut à gauche, te ramène toujours à l''accueil.') }
 )
 
 function Show-Tour {

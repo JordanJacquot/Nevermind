@@ -156,6 +156,18 @@
   const heure = () => new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const CONNEXIONS = { cable: 'Câble', wifi: 'Wi-Fi', aucune: 'Pas de connexion' };
   const borne = (v, a, b) => Math.max(a, Math.min(b, v));
+  // Une liste d'un seul élément envoyée par PowerShell arrive souvent sans ses crochets (un objet seul) : tout champ qui
+  // doit être une liste est remis en liste, à tous les niveaux, dès l'arrivée de l'état
+  const LISTES = new Set(['tuiles', 'ronds', 'blocs', 'onglets', 'sections', 'elements', 'rangs', 'boutons', 'resume', 'options', 'appareils', 'actions', 'choix', 'points', 'bascules', 'touches', 'quand']);
+  function normaliser(o) {
+    if (Array.isArray(o)) { o.forEach(normaliser); return o; }
+    if (!o || typeof o !== 'object') return o;
+    for (const [k, v] of Object.entries(o)) {
+      if (LISTES.has(k) && v != null && !Array.isArray(v)) o[k] = [v];
+      normaliser(o[k]);
+    }
+    return o;
+  }
 
   // ---------------------------------------------------------------- liaison avec l'appli
   const webview = window.chrome?.webview;
@@ -325,14 +337,16 @@
         return `<div class="score">${anneau(p, `<span class="centre"><b>${esc(b.valeur)}</b><small>/${esc(b.sur || 100)}</small></span>`)}<div><h3>${esc(b.titre)}</h3><p>${esc(b.texte)}</p></div></div>`;
       }
       case 'ligne': {
-        const interne = b.bascule || b.bascules?.length || b.bouton || b.case;
+        const interne = b.bascule || b.bascules?.length || b.bouton || b.case || b.boutons?.length;
         const img = urlSure(b.image) ? `<span class="ic img"><img src="${urlSure(b.image)}" alt="" onerror="this.remove()"></span>` : icone(b.icone, b.couleur);
         const debut = `${b.case ? caseC(b.case.id, b.case.oui, b.case.valeur) : ''}${b.quand ? `<span class="quand"><b>${esc(b.quand[0])}</b>${esc(b.quand[1] || '')}</span>` : ''}${img}`;
         const milieu = `<span class="txt"><b>${esc(b.texte)}</b>${note}</span>`;
         const fin = `${b.barre != null ? barre(b.barre, b.ton) : ''}${etiq(b.etiquette, b.ton)}${b.valeur != null && b.valeur !== '' ? `<span class="v${b.ton ? ` ${esc(b.ton)}` : ''}">${esc(b.valeur)}</span>` : ''}${b.bascule ? bascule(b.bascule.id, b.bascule.oui) : ''}${(b.bascules || []).map((x) => `<span class="bascule-l">${esc(x.texte)}${bascule(x.id, x.oui)}</span>`).join('')}${b.bouton ? btn(b.bouton, ' petit') : ''}`;
-        const cls = `ligne plaque${b.fait ? ' fait' : ''}`;
+        const cls = `ligne plaque${b.fait ? ' fait' : ''}${b.boutons?.length ? ' avec-btns' : ''}`;
         if (b.id && !interne) return `<button type="button" class="${cls} f" data-k="l:${esc(b.id)}" data-action="${esc(b.id)}">${debut}${milieu}<span class="fin">${fin}${fleche()}</span></button>`;
-        return `<div class="${cls}">${debut}${milieu}<span class="fin">${fin}</span></div>`;
+        // (boutons : une rangée de petits boutons sous le texte, dans la même carte)
+        const btns = b.boutons?.length ? `<span class="btns">${b.boutons.map((x) => btn(x, ' petit')).join('')}</span>` : '';
+        return `<div class="${cls}">${debut}${milieu}<span class="fin">${fin}</span>${btns}</div>`;
       }
       case 'bascule': return `<button type="button" class="ligne plaque f" data-k="b:${esc(b.id)}" data-bascule="${esc(b.id)}" role="switch" aria-checked="${!!b.oui}"><span class="txt"><b>${esc(b.texte)}</b>${note}</span><span class="fin"><span class="bascule${b.oui ? ' oui' : ''}"></span></span></button>`;
       case 'case': return `<button type="button" class="ligne plaque f" data-k="x:${esc(b.id)}:${esc(b.valeur ?? '')}" data-case="${esc(b.id)}"${b.valeur != null ? ` data-valeur="${esc(b.valeur)}"` : ''} role="checkbox" aria-checked="${!!b.oui}"><span class="case${b.oui ? ' oui' : ''}">${ico('coche', 3)}</span><span class="txt"><b>${esc(b.texte)}</b>${note}</span>${b.droite ? `<span class="fin"><span class="v">${esc(b.droite)}</span></span>` : ''}</button>`;
@@ -631,6 +645,7 @@
   const kit = window.kit = {
     surMessage: null,
     etat(nouveau) {
+      normaliser(nouveau);
       const avantTheme = E.theme;
       E = { ...E, ...nouveau };
       son.actif = E.sons !== false;

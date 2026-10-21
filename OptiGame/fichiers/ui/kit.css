@@ -180,6 +180,8 @@ body.avec-3d .anneau { background: none; }
 /* Une ligne : icône, texte, puis à droite étiquette, valeur, interrupteur, bouton ou flèche */
 .ligne { display: flex; align-items: center; gap: 14px; width: 100%; box-sizing: border-box; min-height: 64px; padding: 12px 16px; margin-bottom: 10px; text-align: left; font-size: 15px; }
 .ligne .txt { min-width: 0; flex: 1; } .ligne .txt b { display: block; font-size: 16px; } .ligne .n { display: block; color: var(--doux); font-size: 13.5px; margin-top: 2px; }
+.ligne.avec-btns { flex-wrap: wrap; row-gap: 10px; }
+.ligne .btns { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding-left: 56px; }
 .ligne .fin { display: flex; align-items: center; gap: 12px; margin-left: auto; flex: none; }
 .ligne .v { font-weight: 800; white-space: nowrap; color: var(--P); font-variant-numeric: tabular-nums; }
 .ligne .v.ok { color: var(--vert); } .ligne .v.attention { color: var(--orange); } .ligne .v.urgent { color: var(--rouge); }
@@ -216,6 +218,8 @@ body.avec-3d .anneau { background: none; }
 .champ { width: 55%; max-width: 320px; height: 40px; border-radius: 12px; border: 1px solid var(--ligne); background: var(--fond2); padding: 0 12px; font-size: 15px; }
 .champ-grand { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 18px; border-radius: 99px; margin-bottom: 18px; }
 .champ-grand svg { width: 20px; height: 20px; color: var(--doux); flex: none; }
+/* (le grand champ a déjà son bord de plasma : pas d'anneau en plus dedans) */
+.champ-grand .champ.f.f:focus-visible { box-shadow: none; }
 .champ-grand .champ { flex: 1; width: auto; max-width: none; border: 0; background: transparent; height: 100%; padding: 0; font-size: 16px; }
 .champ-grand:focus-within::before { opacity: 1; }
 .champ::placeholder { color: var(--pale); }

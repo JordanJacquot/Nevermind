@@ -51,6 +51,12 @@ function Test-Step([string]$Name, [scriptblock]$Body) {
     } catch { Add-TestResult $Name $false "$($_.Exception.Message) $($_.InvocationInfo.PositionMessage)" }
 }
 function Assert-Test([bool]$Cond, [string]$Why) { if (-not $Cond) { throw $Why } }
+# Étape qui vérifie l'interface d'origine (le modèle caché derrière la console) : la console est mise de côté le temps de l'étape
+function Test-StepWpf([string]$Name, [scriptblock]$Body) {
+    $kit = [bool]($script:Kit -and $script:Kit.Actif)
+    if ($kit) { $script:Kit.Actif = $false }
+    try { Test-Step $Name $Body } finally { if ($kit) { $script:Kit.Actif = $true } }
+}
 
 $Window.WindowStartupLocation = 'Manual'; $Window.Left = -5000; $Window.Top = 0; $Window.Height = 900; $Window.ShowInTaskbar = $false
 
@@ -183,7 +189,7 @@ $script:T.Run.Add_Tick({
                 } else { $detail += ' (profil non testé : pas administrateur)' }
                 $detail
             }
-            Test-Step 'Compteur de FPS (overlay, raccourci, avant / après)' {
+            Test-StepWpf 'Compteur de FPS (overlay, raccourci, avant / après)' {
                 Assert-Test (Test-Path -LiteralPath $PresentMonExe) 'PresentMon absent'
                 # Raccourci Ctrl+Maj+F : message simulé, compteur désactivé donc une notification l'explique
                 Set-Setting 'FpsMeasure' $false
@@ -264,7 +270,7 @@ $script:T.Run.Add_Tick({
                 Set-GamingSubPage 'tweaks'
                 "$hk, overlay, arrêt propre et comparaison OK"
             }
-            Test-Step 'Onglet Overlay' {
+            Test-StepWpf 'Onglet Overlay' {
                 $oldOn = Test-FpsOverlay; $oldStyle = Get-FpsOverlayStyle; $oldCorner = Get-FpsOverlayCorner; $oldMeasure = Test-FpsMeasure
                 try {
                     Set-Setting 'FpsMeasure' $true; Set-Setting 'FpsOverlay' $true
@@ -528,7 +534,7 @@ $script:T.Run.Add_Tick({
                     if ($script:OrgViewOn) { Show-OrgView $false }
                 }
             }
-            Test-Step 'Bibliothèque de jeux' {
+            Test-StepWpf 'Bibliothèque de jeux' {
                 $sw = [Diagnostics.Stopwatch]::StartNew(); Show-Page $GamesIndex; $tBuild = $sw.ElapsedMilliseconds; Wait-TestMs 600
                 $sw.Restart(); Update-LibraryView; $tAgain = $sw.ElapsedMilliseconds
                 Assert-Test ($tAgain -lt 1500) "rafraîchir la bibliothèque prend $tAgain ms"
@@ -743,6 +749,8 @@ $script:T.Run.Add_Tick({
                     Start-NexoGlitch $script:LogoMark $script:LogoWord 1500
                     $moved = $script:LogoMark.Busy
                     Wait-TestMs 1900
+                    # (un saut automatique a pu partir entre-temps : on attend qu'il finisse)
+                    $fin = (Get-Date).AddSeconds(4); while ($script:LogoMark.Busy -and (Get-Date) -lt $fin) { Wait-TestMs 100 }
                     $rest = [math]::Abs($script:LogoMark.Cyan.RenderTransform.X - $script:LogoMark.Rest[0] * $script:LogoMark.Size) -lt 0.01 -and -not $script:LogoMark.Busy
                     Assert-Test ($moved -and $rest) "glitch : en cours $moved, retour au repos $rest"
                 }
@@ -793,22 +801,39 @@ $script:T.Run.Add_Tick({
                 Wait-TestMs 2500
                 "$($cases.Count) recherches justes (fautes de frappe comprises), suggestions affichées, arrivée sur Overlay et dans les Paramètres"
             }
-            Test-Step 'Paramètres (roue crantée)' {
-                Assert-Test ($null -eq $ui.Tabs.Template.FindName('TopReport', $ui.Tabs)) 'bouton Signaler encore dans la barre'
-                if ($script:Kit.Actif) {
-                    # Accueil console : plus de barre du haut, les Paramètres s'ouvrent par le bouton rond de l'accueil
-                    Show-Page $HubIndex; Wait-TestMs 300
-                    & $script:Vue.Actions['parametres'] $null 'accueil'; Wait-TestMs 400
-                    Assert-Test ($ui.SettingsOverlay.Visibility -eq 'Visible') 'le bouton Paramètres de l''accueil n''ouvre pas les Paramètres'
-                    Wait-TestMs 400
-                    Assert-Test ($ui.EcranKit.Visibility -ne 'Visible') 'l''accueil console reste par-dessus les Paramètres'
-                } else {
-                    Assert-Test ($null -ne $script:TopSettings -and $script:TopSettings.IsVisible) 'roue crantée absente en haut'
-                    Show-Page 6; Wait-TestMs 300
-                    Assert-Test $script:TopSettings.IsVisible 'roue absente sur une page intérieure'
-                    $script:TopSettings.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))); Wait-TestMs 400
-                    Assert-Test ($ui.SettingsOverlay.Visibility -eq 'Visible') 'la roue n''ouvre pas les Paramètres'
+            if ($script:Kit -and $script:Kit.Actif) {
+                Test-Step 'Console : toutes les pages' {
+                    $avant = $script:Vue.Ecran; $vides = @(); $nb = 0
+                    try {
+                        foreach ($id in $script:Kit.PagesKit) {
+                            # (l'écran affiché : les pages lourdes ne se préparent que quand on les regarde)
+                            $script:Vue.Ecran = $id
+                            $p = $null
+                            foreach ($g in 'Get-PagesPc', 'Get-PagesPerf', 'Get-PagesProtection', 'Get-PagesJeux', 'Get-PagesReseau', 'Get-PagesDivers') { $r = & $g; if ($r.Contains($id)) { $p = $r[$id] } }
+                            if ($null -eq $p -and $id -eq 'jeu') { continue }   # (la page d'un jeu : seulement quand un jeu est choisi)
+                            Assert-Test ($null -ne $p) "page $id absente"
+                            $n = @($p.blocs | Where-Object { $_ }).Count + @($p.onglets | Where-Object { $_ }).Count + @($p.sections | Where-Object { $_ }).Count
+                            if (-not $p.titre -or -not $n) { $vides += $id } else { $nb++ }
+                            [void](ConvertTo-Json -InputObject $p -Depth 16 -Compress)
+                        }
+                    } finally { $script:Vue.Ecran = $avant }
+                    Assert-Test (-not $vides.Count) "pages vides : $($vides -join ', ')"
+                    $e = Get-EcranNevermind
+                    Assert-Test (@($e.accueil.tuiles).Count -eq 7) "$(@($e.accueil.tuiles).Count) tuiles sur l'accueil"
+                    # La roue crantée et l'aide ouvrent les pages de la console
+                    Show-Settings; Wait-TestMs 200
+                    Assert-Test ($script:Kit.RetourEcran -eq 'parametres') 'la roue n''ouvre pas la page Paramètres'
+                    Show-Settings 'aide'; Wait-TestMs 200
+                    Assert-Test ($script:Kit.RetourEcran -eq 'aide') 'l''aide n''ouvre pas la page Aide'
+                    Show-Page $HubIndex
+                    "$nb pages construites et non vides, 7 tuiles, Paramètres et Aide dans la console"
                 }
+            }
+            Test-StepWpf 'Paramètres (roue crantée)' {
+                Assert-Test ($null -eq $ui.Tabs.Template.FindName('TopReport', $ui.Tabs)) 'bouton Signaler encore dans la barre'
+                # (le panneau d'origine : la page Paramètres de la console clique sur ses réglages)
+                Show-Settings 'general'; Wait-TestMs 400
+                Assert-Test ($ui.SettingsOverlay.Visibility -eq 'Visible') 'les Paramètres ne s''ouvrent pas'
                 Save-TestShot 'parametres-general'
                 $seen = @()
                 foreach ($t in $SettingsTabs) {
@@ -845,7 +870,7 @@ $script:T.Run.Add_Tick({
                 Show-Page $HubIndex
                 "$($seen.Count) onglets ($($seen -join ', ')), réglage synchronisé avec sa page, Échap ferme, barre du haut tenue à $([int]$Window.MinWidth) px"
             }
-            Test-Step 'Thèmes (5 choix)' {
+            Test-StepWpf 'Thèmes (5 choix)' {
                 $base = @($AppThemes.Keys | Where-Object { -not $AppThemes[$_].Pack })
                 Assert-Test ($base.Count -eq 5) "$($base.Count) thèmes"
                 $raw = [IO.File]::ReadAllText((Join-Path $ModulesDir 'interface.xaml'), [Text.Encoding]::UTF8)
@@ -872,7 +897,7 @@ $script:T.Run.Add_Tick({
                 Set-Setting 'Theme' $old; $script:ThemePick = $null; Hide-Settings
                 "$(($base | ForEach-Object { $AppThemes[$_].Name }) -join ', ') : fenêtre chargée dans chacun, couleurs d'état intactes"
             }
-            Test-Step 'Packs de thème (image perso, chargement)' {
+            Test-StepWpf 'Packs de thème (image perso, chargement)' {
                 Add-Type -AssemblyName System.Drawing
                 $work = Join-Path $DataDir 'essai-pack'; New-Item -ItemType Directory -Force -Path $work | Out-Null
                 # GIF sur fond blanc : un rond jaune bordé de noir, avec un point blanc au milieu (comme le reflet d'un oeil)
