@@ -22,7 +22,8 @@ function Get-TuilesTestsKit {
         $ton = Get-TonKit $point.Fill
         $total++; if ($ton) { $faits++ }
         $ligne = @{ type = 'ligne'; icone = $(if ($IconesTests[$tag]) { $IconesTests[$tag] } else { 'test' }); couleur = $(switch ($ton) { 'ok' { 'vert' } 'attention' { 'orange' } 'urgent' { 'rouge' } default { 'P' } })
-            texte = $titres[0]; note = "$(if ($titres.Count -gt 1) { "$($titres[1]). " })$([string]$sp.Children[1].Text)"
+            # (« SSD, 1 To  /  C: D: » : « SSD, 1 To, disque C: D: », sans point collé à la lettre du disque)
+            texte = $titres[0]; note = (@($(if ($titres.Count -gt 1) { $titres[1] -replace '\s+/\s+', ', disque ' }), [string]$sp.Children[1].Text) | Where-Object { $_ }) -join ' · '
             etiquette = $(switch ($ton) { 'ok' { 'Bon' } 'attention' { 'À surveiller' } 'urgent' { 'Problème' } default { 'Pas encore testé' } }); ton = $ton }
         # Les boutons du test, dans la carte du composant
         $premier = $true
@@ -40,18 +41,8 @@ function Get-TuilesTestsKit {
     @{ Blocs = @($blocs); Faits = $faits; Total = $total }
 }
 
-# Où se trouve un résultat de recherche, avec les noms des onglets de la console (« Performances › Optimisation gaming »)
-function Get-OuKit($E) {
-    if ($E.P -is [string]) { return [string]$E.Where }
-    $onglets = @{ tableau = 'Ton PC'; tests = 'Ton PC'; optimisation = 'Performances'; demarrage = 'Performances'; nettoyage = 'Performances'
-        securite = 'Protection'; connexion = 'Protection'; sauvegarde = 'Protection' }
-    $id = $KitPagesIndex[[int]$E.P]
-    if (-not $id -or -not $onglets[$id]) { return [string]$E.Where }
-    $page = [string]$PageNames[[int]$E.P]
-    $sub = if ($E.S) { ' › ' + (@($GamingSubPages | Where-Object { $_.Id -eq $E.S })[0]).Label } else { '' }
-    if ($id -eq 'tableau') { return "Ton PC$sub" }
-    "$($onglets[$id]) › $page$sub"
-}
+# Où se trouve un résultat de recherche : Get-SearchWhere (recherche.ps1) donne déjà les noms de la console
+function Get-OuKit($E) { [string]$E.Where }
 
 function Get-PagesDivers {
     $pages = [ordered]@{}
@@ -92,7 +83,7 @@ function Get-PagesDivers {
         onglets = @(
             @{ id = 'general'; nom = 'Général'; blocs = @(
                 @{ type = 'reglages'; rangs = @(
-                    @{ texte = 'Raccourci et démarrage'; note = [string]$ui.ShortcutStatus.Text; bouton = $(if ($raccourci) { @{ id = 'clic:BtnShortcut'; texte = 'Créer le raccourci'; style = 'second' } }) }
+                    @{ texte = 'Raccourci sur le bureau'; note = [string]$ui.ShortcutStatus.Text; bouton = $(if ($raccourci) { @{ id = 'clic:BtnShortcut'; texte = 'Créer le raccourci'; style = 'second' } }) }
                     if ($demarrage) { @{ texte = 'Lancer Nevermind au démarrage du PC'; note = 'Il reste réduit près de l''horloge, sans demande d''autorisation, pour le mode jeu et la mesure des FPS.'; bascule = @{ id = 'coche:ChkAutoStart'; oui = [bool]$ui.ChkAutoStart.IsChecked } } }
                     @{ texte = 'Visite guidée'; note = 'Revoir en 3 étapes comment marche Nevermind.'; bouton = @{ id = 'visite'; texte = 'Revoir la visite'; style = 'second' } }
                 ) }
@@ -100,7 +91,7 @@ function Get-PagesDivers {
             @{ id = 'jeux'; nom = 'Jeux'; blocs = @(
                 @{ type = 'reglages'; rangs = @(
                     @{ texte = 'Mesurer mes FPS quand je joue'; note = 'Moyenne, chutes et courbe de chaque partie, gardées dans Jeux, Perf. In Game.'; bascule = @{ id = 'fps-mesure'; oui = [bool](Test-FpsMeasure) } }
-                    @{ texte = 'Compteur de FPS à l''écran'; note = 'Affichage, style et position du compteur par dessus le jeu.'; lien = @{ id = 'overlay'; texte = 'Ouvrir Overlay' } }
+                    @{ texte = 'Compteur de FPS à l''écran'; note = 'Affichage, style et position du compteur par-dessus le jeu.'; lien = @{ id = 'overlay'; texte = 'Ouvrir Overlay' } }
                     @{ texte = 'Mesurer ma connexion quand je joue'; note = 'Box, Internet et serveur du jeu pendant la partie, pour savoir d''où vient le lag.'; bascule = @{ id = 'lag-mesure'; oui = [bool](Test-LagMeasure) } }
                     @{ texte = 'Mode jeu : fermer des applis pendant que je joue'; note = 'Les applis choisies (Optimisation gaming, Mode jeu) sont fermées puis relancées après la partie.'; bascule = @{ id = 'modejeu'; oui = [bool](Get-Setting 'GameMode' $false) } }
                     @{ texte = 'Jaquettes depuis Internet'; note = 'Cherche les images des jeux qui n''en ont pas (seul le nom du jeu est envoyé).'; bascule = @{ id = 'coche:ChkLibCovers'; oui = [bool](Test-CoversOnline) } }
@@ -117,8 +108,8 @@ function Get-PagesDivers {
             @{ id = 'theme'; nom = 'Thème'; blocs = $theme }
             @{ id = 'maj'; nom = 'Mises à jour'; blocs = @(
                 @{ type = 'reglages'; rangs = @(
-                    @{ texte = 'Version'; note = [string]$ui.UpdateStatus.Text; bouton = $(if ($ui.BtnCheckUpdate.Visibility -eq 'Visible') { @{ id = 'clic:BtnCheckUpdate'; texte = 'Vérifier'; style = 'second' } }) }
-                    @{ texte = 'Recevoir les versions bêta'; note = 'Les nouveautés en avant-première ; elles peuvent contenir des bugs.'; bascule = @{ id = 'coche:ChkBeta'; oui = [bool]$ui.ChkBeta.IsChecked } }
+                    @{ texte = 'Version'; note = [string]$ui.UpdateStatus.Text; valeur = "Nevermind $AppVersion" }   # (« Vérifier les mises à jour » : le bouton de la carte)
+                    @{ texte = 'Recevoir les versions bêta'; note = 'Les nouveautés en avant-première ; elles peuvent contenir des erreurs.'; bascule = @{ id = 'coche:ChkBeta'; oui = [bool]$ui.ChkBeta.IsChecked } }
                 ) }
             ) }
         ) }
@@ -129,13 +120,13 @@ function Get-PagesDivers {
         blocs = @(
             @{ type = 'faq'; elements = @(
                 @{ question = 'Est-ce que Nevermind peut abîmer mon PC ?'; icone = 'bouclier'; couleur = 'T'; reponse = 'Non. Rien n''est modifié sans ton accord, et chaque changement est sauvegardé avant d''être fait : tu peux l''annuler à tout moment depuis la page Sauvegarde (dans Protection). Nevermind ne touche jamais à tes documents.' }
-                @{ question = 'Comment revenir à l''accueil ?'; icone = 'maison'; couleur = 'P'; reponse = 'Clique sur le logo ou le nom Nevermind en haut à gauche, ou appuie sur Échap (B) jusqu''à l''accueil.' }
-                @{ question = 'Nevermind reste ouvert quand je le ferme ?'; icone = 'horloge'; couleur = 'P'; reponse = 'En réduisant, Nevermind reste ouvert près de l''horloge : il continue en arrière plan pour le mode jeu et la mesure des FPS.' }
+                @{ question = 'Comment revenir à l''accueil ?'; icone = 'maison'; couleur = 'P'; reponse = 'Clique sur le logo ou le nom Nevermind en haut à gauche, ou appuie sur Échap (ou le bouton Retour en bas à droite) jusqu''à revenir à l''accueil.' }
+                @{ question = 'Que se passe-t-il quand je clique sur la croix ?'; icone = 'horloge'; couleur = 'P'; reponse = 'Nevermind te demande si tu veux quitter ou réduire. « Quitter » le ferme complètement. « Réduire » le garde ouvert près de l''horloge : il continue en arrière-plan pour le mode jeu, le compteur de FPS et la mesure des FPS.' }
                 @{ question = 'Mes FPS ne sont pas mesurés dans un jeu'; icone = 'manette'; couleur = 'S'; reponse = 'Vérifie dans Paramètres, Jeux, que « Mesurer mes FPS quand je joue » est activé. Si Nevermind ne reconnaît pas le jeu, appuie sur Ctrl + Maj + F pendant la partie, ou ajoute le jeu dans la page Jeux.' }
                 @{ question = 'À quoi sert la page Réseau ?'; icone = 'radar'; couleur = 'S'; reponse = 'Elle trouve les appareils de ta maison (téléphones, consoles, TV, objets connectés) et vérifie leur sécurité. Un nouvel appareil inconnu est signalé.' }
             ) }
             @{ type = 'titre'; texte = 'Toujours bloqué ?' }
-            @{ type = 'ligne'; icone = 'rapport'; couleur = 'P'; texte = 'Signaler un problème'; note = 'Crée un fichier sur ton bureau avec le journal de l''app et la configuration de ton PC, sans tes fichiers ni ton nom. Envoie le à la personne qui t''a donné Nevermind.'; bouton = @{ id = 'clic:BtnReportProblem'; texte = 'Créer le fichier'; style = 'second' } }
+            @{ type = 'ligne'; icone = 'rapport'; couleur = 'P'; texte = 'Signaler un problème'; note = 'Crée un fichier sur ton bureau avec le journal de Nevermind et la configuration de ton PC, sans tes fichiers ni ton nom. Envoie-le à la personne qui t''a donné Nevermind.'; bouton = @{ id = 'clic:BtnReportProblem'; texte = 'Créer le fichier'; style = 'second' } }
             @{ type = 'raccourcis'; elements = @(@{ id = 'recherche'; nom = 'Rechercher un réglage'; icone = 'loupe'; couleur = 'S' }) }
         ) }
     $pages

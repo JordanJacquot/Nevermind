@@ -37,9 +37,10 @@ function Get-PagesProtection {
     $script:Kit.SecChecks = @($checks)
     $defenderOk = $d -and $d.S.Mp -and $d.S.Mp.AMRunningMode -eq 'Normal'
     $titreSec = if ($null -eq $sec) { 'Vérification en cours' } elseif ($sec -ge 80) { 'Bien protégé' } elseif ($sec -ge 50) { 'Quelques points à voir' } else { 'Vérifie ta protection' }
-    $texteSec = if ($checks.Count) { "$($checks.Count) point$(if ($checks.Count -gt 1) { 's' }) à vérifier." } elseif ($d) { 'Rien de suspect : pas de fichier déguisé, pas de programme caché, pas de tâche douteuse.' } else { 'Antivirus, programmes cachés, réseau, sauvegarde.' }
+    $texteSec = if ($checks.Count) { "$($checks.Count) point$(if ($checks.Count -gt 1) { 's' }) à vérifier." } elseif ($d) { 'Rien de suspect sur ton PC.' } else { 'Antivirus, programmes cachés, réseau, sauvegarde.' }
     $analyses = @(if ($defenderOk) { @{ id = 'clic:BtnScanQuick'; texte = 'Analyse rapide' }; @{ id = 'clic:BtnScanFull'; texte = 'Analyse complète' } })
-    $module = if ($null -ne $sec) { @{ anneau = @{ valeur = [int]$sec; sur = 100; ton = $(if ($sec -lt 50) { 'urgent' } elseif ($sec -lt 80) { 'attention' }) }; titre = $titreSec; texte = $texteSec; boutons = $analyses; resume = @($etat | Select-Object -First 4) } }
+    # (la carte résume le niveau ; le détail de chaque protection est à droite, sans doublon)
+    $module = if ($null -ne $sec) { @{ anneau = @{ valeur = [int]$sec; sur = 100; ton = $(if ($sec -lt 50) { 'urgent' } elseif ($sec -lt 80) { 'attention' }) }; titre = $titreSec; texte = $texteSec; boutons = $analyses } }
         else { @{ icone = 'bouclier'; couleur = 'T'; titre = $titreSec; texte = 'Nevermind vérifie ta protection, ça prend quelques secondes.' } }
 
     # Connexion
@@ -57,13 +58,13 @@ function Get-PagesProtection {
         blocs = @(
             @{ type = 'outils'; elements = @(
                 @{ id = 'securite'; nom = 'Sécurité'; note = 'Virus et programmes dangereux'; icone = 'bouclier'; couleur = 'T'; etiquette = $(if ($checks.Count) { "$($checks.Count) point$(if ($checks.Count -gt 1) { 's' })" } elseif ($d) { 'Tout est propre' }); ton = $(if (@($checks | Where-Object { $_.Status -eq 'bad' }).Count) { 'urgent' } elseif ($checks.Count) { 'attention' } else { 'ok' }) }
-                @{ id = 'connexion'; nom = 'Connexion'; note = 'Ping, stabilité, DNS'; icone = 'ondes'; couleur = 'P'; etiquette = $(if ($inter.Count) { "$($inter[0].Avg) ms" } else { 'À tester' }); ton = $(if ($inter.Count) { $TonsStatut[[string]$inter[0].Status] } else { '' }) }
+                @{ id = 'connexion'; nom = 'Connexion'; note = 'Temps de réponse (ping), stabilité, DNS'; icone = 'ondes'; couleur = 'P'; etiquette = $(if ($inter.Count) { "$($inter[0].Avg) ms" } else { 'À tester' }); ton = $(if ($inter.Count) { $TonsStatut[[string]$inter[0].Status] } else { '' }) }
                 @{ id = 'sauvegarde'; nom = 'Sauvegarde'; note = 'Revenir en arrière à tout moment'; icone = 'sauve'; couleur = 'S'; etiquette = $(if ($nb) { "$nb réglage$(if ($nb -gt 1) { 's' })" } else { 'Rien de modifié' }); ton = 'ok' }
             ) }
             if ($checks.Count) { @{ type = 'titre'; texte = 'Points à vérifier' } }
         ) + @(foreach ($c in @($checks | Select-Object -First 4)) { @{ type = 'ligne'; id = 'securite'; icone = 'alerte'; couleur = $(if ($c.Status -eq 'bad') { 'rouge' } else { 'orange' }); texte = [string]$c.Title; note = [string]$c.Detail; etiquette = $(if ($c.Status -eq 'bad') { 'Important' } else { 'À voir' }); ton = $TonsStatut[[string]$c.Status] } }) + @(
-            if ($etat.Count) { @{ type = 'pastilles'; elements = @($etat | Where-Object { $_.ton -eq 'ok' -and $_.nom -ne 'Dernière analyse' } | ForEach-Object { @{ texte = "$($_.nom) : $($_.valeur.ToLower())"; ton = 'ok' } }) } }
-        ) }
+            if ($etat.Count) { @{ type = 'titre'; texte = 'Ta protection' } }
+        ) + @(foreach ($e in $etat) { @{ type = 'ligne'; id = 'securite'; icone = $(if ($e.ton -eq 'ok') { 'ok' } else { 'alerte' }); couleur = $(switch ([string]$e.ton) { 'ok' { 'vert' } 'urgent' { 'rouge' } 'attention' { 'orange' } default { 'P' } }); texte = [string]$e.nom; valeur = [string]$e.valeur; ton = [string]$e.ton } }) }
 
     # ---- Sécurité
     $lignesSec = New-Object System.Collections.ArrayList
@@ -72,7 +73,7 @@ function Get-PagesProtection {
         [void]$lignesSec.Add(@{ type = 'ligne'; icone = 'alerte'; couleur = $(if ($c.Status -eq 'bad') { 'rouge' } else { 'orange' }); texte = [string]$c.Title; note = [string]$c.Detail; etiquette = $(if ($c.Status -eq 'bad') { 'Important' } else { 'À voir' }); ton = $TonsStatut[[string]$c.Status] })
         if ($c.Items) {
             $it = @($c.Items | Select-Object -First 6 | ForEach-Object { [string]$_ })
-            if (@($c.Items).Count -gt 6) { $it += "et $(@($c.Items).Count - 6) autre(s)..." }
+            if (@($c.Items).Count -gt 6) { $reste = @($c.Items).Count - 6; $it += "et $reste autre$(if ($reste -gt 1) { 's' })..." }
             [void]$lignesSec.Add(@{ type = 'liste'; elements = $it })
         }
         for ($j = 0; $j -lt @($c.Actions).Count; $j++) { [void]$lignesSec.Add(@{ type = 'bouton'; id = "sec:$k`:$j"; texte = [string]$c.Actions[$j].Label; style = $(if ($j) { 'second' }) }) }
@@ -87,7 +88,7 @@ function Get-PagesProtection {
         @{ id = 'menaces'; nom = "Menaces récentes ($($menaces.Count))"; blocs = $(if ($menaces.Count) { @(foreach ($h in $menaces) { @{ type = 'ligne'; icone = 'alerte'; couleur = $(if ($h.Active) { 'rouge' } else { 'doux' }); texte = [string]$h.Name; note = "$(try { $h.When.ToString('dd/MM/yyyy HH:mm') } catch { '' })   $($h.File)"; etiquette = [string]$h.State; ton = $(if ($h.Active) { 'urgent' } else { 'ok' }) } }) } else { @(@{ type = 'texte'; texte = 'Aucune menace trouvée sur ce PC récemment.' }) }) }
     )
     if ($approuves.Count) {
-        $ongletsSec += @{ id = 'approuves'; nom = "Approuvés par toi ($($approuves.Count))"; blocs = @(@{ type = 'texte'; texte = 'Tu as indiqué que c''est toi qui les as mis en place : ils ne baissent plus le niveau de protection. Retire les si tu changes d''avis.' }) + @(for ($k = 0; $k -lt $approuves.Count; $k++) { $t = $approuves[$k]; @{ type = 'ligne'; icone = 'ok'; couleur = 'vert'; texte = [string]$t.Text; note = [string]$t.Kind; bouton = @{ id = "sec-retirer:$k"; texte = 'Retirer'; style = 'second' } } }) }
+        $ongletsSec += @{ id = 'approuves'; nom = "Approuvés par toi ($($approuves.Count))"; blocs = @(@{ type = 'texte'; texte = 'Tu as indiqué que c''est toi qui les as mis en place : ils ne baissent plus le niveau de protection. Retire-les si tu changes d''avis.' }) + @(for ($k = 0; $k -lt $approuves.Count; $k++) { $t = $approuves[$k]; @{ type = 'ligne'; icone = 'ok'; couleur = 'vert'; texte = [string]$t.Text; note = [string]$t.Kind; bouton = @{ id = "sec-retirer:$k"; texte = 'Retirer'; style = 'second' } } }) }
     }
     $pages.securite = @{ titre = 'Sécurité'; parent = 'protection'; sous = 'Recherche des virus et de tout ce qui pourrait être dangereux sur ton PC.'; icone = 'bouclier'; couleur = 'T'
         actions = @(@{ id = 'clic:BtnSecRefresh'; texte = 'Revérifier'; icone = 'actu' })
@@ -104,7 +105,7 @@ function Get-PagesProtection {
         @{ texte = 'Box'; valeur = [string]$net.Gateway }
         if ($net.Dns) { @{ texte = 'DNS actuel'; valeur = [string]$net.Dns } }
     })
-    $pages.connexion = @{ titre = 'Connexion'; parent = 'protection'; sous = 'Mesure ton ping, sa stabilité (gigue) et les pertes de paquets.'; icone = 'ondes'; couleur = 'P'
+    $pages.connexion = @{ titre = 'Connexion'; parent = 'protection'; sous = 'Mesure ton temps de réponse (ping), sa stabilité (gigue) et les messages perdus en route.'; icone = 'ondes'; couleur = 'P'
         module = $(if ($inter.Count) { $p = $inter[0]
                 @{ icone = 'ondes'; couleur = $(switch ([string]$p.Status) { 'ok' { 'vert' } 'warn' { 'orange' } 'bad' { 'rouge' } default { 'P' } }); titre = "Ping $($p.Avg) ms"; texte = [string]$p.Verdict; boutons = @(@{ id = 'clic:BtnPing'; texte = 'Tester ma connexion' }); resume = @(@{ nom = 'Gigue'; valeur = "$($p.Jitter) ms" }, @{ nom = 'Pertes'; valeur = "$($p.Loss) %"; ton = $(if ($p.Loss -gt 0) { 'attention' } else { 'ok' }) }) } }
             elseif (-not $net) { @{ icone = 'ondes'; couleur = 'rouge'; titre = 'Pas de connexion'; texte = 'Aucune connexion Internet détectée.'; boutons = @(@{ id = 'clic:BtnPing'; texte = 'Réessayer' }) } }
@@ -116,7 +117,7 @@ function Get-PagesProtection {
             @{ type = 'titre'; texte = 'Serveur DNS' }
             @{ type = 'choix'; id = 'dns'; valeur = "$choixDns"; options = @(@{ id = '0'; texte = 'Automatique (celui de ta box)' }, @{ id = '1'; texte = 'Cloudflare' }, @{ id = '2'; texte = 'Google' }, @{ id = '3'; texte = 'Quad9' }) }
             @{ type = 'bouton'; id = 'clic:BtnDnsFlush'; texte = 'Vider le cache DNS'; style = 'second' }
-            @{ type = 'note'; texte = 'Bon à savoir : le DNS ne change pas ton ping en jeu, il sert seulement à trouver l''adresse des serveurs. Un DNS rapide accélère un peu la navigation et la connexion des launchers.' }
+            @{ type = 'note'; texte = 'Bon à savoir : le DNS ne change pas ton ping en jeu, il sert seulement à trouver l''adresse des serveurs. Un DNS rapide accélère un peu la navigation et la connexion des lanceurs de jeux (Steam, Epic...).' }
         ) }
 
     # ---- Sauvegarde

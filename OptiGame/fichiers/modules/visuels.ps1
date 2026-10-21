@@ -56,9 +56,12 @@ function Start-PageTransition {
     Start-FromTo $h.RenderTransform ([System.Windows.Media.TranslateTransform]::YProperty) 16 0 340
 }
 
-# Fenêtre ouverte par dessus l'app : le fond se floute
+# La console est devant : sur l'accueil, sans panneau d'avant par-dessus (l'interface d'avant est cachée derrière)
+function Test-ConsoleDevant { [bool]($script:Kit.Actif -and $ui.Tabs.SelectedIndex -eq $HubIndex -and -not (Test-PanneauOuvert)) }
+
+# Fenêtre ouverte par dessus l'app : le fond se floute (pas sous la console : la fiche et le panneau sont montrés dans l'écran)
 function Update-BackdropBlur {
-    $on = $ui.TestOverlay.IsVisible -or $ui.Overlay.IsVisible -or $ui.NetMapOverlay.IsVisible
+    $on = ($ui.TestOverlay.IsVisible -or $ui.Overlay.IsVisible -or $ui.NetMapOverlay.IsVisible) -and -not (Test-ConsoleDevant)
     if ($on -and -not $ui.Tabs.Effect) {
         $fx = New-Object System.Windows.Media.Effects.BlurEffect
         $fx.Radius = 0
@@ -699,7 +702,7 @@ function Initialize-NexoLogo($MarkHost, $WordHost) {
     $script:LogoTimer.Add_Tick({
         param($s, $e)
         $s.Interval = [TimeSpan]::FromSeconds((Get-Random -Minimum 6 -Maximum 13))
-        if ($Window.IsVisible -and $Window.IsActive) { Start-NexoGlitch $script:LogoMark $script:LogoWord }
+        if ($Window.IsVisible -and $Window.IsActive -and -not $script:Kit.Actif) { Start-NexoGlitch $script:LogoMark $script:LogoWord }   # (sous la console, la barre du logo est repliée)
     })
     $script:LogoTimer.Start()
 }
@@ -982,7 +985,7 @@ function Initialize-PackLogo($MarkHost, $WordHost) {
     $script:LogoTimer.Add_Tick({
         param($s, $e)
         $s.Interval = [TimeSpan]::FromSeconds((Get-Random -Minimum 6 -Maximum 13))
-        if ($Window.IsVisible -and $Window.IsActive) { Start-PackLogoShake }
+        if ($Window.IsVisible -and $Window.IsActive -and -not $script:Kit.Actif) { Start-PackLogoShake }   # (sous la console, la barre du logo est repliée)
     })
     $script:LogoTimer.Start()
 }
@@ -1051,6 +1054,19 @@ function Initialize-PackFooter {
     $script:Footer.Img.Add_SizeChanged($fit)
 }
 
+# Barre du bas cachée derrière l'écran de la console : le dessin animé s'arrête, et repart quand elle réapparaît
+function Set-FooterPause([bool]$Pause) {
+    $F = $script:Footer
+    if (-not $F) { return }
+    $F.EnPause = $Pause
+    if ($F.Danse) {
+        $p = [System.Windows.Media.RotateTransform]::AngleProperty
+        foreach ($d in $F.Danse) { if ($Pause) { $d.Rot.BeginAnimation($p, $null) } else { $d.Rot.BeginAnimation($p, $d.Anim) } }
+    } elseif ($F.Timer) {
+        if ($Pause) { $F.Timer.Stop() } else { $F.Timer.Start() }
+    }
+}
+
 # Icônes animées des onglets du haut (pack de thème) : première image au repos, animation au survol de l'onglet
 function Initialize-PackTabIcons {
     if (-not $ThemePack -or -not $ThemePack.TabIcons -or -not $ThemePack.TabIcons.Count) { return }
@@ -1099,6 +1115,7 @@ function Get-TabIconState($TabItem) {
 function Initialize-PackFooterDance($F) {
     $row = New-Object System.Windows.Controls.StackPanel
     $row.Orientation = 'Horizontal'
+    $danse = New-Object System.Collections.ArrayList
     $i = 0
     foreach ($file in $F.Files) {
         $bi = New-Object System.Windows.Media.Imaging.BitmapImage
@@ -1113,13 +1130,14 @@ function Initialize-PackFooterDance($F) {
         $e = New-Object System.Windows.Media.Animation.SineEase; $e.EasingMode = 'EaseInOut'; $a.EasingFunction = $e
         $a.BeginTime = [TimeSpan]::FromMilliseconds(260 * $i)
         $rot.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
+        [void]$danse.Add(@{ Rot = $rot; Anim = $a })   # (pour la pause sous la console, Set-FooterPause)
         [void]$row.Children.Add($img)
         $i++
     }
     $ui.FooterArt.Child = $row
     $ui.FooterArt.Visibility = 'Visible'
     $ui.StatusBar.Padding = New-Thickness 36 2 36 6
-    $script:Footer = @{ Img = $row; Timer = (New-Object System.Windows.Threading.DispatcherTimer) }
+    $script:Footer = @{ Img = $row; Timer = (New-Object System.Windows.Threading.DispatcherTimer); Danse = $danse }
     $fit = { if ($script:Footer) { $ui.StatusText.MaxWidth = [math]::Max(80.0, ($ui.StatusBar.ActualWidth - 72 - $script:Footer.Img.ActualWidth) / 2 - 16) } }
     $ui.StatusBar.Add_SizeChanged($fit)
     $row.Add_SizeChanged($fit)

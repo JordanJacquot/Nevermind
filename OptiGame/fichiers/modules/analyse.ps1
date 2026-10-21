@@ -18,10 +18,6 @@ function Get-LoadColor([double]$Pct, [double]$Warn = 75, [double]$Bad = 90) {
     if ($Pct -ge $Bad) { $Colors.bad } elseif ($Pct -ge $Warn) { $Colors.warn } else { $Colors.ok }
 }
 
-function Get-EventCount([hashtable]$Filter) {
-    try { @(Get-WinEvent -FilterHashtable $Filter -ErrorAction Stop).Count } catch { 0 }
-}
-
 function Format-Duration([TimeSpan]$Span) {
     if ($Span.TotalDays -ge 1) { return "$([int][math]::Floor($Span.TotalDays)) j $($Span.Hours) h" }
     "$($Span.Hours) h $($Span.Minutes) min"
@@ -279,7 +275,7 @@ function Invoke-Analysis {
             $c.Lines['Pilote'] = @("$($g.DriverVersion) du $($g.DriverDate.ToString('dd/MM/yyyy'))", $(if ($age -gt 180) { $Colors.warn } else { '#EEEBF7' }))
             if ($age -gt 180) {
                 $months = [math]::Floor($age / 30)
-                Add-Note $c 'warn' "Pilote vieux d'environ $months mois: mets le à jour pour de meilleures performances."
+                Add-Note $c 'warn' "Pilote vieux d'environ $months mois: mets-le à jour pour de meilleures performances."
                 $c.Action = Get-DriverLink $g.Name; $c.ActionLabel = 'Télécharger le pilote'
                 $steps = if ($g.Name -match 'NVIDIA|GeForce') {
                     @('Ouvre l''application NVIDIA si tu l''as (onglet Pilotes), ou clique sur « Site du pilote ».', 'Télécharge le dernier pilote « Game Ready » pour ta carte.', 'Lance l''installation (installation rapide). L''écran peut clignoter, c''est normal.', 'Relance l''analyse de Nevermind.')
@@ -380,7 +376,7 @@ function Invoke-Analysis {
                     $(if (-not $primary) { " Écran secondaire : simple avertissement, il ne fait pas baisser ta note." } else { '' })
                 Add-Finding $F $sev "Écran $i$role bridé à $cur Hz" $detail $(if ($primary) { 3 } else { 0 }) -Id $dispId -Fix (New-Fix -Auto `
                     -What @("Passer l'écran $i ($w x $h) de $cur Hz à $max Hz, sans changer sa résolution.") `
-                    -Why "Plus de Hz, c'est une image plus fluide et moins de latence: c'est le réglage qui se voit le plus en jeu. Si tu utilises cet écran seulement pour des vidéos, clique sur « Ignorer (c'est voulu) »: il ne comptera plus dans ton score. Si l'écran devient noir après le changement, ne touche à rien: l'app revient toute seule à l'ancien réglage au bout de 15 secondes." `
+                    -Why "Plus de Hz, c'est une image plus fluide et moins de latence: c'est le réglage qui se voit le plus en jeu. Si tu utilises cet écran seulement pour des vidéos, clique sur « Ignorer (c'est voulu) »: il ne comptera plus dans ton score. Si l'écran devient noir après le changement, ne touche à rien: Nevermind revient tout seul à l'ancien réglage au bout de 15 secondes." `
                     -Run { param($a) Set-DisplayRate $a.Device $a.Hz } -RunArgs @{ Device = $dev; Hz = $max } `
                     -Open 'ms-settings:display-advanced' -OpenLabel 'Affichage avancé')
             } elseif ($cur -gt 60) {
@@ -428,7 +424,7 @@ function Invoke-Analysis {
                 Add-Note $c 'bad' "Le test mémoire de Windows a trouvé des erreurs. Désactive l'XMP / EXPO pour tester, et si ça continue, une barrette est défectueuse."
                 Add-Finding $F 'bad' 'Mémoire défectueuse ou instable' "Le dernier test mémoire de Windows a trouvé des erreurs: plantages et écrans bleus possibles." 3 -Id 'ram-errors' -Fix (New-Fix `
                     -Why 'Une mémoire qui fait des erreurs provoque plantages, écrans bleus et fichiers corrompus.' `
-                    -Steps @('Entre dans le BIOS et remets la mémoire en réglage par défaut (désactive XMP / EXPO).', 'Relance le test mémoire de Windows avec le bouton ci dessous.', 'Si les erreurs continuent, teste les barrettes une par une: celle qui provoque des erreurs est défectueuse.') `
+                    -Steps @('Entre dans le BIOS et remets la mémoire en réglage par défaut (désactive XMP / EXPO).', 'Relance le test mémoire de Windows avec le bouton ci-dessous.', 'Si les erreurs continuent, teste les barrettes une par une: celle qui provoque des erreurs est défectueuse.') `
                     -What @('Lancer le test mémoire de Windows (le PC redémarre, le test dure environ 15 minutes).') `
                     -Run { Start-Process 'mdsched.exe' } -RunLabel 'Lancer le test mémoire' -NoRescan -Done 'Le test mémoire de Windows est lancé: choisis « Redémarrer maintenant ».')
             }
@@ -510,7 +506,7 @@ function Invoke-Analysis {
                 $wear = [int]$rel.Wear
                 $c.Lines['Usure'] = @("$wear %", (Get-LoadColor $wear 70 90))
                 if ($wear -ge 90) { Add-Note $c 'bad' "SSD usé à $wear %: il approche de sa fin de vie, prévois son remplacement." }
-                elseif ($wear -ge 70) { Add-Note $c 'warn' "SSD usé à $wear %: surveille le et sauvegarde tes fichiers." }
+                elseif ($wear -ge 70) { Add-Note $c 'warn' "SSD usé à $wear %: surveille-le et sauvegarde tes fichiers." }
             }
             if ($rel.Temperature -gt 0) {
                 $t = [int]$rel.Temperature
@@ -530,7 +526,7 @@ function Invoke-Analysis {
 
         $diskFix = New-Fix `
             -Why (($c.Notes | ForEach-Object { $_.Text }) -join ' ') `
-            -Steps @('Copie tes fichiers importants (photos, documents, sauvegardes de jeux) sur un autre disque ou dans le cloud.', 'Regarde le détail dans la carte du disque (usure, température, erreurs, remplissage).', 'Si le disque est défaillant ou très usé, remplace le rapidement: les jeux se réinstallent, tes fichiers perso non.')
+            -Steps @('Copie tes fichiers importants (photos, documents, sauvegardes de jeux) sur un autre disque ou dans le cloud.', 'Regarde le détail dans la carte du disque (usure, température, erreurs, remplissage).', 'Si le disque est défaillant ou très usé, remplace-le rapidement: les jeux se réinstallent, tes fichiers perso non.')
         if ($c.Status -eq 'bad') {
             Add-Finding $F 'bad' "Disque en mauvaise santé: $($d.FriendlyName)" 'Sauvegarde tes fichiers importants dès maintenant.' 3 -Id "disk:$($d.FriendlyName)" -Fix $diskFix
         } elseif ($c.Status -eq 'warn') {
@@ -555,7 +551,7 @@ function Invoke-Analysis {
         $spaceFix = New-Fix -Auto `
             -What @('Supprimer les fichiers temporaires de Windows et de ton compte.', 'Supprimer les fichiers de mises à jour Windows déjà installées et les anciens rapports d''erreurs.', 'Tes documents, tes jeux et la corbeille ne sont pas touchés.') `
             -Why 'Windows et les jeux ralentissent quand le disque système est plein, et les mises à jour de jeux peuvent échouer. Si ça ne suffit pas, désinstalle les jeux auxquels tu ne joues plus.' `
-            -Run { Invoke-CleanAll } -Open 'tab:4' -OpenLabel 'Onglet Nettoyage'
+            -Run { Invoke-CleanAll } -Open 'tab:4' -OpenLabel 'Nettoyage'
         if ($pct -lt 10)     { Add-Finding $F 'bad'  "Disque presque plein ($freeGB Go libres)" 'Windows et les jeux ralentissent quand le disque est plein.' 2 -Id 'disk-space' -Fix $spaceFix }
         elseif ($pct -lt 20) { Add-Finding $F 'warn' "Espace disque limité ($freeGB Go libres)" 'Garde au moins 20 % de libre pour de bonnes performances.' 2 -Id 'disk-space' -Fix $spaceFix }
         else                 { Add-Finding $F 'ok'   "Espace disque suffisant ($freeGB Go libres)" '' 2 -Id 'disk-space' }
@@ -585,10 +581,10 @@ function Invoke-Analysis {
         if ($sb) { $c.Lines['Secure Boot'] = @('Activé', $Colors.ok) }
         else {
             $c.Lines['Secure Boot'] = @('Désactivé', $Colors.warn)
-            Add-Note $c 'warn' "Certains jeux récents (Valorant, Battlefield 6, Call of Duty) exigent le Secure Boot pour leur anti triche. Active le dans le BIOS si un jeu refuse de se lancer."
+            Add-Note $c 'warn' "Certains jeux récents (Valorant, Battlefield 6, Call of Duty) exigent le Secure Boot pour leur anti-triche. Active-le dans le BIOS si un jeu refuse de se lancer."
             Add-Finding $F 'warn' 'Secure Boot désactivé' "Des jeux comme Valorant, Battlefield 6 ou les derniers Call of Duty peuvent refuser de se lancer." 1 -Id 'secureboot' -Fix (New-Fix `
-                -Why 'Les anti triche récents vérifient que le Secure Boot est actif. Sans lui, certains jeux refusent de démarrer.' `
-                -Steps @('Clique sur « Redémarrer dans le BIOS » (enregistre ton travail avant).', 'Va dans le menu Boot (ou Sécurité) > Secure Boot et mets le sur « Enabled ». Sur certaines cartes, il faut d''abord mettre « OS Type » sur « Windows UEFI mode ».', 'Enregistre avec F10 et redémarre.') `
+                -Why 'Les anti-triche récents vérifient que le Secure Boot est actif. Sans lui, certains jeux refusent de démarrer.' `
+                -Steps @('Clique sur « Redémarrer dans le BIOS » (enregistre ton travail avant).', 'Va dans le menu Boot (ou Sécurité) > Secure Boot et mets-le sur « Enabled ». Sur certaines cartes, il faut d''abord mettre « OS Type » sur « Windows UEFI mode ».', 'Enregistre avec F10 et redémarre.') `
                 -What @('Redémarrer le PC directement dans le BIOS.') `
                 -Run $BiosRun -RunLabel 'Redémarrer dans le BIOS' -Confirm $BiosConfirm -NoRescan -Done $BiosDone)
         }
@@ -616,7 +612,7 @@ function Invoke-Analysis {
     $c.Lines['Allumé depuis'] = Format-Duration $uptime
     $crashFix = New-Fix `
         -Why 'Les plantages viennent le plus souvent d''un pilote défectueux, d''un réglage XMP / overclock trop agressif ou d''une surchauffe.' `
-        -Steps @('Clique sur « Historique » pour voir quand le PC a planté et quel programme ou pilote est en cause.', 'Mets à jour Windows et le pilote de ta carte graphique.', 'Si tu as activé XMP / EXPO, un overclock ou un undervolt, remets les réglages par défaut dans le BIOS pour tester.', 'Surveille les températures en jeu avec HWiNFO: au delà de 90 °C, nettoie le PC ou améliore le refroidissement.') `
+        -Steps @('Clique sur « Historique » pour voir quand le PC a planté et quel programme ou pilote est en cause.', 'Mets à jour Windows et le pilote de ta carte graphique.', 'Si tu as activé XMP / EXPO, un overclock ou un undervolt, remets les réglages par défaut dans le BIOS pour tester.', 'Surveille les températures en jeu avec HWiNFO: au-delà de 90 °C, nettoie le PC ou améliore le refroidissement.') `
         -Open 'run:perfmon.exe /rel' -OpenLabel 'Historique'
     if ($bsod -ge 2) {
         Add-Note $c 'bad' "$bsod écrans bleus ce mois ci. Causes fréquentes: pilote défectueux, XMP / overclock instable, surchauffe."
@@ -677,7 +673,7 @@ function Invoke-Analysis {
             Add-Note $c 'info' 'Le Wi-Fi ajoute de la latence et des pertes de paquets. Pour jouer en ligne, le câble reste le plus stable.'
             Add-Finding $F 'warn' 'Connexion en Wi-Fi' 'Le Wi-Fi ajoute de la latence et des pertes de paquets, surtout loin de la box.' 1 -Id 'wifi' -Fix (New-Fix `
                 -Why 'En Wi-Fi, le ping varie et des paquets se perdent: ça se traduit par du lag et des tirs qui ne comptent pas.' `
-                -Steps @('Si possible, branche un câble Ethernet entre le PC et la box (un long câble plat se cache facilement).', 'Sinon, un adaptateur CPL (réseau par les prises électriques) est une bonne alternative.', 'En Wi-Fi, connecte toi au réseau 5 GHz ou 6 GHz de ta box plutôt qu''au 2,4 GHz, et rapproche le PC de la box.') `
+                -Steps @('Si possible, branche un câble Ethernet entre le PC et la box (un long câble plat se cache facilement).', 'Sinon, un adaptateur CPL (réseau par les prises électriques) est une bonne alternative.', 'En Wi-Fi, connecte-toi au réseau 5 GHz ou 6 GHz de ta box plutôt qu''au 2,4 GHz, et rapproche le PC de la box.') `
                 -Open 'tab:3' -OpenLabel 'Tester le ping')
         } else {
             Add-Finding $F 'ok' 'Connexion par câble' 'La connexion la plus stable pour jouer en ligne.' 1 -Id 'wifi'
@@ -695,13 +691,13 @@ function Invoke-Analysis {
         $startFix = if ($safe.Count) {
             New-Fix -Auto `
                 -What @("Désactiver le lancement automatique de : $(($safe | ForEach-Object { $_.Nom }) -join ', ').", 'Ces programmes restent installés et se lancent normalement quand tu les ouvres.') `
-                -Why 'Chaque programme au démarrage ralentit l''allumage du PC et occupe de la mémoire pendant tes parties. Pour les autres, choisis toi même dans l''onglet Démarrage.' `
+                -Why 'Chaque programme au démarrage ralentit l''allumage du PC et occupe de la mémoire pendant tes parties. Pour les autres, choisis toi-même dans la page Démarrage (dans Performances).' `
                 -Run { param($a) foreach ($i in $a.Items) { Set-StartupState $i $false } } -RunArgs @{ Items = $safe } `
-                -Open 'tab:2' -OpenLabel 'Onglet Démarrage'
+                -Open 'tab:2' -OpenLabel 'Démarrage'
         } else {
             New-Fix -Why 'Chaque programme au démarrage ralentit l''allumage du PC et occupe de la mémoire pendant tes parties.' `
-                -Steps @('Ouvre l''onglet Démarrage.', 'Désactive les programmes dont tu n''as pas besoin dès l''allumage (launchers, messageries, outils de mise à jour).', 'Garde l''antivirus et les pilotes (audio, carte graphique, souris).') `
-                -Open 'tab:2' -OpenLabel 'Onglet Démarrage'
+                -Steps @('Ouvre la page Démarrage (dans Performances).', 'Désactive les programmes dont tu n''as pas besoin dès l''allumage (launchers, messageries, outils de mise à jour).', 'Garde l''antivirus et les pilotes (audio, carte graphique, souris).') `
+                -Open 'tab:2' -OpenLabel 'Démarrage'
         }
         Add-Finding $F 'warn' "$enabled programmes se lancent au démarrage" "Ils ralentissent l'allumage du PC et occupent de la mémoire pendant tes parties." 1 -Id 'startup' -Fix $startFix
     } else {
@@ -712,8 +708,8 @@ function Invoke-Analysis {
     $hvci = Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' 'Enabled'
     if ($hvci -eq 1) {
         Add-Finding $F 'info' 'Intégrité de la mémoire activée' "Cette protection de Windows bloque certains logiciels malveillants mais peut coûter quelques pourcents de FPS. Microsoft conseille de la laisser activée: Nevermind n'y touche pas, c'est à toi de décider." 0 -Id 'hvci' -Fix (New-Fix `
-            -Why 'C''est un compromis entre sécurité et performances. Microsoft recommande de la laisser activée, et certains anti triche l''exigent.' `
-            -Steps @('Si tu veux la désactiver: ouvre Sécurité Windows > Sécurité des appareils > Isolation du noyau.', 'Coupe « Intégrité de la mémoire » et redémarre.', 'Si un jeu ou un anti triche la réclame, réactive la au même endroit.') `
+            -Why 'C''est un compromis entre sécurité et performances. Microsoft recommande de la laisser activée, et certains anti-triche l''exigent.' `
+            -Steps @('Si tu veux la désactiver: ouvre Sécurité Windows > Sécurité des appareils > Isolation du noyau.', 'Coupe « Intégrité de la mémoire » et redémarre.', 'Si un jeu ou un anti-triche la réclame, réactive-la au même endroit.') `
             -Open 'windowsdefender://coreisolation' -OpenLabel 'Isolation du noyau')
     }
 
@@ -724,7 +720,7 @@ function Invoke-Analysis {
         } else {
             $st = if ($t.Recommended -eq $false) { 'info' } else { 'warn' }
             Add-Finding $F $st $t.Titre $t.Ko (Get-TweakWeight $t) -Id "tweak:$($t.Id)" -Fix (New-Fix -Auto `
-                -What @($t.What) -Why $t.Description -Run $t.Apply -Reboot:([bool]$t.Reboot) -Restore -Open 'tab:1' -OpenLabel 'Onglet Gaming')
+                -What @($t.What) -Why $t.Description -Run $t.Apply -Reboot:([bool]$t.Reboot) -Restore -Open 'tab:1' -OpenLabel 'Optimisation gaming')
         }
     }
 

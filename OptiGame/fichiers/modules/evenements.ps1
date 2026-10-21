@@ -342,7 +342,7 @@ $Window.Add_ContentRendered({
     $back = $ui.Tabs.Template.FindName('NavBack', $ui.Tabs)
     if ($back) { $back.Add_Click({ Show-Page $HubIndex }) }
     try { Initialize-AccueilConsole } catch { Write-Log "Accueil console : $_" }
-    # Roue crantée : Paramètres (Signaler un problème est dans l'onglet Aide)
+    # Roue crantée de l'interface d'avant : Paramètres (Signaler un problème est dans l'onglet Aide ; la console a sa propre barre)
     $script:TopSettings = $ui.Tabs.Template.FindName('TopSettings', $ui.Tabs)
     $script:SettingsGear = $ui.Tabs.Template.FindName('TopSettingsIcon', $ui.Tabs)
     if ($script:SettingsGear) { $script:SettingsGear.RenderTransform = New-Object System.Windows.Media.RotateTransform }   # celle du modèle est figée

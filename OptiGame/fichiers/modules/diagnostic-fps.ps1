@@ -168,8 +168,8 @@ function Get-FpsDiagnosis($S) {
         'igpu' { $head = 'Le jeu tourne sur la petite puce graphique'; $txt = 'Ton PC a deux cartes graphiques, et le jeu utilise la moins puissante (celle intégrée au processeur). La grosse carte est restée presque au repos.' }
         'cap' { $head = "Tes FPS sont bloqués à $cap"; $txt = if ($d.HzMax -and $cap -ge $d.HzMax) { "C'est la fréquence de ton écran ($($d.HzMax) Hz) : afficher plus d'images ne servirait à rien. C'est idéal." } else { 'Une limite de FPS ou la synchronisation verticale (V-Sync) bloque les images. Ce n''est pas ton PC qui peine.' } }
         'gpu' { $head = "C'est ta carte graphique qui décide des FPS$gpuLabel"; $txt = 'Elle travaille à fond pour dessiner chaque image. Pour gagner des FPS, il faut lui demander un peu moins de travail dans les options graphiques du jeu.' }
-        'cpu' { $head = 'C''est ton processeur qui limite les FPS'; $txt = 'La carte graphique attend que le processeur lui prépare les images. Des programmes en arrière plan, un mode d''économie d''énergie ou certains réglages du jeu peuvent en être la cause.' }
-        default { $head = 'Ni la carte graphique ni le processeur ne sont à fond'; $txt = 'Les FPS sont limités par autre chose : le jeu lui même, une limite de FPS, ou des petits blocages (disque, mémoire).' }
+        'cpu' { $head = 'C''est ton processeur qui limite les FPS'; $txt = 'La carte graphique attend que le processeur lui prépare les images. Des programmes en arrière-plan, un mode d''économie d''énergie ou certains réglages du jeu peuvent en être la cause.' }
+        default { $head = 'Ni la carte graphique ni le processeur ne sont à fond'; $txt = 'Les FPS sont limités par autre chose : le jeu lui-même, une limite de FPS, ou des petits blocages (disque, mémoire).' }
     }
     if (-not $problem -and $limit -ne 'cap') { $txt = 'Ta partie était fluide. ' + $txt }
 
@@ -186,14 +186,14 @@ function Get-FpsDiagnosis($S) {
     $powerOk = $true
     try { $powerOk = Test-PowerPlan } catch {}
     if (-not $powerOk -and ($limit -eq 'cpu' -or $stutter -or $lowFps)) {
-        Add-DiagItem $items 'warn' 'Windows est en mode économie d''énergie' 'Le processeur ralentit dès qu''il peut, ce qui donne des chutes de FPS et des micro saccades.' $null @(
+        Add-DiagItem $items 'warn' 'Windows est en mode économie d''énergie' 'Le processeur ralentit dès qu''il peut, ce qui donne des chutes de FPS et des micro-saccades.' $null @(
             @{ Label = 'Mettre en mode performances'; NoRefresh = $true; Script = { Hide-TestPanel; Invoke-TweakFix @('power') } })
     } elseif ($null -ne $d.Perf -and $d.Perf -lt 85 -and $d.Cpu -ge 50) {
         Add-DiagItem $items 'warn' 'Le processeur a ralenti pendant la partie' "Il tournait en moyenne à $([int]$d.Perf) % de sa vitesse normale alors qu'il était très occupé : souvent une surchauffe." @(
-            'Dépoussière les grilles et les ventilateurs du PC.', 'Vérifie que les ventilateurs du processeur tournent.', 'Sur un portable, pose le sur une surface dure (pas sur un lit ou un coussin).') $null
+            'Dépoussière les grilles et les ventilateurs du PC.', 'Vérifie que les ventilateurs du processeur tournent.', 'Sur un portable, pose-le sur une surface dure (pas sur un lit ou un coussin).') $null
     }
     if ($null -ne $d.Temp -and $d.Temp -ge 83) {
-        Add-DiagItem $items 'warn' "Ta carte graphique a chauffé ($([int]$d.Temp) °C)" 'Au delà de 83 °C environ, elle baisse sa vitesse pour se protéger, et les FPS avec.' @(
+        Add-DiagItem $items 'warn' "Ta carte graphique a chauffé ($([int]$d.Temp) °C)" 'Au-delà de 83 °C environ, elle baisse sa vitesse pour se protéger, et les FPS avec.' @(
             'Dépoussière la carte et les entrées d''air du boîtier.', 'Laisse de l''espace autour du PC pour qu''il respire.', 'Si le boîtier a peu de ventilateurs, en ajouter un aide beaucoup.') $null
     }
     if ($null -ne $d.Vram -and $d.Vram -ge 95) {
@@ -205,7 +205,7 @@ function Get-FpsDiagnosis($S) {
         $heavy = @($d.TopMem | Where-Object { $_.Name -notmatch $SystemProcs -and $_.Name -ne $S.Key } | Select-Object -First 4)
         $acts = @($heavy | Select-Object -First 2 | ForEach-Object {
             @{ Label = "Fermer $($_.Name)"; NoRefresh = $true; Arg = $_.Name
-               Confirm = "Fermer tous les $($_.Name) ?$(if ($_.Name -match $Browsers) { "`n`nTes onglets seront proposés à la réouverture du navigateur." }) Si tu as du travail pas enregistré dedans, ferme le toi même."
+               Confirm = "Fermer tous les $($_.Name) ?$(if ($_.Name -match $Browsers) { "`n`nTes onglets seront proposés à la réouverture du navigateur." }) Si tu as du travail pas enregistré dedans, ferme-le toi-même."
                Script = { param($n) Stop-ProgrammeNom $n; Set-Status "$n fermé." } } })
         Add-DiagItem $items 'warn' "La mémoire vive était presque pleine ($([int]$d.Ram) %)" 'Quand elle est pleine, Windows déplace des données sur le disque et le jeu saccade.' @($heavy | ForEach-Object { "$($_.Name) : $([math]::Round($_.MB / 1024, 1)) Go" }) $acts
     }
@@ -214,7 +214,7 @@ function Get-FpsDiagnosis($S) {
         $acts = @()
         foreach ($p in @($bg | Where-Object { $_.Name -notmatch $SystemProcs } | Select-Object -First 2)) {
             $acts += @{ Label = "Fermer $($p.Name)"; NoRefresh = $true; Arg = $p.Name
-                Confirm = "Fermer tous les $($p.Name) ? Si tu as du travail pas enregistré dedans, ferme le toi même."
+                Confirm = "Fermer tous les $($p.Name) ? Si tu as du travail pas enregistré dedans, ferme-le toi-même."
                 Script = { param($n) Stop-ProgrammeNom $n; Set-Status "$n fermé." } }
         }
         if (-not $d.GameMode) {
@@ -222,7 +222,7 @@ function Get-FpsDiagnosis($S) {
         }
         $lines = @($bg | ForEach-Object { "$($_.Name) : $([math]::Round($_.Pct, 0)) % du processeur" })
         if ($d.Top | Where-Object { $_.Name -eq 'MsMpEng' -and $_.Pct -ge 4 }) { $lines += 'MsMpEng, c''est l''antivirus : une analyse tournait pendant la partie. Lance les analyses quand tu ne joues pas.' }
-        Add-DiagItem $items 'warn' 'Des programmes en arrière plan utilisaient ton processeur' 'Pendant que tu jouais, ces programmes prenaient du temps de calcul au jeu.' $lines $acts
+        Add-DiagItem $items 'warn' 'Des programmes en arrière-plan utilisaient ton processeur' 'Pendant que tu jouais, ces programmes prenaient du temps de calcul au jeu.' $lines $acts
     }
     if ($stutter -and ($d.Media -eq 'HDD' -or ($null -ne $d.Disk -and $d.Disk -ge 90))) {
         $lines = if ($d.Media -eq 'HDD') { @("Le jeu est installé sur un disque dur classique ($($d.Drive):), bien plus lent qu'un SSD.", 'Steam : clic droit sur le jeu > Propriétés > Fichiers installés > Déplacer le dossier d''installation, vers un SSD.', 'Epic : désinstalle puis réinstalle le jeu sur un SSD.') } else { @('Le disque était occupé à 100 % par moments pendant la partie.', 'Évite les téléchargements et les mises à jour (Steam, Windows) pendant que tu joues.') }

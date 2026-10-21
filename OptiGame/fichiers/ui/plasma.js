@@ -114,7 +114,12 @@ function demarrer() {
           k.clearRect(0, 0, W, W); k.textAlign = 'center'; k.textBaseline = 'alphabetic';
           if (fond) {   // la jaquette en fond, assombrie vers le bas pour garder le texte lisible
             k.save(); k.beginPath(); k.roundRect(0, 0, W, W, 90); k.clip();
-            const s = Math.max(W / fond.width, W / fond.height); k.globalAlpha = 0.85; k.drawImage(fond, (W - fond.width * s) / 2, (W - fond.height * s) / 2, fond.width * s, fond.height * s);
+            const s = Math.max(W / fond.width, W / fond.height);
+            if (fond.height > fond.width * 1.15) {
+              // jaquette en hauteur : la même image floue remplit la tuile, et la jaquette entière est posée en haut (rien de coupé)
+              k.filter = 'blur(18px)'; k.globalAlpha = 0.55; k.drawImage(fond, (W - fond.width * s) / 2, (W - fond.height * s) / 2, fond.width * s, fond.height * s); k.filter = 'none';
+              const h = W * 0.74, l = fond.width * h / fond.height; k.globalAlpha = 0.95; k.drawImage(fond, (W - l) / 2, W * 0.05, l, h);
+            } else { k.globalAlpha = 0.85; k.drawImage(fond, (W - fond.width * s) / 2, (W - fond.height * s) / 2, fond.width * s, fond.height * s); }
             k.globalAlpha = 1; const g = k.createLinearGradient(0, 0, 0, W); g.addColorStop(0.2, 'rgba(6,5,15,0.1)'); g.addColorStop(1, 'rgba(6,5,15,0.92)'); k.fillStyle = g; k.fillRect(0, 0, W, W); k.restore();
           }
           const gros = t.gros != null && t.gros !== '';

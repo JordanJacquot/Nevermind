@@ -74,11 +74,15 @@ function Measure-Score($Findings) {
         $item.Gain = $item.Weight * (1 - $credit)
         if ($item.Fix -and $item.Fix.Auto -and $item.Status -ne 'ok') { $autoRaw += $item.Gain }
     }
-    foreach ($item in $active) {
-        $item.Gain = if ($total -and $scored -contains $item) { [int][math]::Round(100 * $item.Gain / $total) } else { 0 }
-    }
     $score = if ($total) { [int][math]::Round(100 * $got / $total) } else { 100 }
     $potential = if ($total) { [int][math]::Round(100 * ($got + $autoRaw) / $total) } else { 100 }
+    foreach ($item in $active) {
+        $raw = if ($total -and $scored -contains $item) { [double]$item.Gain } else { 0.0 }
+        $g = if ($total) { [int][math]::Round(100 * $raw / $total) } else { 0 }
+        # (le gain montré : ce que le score gagnerait vraiment, arrondis compris, comme « Jusqu'à N en un clic » ; au moins 1)
+        if ($g -gt 0) { $g = [math]::Max(1, [int][math]::Round(100 * ($got + $raw) / $total) - $score) }
+        $item.Gain = $g
+    }
     @{ Score = $score; Potential = $potential; Active = $active }
 }
 
@@ -106,7 +110,7 @@ function Show-Score([int]$Score, [int]$Bad, [int]$Warn, [int]$Potential) {
 # ---------------------------------------------------------------------------
 function Get-FixKind($f) {
     if ($f.Fix -and $f.Fix.Auto) { return @{ Text = "L'app s'en charge"; Color = $Colors.ok } }
-    @{ Text = 'À faire toi même'; Color = $Colors.info }
+    @{ Text = 'À faire toi-même'; Color = $Colors.info }
 }
 
 function Show-Improvements($Active) {
@@ -122,7 +126,7 @@ function Show-Improvements($Active) {
         $ui.BtnFixAll.Visibility = 'Collapsed'
         return
     }
-    $ui.ImproveSub.Text = "$($items.Count) amélioration$(if ($items.Count -gt 1) {'s'}) possible$(if ($items.Count -gt 1) {'s'}), dont $($auto.Count) que l'app peut faire pour toi. Clique sur une ligne pour voir le détail."
+    $ui.ImproveSub.Text = "$($items.Count) amélioration$(if ($items.Count -gt 1) {'s'}) possible$(if ($items.Count -gt 1) {'s'}), dont $($auto.Count) que Nevermind peut faire pour toi. Clique sur une ligne pour voir le détail."
     if ($auto.Count) {
         $sum = ($auto | Measure-Object Gain -Sum).Sum
         $ui.BtnFixAll.Content = "Tout corriger (+$sum pts)"
@@ -260,7 +264,7 @@ function Show-Findings($All, $Active) {
 }
 
 # ---------------------------------------------------------------------------
-# Fiche détaillée (fenêtre par dessus l'application)
+# Fiche détaillée (fenêtre par-dessus l'application)
 # ---------------------------------------------------------------------------
 function Add-SheetSection([string]$Title, [string[]]$Lines, [switch]$Numbered, [switch]$Bullets) {
     $h = New-Text $Title 13 '#A6A1BC' -Semi
@@ -321,13 +325,13 @@ function Open-Sheet($Items) {
         if ($f.Detail) { Add-SheetSection "Ce qu'on a trouvé" @($f.Detail) }
         if ($fix -and $fix.Why) { Add-SheetSection 'Pourquoi ça compte' @($fix.Why) }
         if ($fix -and $fix.Auto) {
-            Add-SheetSection "Ce que l'app va faire quand tu cliques sur Exécuter" $fix.What -Bullets
-            $safe = 'Tu peux revenir en arrière à tout moment depuis l''onglet Sauvegarde.'
+            Add-SheetSection "Ce que Nevermind va faire quand tu cliques sur Exécuter" $fix.What -Bullets
+            $safe = 'Tu peux revenir en arrière à tout moment depuis la page Sauvegarde (dans Protection).'
             if ($fix.Restore) { $safe = 'Un point de restauration Windows est créé avant. ' + $safe }
             Add-SheetInfo $safe $Colors.ok
         } elseif ($fix) {
             if ($fix.Steps) { Add-SheetSection 'Ce que tu dois faire' $fix.Steps -Numbered }
-            if ($fix.What) { Add-SheetSection "Ce que l'app peut faire pour t'aider" $fix.What -Bullets }
+            if ($fix.What) { Add-SheetSection "Ce que Nevermind peut faire pour t'aider" $fix.What -Bullets }
         }
         if ($isIgnored) { Add-SheetInfo 'Ce point est ignoré : il ne compte plus dans ton score.' $Colors.info }
 
@@ -347,7 +351,7 @@ function Open-Sheet($Items) {
         $s.Margin = New-Thickness 0 6 0 0
         [void]$body.Children.Add($s)
         foreach ($f in $auto) { Add-SheetSection "$($f.Titre)   (+$($f.Gain) pts)" $f.Fix.What -Bullets }
-        $safe = 'Un point de restauration Windows est créé avant. Tu peux tout annuler depuis l''onglet Sauvegarde.'
+        $safe = 'Un point de restauration Windows est créé avant. Tu peux tout annuler depuis la page Sauvegarde (dans Protection).'
         if ($auto | Where-Object { $_.Fix.Reboot }) { $safe += ' Certains réglages demandent un redémarrage.' }
         Add-SheetInfo $safe $Colors.ok
         $ui.SheetRun.Visibility = 'Visible'
@@ -444,7 +448,7 @@ function Confirm-DisplayChange($Log) {
     $body = $ui.SheetBody
     $body.Children.Clear()
     [void]$body.Children.Add((New-Text 'Tes écrans s''affichent bien ?' 21 '#FFFFFF' -Bold))
-    $t = New-Text "La fréquence de l'écran vient d'être changée. Si un écran est resté noir ou affiche un message d'erreur, ne touche à rien : l'app revient toute seule à l'ancien réglage." 14 '#EEEBF7'
+    $t = New-Text "La fréquence de l'écran vient d'être changée. Si un écran est resté noir ou affiche un message d'erreur, ne touche à rien : Nevermind revient tout seul à l'ancien réglage." 14 '#EEEBF7'
     $t.Margin = New-Thickness 0 12 0 0
     [void]$body.Children.Add($t)
     Add-SheetInfo 'Sans réponse, retour automatique à l''ancien réglage.' $Colors.warn

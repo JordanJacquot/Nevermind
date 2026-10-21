@@ -25,7 +25,7 @@ $CleanTargets = @(
     @{ Id = 'temp'; Titre = 'Fichiers temporaires'; Paths = @($env:TEMP); Exclude = @('claude')
        Desc = 'Restes laissés par tes programmes et les installations. Ce qui a moins de 24 h ou sert encore est gardé.' },
     @{ Id = 'claude'; Titre = 'Fichiers de travail de Claude'; Paths = @("$env:TEMP\claude"); Default = $false; Warn = $true; Optional = $true
-       Desc = 'Captures, scripts et téléchargements des discussions Claude Code. Tes discussions ne sont pas effacées, mais une discussion en cours peut encore en avoir besoin : garde les si tu travailles avec Claude.' },
+       Desc = 'Captures, scripts et téléchargements des discussions Claude Code. Tes discussions ne sont pas effacées, mais une discussion en cours peut encore en avoir besoin : garde-les si tu travailles avec Claude.' },
     # Dossiers de Windows : lus et vidés par l'Aide, qui a sa propre liste de dossiers (aide-actions.ps1, $AideNettoyage)
     @{ Id = 'wintemp'; Titre = 'Fichiers temporaires de Windows'; Paths = $AideNettoyage['wintemp']; Aide = $true
        Desc = 'Restes laissés par Windows et les programmes installés pour tout le PC.' },

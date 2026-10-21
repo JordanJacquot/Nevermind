@@ -24,18 +24,18 @@ function Get-StatKit([int]$Index, [string]$Defaut = '') {
     $s = $script:Kit.Stats[$Index]
     if ($s -and $s.T) { $s.T } else { $Defaut }
 }
-function Get-LigneOutil([int]$Index, [string]$Nom) {
-    @{ type = 'ligne'; id = "page:$Index"; texte = $Nom; note = (Get-StatKit $Index ' '); valeur = 'Ouvrir' }
-}
+# La ponctuation française dans les textes venus des autres modules (« Désactivé: » devient « Désactivé : ») ; une lettre
+# de lecteur (« D: ») reste collée
+function Format-TexteKit($Texte) { ([string]$Texte) -creplace '(?<=[a-zà-ÿ]{2}):(?=\s)', ' :' }
 
 function Get-EcranNevermind {
     $a = $script:LastAnalysis
     $fd = Get-HubFindings $a
     $fn = Get-FirstName
     $salut = try { (Get-ThemeText 'Hello') -f $(if ($ThemeId -eq 'terminal') { $fn.ToLower() } else { $fn }) } catch { '' }
-    $todo = $fd.Important.Count
-    $resume = if (-not $a) { 'Analyse en cours...' } elseif ($todo -eq 1) { 'Une chose à régler' } elseif ($todo -gt 1) { "$todo choses à régler" }
-        elseif ($fd.Manual.Count) { 'Prêt pour jouer' } else { 'Au top pour jouer' }
+    # (les mêmes points que Ton PC et l'onglet « À régler » du Tableau de bord : ceux qui font gagner des points)
+    $todo = @(@($fd.Important) + @($fd.Manual) | Where-Object { $_ }).Count
+    $resume = if (-not $a) { 'Analyse en cours...' } elseif ($todo -eq 1) { '1 point à régler' } elseif ($todo -gt 1) { "$todo points à régler" } else { 'Au top pour jouer' }
     $sec = $script:SecurityScore
 
     # Jeux : le dernier jeu lancé, sa jaquette en fond de la tuile
@@ -53,7 +53,10 @@ function Get-EcranNevermind {
             }
         }
     } catch { Write-Log "Écran, jeux : $_" }
-    $nbApp = @($script:NetList).Count
+    $nbApp = @($script:NetList | Where-Object { $_ }).Count   # (@($null).Count vaut 1 : avant le premier scan, la liste est vide)
+    # Performances : le même compte que la page (Get-ReglagesKit, ecran-perf.ps1)
+    $rg = Get-ReglagesKit
+    $sousPerf = if ($rg.Lignes.Count) { Get-TitreReglagesKit $rg } else { Get-StatKit 1 'Pour gagner des FPS' }
 
     # Les pages : chaque groupe vient de son fichier (ecran-*.ps1) ; une page qui échoue n'empêche pas les autres
     $pages = [ordered]@{}
@@ -70,10 +73,10 @@ function Get-EcranNevermind {
         accueil = @{
             tuiles = @(
                 @{ id = 'pc'; nom = 'Ton PC'; gros = $(if ($a) { [int]$a.Score } else { '...' }); petit = $(if ($a) { '/100' } else { '' }); sous = $resume; couleur = 'P'; alerte = [bool]$todo }
-                @{ id = 'perf'; nom = 'Performances'; icone = 'eclair'; sous = (Get-StatKit 1 'Pour gagner des FPS'); couleur = 'P' }
+                @{ id = 'perf'; nom = 'Performances'; icone = 'eclair'; sous = $sousPerf; couleur = 'P' }
                 @{ id = 'protection'; nom = 'Protection'; gros = $(if ($null -ne $sec) { [int]$sec } else { $null }); petit = $(if ($null -ne $sec) { '/100' }); icone = 'bouclier'; sous = 'Pour rester tranquille'; couleur = 'T'; alerte = [bool]($null -ne $sec -and $sec -lt 50) }
                 $jeux
-                @{ id = 'reseau'; nom = 'Réseau'; icone = 'radar'; sous = $(if ($nbApp) { "$nbApp appareil$(if ($nbApp -gt 1) { 's' })" } else { 'Les appareils chez toi' }); couleur = 'S' }
+                @{ id = 'reseau'; nom = 'Réseau'; icone = 'radar'; sous = $(if ($nbApp) { "$nbApp appareil$(if ($nbApp -gt 1) { 's' })" } elseif ($script:NetScanning) { 'Scan en cours' } else { 'Pas encore scanné' }); couleur = 'S' }
                 @{ id = 'trafic'; nom = 'Trafic'; icone = 'courbe'; sous = 'Ce qui sort de ton PC'; couleur = 'T' }
                 @{ id = 'overlay'; nom = 'Overlay'; icone = 'jauge'; sous = 'Tes FPS en jeu'; couleur = 'vert' }
             )
@@ -192,12 +195,13 @@ function Register-ActionsNevermind {
 }
 
 # Retour au menu de Mindset (la console) : « menu » dans afficher-page.txt, puis le signal de Mindset (déjà ouvert).
-# En test : rien (jamais le signal du vrai Mindset).
+# (le fichier est à côté de suite.json, comme pour les Paramètres.) En test : le fichier seulement si la copie simule
+# Mindset (OPTIGAME_SUITE), et jamais le signal du vrai Mindset.
 function Request-MenuMindset {
-    if ($EnTest) { Write-Log 'Retour au menu de Mindset demandé (test : rien envoyé)'; return }
+    if ($EnTest -and -not $env:OPTIGAME_SUITE) { Write-Log 'Retour au menu de Mindset demandé (test : rien envoyé)'; return }
     try {
-        $dir = Join-Path $env:LOCALAPPDATA 'Mindset'
-        [IO.File]::WriteAllText((Join-Path $dir 'afficher-page.txt'), 'menu', (New-Object Text.UTF8Encoding($false)))
+        [IO.File]::WriteAllText((Join-Path (Split-Path $SuiteFile) 'afficher-page.txt'), 'menu', (New-Object Text.UTF8Encoding($false)))
+        if ($EnTest) { Write-Log 'Retour au menu de Mindset demandé (test : fichier seulement)'; return }
         $s = [System.Threading.EventWaitHandle]::OpenExisting('Local\Mindset-Afficher'); [void]$s.Set(); $s.Dispose()
         Write-Log 'Retour au menu de Mindset demandé'
     } catch { Write-Log "Retour au menu de Mindset impossible ($($_.Exception.Message))" }
@@ -244,7 +248,11 @@ function Test-PanneauOuvert {
 # Une autre page d'avant, la carte du réseau ou le panneau des tests : l'écran est fermé tout à fait (une WebView2
 # présente fige les grosses animations de l'interface d'avant, voir Close-Vue), et recréé au retour.
 function Update-EcranKitVisible {
-    if (-not $script:Kit.Actif) { return }
+    if (-not $script:Kit.Actif) {
+        # (console mise de côté : le dessin de la barre du bas repart)
+        if ($script:Footer -and $script:Footer.EnPause) { Set-FooterPause $false }
+        return
+    }
     $surAccueil = $ui.Tabs.SelectedIndex -eq $HubIndex
     $voir = $surAccueil -and -not (Test-PanneauOuvert)
     $fermer = ($ui.StartupOverlay.Visibility -ne 'Visible') -and (-not $surAccueil -or $ui.NetMapOverlay.Visibility -eq 'Visible')   # (pas pendant le chargement)
@@ -253,7 +261,10 @@ function Update-EcranKitVisible {
     if ($ui.EcranKit.Visibility -ne $v) {
         $ui.EcranKit.Visibility = $v
         if ($voir) { Update-EcranNevermind }
+        try { Update-BackdropBlur } catch {}
     }
+    # La barre du bas est cachée derrière l'écran : son dessin animé s'arrête tant qu'il est montré
+    if ($script:Footer -and [bool]$script:Footer.EnPause -ne $voir) { Set-FooterPause $voir }
     if ($fermer -and $script:Vue.Controle) { [void](Close-Vue) }
     if ($voir) { Update-FicheKit; Update-PanneauKit }
 }
@@ -367,8 +378,9 @@ function Initialize-AccueilConsole {
             'Rien n''est modifié sans ton accord : chaque changement passe par un bouton sur lequel tu cliques.') },
         @{ Title = 'L''accueil'; Lines = @(
             'Les grandes tuiles : Ton PC et sa note sur 100, Performances, Protection, Jeux, Réseau, Trafic et Overlay.',
-            'Fais glisser la rangée à la souris, ou les flèches du clavier : un clic sur la tuile du milieu (ou Entrée) l''ouvre, Échap revient.',
-            'En haut, le logo ramène à l''accueil ; les onglets mènent aux mêmes pages, et les petites icônes à droite : Rechercher, Paramètres et Aide.') },
+            'Fais glisser la rangée à la souris, ou utilise les flèches du clavier : un clic sur la tuile du milieu (ou Entrée) l''ouvre, Échap revient.',
+            'En haut, le logo ramène à l''accueil ; les onglets mènent aux mêmes pages, et les petites icônes à droite : la loupe pour rechercher un réglage (ou Ctrl + K), Paramètres et Aide.',
+            'Un souci ? « Signaler un problème » est dans l''Aide.') },
         @{ Title = 'Tout est annulable'; Lines = @(
             'Chaque changement est sauvegardé avant d''être fait.',
             'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde (dans Protection) garde l''historique : tu peux annuler n''importe quel changement.',

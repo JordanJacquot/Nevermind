@@ -69,7 +69,7 @@ function Add-CustomGame([string]$Exe, [string]$Name) {
     }
     $base = [IO.Path]::GetFileNameWithoutExtension($Exe).ToLower()
     if ($base.Length -lt 3 -or $base -match $GenericExe) {
-        Show-Message "Le nom « $([IO.Path]::GetFileName($Exe)) » est trop courant pour reconnaître le jeu à coup sûr.`n`nChoisis plutôt le programme qui porte le nom du jeu (souvent dans un sous dossier comme Binaries\Win64)." 'Warning'
+        Show-Message "Le nom « $([IO.Path]::GetFileName($Exe)) » est trop courant pour reconnaître le jeu à coup sûr.`n`nChoisis plutôt le programme qui porte le nom du jeu (souvent dans un sous-dossier comme Binaries\Win64)." 'Warning'
         return
     }
     $list = @(@(Get-Setting 'CustomGames' @()) | Where-Object { $_ -and [string]$_.Exe -ne $Exe })
@@ -161,7 +161,7 @@ function Stop-GameSession {
     Write-Log "Mode jeu: fin de $($s.Game) après $mins min$(if ($failed) { ", à relancer à la main: $($failed -join ', ')" })"
     Update-GameModeStatus
     if ($s.Closed.Count) {
-        Show-Notify 'Fin du mode jeu' $(if ($failed) { "Relance toi même : $($failed -join ', ')." } else { 'Les applis fermées ont été relancées.' })
+        Show-Notify 'Fin du mode jeu' $(if ($failed) { "Relance toi-même : $($failed -join ', ')." } else { 'Les applis fermées ont été relancées.' })
     }
 }
 
@@ -271,7 +271,7 @@ function Build-GameProfiles {
     $srcs = @($games | Group-Object { if ($_.Source) { $_.Source } else { 'Steam' } } | Sort-Object Count -Descending | ForEach-Object { "$($_.Name) $($_.Count)" })
     $hl = New-Object System.Windows.Controls.StackPanel
     [void]$hl.Children.Add((New-Text $(if ($games.Count) { "$($games.Count) jeu$(if ($games.Count -gt 1) {'x'}) reconnu$(if ($games.Count -gt 1) {'s'}) : $($srcs -join ', ')." } else { 'Aucun jeu trouvé sur ce PC.' }) 13 '#FFFFFF' -Semi))
-    $intro = New-Text 'Un jeu manque (jeu autonome, itch.io, émulateur...) ? Ajoute le : Nevermind le reconnaîtra à son lancement (mode jeu, FPS, lag). Les réglages ci dessous sont appliqués à chaque lancement, même Nevermind fermé ; « Priorité haute » : le jeu passe avant les autres programmes.' 12 '#A6A1BC'
+    $intro = New-Text 'Un jeu manque (jeu autonome, itch.io, émulateur...) ? Ajoute-le : Nevermind le reconnaîtra à son lancement (mode jeu, FPS, lag). Les réglages ci-dessous sont appliqués à chaque lancement, même Nevermind fermé ; « Priorité haute » : le jeu passe avant les autres programmes.' 12 '#A6A1BC'
     $intro.Margin = New-Thickness 0 2 0 0
     [void]$hl.Children.Add($intro)
     Add-ToGrid $hd $hl 0
@@ -619,7 +619,7 @@ function Update-FpsTarget {
     if ($t.Exclusive -and -not $t.Warned) {
         $t.Warned = $true
         Write-Log "Mesure des FPS: $($t.Name) est en plein écran exclusif, l'overlay ne peut pas s'afficher."
-        Set-Status "$($t.Name) est en plein écran : le compteur ne peut pas s'afficher par dessus, mais la mesure continue."
+        Set-Status "$($t.Name) est en plein écran : le compteur ne peut pas s'afficher par-dessus, mais la mesure continue."
     }
     if (-not $front) { if ($o.Win.IsVisible) { $o.Win.Hide() }; return }
     if (-not $o.Win.IsVisible) { Set-OverlayPosition $t.Pid; $o.Win.Show() }
@@ -641,7 +641,7 @@ function Update-FpsTarget {
 # Ctrl+Maj+F : lance ou arrête la mesure sur le jeu au premier plan, quel que soit son launcher.
 function Switch-FpsManual {
     if (-not (Test-FpsMeasure)) {
-        Show-Notify 'Mesure des FPS désactivée' 'Active la dans Nevermind : page Jeux, Perf. In Game, FPS.'
+        Show-Notify 'Mesure des FPS désactivée' 'Active-la dans Nevermind : page Jeux, Perf. In Game, FPS.'
         return
     }
     if ($script:FpsTarget) {
@@ -754,7 +754,7 @@ function Measure-FpsGroup($Sessions) {
 function Get-FpsVerdict($S) {
     $ratio = if ($S.Avg -gt 0) { $S.Low1 / $S.Avg } else { 0 }
     if ($S.Avg -lt 30) { return @('bad', 'Moins de 30 FPS en moyenne : le jeu saccade. Baisse la qualité graphique ou la résolution.') }
-    if ($ratio -lt 0.5) { return @('warn', 'Moyenne correcte, mais des chutes fréquentes : ce sont elles que tu ressens comme des saccades. Souvent des programmes en arrière plan, un disque plein ou une surchauffe.') }
+    if ($ratio -lt 0.5) { return @('warn', 'Moyenne correcte, mais des chutes fréquentes : ce sont elles que tu ressens comme des saccades. Souvent des programmes en arrière-plan, un disque plein ou une surchauffe.') }
     if ($S.Avg -lt 60) { return @('warn', 'Jouable, mais en dessous de 60 FPS la fluidité se ressent dans les jeux rapides.') }
     if ($ratio -lt 0.7) { return @('ok', 'Bonne moyenne, avec quelques petites chutes par moments.') }
     @('ok', 'Fluide et régulier : très bonne partie.')
@@ -834,7 +834,7 @@ function Show-FpsSession([string]$Id) {
     if ($exePath -and (Test-Path -LiteralPath $exePath) -and -not @($script:Games | Where-Object { @($_.Exes) -contains $exePath }).Count) {
         $ag = New-Grid @('*', 'Auto')
         $ag.Margin = New-Thickness 0 12 0 0
-        $at = New-Text "Nevermind ne connaît pas encore ce jeu : ajoute le pour qu'il soit reconnu tout seul la prochaine fois (mode jeu, FPS, lag)." 12.5 '#D3CDE3'
+        $at = New-Text "Nevermind ne connaît pas encore ce jeu : ajoute-le pour qu'il soit reconnu tout seul la prochaine fois (mode jeu, FPS, lag)." 12.5 '#D3CDE3'
         $at.VerticalAlignment = 'Center'
         Add-ToGrid $ag $at 0
         $ab = New-Button 'Ajouter à mes jeux' 'BtnPrimary'
@@ -847,7 +847,7 @@ function Show-FpsSession([string]$Id) {
     [void]$body.Children.Add((New-Details @(
         @('Durée mesurée', "$(Format-PlayTime $s.Seconds) de jeu$(if ([int]$s.MenuSec -ge 5) { " + $(Format-PlayTime $s.MenuSec) de menus bloqués à $([int]$s.MenuFps) FPS" })"),
         @('Images affichées', ('{0:N0}' -f $s.Frames)),
-        @('Mode d''affichage', $(if ($s.Exclusive) { 'Plein écran (le compteur ne peut pas s''afficher par dessus)' } else { 'Fenêtré ou plein écran fenêtré' })),
+        @('Mode d''affichage', $(if ($s.Exclusive) { 'Plein écran (le compteur ne peut pas s''afficher par-dessus)' } else { 'Fenêtré ou plein écran fenêtré' })),
         @('Mesure', 'PresentMon (Intel). Les moments où le jeu n''était pas au premier plan ne comptent pas.')
     )))
 }
@@ -914,8 +914,8 @@ function Invoke-FpsHelp {
     Show-ResultSheet 'Trouvons d''où viennent tes problèmes de FPS' @(
         '1.  La mesure des FPS est activée.',
         '2.  Lance ton jeu et joue au moins 5 minutes, de préférence là où ça rame.',
-        '3.  Si Nevermind ne reconnaît pas le jeu, appuie sur Ctrl + Maj + F en jeu (ou ajoute le dans Profils par jeu).',
-        '4.  Quitte le jeu : Nevermind t''explique d''où vient le problème et ce qu''il peut régler pour toi.') $null 'Nevermind regarde qui freine (carte graphique ou processeur), la température, la mémoire, le disque et les programmes en arrière plan.'
+        '3.  Si Nevermind ne reconnaît pas le jeu, appuie sur Ctrl + Maj + F en jeu (ou ajoute-le dans Profils par jeu).',
+        '4.  Quitte le jeu : Nevermind t''explique d''où vient le problème et ce qu''il peut régler pour toi.') $null 'Nevermind regarde qui freine (carte graphique ou processeur), la température, la mémoire, le disque et les programmes en arrière-plan.'
 }
 
 # ---------------------------------------------------------------------------
@@ -1108,7 +1108,7 @@ function Build-OverlayPanel {
     # État : interrupteur, ce qui se passe maintenant, raccourci
     $st = New-OverlayPanelCard 'Compteur à l''écran' '' '#00E5FF'
     $st.Card.Padding = New-Thickness 20 18 20 18
-    $row = New-SwitchRow 'Afficher le compteur pendant la partie' 'Par dessus le jeu, en fenêtré ou plein écran fenêtré.' $on { param($s, $e) $v = [bool]$s.IsChecked; Invoke-Safe { Set-FpsOverlayOn $v } }
+    $row = New-SwitchRow 'Afficher le compteur pendant la partie' 'Par-dessus le jeu, en fenêtré ou plein écran fenêtré.' $on { param($s, $e) $v = [bool]$s.IsChecked; Invoke-Safe { Set-FpsOverlayOn $v } }
     $row.Margin = New-Thickness 0 14 0 0
     [void]$st.Body.Children.Add($row)
     $state = New-Object System.Windows.Controls.Border
@@ -1172,11 +1172,11 @@ function Build-OverlayPanel {
     # Ligne 2 : style et position
     $row2 = New-Grid @('*', '*')
     $row2.Margin = New-Thickness 0 0 0 16
-    $sc = New-OverlayPanelCard 'Style du compteur' 'Choisis ce qui s''affiche par dessus ton jeu.' '#B04BFF'
+    $sc = New-OverlayPanelCard 'Style du compteur' 'Choisis ce qui s''affiche par-dessus ton jeu.' '#B04BFF'
     $sc.Card.Margin = New-Thickness 0 0 8 0
     $tiles = New-Grid @('*', '*')
     $col = 0
-    foreach ($o in @(@('complet', 'Complet', 'Le chiffre, le 1 % bas et la moyenne.'), @('discret', 'Discret', 'Juste le chiffre, petit et semi transparent.'))) {
+    foreach ($o in @(@('complet', 'Complet', 'Le chiffre, le 1 % bas et la moyenne.'), @('discret', 'Discret', 'Juste le chiffre, petit et semi-transparent.'))) {
         $sel = $style -eq $o[0]
         $tile = New-Object System.Windows.Controls.Border
         $tile.CornerRadius = [System.Windows.CornerRadius]::new(16)
@@ -1255,7 +1255,7 @@ function Build-OverlayPanel {
 
     # Bon à savoir
     $tip = New-OverlayPanelCard 'Bon à savoir' '' '#4EA8FF'
-    $tt = New-Text "En plein écran exclusif, Windows ne laisse rien s'afficher par dessus le jeu : choisis « plein écran fenêtré » ou « sans bordure » dans les options du jeu. La mesure, elle, continue quand même.`nTes FPS de chaque partie (moyenne, chutes, courbe) sont gardés dans Optimisation gaming, onglet Mes parties." 12.5 '#B9B3CC'
+    $tt = New-Text "En plein écran exclusif, Windows ne laisse rien s'afficher par-dessus le jeu : choisis « plein écran fenêtré » ou « sans bordure » dans les options du jeu. La mesure, elle, continue quand même.`nTes FPS de chaque partie (moyenne, chutes, courbe) sont gardés dans Optimisation gaming, onglet Mes parties." 12.5 '#B9B3CC'
     $tt.Margin = New-Thickness 19 8 0 0
     [void]$tip.Body.Children.Add($tt)
     [void]$panel.Children.Add($tip.Card)

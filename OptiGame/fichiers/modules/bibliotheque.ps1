@@ -358,7 +358,7 @@ function Get-GameLaunch($Game) {
 function Start-LibraryGame($Game) {
     if (-not $Game) { return }
     $how = Get-GameLaunch $Game
-    if ($how.Kind -eq 'exe' -and -not (Test-Path -LiteralPath $how.Path)) { Show-Message "Le jeu « $($Game.Name) » est introuvable :`n$($how.Path)`n`nIl a peut être été désinstallé ou déplacé. Clique sur « Actualiser »." 'Warning'; return }
+    if ($how.Kind -eq 'exe' -and -not (Test-Path -LiteralPath $how.Path)) { Show-Message "Le jeu « $($Game.Name) » est introuvable :`n$($how.Path)`n`nIl a peut-être été désinstallé ou déplacé. Clique sur « Actualiser »." 'Warning'; return }
     Write-Log "Bibliothèque: lancement de $($Game.Name) ($($how.Path))"
     if ($how.Kind -eq 'exe') {
         # Raccourci temporaire : le jeu démarre dans son dossier, comme depuis son icône
@@ -509,7 +509,7 @@ function Show-Leftovers {
     $ui.TestProgress.Value = 100; $ui.TestPct.Text = ''
     Set-TestState 'info' "$($list.Count) dossier$(if ($list.Count -gt 1) {'s'})"
     $body = $ui.TestBody
-    $intro = New-Text 'Ces jeux ne sont plus installés (Steam ne les connaît plus), mais leur dossier est resté sur le disque. La suppression est définitive : ils ne passent pas par la corbeille, la place est libérée tout de suite et ils ne peuvent pas être récupérés. S''ils contiennent des sauvegardes ou des mods, ouvre les pour vérifier avant.' 12.5 '#A6A1BC'
+    $intro = New-Text 'Ces jeux ne sont plus installés (Steam ne les connaît plus), mais leur dossier est resté sur le disque. La suppression est définitive : ils ne passent pas par la corbeille, la place est libérée tout de suite et ils ne peuvent pas être récupérés. S''ils contiennent des sauvegardes ou des mods, ouvre-les pour vérifier avant.' 12.5 '#A6A1BC'
     $intro.Margin = New-Thickness 0 0 0 10
     [void]$body.Children.Add($intro)
     if ($list.Count -gt 1) {
@@ -789,7 +789,7 @@ function Update-LibraryDetail {
     $play.Add_Click({ param($s, $e) $n = [string]$s.Tag; $x = @(Get-LibraryGames | Where-Object { $_.Name -eq $n })[0]; Invoke-Safe { Start-LibraryGame $x } })
     [void]$body.Children.Add($play)
     $how = Get-GameLaunch $g
-    $hw = New-Text $(if ($how.Kind -eq 'url' -and $g.Source) { "Lancé par $($g.Source) (connexion, mises à jour et anti triche comme d'habitude)." } else { 'Lancé directement depuis son dossier.' }) 11 '#655E7E'
+    $hw = New-Text $(if ($how.Kind -eq 'url' -and $g.Source) { "Lancé par $($g.Source) (connexion, mises à jour et anti-triche comme d'habitude)." } else { 'Lancé directement depuis son dossier.' }) 11 '#655E7E'
     $hw.Margin = New-Thickness 0 6 0 0; $hw.TextWrapping = 'Wrap'
     [void]$body.Children.Add($hw)
 

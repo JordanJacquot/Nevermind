@@ -566,7 +566,7 @@ $PortInfo = @{
     554   = @('Flux vidéo', 'info', 'Souvent une caméra de surveillance ou un décodeur TV.', '')
     631   = @('Impression', 'info', 'Service d''impression réseau.', '')
     1883  = @('Objets connectés (MQTT)', 'info', 'Messagerie utilisée par la domotique.', '')
-    3389  = @('Bureau à distance Windows', 'warn', 'Permet de prendre le contrôle du PC à distance. Désactive le si tu ne t''en sers pas.', '')
+    3389  = @('Bureau à distance Windows', 'warn', 'Permet de prendre le contrôle du PC à distance. Désactive-le si tu ne t''en sers pas.', '')
     5000  = @('Interface web (NAS, AirPlay)', 'info', 'Page de réglages ou service de diffusion.', 'http://{0}:5000')
     5001  = @('Interface web sécurisée (NAS)', 'info', 'Page de réglages chiffrée.', 'https://{0}:5001')
     5357  = @('Découverte réseau Windows', 'info', 'Permet aux autres appareils de voir ce PC sur le réseau.', '')
@@ -775,7 +775,7 @@ function Show-DeviceDetail($D) {
     }
     $txt = switch ($worst) {
         'bad'  { "À corriger : $($notes -join ', '). Désactive ce service dans les réglages de l'appareil, ou demande à la personne qui l'a installé." }
-        'warn' { "À surveiller : $($notes -join ', '). Si tu ne sais pas pourquoi c'est ouvert, désactive le dans les réglages de l'appareil." }
+        'warn' { "À surveiller : $($notes -join ', '). Si tu ne sais pas pourquoi c'est ouvert, désactive-le dans les réglages de l'appareil." }
         default { if ($open.Count) { 'Rien d''inhabituel pour ce type d''appareil.' } else { 'Rien à signaler.' } }
     }
     [void]$body.Children.Add((New-Verdict $worst $txt))

@@ -60,6 +60,9 @@ function Set-Gauge($Val, $Bar, $Sub, $Value, [string]$Text, [string]$SubText, [d
 
 function Update-LiveUI {
     if (-not $Live.Updated) { return }
+    # Sous l'écran de la console, les jauges d'avant sont cachées derrière : seule l'alerte de température compte
+    # (la console lit $Live elle-même)
+    if ($script:Kit.Actif -and $ui.EcranKit.Visibility -eq 'Visible') { Test-TempAlert; return }
     $cpuSub = if ($Live.CpuPerf -and $Live.BaseMHz) { 'Fréquence {0:N1} GHz' -f ($Live.BaseMHz * $Live.CpuPerf / 100 / 1000) } else { '' }
     Set-Gauge $ui.LiveCpuVal $ui.LiveCpuBar $ui.LiveCpuSub $Live.Cpu "$([int]$Live.Cpu) %" $cpuSub
 
@@ -285,9 +288,9 @@ function New-RestorePoint {
     $r = try { [void](Invoke-Aide 'restauration.creer' @{ Description = 'Nevermind' } 600000); 'OK' } catch { $_.Exception.Message }
     if ("$r" -eq 'OK') { Set-Status 'Point de restauration créé.'; return $true }
     Write-Log "Point de restauration: $r"
-    Confirm-Action ("Impossible de créer le point de restauration.`n`nMotif: $r`n`n" +
-        "La protection du système est peut-être désactivée sur ce PC. Tu peux quand même continuer: " +
-        "Nevermind garde une sauvegarde de chaque réglage modifié et peut tout annuler depuis l'onglet Sauvegarde.`n`nContinuer ?")
+    Confirm-Action ("Impossible de créer le point de restauration.`n`nMotif : $r`n`n" +
+        "La protection du système est peut-être désactivée sur ce PC. Tu peux quand même continuer : " +
+        "Nevermind garde une sauvegarde de chaque réglage modifié et peut tout annuler depuis la page Sauvegarde (dans Protection).`n`nContinuer ?")
 }
 
 function Invoke-ApplyTweaks {
@@ -300,13 +303,13 @@ function Invoke-ApplyTweaks {
     $script:RunLog = New-Object System.Collections.ArrayList
     try {
         foreach ($r in $sel) {
-            Set-Status "Application: $($r.Tweak.Titre)..."
+            Set-Status "Application : $($r.Tweak.Titre)..."
             try {
                 & $r.Tweak.Apply
                 $done += $r.Tweak.Titre
                 if ($r.Tweak.Reboot) { $reboot = $true }
             } catch {
-                $failed += "$($r.Tweak.Titre): $($_.Exception.Message)"
+                $failed += "$($r.Tweak.Titre) : $($_.Exception.Message)"
                 Write-Log "Échec $($r.Tweak.Id): $_"
             }
         }
@@ -338,7 +341,7 @@ $DeviceStartup = '\b(Logitech|LGHUB|Razer|Corsair|iCUE|SteelSeries|HyperX|NGENUI
 $HostExes = '^(rundll32|cmd|powershell|pwsh|wscript|cscript|conhost|explorer|mshta)\.exe$'
 
 # Icône d'un programme, prête pour l'interface.
-# Infos des programmes (nom, éditeur, icône) lues en arrière plan : ouvrir un .exe réveille souvent l'antivirus,
+# Infos des programmes (nom, éditeur, icône) lues en arrière-plan : ouvrir un .exe réveille souvent l'antivirus,
 # ce qui figeait la fenêtre jusqu'à 2 s pendant le chargement. Gardées pour toute la session.
 $ExeFactsWork = {
     param($list)
@@ -409,11 +412,11 @@ function Get-StartupInfo($Item) {
     if ($text -match $SafeStartup) {
         $adv = @{ Kind = 'safe'; Label = 'Tu peux le désactiver'; Color = $Colors.ok; Why = 'Il se lance quand tu l''ouvres, pas besoin qu''il démarre avec Windows.' }
     } elseif ($text -match $KeepStartup) {
-        $adv = @{ Kind = 'keep'; Label = 'À garder'; Color = $Colors.warn; Why = 'Pilote ou protection de ton PC : laisse le activé.' }
+        $adv = @{ Kind = 'keep'; Label = 'À garder'; Color = $Colors.warn; Why = 'Pilote ou protection de ton PC : laisse-le activé.' }
     } elseif ($text -match $DeviceStartup) {
-        $adv = @{ Kind = 'choice'; Label = 'À toi de voir'; Color = '#A6A1BC'; Why = 'Garde le si tu utilises les réglages de ta souris, ton clavier ou tes lumières.' }
+        $adv = @{ Kind = 'choice'; Label = 'À toi de voir'; Color = '#A6A1BC'; Why = 'Garde-le si tu utilises les réglages de ta souris, ton clavier ou tes lumières.' }
     } else {
-        $adv = @{ Kind = 'choice'; Label = 'À toi de voir'; Color = '#A6A1BC'; Why = 'Désactive le si tu ne t''en sers pas dès que tu allumes ton PC.' }
+        $adv = @{ Kind = 'choice'; Label = 'À toi de voir'; Color = '#A6A1BC'; Why = 'Désactive-le si tu ne t''en sers pas dès que tu allumes ton PC.' }
     }
     # Applis lancées par un petit programme de mise à jour (Discord...) : on prend l'icône de la vraie appli.
     $iconExe = $Item.Exe
@@ -558,7 +561,7 @@ function Update-NetInfo {
     try {
         $dns = [string]$n.Dns
         if (-not $dns) { throw 'DNS inconnu' }
-        $ui.DnsCurrent.Text = "DNS actuel: $dns"
+        $ui.DnsCurrent.Text = "DNS actuel : $dns"
     } catch { $ui.DnsCurrent.Text = '' }
 }
 
@@ -597,25 +600,25 @@ function Invoke-NetTest {
 
     $targets = @()
     if ($script:Net.Gateway -and $script:Net.Gateway -ne '0.0.0.0') { $targets += @{ Label = 'Ta box (réseau local)'; Host = $script:Net.Gateway; Local = $true } }
-    $targets += @{ Label = 'Internet: Cloudflare'; Host = '1.1.1.1'; Local = $false }
-    $targets += @{ Label = 'Internet: Google'; Host = '8.8.8.8'; Local = $false }
+    $targets += @{ Label = 'Internet : Cloudflare'; Host = '1.1.1.1'; Local = $false }
+    $targets += @{ Label = 'Internet : Google'; Host = '8.8.8.8'; Local = $false }
 
     foreach ($t in $targets) {
         $m = Measure-Latency $t.Host $t.Label
         if ($t.Local) {
             if ($m.Loss -gt 0 -or $m.Avg -gt 5 -or $m.Jitter -gt 3) {
-                $st = 'warn'; $verdict = "Réseau local instable. C'est typique du Wi-Fi (murs, distance, voisins): rapproche toi de la box ou passe en câble."
+                $st = 'warn'; $verdict = "Réseau local instable. C'est typique du Wi-Fi (murs, distance, voisins) : rapproche-toi de la box ou passe en câble."
             } else { $st = 'ok'; $verdict = 'Liaison avec ta box rapide et stable.' }
         } else {
-            if ($m.Loss -ge 5)       { $st = 'bad';  $verdict = 'Pertes de paquets: tu risques de la téléportation et des tirs qui ne comptent pas.' }
+            if ($m.Loss -ge 5)       { $st = 'bad';  $verdict = 'Pertes de paquets : tu risques de la téléportation et des tirs qui ne comptent pas.' }
             elseif ($m.Loss -gt 0)   { $st = 'warn'; $verdict = 'Quelques pertes de paquets.' }
-            elseif ($m.Jitter -gt 15){ $st = 'warn'; $verdict = 'Ping instable (gigue élevée): sensations de lag irrégulières.' }
+            elseif ($m.Jitter -gt 15){ $st = 'warn'; $verdict = 'Ping instable (gigue élevée) : sensations de lag irrégulières.' }
             elseif ($m.Avg -lt 30)   { $st = 'ok';   $verdict = 'Excellent pour jouer en ligne.' }
             elseif ($m.Avg -lt 60)   { $st = 'ok';   $verdict = 'Bon pour jouer en ligne.' }
-            elseif ($m.Avg -lt 100)  { $st = 'warn'; $verdict = 'Moyen: jouable, mais tu seras désavantagé dans les jeux compétitifs.' }
+            elseif ($m.Avg -lt 100)  { $st = 'warn'; $verdict = 'Moyen : jouable, mais tu seras désavantagé dans les jeux compétitifs.' }
             else                     { $st = 'bad';  $verdict = 'Ping élevé.' }
         }
-        if ($m.Loss -eq 100) { $st = 'bad'; $verdict = 'Aucune réponse (ce serveur bloque peut être le ping).' }
+        if ($m.Loss -eq 100) { $st = 'bad'; $verdict = 'Aucune réponse (ce serveur bloque peut-être le ping).' }
 
         $card = New-Card
         $g = New-Grid @('Auto', '*', 'Auto')
@@ -758,7 +761,7 @@ function Add-LastCleanInfo {
     if (-not $l -or -not $l.Date) { return }
     $g = New-Grid @('*', 'Auto')
     $g.Margin = New-Thickness 4 10 0 0
-    $t = New-Text "Dernier nettoyage le $(([datetime]$l.Date).ToString('dd/MM à HH:mm')) : $(Format-Size ([double]$l.Freed)) libérés, $($l.Deleted) fichier(s) supprimé(s), $($l.Skipped) laissé(s) car utilisé(s), $($l.Errors) refusé(s)." 12.5 '#A6A1BC'
+    $t = New-Text "Dernier nettoyage le $(([datetime]$l.Date).ToString('dd/MM à HH:mm')) : $(Format-Size ([double]$l.Freed)) libérés, $($l.Deleted) fichier$(if ([int]$l.Deleted -gt 1) { 's' }) supprimé$(if ([int]$l.Deleted -gt 1) { 's' }), $($l.Skipped) laissé$(if ([int]$l.Skipped -gt 1) { 's' }) car utilisé$(if ([int]$l.Skipped -gt 1) { 's' }), $($l.Errors) refusé$(if ([int]$l.Errors -gt 1) { 's' })." 12.5 '#A6A1BC'
     $t.VerticalAlignment = 'Center'
     Add-ToGrid $g $t 0
     if ($l.File -and (Test-Path -LiteralPath ([string]$l.File))) {
@@ -858,7 +861,7 @@ function Invoke-UndoAll {
     Update-StartupList
     Update-NetInfo
     $msg = 'Tous les réglages ont été remis comme avant. Redémarre le PC pour que tout soit pris en compte.'
-    if ($errors) { $msg += "`n`nCertains éléments n'ont pas pu être restaurés:`n" + ($errors -join "`n") }
+    if ($errors) { $msg += "`n`nCertains éléments n'ont pas pu être restaurés :`n" + ($errors -join "`n") }
     Show-Message $msg
     Invoke-Analysis
 }

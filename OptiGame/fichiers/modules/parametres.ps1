@@ -63,7 +63,7 @@ function Build-SettingsPanels {
         param($s, $e) $on = [bool]$s.IsChecked
         Invoke-Safe { Set-FpsMeasure $on }
     }))
-    [void]$p.Children.Add((New-SettingAction 'Compteur de FPS à l''écran' 'Affichage, style et position du compteur par dessus le jeu.' 'Ouvrir Overlay' { Hide-Settings; Show-Page $OverlayIndex }))
+    [void]$p.Children.Add((New-SettingAction 'Compteur de FPS à l''écran' 'Affichage, style et position du compteur par-dessus le jeu.' 'Ouvrir Overlay' { Hide-Settings; Show-Page $OverlayIndex }))
     [void]$p.Children.Add((New-SettingSwitch 'Mesurer ma connexion quand je joue' 'Box, Internet et serveur du jeu pendant la partie, pour savoir d''où vient le lag.' (Test-LagMeasure) {
         param($s, $e) $on = [bool]$s.IsChecked
         Invoke-Safe {

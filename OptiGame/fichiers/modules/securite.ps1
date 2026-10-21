@@ -60,10 +60,6 @@ function Get-ProtectionScore($S, [array]$Checks) {
     [int][math]::Max(0.0, [math]::Min(100.0, $score))
 }
 
-function Test-Signed([string]$Path) {
-    try { (Get-AuthenticodeSignature -FilePath $Path -ErrorAction Stop).Status -eq 'Valid' } catch { $false }
-}
-
 function Get-SuspectFolders {
     @(
         @{ Path = $env:TEMP; Depth = 0; Label = 'dossier temporaire' },
@@ -124,7 +120,7 @@ function Get-SecurityChecks($S) {
     if ($excl.Count) {
         $trust = @($excl | ForEach-Object { New-TrustEntry 'Exclusion de l''antivirus' "exclusion|$_" $_ })
         [void]$list.Add(@{ Status = 'warn'; Title = "$($excl.Count) élément$(if ($excl.Count -gt 1) {'s'}) exclu$(if ($excl.Count -gt 1) {'s'}) de l'antivirus"
-            Detail = 'Ces dossiers ou programmes ne sont jamais analysés. Si tu ne les as pas ajoutés toi même (ou un jeu que tu connais), c''est suspect : les virus s''ajoutent souvent eux mêmes en exclusion.'
+            Detail = 'Ces dossiers ou programmes ne sont jamais analysés. Si tu ne les as pas ajoutés toi-même (ou un jeu que tu connais), c''est suspect : les virus s''ajoutent souvent eux-mêmes en exclusion.'
             Items = @($trust | ForEach-Object { $_.Text }); Trust = $trust
             Actions = @(@{ Label = 'Retirer les exclusions'; Confirm = 'Retirer ces exclusions de Microsoft Defender ? Ces éléments seront de nouveau analysés.'; Arg = $excl
                            Script = { param($a) [void](Invoke-Aide 'antivirus.retirer-exclusions' @{ Elements = @($a) }) } }) })
@@ -162,7 +158,7 @@ function Get-SecurityChecks($S) {
         $what = if ($pac) { "script $pac" } else { [string](Get-RegValue $inet 'ProxyServer') }
     }
     if (($proxyOn -or $pac) -and -not $trusted["proxy|$what"]) {
-        [void]$list.Add(@{ Status = 'warn'; Title = 'Un proxy détourne ta navigation'; Detail = "Tout ton trafic web passe par : $what. Si tu ne l'as pas configuré toi même (VPN, travail), c'est suspect."
+        [void]$list.Add(@{ Status = 'warn'; Title = 'Un proxy détourne ta navigation'; Detail = "Tout ton trafic web passe par : $what. Si tu ne l'as pas configuré toi-même (VPN, travail), c'est suspect."
             Trust = @(New-TrustEntry 'Proxy' "proxy|$what" $what)
             Actions = @(@{ Label = 'Paramètres du proxy'; Script = { Open-Url 'ms-settings:network-proxy' } }) })
     }
@@ -181,7 +177,7 @@ function Get-SecurityChecks($S) {
     if ($scripts.Count) {
         $trust = @($scripts | ForEach-Object { New-TrustEntry 'Fichier' "fichier|$_" $_ })
         [void]$list.Add(@{ Status = 'warn'; Title = "$($scripts.Count) script$(if ($scripts.Count -gt 1) {'s'}) dans tes téléchargements"
-            Detail = 'Ces types de fichiers (.vbs, .js, .hta, .scr...) servent rarement à autre chose qu''à installer des virus quand ils viennent d''Internet. Si tu ne sais pas d''où ils viennent, supprime les.'
+            Detail = 'Ces types de fichiers (.vbs, .js, .hta, .scr...) servent rarement à autre chose qu''à installer des virus quand ils viennent d''Internet. Si tu ne sais pas d''où ils viennent, supprime-les.'
             Items = $scripts; Trust = $trust
             Actions = @(@{ Label = 'Analyser avec Defender'; Arg = $scripts; Script = { param($a) Invoke-DefenderScan 'CustomScan' $a 'Analyse des scripts téléchargés' } },
                         @{ Label = 'Ouvrir l''emplacement'; Arg = $scripts[0]; Script = { param($a) Start-Process 'explorer.exe' -ArgumentList "/select,`"$a`"" } }) })
@@ -204,7 +200,7 @@ function Get-SecurityChecks($S) {
     if ($susStart.Count) {
         $trust = @($susStart | ForEach-Object { New-TrustEntry 'Programme au démarrage' "demarrage|$($_.Nom)|$($_.Exe)" "$($_.Nom)  :  $($_.Exe)" })
         [void]$list.Add(@{ Status = 'warn'; Title = "$($susStart.Count) programme$(if ($susStart.Count -gt 1) {'s'}) au démarrage à vérifier"
-            Detail = 'Ils se lancent avec Windows et ne sont pas signés par un éditeur, ou sont rangés dans un dossier inhabituel. Si tu ne les reconnais pas, analyse les et désactive les.'
+            Detail = 'Ils se lancent avec Windows et ne sont pas signés par un éditeur, ou sont rangés dans un dossier inhabituel. Si tu ne les reconnais pas, analyse-les et désactive-les.'
             Items = @($trust | ForEach-Object { $_.Text }); Trust = $trust
             Actions = @(@{ Label = 'Analyser avec Defender'; Arg = @($susStart | ForEach-Object { $_.Exe }); Script = { param($a) Invoke-DefenderScan 'CustomScan' $a 'Analyse des programmes au démarrage' } },
                         @{ Label = 'Désactiver au démarrage'; Arg = $susStart; Confirm = 'Désactiver ces programmes au démarrage ? Ils restent installés.'; Script = { param($a) foreach ($i in $a) { Set-StartupState $i $false }; Update-StartupList } }) })
@@ -350,7 +346,7 @@ function New-TrustedCard {
     Add-ToGrid $head $ic 0
     $txt = New-Object System.Windows.Controls.StackPanel
     [void]$txt.Children.Add((New-Text "$($all.Count) élément$(if ($all.Count -gt 1) {'s'}) approuvé$(if ($all.Count -gt 1) {'s'}) par toi" 14.5 '#FFFFFF' -Semi))
-    $d = New-Text 'Tu as indiqué que c''est toi qui les as mis en place : ils ne baissent plus le niveau de protection. Retire les si tu changes d''avis.' 12.5 '#A6A1BC'
+    $d = New-Text 'Tu as indiqué que c''est toi qui les as mis en place : ils ne baissent plus le niveau de protection. Retire-les si tu changes d''avis.' 12.5 '#A6A1BC'
     $d.Margin = New-Thickness 0 3 0 0
     [void]$txt.Children.Add($d)
     Add-ToGrid $head $txt 1
@@ -425,7 +421,7 @@ function Update-SecurityTab {
         [void]$ui.SecLines.Children.Add((New-StatusLine 'Dernière analyse' $last $(if ($mp.QuickScanAge -le 14) { 'ok' } else { 'warn' })))
     } elseif ($S.OtherAv.Count) {
         [void]$ui.SecLines.Children.Add((New-StatusLine 'Antivirus' ($S.OtherAv -join ', ') 'ok'))
-        [void]$ui.SecLines.Children.Add((New-StatusLine 'Analyses' 'Faites les avec ton antivirus' 'info'))
+        [void]$ui.SecLines.Children.Add((New-StatusLine 'Analyses' 'Fais-les avec ton antivirus' 'info'))
     } else {
         [void]$ui.SecLines.Children.Add((New-StatusLine 'Antivirus' 'Aucun antivirus actif' 'bad'))
     }
@@ -502,7 +498,8 @@ $ScanWork = {
     } catch { @{ Error = $_.Exception.GetBaseException().Message } }
 }
 
-function New-Radar {
+# -Fixe : sans animation (sous la console, le panneau est montré dans l'écran et le radar reste caché derrière)
+function New-Radar([switch]$Fixe) {
     $g = New-Object System.Windows.Controls.Grid
     $g.Width = 190; $g.Height = 190
     $g.HorizontalAlignment = 'Center'
@@ -534,8 +531,10 @@ function New-Radar {
     $a.From = 0; $a.To = 360
     $a.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(1600))
     $a.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
-    $rot.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
-    Start-Pulse $shield
+    if (-not $Fixe) {
+        $rot.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
+        Start-Pulse $shield
+    }
     @{ El = $g; Shield = $shield; Sweep = $sweep; Rot = $rot }
 }
 
@@ -550,7 +549,9 @@ function Invoke-DefenderScan([string]$Type, [string[]]$Paths, [string]$Title) {
     Set-TestState 'run' 'Analyse en cours'
     Set-TestButtons 'run'
     $body = $ui.TestBody
-    $radar = New-Radar
+    $console = [bool]($script:Kit -and $script:Kit.Actif)
+    $radar = New-Radar -Fixe:$console
+    if ($console) { $radar.El.Tag = 'SansImageKit' }   # (pas photographié dans le panneau de la console : l'état et le temps suffisent)
     [void]$body.Children.Add($radar.El)
     $time = New-Text '00:00' 40 '#FFFFFF' -Bold
     $time.HorizontalAlignment = 'Center'

@@ -39,6 +39,9 @@ function Get-IconeConstat([string]$Id) {
     }
 }
 $IconesTon = @{ ok = @('ok', 'vert'); attention = @('alerte', 'orange'); urgent = @('alerte', 'rouge'); '' = @('aide', 'P') }
+# Le seuil d'alerte de température de la carte graphique (le même que Test-TempAlert, jeu.ps1) : l'anneau montre la
+# température sur ce seuil
+$SeuilTempKit = 87
 
 # ---------------------------------------------------------------------------
 # Les mesures en direct (processeur, mémoire, carte graphique, température) : le fil des mesures de Nevermind ($Live)
@@ -57,7 +60,7 @@ function Get-MesuresKit {
     [void]$l.Add(@{ id = 'gpu'; nom = 'Carte graphique'; note = [string]$info['Carte graphique']; valeur = $(if ($null -ne $gpu) { [int]$gpu } else { 0 }); texte = $(if ($null -ne $gpu) { "$([int]$gpu) %" } else { '...' }) })
     if (-not $pas -and $null -ne $Live.GpuTemp) {
         $t = [double]$Live.GpuTemp
-        [void]$l.Add(@{ id = 'temp'; nom = 'Température'; note = 'de la carte graphique'; valeur = [int][math]::Min(100, $t); texte = "$([int]$t)°"; ton = $(if ($t -ge 87) { 'urgent' } elseif ($t -ge 80) { 'attention' } else { '' }) })
+        [void]$l.Add(@{ id = 'temp'; nom = 'Température'; note = "carte graphique, alerte à $SeuilTempKit°"; valeur = [int][math]::Min(100, 100 * $t / $SeuilTempKit); texte = "$([int]$t)°"; ton = $(if ($t -ge $SeuilTempKit) { 'urgent' } elseif ($t -ge 80) { 'attention' } else { '' }) })
     }
     return @($l)
 }
@@ -75,24 +78,27 @@ function Get-LigneConstat($f, [string]$Id) {
     $auto = $f.Fix -and $f.Fix.Auto
     $ton = $TonsStatut[[string]$f.Status]
     @{ type = 'ligne'; id = $Id; icone = (Get-IconeConstat $f.Id); couleur = $(if ($ton -eq 'urgent') { 'rouge' } elseif ($f.Status -eq 'ok') { 'vert' } else { 'P' })
-        texte = [string]$f.Titre; note = $(if ($f.Status -eq 'ok') { [string]$f.Detail } elseif ($auto) { 'Nevermind le fait pour toi' } elseif ($f.Fix) { 'À faire toi-même, Nevermind explique comment' } else { [string]$f.Detail })
+        texte = (Format-TexteKit $f.Titre); note = $(if ($f.Status -eq 'ok') { Format-TexteKit $f.Detail } elseif ($auto) { 'Nevermind le fait pour toi' } elseif ($f.Fix) { 'À faire toi-même, Nevermind explique comment' } else { Format-TexteKit $f.Detail })
         valeur = $(if ($f.Gain -gt 0) { "+$([int]$f.Gain) point$(if ($f.Gain -gt 1) { 's' })" } elseif ($f.Status -eq 'ok') { '' } else { 'Voir' }); ton = $(if ($ton -eq 'urgent') { 'urgent' } elseif ($f.Status -eq 'ok') { 'ok' } else { '' }) }
 }
 
 function Get-PagesPc {
     $a = $script:LastAnalysis
     $fd = Get-HubFindings $a
-    $todo = $fd.Important.Count
-    $script:Kit.Fiches = @(@($fd.Important) + @($fd.Manual) | Select-Object -First 8)
+    $aRegler = @(@($fd.Important) + @($fd.Manual) | Where-Object { $_ })
+    $todo = $aRegler.Count
+    $script:Kit.Fiches = @($aRegler | Select-Object -First 8)
     $auto = @(if ($a) { $a.Active | Where-Object { $_.Status -ne 'ok' -and $_.Gain -gt 0 -and $_.Fix -and $_.Fix.Auto } })
-    $gainAuto = [int](($auto | Measure-Object Gain -Sum).Sum)
-    $boutonsTout = @(if ($auto.Count) { @{ id = 'toutcorriger'; texte = "Tout corriger (+$gainAuto points)" } })
+    # (le gain de « Tout corriger » : le même calcul que « Jusqu'à N en un clic », Measure-Score)
+    $gainAuto = if ($a) { [math]::Max(0, [int]$a.Potential - [int]$a.Score) } else { 0 }
+    $boutonsTout = @(if ($auto.Count) { @{ id = 'toutcorriger'; texte = $(if ($gainAuto) { "Tout corriger (+$gainAuto point$(if ($gainAuto -gt 1) { 's' }))" } else { 'Tout corriger' }) } })
     $analyser = @{ id = 'analyser'; texte = 'Relancer l''analyse'; icone = 'actu' }
 
     $module = if ($a) {
         @{ anneau = @{ valeur = [int]$a.Score; sur = 100; ton = $(if ($todo) { 'attention' } else { '' }) }
-            titre = $(if ($todo -and $a.Score -ge 90) { 'Presque parfait' } elseif ($todo) { 'Encore un peu de marge' } elseif ($fd.Manual.Count) { 'Prêt pour jouer' } else { 'Ton PC est au top' })
-            texte = [string]$ui.HubSub.Text; boutons = $boutonsTout }
+            titre = [string]$a.Label
+            texte = $(if ($todo) { "$(if ($todo -eq 1) { '1 point' } else { "$todo points" }) à régler pour gagner des points$(if ($auto.Count -eq $todo) { ', Nevermind s''en charge.' } elseif ($auto.Count) { ", dont $($auto.Count) que Nevermind fait pour toi." } else { '.' })" } else { 'Ton PC est au top pour jouer. Rien à corriger.' })
+            boutons = $boutonsTout }
     } else { @{ icone = 'pc'; titre = 'Analyse en cours'; texte = 'Je regarde ton PC, ça prend quelques secondes.' } }
 
     $lignes = @(for ($k = 0; $k -lt $script:Kit.Fiches.Count; $k++) { Get-LigneConstat $script:Kit.Fiches[$k] "fiche:$k" })
@@ -100,7 +106,7 @@ function Get-PagesPc {
     $blocs = @(
         @{ type = 'titre'; texte = 'Ton PC maintenant'; direct = $true }
         @{ type = 'mesures'; elements = @(Get-MesuresKit) }
-        if ($lignes.Count) { @{ type = 'titre'; texte = 'Pour gagner des points' } }
+        if ($lignes.Count) { @{ type = 'titre'; texte = 'Pour gagner des points'; droite = $(if ($todo -gt $lignes.Count) { "les $($lignes.Count) premiers sur $todo" } else { "$todo à régler" }) } }
     ) + $lignes + @(
         @{ type = 'titre'; texte = 'Outils' }
         @{ type = 'raccourcis'; elements = @(@{ id = 'tableau'; nom = 'Tableau de bord'; icone = 'jauge'; couleur = 'P' }, @{ id = (Get-IdOutilKit 'tests' 5); nom = 'Tests des composants'; icone = 'test'; couleur = 'S' }) }
@@ -112,18 +118,20 @@ function Get-PagesPc {
 
     # Le Tableau de bord : tout le détail de l'analyse
     $tous = @(if ($a) { $a.Active })
-    $aRegarder = @($tous | Where-Object { $_.Status -ne 'ok' })
+    $pourInfo = @($tous | Where-Object { $_.Status -ne 'ok' -and $aRegler -notcontains $_ })
     $dejaOk = @($tous | Where-Object { $_.Status -eq 'ok' })
     $ignores = @($script:IgnoredFindings | Where-Object { $_ })
-    $script:Kit.Constats = @($aRegarder) + @($dejaOk) + @($ignores)
+    $script:Kit.Constats = @($aRegler) + @($pourInfo) + @($dejaOk) + @($ignores)
     $k = 0
-    $lr = @(foreach ($f in $aRegarder) { $l = Get-LigneConstat $f "constat:$k"; $l.etiquette = [string]$StatusLabels[[string]$f.Status]; $l.ton = $TonsStatut[[string]$f.Status]; $l; $k++ })
+    $lr = @(foreach ($f in $aRegler) { $l = Get-LigneConstat $f "constat:$k"; $l.etiquette = [string]$StatusLabels[[string]$f.Status]; $l.ton = $TonsStatut[[string]$f.Status]; $l; $k++ })
+    $lp = @(foreach ($f in $pourInfo) { $l = Get-LigneConstat $f "constat:$k"; $l.etiquette = 'Pour info'; $l.ton = ''; $l.valeur = 'Voir'; $l; $k++ })
     $lo = @(foreach ($f in $dejaOk) { $l = Get-LigneConstat $f "constat:$k"; $l; $k++ })
     $li = @(foreach ($f in $ignores) { $l = Get-LigneConstat $f "constat:$k"; $l.etiquette = 'Ignoré'; $l.note = 'Ne compte plus dans ton score'; $l; $k++ })
     $onglets = @(
-        @{ id = 'regarder'; nom = "À regarder ($($aRegarder.Count))"; blocs = $(if ($lr.Count) { @(@{ type = 'texte'; texte = 'Clique sur un point pour voir ce qu''il faut faire.' }) + $lr } else { @(@{ type = 'texte'; texte = 'Rien à corriger : ton PC est bien réglé pour le jeu.' }) }) }
-        @{ id = 'ok'; nom = "Déjà OK ($($dejaOk.Count))"; blocs = $lo }
+        @{ id = 'regarder'; nom = "À régler ($($aRegler.Count))"; blocs = $(if ($lr.Count) { @(@{ type = 'texte'; texte = 'Les points qui font gagner des points. Clique sur un point pour voir ce qu''il faut faire.' }) + $lr } else { @(@{ type = 'texte'; texte = 'Rien à corriger : ton PC est bien réglé pour le jeu.' }) }) }
     )
+    if ($lp.Count) { $onglets += @{ id = 'info'; nom = "Pour info ($($lp.Count))"; blocs = @(@{ type = 'texte'; texte = 'Ces points ne comptent pas dans ton score : à toi de voir s''ils te concernent.' }) + $lp } }
+    $onglets += @{ id = 'ok'; nom = "Déjà OK ($($dejaOk.Count))"; blocs = $lo }
     if ($li.Count) { $onglets += @{ id = 'ignores'; nom = "Ignorés ($($li.Count))"; blocs = $li } }
     $comp = New-Object System.Collections.ArrayList
     $script:Kit.ActionsComposants = @()
@@ -143,7 +151,7 @@ function Get-PagesPc {
     [ordered]@{
         pc = @{ titre = 'Ton PC'; sous = 'La santé de chaque composant de ton PC et ce qui freine tes jeux.'; icone = 'pc'; couleur = 'P'; actions = @($analyser); module = $module; blocs = $blocs }
         tableau = @{ titre = 'Tableau de bord'; parent = 'pc'; sous = 'Tout le détail de l''analyse : ce qui freine tes jeux, et la santé de chaque composant.'; icone = 'jauge'; couleur = 'P'; actions = @($analyser)
-            module = $(if ($a) { @{ anneau = @{ valeur = [int]$a.Score; sur = 100 }; titre = [string]$a.Label; texte = $(if ($a.Potential -gt $a.Score) { "Jusqu'à $($a.Potential) en un clic." } else { [string]$ui.ScoreCounts.Text }); boutons = $boutonsTout } } else { $module })
+            module = $(if ($a) { @{ anneau = @{ valeur = [int]$a.Score; sur = 100; ton = $(if ($todo) { 'attention' } else { '' }) }; titre = [string]$a.Label; texte = $(if ($gainAuto -and $auto.Count) { "Jusqu'à $($a.Potential) en un clic." } elseif ($todo) { "$(if ($todo -eq 1) { '1 point' } else { "$todo points" }) à régler." } else { 'Rien à corriger.' }); boutons = $boutonsTout } } else { $module })
             onglets = $onglets }
     }
 }
@@ -218,6 +226,10 @@ function Get-FicheKit {
 function Update-FicheKit {
     $ouverte = $ui.Overlay.Visibility -eq 'Visible'
     if ($ouverte) {
+        # (relue au plus une fois toutes les 900 ms, sauf dans les 2 s après un geste : la fiche répond tout de suite)
+        $maintenant = Get-Date
+        if ($script:Kit.FicheOuverte -and $script:Kit.FicheVu -and ($maintenant - $script:Kit.FicheVu).TotalMilliseconds -lt 900 -and ($maintenant - $script:Kit.Geste).TotalSeconds -gt 2) { return }
+        $script:Kit.FicheVu = $maintenant
         $f = Get-FicheKit
         $cle = $f | ConvertTo-Json -Depth 8 -Compress
         if ($cle -eq $script:Kit.FicheCle) { return }
@@ -227,7 +239,7 @@ function Update-FicheKit {
         Update-EcranNevermind
         if ($premiere) { Open-EcranVue 'fiche' }
     } elseif ($script:Kit.FicheOuverte) {
-        $script:Kit.FicheOuverte = $false; $script:Kit.Fiche = $null; $script:Kit.FicheCle = ''
+        $script:Kit.FicheOuverte = $false; $script:Kit.Fiche = $null; $script:Kit.FicheCle = ''; $script:Kit.FicheVu = $null
         $de = $script:Kit.FicheDe
         if ($script:Vue.Ecran -eq 'fiche') { Open-EcranVue $(if ($de -and $de -ne 'fiche') { $de } else { 'accueil' }) }
         Update-EcranNevermind

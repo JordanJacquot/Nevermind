@@ -77,6 +77,7 @@ function Add-BlocsWpf($El, $Blocs, $Etat) {
         $prim = $El.Style -and $El.Style -eq $Window.TryFindResource('BtnPrimary')
         [void]$Blocs.Add(@{ type = 'bouton'; id = "panneau:b:$($Etat.Boutons.Count - 1)"; texte = $txt; style = $(if (-not $prim) { 'second' }) }); return
     }
+    if ('SansImageKit' -eq $El.Tag) { return }   # (un dessin animé d'avant que la console ne montre pas, le radar d'une analyse)
     if (Test-DessinWpf $El) {
         $img = Get-ImageWpf $El
         if ($img) { [void]$Blocs.Add(@{ type = 'image'; url = $img; hauteur = [int][math]::Min(320, [math]::Max(60, $El.ActualHeight)) }) }

@@ -254,7 +254,7 @@ function Hide-ToTray {
     $Window.Hide()
     if (-not (Get-Setting 'TrayHintShown' $false)) {
         Set-Setting 'TrayHintShown' $true
-        Show-Notify 'Nevermind reste ouvert' 'Il continue en arrière plan (mode jeu, mesure des FPS). Clique sur son icône près de l''horloge pour le rouvrir.'
+        Show-Notify 'Nevermind reste ouvert' 'Il continue en arrière-plan (mode jeu, mesure des FPS). Clique sur son icône près de l''horloge pour le rouvrir.'
     }
 }
 
@@ -420,7 +420,7 @@ function Show-ReportPanel {
     $tb.FontSize = Get-UiFontSize 13; $tb.Padding = New-Thickness 8 6 8 6
     $tb.Background = Get-Brush '#0E0C16'; $tb.Foreground = Get-Brush '#FFFFFF'; $tb.BorderBrush = Get-Brush '#2AFFFFFF'; $tb.CaretBrush = Get-Brush '#FFFFFF'
     [void]$body.Children.Add($tb)
-    $n = New-Text 'Nevermind crée un fichier .zip sur ton bureau avec ta phrase, les infos du PC (Windows, composants, score) et le journal de l''app. Il ne contient ni tes fichiers, ni ton nom, ni tes mots de passe. Envoie-le à la personne qui t''a donné Nevermind (Discord par exemple).' 12 '#A6A1BC'
+    $n = New-Text 'Nevermind crée un fichier .zip sur ton bureau avec ta phrase, les infos du PC (Windows, composants, score) et le journal de Nevermind. Il ne contient ni tes fichiers, ni ton nom, ni tes mots de passe. Envoie-le à la personne qui t''a donné Nevermind (Discord par exemple).' 12 '#A6A1BC'
     $n.Margin = New-Thickness 0 10 0 0
     [void]$body.Children.Add($n)
     $wp = New-Object System.Windows.Controls.WrapPanel
@@ -442,16 +442,15 @@ $TourSteps = @(
     @{ Title = 'Bienvenue dans Nevermind'; Lines = @(
         'Nevermind analyse ton PC et le règle pour que tes jeux tournent au mieux.',
         'Rien n''est modifié sans ton accord : chaque changement passe par un bouton sur lequel tu cliques.') },
-    @{ Title = 'Les modules'; Lines = @(
-        'L''accueil montre tes modules : fais les défiler à la souris ou aux flèches, puis clique sur celui que tu veux ouvrir.',
-        'Ton PC et Performances montrent ce qui freine tes jeux : clique sur un point, lis la fiche, puis « Exécuter » pour que l''app le corrige.',
+    @{ Title = 'Les onglets'; Lines = @(
+        'En haut, les onglets : Ordinateur, Jeux, Réseau, Trafic et Overlay.',
+        'Ordinateur range les outils en trois familles : Performances, Santé du PC et Protection. Le tableau de bord montre ce qui freine tes jeux : clique sur un point, lis la fiche, puis « Exécuter » pour que Nevermind le corrige.',
         'Jeux réunit tous tes jeux : tu les lances et tu optimises chacun depuis sa fiche.',
         'Réseau scanne les appareils de ta maison et vérifie leur sécurité.') },
     @{ Title = 'Tout est annulable'; Lines = @(
         'Chaque changement est sauvegardé avant d''être fait.',
-        'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde garde l''historique : tu peux annuler n''importe quel changement.',
-        'En haut à droite : la loupe trouve un réglage (ou Ctrl + K), la roue crantée ouvre les Paramètres, et le point d''interrogation l''Aide, avec « Signaler un problème ».',
-        'Le logo Nevermind, en haut à gauche, te ramène toujours à l''accueil.') }
+        'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde (dans Ordinateur, famille Protection) garde l''historique : tu peux annuler n''importe quel changement.',
+        'En haut, la barre de recherche trouve un réglage (ou Ctrl + K) et la roue crantée ouvre les Paramètres. « Signaler un problème » est dans l''onglet Aide des Paramètres.') }
 )
 
 function Show-Tour {

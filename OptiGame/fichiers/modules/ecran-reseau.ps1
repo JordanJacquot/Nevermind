@@ -63,7 +63,7 @@ function Get-PagesReseau {
     if ($liste.Count -and $ui.NetDevHint.Text) { $blocs += @{ type = 'note'; texte = [string]$ui.NetDevHint.Text } }
     [ordered]@{
         reseau = @{ titre = 'Réseau'; sous = 'Tous les appareils connectés chez toi : téléphones, consoles, TV, box, objets connectés.'; icone = 'radar'; couleur = 'S'
-            actions = @(@{ id = 'clic:BtnNetScan'; texte = $(if ($scan) { 'Scan en cours...' } elseif ($liste.Count) { 'Scanner de nouveau' } else { 'Scanner le réseau' }); icone = 'actu' })
+            actions = @(if ($liste.Count) { @{ id = 'clic:BtnNetScan'; texte = $(if ($scan) { 'Scan en cours...' } else { 'Scanner de nouveau' }); icone = 'actu' } })   # (avant le premier scan : le bouton de la carte seulement)
             module = $module; blocs = $blocs }
     }
 }

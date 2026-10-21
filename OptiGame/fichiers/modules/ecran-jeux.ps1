@@ -57,9 +57,9 @@ function Get-PagesJeux {
     $blocsFps = @(
         @{ type = 'reglages'; rangs = @(
             @{ texte = 'Mesurer mes FPS quand je joue'; note = 'Automatique pour tes jeux (Steam, Epic, Ubisoft, EA, Battle.net, Riot, GOG, Xbox...). Pour un autre jeu : Ctrl + Maj + F pendant la partie.'; bascule = @{ id = 'fps-mesure'; oui = [bool](Test-FpsMeasure) } }
-            @{ texte = 'Le compteur par dessus le jeu'; note = "Compteur à l'écran : $(if (Test-FpsOverlay) { "affiché, style $(Get-FpsOverlayStyle), $($OverlayCorners[(Get-FpsOverlayCorner)].ToLower())" } else { 'masqué' })."; lien = @{ id = 'overlay'; texte = 'Régler le compteur' } }
+            @{ texte = 'Le compteur par-dessus le jeu'; note = "Compteur à l'écran : $(if (Test-FpsOverlay) { "affiché, style $(Get-FpsOverlayStyle), $($OverlayCorners[(Get-FpsOverlayCorner)].ToLower())" } else { 'masqué' })."; lien = @{ id = 'overlay'; texte = 'Régler le compteur' } }
         ) }
-        if (-not (Test-Path -LiteralPath $PresentMonExe)) { @{ type = 'note'; texte = 'PresentMon est absent du dossier de l''app : réinstalle Nevermind.' } }
+        if (-not (Test-Path -LiteralPath $PresentMonExe)) { @{ type = 'note'; texte = 'PresentMon est absent du dossier de Nevermind : réinstalle Nevermind.' } }
     )
     if ($sessions.Count) {
         $cmpS = @(Get-FpsSessions | Where-Object { $_.Key -eq $sessions[0].Key } | Sort-Object { [datetime]$_.Date })
@@ -105,14 +105,30 @@ function Get-PagesJeux {
         @{ image = (Get-JaquetteKit $jeuM); legende = [string]$jeuM.Name; titre = $(if ($last) { 'Reprendre' } else { [string]$jeuM.Name })
             texte = $(if ($pl) { "Dernière partie $(Format-LastPlayed $pl.Last)$(if ($last -and $last.Last) { ", $('{0:N0}' -f $last.Last.Avg) FPS en moyenne" })." } else { 'Pas encore joué depuis Nevermind.' })
             boutons = @(@{ id = 'jeu-module-lancer'; texte = $(if ($script:GameSession -and $script:GameSession.Game -eq $jeuM.Name) { 'En cours de jeu' } else { 'Jouer' }) }, @{ id = 'jeu-module-fiche'; texte = 'Voir le jeu'; style = 'second' })
-            resume = @(@{ nom = 'Launcher'; valeur = $(if ($jeuM.Source) { [string]$jeuM.Source } else { 'Steam' }) }, @{ nom = 'Bibliothèque'; valeur = "$($tous.Count) jeu$(if ($tous.Count -gt 1) { 'x' })" }) }
-    } else { @{ icone = 'manette'; couleur = 'S'; titre = 'Tes jeux'; texte = 'Tous tes jeux, quel que soit le launcher.' } }
-    $pages.jeux = @{ titre = 'Jeux'; sous = 'Tous tes jeux, quel que soit le launcher.'; icone = 'manette'; couleur = 'S'
+            resume = @(@{ nom = 'Lanceur'; valeur = $(if ($jeuM.Source) { [string]$jeuM.Source } else { 'Steam' }) }, @{ nom = 'Bibliothèque'; valeur = "$($tous.Count) jeu$(if ($tous.Count -gt 1) { 'x' })" }) }
+    } else { @{ icone = 'manette'; couleur = 'S'; titre = 'Tes jeux'; texte = 'Tous tes jeux, quel que soit le lanceur (Steam, Epic...).' } }
+
+    # ---- Les modules de Perf. In Game : la dernière partie mesurée (FPS), la dernière mesure de connexion (Lag en ligne)
+    $modFps = if ($sessions.Count) {
+        $s0 = $sessions[0]; $d0 = [datetime]$s0.Date
+        @{ icone = 'jauge'; couleur = $(if ($s0.Avg -lt 30) { 'rouge' } elseif ($s0.Avg -lt 60) { 'orange' } else { 'vert' }); titre = "$('{0:N0}' -f $s0.Avg) FPS en moyenne"
+            texte = "Dernière partie mesurée : $(Get-SessionName $s0), le $($d0.ToString('dd/MM')) à $($d0.ToString('HH:mm')), pendant $(Format-PlayTime $s0.Seconds)."
+            boutons = @(@{ id = "fps:$($s0.Id)"; texte = 'Voir le détail' })
+            resume = @(@{ nom = 'Jeu'; valeur = [string](Get-SessionName $s0) }, @{ nom = 'FPS moyens'; valeur = ('{0:N0}' -f $s0.Avg) }, @{ nom = '1 % bas'; valeur = ('{0:N0}' -f $s0.Low1) }, @{ nom = 'Parties mesurées'; valeur = "$($sessions.Count)" }) }
+    } else { @{ icone = 'jauge'; couleur = 'doux'; titre = 'Aucune partie mesurée'; texte = 'Joue au moins 30 secondes : tes FPS moyens et tes chutes apparaîtront ici.' } }
+    $modLag = if ($lags.Count) {
+        $s0 = $lags[0]; $d0 = [datetime]$s0.Date; $niv = [string]$s0.Diag.Level; $ligneLag = [string](Get-LagSessionLine $s0)
+        @{ icone = 'internet'; couleur = $(switch ($niv) { 'ok' { 'vert' } 'warn' { 'orange' } 'bad' { 'rouge' } default { 'T' } }); titre = [string]$s0.Diag.Title
+            texte = "Dernière mesure : $($s0.Game), le $($d0.ToString('dd/MM')) à $($d0.ToString('HH:mm')).$(if ($ligneLag) { " $ligneLag." } else { '' })"
+            boutons = @(@{ id = "lag:$($s0.Id)"; texte = 'Voir le détail' })
+            resume = @(@{ nom = 'État'; valeur = $(switch ($niv) { 'ok' { 'Stable' } 'warn' { 'À voir' } 'bad' { 'Problème' } default { '-' } }); ton = $(if ($TonsStatut[$niv]) { [string]$TonsStatut[$niv] } else { '' }) }, @{ nom = 'Durée'; valeur = (Format-PlayTime $s0.Seconds) }) }
+    } else { @{ icone = 'internet'; couleur = 'doux'; titre = 'Aucune mesure'; texte = 'Joue une partie en ligne (au moins une minute) ou lance le test rapide : Nevermind te dira d''où vient le lag.' } }
+    $pages.jeux = @{ titre = 'Jeux'; sous = 'Tous tes jeux, quel que soit le lanceur (Steam, Epic...).'; icone = 'manette'; couleur = 'S'
         actions = @(@{ id = 'jeux-organizer'; texte = 'Organizer Dofus'; style = 'second' }, @{ id = 'clic:BtnLibRefresh'; texte = 'Actualiser'; icone = 'actu' }, @{ id = 'clic:BtnLibAdd'; texte = 'Ajouter un jeu'; icone = 'plus' })
         module = $module
         onglets = @(
-            @{ id = 'lib'; nom = 'Bibliothèque'; blocs = $blocsLib }
-            @{ id = 'perf'; nom = 'Perf. In Game'; texte = 'Tes FPS et ta connexion pendant chaque partie : ce qui ralentit, et comment le corriger.'; onglets = @(@{ id = 'fps'; nom = 'FPS'; blocs = $blocsFps }, @{ id = 'lag'; nom = 'Lag en ligne'; blocs = $blocsLag }) }
+            @{ id = 'lib'; nom = 'Bibliothèque'; module = $module; blocs = $blocsLib }
+            @{ id = 'perf'; nom = 'Perf. In Game'; texte = 'Tes FPS et ta connexion pendant chaque partie : ce qui ralentit, et comment le corriger.'; onglets = @(@{ id = 'fps'; nom = 'FPS'; module = $modFps; blocs = $blocsFps }, @{ id = 'lag'; nom = 'Lag en ligne'; module = $modLag; blocs = $blocsLag }) }
         ) }
 
     # ---- La fiche d'un jeu
@@ -136,7 +152,7 @@ function Get-PagesJeux {
         })
         $pages.jeu = @{ titre = [string]$g.Name; parent = 'jeux'; sous = "$(if ($g.Source) { $g.Source } else { 'Steam' }) · dernière partie : $(Format-LastPlayed $(if ($pl) { $pl.Last } else { '' }))"; icone = 'manette'; couleur = 'S'
             module = @{ image = (Get-JaquetteKit $g); legende = [string]$g.Name; titre = $(if ($enJeu) { 'En cours de jeu' } else { 'Prêt à jouer' })
-                texte = $(if ($how.Kind -eq 'url' -and $g.Source) { "Lancé par $($g.Source) (connexion, mises à jour et anti triche comme d'habitude)." } else { 'Lancé directement depuis son dossier.' })
+                texte = $(if ($how.Kind -eq 'url' -and $g.Source) { "Lancé par $($g.Source) (connexion, mises à jour et anti-triche comme d'habitude)." } else { 'Lancé directement depuis son dossier.' })
                 boutons = @(if (-not $enJeu) { @{ id = 'jeu-lancer'; texte = 'Lancer' } })
                 resume = @(@{ nom = 'Temps de jeu'; valeur = $(if ($pl) { Format-PlayTime $pl.Seconds } else { '-' }) }, @{ nom = 'Parties'; valeur = $(if ($pl) { [string]$pl.Count } else { '0' }) }, @{ nom = 'FPS moyens'; valeur = $(if ($dern) { '{0:N0}' -f $dern.Avg } else { '-' }) }) }
             blocs = @(
@@ -157,18 +173,18 @@ function Get-PagesJeux {
     $affiche = Test-FpsOverlay
     $coins = @{ hg = 'haut-gauche'; hd = 'haut-droite'; bg = 'bas-gauche'; bd = 'bas-droite' }
     $fpsApercu = if ($sessions.Count) { [int]$sessions[0].Avg } else { 144 }
-    $pages.overlay = @{ titre = 'Overlay'; sous = 'Ton compteur de FPS par dessus le jeu : un coup d''oeil suffit, sans quitter la partie.'; icone = 'jauge'; couleur = 'vert'
+    $pages.overlay = @{ titre = 'Overlay'; sous = 'Ton compteur de FPS par-dessus le jeu : un coup d''œil suffit, sans quitter la partie.'; icone = 'jauge'; couleur = 'vert'
         module = @{ icone = 'jauge'; couleur = $(if ($affiche -and $mesure) { 'vert' } else { 'doux' }); titre = $(if (-not $mesure) { 'Mesure coupée' } elseif ($affiche) { 'Prêt' } else { 'Compteur masqué' })
             texte = $(if (-not $mesure) { 'La mesure des FPS est coupée : le compteur ne peut pas s''afficher.' } elseif ($affiche) { 'Il apparaîtra dès que tu lances un jeu.' } else { 'Active le compteur pour le voir pendant tes parties.' })
             boutons = @(if (-not $mesure) { @{ id = 'fps-mesure'; valeur = 'oui'; texte = 'Activer la mesure' } }) }
         blocs = @(
             @{ type = 'apercu'; id = 'overlay-coin'; coin = $coins[(Get-FpsOverlayCorner)]; style = $(if ((Get-FpsOverlayStyle) -eq 'discret') { 'discret' } else { 'complet' }); fps = $fpsApercu; detail = $(if ($sessions.Count) { "1 % bas $('{0:N0}' -f $sessions[0].Low1) · moy. $('{0:N0}' -f $sessions[0].Avg)" }); legende = 'Aperçu. Clique sur un coin de l''écran pour y placer le compteur.' }
             @{ type = 'reglages'; rangs = @(
-                @{ texte = 'Afficher le compteur pendant la partie'; note = 'Par dessus le jeu, en fenêtré ou plein écran fenêtré.'; bascule = @{ id = 'overlay-on'; oui = [bool]$affiche } }
+                @{ texte = 'Afficher le compteur pendant la partie'; note = 'Par-dessus le jeu, en fenêtré ou plein écran fenêtré.'; bascule = @{ id = 'overlay-on'; oui = [bool]$affiche } }
                 @{ texte = 'Raccourci pour le montrer ou le cacher'; note = 'Jeu non reconnu ? Appuie dessus pendant la partie pour lancer ou arrêter la mesure et le compteur.'; touches = @('Ctrl', 'Maj', 'F') }
             ) }
             @{ type = 'titre'; texte = 'Style du compteur' }
-            @{ type = 'cartes'; id = 'overlay-style'; valeur = $(if ((Get-FpsOverlayStyle) -eq 'discret') { 'discret' } else { 'complet' }); options = @(@{ id = 'complet'; titre = 'Complet'; texte = 'Le chiffre, le 1 % bas et la moyenne.' }, @{ id = 'discret'; titre = 'Discret'; texte = 'Juste le chiffre, petit et semi transparent.' }) }
+            @{ type = 'cartes'; id = 'overlay-style'; valeur = $(if ((Get-FpsOverlayStyle) -eq 'discret') { 'discret' } else { 'complet' }); options = @(@{ id = 'complet'; titre = 'Complet'; texte = 'Le chiffre, le 1 % bas (les pires moments de la partie) et la moyenne.' }, @{ id = 'discret'; titre = 'Discret'; texte = 'Juste le chiffre, petit et semi-transparent.' }) }
             @{ type = 'titre'; texte = 'Position du compteur' }
             @{ type = 'choix'; id = 'overlay-coin'; valeur = $coins[(Get-FpsOverlayCorner)]; options = @($OverlayCorners.Keys | ForEach-Object { @{ id = $coins[$_]; texte = $OverlayCorners[$_] } }) }
             @{ type = 'note'; texte = 'Il reste collé au bord, même quand le chiffre change de taille.' }
@@ -205,7 +221,7 @@ function Get-PagesJeux {
             $dests = @($x.Dest.Values | Where-Object { -not $_.Private }).Count
             $sig = Get-AppSigLabel $x
             $blocsT += @{ type = 'ligne'; id = "trafic-app:$k"; image = $(if ($x.Path) { Get-IconeExeKit $x.Path }); icone = 'app'; couleur = 'doux'; texte = [string]$x.Title
-                note = "$($sig[0]) · $dests destination$(if ($dests -gt 1) { 's' })$(if ($x.Udp) { ', UDP' })"; barre = [int](100 * $x.Out / $maxO); valeur = "↑ $(Format-Bytes $x.Out)"; ton = $(if ($x.Rate -gt 50KB) { 'attention' } else { '' }) }
+                note = "$($sig[0]) · $dests destination$(if ($dests -gt 1) { 's' })"; barre = [int](100 * $x.Out / $maxO); valeur = "↑ $(Format-Bytes $x.Out)"; ton = $(if ($x.Rate -gt 50KB) { 'attention' } else { '' }) }
         }
     } elseif ($actif) { $blocsT += @{ type = 'texte'; texte = 'Aucun programme ne communique avec Internet pour le moment.' } }
     $blocsT += @{ type = 'note'; texte = 'Le contenu des échanges est chiffré (HTTPS) : Nevermind voit quel programme parle à qui et combien il envoie, jamais ce qu''il y a dedans.' }

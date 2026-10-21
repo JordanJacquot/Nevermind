@@ -1,4 +1,4 @@
-﻿# Nevermind : barre de recherche des réglages (en haut de chaque page, Ctrl+K).
+﻿# Nevermind : recherche des réglages (Ctrl+K). Barre en haut de l'interface d'avant, page « Rechercher » de la console.
 # Suggestions au fil de la frappe ; un clic ouvre la bonne page et fait clignoter le réglage.
 # Chargé par OptiGame.ps1 après les pages (il connaît leurs numéros) et avant evenements.ps1.
 
@@ -50,7 +50,7 @@ $SearchEntries = @(
     @{ T = 'Test de la mémoire'; P = 5; A = 'Tester la mémoire'; K = 'ram memoire barrette erreurs' },
     @{ T = 'Carte graphique en direct'; P = 5; A = 'Surveiller en direct'; K = 'gpu temperature carte graphique nvidia amd' },
     @{ T = 'Débit Internet'; P = 5; A = 'Tester ma connexion'; K = 'debit vitesse internet speedtest telechargement' },
-    @{ T = 'Lag en charge (bufferbloat)'; P = 5; A = 'Lag en charge'; K = 'bufferbloat lag charge telechargement' },
+    @{ T = 'Lag quand la connexion est chargée'; P = 5; A = 'Lag en charge'; K = 'bufferbloat lag charge telechargement' },
     @{ T = 'Pixels morts de l''écran'; P = 5; A = 'Écrans'; K = 'pixels morts ecran moniteur couleurs' },
     @{ T = 'Batterie du portable'; P = 5; A = 'Batterie'; K = 'batterie portable autonomie usure' },
     # Sécurité
@@ -69,7 +69,6 @@ $SearchEntries = @(
     @{ T = 'Versions bêta'; P = 'parametres'; Tab = 'maj'; A = 'Mises à jour'; K = 'beta preversion avant premiere' },
     @{ T = 'Raccourci sur le bureau'; P = 'parametres'; Tab = 'general'; A = 'Raccourci et démarrage'; K = 'raccourci bureau icone' },
     @{ T = 'Lancer Nevermind au démarrage du PC'; P = 'parametres'; Tab = 'general'; A = 'Raccourci et démarrage'; K = 'demarrage automatique boot windows lancement auto allumage' },
-    @{ T = 'Signaler un problème'; P = 7; A = 'Signaler un problème'; K = 'bug erreur rapport aide support' },
     # Réseau
     @{ T = 'Scanner le réseau'; P = 'reseau'; A = 'Scanner le réseau'; K = 'appareils wifi box scan connectes' },
     @{ T = 'Carte du réseau'; P = 'reseau'; A = 'Ton réseau'; K = 'carte constellation appareils map'; Do = { if (@($script:NetList).Count) { Show-NetMap } } },
@@ -79,7 +78,7 @@ $SearchEntries = @(
     @{ T = 'Ce qui sort de ton PC'; P = 'trafic'; A = 'Ce qui sort de ton PC'; K = 'trafic internet donnees envoyees programmes connexions espion' },
     @{ T = 'Identifier les serveurs sans nom'; P = 'trafic'; A = 'Identifier les serveurs sans nom'; K = 'rdap annuaire serveur ip proprietaire ipinfo' },
     @{ T = 'Pays du serveur du jeu (Lag en ligne)'; P = 'parametres'; Tab = 'reseau'; A = 'Identifier les serveurs sans nom'; K = 'pays localisation serveur jeu lag ping ou se trouve geolocalisation ipinfo' },
-    @{ T = 'Thème (couleurs de l''app)'; P = 'parametres'; Tab = 'theme'; K = 'theme couleur couleurs apparence design da sombre terminal arcade rubis crepuscule neon skin' },
+    @{ T = 'Thème (couleurs de Nevermind)'; P = 'parametres'; Tab = 'theme'; K = 'theme couleur couleurs apparence design da sombre terminal arcade rubis crepuscule neon skin' },
     @{ T = 'Paramètres de Nevermind'; P = 'parametres'; Tab = 'general'; K = 'parametres reglages options configuration roue engrenage settings' },
     @{ T = 'Signaler un problème'; P = 'parametres'; Tab = 'aide'; A = 'Signaler un problème'; K = 'bug souci erreur rapport envoyer probleme aide' },
     @{ T = 'Revoir la visite guidée'; P = 'parametres'; Tab = 'aide'; A = 'Visite guidée'; K = 'visite tutoriel aide decouvrir' },
@@ -150,8 +149,15 @@ function Get-SearchWhere($E) {
         'jeux' { 'Jeux' }
         'trafic' { 'Trafic' }
         'overlay' { 'Overlay' }
-        'parametres' { 'Paramètres › ' + (@($SettingsTabs | Where-Object { $_.Id -eq $E.Tab })[0]).Label }
-        default { "Ordinateur › $($PageNames[[int]$E.P])$sub" }
+        'parametres' { if ($E.Tab -eq 'aide') { 'Aide' } else { 'Paramètres › ' + (@($SettingsTabs | Where-Object { $_.Id -eq $E.Tab })[0]).Label } }
+        default {
+            # Rangement de la console : Ton PC, Performances, Protection (table locale : $KitPagesIndex n'existe pas encore au chargement)
+            $i = [int]$E.P
+            $famille = @{ 1 = 'Performances'; 2 = 'Performances'; 4 = 'Performances'; 3 = 'Protection'; 6 = 'Protection'; 7 = 'Protection' }
+            if ($i -eq 0) { "Ton PC$sub" }
+            elseif ($i -eq 5) { "Ton PC › Tests des composants$sub" }
+            else { "$($famille[$i]) › $($PageNames[$i])$sub" }
+        }
     }
 }
 
@@ -405,7 +411,7 @@ function Initialize-Search {
     $Window.Add_LocationChanged({ Close-Search })
 }
 
-# Ctrl+K ou Ctrl+F : va dans la barre de recherche
+# Ctrl+K ou Ctrl+F : va dans la barre de recherche (interface d'avant ; la console ouvre sa page « Rechercher »)
 function Focus-Search {
     if (-not $script:Search) { return }
     [void]$script:Search.Input.Focus()

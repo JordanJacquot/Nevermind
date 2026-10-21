@@ -314,7 +314,7 @@ $script:T.Run.Add_Tick({
                 }
                 $cases = @(
                     @('gpu', (& $mkS 45 35 @{ GpuRatio = 0.97; CpuRatio = 0.4; Gpu = 99; Vram = 97 }), 'Les réglages du jeu qui font gagner'),
-                    @('cpu', (& $mkS 50 22 @{ GpuRatio = 0.45; CpuRatio = 0.93; Gpu = 50; Cpu = 85; Stutters = 200; Top = @([pscustomobject]@{ Name = 'chrome'; Pct = 18 }, [pscustomobject]@{ Name = 'MsMpEng'; Pct = 9 }) }), 'Des programmes en arrière plan'),
+                    @('cpu', (& $mkS 50 22 @{ GpuRatio = 0.45; CpuRatio = 0.93; Gpu = 50; Cpu = 85; Stutters = 200; Top = @([pscustomobject]@{ Name = 'chrome'; Pct = 18 }, [pscustomobject]@{ Name = 'MsMpEng'; Pct = 9 }) }), 'Des programmes en arrière-plan'),
                     @('cap', (& $mkS 60 57 @{ GpuRatio = 0.4; CpuRatio = 0.3; Gpu = 40; Hz = 60; HzMax = 144; Amp = 0.4 }), 'Une limite bloque le jeu'),
                     @('igpu', (& $mkS 35 25 @{ GpuRatio = -1; CpuRatio = -1; Gpu = 3; Dual = $true; Laptop = $true }), 'Forcer la grosse carte'),
                     @('cpu', (& $mkS 200 150 @{}), 'Aucun problème')
@@ -503,7 +503,7 @@ $script:T.Run.Add_Tick({
                     try {
                         (Get-OrgConfig).Hotkeys.P8 = 'Ctrl+Alt+F11'
                         Register-OrgHotkeys; Unregister-OrgHotkeys; Build-OrgPanel
-                        Assert-Test ($script:OrgKeyFailed.ContainsKey('P8') -and [bool](Find-PageElement $ui.OrgPanel 'Déjà prise par un autre programme : choisis en une autre.')) 'touche déjà prise non signalée'
+                        Assert-Test ($script:OrgKeyFailed.ContainsKey('P8') -and [bool](Find-PageElement $ui.OrgPanel 'Déjà prise par un autre programme : choisis-en une autre.')) 'touche déjà prise non signalée'
                     } finally { [OGNative]::RemoveHotKey($hMain, 7999); (Get-OrgConfig).Hotkeys.P8 = 'F8'; $script:OrgKeyFailed = @{} }
                     # Barre flottante : un bouton par perso connecté
                     Show-OrgBar; Wait-TestMs 300

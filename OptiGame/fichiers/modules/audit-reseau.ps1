@@ -6,7 +6,7 @@
 # ---------------------------------------------------------------------------
 $AuditPorts = @(21, 23, 80, 139, 443, 445, 554, 3389, 5900)
 $AuditTips = @(
-    'Si beaucoup de monde connaît le mot de passe de ton Wi-Fi, change le de temps en temps depuis la page de ta box.',
+    'Si beaucoup de monde connaît le mot de passe de ton Wi-Fi, change-le de temps en temps depuis la page de ta box.',
     'Crée un Wi-Fi invité (souvent proposé par la box) pour tes visiteurs et tes objets connectés.',
     'Change le mot de passe par défaut des caméras, NAS et imprimantes réseau.',
     'Laisse les mises à jour automatiques activées sur ta box, ton PC et tes appareils.'
@@ -192,7 +192,7 @@ function Get-NetAuditChecks($R, $Devs, $Net) {
     $wpsIps = @($ssdp | Where-Object { $_.St -match 'wifialliance-org:(device:WFADevice|service:WFAWLANConfig)' } | ForEach-Object { $_.Ip } | Select-Object -Unique)
     if ($wpsIps.Count) {
         $title = if ($wpsIps.Count -eq 1 -and $wpsIps[0] -eq $gw) { 'Le WPS semble activé sur ta box' } else { "Le WPS semble activé sur $(& $plural $wpsIps.Count 'appareil' 'appareils')" }
-        Add-AuditCheck $list 'warn' 'box' $title 'Le WPS permet de connecter un appareil en appuyant sur un bouton, mais son code PIN est une faille connue qui permet de trouver le mot de passe du Wi-Fi. Si tu ne t''en sers pas, désactive le dans les réglages Wi-Fi de ta box et de tes répéteurs.' @($wpsIps | ForEach-Object { & $nameOf $_ }) @($boxAct)
+        Add-AuditCheck $list 'warn' 'box' $title 'Le WPS permet de connecter un appareil en appuyant sur un bouton, mais son code PIN est une faille connue qui permet de trouver le mot de passe du Wi-Fi. Si tu ne t''en sers pas, désactive-le dans les réglages Wi-Fi de ta box et de tes répéteurs.' @($wpsIps | ForEach-Object { & $nameOf $_ }) @($boxAct)
     } else {
         Add-AuditCheck $list 'ok' 'box' 'WPS non annoncé sur le réseau' 'Aucun appareil ne propose la connexion par code PIN WPS.'
     }
@@ -204,7 +204,7 @@ function Get-NetAuditChecks($R, $Devs, $Net) {
         $danger = @($maps | Where-Object { $risky.ContainsKey($_.Int) })
         $safe = @($maps | Where-Object { -not $risky.ContainsKey($_.Int) })
         if ($danger.Count) {
-            Add-AuditCheck $list 'bad' 'box' "$(& $plural $danger.Count 'service sensible ouvert' 'services sensibles ouverts') sur Internet" 'Ces règles, créées automatiquement par un appareil (UPnP), rendent un service sensible joignable depuis tout Internet : n''importe qui peut essayer de s''y connecter. Supprime les dans la page de ta box (rubrique NAT, PAT ou UPnP) si tu ne sais pas à quoi elles servent.' @($danger | ForEach-Object { "$(& $mapText $_) ($($risky[$_.Int]))" }) @($boxAct)
+            Add-AuditCheck $list 'bad' 'box' "$(& $plural $danger.Count 'service sensible ouvert' 'services sensibles ouverts') sur Internet" 'Ces règles, créées automatiquement par un appareil (UPnP), rendent un service sensible joignable depuis tout Internet : n''importe qui peut essayer de s''y connecter. Supprime-les dans la page de ta box (rubrique NAT, PAT ou UPnP) si tu ne sais pas à quoi elles servent.' @($danger | ForEach-Object { "$(& $mapText $_) ($($risky[$_.Int]))" }) @($boxAct)
         }
         if ($safe.Count -or -not $maps.Count) {
             $title = if ($safe.Count) { "UPnP activé : $(& $plural $safe.Count 'port ouvert' 'ports ouverts') automatiquement" } else { 'UPnP activé, aucun port ouvert' }
@@ -250,15 +250,15 @@ function Get-NetAuditChecks($R, $Devs, $Net) {
         if ($ps -contains 554) { $cams += $nm }
     }
     $checked = @($Devs | Where-Object { -not $_.Self }).Count
-    if ($telnet.Count) { Add-AuditCheck $list 'bad' 'devices' "Telnet ouvert sur $(& $plural $telnet.Count 'appareil' 'appareils')" 'Telnet permet de prendre la main sur un appareil sans aucun chiffrement, et ces appareils ont souvent un mot de passe par défaut connu de tous. Désactive le dans les réglages de l''appareil, ou mets à jour son logiciel.' $telnet }
-    if ($ftp.Count) { Add-AuditCheck $list 'warn' 'devices' "Transfert de fichiers FTP ouvert sur $(& $plural $ftp.Count 'appareil' 'appareils')" 'Le FTP envoie les fichiers et les mots de passe en clair. Normal sur certains NAS ou box : si tu ne t''en sers pas, désactive le dans les réglages de l''appareil.' $ftp }
-    if ($remote.Count) { Add-AuditCheck $list 'warn' 'devices' 'Prise de contrôle à distance ouverte' 'Ces appareils acceptent qu''on prenne le contrôle de leur écran. Si ce n''est pas voulu, désactive le dans leurs réglages, et utilise toujours un mot de passe fort.' $remote }
-    if ($cams.Count) { Add-AuditCheck $list 'info' 'devices' "Flux vidéo sur $(& $plural $cams.Count 'appareil' 'appareils')" 'Souvent une caméra ou un décodeur TV. Vérifie que tes caméras sont protégées par un mot de passe que tu as choisi toi même.' $cams }
+    if ($telnet.Count) { Add-AuditCheck $list 'bad' 'devices' "Telnet ouvert sur $(& $plural $telnet.Count 'appareil' 'appareils')" 'Telnet permet de prendre la main sur un appareil sans aucun chiffrement, et ces appareils ont souvent un mot de passe par défaut connu de tous. Désactive-le dans les réglages de l''appareil, ou mets à jour son logiciel.' $telnet }
+    if ($ftp.Count) { Add-AuditCheck $list 'warn' 'devices' "Transfert de fichiers FTP ouvert sur $(& $plural $ftp.Count 'appareil' 'appareils')" 'Le FTP envoie les fichiers et les mots de passe en clair. Normal sur certains NAS ou box : si tu ne t''en sers pas, désactive-le dans les réglages de l''appareil.' $ftp }
+    if ($remote.Count) { Add-AuditCheck $list 'warn' 'devices' 'Prise de contrôle à distance ouverte' 'Ces appareils acceptent qu''on prenne le contrôle de leur écran. Si ce n''est pas voulu, désactive-le dans leurs réglages, et utilise toujours un mot de passe fort.' $remote }
+    if ($cams.Count) { Add-AuditCheck $list 'info' 'devices' "Flux vidéo sur $(& $plural $cams.Count 'appareil' 'appareils')" 'Souvent une caméra ou un décodeur TV. Vérifie que tes caméras sont protégées par un mot de passe que tu as choisi toi-même.' $cams }
     if (-not ($telnet.Count + $ftp.Count + $remote.Count)) { Add-AuditCheck $list 'ok' 'devices' "Aucun service dangereux sur tes $(& $plural $checked 'appareil' 'appareils')" 'Pas de Telnet, de FTP ni de prise de contrôle à distance ouverts.' }
     $devText = { param($d) "$($d.Title) ($($d.Ip))$(if ($d.Vendor -eq 'Adresse privée') { ', adresse masquée' } elseif ($d.Vendor) { ', ' + $d.Vendor })" }
     $camDevs = @($Devs | Where-Object { $_.Camera })
     if ($camDevs.Count) {
-        Add-AuditCheck $list 'warn' 'devices' "$(& $plural $camDevs.Count 'caméra possible' 'caméras possibles') sur ton réseau" 'Vérifie que tu sais à qui elles sont et où elles filment (utile aussi en location ou en colocation). Une caméra doit avoir un mot de passe que tu as choisi toi même.' @($camDevs | ForEach-Object { "$(& $devText $_) : $(@($_.CameraWhy) -join ', ')" }) $null
+        Add-AuditCheck $list 'warn' 'devices' "$(& $plural $camDevs.Count 'caméra possible' 'caméras possibles') sur ton réseau" 'Vérifie que tu sais à qui elles sont et où elles filment (utile aussi en location ou en colocation). Une caméra doit avoir un mot de passe que tu as choisi toi-même.' @($camDevs | ForEach-Object { "$(& $devText $_) : $(@($_.CameraWhy) -join ', ')" }) $null
     }
     $new = @($Devs | Where-Object { $_.New })
     $unk = @($Devs | Where-Object { $_.Title -eq 'Appareil inconnu' -and -not $_.New })
@@ -287,9 +287,9 @@ function Get-NetAuditChecks($R, $Devs, $Net) {
         Add-AuditCheck $list 'ok' 'pc' 'SMBv1 désactivé' 'L''ancienne version du partage de fichiers (faille WannaCry) est coupée.'
     }
     if ($pc.Rdp) {
-        Add-AuditCheck $list 'warn' 'pc' 'Bureau à distance activé' 'N''importe qui sur ton réseau peut essayer de se connecter à ce PC avec ton mot de passe Windows. Si tu ne t''en sers pas, désactive le.' $null @(
+        Add-AuditCheck $list 'warn' 'pc' 'Bureau à distance activé' 'N''importe qui sur ton réseau peut essayer de se connecter à ce PC avec ton mot de passe Windows. Si tu ne t''en sers pas, désactive-le.' $null @(
             @{ Label = 'Désactiver'; After = $rerun
-               Confirm = 'Désactiver le Bureau à distance ? Tu pourras revenir en arrière depuis l''onglet Sauvegarde.'
+               Confirm = 'Désactiver le Bureau à distance ? Tu pourras revenir en arrière depuis la page Sauvegarde (dans Protection).'
                Script = { Set-Reg 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' 'fDenyTSConnections' 1; Update-BackupSummary } })
     } else {
         Add-AuditCheck $list 'ok' 'pc' 'Bureau à distance désactivé' 'Personne ne peut prendre le contrôle de ce PC à distance.'

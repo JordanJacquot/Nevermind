@@ -114,14 +114,14 @@ $Tweaks = @(
     @{
         Id = 'power'; What = 'Mettre Windows en mode performances : plan « Performances élevées » sur un PC fixe, mode « Meilleures performances » sur un portable.'; Impact = 'Important'
         Titre = "Plan d'alimentation"
-        Description = "Le processeur reste à pleine vitesse au lieu de ralentir pour économiser l'énergie, ce qui réduit les micro saccades. Sur un portable, la batterie se vide plus vite: le réglage s'applique surtout quand il est branché."
+        Description = "Le processeur reste à pleine vitesse au lieu de ralentir pour économiser l'énergie, ce qui réduit les micro-saccades. Sur un portable, la batterie se vide plus vite: le réglage s'applique surtout quand il est branché."
         Ok = 'Mode performances actif: le processeur tourne à pleine vitesse.'
         Ko = "Le plan actuel laisse le processeur ralentir pour économiser l'énergie."
         Test = { Test-PowerPlan }; Apply = { Set-PowerPlan }
     },
     @{
         Id = 'dvr'; What = 'Couper l''option « Enregistrer ce qui s''est passé » de la Xbox Game Bar.'; Impact = 'Important'
-        Titre = 'Enregistrement en arrière plan (Xbox Game Bar)'
+        Titre = 'Enregistrement en arrière-plan (Xbox Game Bar)'
         Description = "Coupe l'enregistrement permanent des 30 dernières secondes de jeu, qui coûte des FPS. Les captures manuelles (Win + Alt + R), ShadowPlay et Radeon ReLive continuent de fonctionner."
         Ok = "Désactivé: la Game Bar ne filme pas tes parties en continu."
         Ko = 'La Game Bar filme tes parties en continu, ce qui coûte des FPS.'
@@ -143,7 +143,7 @@ $Tweaks = @(
     @{
         Id = 'hags'; What = 'Activer la planification GPU à accélération matérielle (prise en compte au prochain redémarrage).'; Impact = 'Moyen'; Reboot = $true
         Titre = 'Planification GPU à accélération matérielle'
-        Description = "La carte graphique gère elle même sa mémoire: un peu moins de latence, et c'est obligatoire pour la génération d'images DLSS 3. Nécessite une carte récente (NVIDIA GTX 1000 ou plus, AMD RX 5000 ou plus)."
+        Description = "La carte graphique gère elle-même sa mémoire: un peu moins de latence, et c'est obligatoire pour la génération d'images DLSS 3. Nécessite une carte récente (NVIDIA GTX 1000 ou plus, AMD RX 5000 ou plus)."
         Ok = 'Activée.'
         Ko = 'Désactivée (ou non prise en charge par ta carte graphique).'
         Test = { (Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' 'HwSchMode') -eq 2 }
@@ -187,7 +187,7 @@ $Tweaks = @(
     @{
         Id = 'transparency'; What = 'Désactiver les effets de transparence de Windows.'; Impact = 'Léger'; Recommended = $false
         Titre = 'Effets de transparence'
-        Description = "Petit gain sur les PC modestes seulement. C'est surtout esthétique: garde les si ton PC est puissant."
+        Description = "Petit gain sur les PC modestes seulement. C'est surtout esthétique: garde-les si ton PC est puissant."
         Ok = 'Désactivés.'
         Ko = 'Activés (impact très léger, surtout utile de les couper sur un PC modeste).'
         Test = { (Get-RegValue 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' 'EnableTransparency') -eq 0 }

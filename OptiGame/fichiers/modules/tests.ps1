@@ -387,7 +387,7 @@ function Show-DiskHealth($Tile, $Ctx) {
     if (-not $rel) { try { $rel = Get-AideFiabiliteDisque ([string]$Ctx.Id) } catch {} }
     $status = 'ok'; $notes = @()
     switch ([string]$d.HealthStatus) {
-        'Warning'   { $status = 'warn'; $notes += 'Le disque signale lui même un problème.' }
+        'Warning'   { $status = 'warn'; $notes += 'Le disque signale lui-même un problème.' }
         'Unhealthy' { $status = 'bad'; $notes += 'Le disque annonce une panne proche.' }
     }
     $gauges = @()
@@ -683,7 +683,7 @@ function Test-NetSpeed($Tile, $Ctx) {
             } elseif ($r[1] -lt 10) {
                 $status = 'warn'; $txt = 'Connexion lente : les téléchargements seront longs. Pour jouer, c''est surtout le ping qui compte.'
             } elseif ($r[0] -gt 60) {
-                $status = 'warn'; $txt = 'Le débit est correct mais le ping est élevé : en Wi-Fi, rapproche toi de la box ou branche un câble.'
+                $status = 'warn'; $txt = 'Le débit est correct mais le ping est élevé : en Wi-Fi, rapproche-toi de la box ou branche un câble.'
             } else {
                 $status = 'ok'; $txt = 'Bonne connexion pour jouer et télécharger.'
             }

@@ -416,7 +416,7 @@ function Get-LagDiagnosis($R) {
             $names = ($apps | ForEach-Object { "$($_.Name) ($(Format-Bytes $_.Rate)/s)" }) -join ', '
             $acts = @()
             if (@($apps | Where-Object { $_.Name -match 'Windows : .*(Optimisation de livraison|Optimisation de la distribution|Delivery Optimization|Windows Update|BITS|transfert intelligent)' }).Count) {
-                $acts += @{ Label = 'Limiter Windows Update'; NoRefresh = $true; Arg = $null; Script = { param($x) Set-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization' 'DOPercentageMaxBackgroundBandwidth' 10; Set-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization' 'DODownloadMode' 0; Set-Status 'Windows Update est limité à 10 % de ta connexion en arrière plan. Annulable (page Sauvegarde).' } }
+                $acts += @{ Label = 'Limiter Windows Update'; NoRefresh = $true; Arg = $null; Script = { param($x) Set-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization' 'DOPercentageMaxBackgroundBandwidth' 10; Set-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization' 'DODownloadMode' 0; Set-Status 'Windows Update est limité à 10 % de ta connexion en arrière-plan. Annulable (page Sauvegarde).' } }
             }
             $f += @{ Status = $rS; Title = 'Un téléchargement sature ta connexion'
                 Detail = "Pendant les pics de ping, ton PC téléchargeait ou envoyait en même temps : $names. La connexion était pleine, les paquets du jeu attendaient leur tour."
@@ -424,7 +424,7 @@ function Get-LagDiagnosis($R) {
                 Actions = $acts }
         } else {
             $isp = if ($R.Isp) { " ($($R.Isp))" } else { '' }
-            $tips = @('Regarde si quelqu''un de la maison regarde une vidéo, télécharge ou sauvegarde en ligne pendant tes parties.', 'Redémarre ta box : débranche la 30 secondes.', 'Fais le test « Latence en charge » de la page Tests : il montre si ta box gère mal les gros téléchargements.', "Si ça dure plusieurs jours, contacte ton fournisseur$isp avec ces chiffres.")
+            $tips = @('Regarde si quelqu''un de la maison regarde une vidéo, télécharge ou sauvegarde en ligne pendant tes parties.', 'Redémarre ta box : débranche-la 30 secondes.', 'Fais le test « Latence en charge » de la page Tests : il montre si ta box gère mal les gros téléchargements.', "Si ça dure plusieurs jours, contacte ton fournisseur$isp avec ces chiffres.")
             if (-not $R.Etw) { $tips += 'Windows a refusé la trace réseau pendant cette partie (souvent l''anti-triche du jeu) : Nevermind n''a pas pu voir si un programme de ce PC téléchargeait.' }
             $f += @{ Status = $rS; Title = 'Ta connexion Internet sature ou décroche'
                 Detail = "Ton PC et ta box communiquent bien, mais le ping vers Internet a des pics (jusqu'à $(Format-Ms $ref.P95), $($ref.Loss) % perdus). Soit un autre appareil de la maison utilise beaucoup la connexion, soit ta box ou ton fournisseur a un souci."
@@ -720,7 +720,7 @@ function Show-LagSession([string]$Id) {
         $c.Margin = New-Thickness 0 6 0 0
         [void]$body.Children.Add($c)
     }
-    $n = New-Text "Pings envoyés deux fois par seconde vers chaque étape. « Variation » : de combien le ping change d'un envoi à l'autre (au dessus de 10 ms, ça se sent en jeu). « Pics » : 95 % des pings étaient en dessous. $(if (-not $s.Etw) { 'Windows a refusé la trace réseau pendant cette mesure : seul le serveur de connexion du jeu (TCP) était visible.' }) Le pays d'un serveur vient de l'annuaire public ipinfo.io (seule l'adresse du serveur est envoyée)." 11.5 '#655E7E'
+    $n = New-Text "Pings envoyés deux fois par seconde vers chaque étape. « Variation » : de combien le ping change d'un envoi à l'autre (au-dessus de 10 ms, ça se sent en jeu). « Pics » : 95 % des pings étaient en dessous. $(if (-not $s.Etw) { 'Windows a refusé la trace réseau pendant cette mesure : seul le serveur de connexion du jeu (TCP) était visible.' }) Le pays d'un serveur vient de l'annuaire public ipinfo.io (seule l'adresse du serveur est envoyée)." 11.5 '#655E7E'
     $n.Margin = New-Thickness 0 12 0 0
     [void]$body.Children.Add($n)
 }

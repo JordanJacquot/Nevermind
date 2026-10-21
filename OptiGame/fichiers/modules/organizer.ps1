@@ -598,7 +598,7 @@ function New-OrgKeyRow([string]$Label, [string]$Action) {
     $l.VerticalAlignment = 'Center'
     [void]$l.Children.Add((New-Text $Label 13 '#EEEBF7' -Semi))
     if ($script:OrgKeyFailed -and $script:OrgKeyFailed.ContainsKey($Action) -and $script:OrgKeyFailed[$Action] -eq (Get-OrgConfig).Hotkeys[$Action]) {
-        [void]$l.Children.Add((New-Text 'Déjà prise par un autre programme : choisis en une autre.' 11.5 $Colors.bad))
+        [void]$l.Children.Add((New-Text 'Déjà prise par un autre programme : choisis-en une autre.' 11.5 $Colors.bad))
     }
     Add-ToGrid $g $l 0
     Add-ToGrid $g (New-OrgKeyButton $Action) 1
@@ -615,7 +615,7 @@ function Build-OrgPanel {
 
     $top = New-Grid @('*', '330')
     # Persos
-    $pc = New-OverlayPanelCard 'Mes personnages' 'Range les dans ton ordre d''initiative : glisse une ligne pour la déplacer.' '#00E5FF'
+    $pc = New-OverlayPanelCard 'Mes personnages' 'Range-les dans ton ordre d''initiative : glisse une ligne pour la déplacer.' '#00E5FF'
     $pc.Card.Margin = New-Thickness 0 0 16 0
     $pc.Card.VerticalAlignment = 'Top'
     $pc.Card.Padding = New-Thickness 20 18 20 18
@@ -709,12 +709,12 @@ function Build-OrgPanel {
     }
     [void]$side.Children.Add($kc.Card)
 
-    $bc = New-OverlayPanelCard 'Barre flottante' 'Un bouton par perso connecté, par dessus le jeu.' '#FF2EB5'
+    $bc = New-OverlayPanelCard 'Barre flottante' 'Un bouton par perso connecté, par-dessus le jeu.' '#FF2EB5'
     $bc.Card.Padding = New-Thickness 20 18 20 18
     $bc.Card.Margin = New-Thickness 0 16 0 0
     [void]$bc.Body.Children.Add((New-SwitchRow 'Afficher la barre' 'Visible quand une fenêtre Dofus est devant.' $c.Bar { param($s, $e) $v = [bool]$s.IsChecked; Invoke-Safe { $cc = Get-OrgConfig; $cc.Bar = $v; Save-OrgConfig; Update-OrgWatch -Full } }))
     [void]$bc.Body.Children.Add((New-SwitchRow 'Toujours visible' 'Même quand tu es sur une autre fenêtre que Dofus.' $c.BarAlways { param($s, $e) $v = [bool]$s.IsChecked; Invoke-Safe { $cc = Get-OrgConfig; $cc.BarAlways = $v; Save-OrgConfig; Update-OrgWatch -Full } }))
-    $fs = New-Text 'Elle n''apparaît pas par dessus Dofus ? Mets le jeu en mode fenêtré ou plein écran fenêtré (sans bordure) : le vrai plein écran cache tout ce qui est par dessus, y compris Discord.' 12 '#8E88A8'
+    $fs = New-Text 'Elle n''apparaît pas par-dessus Dofus ? Mets le jeu en mode fenêtré ou plein écran fenêtré (sans bordure) : le vrai plein écran cache tout ce qui est par-dessus, y compris Discord.' 12 '#8E88A8'
     $fs.Margin = New-Thickness 0 0 0 8
     [void]$bc.Body.Children.Add($fs)
     $rb = New-Button 'Remettre la barre en haut au centre'

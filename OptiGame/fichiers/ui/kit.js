@@ -20,7 +20,8 @@
 //               module : le module de gauche { anneau: { valeur, sur, texte, petit, unite, ton } | icone | image,
 //                        titre, texte, boutons: [bouton], case: { id, texte, oui }, resume: [{ nom, valeur, ton }] }
 //                        sans module : le contenu prend toute la largeur ; un bloc « score » en premier devient le module
-//               onglets : [{ id, nom, blocs, onglets: [...] }] des sous-onglets en pastilles (deux niveaux au plus)
+//               onglets : [{ id, nom, module?, blocs, onglets: [...] }] des sous-onglets en pastilles (deux niveaux au plus) ;
+//                         un onglet qui a son module remplace celui de la page tant qu'il est choisi
 //               sections : l'ancien format ({ nom, blocs }), montré en sous-onglets
 //               retour: 'appli' : B est envoyé à l'appli (action 'retour') au lieu de revenir en arrière
 //            ou { titre, question: { etape, texte, choix: [{ id, texte }] } } une question à la fois
@@ -289,7 +290,7 @@
       // La 3D : plasma.js dessine les tuiles dans la toile ; le kit garde le nom, le clavier et les sons
       const donnees = t.map((x) => ({ id: x.id, nom: x.nom, sous: x.sous, icone: x.icone, gros: x.gros, petit: x.petit, couleur: x.couleur, image: urlSure(x.image), fond: urlSure(x.fond), alerte: x.alerte }));
       if (!document.getElementById('accueil3d')) {
-        ecran.innerHTML = `<div class="accueil3d${anime ? ' entree' : ''}" id="accueil3d"><div class="nom-sel" id="nomSel"></div><div class="aide-accueil">Fais glisser la rangée, ou les flèches ; clic ou A pour ouvrir</div></div>`;
+        ecran.innerHTML = `<div class="accueil3d${anime ? ' entree' : ''}" id="accueil3d"><div class="nom-sel" id="nomSel"></div><div class="aide-accueil">Fais glisser la rangée ou utilise les flèches ; clic (ou A) pour ouvrir</div></div>`;
       }
       p.accueil(donnees, sel, anime);
       nomSel(sel);
@@ -491,17 +492,17 @@
     const el = document.getElementById('corps'); if (!el) return;
     const p = E.pages[nav.ecran], o1 = ongletsDe(p);
     const ch = nav.onglets[nav.ecran] || (nav.onglets[nav.ecran] = [0, 0]);
-    let tete = '', tete2 = '', contenu;
+    let tete = '', tete2 = '', contenu, propre = null;
     if (o1) {
       ch[0] = borne(ch[0], 0, o1.length - 1);
       const o = o1[ch[0]]; tete = pastilles(o1, ch[0], 0);
       if (o.onglets?.length) {   // (deuxième niveau : des pastilles plus petites, en haut du contenu)
         ch[1] = borne(ch[1], 0, o.onglets.length - 1);
         tete2 = `${o.texte ? `<p class="texte">${esc(o.texte)}</p>` : ''}${pastilles(o.onglets, ch[1], 1)}`;
-        contenu = [...(o.onglets[ch[1]].blocs || [])];
-      } else contenu = [...(o.blocs || [])];
+        contenu = [...(o.onglets[ch[1]].blocs || [])]; propre = o.onglets[ch[1]].module || o.module;
+      } else { contenu = [...(o.blocs || [])]; propre = o.module; }
     } else contenu = [...(p.blocs || p.sections?.[0]?.blocs || [])];
-    const m = moduleDe(p, contenu);
+    const m = propre || moduleDe(p, contenu);
     el.innerHTML = `${tete}<div class="deplie${m ? '' : ' sans-module'}">${m ? module(m) : ''}<section class="contenu">${tete2}${blocs(contenu)}</section></div>`;
   }
   function question(p, focus) {
