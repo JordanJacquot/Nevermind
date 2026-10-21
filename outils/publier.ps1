@@ -59,8 +59,11 @@ if (-not $SansTest) {
     if ($LASTEXITCODE) { throw 'Publication annulée : le test automatique a échoué.' }
 }
 
+# Un programme (git, gh) : seul son code de sortie compte. Ses messages normaux (« To https://github.com/... ») passent
+# par la sortie d'erreur : sans « Continue », PowerShell les prenait pour des erreurs et arrêtait la publication.
 function Invoke-Native([string]$Exe, [string[]]$Arguments) {
-    & $Exe @Arguments
+    $ErrorActionPreference = 'Continue'
+    & $Exe @Arguments 2>&1 | ForEach-Object { "$_" }
     if ($LASTEXITCODE) { throw "Échec : $Exe $($Arguments -join ' ')" }
 }
 
