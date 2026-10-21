@@ -85,8 +85,8 @@ function demarrer() {
   let acc = null;
   function creerAccueil() {
     const toile = document.createElement('canvas'); toile.className = 'toile3d';
-    const r = new THREE.WebGLRenderer({ canvas: toile, antialias: true, powerPreference: 'high-performance' });
-    r.setPixelRatio(Math.min(devicePixelRatio, 2)); r.toneMapping = THREE.ACESFilmicToneMapping;
+    const r = new THREE.WebGLRenderer({ canvas: toile, antialias: true, alpha: true, powerPreference: 'high-performance' });
+    r.setPixelRatio(Math.min(devicePixelRatio, 2)); r.toneMapping = THREE.ACESFilmicToneMapping; r.setClearColor(0x000000, 0);
     const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(38, 1, 0.1, 200);
     const etoiles = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(Array.from({ length: 2400 }, (_, i) => (i % 3 === 0 ? (Math.random() - 0.5) * 60 : i % 3 === 1 ? Math.random() * 22 - 6 : -8 - Math.random() * 30)), 3)),
       new THREE.PointsMaterial({ size: 0.05, transparent: true, opacity: 0.55, depthWrite: false }));
@@ -95,12 +95,15 @@ function demarrer() {
     solM.rotation.x = -Math.PI / 2; solM.position.y = -1.9; scene.add(solM);
     scene.add(new THREE.AmbientLight(0xffffff, 0.55)); const lum = new THREE.DirectionalLight(0xffffff, 1.3); lum.position.set(-3, 6, 7); scene.add(lum);
     const rangee = new THREE.Group(); scene.add(rangee);
-    const geo = { bloc: blocArrondi(2.3, 2.3, 0.3, 0.22), bord: new THREE.PlaneGeometry(2.6, 2.6), face: new THREE.PlaneGeometry(2.1, 2.1), reflet: new THREE.PlaneGeometry(2.3, 0.04), anneau: new THREE.TorusGeometry(0.42, 0.06, 24, 160) };
+    const geo = { bloc: blocArrondi(2.3, 2.3, 0.3, 0.22), bord: new THREE.PlaneGeometry(2.6, 2.6), face: new THREE.PlaneGeometry(2.1, 2.1), reflet: new THREE.PlaneGeometry(2.3, 0.04), anneau: new THREE.TorusGeometry(0.42, 0.06, 24, 160), image: new THREE.PlaneGeometry(1, 1) };
     const matBloc = new THREE.MeshStandardMaterial({ color: 0x0C0A1E, metalness: 0.5, roughness: 0.45 });
     const a = {
       toile, r, scene, cam, rangee, items: [], cle: '', pos: 0, cible: 0, sel: 0, tenu: null, souris: { x: 0, y: 0 },
       couleurs() {
-        scene.background = coul.fond.clone(); scene.fog = new THREE.Fog(coul.fond, 14, 34);
+        // Le fond d'un thème perso (bloc Console) reste visible derrière la rangée : pas de ciel uni, un sol voilé
+        const img = document.body.classList.contains('fond-console');
+        scene.background = img ? null : coul.fond.clone(); scene.fog = new THREE.Fog(coul.fond, 14, 34);
+        solM.material.transparent = img; solM.material.opacity = img ? 0.6 : 1; solM.material.needsUpdate = true;
         etoiles.material.color = coul.P.clone().lerp(new THREE.Color(1, 1, 1), 0.55);
         if (this.donnees) this.construire(this.donnees, true);
       },
@@ -123,6 +126,10 @@ function demarrer() {
             k.globalAlpha = 1; const g = k.createLinearGradient(0, 0, 0, W); g.addColorStop(0.2, 'rgba(6,5,15,0.1)'); g.addColorStop(1, 'rgba(6,5,15,0.92)'); k.fillStyle = g; k.fillRect(0, 0, W, W); k.restore();
           }
           const gros = t.gros != null && t.gros !== '';
+          if (t.pack && !fond) {   // l'image du thème perso (posée devant, à part) : une lueur douce derrière elle
+            const y = gros ? 240 : 335, g = k.createRadialGradient(W / 2, y, 10, W / 2, y, gros ? 200 : 320);
+            g.addColorStop(0, couleur); g.addColorStop(1, 'transparent'); k.save(); k.globalAlpha = 0.22; k.fillStyle = g; k.fillRect(0, 0, W, W); k.restore();
+          }
           if (gros) {
             const n = String(t.gros), pt = t.petit || '';
             k.font = `800 190px ${pol}`; const wN = k.measureText(n).width; k.font = `700 80px ${pol}`; const wS = pt ? k.measureText(pt).width : 0;
@@ -139,7 +146,7 @@ function demarrer() {
         };
         ecrire();
         if (t.image) imageLoin(t.image, (im) => { icone = im; ecrire(); });
-        else if (t.icone || !t.gros) { const im = imageIcone(t.icone || 'etoile', couleur); quandPrete(im, () => { icone = im; ecrire(); }); }
+        else if ((t.icone || !t.gros) && !t.pack) { const im = imageIcone(t.icone || 'etoile', couleur); quandPrete(im, () => { icone = im; ecrire(); }); }
         if (t.fond) imageLoin(t.fond, (im) => { fond = im; ecrire(); });
         document.fonts?.ready?.then(ecrire);
         return tex;
@@ -148,7 +155,7 @@ function demarrer() {
         const cle = JSON.stringify(tuiles);
         if (cle === this.cle && !forcer) return;
         this.cle = cle; this.donnees = tuiles;
-        for (const x of this.items) { rangee.remove(x.g); x.face.material.map.dispose(); x.face.material.dispose(); x.bord.material.dispose(); x.anneau?.material.dispose(); }
+        for (const x of this.items) { rangee.remove(x.g); x.face.material.map.dispose(); x.face.material.dispose(); x.bord.material.dispose(); x.anneau?.material.dispose(); x.img?.material.map?.dispose(); x.img?.material.dispose(); }
         this.items = tuiles.map((t, i) => {
           const g = new THREE.Group(); g.position.x = i * PAS; rangee.add(g);
           g.add(new THREE.Mesh(geo.bloc, matBloc));
@@ -162,7 +169,19 @@ function demarrer() {
             anneau.rotation.z = Math.PI / 2; anneau.position.set(0, 0.56, 0.3); g.add(anneau);
           }
           const reflet = new THREE.Mesh(geo.reflet, new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.12 })); reflet.position.set(0, 1.0, 0.27); g.add(reflet);
-          return { g, bord, face, anneau };
+          // L'image du thème perso à la place de l'icône dessinée : posée devant la tuile, elle rebondit sur la tuile choisie
+          let img = null;
+          if (t.pack && !t.fond) {
+            const gros = t.gros != null && t.gros !== '', taille = gros ? 0.62 : 1.0, base = gros ? 0.56 : 0.36;   // (une note : dans son anneau)
+            const m = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false });
+            img = new THREE.Mesh(geo.image, m); img.position.set(0, base, 0.275); img.userData.base = base; img.visible = false; g.add(img);
+            imageLoin(t.pack, (im) => {
+              const tx = new THREE.Texture(im); tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 8; tx.needsUpdate = true;
+              m.map = tx; m.needsUpdate = true;
+              const q = im.width / im.height; img.scale.set(taille * Math.min(1, q), taille * Math.min(1, 1 / q), 1); img.visible = true;
+            });
+          }
+          return { g, bord, face, anneau, img };
         });
         this.borner();
       },
@@ -187,6 +206,7 @@ function demarrer() {
           x.g.rotation.y = -Math.max(-1, Math.min(1, d)) * 0.28 + (s ? this.souris.x * 0.2 : 0); x.g.rotation.x += ((s ? this.souris.y * 0.14 : 0) - x.g.rotation.x) * 0.1;
           const u = x.bord.material.uniforms; u.t.value = t; u.force.value += ((s ? 1 : 0.2 + proche * 0.4) - u.force.value) * 0.1;
           if (x.anneau) { x.anneau.material.uniforms.t.value = t; x.anneau.material.uniforms.force.value = s ? 1.2 : 0.7; }
+          if (x.img) { const b = x.img.userData.base, c = s ? b + Math.abs(Math.sin(t * 2.6)) * 0.07 : b; x.img.position.y += (c - x.img.position.y) * (s ? 0.6 : 0.15); }
         });
         r.render(scene, cam);
       },

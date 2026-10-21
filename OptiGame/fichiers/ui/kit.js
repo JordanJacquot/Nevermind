@@ -9,6 +9,11 @@
 //   theme     : 'neon' | 'crepuscule' | 'terminal' | 'arcade' | 'rubis'      couleurs : { P, S, T, fond, ... } (thème perso)
 //   connexion : 'cable' | 'wifi' | 'aucune'          sons : true | false
 //   pack      : les images d'un thème perso (logo, fond, mascotte, bas, police, phrase), voir pack()
+//               pack.console (facultatif, nouvelle interface) : { tuiles: { id: url }, mascotte: { url },
+//               chargement: { url, effet: 'tourne' | 'aucun' } } ; les tuiles montrent leur image à la place de l'icône
+//               dessinée (la tuile choisie rebondit), la mascotte se pose dans un coin de l'accueil, l'image de
+//               chargement remplace le petit rond de la pastille « en cours ». Les ronds du haut ne changent jamais
+//               (couleurs seulement) et, avec ce bloc, il n'y a plus de dessin en bas.
 //   accueil   : { tuiles: [{ id, nom, icone | image | gros, petit, sous, couleur, fond, alerte }],
 //                 ronds: [{ id, nom, icone, couleur }] }
 //               Les tuiles sont aussi les onglets du haut ; les ronds, les petites icônes à droite du haut.
@@ -236,6 +241,9 @@
     const p = E.pack || {}, pixel = !!p.police?.pixel;
     const d = document.getElementById('decor'), fu = urlSure(p.fond?.url);
     d.classList.toggle('vu', !!fu);
+    // Avec le bloc Console, la 3D de l'accueil laisse voir le fond du thème
+    const fc = !!fu && !!p.console;
+    if (document.body.classList.contains('fond-console') !== fc) { document.body.classList.toggle('fond-console', fc); window.kitPlasma?.couleurs?.(); }
     if (fu) {
       d.style.setProperty('--img', `url('${fu}')`);
       d.style.setProperty('--op', String(Math.min(1, Math.max(0.05, +p.fond.opacite || 0.35))));
@@ -248,8 +256,45 @@
       st.textContent = `@font-face { font-family: "PolicePack"; src: url('${pu}'); }
         ${p.police.partout ? 'body' : '.marque, .nom-sel, h1, h3, .module .grand, .question h2'} { font-family: "PolicePack", var(--police-app); }`;
     }
-    poser('mascotte', p.mascotte ? JSON.stringify(p.mascotte) : '', (el) => planche(el, p.mascotte, 52, pixel));
-    poser('dessinBas', p.bas ? JSON.stringify(p.bas) : '', (el) => planche(el, p.bas, Math.min(48, Math.max(16, (p.bas.hauteur | 0) || 32)), pixel));
+    const c = p.console || null, mc = urlSure(c?.mascotte?.url);
+    // Nouvelle interface : la mascotte quitte le haut pour un coin de l'accueil ; sinon elle reste (ou revient) en haut
+    const m = document.getElementById('mascotte'), coin = !!mc;
+    if (coin && m.parentElement !== document.getElementById('cadre')) document.getElementById('cadre').appendChild(m);
+    if (!coin && m.parentElement !== haut) haut.insertBefore(m, document.getElementById('rondsHaut'));
+    m.classList.toggle('mascotte-coin', coin);
+    if (coin) poser('mascotte', `coin:${mc}`, (el) => mascotteCoin(el, mc));
+    else poser('mascotte', p.mascotte ? JSON.stringify(p.mascotte) : '', (el) => planche(el, p.mascotte, 52, pixel));
+    // (avec le bloc Console : pas de dessin en bas)
+    poser('dessinBas', p.bas && !c ? JSON.stringify(p.bas) : '', (el) => planche(el, p.bas, Math.min(48, Math.max(16, (p.bas.hauteur | 0) || 32)), pixel));
+    // L'image de chargement : à la place du petit rond de la pastille « en cours »
+    const o = document.getElementById('occupe'), cu = urlSure(c?.chargement?.url), oi = o?.querySelector('i');
+    if (oi) {
+      o.classList.toggle('avec-image', !!cu); o.classList.toggle('fixe', !!cu && c.chargement.effet === 'aucun');
+      if (cu) oi.style.setProperty('--img', `url('${cu}')`); else oi.style.removeProperty('--img');
+    }
+  }
+  // La mascotte de l'accueil : une image (animée ou non). Fixe, elle flotte doucement ; opaque (sans transparence, une
+  // photo ou un GIF sur fond), elle est montrée en vignette arrondie. Le fichier est lu une fois pour le savoir.
+  function mascotteCoin(hote, url) {
+    const img = new Image(); img.alt = ''; img.decoding = 'async';
+    img.onerror = () => img.remove();
+    hote.appendChild(img);
+    fetch(url).then((r) => (r.ok ? r.blob() : Promise.reject())).then(async (b) => {
+      const o = new Uint8Array(await b.arrayBuffer()), txt = (s) => { for (let i = 0; i + s.length < o.length; i++) { let k = 0; while (k < s.length && o[i + k] === s.charCodeAt(k)) k++; if (k === s.length) return true; } return false; };
+      let anime = false;
+      if (o[0] === 0x47 && o[1] === 0x49) { let n = 0; for (let i = 13; i + 3 < o.length && n < 2; i++) if (o[i] === 0x21 && o[i + 1] === 0xF9 && o[i + 2] === 0x04) n++; anime = n > 1; }
+      else if (o[0] === 0x52 && o[1] === 0x49) anime = txt('ANIM');
+      else if (o[0] === 0x89 && o[1] === 0x50) anime = txt('acTL');
+      let opaque = /\.jpe?g$/i.test(url);
+      try {
+        const bm = await createImageBitmap(b), cv = document.createElement('canvas'); cv.width = cv.height = 24;
+        const k = cv.getContext('2d', { willReadFrequently: true }); k.drawImage(bm, 0, 0, 24, 24); bm.close?.();
+        const d = k.getImageData(0, 0, 24, 24).data; opaque = true;
+        for (const [x, y] of [[0, 0], [23, 0], [0, 23], [23, 23], [12, 0], [0, 12], [23, 12], [12, 23]]) if (d[(y * 24 + x) * 4 + 3] < 250) { opaque = false; break; }
+      } catch (e) {}
+      img.className = `${opaque ? 'vignette' : ''}${anime ? '' : ' flotte'}`.trim();
+      img.src = URL.createObjectURL(b);
+    }).catch(() => { img.className = 'flotte'; img.src = url; });
   }
 
   // ---------------------------------------------------------------- le haut : logo et nom (retour à l'accueil),
@@ -289,7 +334,7 @@
     const p = plasma();
     if (p) {
       // La 3D : plasma.js dessine les tuiles dans la toile ; le kit garde le nom, le clavier et les sons
-      const donnees = t.map((x) => ({ id: x.id, nom: x.nom, sous: x.sous, icone: x.icone, gros: x.gros, petit: x.petit, couleur: x.couleur, image: urlSure(x.image), fond: urlSure(x.fond), alerte: x.alerte }));
+      const donnees = t.map((x) => ({ id: x.id, nom: x.nom, sous: x.sous, icone: x.icone, gros: x.gros, petit: x.petit, couleur: x.couleur, image: urlSure(x.image), fond: urlSure(x.fond), alerte: x.alerte, pack: imagePack(x.id) }));
       if (!document.getElementById('accueil3d')) {
         ecran.innerHTML = `<div class="accueil3d${anime ? ' entree' : ''}" id="accueil3d"><div class="nom-sel" id="nomSel"></div><div class="aide-accueil">Fais glisser la rangée ou utilise les flèches ; clic (ou A) pour ouvrir</div></div>`;
       }
@@ -300,11 +345,14 @@
     // Sans 3D : les tuiles à plat
     ecran.innerHTML = `<div class="accueil${anime ? ' entree' : ''}"><div class="nom-sel" id="nomSel"></div>
       <div class="rangee">${t.map((x, i) => `<button type="button" class="tuile f${urlSure(x.fond) ? ' avec-fond' : ''}" data-k="t:${esc(x.id)}" data-tuile="${i}" style="--a:${couleur(x.couleur)}${urlSure(x.fond) ? `;--fond:url('${urlSure(x.fond)}')` : ''}" aria-label="${esc(x.nom)}">
-        ${x.gros != null ? `<span class="gros">${esc(x.gros)}${x.petit ? `<small>${esc(x.petit)}</small>` : ''}</span>` : (urlSure(x.image) ? `<span class="ico"><img src="${urlSure(x.image)}" alt="" onerror="this.remove()"></span>` : `<span class="ico">${ico(x.icone, 1.8)}</span>`)}<b>${esc(x.nom)}</b><span class="sous">${esc(x.sous)}</span></button>`).join('')}</div></div>`;
+        ${x.gros != null ? `${imagePack(x.id) ? `<span class="ico"><img class="pack" src="${imagePack(x.id)}" alt="" onerror="this.remove()"></span>` : ''}<span class="gros">${esc(x.gros)}${x.petit ? `<small>${esc(x.petit)}</small>` : ''}</span>` : (urlSure(x.image) || imagePack(x.id) ? `<span class="ico"><img${urlSure(x.image) ? '' : ' class="pack"'} src="${urlSure(x.image) || imagePack(x.id)}" alt="" onerror="this.remove()"></span>` : `<span class="ico">${ico(x.icone, 1.8)}</span>`)}<b>${esc(x.nom)}</b><span class="sous">${esc(x.sous)}</span></button>`).join('')}</div></div>`;
     const cible = ecran.querySelector(`[data-tuile="${sel}"]`) || ecran.querySelector('.tuile');
     cible?.focus({ preventScroll: true }); cible?.scrollIntoView({ block: 'nearest', inline: 'center' });
     nomSel(sel);
   }
+  // L'image d'une tuile dans le thème perso (bloc Console), à la place de son icône dessinée
+  // (« tuiles » est mis en liste par normaliser() : l'objet est alors son premier élément)
+  function imagePack(id) { let m = E.pack?.console?.tuiles; if (Array.isArray(m)) m = m[0]; const u = m?.[id]; return u ? urlSure(u) : ''; }
   function nomSel(i) {
     const ns = document.getElementById('nomSel'), x = E.accueil?.tuiles?.[i]; if (!ns || !x) return;
     ns.textContent = x.nom; ns.style.color = couleur(x.couleur);
@@ -526,7 +574,7 @@
 
   // L'appli sait sur quel écran on est (pour y revenir après une fiche, par exemple)
   let ecranDit = null;
-  function direEcran() { if (nav.ecran !== ecranDit) { ecranDit = nav.ecran; envoyer({ type: 'ecran', id: nav.ecran }); } }
+  function direEcran() { document.body.classList.toggle('sur-accueil', nav.ecran === 'accueil'); if (nav.ecran !== ecranDit) { ecranDit = nav.ecran; envoyer({ type: 'ecran', id: nav.ecran }); } }
   function dessiner(anime) {
     const k = document.activeElement?.closest?.('#ecran [data-k]')?.dataset.k;
     if (nav.ecran === 'accueil') accueil(k, anime); else page(anime, k);

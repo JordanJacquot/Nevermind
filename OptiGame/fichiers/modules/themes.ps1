@@ -52,6 +52,11 @@ $Theme = $AppThemes[$ThemeId]
 #   Colors            couleurs propres au pack (au lieu d'un thème de base) : { P, S, T, NH, NS, Map }
 #   FontPixel         false pour une police lisse (pas de rendu « pixel », tailles inchangées)
 #   Font, FontScope   police du pack (fichier .ttf) : sur les titres, onglets, boutons et chiffres (« titres »), ou partout (« tout »)
+#   Console           nouvelle interface (l'écran du kit), facultatif :
+#                     { Tuiles = { pc, perf, protection, jeux, reseau, trafic, overlay = image PNG ou WebP },
+#                       Mascotte = image (PNG, WebP, GIF animé) dans un coin de l'accueil,
+#                       Chargement = { File, Effet = tourne | aucun }, Fond, FondOpacite (sinon Background, BackgroundOpacity) }
+#                     Avec ce bloc : pas de dessin en bas de l'écran, les petites icônes rondes du haut gardent leur dessin.
 # ---------------------------------------------------------------------------
 $PacksDir = Join-Path $DataDir 'packs'
 if ($env:OPTIGAME_TEST -and $env:OPTIGAME_PACKS) { $PacksDir = $env:OPTIGAME_PACKS }
@@ -107,7 +112,22 @@ function Get-ThemePack([string]$Id) {
     if ($j.Loader -and $j.Loader.File -and (Test-Path -LiteralPath (Join-Path $dir ([string]$j.Loader.File)))) {
         $p.Loader = @{ File = (Join-Path $dir ([string]$j.Loader.File)); Frames = [math]::Max(1, [int]$j.Loader.Frames); Delay = [math]::Max(40, [int]$j.Loader.Delay); Flip = [bool]$j.Loader.Flip; Static = [bool]$j.Loader.Static; Height = [int]$j.Loader.Height; Gap = [int]$j.Loader.Gap }
     }
+    $p.Console = Get-ThemePackConsole $j.Console $dir
     $p
+}
+
+# Le bloc « Console » d'un pack.json (nouvelle interface) : seulement des images simples du dossier du pack
+function Get-ThemePackConsole($C, [string]$Dir) {
+    if (-not $C) { return $null }
+    $image = { param($n) if ($n -is [string] -and $n -match '\A[\w .()-]{1,80}\.(png|webp|gif|jpe?g)\z' -and $n -notmatch '\.\.' -and (Test-Path -LiteralPath (Join-Path $Dir $n))) { Join-Path $Dir $n } else { $null } }
+    $r = @{ Tuiles = @{}; Mascotte = $null; Chargement = $null; Fond = $null; FondOpacite = $null }
+    if ($C.Tuiles) { foreach ($pr in $C.Tuiles.PSObject.Properties) { $f = & $image $pr.Value; if ($pr.Name -match '\A[a-z]{1,20}\z' -and $f) { $r.Tuiles[$pr.Name] = $f } } }
+    $r.Mascotte = & $image $C.Mascotte
+    $ch = if ($C.Chargement -is [string]) { @{ File = $C.Chargement } } else { $C.Chargement }
+    if ($ch -and ($f = & $image $ch.File)) { $r.Chargement = @{ File = $f; Effet = $(if ([string]$ch.Effet -eq 'aucun') { 'aucun' } else { 'tourne' }) } }
+    $r.Fond = & $image $C.Fond
+    if ($C.FondOpacite) { $r.FondOpacite = [math]::Min(1.0, [math]::Max(0.05, [double]$C.FondOpacite)) }
+    $r
 }
 
 function Get-ThemePacks {

@@ -55,8 +55,10 @@ button:focus, input:focus { outline: none; }
 .marque:hover { background: rgba(255,255,255,0.06); }
 #logoHote { display: flex; align-items: center; }
 #logoHote:empty { display: none; }
-#titreTexte { font-size: 19px; font-weight: 800; display: flex; align-items: baseline; gap: 10px; }
-#titreTexte .phrase { font-size: 14px; font-weight: 500; color: var(--doux); }
+/* (la phrase d'accueil cède la place aux onglets : c'est elle qui rétrécit, avec « ... », jamais les onglets) */
+.haut .marque { min-width: 0; flex-shrink: 20; }
+#titreTexte { font-size: 19px; font-weight: 800; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+#titreTexte .phrase { font-size: 14px; font-weight: 500; color: var(--doux); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .onglets { display: flex; gap: 6px; flex-wrap: nowrap; overflow: hidden; min-width: 0; }
 .onglet { position: relative; font-size: 14px; color: var(--doux); border: 1px solid var(--ligne); border-radius: 999px; padding: 7px 14px; white-space: nowrap; transition: all 180ms ease; }
 .onglet:hover, .onglet:focus { color: var(--texte); border-color: color-mix(in srgb, var(--S) 60%, var(--ligne)); }
@@ -90,6 +92,14 @@ button:focus, input:focus { outline: none; }
 #mascotte { margin-left: auto; margin-right: 6px; display: flex; align-items: center; }
 #mascotte:empty, #dessinBas:empty { display: none; }
 #dessinBas { display: inline-flex; margin-right: 12px; }
+/* Thème perso, nouvelle interface (bloc Console) : la mascotte dans un coin de l'accueil (seulement là). Fixe, elle
+   flotte doucement ; opaque, elle est en vignette arrondie. Une seule animation par image. */
+#mascotte.mascotte-coin { position: absolute; left: 26px; bottom: 60px; z-index: 2; margin: 0; pointer-events: none; display: none; }
+body.sur-accueil #mascotte.mascotte-coin:not(:empty) { display: block; }
+#mascotte.mascotte-coin img { display: block; max-width: 210px; max-height: 170px; object-fit: contain; filter: drop-shadow(0 6px 14px rgba(0,0,0,0.55)); }
+#mascotte.mascotte-coin img.vignette { max-height: 150px; border-radius: 20px; border: 2px solid color-mix(in srgb, var(--P) 55%, transparent); box-shadow: 0 0 18px color-mix(in srgb, var(--P) 35%, transparent), 0 10px 26px rgba(0,0,0,0.55); filter: none; }
+#mascotte.mascotte-coin img.flotte { animation: flotteM 4.5s ease-in-out infinite; }
+@keyframes flotteM { 50% { translate: 0 -9px; } }
 
 #ecran { flex: 1; min-height: 0; }
 .bas { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; height: 50px; box-sizing: border-box; padding: 0 26px; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
@@ -115,6 +125,9 @@ button:focus, input:focus { outline: none; }
 .tuile.avec-fond { background: linear-gradient(180deg, rgba(6,5,15,0.1) 20%, rgba(6,5,15,0.92)), var(--fond) center / cover no-repeat; }
 .tuile .ico svg { width: 64px; height: 64px; color: var(--a); }
 .tuile .ico img { width: 64px; height: 64px; object-fit: contain; }
+.tuile .ico img.pack { width: 96px; height: 96px; } .tuile .ico:has(+ .gros) img.pack { width: 56px; height: 56px; }
+.tuile:focus .ico img.pack { animation: rebond 1.2s ease-in-out infinite; }
+@keyframes rebond { 0%, 100% { translate: 0 0; } 45% { translate: 0 -7px; } }
 .tuile .gros { font-size: 64px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
 .tuile .gros small { font-size: 0.34em; color: var(--doux); margin-left: 4px; }
 .tuile b { font-size: 20px; } .tuile .sous { font-size: 13.5px; color: var(--doux); }
@@ -377,6 +390,12 @@ body.avec-3d .anneau { background: none; }
 #occupe.vu { opacity: 1; transform: translate(-50%, 0); }
 #occupe span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #occupe i { width: 18px; height: 18px; flex: none; border-radius: 50%; background: conic-gradient(var(--P), var(--S), var(--T), transparent 80%); -webkit-mask: radial-gradient(circle, transparent 55%, #000 57%); mask: radial-gradient(circle, transparent 55%, #000 57%); animation: tourne2 0.9s linear infinite; }
+/* L'image de chargement d'un thème perso : elle tourne sur elle-même avec une lueur aux couleurs du thème
+   (« aucun » : telle quelle) ; rien ne tourne tant que la pastille est cachée */
+#occupe.avec-image i { width: 34px; height: 34px; margin: -7px 0; border-radius: 0; background: var(--img) center / contain no-repeat; -webkit-mask: none; mask: none; filter: drop-shadow(0 0 5px var(--P)) drop-shadow(0 0 2px var(--S)); animation: tourneY 1.8s linear infinite; }
+#occupe.avec-image.fixe i { animation: none; filter: none; }
+#occupe:not(.vu) i { animation-play-state: paused; }
+@keyframes tourneY { to { transform: rotateY(360deg); } }
 #questionM { position: fixed; inset: 0; z-index: 8; display: none; align-items: center; justify-content: center; background: rgba(4, 3, 12, 0.66); backdrop-filter: blur(6px); }
 #questionM.vu { display: flex; }
 #questionM .boite { width: min(560px, calc(100vw - 40px)); padding: 26px 28px 20px; box-sizing: border-box; animation: entree 300ms cubic-bezier(.2, .9, .3, 1); }

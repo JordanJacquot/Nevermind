@@ -241,19 +241,29 @@ function Get-CouleursVue {
 }
 
 # Les images d'un thème perso pour l'écran (themes.ps1, Get-ThemePack) : fond, logo, mascotte, dessin du bas, police,
-# phrase d'accueil. Les fichiers sont servis depuis le dossier du thème (https://theme.local/, voir Initialize-Vue).
+# phrase d'accueil, et le bloc Console (images des tuiles, mascotte de l'accueil, chargement ; avec lui, son fond passe
+# avant Background et il n'y a pas de dessin en bas). Servis depuis le dossier du thème (https://theme.local/, voir Initialize-Vue).
 function Get-PackVue {
     $t = $ThemePack
     if (-not $t) { return $null }
     $u = { param($f) 'https://theme.local/' + [uri]::EscapeDataString([IO.Path]::GetFileName([string]$f)) }
     $p = [ordered]@{}
     if ($t.Logo) { $p.logo = @{ url = (& $u $t.Logo); images = $t.LogoFrames; delai = $t.LogoDelay; lueur = $t.LogoGlow } }
-    if ($t.Background) {
-        $p.fond = @{ url = (& $u $t.Background); opacite = $t.BackgroundOpacity
+    $c = $t.Console
+    $fond = if ($c -and $c.Fond) { $c.Fond } else { $t.Background }
+    if ($fond) {
+        $op = if ($c -and $c.Fond -and $c.FondOpacite) { $c.FondOpacite } else { $t.BackgroundOpacity }
+        $p.fond = @{ url = (& $u $fond); opacite = $op
             x = @{ Left = 'gauche'; Right = 'droite' }[[string]$t.BackgroundAlignX]; y = @{ Top = 'haut'; Bottom = 'bas' }[[string]$t.BackgroundAlignY] }
     }
     if ($t.Mascotte) { $p.mascotte = @{ url = (& $u $t.Mascotte.File); images = $t.Mascotte.Frames; delai = $t.Mascotte.Delay; miroir = $t.Mascotte.Flip } }
-    if ($t.Footer -and $t.Footer.File) { $p.bas = @{ url = (& $u $t.Footer.File); images = $t.Footer.Frames; delai = $t.Footer.Delay; hauteur = $t.Footer.Height } }
+    if ($c) {
+        $tu = [ordered]@{}; foreach ($k in $c.Tuiles.Keys) { $tu[$k] = & $u $c.Tuiles[$k] }
+        $p.console = [ordered]@{ tuiles = $tu }
+        if ($c.Mascotte) { $p.console.mascotte = @{ url = (& $u $c.Mascotte) } }
+        if ($c.Chargement) { $p.console.chargement = @{ url = (& $u $c.Chargement.File); effet = $c.Chargement.Effet } }
+    }
+    elseif ($t.Footer -and $t.Footer.File) { $p.bas = @{ url = (& $u $t.Footer.File); images = $t.Footer.Frames; delai = $t.Footer.Delay; hauteur = $t.Footer.Height } }
     elseif ($t.Footer -and $t.Footer.Files) { $p.bas = @{ url = (& $u @($t.Footer.Files)[0]); images = 1; hauteur = $t.Footer.Height } }
     if ($t.Font) { $p.police = @{ url = (& $u $t.Font); partout = ($t.FontScope -eq 'tout'); pixel = [bool]$t.FontPixel } }
     $p
