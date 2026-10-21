@@ -140,6 +140,13 @@ function Add-AideLectureSecurite($D) {
         $D.Tasks = @(foreach ($t2 in @(Invoke-Aide 'lecture.taches' @{} 60000 | Where-Object { $_ })) {
             $exe = [Environment]::ExpandEnvironmentVariables([string]$t2.Exe).Trim('"')
             $argsTxt = [string]$t2.Args
+            # L'installateur de Mindset (la suite) : sa tâche exacte, et son script que seul un administrateur peut modifier (ni le fichier
+            # ni son dossier ne donnent de droit d'écriture à Tout le monde, aux Utilisateurs ou à l'utilisateur lui-même)
+            $protege = { param($f) try { $sids = @('S-1-1-0', 'S-1-5-11', 'S-1-5-32-545', [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+                -not @(foreach ($x in $f, (Split-Path $f -Parent)) { (Get-Acl -LiteralPath $x).Access | Where-Object { $_.AccessControlType -eq 'Allow' -and ([int64]$_.FileSystemRights -band 0xD0046) -and
+                    ($sids -contains $(try { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { '' })) } }).Count } catch { $false } }
+            if ([string]$t2.Chemin -eq '\Mindset\' -and [string]$t2.Nom -eq 'Mindset (installation)' -and $exe -match '\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$' -and
+                $argsTxt -match '^-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "([^"]+\\fichiers\\installer-admin\.ps1)" -Action demande -Demande "[^"]+\\installation\.demande"$' -and (Test-Path -LiteralPath $Matches[1]) -and (& $protege $Matches[1])) { continue }
             $cachee = $exe -match '(powershell|pwsh|cmd|wscript|cscript|mshta)(\.exe)?$' -and $argsTxt -match '(-enc|-encodedcommand|frombase64|downloadstring|downloadfile|invoke-expression|\biex\b|-w(indowstyle)?\s+h(idden)?|http)'
             $risque = $exe -like "$tmp*" -or $exe -like "$pub*"
             if ($cachee -or $risque) { @{ Name = [string]$t2.Nom; Path = [string]$t2.Chemin; Cmd = "$exe $argsTxt".Trim(); Bad = $cachee } }

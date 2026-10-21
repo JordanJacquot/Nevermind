@@ -269,6 +269,13 @@ $SecDataWork = {
             if ($a.OwnTask -and $t2.TaskName -eq $a.OwnTask -and $t2.TaskPath -eq '\' -and $exe -match '\\WindowsPowerShell\\v1\.0\\powershell\.exe$' -and
                 $argsTxt -match '^-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "([^"]+\\fichiers\\OptiGame\.ps1)" -Demarrage$' -and
                 ($Matches[1] -eq $a.OwnScript -or (Test-Path -LiteralPath $Matches[1]))) { continue }
+            # L'installateur de Mindset (la suite) : sa tâche exacte, et son script que seul un administrateur peut modifier (ni le fichier
+            # ni son dossier ne donnent de droit d'écriture à Tout le monde, aux Utilisateurs ou à l'utilisateur lui-même)
+            $protege = { param($f) try { $sids = @('S-1-1-0', 'S-1-5-11', 'S-1-5-32-545', [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+                -not @(foreach ($x in $f, (Split-Path $f -Parent)) { (Get-Acl -LiteralPath $x).Access | Where-Object { $_.AccessControlType -eq 'Allow' -and ([int64]$_.FileSystemRights -band 0xD0046) -and
+                    ($sids -contains $(try { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { '' })) } }).Count } catch { $false } }
+            if ($t2.TaskPath -eq '\Mindset\' -and $t2.TaskName -eq 'Mindset (installation)' -and $exe -match '\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$' -and
+                $argsTxt -match '^-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "([^"]+\\fichiers\\installer-admin\.ps1)" -Action demande -Demande "[^"]+\\installation\.demande"$' -and (Test-Path -LiteralPath $Matches[1]) -and (& $protege $Matches[1])) { continue }
             $hiddenCmd = $exe -match '(powershell|pwsh|cmd|wscript|cscript|mshta)(\.exe)?$' -and $argsTxt -match '(-enc|-encodedcommand|frombase64|downloadstring|downloadfile|invoke-expression|\biex\b|-w(indowstyle)?\s+h(idden)?|http)'
             $riskPath = $exe -like "$($a.Temp)*" -or $exe -like "$($a.Public)*"
             if ($hiddenCmd -or $riskPath) { $r.Tasks += @{ Name = $t2.TaskName; Path = $t2.TaskPath; Cmd = "$exe $argsTxt".Trim(); Bad = $hiddenCmd } }
