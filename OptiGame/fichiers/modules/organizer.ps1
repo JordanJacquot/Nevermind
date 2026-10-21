@@ -380,11 +380,46 @@ function New-OrgBadge($Char, [double]$Size) {
 
 # ---------------------------------------------------------------------------
 # Barre flottante : un bouton par perso connecté, par dessus le jeu, sans jamais lui prendre le focus
+# DA de la console : verre sombre, bord de plasma (cyan, violet, magenta du thème) qui tourne lentement,
+# le perso devant mis en avant par un bord de plasma lumineux. Une seule animation WPF (20 images par seconde au plus),
+# arrêtée quand la barre est cachée : rien de lourd par dessus le jeu.
 # ---------------------------------------------------------------------------
+# Bord de plasma : un dégradé qui tourne avec la rotation commune de la barre
+function New-OrgPlasmaBrush([double]$Opacity = 1, [switch]$Fixed) {
+    $b = New-LinearBrush @('#00E5FF', '#B04BFF', '#FF2EB5', '#00E5FF') 0 0 1 1
+    if (-not $Fixed) {
+        if (-not $script:OrgSpin) { $script:OrgSpin = New-Object System.Windows.Media.RotateTransform 0, 0.5, 0.5 }
+        $b.RelativeTransform = $script:OrgSpin
+    }
+    $b.Opacity = $Opacity
+    $b
+}
+
+# Coins : en pilule, sauf police pixel (pack) ou thème Terminal, qui gardent des coins carrés
+function Get-OrgBarRadius([double]$Round, [double]$Square) {
+    if (($PackFont -and $ThemePack.FontPixel) -or $Theme.Decor -eq 'terminal') { $Square } else { $Round }
+}
+
+function Start-OrgBarSpin {
+    if ($script:OrgSpinOn -or -not $script:OrgSpin) { return }
+    $a = New-Object System.Windows.Media.Animation.DoubleAnimation 0, 360, ([System.Windows.Duration]::new([TimeSpan]::FromSeconds(9)))
+    $a.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+    [System.Windows.Media.Animation.Timeline]::SetDesiredFrameRate($a, 20)
+    $script:OrgSpin.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
+    $script:OrgSpinOn = $true
+}
+
+function Stop-OrgBarSpin {
+    if (-not $script:OrgSpinOn) { return }
+    $script:OrgSpin.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null)
+    $script:OrgSpinOn = $false
+}
+
 function Show-OrgBar {
     if ($script:OrgBar) {
         if (-not $script:OrgBar.Win.IsVisible) { $script:OrgBar.Win.Show() }
         if ($script:OrgBarSig -ne $script:OrgSig) { Update-OrgBar }
+        Start-OrgBarSpin
         return
     }
     $w = New-Object System.Windows.Window
@@ -393,13 +428,13 @@ function Show-OrgBar {
     $w.Topmost = $true; $w.ShowInTaskbar = $false; $w.ShowActivated = $false
     $w.SizeToContent = 'WidthAndHeight'; $w.ResizeMode = 'NoResize'
     $w.Title = 'Nevermind Organizer'
+    $w.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe UI Variable Display, Segoe UI'
     $w.Add_SourceInitialized({ param($s, $e) try { [WinFocus]::NoActivate((New-Object System.Windows.Interop.WindowInteropHelper $s).Handle) } catch {} })
     $root = New-Object System.Windows.Controls.Border
-    $root.Background = Get-Brush '#E60B0820'
-    $root.BorderBrush = New-LinearBrush @('#B000E5FF', '#B0FF2EB5') 0 0 1 1
+    $root.Background = New-LinearBrush @('#F5100E22', '#F206050F') 0 0 0 1
     $root.BorderThickness = New-Thickness 1 1 1 1
-    $root.CornerRadius = [System.Windows.CornerRadius]::new($(if (($PackFont -and $ThemePack.FontPixel) -or $Theme.Decor -eq 'terminal') { 3 } else { 14 }))
-    $root.Padding = New-Thickness 4 4 6 4
+    $root.CornerRadius = [System.Windows.CornerRadius]::new((Get-OrgBarRadius 24 3))
+    $root.Padding = New-Thickness 5 6 8 6
     $row = New-Object System.Windows.Controls.StackPanel
     $row.Orientation = 'Horizontal'
     $root.Child = $row
@@ -409,9 +444,10 @@ function Show-OrgBar {
     $wa = [System.Windows.SystemParameters]::WorkArea
     $w.Left = if ($null -ne $c.BarX) { $c.BarX } else { $wa.Left + $wa.Width / 2 - 150 }
     $w.Top = if ($null -ne $c.BarY) { $c.BarY } else { $wa.Top + 6 }
-    $script:OrgBar = @{ Win = $w; Row = $row; Items = @{} }
+    $script:OrgBar = @{ Win = $w; Row = $row; Items = @{}; Root = $root }
     Update-OrgBar
     $w.Show()
+    Start-OrgBarSpin
     # Hors de l'écran (écran débranché) : retour en haut au centre
     if (-not (Test-OrgBarOnScreen $w.Left $w.Top)) { Reset-OrgBarPosition }
     Set-OrgBarOnTop
@@ -431,6 +467,7 @@ function Set-OrgBarOnTop {
 
 function Hide-OrgBar {
     if ($script:OrgBar -and $script:OrgBar.Win.IsVisible) { $script:OrgBar.Win.Hide() }
+    Stop-OrgBarSpin
 }
 
 function Reset-OrgBarPosition {
@@ -450,12 +487,17 @@ function Update-OrgBar {
     $b.Row.Children.Clear()
     $b.Items = @{}
     $script:OrgBarSig = $script:OrgSig
+    # Bords de plasma refaits à chaque fois (couleurs du thème du moment), la rotation reste la même
+    if ($b.Root) { $b.Root.BorderBrush = New-OrgPlasmaBrush 0.5 }
+    $plasma = New-OrgPlasmaBrush 1
+    $script:OrgBarHover = New-OrgPlasmaBrush 0.6
+    $pixel = $PackFont -and $ThemePack.FontPixel
     # Poignée : glisser pour déplacer la barre
     $grip = New-Object System.Windows.Controls.Border
     $grip.Background = Get-Brush '#01FFFFFF'; $grip.Padding = New-Thickness 4 0 4 0
     $grip.Cursor = [System.Windows.Input.Cursors]::SizeAll
     $grip.ToolTip = 'Glisse pour déplacer la barre'
-    $gi = New-Text ([string][char]0xE76F) 12 '#8E88A8'
+    $gi = New-Text ([string][char]0xE76F) 12 '#6F6894'
     $gi.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe Fluent Icons, Segoe MDL2 Assets'; $gi.VerticalAlignment = 'Center'
     $grip.Child = $gi
     $grip.Add_MouseLeftButtonDown({
@@ -466,37 +508,62 @@ function Update-OrgBar {
         } catch {}
     })
     [void]$b.Row.Children.Add($grip)
-    $fg = [WinFocus]::Foreground()
-    $fgPid = [WinFocus]::Pid($fg)
+    $fg = if ($script:OrgFakeFg) { $script:OrgFakeFg } else { [WinFocus]::Foreground() }
+    $fgPid = if ($script:OrgFakeFg) { 0 } else { [WinFocus]::Pid($fg) }
     $n = 0
     foreach ($ch in @(Get-OrgOnline)) {
         $n++
         $on = $ch.Hwnd -eq $fg -or ($fgPid -and $ch.Pid -eq $fgPid)
+        # Perso devant : bord de plasma lumineux (et sa lueur), un peu plus grand ; les autres en retrait
+        $r = Get-OrgBarRadius 16 2
         $pill = New-Object System.Windows.Controls.Border
-        $pill.CornerRadius = [System.Windows.CornerRadius]::new($(if (($PackFont -and $ThemePack.FontPixel) -or $Theme.Decor -eq 'terminal') { 2 } else { 10 }))
-        $pill.Padding = New-Thickness 5 3 9 3; $pill.Margin = New-Thickness 2 0 2 0
+        $pill.CornerRadius = [System.Windows.CornerRadius]::new($r)
+        $pill.Padding = New-Thickness 4 3 12 3
         $pill.Cursor = [System.Windows.Input.Cursors]::Hand
-        $pill.Background = if ($on) { New-LinearBrush @('#6600E5FF', '#66B04BFF') 0 0 1 0 } else { Get-Brush '#10FFFFFF' }
-        $pill.BorderBrush = Get-Brush $(if ($on) { '#00E5FF' } else { '#00FFFFFF' }); $pill.BorderThickness = New-Thickness 1 1 1 1
+        if ($on) {
+            $pill.Background = New-LinearBrush @('#E61A1538', '#E60F0C24') 0 0 0 1
+            $pill.BorderBrush = $plasma; $pill.BorderThickness = New-Thickness 1.5 1.5 1.5 1.5
+        } else {
+            $pill.Background = Get-Brush '#C8181433'
+            $pill.BorderBrush = Get-Brush '#25223F'; $pill.BorderThickness = New-Thickness 1 1 1 1
+            # Survol : le bord de plasma s'allume à moitié
+            $pill.Add_MouseEnter({ param($s, $e) if ($script:OrgBarHover) { $s.BorderBrush = $script:OrgBarHover } })
+            $pill.Add_MouseLeave({ param($s, $e) $s.BorderBrush = Get-Brush '#25223F' })
+        }
         $sp = New-Object System.Windows.Controls.StackPanel
         $sp.Orientation = 'Horizontal'
         $bd = New-OrgBadge $ch 22
-        $bd.Margin = New-Thickness 0 0 6 0
+        $bd.Margin = New-Thickness 0 0 7 0
+        if (-not $on) { $bd.Opacity = 0.75 }
         [void]$sp.Children.Add($bd)
-        $t = New-Text $ch.Name 12 $(if ($on) { '#FFFFFF' } else { '#D3CDE3' }) -Semi
+        $t = New-Text $ch.Name 12 $(if ($on) { '#FFFFFF' } else { '#A8A3C4' }) -Semi
         $t.TextWrapping = 'NoWrap'; $t.VerticalAlignment = 'Center'; $t.MaxWidth = 110; $t.TextTrimming = 'CharacterEllipsis'
         Set-OverlayFont $t 8
         [void]$sp.Children.Add($t)
         $pill.Child = $sp
+        $cell = New-Object System.Windows.Controls.Grid
+        $cell.Margin = New-Thickness 3 0 3 0
+        if ($on) {
+            # Lueur : un bord flou fixe, gardé en image (ne se redessine pas à chaque image de la rotation)
+            $glow = New-Object System.Windows.Controls.Border
+            $glow.CornerRadius = [System.Windows.CornerRadius]::new($r)
+            $glow.BorderBrush = New-OrgPlasmaBrush 1 -Fixed; $glow.BorderThickness = New-Thickness 3 3 3 3
+            $blur = New-Object System.Windows.Media.Effects.BlurEffect; $blur.Radius = 10
+            $glow.Effect = $blur; $glow.IsHitTestVisible = $false
+            $glow.CacheMode = New-Object System.Windows.Media.BitmapCache
+            [void]$cell.Children.Add($glow)
+            if (-not $pixel) { $cell.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5); $cell.RenderTransform = New-Object System.Windows.Media.ScaleTransform 1.06, 1.06 }
+        }
+        [void]$cell.Children.Add($pill)
         $key = (Get-OrgConfig).Hotkeys["P$n"]
         $pill.ToolTip = "$($ch.Name)$(if ($ch.Class) { " ($($ch.Class))" })$(if ($key) { " : $(Format-OrgKey $key)" })"
         $pill.Tag = $ch.Name
         $pill.Add_MouseLeftButtonUp({ param($s, $e) $nm = [string]$s.Tag; Invoke-Safe { [void](Show-OrgChar (@(Get-OrgOnline | Where-Object { $_.Name -eq $nm })[0])) } })
-        [void]$b.Row.Children.Add($pill)
+        [void]$b.Row.Children.Add($cell)
         $b.Items[$ch.Name] = $pill
     }
     if (-not $n) {
-        $t = New-Text 'Aucun perso connecté' 12 '#8E88A8'
+        $t = New-Text 'Aucun perso connecté' 12 '#A8A3C4'
         $t.Margin = New-Thickness 6 4 6 4; $t.TextWrapping = 'NoWrap'
         [void]$b.Row.Children.Add($t)
     }
