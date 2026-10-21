@@ -231,15 +231,25 @@ function demarrer() {
   const geosA = {}; const anneauA = new THREE.Mesh(new THREE.TorusGeometry(1, 0.14, 32, 220), matA); sA.add(anneauA);
   const sourisP = { x: 0, y: 0 }; addEventListener('pointermove', (e) => { sourisP.x = e.clientX; sourisP.y = e.clientY; });
   let aEffacer = false;
+  // La valeur affichée de chaque anneau, gardée entre deux rendus : une page redessinée (mise à jour toutes les
+  // quelques secondes) recrée ses anneaux, qui repartent alors de leur valeur d'avant et non de 0. La clé : la page,
+  // puis l'élément nommé le plus proche (data-id, data-k : une mesure, une ligne...), sinon la place de l'anneau
+  const vus = new Map();
+  const cleAnneau = (el, i) => {
+    const pg = el.closest('.page, .accueil, .question'), n = el.closest('[data-id], [data-k]');
+    return `${pg?.dataset.id || ''}|${n && n !== pg ? n.dataset.id || n.dataset.k : `#${i}`}`;
+  };
   function anneaux(t) {
     const W = innerWidth, H = innerHeight, els = document.querySelectorAll('#ecran [data-anneau]');
     if (!els.length) { if (aEffacer) { rA.setScissorTest(false); rA.clear(); aEffacer = false; } return; }
     if (toileA.width !== Math.round(W * rA.getPixelRatio()) || toileA.height !== Math.round(H * rA.getPixelRatio())) rA.setSize(W, H, false);
     rA.setScissorTest(false); rA.clear(); rA.setScissorTest(true); aEffacer = true;
     const z = document.getElementById('ecran').getBoundingClientRect();
-    els.forEach((el) => {
+    els.forEach((el, i) => {
+      // (un anneau neuf reprend la valeur affichée de celui qu'il remplace ; au premier affichage, il part de 0)
+      if (el._cle === undefined) { el._cle = cleAnneau(el, i); el._v = vus.get(el._cle) ?? 0; }
       const b = el.getBoundingClientRect(); if (b.width < 4 || b.bottom < z.top || b.top > z.bottom || el.offsetParent === null) return;
-      const cible = +el.dataset.anneau || 0; el._v = el._v ?? 0; el._v += (cible - el._v) * 0.06;
+      const cible = +el.dataset.anneau || 0; el._v += (cible - el._v) * 0.06; vus.set(el._cle, el._v);
       const ep = +(el.dataset.ep || 0.14); if (!geosA[ep]) geosA[ep] = new THREE.TorusGeometry(1, ep, 32, 220); anneauA.geometry = geosA[ep];
       const u = matA.uniforms; u.t.value = t; u.v.value = el._v; u.alerte.value = el.dataset.alerte ? 1 : 0;
       const dx = (sourisP.x - (b.left + b.width / 2)) / W, dy = (sourisP.y - (b.top + b.height / 2)) / H;

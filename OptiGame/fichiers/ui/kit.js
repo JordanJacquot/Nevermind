@@ -478,6 +478,8 @@
     if (p.question || p.resultat) { question(p, focus); return; }
     const garde = !premiere && ecran.querySelector('.page')?.dataset.id === nav.ecran ? ecran.querySelector('.defile')?.scrollTop : 0;
     const parent = p.parent && E.pages?.[p.parent];
+    // (la même page redessinée : ses barres glissent de leur largeur d'avant vers la nouvelle, au lieu de sauter)
+    const largeurs = !premiere && ecran.querySelector('.page')?.dataset.id === nav.ecran ? [...ecran.querySelectorAll('.flux i')].map((x) => x.style.width) : null;
     ecran.innerHTML = `<div class="page${premiere ? ' entree' : ''}" data-id="${esc(nav.ecran)}"><div class="defile">
       <div class="tete"><button type="button" class="retour f" data-k="retour" data-retour="1" title="Retour" aria-label="Retour">${ico('retour', 2.2)}</button>
         ${p.icone ? `<span class="ic-page plasma-bord fort" style="--a:${couleur(p.couleur)}">${ico(p.icone, 1.6)}</span>` : ''}
@@ -485,6 +487,10 @@
         <div class="actions">${(p.actions || []).map((b) => btn({ ...b, style: b.style || 'second' })).join('')}</div></div>
       <div id="corps"></div></div></div>`;
     corps();
+    if (largeurs) ecran.querySelectorAll('.flux i').forEach((x, k) => {
+      const fin = x.style.width; if (largeurs[k] == null || largeurs[k] === fin) return;
+      x.style.transition = 'none'; x.style.width = largeurs[k]; void x.offsetWidth; x.style.transition = ''; x.style.width = fin;
+    });
     if (garde) { const c = ecran.querySelector('.defile'); if (c) c.scrollTop = garde; }
     const cible = (focus && ecran.querySelector(`[data-k="${CSS.escape(focus)}"]`)) || (premiere ? ecran.querySelector('.pastilles-o .oui, .module .btn, #corps .f') : null);
     cible?.focus({ preventScroll: true });

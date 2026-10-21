@@ -117,21 +117,41 @@ if (-not $env:OPTIGAME_TEST) {
     $script:ShowWatch.Add_Tick({ Watch-Requests })
     $script:ShowWatch.Start()
 }
+# Partie en cours : le jeu n'est pas au premier plan et Nevermind est à l'écran (seul ou dans Mindset). On regarde
+# alors Nevermind ou Mindset, pas le jeu : un thème qui vient d'y être choisi peut s'appliquer tout de suite.
+function Test-ThemeSansGener {
+    try {
+        $fg = [WinFocus]::Pid([WinFocus]::Foreground())
+        if (-not $fg -or ($script:GameSession -and $fg -eq $script:GameSession.Pid)) { return $false }
+        if ($fg -eq $PID) { return $true }
+        $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
+        [bool]($script:Embedded -and [EmbedInfo]::IsShown($h))
+    } catch { $false }
+}
+
 # Géré par Mindset : le thème de la suite changé ailleurs (Mindset, Evermind) est suivi. Toutes les 2,5 s, seule la
 # date du fichier est lue ; il n'est relu que si elle a changé. Nouveau thème (un des 5, ou un pack de la suite
 # installé par Mindset dans les packs de Nevermind) : enregistré, puis Nevermind se relance
 # (comme un changement de thème ici). Pas de boucle : après la relance, son thème est celui de la suite.
-if ($Managed -and -not $env:OPTIGAME_TEST) {
+# (Une copie de test qui simule Mindset, OPTIGAME_SUITE, le suit aussi : sans relance, voir Set-AppTheme.)
+if ($Managed -and (-not $env:OPTIGAME_TEST -or $env:OPTIGAME_SUITE)) {
     $script:SuiteWatch = New-Object System.Windows.Threading.DispatcherTimer
     $script:SuiteWatch.Interval = [TimeSpan]::FromMilliseconds(2500)
     $script:SuiteWatch.Add_Tick({
         $stamp = try { [IO.File]::GetLastWriteTimeUtc($SuiteFile) } catch { $script:SuiteStamp }
         if ($stamp -eq $script:SuiteStamp -or $script:AllowClose) { return }
-        # Chargement, action en cours, partie en cours : on attendra le prochain passage (date non retenue)
-        if ($script:Starting -or $script:WaitFrames.Count -or $script:GameSession -or $script:LagSession) { return }
-        $script:SuiteStamp = $stamp
+        # Chargement ou action en cours : on attendra le prochain passage (date non retenue)
+        if ($script:Starting -or $script:WaitFrames.Count) { return }
         $t = (Read-Suite).Theme
-        if ($t -and $t -cne (Get-CurrentThemeKey)) {
+        if (-not $t -or $t -ceq (Get-CurrentThemeKey)) { $script:SuiteStamp = $stamp; return }
+        # Partie en cours : pas de relance pendant qu'on joue. Elle attend la fin de la partie, ou que Nevermind ou
+        # Mindset soit regardé (le thème vient d'y être choisi, le jeu est en arrière-plan). Noté une fois au journal.
+        if (($script:GameSession -or $script:LagSession) -and -not (Test-ThemeSansGener)) {
+            if ($script:SuiteThemeAttente -cne $t) { $script:SuiteThemeAttente = $t; Write-Log "Thème de la suite changé dans Mindset : $t, appliqué après la partie en cours (ou dès que Nevermind ou Mindset est à l'écran)" }
+            return
+        }
+        $script:SuiteStamp = $stamp
+        if ($t) {
             # Pack de la suite pas (encore) installé ou illisible : thème actuel gardé, noté une fois au journal, et
             # suite.json relu au passage suivant (le pack peut arriver juste après)
             if ($t -like 'pack:*' -and -not (Get-ThemePack $t.Substring(5))) {

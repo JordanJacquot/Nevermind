@@ -69,12 +69,15 @@ function Get-PagesDivers {
         ) }
 
     # ---- Paramètres
+    # (géré par Mindset : le thème choisi ici devient celui de toute la suite ; un nouveau thème perso s'importe dans Mindset)
+    $cartesTheme = @{ type = 'cartes'; id = 'theme'; valeur = (Get-CurrentThemeKey); options = @(Get-ThemeChoices | ForEach-Object { @{ id = [string]$_.Key; titre = [string]$_.Name; texte = [string]$_.Desc } }) }
     $theme = if ($Managed) {
-        @(@{ type = 'reglages'; rangs = @(@{ texte = 'Thème de la suite'; note = [string]$ManagedThemeText; bouton = @{ id = 'theme-mindset'; texte = 'Ouvrir Mindset'; style = 'second' } }) })
+        @(@{ type = 'texte'; texte = 'Change les couleurs et l''ambiance de toute la suite : Nevermind, Mindset et ses autres applis. Elles redémarrent pour appliquer le thème.' }
+          $cartesTheme
+          @{ type = 'reglages'; rangs = @(@{ texte = 'Thèmes personnalisés'; note = 'Un nouveau thème personnalisé s''importe dans Mindset, pour toute la suite.'; bouton = @{ id = 'theme-mindset'; texte = 'Ouvrir Mindset'; style = 'second' } }) })
     } else {
-        $cle = Get-CurrentThemeKey
         @(@{ type = 'texte'; texte = 'Change les couleurs et l''ambiance de Nevermind. Nevermind redémarre pour appliquer le thème.' }
-          @{ type = 'cartes'; id = 'theme'; valeur = $cle; options = @(Get-ThemeChoices | ForEach-Object { @{ id = [string]$_.Key; titre = [string]$_.Name; texte = [string]$_.Desc } }) })
+          $cartesTheme)
     }
     $raccourci = $ui.BtnShortcut.Visibility -eq 'Visible'
     $demarrage = $ui.AutoStartRow.Visibility -eq 'Visible'
@@ -138,7 +141,8 @@ function Register-ActionsDivers {
     Register-ActionVue 'theme' { param($Valeur, $Ecran)
         $id = [string]$Valeur
         if ($id -eq (Get-CurrentThemeKey)) { return }
-        if (Confirm-Action 'Changer de thème ? Nevermind va redémarrer pour l''appliquer.') { Invoke-Safe { Set-AppTheme $id } }
+        $question = if ($Managed) { 'Changer le thème de toute la suite ? Nevermind et Mindset vont redémarrer pour l''appliquer.' } else { 'Changer de thème ? Nevermind va redémarrer pour l''appliquer.' }
+        if (Confirm-Action $question) { Invoke-Safe { Select-AppTheme $id } }
     }
 }
 function Invoke-ActionDivers([string]$Id, $Valeur) {

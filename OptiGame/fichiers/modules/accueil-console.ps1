@@ -103,7 +103,12 @@ function Update-EcranNevermind {
     if (-not $script:Vue.Controle -or $ui.EcranKit.Visibility -ne 'Visible') { $script:Kit.Envoye = ''; return }
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $e = Get-EcranNevermind
+    # (les mesures en direct ont leur propre envoi, toutes les 1,6 s : elles ne comptent pas dans la comparaison, sinon
+    # la page Ton PC serait redessinée en entier à chaque variation)
+    $mes = @(foreach ($p in $e.pages.Values) { foreach ($b in @($p.blocs) + @($p.sections | ForEach-Object { $_.blocs })) { if ($b -is [System.Collections.IDictionary] -and $b.type -eq 'mesures') { $b } } })
+    $vraies = @(foreach ($b in $mes) { , $b.elements; $b.elements = @($b.elements | ForEach-Object { $_.id }) })
     $cle = ($e | ConvertTo-Json -Depth 16 -Compress) -replace '":\{\}', '":null'
+    for ($i = 0; $i -lt $mes.Count; $i++) { $mes[$i].elements = $vraies[$i] }
     if ($sw.ElapsedMilliseconds -gt 300) { Write-Log "Écran : préparé en $($sw.ElapsedMilliseconds) ms" }
     if ($cle -eq $script:Kit.Envoye) { return }
     $script:Kit.Envoye = $cle

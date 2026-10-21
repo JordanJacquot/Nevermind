@@ -62,12 +62,14 @@ button:focus, input:focus { outline: none; }
 .onglet:hover, .onglet:focus { color: var(--texte); border-color: color-mix(in srgb, var(--S) 60%, var(--ligne)); }
 .onglet.actif { color: #fff; border-color: var(--S); background: color-mix(in srgb, var(--S) 20%, transparent); }
 .onglet .point { position: absolute; top: 3px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--orange); }
-.ronds-haut { display: flex; gap: 8px; margin-left: auto; }
-#mascotte + .ronds-haut { margin-left: 0; }
+/* Les ronds, la connexion et l'heure : collés à droite, séparés des onglets (la mascotte d'un thème perso, quand il y
+   en a une, prend leur place juste avant eux ; vide, elle est cachée et ne compte pas) */
+.ronds-haut { display: flex; flex: none; gap: 8px; margin-left: auto; padding-left: 16px; }
+#mascotte:not(:empty) + .ronds-haut { margin-left: 0; padding-left: 0; }
 .rond { --a: var(--P); width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--ligne); display: grid; place-items: center; color: var(--doux); transition: all 180ms ease; }
 .rond svg { width: 19px; height: 19px; }
 .rond:hover, .rond:focus, .rond.actif { color: var(--a); border-color: color-mix(in srgb, var(--a) 60%, var(--ligne)); background: color-mix(in srgb, var(--a) 12%, transparent); }
-.etat { display: flex; align-items: center; gap: 12px; margin-left: 10px; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--doux); }
+.etat { display: flex; flex: none; align-items: center; gap: 12px; margin-left: 10px; font-size: 15px; font-variant-numeric: tabular-nums; color: var(--doux); }
 .cnx { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--ligne); }
 .cnx svg { width: 17px; height: 17px; color: var(--P); }
 /* Le logo de l'appli, qui « glitche » de temps en temps comme dans Mindset */

@@ -115,6 +115,34 @@ function Get-ThemePacks {
     @(Get-ChildItem -LiteralPath $PacksDir -Directory | ForEach-Object { Get-ThemePack $_.Name } | Where-Object { $_ })
 }
 
+# Géré par Mindset : un pack de la suite est un thème personnalisé importé dans Mindset (son dossier de packs est à côté
+# de celui de Nevermind). Un pack ajouté seulement dans Nevermind, Mindset et les autres applis ne l'ont pas.
+function Test-PackSuite([string]$Id) {
+    if ($Id -notmatch '\A[a-z0-9-]{1,40}\z') { return $false }
+    Test-Path -LiteralPath (Join-Path (Split-Path $DataDir) "Mindset\packs\$Id\pack.json")
+}
+
+# Géré par Mindset : le thème choisi dans Nevermind devient celui de toute la suite (suite.json). Mindset le voit et se
+# relance avec, les autres applis gérées aussi. Seul le thème change : le reste du fichier est gardé tel quel.
+# Une copie de test n'écrit que dans le suite.json de test (OPTIGAME_SUITE), jamais dans le vrai.
+function Write-SuiteTheme([string]$Id) {
+    if (-not $Managed -or ($env:OPTIGAME_TEST -and -not $env:OPTIGAME_SUITE)) { return $false }
+    if (-not ($Id -cin $SuiteThemes -or $Id -cmatch '\Apack:[a-z0-9-]{1,40}\z')) { return $false }
+    try {
+        $j = [IO.File]::ReadAllText($SuiteFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        foreach ($p in @(@('theme', $Id), @('modifie', (Get-Date).ToString('s')))) {
+            if ($j.PSObject.Properties[$p[0]]) { $j.($p[0]) = $p[1] } else { $j | Add-Member -NotePropertyName $p[0] -NotePropertyValue $p[1] }
+        }
+        # Écrit à côté puis remplacé d'un coup, comme Mindset : une appli qui lit au même moment ne voit jamais un fichier à moitié écrit
+        $tmp = "$SuiteFile.nevermind.tmp"
+        [IO.File]::WriteAllText($tmp, ($j | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding $false))
+        Move-Item -LiteralPath $tmp -Destination $SuiteFile -Force
+        $script:SuiteStamp = [IO.File]::GetLastWriteTimeUtc($SuiteFile)
+        Write-Log "Thème de la suite choisi dans Nevermind : $Id"
+        $true
+    } catch { Write-Log "Thème de la suite pas enregistré : $($_.Exception.Message)"; $false }
+}
+
 # Géré par Mindset : le thème de la suite, enregistré comme thème de Nevermind. Un des 5 thèmes, ou « pack:<id> » :
 # un pack de la suite, que Mindset installe dans les packs de Nevermind. Pack absent ou illisible : le thème actuel reste.
 if ($Managed -and $Suite.Theme -and $ThemeSetting -cne $Suite.Theme -and -not ($env:OPTIGAME_TEST -and $env:OPTIGAME_THEME)) {
