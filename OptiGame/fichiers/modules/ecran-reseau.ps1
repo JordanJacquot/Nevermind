@@ -13,6 +13,17 @@ $SortesReseau = @{
 }
 function Get-SorteReseau($D) { $s = $SortesReseau[[string]$D.KindInfo.Kind]; if ($s) { $s } else { @('inconnu', 'doux') } }
 
+# Pendant un scan (lancé depuis l'écran, il tourne avant que l'écran ne soit renvoyé) : la progression part à l'écran au
+# plus une fois par seconde, sinon on croirait que Nevermind est figé jusqu'au système solaire
+function Update-ScanKit([string]$Texte, [int]$Trouves, [switch]$Tout) {
+    if (-not ($script:Kit -and $script:Kit.Actif)) { return }
+    $script:Kit.ScanTexte = $Texte; $script:Kit.ScanTrouves = $Trouves
+    $now = Get-Date
+    if (-not $Tout -and $script:Kit.ScanVu -and ($now - $script:Kit.ScanVu).TotalMilliseconds -lt 900) { return }
+    $script:Kit.ScanVu = $now
+    try { Update-EcranNevermind } catch { Write-Log "Écran, scan : $_" }
+}
+
 function Get-PagesReseau {
     $liste = @($script:NetList | Where-Object { $_ })
     $script:Kit.Appareils = $liste
@@ -45,8 +56,13 @@ function Get-PagesReseau {
             resume = @(@{ nom = 'Box'; valeur = $(if ($box) { [string]$box.Title } else { '?' }) }, @{ nom = 'Nouveaux'; valeur = "$(@($liste | Where-Object { $_.New }).Count)"; ton = $(if (@($liste | Where-Object { $_.New }).Count) { 'attention' } else { 'ok' }) }) }
     } else { @{ icone = 'radar'; couleur = 'S'; titre = $(if ($scan) { 'Scan en cours' } else { 'Pas encore scanné' }); texte = 'Découvre tous les appareils connectés à ton réseau : téléphones, consoles, TV, box, objets connectés...'; boutons = @(if (-not $scan) { @{ id = 'clic:BtnNetScan'; texte = 'Scanner le réseau' } }) } }
     $blocs = @(
+        if ($scan) {
+            $n = [int]$script:Kit.ScanTrouves
+            @{ type = 'ligne'; icone = 'radar'; couleur = 'S'; texte = $(if ($script:Kit.ScanTexte) { [string]$script:Kit.ScanTexte } else { 'Scan du réseau...' })
+                note = $(if ($n) { "$n appareil$(if ($n -gt 1) { 's' }) trouvé$(if ($n -gt 1) { 's' }) pour l'instant" } else { 'Ça prend une à deux minutes.' })
+                barre = [int][OGNative]::Progress; valeur = "$([int][OGNative]::Progress) %" }
+        }
         if ($liste.Count) { @{ type = 'reseau'; centre = $(if ($box) { [string]$box.Title } else { 'Ta box' }); appareils = $planetes; legende = 'Plus un appareil tourne près de la box, plus il répond vite. Orange : à vérifier.' } }
-        elseif ($scan) { @{ type = 'texte'; texte = 'Nevermind cherche les appareils de ton réseau, ça prend une à deux minutes.' } }
         @{ type = 'ligne'; icone = 'bouclier'; couleur = 'T'; texte = 'Audit de sécurité du réseau'; note = [string]$ui.NetAuditText.Text; etiquette = $(if ($audit) { "$(@($audit.Score)[0]) sur 100" }); ton = $(if ($audit) { $(if ([int]@($audit.Score)[0] -ge 85) { 'ok' } elseif ([int]@($audit.Score)[0] -ge 60) { 'attention' } else { 'urgent' }) }); bouton = @{ id = 'clic:BtnNetAudit'; texte = [string]$ui.BtnNetAudit.Content; style = 'second' } }
         if ($aVoir.Count) { @{ type = 'titre'; texte = 'À vérifier' } }
     )

@@ -337,8 +337,10 @@ function Invoke-NetworkScan {
         $u.Radar.Num.Text = "$f"
         $u.Bar.Value = [OGNative]::Progress
         $u.Phase.Text = switch ([OGNative]::Phase) { 'ping' { 'Recherche des appareils...' } 'arp' { 'Recherche des appareils discrets...' } 'names' { 'Récupération des noms...' } 'vendors' { 'Identification des fabricants...' } default { 'Préparation...' } }
+        Update-ScanKit $u.Phase.Text $f
     })
     $script:NetTimer.Start()
+    Update-ScanKit 'Préparation...' 0 -Tout
     try {
         $r = Invoke-Async $NetScanWork @{ Ips = $ips; If = $net.IfIndex; Oui = $OuiFile; LoadOui = (-not $script:Oui) } | Select-Object -First 1
         if ($r -and $r.OuiMap) { $script:Oui = $r.OuiMap }

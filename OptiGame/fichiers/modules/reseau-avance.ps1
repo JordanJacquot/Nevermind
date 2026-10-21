@@ -274,8 +274,10 @@ function Invoke-NetDeepScan($Net, [string[]]$Subnet, $Hero) {
         $u.Line.Text = switch ([OGNative]::Phase) {
             'deep-arp' { 'Recherche des appareils qui ne répondent pas au ping...' } 'deep-listen' { 'Écoute des appareils qui se présentent (TV, enceintes, imprimantes...)...' }
             'deep-names' { 'Recherche des noms Windows...' } 'deep-web' { 'Lecture des pages de réglages...' } default { 'Recherche approfondie...' } }
+        Update-ScanKit $u.Line.Text @($script:NetList).Count
     })
     $tm.Start()
+    Update-ScanKit 'Recherche approfondie...' @($script:NetList).Count -Tout
     try {
         $found = @($script:NetList | ForEach-Object { [string]$_.Ip })
         $missing = @($Subnet | Where-Object { $found -notcontains $_ })
