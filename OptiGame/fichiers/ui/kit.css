@@ -186,6 +186,8 @@ body.avec-3d .anneau { background: none; }
 .ligne.fait { opacity: 0.55; }
 .ic { --a: var(--P); width: 42px; height: 42px; flex: none; border-radius: 12px; display: grid; place-items: center; background: rgba(255,255,255,0.05); color: var(--a); }
 .ic svg { width: 22px; height: 22px; }
+.ic.img img { width: 28px; height: 28px; object-fit: contain; }
+.bascule-l { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--doux); }
 .chev { display: inline-grid; color: var(--doux); } .chev svg { width: 18px; height: 18px; }
 .quand { width: 62px; flex: none; color: var(--doux); font-size: 12.5px; line-height: 1.3; text-align: center; } .quand b { display: block; font-size: 15px; color: var(--texte); }
 .etiquette { font-size: 12px; font-weight: 800; padding: 4px 10px; border-radius: 99px; background: rgba(255,255,255,0.07); white-space: nowrap; }
@@ -361,6 +363,18 @@ body.avec-3d .anneau { background: none; }
 
 .entree { animation: entree 420ms cubic-bezier(.2, .9, .3, 1); }
 @keyframes entree { from { opacity: 0; transform: translateY(18px) scale(0.98); } }
+/* ---------------------------------------------------------------- la pastille « en cours », la question par-dessus */
+#occupe { position: fixed; z-index: 7; left: 50%; bottom: 14px; transform: translate(-50%, 20px); display: flex; align-items: center; gap: 10px; padding: 9px 18px 9px 12px; border-radius: 99px; background: var(--carte2); border: 1px solid var(--ligne); font-size: 14px; opacity: 0; pointer-events: none; transition: opacity 200ms ease, transform 200ms ease; max-width: 60vw; }
+#occupe.vu { opacity: 1; transform: translate(-50%, 0); }
+#occupe span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#occupe i { width: 18px; height: 18px; flex: none; border-radius: 50%; background: conic-gradient(var(--P), var(--S), var(--T), transparent 80%); -webkit-mask: radial-gradient(circle, transparent 55%, #000 57%); mask: radial-gradient(circle, transparent 55%, #000 57%); animation: tourne2 0.9s linear infinite; }
+#questionM { position: fixed; inset: 0; z-index: 8; display: none; align-items: center; justify-content: center; background: rgba(4, 3, 12, 0.66); backdrop-filter: blur(6px); }
+#questionM.vu { display: flex; }
+#questionM .boite { width: min(560px, calc(100vw - 40px)); padding: 26px 28px 20px; box-sizing: border-box; animation: entree 300ms cubic-bezier(.2, .9, .3, 1); }
+#questionM h3 { margin: 0 0 10px; font-size: 22px; }
+#questionM p { margin: 0; color: var(--texte); line-height: 1.55; font-size: 15.5px; }
+#questionM .boutons { justify-content: flex-end; margin: 22px 0 0; }
+#questionM .btn:focus { box-shadow: 0 0 0 2px var(--fond), 0 0 0 4px var(--S); }
 @media (max-width: 980px) { .onglets { display: none; } }
 @media (max-width: 900px) { .deplie { grid-template-columns: 1fr; } .module { position: static; } .defile { padding: 16px 16px 70px; } .pastilles-o { margin-left: 0; } .tete { flex-wrap: wrap; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

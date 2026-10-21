@@ -32,11 +32,11 @@ function demarrer() {
   const vsUv = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
   // L'anneau : le plasma coule du cyan au violet puis au magenta le long de la partie remplie ; orange en alerte
   const fsAnneau = `uniform float t; uniform float v; uniform float force; uniform float alerte; uniform vec3 c1; uniform vec3 c2; uniform vec3 c3; uniform vec3 co; varying vec2 vUv;
-    void main() { float u = vUv.x; float dedans = step(u, v); float k = u / max(v, 0.001);
+    void main() { float u = vUv.x; float dedans = step(u, v); float k = clamp(u / max(v, 0.001), 0.0, 1.0);
       vec3 c = k < 0.5 ? mix(c1, c2, k * 2.0) : mix(c2, c3, k * 2.0 - 1.0); c = mix(c, co, alerte);
       float n = sin(u * 70.0 - t * (6.0 + v * 5.0)) * sin(vUv.y * 6.283 + t * 2.0) * 0.5 + 0.5; float n2 = sin(u * 23.0 + t * 1.3) * sin(vUv.y * 12.566 - t * 3.0) * 0.5 + 0.5;
       vec3 vif = c * (0.55 + 0.6 * n * n2) * force + vec3(1.0) * pow(n * n2, 4.0) * 0.5;
-      float bout = smoothstep(0.035, 0.0, abs(u - v)) * 1.2 * step(v, 0.999);
+      float bout = smoothstep(0.035, 0.0, abs(u - v)) * 1.2 * step(v, 0.999) * step(0.004, v);
       gl_FragColor = vec4(mix(vec3(0.10, 0.09, 0.22), vif, dedans) + c * bout, 1.0); }`;
   // Le bord d'une tuile : un rectangle arrondi de plasma qui tourne
   const fsBord = `uniform float t; uniform float force; uniform vec2 taille; uniform vec3 c1; uniform vec3 c2; uniform vec3 c3; uniform vec3 co; uniform float alerte; varying vec2 vUv;

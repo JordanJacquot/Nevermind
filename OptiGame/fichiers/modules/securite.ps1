@@ -483,6 +483,7 @@ function Update-SecurityTab {
         [void]$ui.SecHistory.Children.Add($card)
     }
     $script:SecurityScore = $score
+    $script:SecDonnees = @{ S = $S; Checks = $checks; Score = $score; Hist = $hist }   # (pour l'écran : ecran-protection.ps1)
     Set-Status "Sécurité : niveau de protection $score sur 100."
 }
 

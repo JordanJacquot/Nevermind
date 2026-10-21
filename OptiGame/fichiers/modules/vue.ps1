@@ -183,7 +183,8 @@ function Send-OrdreVue($Objet) {
     $c = $script:Vue.Controle.CoreWebView2
     if (-not $c -or -not $script:Vue.Pret) { return }
     if ($script:Vue.EnVeille) { try { $c.Resume() } catch {}; $script:Vue.EnVeille = $false }
-    try { $c.PostWebMessageAsJson(($Objet | ConvertTo-Json -Depth 12 -Compress)) } catch { Write-Log "Écran : envoi impossible ($_)" }
+    # (« $(if (...) { ... }) » sans « else » qui ne donne rien devient {} en JSON avec PowerShell 5.1 : remis à null)
+    try { $c.PostWebMessageAsJson((($Objet | ConvertTo-Json -Depth 16 -Compress) -replace '":\{\}', '":null')) } catch { Write-Log "Écran : envoi impossible ($_)" }
 }
 
 # Ce qu'il faut montrer (accueil, pages...) : voir ui\kit.js. Gardé, et renvoyé si l'écran se recharge.
@@ -207,6 +208,27 @@ function Get-ImageVue([string]$Chemin) {
     "https://fichier.local/$jeton"
 }
 function Show-MessageVue([string]$Texte, [switch]$Bravo) { Send-OrdreVue @{ kit = 'message'; texte = $Texte; bravo = [bool]$Bravo } }
+# La pastille « en cours » en bas de l'écran (texte vide : fini)
+function Set-OccupeVue([string]$Texte) { if ($script:Vue.Pret) { Send-OrdreVue @{ kit = 'occupe'; texte = $Texte } } }
+# Une question dans l'écran, dans le style de l'appli ; attend la réponse (la fenêtre reste vivante) et renvoie l'id du
+# bouton choisi ($null si l'écran n'est pas là : à l'appli de demander autrement).
+#   Read-QuestionVue 'Continuer ?' -Boutons @(@{ id = 'oui'; texte = 'Oui' }, @{ id = 'non'; texte = 'Non'; style = 'second' })
+function Read-QuestionVue([string]$Texte, [string]$Titre = '', [array]$Boutons = @(@{ id = 'oui'; texte = 'Oui' }, @{ id = 'non'; texte = 'Non'; style = 'second' })) {
+    if (-not $script:Vue.Pret -or -not $script:Vue.Controle -or $script:Vue.Controle.Visibility -ne 'Visible' -or $script:Vue.Cadre) { return $null }
+    $id = [guid]::NewGuid().ToString('N').Substring(0, 10)
+    $script:Vue.Reponse = $null
+    Send-OrdreVue @{ kit = 'question'; id = $id; titre = $Titre; texte = $Texte; boutons = @($Boutons) }
+    $cadre = New-Object System.Windows.Threading.DispatcherFrame
+    $script:Vue.Cadre = $cadre
+    # (si l'écran disparaît entre-temps, la question est abandonnée : la fenêtre ne reste jamais bloquée)
+    $garde = New-Object System.Windows.Threading.DispatcherTimer
+    $garde.Interval = [TimeSpan]::FromMilliseconds(500)
+    $garde.Add_Tick({ if (-not $script:Vue.Pret -or -not $script:Vue.Controle -or -not $Window.IsLoaded) { if ($script:Vue.Cadre) { $script:Vue.Cadre.Continue = $false } } })
+    $garde.Start()
+    try { [System.Windows.Threading.Dispatcher]::PushFrame($cadre) } finally { $garde.Stop(); $script:Vue.Cadre = $null }
+    if ($script:Vue.Reponse -and $script:Vue.Reponse.Id -eq $id) { return $script:Vue.Reponse.Valeur }
+    [string]$Boutons[-1].id
+}
 function Open-EcranVue([string]$Ecran) { Send-OrdreVue @{ kit = 'aller'; ecran = $Ecran } }
 
 # Le thème de la suite pour l'écran : un des 5 thèmes ; un thème perso garde le nom de sa base et donne ses couleurs
@@ -282,6 +304,14 @@ function Receive-MessageVue([string]$Json) {
             if ($script:Vue.Actions['pret']) { & $script:Vue.Actions['pret'] $null $null }
         }
         'erreur' { Write-Log "Écran : erreur ($([string]$m.texte))" }
+        'reponse' {   # La réponse à une question posée par Read-QuestionVue
+            $script:Vue.Reponse = @{ Id = [string]$m.id; Valeur = [string]$m.valeur }
+            if ($script:Vue.Cadre) { $script:Vue.Cadre.Continue = $false }
+        }
+        'ecran' {   # L'écran montré (accueil ou id d'une page) : $script:Vue.Ecran
+            $script:Vue.Ecran = [string]$m.id
+            if ($script:Vue.Actions['ecran']) { & $script:Vue.Actions['ecran'] $script:Vue.Ecran $null }
+        }
         'menu' {   # Retour depuis l'accueil : dans Mindset, retour à la console
             if ($script:Vue.Actions['menu']) { & $script:Vue.Actions['menu'] $null $null }
             elseif ($script:Embedded) { Request-MenuMindset }
@@ -293,6 +323,7 @@ function Receive-MessageVue([string]$Json) {
             if ($script:Vue.Actions[$id]) { & $script:Vue.Actions[$id] $m.valeur ([string]$m.ecran) }
             elseif ($script:Vue.Actions['*']) { & $script:Vue.Actions['*'] $id $m.valeur ([string]$m.ecran) }
             else { Write-Log "Écran : action sans suite ($id)" }
+            if ($script:Vue.Actions['apres']) { & $script:Vue.Actions['apres'] $id ([string]$m.ecran) }   # (l'écran à jour après le geste)
         }
     }
 }

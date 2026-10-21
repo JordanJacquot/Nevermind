@@ -28,8 +28,9 @@
 //     bloc    : { type: 'titre', texte, droite, direct }      un titre de bloc (direct : la pastille « En direct »)
 //               { type: 'texte', texte } | { type: 'note', texte }   un paragraphe | un encadré « bon à savoir »
 //               { type: 'score', valeur, sur, titre, texte }
-//               { type: 'ligne', id?, texte, note, valeur, ton, fait, icone, couleur, etiquette, quand: [haut, bas],
-//                 barre (0 à 100), bascule: { id, oui }, bouton: { id, texte, style }, case: { id, oui } }
+//               { type: 'ligne', id?, texte, note, valeur, ton, fait, icone, couleur, image, etiquette, quand: [haut, bas],
+//                 barre (0 à 100), bascule: { id, oui }, bascules: [{ id, oui, texte }], bouton: { id, texte, style },
+//                 case: { id, oui, valeur } }   image : une petite image à la place de l'icône (icône d'un programme)
 //                 ton : 'ok' | 'attention' | 'urgent' (couleur de la valeur et de l'étiquette)
 //               { type: 'bascule', id, texte, note, oui } | { type: 'case', id, texte, note, valeur, oui }
 //               { type: 'bouton', id, texte, style: 'second' | 'danger', icone }   (les boutons qui se suivent : une ligne)
@@ -58,7 +59,13 @@
 //   focus     : l'élément à choisir (« t:<id> » une tuile, « l:<id> » une ligne...), par exemple au retour
 //
 // Messages envoyés à l'appli : { type: 'pret' } au chargement, { type: 'action', id, valeur, ecran } à chaque geste,
-// { type: 'menu' } quand on fait Retour depuis l'accueil (dans Mindset : retour à la console).
+// { type: 'ecran', id } quand on change d'écran, { type: 'menu' } quand on fait Retour depuis l'accueil (dans Mindset :
+// retour à la console).
+// Ordres de l'appli en plus de l'état : { kit: 'message', texte, bravo }, { kit: 'aller', ecran }, { kit: 'pause' },
+// { kit: 'reprendre' }, { kit: 'mesures', valeurs: { id: { valeur, texte, note, ton } } } (les mesures en direct d'un bloc
+// « mesures » dont les éléments ont un id, sans redessiner la page), { kit: 'occupe', texte } (la pastille « en cours » ;
+// texte vide : fini), { kit: 'question', id, titre, texte, boutons: [{ id, texte, style }] } (une question par-dessus
+// l'écran ; la réponse revient en { type: 'reponse', id, valeur: id du bouton } ; Échap : le dernier bouton).
 (() => {
   'use strict';
   // ---------------------------------------------------------------- petits sons de console (après le premier geste)
@@ -168,6 +175,9 @@
     else if (d.kit === 'aller') kit.aller(d.ecran);
     else if (d.kit === 'pause') kit.pause();
     else if (d.kit === 'reprendre') kit.reprendre();
+    else if (d.kit === 'mesures') kit.mesures(d.valeurs);
+    else if (d.kit === 'occupe') kit.occupe(d.texte);
+    else if (d.kit === 'question') kit.question(d);
     else if (!d.kit) kit.etat(d);
   });
 
@@ -257,7 +267,7 @@
 
   // ---------------------------------------------------------------- l'accueil : la rangée de tuiles
   function accueil(focus, anime) {
-    nav.ecran = 'accueil'; enTete();
+    nav.ecran = 'accueil'; enTete(); direEcran();
     const t = E.accueil?.tuiles || [];
     let sel = nav.sel;
     if (focus && focus.startsWith('t:')) { const k = t.findIndex((x) => `t:${x.id}` === focus); if (k >= 0) sel = k; }
@@ -315,10 +325,11 @@
         return `<div class="score">${anneau(p, `<span class="centre"><b>${esc(b.valeur)}</b><small>/${esc(b.sur || 100)}</small></span>`)}<div><h3>${esc(b.titre)}</h3><p>${esc(b.texte)}</p></div></div>`;
       }
       case 'ligne': {
-        const interne = b.bascule || b.bouton || b.case;
-        const debut = `${b.case ? caseC(b.case.id, b.case.oui, b.case.valeur) : ''}${b.quand ? `<span class="quand"><b>${esc(b.quand[0])}</b>${esc(b.quand[1] || '')}</span>` : ''}${icone(b.icone, b.couleur)}`;
+        const interne = b.bascule || b.bascules?.length || b.bouton || b.case;
+        const img = urlSure(b.image) ? `<span class="ic img"><img src="${urlSure(b.image)}" alt="" onerror="this.remove()"></span>` : icone(b.icone, b.couleur);
+        const debut = `${b.case ? caseC(b.case.id, b.case.oui, b.case.valeur) : ''}${b.quand ? `<span class="quand"><b>${esc(b.quand[0])}</b>${esc(b.quand[1] || '')}</span>` : ''}${img}`;
         const milieu = `<span class="txt"><b>${esc(b.texte)}</b>${note}</span>`;
-        const fin = `${b.barre != null ? barre(b.barre, b.ton) : ''}${etiq(b.etiquette, b.ton)}${b.valeur != null && b.valeur !== '' ? `<span class="v${b.ton ? ` ${esc(b.ton)}` : ''}">${esc(b.valeur)}</span>` : ''}${b.bascule ? bascule(b.bascule.id, b.bascule.oui) : ''}${b.bouton ? btn(b.bouton, ' petit') : ''}`;
+        const fin = `${b.barre != null ? barre(b.barre, b.ton) : ''}${etiq(b.etiquette, b.ton)}${b.valeur != null && b.valeur !== '' ? `<span class="v${b.ton ? ` ${esc(b.ton)}` : ''}">${esc(b.valeur)}</span>` : ''}${b.bascule ? bascule(b.bascule.id, b.bascule.oui) : ''}${(b.bascules || []).map((x) => `<span class="bascule-l">${esc(x.texte)}${bascule(x.id, x.oui)}</span>`).join('')}${b.bouton ? btn(b.bouton, ' petit') : ''}`;
         const cls = `ligne plaque${b.fait ? ' fait' : ''}`;
         if (b.id && !interne) return `<button type="button" class="${cls} f" data-k="l:${esc(b.id)}" data-action="${esc(b.id)}">${debut}${milieu}<span class="fin">${fin}${fleche()}</span></button>`;
         return `<div class="${cls}">${debut}${milieu}<span class="fin">${fin}</span></div>`;
@@ -333,7 +344,7 @@
       case 'cartes': return `<div class="cartes-choix">${(b.options || []).map((o) => `<button type="button" class="carte-choix plaque f${o.id === b.valeur ? ' oui' : ''}" data-k="p:${esc(b.id)}:${esc(o.id)}" data-action="${esc(b.id)}" data-valeur="${esc(o.id)}" data-choix="1"><b>${esc(o.titre)}</b><span>${esc(o.texte)}</span></button>`).join('')}</div>`;
       case 'outils': return `<div class="outils">${(b.elements || []).map((x) => `<button type="button" class="outil plaque f" data-k="l:${esc(x.id)}" data-action="${esc(x.id)}"><span class="haut-o">${icone(x.icone || 'etoile', x.couleur)}${etiq(x.etiquette, x.ton)}</span><b>${esc(x.nom)}</b><span class="n">${esc(x.note)}</span></button>`).join('')}</div>`;
       case 'raccourcis': return `<div class="raccourcis">${(b.elements || []).map((x) => `<button type="button" class="raccourci plaque f" data-k="l:${esc(x.id)}" data-action="${esc(x.id)}">${icone(x.icone || 'etoile', x.couleur)}<b>${esc(x.nom)}</b>${fleche()}</button>`).join('')}</div>`;
-      case 'mesures': return `<div class="mesures">${(b.elements || []).map((x) => `<div class="mesure plaque">${anneau(x.valeur, `<span class="centre"><b class="${x.ton ? esc(x.ton) : ''}">${esc(x.texte ?? `${Math.round(+x.valeur || 0)} %`)}</b></span>`, x.ton)}<b>${esc(x.nom)}</b><span class="n">${esc(x.note)}</span></div>`).join('')}</div>`;
+      case 'mesures': return `<div class="mesures">${(b.elements || []).map((x) => `<div class="mesure plaque"${x.id ? ` data-id="${esc(x.id)}"` : ''}>${anneau(x.valeur, `<span class="centre"><b class="${x.ton ? esc(x.ton) : ''}">${esc(x.texte ?? `${Math.round(+x.valeur || 0)} %`)}</b></span>`, x.ton)}<b>${esc(x.nom)}</b><span class="n">${esc(x.note)}</span></div>`).join('')}</div>`;
       case 'pastilles': return `<div class="pastilles">${(b.elements || []).map((x) => `<span class="pastille ${esc(x.ton || 'ok')}">${ico(x.ton === 'attention' || x.ton === 'urgent' ? 'alerte' : 'ok', 2.2)}${esc(x.texte)}</span>`).join('')}</div>`;
       case 'reglages': return `<div class="reglages plaque">${(b.rangs || []).map((r) => `<div class="rang"><span class="txt"><b>${esc(r.texte)}</b>${r.note ? `<span class="n">${esc(r.note)}</span>` : ''}</span>${r.bascule ? bascule(r.bascule.id, r.bascule.oui) : ''}${r.bouton ? btn(r.bouton, ' petit') : ''}${r.lien ? `<button type="button" class="raccourci plaque f" data-k="l:${esc(r.lien.id)}" data-action="${esc(r.lien.id)}"><b>${esc(r.lien.texte)}</b>${fleche()}</button>` : ''}${r.touches ? `<span class="touches">${r.touches.map((k) => `<kbd>${esc(k)}</kbd>`).join('+')}</span>` : ''}${r.valeur ? `<span class="v">${esc(r.valeur)}</span>` : ''}</div>`).join('')}</div>`;
       case 'faq': return `<div class="faq">${(b.elements || []).map((x, i) => `<div class="question-r plaque"><button type="button" class="q f" data-k="q:${i}" data-ouvrir="1">${icone(x.icone || 'aide', x.couleur)}<b>${esc(x.question)}</b>${fleche()}</button><p>${esc(x.reponse)}</p></div>`).join('')}</div>`;
@@ -491,6 +502,9 @@
     ((focus && ecran.querySelector(`[data-k="${CSS.escape(focus)}"]`)) || ecran.querySelector('#ecran .f'))?.focus();
   }
 
+  // L'appli sait sur quel écran on est (pour y revenir après une fiche, par exemple)
+  let ecranDit = null;
+  function direEcran() { if (nav.ecran !== ecranDit) { ecranDit = nav.ecran; envoyer({ type: 'ecran', id: nav.ecran }); } }
   function dessiner(anime) {
     const k = document.activeElement?.closest?.('#ecran [data-k]')?.dataset.k;
     if (nav.ecran === 'accueil') accueil(k, anime); else page(anime, k);
@@ -504,7 +518,7 @@
     }
     const avant = nav.ecran; nav.ecran = id;
     if (E.pages[id].parent !== avant && avant !== id) nav.onglets[id] = nav.onglets[id] || [0, 0];
-    page(true, focus);
+    page(true, focus); direEcran();
   }
   function retour() {
     son.retour();
@@ -648,6 +662,40 @@
       const b = document.getElementById('bulle'); b.textContent = texte; b.classList.add('vu');
       if (bravo) son.bravo();
       clearTimeout(bulleMinuterie); bulleMinuterie = setTimeout(() => b.classList.remove('vu'), 2600);
+    },
+    // Les mesures en direct : l'anneau, le chiffre et la note changent sur place
+    mesures(valeurs) {
+      for (const [id, v] of Object.entries(valeurs || {})) {
+        const el = ecran.querySelector(`.mesure[data-id="${CSS.escape(id)}"]`); if (!el || !v) continue;
+        const a = el.querySelector('.anneau'), p = borne(+v.valeur || 0, 0, 100);
+        a.dataset.anneau = p / 100; a.style.setProperty('--p', p);
+        if (v.ton === 'attention' || v.ton === 'urgent') a.dataset.alerte = '1'; else delete a.dataset.alerte;
+        const b = a.querySelector('.centre b'); if (b) { b.textContent = v.texte ?? `${Math.round(p)} %`; b.className = v.ton || ''; }
+        if (v.note != null) { const n = el.querySelector(':scope > .n'); if (n) n.textContent = v.note; }
+      }
+    },
+    // Le travail en cours : une pastille en bas de l'écran, avec ce que fait l'appli (« Nettoyage... »)
+    occupe(texte) {
+      const o = document.getElementById('occupe'); if (!o) return;
+      if (texte) { o.querySelector('span').textContent = texte; o.classList.add('vu'); } else o.classList.remove('vu');
+    },
+    // Une question par-dessus l'écran (« Continuer ? ») : la réponse part à l'appli, l'écran reprend
+    question(q) {
+      const fond = document.getElementById('questionM'); if (!fond) return;
+      const boutons = (q.boutons?.length ? q.boutons : [{ id: 'ok', texte: 'OK' }]);
+      fond.innerHTML = `<div class="boite plasma-bord fort" role="dialog" aria-modal="true">${q.titre ? `<h3>${esc(q.titre)}</h3>` : ''}<p>${esc(q.texte).replace(/\n/g, '<br>')}</p>
+        <div class="boutons">${boutons.map((b) => `<button type="button" class="btn${b.style ? ` ${esc(b.style)}` : ''}" data-rep="${esc(b.id)}">${esc(b.texte)}</button>`).join('')}</div></div>`;
+      fond.classList.add('vu'); son.ok();
+      const repondre = (v) => { fond.classList.remove('vu'); fond.innerHTML = ''; removeEventListener('keydown', clavier, true); envoyer({ type: 'reponse', id: q.id, valeur: v }); };
+      const clavier = (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); repondre(boutons[boutons.length - 1].id); }
+        else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); const f = document.activeElement?.dataset?.rep; repondre(f || boutons[0].id); }
+        else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); const l = [...fond.querySelectorAll('[data-rep]')], i = l.indexOf(document.activeElement); l[(i + (e.key === 'ArrowRight' ? 1 : l.length - 1)) % l.length]?.focus(); }
+        else if (e.key.startsWith('Arrow') || e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); }
+      };
+      addEventListener('keydown', clavier, true);
+      fond.querySelectorAll('[data-rep]').forEach((b) => b.addEventListener('click', () => repondre(b.dataset.rep)));
+      fond.querySelector('[data-rep]')?.focus();
     },
     pause() { arreter(); window.kitPlasma?.pause?.(); },
     reprendre() { demarrer(); window.kitPlasma?.reprendre?.(); },
