@@ -8,17 +8,22 @@
 </head>
 <body>
 <div id="cadre">
-  <div id="fond3d" aria-hidden="true"></div>
   <div id="decor" aria-hidden="true"></div>
-  <header class="haut" id="haut"><div class="titre-app"><span id="logoHote"></span><span id="titreTexte"></span></div>
-    <div id="mascotte" aria-hidden="true"></div><div class="etat" id="etatHaut"></div></header>
+  <header class="haut" id="haut">
+    <button type="button" class="marque" id="marque" title="Revenir à l'accueil"><span id="logoHote"></span><span id="titreTexte"></span></button>
+    <nav class="onglets" id="onglets" aria-label="Pages"></nav>
+    <div id="mascotte" aria-hidden="true"></div>
+    <div class="ronds-haut" id="rondsHaut"></div>
+    <div class="etat" id="etatHaut"></div>
+  </header>
   <main id="ecran"></main>
   <footer class="bas"><div class="bas-g"><span id="dessinBas" aria-hidden="true"></span><span id="basG"></span></div>
     <div class="aides"><button type="button" class="aide" id="aideB"><i>B</i>Retour</button><button type="button" class="aide" id="aideA"><i>A</i>OK</button></div></footer>
 </div>
+<canvas id="plasma" aria-hidden="true"></canvas>
 <div id="bulle" role="status" aria-live="polite"></div>
 <script type="importmap">{ "imports": { "three": "./three/three.module.js" } }</script>
 <script src="kit.js"></script>
-<script type="module" src="fond3d.js"></script>
+<script type="module" src="plasma.js"></script>
 </body>
 </html>

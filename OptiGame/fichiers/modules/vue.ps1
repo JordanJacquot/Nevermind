@@ -67,6 +67,7 @@ function Initialize-Vue($Hote) {
             $c.Add_NavigationStarting({ param($s2, $e2) if (-not $e2.Uri.StartsWith("https://$HoteVue/")) { $e2.Cancel = $true; Write-Log "Écran : navigation refusée ($($e2.Uri))" } })
             $c.Add_NewWindowRequested({ param($s2, $e2) $e2.Handled = $true })
             # Une image ailleurs sur le PC, déclarée par l'appli (Get-ImageVue) : servie seulement si son jeton est connu
+            # (« Access-Control-Allow-Origin » : la 3D de l'accueil peut s'en servir, une jaquette en fond de tuile)
             $c.AddWebResourceRequestedFilter('https://fichier.local/*', [Microsoft.Web.WebView2.Core.CoreWebView2WebResourceContext]::Image)
             $c.Add_WebResourceRequested({
                 param($s2, $e2)
@@ -74,7 +75,7 @@ function Initialize-Vue($Hote) {
                 $f = $script:Vue.Images[$jeton]
                 $type = @{ '.png' = 'image/png'; '.jpg' = 'image/jpeg'; '.jpeg' = 'image/jpeg'; '.gif' = 'image/gif'; '.webp' = 'image/webp'; '.bmp' = 'image/bmp' }[[IO.Path]::GetExtension([string]$f).ToLowerInvariant()]
                 if ($f -and $type -and [IO.File]::Exists($f)) {
-                    try { $flux = New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($f)); $e2.Response = $s2.Environment.CreateWebResourceResponse($flux, 200, 'OK', "Content-Type: $type"); return } catch {}
+                    try { $flux = New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($f)); $e2.Response = $s2.Environment.CreateWebResourceResponse($flux, 200, 'OK', "Content-Type: $type`r`nAccess-Control-Allow-Origin: *"); return } catch {}
                 }
                 $e2.Response = $s2.Environment.CreateWebResourceResponse($null, 404, 'Not Found', '')
             })

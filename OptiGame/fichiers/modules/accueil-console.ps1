@@ -91,7 +91,7 @@ function Get-EcranNevermind {
         app = @{ nom = 'Nevermind'; version = $AppVersion; logo = 'logo.png'; phrase = $salut }
         accueil = @{
             tuiles = @(
-                @{ id = 'pc'; nom = 'Ton PC'; gros = $(if ($a) { [int]$a.Score } else { '...' }); petit = '/100'; sous = $resume; couleur = $(if ($fd.Important | Where-Object { $_.Status -eq 'bad' }) { 'rouge' } elseif ($todo) { 'orange' } else { 'P' }) }
+                @{ id = 'pc'; nom = 'Ton PC'; gros = $(if ($a) { [int]$a.Score } else { '...' }); petit = $(if ($a) { '/100' } else { '' }); sous = $resume; couleur = 'P'; alerte = [bool]$todo }
                 @{ id = 'perf'; nom = 'Performances'; icone = 'eclair'; sous = (Get-StatKit 1 'Pour gagner des FPS'); couleur = 'P' }
                 @{ id = 'protection'; nom = 'Protection'; gros = $(if ($null -ne $sec) { [int]$sec } else { $null }); petit = $(if ($null -ne $sec) { '/100' }); icone = 'bouclier'; sous = 'Pour rester tranquille'; couleur = 'T' }
                 $jeux
@@ -100,7 +100,6 @@ function Get-EcranNevermind {
                 @{ id = 'overlay'; nom = 'Overlay'; icone = 'jauge'; sous = 'Tes FPS en jeu'; couleur = 'vert' }
             )
             ronds = @(
-                @{ id = 'analyser'; nom = 'Analyser'; icone = 'actu'; couleur = 'P' }
                 @{ id = 'recherche'; nom = 'Rechercher'; icone = 'loupe'; couleur = 'S' }
                 @{ id = 'parametres'; nom = 'Paramètres'; icone = 'reglages'; couleur = 'doux' }
                 @{ id = 'aide'; nom = 'Aide'; icone = 'aide'; couleur = 'T' }
