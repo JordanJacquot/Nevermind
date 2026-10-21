@@ -317,6 +317,8 @@ body.avec-3d .anneau { background: none; }
 .et { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; }
 .et.nom { font-size: 12.5px; font-weight: 700; background: rgba(6,5,15,0.72); padding: 3px 9px; border-radius: 9px; }
 .et.nom.attention { color: var(--orange); }
+.et.nom.centre { font-size: 13.5px; color: var(--P); z-index: 1; transition: opacity 300ms ease; }
+.et { transition: opacity 400ms ease; }
 .reseau3d .legende { position: absolute; left: 16px; bottom: 12px; margin: 0; font-size: 13px; color: var(--doux); background: rgba(6,5,15,0.7); padding: 6px 12px; border-radius: 10px; }
 .reseau { margin-bottom: 18px; padding: 8px; }
 .reseau svg { display: block; width: 100%; height: auto; }

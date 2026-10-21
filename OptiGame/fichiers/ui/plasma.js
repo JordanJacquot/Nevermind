@@ -276,7 +276,7 @@ function demarrer() {
         const soleil = new THREE.Mesh(new THREE.SphereGeometry(0.9, 48, 32), new THREE.MeshStandardMaterial({ color: 0x0A2A3A, emissive: coul.P, emissiveIntensity: 0.9, roughness: 0.3 })); groupe.add(soleil);
         const couronne = new THREE.Mesh(new THREE.SphereGeometry(1.25, 32, 24), new THREE.MeshBasicMaterial({ color: coul.P, transparent: true, opacity: 0.12 })); groupe.add(couronne);
         this.anims.push((t) => couronne.scale.setScalar(1 + Math.sin(t * 2) * 0.04));
-        const sb = sprite('box', hexa(coul.P), 0.9); sb.position.set(0, 2.1, 0); groupe.add(sb); etiq(d.centre || 'Box', 'nom', sb, 0.75);
+        const sb = sprite('box', hexa(coul.P), 0.9); sb.position.set(0, 2.1, 0); groupe.add(sb); etiq(d.centre || 'Box', 'nom centre', sb, 0.8);
         const fam = [coul.P, coul.T, coul.S, new THREE.Color(lire('--vert', '#3DDC84'))];
         const tri = [...(d.appareils || [])].sort((a, b) => a.ping - b.ping), rayons = [2.4, 3.6, 4.8, 6], parAnneau = Math.max(4, Math.ceil(tri.length / 4));
         tri.forEach((a, i) => {
@@ -298,9 +298,16 @@ function demarrer() {
         const w = hote.clientWidth, h = hote.clientHeight;
         if (this.w !== w || this.h !== h) { this.w = w; this.h = h; r.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); }
         this.anims.forEach((f) => f(t));
-        cam.position.set(Math.sin(t * 0.05) * 11, 6.5, Math.cos(t * 0.05) * 11); cam.lookAt(0, -0.4, 0); r.render(scene, cam);
-        const v = new THREE.Vector3();
-        for (const e of this.ets) { e.obj.getWorldPosition(v); v.y += e.dy; v.project(cam); e.d.style.left = `${(v.x + 1) / 2 * w}px`; e.d.style.top = `${(1 - v.y) / 2 * h}px`; }
+        // (vue plongeante : les orbites restent bien rondes et les noms ne se chevauchent pas)
+        cam.position.set(Math.sin(t * 0.05) * 9.5, 9.5, Math.cos(t * 0.05) * 9.5); cam.lookAt(0, -0.6, 0); r.render(scene, cam);
+        const v = new THREE.Vector3(), dir = cam.position.clone().setY(0).normalize();
+        for (const e of this.ets) {
+          e.obj.getWorldPosition(v);
+          // un appareil qui passe derrière la box : son nom s'efface un peu
+          const derriere = e.d.classList.contains('centre') ? 0 : -(v.x * dir.x + v.z * dir.z);
+          e.d.style.opacity = derriere > 1.2 ? '0.45' : '1';
+          v.y += e.dy; v.project(cam); e.d.style.left = `${(v.x + 1) / 2 * w}px`; e.d.style.top = `${(1 - v.y) / 2 * h}px`;
+        }
       },
     };
     s.couleurs();
