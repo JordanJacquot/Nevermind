@@ -669,19 +669,21 @@
     }
     if (best) { best.focus({ preventScroll: true }); best.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
   }
+  // Les lettres A et B du clavier valent les boutons (A) OK et (B) Retour affichés en bas de l'écran (pas dans un champ)
+  const toucheManette = (e) => (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable || e.ctrlKey || e.altKey || e.metaKey) ? e.key : ({ a: 'Enter', A: 'Enter', b: 'Escape', B: 'Escape' }[e.key] || e.key);
   addEventListener('keydown', (e) => {
-    const dans = e.target.tagName === 'INPUT', k = { ArrowRight: 'd', ArrowLeft: 'g', ArrowDown: 'b', ArrowUp: 'h' }[e.key];
+    const dans = e.target.tagName === 'INPUT', k = { ArrowRight: 'd', ArrowLeft: 'g', ArrowDown: 'b', ArrowUp: 'h' }[e.key], touche = toucheManette(e);
     const enHaut = !!document.activeElement?.closest?.('#haut');
     // L'accueil en 3D : gauche et droite font défiler la rangée, A ouvre la tuile du milieu, haut va aux onglets
     if (nav.ecran === 'accueil' && plasma() && !enHaut && !dans) {
       if (k === 'd' || k === 'g') { e.preventDefault(); plasma().deplacer(k === 'd' ? 1 : -1); return; }
       if (k === 'h') { e.preventDefault(); document.querySelector('#onglets .f')?.focus(); return; }
-      if (e.key === 'Enter') { e.preventDefault(); ouvrirTuile(nav.sel); return; }
+      if (touche === 'Enter') { e.preventDefault(); ouvrirTuile(nav.sel); return; }
     }
     if (nav.ecran === 'accueil' && plasma() && enHaut && k === 'b') { e.preventDefault(); document.activeElement.blur(); return; }
     if (k && !(dans && (k === 'd' || k === 'g'))) { e.preventDefault(); voisin(k); return; }
-    if (e.key === 'Enter') { e.preventDefault(); valider(document.activeElement?.closest?.('.f')); return; }
-    if (e.key === 'Escape' || (e.key === 'Backspace' && !dans)) { e.preventDefault(); retour(); }
+    if (touche === 'Enter') { e.preventDefault(); valider(document.activeElement?.closest?.('.f')); return; }
+    if (touche === 'Escape' || (e.key === 'Backspace' && !dans)) { e.preventDefault(); retour(); }
   });
 
   // ---------------------------------------------------------------- horloge et logo qui « glitche » (arrêtés en pause)
@@ -760,6 +762,9 @@
       fond.classList.add('vu'); son.ok();
       const repondre = (v) => { fond.classList.remove('vu'); fond.innerHTML = ''; removeEventListener('keydown', clavier, true); envoyer({ type: 'reponse', id: q.id, valeur: v }); };
       const clavier = (e) => {
+        const t = toucheManette(e);
+        if (t === 'Escape' && e.key !== 'Escape') { e.preventDefault(); e.stopPropagation(); repondre(boutons[boutons.length - 1].id); return; }
+        if (t === 'Enter' && e.key !== 'Enter') { e.preventDefault(); e.stopPropagation(); repondre(boutons[0].id); return; }
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); repondre(boutons[boutons.length - 1].id); }
         else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); const f = document.activeElement?.dataset?.rep; repondre(f || boutons[0].id); }
         else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); const l = [...fond.querySelectorAll('[data-rep]')], i = l.indexOf(document.activeElement); l[(i + (e.key === 'ArrowRight' ? 1 : l.length - 1)) % l.length]?.focus(); }
