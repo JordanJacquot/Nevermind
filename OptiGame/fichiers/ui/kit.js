@@ -5,7 +5,8 @@
 // La 3D (tuiles, anneaux, système solaire) est dans plasma.js ; sans 3D, le kit montre les mêmes écrans à plat.
 //
 // L'état envoyé par l'appli (tout est facultatif sauf app et accueil) :
-//   app       : { nom, version, logo, phrase }       logo = image du dossier ui ; phrase = à côté du nom sur l'accueil
+//   app       : { nom, version, logo, phrase }       logo = image du dossier ui ; phrase : plus affichée dans la barre (elle
+//                                                    prenait la place des onglets)
 //   theme     : 'neon' | 'crepuscule' | 'terminal' | 'arcade' | 'rubis'      couleurs : { P, S, T, fond, ... } (thème perso)
 //   connexion : 'cable' | 'wifi' | 'aucune'          sons : true | false
 //   pack      : les images d'un thème perso (logo, fond, mascotte, bas, police, phrase), voir pack()
@@ -310,8 +311,8 @@
       if (p.logo) planche(el, p.logo, 40, !!p.police?.pixel);   // le logo du thème perso, à la place de celui de l'appli
       else if (urlSure(a.logo)) el.innerHTML = `<span class="logo" id="logo" style="--logo:url('${urlSure(a.logo)}')"><i class="b"></i><i class="c c1"></i><i class="c c2"></i></span>`;
     });
-    const phrase = surAccueil && (p.phrase || a.phrase);
-    document.getElementById('titreTexte').innerHTML = `${esc(a.nom)}${phrase ? `<span class="phrase">${esc(phrase)}</span>` : ''}`;
+    // (pas de phrase d'accueil à côté du nom : la barre garde sa place pour les onglets)
+    document.getElementById('titreTexte').innerHTML = esc(a.nom);
     const r = racine(nav.ecran), t = E.accueil?.tuiles || [], ronds = E.accueil?.ronds || [];
     const cle = JSON.stringify([t.map((x) => [x.id, x.nom, x.alerte]), ronds.map((x) => [x.id, x.nom, x.icone]), r]);
     if (haut.dataset.cle !== cle) {
