@@ -970,7 +970,7 @@ function Set-GameOptimization([string]$Name, [string]$Id, [bool]$On) {
 function Invoke-GameOptimize($Game) {
     $items = @(Get-GameOptimizations $Game | Where-Object { -not $_.Ok -and ($_.Switch -or $_.Fix) -and -not $_.Optional })
     if (-not $items.Count) { Set-Status "$($Game.Name) est déjà optimisé."; return }
-    if (-not (Confirm-Action "Optimiser $($Game.Name) ?`n`n$(($items | ForEach-Object { "•  $($_.Title)" }) -join "`n")`n`nTout est annulable depuis la page Sauvegarde.")) { return }
+    if (-not (Confirm-Action "Optimiser $($Game.Name) ?`n`n$(($items | ForEach-Object { "•  $($_.Title)" }) -join "`n")`n`nTout est annulable depuis la page Sauvegarde, où « Détails techniques » montre chaque réglage changé (avant et après).")) { return }
     $done = @()
     foreach ($it in $items) {
         switch ($it.Id) {

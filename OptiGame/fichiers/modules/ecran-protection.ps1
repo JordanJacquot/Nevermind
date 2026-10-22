@@ -129,6 +129,8 @@ function Get-PagesProtection {
         elseif (Test-HistoriqueDefinitif $h) { $l.etiquette = 'Définitif'; $l.note = (@(@($h.Details) -join ', ') + "Pour revenir en arrière : $(Get-RetourDefinitif $h)" | Where-Object { $_ }) -join '. ' }
         else { $l.bouton = @{ id = "hist:$($h.Id)"; texte = 'Annuler'; style = 'second' } }
         $l
+        $tech = @(Get-DetailsTechniques $h)
+        if ($tech.Count) { @{ type = 'faq'; elements = @(@{ question = 'Détails techniques'; reponse = ($tech -join ' ; '); icone = 'liste' }) } }
     })
     $pages.sauvegarde = @{ titre = 'Sauvegarde et rapport'; parent = 'protection'; sous = 'Reviens en arrière à tout moment, ou partage l''état de ton PC.'; icone = 'sauve'; couleur = 'S'
         module = @{ icone = 'sauve'; couleur = 'S'; titre = $(if ($nb) { "$nb réglage$(if ($nb -gt 1) { 's' }) modifié$(if ($nb -gt 1) { 's' })" } else { 'Rien de modifié' }); texte = $(if ($nb) { 'Tout ce que Nevermind a changé est sauvegardé avant d''être fait. Un clic remet tout comme avant.' } else { 'Nevermind n''a encore rien modifié sur ce PC.' }); boutons = @(if ($nb) { @{ id = 'clic:BtnUndo'; texte = 'Tout annuler' } }) }

@@ -63,6 +63,32 @@ function Test-HistoriqueDefinitif($H) { $l = @($H.Log); $l.Count -and -not @($l 
 # La façon de revenir en arrière d'une entrée (changements définitifs)
 function Get-RetourDefinitif($H) { (@($H.Log) | Where-Object { $_.Type -eq 'definitif' -and $_.Retour } | ForEach-Object { [string]$_.Retour } | Select-Object -Unique) -join ' ' }
 
+# Les détails techniques d'une entrée de l'historique : ce qui a été changé exactement, avant et après (issue #7)
+function Format-ValeurTech($V) {
+    if ($null -eq $V) { return 'vide' }
+    if ($V -is [array]) { $t = (@($V) | Select-Object -First 16) -join ','; if (@($V).Count -gt 16) { $t += '...' }; return $t }
+    $t = [string]$V; if ($t.Length -gt 120) { $t = $t.Substring(0, 117) + '...' }; $t
+}
+function Get-DetailsTechniques($H) {
+    @(foreach ($e in @($H.Log)) {
+        switch ([string]$e.Type) {
+            'reg' {
+                $avant = if ($e.Existed) { Format-ValeurTech $e.Value } else { 'absente' }
+                $apres = if ($e.Efface) { 'effacée' } elseif ($e.PSObject.Properties['Nouveau'] -or ($e -is [hashtable] -and $e.ContainsKey('Nouveau'))) { Format-ValeurTech $e.Nouveau } else { 'modifiée' }
+                "Registre $($e.Path) : valeur « $($e.Name) », avant $avant, après $apres"
+            }
+            'svc'     { "Service $($e.Name) : démarrage avant $($e.StartType)$(if ($e.Running) { ', il tournait' })" }
+            'power'   { "Plan d'alimentation changé (avant : $($e.Guid))" }
+            'pcfg'    { "Réglage d'alimentation $($e.Guid) : avant secteur $($e.Ac), batterie $($e.Dc)" }
+            'display' { "Écran $($e.Device) : fréquence avant $($e.Hz) Hz" }
+            'overlay' { "Mode de superposition de l'affichage changé (avant : $($e.Guid))" }
+            'dns'     { "DNS de la carte réseau : avant $(if (@($e.Servers).Count) { @($e.Servers) -join ', ' } else { 'automatique (box)' })" }
+            'fw'      { "Pare-feu : règle « $($e.Name) »" }
+            'definitif' { "$($e.Quoi) (définitif)" }
+        }
+    })
+}
+
 function Add-History([string]$Titre, [string[]]$Details, $Log) {
     if (-not $Log -or -not @($Log).Count) { return $null }
     if ($null -eq $script:History) { Import-History }
@@ -110,7 +136,7 @@ function Update-HistoryList {
         $row.Margin = New-Thickness 0 0 0 8
         $sp = New-Object System.Windows.Controls.StackPanel
         $t = New-Text $h.Titre 13.5 $(if ($h.Annule) { '#655E7E' } else { '#FFFFFF' }) -Semi
-        $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'; $t.ToolTip = (@($h.Titre) + @($h.Details)) -join "`n"
+        $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'; $t.ToolTip = (@($h.Titre) + @($h.Details) + @(Get-DetailsTechniques $h)) -join "`n"
         [void]$sp.Children.Add($t)
         [void]$sp.Children.Add((New-Text $h.Date 12 '#A6A1BC'))
         Add-ToGrid $row $sp 0

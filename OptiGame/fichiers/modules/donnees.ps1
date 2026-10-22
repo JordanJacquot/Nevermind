@@ -180,7 +180,7 @@ function Clear-Reg([string]$Path, [string]$Name) {
     $st = Get-RegState $Path $Name
     if (-not $st.Existed) { return }
     Save-Original $Path $Name
-    if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'reg'; Path = $Path; Name = $Name; Existed = $true; Value = $st.Value; Kind = $st.Kind }) }
+    if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'reg'; Path = $Path; Name = $Name; Existed = $true; Value = $st.Value; Kind = $st.Kind; Efface = $true }) }
     Remove-RegValue $Path $Name
 }
 
@@ -188,7 +188,7 @@ function Set-Reg([string]$Path, [string]$Name, $Value, [string]$Kind = 'DWord') 
     Save-Original $Path $Name
     if ($null -ne $script:RunLog) {
         $st = Get-RegState $Path $Name
-        [void]$script:RunLog.Add(@{ Type = 'reg'; Path = $Path; Name = $Name; Existed = $st.Existed; Value = $st.Value; Kind = $st.Kind })
+        [void]$script:RunLog.Add(@{ Type = 'reg'; Path = $Path; Name = $Name; Existed = $st.Existed; Value = $st.Value; Kind = $st.Kind; Nouveau = $(if ($Value -is [byte[]]) { [int[]]$Value } else { $Value }); NouveauType = $Kind })
     }
     Write-RegValue $Path $Name $Value $Kind
 }
