@@ -232,7 +232,10 @@ function Show-Message([string]$Text, [string]$Icon = 'Information') {
 }
 function Confirm-Action([string]$Text) {
     if (Test-EcranKitMontre) { $r = Read-QuestionVue $Text '' @(@{ id = 'oui'; texte = 'Oui' }, @{ id = 'non'; texte = 'Non'; style = 'second' }); if ($null -ne $r) { return $r -eq 'oui' } }
-    ([System.Windows.MessageBox]::Show($Window, $Text, 'Nevermind', 'YesNo', 'Question')) -eq 'Yes'
+    Write-Log 'Question : dans une fenêtre de Windows'
+    $oui = ([System.Windows.MessageBox]::Show($Window, $Text, 'Nevermind', 'YesNo', 'Question')) -eq 'Yes'
+    Write-Log "Question : réponse $(if ($oui) { 'oui' } else { 'non' }) (fenêtre de Windows)"
+    $oui
 }
 # Occupé : la pastille « en cours » montre ce que fait Nevermind ; un message qui arrive juste après un geste s'affiche
 $script:KitSetBusy = ${function:Set-Busy}

@@ -225,7 +225,11 @@ function Set-OccupeVue([string]$Texte) { if ($script:Vue.Pret) { Send-OrdreVue @
 # bouton choisi ($null si l'écran n'est pas là : à l'appli de demander autrement).
 #   Read-QuestionVue 'Continuer ?' -Boutons @(@{ id = 'oui'; texte = 'Oui' }, @{ id = 'non'; texte = 'Non'; style = 'second' })
 function Read-QuestionVue([string]$Texte, [string]$Titre = '', [array]$Boutons = @(@{ id = 'oui'; texte = 'Oui' }, @{ id = 'non'; texte = 'Non'; style = 'second' })) {
-    if (-not $script:Vue.Pret -or -not $script:Vue.Controle -or $script:Vue.Controle.Visibility -ne 'Visible' -or $script:Vue.Cadre) { return $null }
+    if (-not $script:Vue.Pret -or -not $script:Vue.Controle -or $script:Vue.Controle.Visibility -ne 'Visible' -or $script:Vue.Cadre) {
+        Write-Log "Question : pas posée à l'écran ($(if ($script:Vue.Cadre) { 'une autre question attend déjà' } elseif (-not $script:Vue.Pret) { 'écran pas prêt' } else { 'écran caché' }))"
+        return $null
+    }
+    Write-Log 'Question : posée à l''écran'
     $id = [guid]::NewGuid().ToString('N').Substring(0, 10)
     $script:Vue.Reponse = $null
     Send-OrdreVue @{ kit = 'question'; id = $id; titre = $Titre; texte = $Texte; boutons = @($Boutons) }
@@ -237,7 +241,8 @@ function Read-QuestionVue([string]$Texte, [string]$Titre = '', [array]$Boutons =
     $garde.Add_Tick({ if (-not $script:Vue.Pret -or -not $script:Vue.Controle -or -not $Window.IsLoaded) { if ($script:Vue.Cadre) { $script:Vue.Cadre.Continue = $false } } })
     $garde.Start()
     try { [System.Windows.Threading.Dispatcher]::PushFrame($cadre) } finally { $garde.Stop(); $script:Vue.Cadre = $null }
-    if ($script:Vue.Reponse -and $script:Vue.Reponse.Id -eq $id) { return $script:Vue.Reponse.Valeur }
+    if ($script:Vue.Reponse -and $script:Vue.Reponse.Id -eq $id) { Write-Log "Question : réponse « $($script:Vue.Reponse.Valeur) »"; return $script:Vue.Reponse.Valeur }
+    Write-Log 'Question : abandonnée (l''écran a disparu)'
     [string]$Boutons[-1].id
 }
 function Open-EcranVue([string]$Ecran) { Send-OrdreVue @{ kit = 'aller'; ecran = $Ecran } }
@@ -342,10 +347,17 @@ function Receive-MessageVue([string]$Json) {
         'action' {
             $id = [string]$m.id
             if ($id -notmatch '^[\w:.-]{1,60}$') { Write-Log "Écran : action refusée ($id)"; return }
-            Start-InstantaneVue   # (si ce geste quitte l'écran, son image servira au retour)
-            if ($script:Vue.Actions[$id]) { & $script:Vue.Actions[$id] $m.valeur ([string]$m.ecran) }
-            elseif ($script:Vue.Actions['*']) { & $script:Vue.Actions['*'] $id $m.valeur ([string]$m.ecran) }
-            else { Write-Log "Écran : action sans suite ($id)" }
+            # Journal des gestes : chaque bouton appuyé (son nom seulement, jamais ce qui est tapé), le temps pris, l'erreur s'il y en a une
+            $note = $id -notmatch '^(recherche|jeux-cherche|jeux-filtre|pret)$'
+            $chrono = [Diagnostics.Stopwatch]::StartNew()
+            if ($note) { Write-Log "Geste : $id (écran $([string]$m.ecran))" }
+            try {
+                Start-InstantaneVue   # (si ce geste quitte l'écran, son image servira au retour)
+                if ($script:Vue.Actions[$id]) { & $script:Vue.Actions[$id] $m.valeur ([string]$m.ecran) }
+                elseif ($script:Vue.Actions['*']) { & $script:Vue.Actions['*'] $id $m.valeur ([string]$m.ecran) }
+                else { Write-Log "Écran : action sans suite ($id)" }
+            } catch { Write-Log "Geste : $id en erreur ($($_.Exception.Message) $($_.InvocationInfo.PositionMessage))" }
+            if ($note) { Write-Log "Geste : $id traité en $($chrono.ElapsedMilliseconds) ms" }
             if ($script:Vue.Actions['apres']) { & $script:Vue.Actions['apres'] $id ([string]$m.ecran) }   # (l'écran à jour après le geste)
         }
     }
