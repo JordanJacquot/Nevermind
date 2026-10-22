@@ -6,7 +6,8 @@
 #
 # Économie : cachée (réduite, autre page de Mindset), la vue est masquée et la page s'arrête (plus de 3D, plus de
 # minuteries) ; au bout d'une minute cachée, WebView2 est mise en veille (TrySuspendAsync), et se réveille au retour.
-# Sans WebView2 (très rare : Windows 11 l'a toujours), un message explique quoi faire au lieu d'un écran vide.
+# Sans WebView2 (très rare : Windows 11 l'a toujours), ou si elle ne démarre pas, l'appli en est prévenue (action
+# « impossible », Register-ActionVue) pour expliquer quoi faire ; sans cette action, un message remplace l'écran vide.
 # Chargé par OptiGame.ps1 avant accueil-console.ps1, qui crée l'écran (Initialize-AccueilConsole).
 
 $EnTest      = [bool]$env:OPTIGAME_TEST
@@ -38,7 +39,7 @@ function Test-VuePossible {
 function Initialize-Vue($Hote) {
     $raison = if ($script:VueVerifiee) { $null } else { Test-VuePossible }
     if ($raison) {
-        Write-Log "Écran impossible : $raison"
+        if (Stop-VueImpossible $raison) { return }
         $t = New-Text "$AppNom ne peut pas s'afficher sur ce PC.`n`nIl lui manque un composant de Windows (WebView2). Ouvre Mindset et réinstalle $AppNom, ou fais les mises à jour de Windows." 16
         $t.TextWrapping = 'Wrap'; $t.TextAlignment = 'Center'; $t.Margin = '60'; $t.VerticalAlignment = 'Center'
         $Hote.Children.Add($t) | Out-Null
@@ -51,7 +52,7 @@ function Initialize-Vue($Hote) {
     $vue.CreationProperties = $cp
     $vue.Add_CoreWebView2InitializationCompleted({
         param($s, $e)
-        if (-not $e.IsSuccess) { Write-Log "Écran : initialisation refusée ($($e.InitializationException.Message))"; return }
+        if (-not $e.IsSuccess) { [void](Stop-VueImpossible "initialisation refusée ($($e.InitializationException.Message))"); return }
         try {
             $c = $s.CoreWebView2
             $r = $c.Settings
@@ -82,7 +83,7 @@ function Initialize-Vue($Hote) {
             $c.Add_WebMessageReceived({ param($s2, $e2) try { Receive-MessageVue $e2.WebMessageAsJson } catch { Write-Log "Écran : message ignoré ($_)" } })
             $c.Add_ProcessFailed({ param($s2, $e2) Write-Log "Écran : processus arrêté ($($e2.ProcessFailedKind)), rechargement"; $script:Vue.Pret = $false; try { $s2.Reload() } catch {} })
             $c.Navigate("https://$HoteVue/index.html")
-        } catch { Write-Log "Écran : réglage impossible ($($_.Exception.Message))" }
+        } catch { [void](Stop-VueImpossible "réglage impossible ($($_.Exception.Message))") }
     })
     # Recréée après une fermeture (Close-Vue) : l'image de l'écran prise avant reste affichée jusqu'à ce que la page
     # soit prête (pas d'écran vide pendant les 2 secondes de démarrage)
@@ -100,7 +101,7 @@ function Initialize-Vue($Hote) {
     $vue.Add_IsVisibleChanged({ param($s, $e) if ($e.NewValue) { try { [void]$s.Focus() } catch {} } })
     # (WebView2 ne démarre qu'une fois la boucle d'affichage lancée)
     [void]$Window.Dispatcher.BeginInvoke([action]{
-        try { [void]$script:Vue.Controle.EnsureCoreWebView2Async() } catch { Write-Log "Écran : démarrage impossible ($($_.Exception.Message))" }
+        try { [void]$script:Vue.Controle.EnsureCoreWebView2Async() } catch { [void](Stop-VueImpossible "démarrage impossible ($($_.Exception.Message))") }
     }, [System.Windows.Threading.DispatcherPriority]::Background)
 
     # Regardée ou non (vérifié toutes les 0,4 s : ça ne coûte rien) : cachée, la vue est masquée (la page le sait et
@@ -111,6 +112,16 @@ function Initialize-Vue($Hote) {
         $script:VueVeille.Add_Tick({ try { if ($script:Vue.Controle) { Update-VeilleVue } } catch {} })
     }
     $script:VueVeille.Start()
+}
+
+# L'écran ne peut pas s'afficher : noté au journal, et l'appli prévenue ($true) si elle a son action « impossible »
+#   Register-ActionVue 'impossible' { param($Raison) ... }
+function Stop-VueImpossible([string]$Raison) {
+    Write-Log "Écran impossible : $Raison"
+    $a = $script:Vue.Actions['impossible']
+    if (-not $a) { return $false }
+    try { & $a $Raison $null } catch { Write-Log "Écran : $_" }
+    $true
 }
 
 # Fermer l'écran tout à fait (WebView2 libérée) : une WebView2 présente dans la fenêtre fige les grosses animations

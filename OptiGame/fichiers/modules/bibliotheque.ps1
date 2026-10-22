@@ -30,7 +30,7 @@ function Add-PlayTime([string]$Game, [datetime]$Start) {
     $log[$Game] = $e
     try { [IO.File]::WriteAllText($PlayFile, (ConvertTo-Json -InputObject $log -Depth 4 -Compress), (New-Object Text.UTF8Encoding($false))) } catch { Write-Log "Temps de jeu: $_" }
     Update-LibraryIfShown
-    if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubStats) { Update-Hub }
+    if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubPret) { Update-Hub }
 }
 
 # La bibliothèque cachée n'est pas reconstruite (0,2 à 0,7 s) : elle se rafraîchit quand on ouvre la page Jeux

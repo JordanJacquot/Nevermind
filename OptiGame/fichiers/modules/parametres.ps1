@@ -174,7 +174,6 @@ function Initialize-Settings {
 
 function Show-Settings([string]$Tab = 'general') {
     if (-not $script:SettingsTabButtons) { Initialize-Settings }
-    Close-Search -Clear
     Build-SettingsPanels
     Set-SettingsTab $Tab
     $o = $ui.SettingsOverlay
@@ -184,39 +183,11 @@ function Show-Settings([string]$Tab = 'general') {
     $ui.SettingsZoom.ScaleX = 0.96; $ui.SettingsZoom.ScaleY = 0.96
     Start-WpfAnim $ui.SettingsZoom ([System.Windows.Media.ScaleTransform]::ScaleXProperty) 1 220
     Start-WpfAnim $ui.SettingsZoom ([System.Windows.Media.ScaleTransform]::ScaleYProperty) 1 220
-    # La roue fait un tour
-    if ($script:SettingsGear) { Start-FromTo $script:SettingsGear.RenderTransform ([System.Windows.Media.RotateTransform]::AngleProperty) 0 180 450 }
 }
 
 function Hide-Settings {
     if ($ui.SettingsOverlay.Visibility -ne 'Visible') { return }
     $ui.SettingsOverlay.Visibility = 'Collapsed'
-}
-
-# Fenêtre étroite (jusqu'à 920 px) : les 5 onglets restent visibles. On cache d'abord le mot « Nevermind »
-# à côté du logo, puis la recherche raccourcit (jamais sous 150 px). À taille normale, rien ne change.
-function Update-TopBarFit {
-    $tabs = $script:TopBar.Tabs; $word = $script:TopBar.Word; $box = $script:TopBar.Search
-    if (-not $tabs -or -not $box) { return }
-    $tabs.Measure([System.Windows.Size]::new([double]::PositiveInfinity, [double]::PositiveInfinity))
-    $tw = $tabs.DesiredSize.Width
-    $inner = $Window.ActualWidth - 86   # marges de la barre et petit espace de sécurité
-    $fixed = 38 + 18 + 58                       # logo, marge, roue crantée
-    $wordW = 122
-    $showWord = $inner -ge ($fixed + $wordW + $tw + 220)
-    if ($word) { $word.Visibility = if ($showWord) { 'Visible' } else { 'Collapsed' } }
-    $left = $fixed + $(if ($showWord) { $wordW } else { 0 })
-    $box.Width = [math]::Max(150.0, [math]::Min(250.0, $inner - $left - $tw))
-    if ($script:TopBar.Key) { $script:TopBar.Key.Visibility = if ($box.Width -ge 215) { 'Visible' } else { 'Collapsed' } }
-}
-
-function Initialize-TopBarFit {
-    $script:TopBar = @{
-        Tabs = $ui.Tabs.Template.FindName('TopTabsHost', $ui.Tabs); Word = $ui.Tabs.Template.FindName('LogoWordHost', $ui.Tabs)
-        Search = $ui.Tabs.Template.FindName('SearchBox', $ui.Tabs); Key = $ui.Tabs.Template.FindName('SearchKey', $ui.Tabs)
-    }
-    $Window.Add_SizeChanged({ try { Update-TopBarFit } catch {} })
-    Update-TopBarFit
 }
 
 # ---------------------------------------------------------------------------

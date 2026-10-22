@@ -162,17 +162,8 @@ function New-HealthCard($C) {
     $card
 }
 
-# Répartit les cartes sur deux colonnes en équilibrant leur hauteur.
+# Le résumé de la santé des composants (« 5 en bon état, 1 à surveiller »), lu par l'écran (page Ton PC, ecran-pc.ps1)
 function Show-HealthCards($Cards) {
-    $ui.HealthLeft.Children.Clear()
-    $ui.HealthRight.Children.Clear()
-    $hl = 0; $hr = 0
-    foreach ($c in $Cards) {
-        Step-UI
-        $h = 4 + 2 * $c.Bars.Count + $c.Lines.Count + 2 * $c.Notes.Count + $(if ($c.Action) { 2 } else { 0 })
-        if ($hl -le $hr) { [void]$ui.HealthLeft.Children.Add((New-HealthCard $c)); $hl += $h }
-        else { [void]$ui.HealthRight.Children.Add((New-HealthCard $c)); $hr += $h }
-    }
     $n = @{ ok = 0; warn = 0; bad = 0 }
     foreach ($c in $Cards) { if ($n.ContainsKey($c.Status)) { $n[$c.Status]++ } else { $n.ok++ } }
     $parts = @("$($n.ok) en bon état")
@@ -733,9 +724,8 @@ function Invoke-Analysis {
     $nbWarn = @($active | Where-Object { $_.Status -eq 'warn' }).Count
 
     Show-HealthCards $cards
-    Show-Improvements $active
     Show-Findings $sorted $active
-    $s = Show-Score $score $nbBad $nbWarn $m.Potential
+    $s = Get-ScoreLook $score
     $script:LastAnalysis = @{ Info = $info; Cards = $cards; Findings = $active; Active = $active; Score = $score; Potential = $m.Potential; Label = $s.Label; Color = $s.Color; Date = Get-Date }
     Set-Status "Analyse terminée: score de $score sur 100."
 }

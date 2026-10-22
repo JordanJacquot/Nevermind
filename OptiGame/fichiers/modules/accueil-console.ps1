@@ -6,10 +6,12 @@
 # gestes appellent les mêmes fonctions, ou appuient sur les mêmes boutons (« clic:BtnPing » : le bouton BtnPing de
 # l'interface d'avant, qui reste chargée sans être montrée). La fiche (un point à régler...) est lue et montrée dans
 # l'écran (ecran-pc.ps1). Les questions et les messages s'affichent dans l'écran, dans le même style.
-# Sans WebView2 (très rare), Nevermind garde son interface d'avant.
+# L'interface d'avant n'est jamais montrée : sans écran (WebView2 absente ou qui ne démarre pas, très rare), un message
+# explique quoi faire et propose le fichier « Signaler un problème », puis Nevermind se ferme (Show-EcranImpossible).
 #
-# L'écran est par-dessus toute la fenêtre (une WebView2 se dessine toujours au-dessus) : une page pas encore passée au
-# kit, ou un panneau de l'interface d'avant (Paramètres, carte du réseau, tests), le cache le temps qu'il est ouvert.
+# L'écran est par-dessus toute la fenêtre (une WebView2 se dessine toujours au-dessus), sur un fond plein. Seul ce qui
+# n'est pas encore passé au kit le cache le temps qu'il est ouvert : l'écran de chargement du démarrage, l'Organizer
+# (page Jeux d'avant) et la carte du réseau.
 # Chargé par OptiGame.ps1 après vue.ps1 ; Initialize-AccueilConsole est appelé par evenements.ps1.
 
 $script:Kit = @{ Actif = $false; Fiches = @(); Constats = @(); Resultats = @(); Recherche = ''; Stats = @{}; Envoye = ''; Geste = [datetime]::MinValue
@@ -132,7 +134,7 @@ $KitPagesIndex = @{ 0 = 'tableau'; 1 = 'optimisation'; 2 = 'demarrage'; 3 = 'con
     $GamesIndex = 'jeux'; $NetIndex = 'reseau'; $TrafficIndex = 'trafic'; $OverlayIndex = 'overlay' }
 $script:KitShowPage = ${function:Show-Page}
 function Show-Page([int]$Index) {
-    $id = if ($script:Kit.Actif) { $KitPagesIndex[$Index] } else { $null }
+    $id = $KitPagesIndex[$Index]
     if ($id -and $script:Kit.PagesKit -contains $id) {
         $script:Kit.RetourEcran = $id   # (si l'écran est en train de revenir : il ira sur la page dès qu'il est prêt)
         & $script:KitShowPage $HubIndex
@@ -141,17 +143,14 @@ function Show-Page([int]$Index) {
     }
     & $script:KitShowPage $Index
 }
-# Les Paramètres d'avant (menu de l'icône près de l'horloge...) : la page du kit
+# Les Paramètres (menu de l'icône près de l'horloge, recherche...) : toujours la page du kit. Le panneau d'avant
+# ($script:KitShowSettings) reste chargé, caché : la page de la console clique sur ses réglages.
 $script:KitShowSettings = ${function:Show-Settings}
 function Show-Settings([string]$Tab = 'general') {
-    if ($script:Kit.Actif) {
-        $id = if ($Tab -eq 'aide') { 'aide' } else { 'parametres' }
-        $script:Kit.RetourEcran = $id
-        & $script:KitShowPage $HubIndex
-        if ($script:Vue.Pret) { Open-EcranVue $id }
-        return
-    }
-    & $script:KitShowSettings $Tab
+    $id = if ($Tab -eq 'aide') { 'aide' } else { 'parametres' }
+    $script:Kit.RetourEcran = $id   # (écran pas encore prêt : il ira sur la page dès qu'il l'est)
+    & $script:KitShowPage $HubIndex
+    if ($script:Vue.Pret) { Open-EcranVue $id }
 }
 $script:KitFindingAction = ${function:Invoke-FindingAction}
 function Invoke-FindingAction([string]$Target) {
@@ -181,6 +180,8 @@ function Register-ActionsNevermind {
         if ($script:Vue.Etat) { $script:Vue.Etat.Remove('focus'); $script:Vue.Etat.Remove('ecran') }
     }
     Register-ActionVue 'menu' { param($Valeur, $Ecran) if ($script:Embedded) { Request-MenuMindset } }
+    # L'écran n'a pas pu démarrer (vue.ps1) : message, puis fermeture
+    Register-ActionVue 'impossible' { param($Raison, $Rien) Show-EcranImpossible $Raison }
     # (comme la croix de la fenêtre : sa règle habituelle s'applique, Quitter ou Réduire)
     Register-ActionVue 'fermer' { param($Valeur, $Ecran) Invoke-Safe { $Window.Close() } }
     # Les pages lourdes (profils par jeu...) ne sont préparées qu'à l'écran : en y arrivant, l'écran est refait
@@ -224,6 +225,8 @@ function Request-MenuMindset {
 # ---------------------------------------------------------------------------
 function Test-EcranKitMontre { $script:Kit.Actif -and $script:Vue.Pret -and $ui.EcranKit.Visibility -eq 'Visible' }
 function Show-Message([string]$Text, [string]$Icon = 'Information') {
+    # (écran impossible : la fenêtre est cachée, le message s'affiche seul au milieu de l'écran)
+    if ($script:EcranImpossible) { [System.Windows.MessageBox]::Show($Text, 'Nevermind', 'OK', $Icon) | Out-Null; return }
     if (Test-EcranKitMontre) { $r = Read-QuestionVue $Text '' @(@{ id = 'ok'; texte = 'OK' }); if ($null -ne $r) { return } }
     [System.Windows.MessageBox]::Show($Window, $Text, 'Nevermind', 'OK', $Icon) | Out-Null
 }
@@ -251,20 +254,17 @@ function Set-Status([string]$Text) {
 # ---------------------------------------------------------------------------
 # Quand montrer l'écran
 # ---------------------------------------------------------------------------
-# Les panneaux de l'interface d'avant encore utilisés (la fiche et le panneau de détail, eux, sont montrés dans l'écran)
+# Ce qui cache encore l'écran : le chargement du démarrage et la carte du réseau (les Paramètres d'avant ne sont plus
+# ouverts que par les tests du moteur ; la fiche et le panneau de détail, eux, sont montrés dans l'écran)
 function Test-PanneauOuvert {
     foreach ($n in 'SettingsOverlay', 'NetMapOverlay', 'StartupOverlay') { if ($ui[$n] -and $ui[$n].Visibility -eq 'Visible') { return $true } }
     $false
 }
-# Sur l'accueil (page d'avant n° HubIndex), rien par-dessus : l'écran est montré. Un panneau d'avant le cache seulement.
-# Une autre page d'avant, la carte du réseau ou le panneau des tests : l'écran est fermé tout à fait (une WebView2
-# présente fige les grosses animations de l'interface d'avant, voir Close-Vue), et recréé au retour.
+# Sur l'accueil (page d'avant n° HubIndex), rien par-dessus : l'écran est montré. Le chargement du démarrage le cache
+# seulement. L'Organizer (page Jeux d'avant) ou la carte du réseau : l'écran est fermé tout à fait (une WebView2
+# présente fige les grosses animations WPF, voir Close-Vue), et recréé au retour.
 function Update-EcranKitVisible {
-    if (-not $script:Kit.Actif) {
-        # (console mise de côté : le dessin de la barre du bas repart)
-        if ($script:Footer -and $script:Footer.EnPause) { Set-FooterPause $false }
-        return
-    }
+    if (-not $script:Kit.Actif) { return }
     $surAccueil = $ui.Tabs.SelectedIndex -eq $HubIndex
     $voir = $surAccueil -and -not (Test-PanneauOuvert)
     $fermer = ($ui.StartupOverlay.Visibility -ne 'Visible') -and (-not $surAccueil -or $ui.NetMapOverlay.Visibility -eq 'Visible')   # (pas pendant le chargement)
@@ -273,15 +273,12 @@ function Update-EcranKitVisible {
     if ($ui.EcranKit.Visibility -ne $v) {
         $ui.EcranKit.Visibility = $v
         if ($voir) { Update-EcranNevermind }
-        try { Update-BackdropBlur } catch {}
     }
-    # La barre du bas est cachée derrière l'écran : son dessin animé s'arrête tant qu'il est montré
-    if ($script:Footer -and [bool]$script:Footer.EnPause -ne $voir) { Set-FooterPause $voir }
     if ($fermer -and $script:Vue.Controle) { [void](Close-Vue) }
     if ($voir) { Update-FicheKit; Update-PanneauKit }
 }
 
-# Les pages d'avant : plus d'onglets en haut, mais « ← Accueil » et le nom de la page
+# La page d'avant encore montrée (l'Organizer) : son nom en haut, et « B Retour » en bas (Initialize-HabillageConsole)
 $KitNomsPages = @{ $GamesIndex = 'Jeux'; $NetIndex = 'Réseau'; $TrafficIndex = 'Trafic'; $OverlayIndex = 'Overlay' }
 function Update-NavBarKit {
     if (-not $script:Kit.Actif -or -not $script:NavBar) { return }
@@ -378,11 +375,44 @@ function Initialize-HabillageConsole {
     $script:Kit.BoutonRetour = $b
 }
 
+# ---------------------------------------------------------------------------
+# Sans écran : un message, puis Nevermind se ferme (l'interface d'avant n'est jamais montrée)
+# ---------------------------------------------------------------------------
+# WebView2 absente ou qui ne démarre pas (très rare) : la raison au journal, la fenêtre cachée, un message simple qui dit
+# quoi faire et propose le fichier « Signaler un problème » (sur le bureau), puis une fermeture propre (sans la question
+# Quitter ou Réduire). Une seule fois, même si plusieurs échecs arrivent ensemble.
+function Show-EcranImpossible([string]$Raison) {
+    if ($script:EcranImpossible) { return }
+    $script:EcranImpossible = $true
+    $script:Kit.Actif = $false   # (plus de nouvel essai de l'écran pendant que le message est affiché)
+    Write-Log "Écran impossible ($Raison) : message affiché, Nevermind se ferme"
+    try { $Window.Hide() } catch {}
+    $texte = "Nevermind n'a pas pu afficher son écran.`n`nRedémarre le PC. Si ça continue, réinstalle Nevermind depuis Mindset.`n`nVeux-tu créer un fichier pour signaler le problème ? Il sera mis sur ton bureau : tu pourras l'envoyer à la personne qui t'a donné Nevermind."
+    $signaler = $false
+    try { $signaler = Confirm-EcranImpossible $texte } catch { Write-Log "Écran impossible, message : $_" }
+    if ($signaler) {
+        Write-Log 'Écran impossible : fichier « Signaler un problème » demandé'
+        try { Export-ProblemReport '' "Nevermind n'a pas pu afficher son écran ($Raison)" } catch { Write-Log "Écran impossible, fichier : $($_.Exception.Message)" }
+    }
+    Close-EcranImpossible
+}
+# La question (Oui : le fichier), seule au milieu de l'écran (la fenêtre est cachée)
+function Confirm-EcranImpossible([string]$Texte) {
+    ([System.Windows.MessageBox]::Show($Texte, 'Nevermind', 'YesNo', 'Warning')) -eq 'Yes'
+}
+# Fermeture voulue : pas de question Quitter ou Réduire
+function Close-EcranImpossible {
+    $script:AllowClose = $true
+    $null = $Window.Dispatcher.BeginInvoke([Action]{ $Window.Close() })
+}
+
 function Initialize-AccueilConsole {
     $raison = Test-VuePossible
-    if ($raison) { Write-Log "Écran impossible ($raison) : interface d'avant"; return }
+    if ($raison) { Show-EcranImpossible $raison; return }
     $script:VueVerifiee = $true   # (Initialize-Vue ne refait pas la vérification)
     $script:Kit.Actif = $true
+    # Fond plein sous l'écran : rien de l'interface d'avant ne se voit à travers, même avant que la page soit dessinée
+    $ui.EcranKit.Background = Get-Brush '#06050F'
     # La visite guidée du premier lancement parle de cet écran
     $script:TourSteps = @(
         @{ Title = 'Bienvenue dans Nevermind'; Lines = @(
@@ -400,11 +430,6 @@ function Initialize-AccueilConsole {
     )
     Register-ActionsNevermind
     Initialize-Vue $ui.EcranKit
-    # Plus de barre d'onglets : la navigation passe par l'écran
-    $barre = $ui.Tabs.Template.FindName('BarreHaut', $ui.Tabs)
-    if ($barre) { $barre.Visibility = 'Collapsed' }
-    $back = $ui.Tabs.Template.FindName('NavBack', $ui.Tabs)
-    if ($back) { $back.Content = '←  Accueil' }
     try { Initialize-HabillageConsole } catch { Write-Log "Habillage console : $_" }
     Update-NavBarKit
     $ui.Tabs.Add_SelectionChanged({ param($s, $e) if ($e.OriginalSource -eq $ui.Tabs) { Update-NavBarKit; Update-EcranKitVisible } })

@@ -48,28 +48,6 @@ function Start-FromTo($Element, $Property, [double]$From, [double]$To, [int]$Ms 
     $Element.BeginAnimation($Property, $a)
 }
 
-# Changement de page : fondu et léger glissement vers le haut
-function Start-PageTransition {
-    $h = $ui.Tabs.Template.FindName('PageHost', $ui.Tabs)
-    if (-not $h) { return }
-    Start-FromTo $h ([System.Windows.UIElement]::OpacityProperty) 0 1 260
-    Start-FromTo $h.RenderTransform ([System.Windows.Media.TranslateTransform]::YProperty) 16 0 340
-}
-
-# La console est devant : sur l'accueil, sans panneau d'avant par-dessus (l'interface d'avant est cachée derrière)
-function Test-ConsoleDevant { [bool]($script:Kit.Actif -and $ui.Tabs.SelectedIndex -eq $HubIndex -and -not (Test-PanneauOuvert)) }
-
-# Fenêtre ouverte par dessus l'app : le fond se floute (pas sous la console : la fiche et le panneau sont montrés dans l'écran)
-function Update-BackdropBlur {
-    $on = ($ui.TestOverlay.IsVisible -or $ui.Overlay.IsVisible -or $ui.NetMapOverlay.IsVisible) -and -not (Test-ConsoleDevant)
-    if ($on -and -not $ui.Tabs.Effect) {
-        $fx = New-Object System.Windows.Media.Effects.BlurEffect
-        $fx.Radius = 0
-        $ui.Tabs.Effect = $fx
-        Start-FromTo $fx ([System.Windows.Media.Effects.BlurEffect]::RadiusProperty) 0 7 220
-    } elseif (-not $on) { $ui.Tabs.Effect = $null }
-}
-
 function Start-Pulse($Element) {
     if (-not $Element.CacheMode) { $Element.CacheMode = New-Object System.Windows.Media.BitmapCache }
     $a = New-Object System.Windows.Media.Animation.DoubleAnimation
@@ -584,7 +562,7 @@ function New-LoaderArc([double]$C, [double]$R, [double]$Start, [double]$Sweep, $
 
 # ---------------------------------------------------------------------------
 # Logo Nevermind : un N blanc avec ses échos cyan et magenta et deux tranches décalées (effet « glitch »).
-# Il « saute » par moments : au survol, toutes les quelques secondes, et pendant le chargement.
+# Il « saute » par moments pendant l'écran de chargement du démarrage.
 # ---------------------------------------------------------------------------
 $NexoCyan = '#00E5FF'
 $MonoFont = if ($PackFont -and $ThemePack.FontScope -eq 'tout') { "$PackFont, Cascadia Code, Consolas" } else { 'Cascadia Code, Consolas' }   # police « code » de la DA : chiffres, titres de section, barre d'état
@@ -640,25 +618,6 @@ function Set-NexoPose($M, [double[]]$Pose) {
     $M.Pieces[1].RenderTransform.X = $Pose[3] * $s
 }
 
-# Le mot « Nevermind » avec les mêmes échos de couleur : { Root, Cyan, Mag, Text }
-function New-NexoWord([double]$FontSize) {
-    $root = New-Object System.Windows.Controls.Grid
-    $mk = {
-        param($hex, $dx)
-        $t = New-Object System.Windows.Controls.TextBlock
-        $t.Text = 'Nevermind'; $t.FontSize = Get-UiFontSize $FontSize; $t.FontWeight = 'Bold'
-        $t.FontFamily = New-Object System.Windows.Media.FontFamily 'Segoe UI Variable Display, Segoe UI'
-        $t.Foreground = Get-Brush $hex
-        $t.RenderTransform = New-Object System.Windows.Media.TranslateTransform $dx, 0
-        $t
-    }
-    $c = & $mk $NexoCyan (-$FontSize * 0.05); $c.Opacity = 0.85
-    $m = & $mk $NexoMagenta ($FontSize * 0.05); $m.Opacity = 0.85
-    $w = & $mk '#FFFFFF' 0
-    foreach ($e in $c, $m, $w) { [void]$root.Children.Add($e) }
-    @{ Root = $root; Cyan = $c; Mag = $m; Text = $w; Size = $FontSize }
-}
-
 # Un « saut » de quelques centaines de millisecondes : décalages au hasard, puis retour au repos
 function Start-NexoGlitch($Mark, $Word = $null, [int]$Ms = 360) {
     if (-not $Mark -or $Mark.Busy) { return }
@@ -683,28 +642,6 @@ function Start-NexoGlitch($Mark, $Word = $null, [int]$Ms = 360) {
         if ($x.Word) { $f = $x.Word.Size; $x.Word.Cyan.RenderTransform.X = & $j ($f * 0.18); $x.Word.Mag.RenderTransform.X = & $j ($f * 0.18); $x.Word.Text.RenderTransform.X = & $j ($f * 0.05) }
     })
     $t.Start()
-}
-
-# Logo de la barre de gauche : saute au survol et de temps en temps (toutes les 6 à 12 s)
-function Initialize-NexoLogo($MarkHost, $WordHost) {
-    if (-not $MarkHost -or -not $WordHost) { return }
-    if ($ThemePack -and $ThemePack.Logo) {
-        try { Initialize-PackLogo $MarkHost $WordHost; return } catch { Write-Log "Logo du pack : $_" }
-    }
-    $script:LogoMark = New-NexoMark 30
-    $script:LogoWord = New-NexoWord 22
-    $MarkHost.Child = $script:LogoMark.Root
-    $WordHost.Children.Clear(); [void]$WordHost.Children.Add($script:LogoWord.Root)
-    $hover = { Start-NexoGlitch $script:LogoMark $script:LogoWord 420 }
-    $MarkHost.Add_MouseEnter($hover); $WordHost.Add_MouseEnter($hover)
-    $script:LogoTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $script:LogoTimer.Interval = [TimeSpan]::FromSeconds(8)
-    $script:LogoTimer.Add_Tick({
-        param($s, $e)
-        $s.Interval = [TimeSpan]::FromSeconds((Get-Random -Minimum 6 -Maximum 13))
-        if ($Window.IsVisible -and $Window.IsActive -and -not $script:Kit.Actif) { Start-NexoGlitch $script:LogoMark $script:LogoWord }   # (sous la console, la barre du logo est repliée)
-    })
-    $script:LogoTimer.Start()
 }
 
 # Animation en boucle, notée pour être arrêtée quand l'écran disparaît
@@ -937,85 +874,6 @@ function Set-SpriteLoaderPos([double]$V) {
     $S.Text.Text = '{0:N0} %' -f $V
 }
 
-# Logo d'un pack de thème (image) : il se secoue au survol et de temps en temps, comme une balle qui hésite
-function Initialize-PackLogo($MarkHost, $WordHost) {
-    $bi = New-Object System.Windows.Media.Imaging.BitmapImage
-    $bi.BeginInit(); $bi.UriSource = New-Object Uri $ThemePack.Logo; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
-    $img = New-Object System.Windows.Controls.Image
-    $img.Source = $bi; $img.Stretch = 'Uniform'
-    [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'HighQuality')
-    $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.85)
-    # Logo animé (planche) : première image au repos, l'animation joue au survol et de temps en temps
-    $logoFrames = $null; $logoTimer = $null
-    if ($ThemePack.LogoFrames -gt 1) {
-        $logoFrames = Get-SheetFrames $ThemePack.Logo $ThemePack.LogoFrames
-        $img.Source = $logoFrames[0]
-        $logoTimer = New-Object System.Windows.Threading.DispatcherTimer
-        $logoTimer.Interval = [TimeSpan]::FromMilliseconds($ThemePack.LogoDelay)
-        $logoTimer.Add_Tick({
-            $m = $script:LogoMark; if (-not $m) { return }
-            $m.Frame++
-            if ($m.Frame -ge $m.Frames.Count) {
-                $m.Frame = 0
-                if ($m.Once -and -not $m.Img.IsMouseOver) { $m.Timer.Stop() }
-            }
-            $m.Img.Source = $m.Frames[$m.Frame]
-        })
-        $MarkHost.Add_MouseLeave({ $m = $script:LogoMark; if ($m -and $m.Timer) { $m.Once = $true } })
-    }
-    $rot = New-Object System.Windows.Media.RotateTransform 0
-    $img.RenderTransform = $rot
-    $MarkHost.Background = [System.Windows.Media.Brushes]::Transparent
-    $MarkHost.Padding = New-Thickness 2 2 2 2
-    $MarkHost.Child = $img
-    $script:LogoMark = @{ Pack = $true; Img = $img; Rot = $rot; Glow = $ThemePack.LogoGlow; Move = $null; Frames = $logoFrames; Timer = $logoTimer; Frame = 0; Once = $true }
-    if ($ThemePack.LogoGlow) {
-        $mv = New-Object System.Windows.Media.TranslateTransform
-        $grp = New-Object System.Windows.Media.TransformGroup; $grp.Children.Add($rot); $grp.Children.Add($mv)
-        $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5); $img.RenderTransform = $grp
-        $script:LogoMark.Move = $mv
-        $MarkHost.Add_MouseLeave({ $m = $script:LogoMark; if ($m.Move) { Stop-EggFloat $m.Img $m.Move $m.Rot } })
-    }
-    $script:LogoWord = New-NexoWord 22
-    $WordHost.Children.Clear(); [void]$WordHost.Children.Add($script:LogoWord.Root)
-    $shake = { Start-PackLogoShake }
-    $MarkHost.Add_MouseEnter($shake); $WordHost.Add_MouseEnter($shake)
-    $script:LogoTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $script:LogoTimer.Interval = [TimeSpan]::FromSeconds(7)
-    $script:LogoTimer.Add_Tick({
-        param($s, $e)
-        $s.Interval = [TimeSpan]::FromSeconds((Get-Random -Minimum 6 -Maximum 13))
-        if ($Window.IsVisible -and $Window.IsActive -and -not $script:Kit.Actif) { Start-PackLogoShake }   # (sous la console, la barre du logo est repliée)
-    })
-    $script:LogoTimer.Start()
-}
-
-function Start-PackLogoShake {
-    $m = $script:LogoMark
-    if (-not $m -or -not $m.Pack) { return }
-    if ($m.Timer) {
-        # Logo animé : un tour complet (en boucle tant que la souris reste dessus)
-        $m.Once = -not $m.Img.IsMouseOver
-        if (-not $m.Timer.IsEnabled) { $m.Frame = 0; $m.Timer.Start() }
-        return
-    }
-    if ($m.Glow -and $m.Move) {
-        # Lévitation brève (au survol elle continue tant que la souris reste dessus)
-        Start-EggFloat $m.Img $m.Move $m.Rot $m.Glow 3
-        if (-not $m.Img.IsMouseOver) {
-            $t = New-Object System.Windows.Threading.DispatcherTimer; $t.Interval = [TimeSpan]::FromMilliseconds(2800)
-            $t.Add_Tick({ param($x, $e) $x.Stop(); $mm = $script:LogoMark; if ($mm -and $mm.Move -and -not $mm.Img.IsMouseOver) { Stop-EggFloat $mm.Img $mm.Move $mm.Rot } })
-            $t.Start()
-        }
-        return
-    }
-    $a = New-Object System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames
-    foreach ($k in @(@(0, 0), @(110, -22), @(240, 18), @(360, -12), @(470, 6), @(580, 0))) {
-        [void]$a.KeyFrames.Add((New-Object System.Windows.Media.Animation.EasingDoubleKeyFrame ([double]$k[1]), ([System.Windows.Media.Animation.KeyTime]::FromTimeSpan([TimeSpan]::FromMilliseconds($k[0])))))
-    }
-    $m.Rot.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
-}
-
 # Planche PNG (images côte à côte) découpée en images prêtes à afficher
 function Get-SheetFrames([string]$File, [int]$Count) {
     $bi = New-Object System.Windows.Media.Imaging.BitmapImage
@@ -1024,160 +882,4 @@ function Get-SheetFrames([string]$File, [int]$Count) {
     @(for ($i = 0; $i -lt $Count; $i++) { $c = New-Object System.Windows.Media.Imaging.CroppedBitmap $bi, ([System.Windows.Int32Rect]::new($i * $fw, 0, $fw, $bi.PixelHeight)); $c.Freeze(); $c })
 }
 
-# Dessin animé d'un pack au centre de la barre du bas (pixels nets, sans flou d'agrandissement)
-function Initialize-PackFooter {
-    $f = if ($ThemePack) { $ThemePack.Footer } else { $null }
-    if (-not $f) { return }
-    if ($f.Files) { Initialize-PackFooterDance $f; return }
-    $frames = Get-SheetFrames $f.File $f.Frames
-    $img = New-Object System.Windows.Controls.Image
-    $img.Source = $frames[0]; $img.Height = $f.Height; $img.Stretch = 'Uniform'
-    # Pixels bruts à la taille d'origine ou agrandi ; lissage de qualité si le dessin est réduit (sinon pixels irréguliers)
-    [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, $(if ($f.Height -ge $frames[0].PixelHeight) { 'NearestNeighbor' } else { 'HighQuality' }))
-    $ui.FooterArt.Child = $img
-    $ui.FooterArt.Visibility = 'Visible'
-    $ui.StatusBar.Padding = New-Thickness 36 2 36 6
-    $script:Footer = @{ Img = $img; Frames = $frames; Frame = 0 }
-    $t = New-Object System.Windows.Threading.DispatcherTimer
-    $t.Interval = [TimeSpan]::FromMilliseconds($f.Delay)
-    $t.Add_Tick({
-        $F = $script:Footer
-        if (-not $F -or -not $Window.IsVisible) { return }
-        $F.Frame = ($F.Frame + 1) % $F.Frames.Count
-        $F.Img.Source = $F.Frames[$F.Frame]
-    })
-    $t.Start()
-    $script:Footer.Timer = $t
-    # Le texte d'état reste dans la moitié gauche, jamais sous le dessin
-    $fit = { if ($script:Footer) { $ui.StatusText.MaxWidth = [math]::Max(80.0, ($ui.StatusBar.ActualWidth - 72 - $script:Footer.Img.ActualWidth) / 2 - 16) } }
-    $ui.StatusBar.Add_SizeChanged($fit)
-    $script:Footer.Img.Add_SizeChanged($fit)
-}
 
-# Barre du bas cachée derrière l'écran de la console : le dessin animé s'arrête, et repart quand elle réapparaît
-function Set-FooterPause([bool]$Pause) {
-    $F = $script:Footer
-    if (-not $F) { return }
-    $F.EnPause = $Pause
-    if ($F.Danse) {
-        $p = [System.Windows.Media.RotateTransform]::AngleProperty
-        foreach ($d in $F.Danse) { if ($Pause) { $d.Rot.BeginAnimation($p, $null) } else { $d.Rot.BeginAnimation($p, $d.Anim) } }
-    } elseif ($F.Timer) {
-        if ($Pause) { $F.Timer.Stop() } else { $F.Timer.Start() }
-    }
-}
-
-# Icônes animées des onglets du haut (pack de thème) : première image au repos, animation au survol de l'onglet
-function Initialize-PackTabIcons {
-    if (-not $ThemePack -or -not $ThemePack.TabIcons -or -not $ThemePack.TabIcons.Count) { return }
-    $tabs = @{ ordinateur = $HubIndex; jeux = $GamesIndex; reseau = $NetIndex; trafic = $TrafficIndex; overlay = $OverlayIndex }
-    $script:TabIcons = @{}
-    foreach ($k in @($ThemePack.TabIcons.Keys)) {
-        if (-not $tabs.ContainsKey($k)) { continue }
-        $ti = $ui.Tabs.Items[$tabs[$k]]
-        $sp = $ti.Header
-        if (-not ($sp -is [System.Windows.Controls.StackPanel]) -or -not $sp.Children.Count) { continue }
-        $def = $ThemePack.TabIcons[$k]
-        $frames = Get-SheetFrames $def.File $def.Frames
-        $img = New-Object System.Windows.Controls.Image
-        $img.Source = $frames[0]; $img.Height = 24; $img.Stretch = 'Uniform'
-        $img.Margin = New-Thickness 0 -4 6 -4; $img.VerticalAlignment = 'Center'
-        [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'HighQuality')
-        $sp.Children.RemoveAt(0)
-        $sp.Children.Insert(0, $img)
-        # Texte de l'onglet centré sur l'icône (sinon il reste collé en haut, surtout avec une police pixel)
-        foreach ($lbl in @($sp.Children | Where-Object { $_ -is [System.Windows.Controls.TextBlock] })) { $lbl.VerticalAlignment = 'Center' }
-        $sp.VerticalAlignment = 'Center'
-        $t = New-Object System.Windows.Threading.DispatcherTimer
-        $t.Interval = [TimeSpan]::FromMilliseconds($def.Delay)
-        $st = @{ Img = $img; Frames = $frames; Frame = 0; Timer = $t; Hop = $null; Tilt = $null }
-        if ($frames.Count -le 1) {
-            $st.Glow = $def.Glow
-            $st.Hop = New-Object System.Windows.Media.TranslateTransform; $st.Tilt = New-Object System.Windows.Media.RotateTransform 0
-            $grp = New-Object System.Windows.Media.TransformGroup; $grp.Children.Add($st.Tilt); $grp.Children.Add($st.Hop)
-            $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.9); $img.RenderTransform = $grp
-        }
-        $t.Tag = $st
-        $t.Add_Tick({ param($s, $e) $x = $s.Tag; $x.Frame = ($x.Frame + 1) % $x.Frames.Count; $x.Img.Source = $x.Frames[$x.Frame] })
-        $script:TabIcons[$k] = $st
-        $ti.Add_MouseEnter({ param($s, $e) $x = Get-TabIconState $s; if ($x) { if ($x.Hop) { Start-IconHop $x } else { $x.Timer.Start() } } })
-        $ti.Add_MouseLeave({ param($s, $e) $x = Get-TabIconState $s; if ($x) { if ($x.Hop) { Stop-IconHop $x } else { $x.Timer.Stop(); $x.Frame = 0; $x.Img.Source = $x.Frames[0] } } })
-    }
-}
-
-function Get-TabIconState($TabItem) {
-    if (-not $script:TabIcons) { return $null }
-    foreach ($x in $script:TabIcons.Values) { if ($TabItem.Header.Children.Contains($x.Img)) { return $x } }
-    $null
-}
-
-# Barre du bas faite d'illustrations fixes : chacune se dandine, l'une après l'autre
-function Initialize-PackFooterDance($F) {
-    $row = New-Object System.Windows.Controls.StackPanel
-    $row.Orientation = 'Horizontal'
-    $danse = New-Object System.Collections.ArrayList
-    $i = 0
-    foreach ($file in $F.Files) {
-        $bi = New-Object System.Windows.Media.Imaging.BitmapImage
-        $bi.BeginInit(); $bi.UriSource = New-Object Uri $file; $bi.CacheOption = 'OnLoad'; $bi.EndInit(); $bi.Freeze()
-        $img = New-Object System.Windows.Controls.Image
-        $img.Source = $bi; $img.Height = $F.Height; $img.Stretch = 'Uniform'; $img.Margin = New-Thickness 3 0 3 0
-        [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($img, 'HighQuality')
-        $rot = New-Object System.Windows.Media.RotateTransform 0
-        $img.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 1.0); $img.RenderTransform = $rot
-        $a = New-Object System.Windows.Media.Animation.DoubleAnimation -9, 9, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(520)))
-        $a.AutoReverse = $true; $a.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
-        $e = New-Object System.Windows.Media.Animation.SineEase; $e.EasingMode = 'EaseInOut'; $a.EasingFunction = $e
-        $a.BeginTime = [TimeSpan]::FromMilliseconds(260 * $i)
-        $rot.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $a)
-        [void]$danse.Add(@{ Rot = $rot; Anim = $a })   # (pour la pause sous la console, Set-FooterPause)
-        [void]$row.Children.Add($img)
-        $i++
-    }
-    $ui.FooterArt.Child = $row
-    $ui.FooterArt.Visibility = 'Visible'
-    $ui.StatusBar.Padding = New-Thickness 36 2 36 6
-    $script:Footer = @{ Img = $row; Timer = (New-Object System.Windows.Threading.DispatcherTimer); Danse = $danse }
-    $fit = { if ($script:Footer) { $ui.StatusText.MaxWidth = [math]::Max(80.0, ($ui.StatusBar.ActualWidth - 72 - $script:Footer.Img.ActualWidth) / 2 - 16) } }
-    $ui.StatusBar.Add_SizeChanged($fit)
-    $row.Add_SizeChanged($fit)
-}
-
-# Icône d'onglet faite d'une image fixe : au survol, elle saute et se balance, en boucle
-function Start-IconHop($X) {
-    if ($X.Glow) { Start-EggFloat $X.Img $X.Hop $X.Tilt $X.Glow 4; return }
-    $ease = New-Object System.Windows.Media.Animation.QuadraticEase; $ease.EasingMode = 'EaseOut'
-    $up = New-Object System.Windows.Media.Animation.DoubleAnimation 0, -5, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(220)))
-    $up.AutoReverse = $true; $up.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever; $up.EasingFunction = $ease
-    $X.Hop.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $up)
-    $sw = New-Object System.Windows.Media.Animation.DoubleAnimation -10, 10, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(440)))
-    $sw.AutoReverse = $true; $sw.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
-    $X.Tilt.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $sw)
-}
-function Stop-IconHop($X) {
-    if ($X.Glow) { Stop-EggFloat $X.Img $X.Hop $X.Tilt; return }
-    $X.Hop.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $null); $X.Hop.Y = 0
-    $X.Tilt.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null); $X.Tilt.Angle = 0
-}
-
-# Dofus (œuf) : il s'élève, oscille doucement et une lueur de sa couleur pulse autour
-function Start-EggFloat($Img, $Move, $Tilt, [string]$Color, [double]$Lift) {
-    $sine = New-Object System.Windows.Media.Animation.SineEase; $sine.EasingMode = 'EaseInOut'
-    $up = New-Object System.Windows.Media.Animation.DoubleAnimation 0, (-$Lift), ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(700)))
-    $up.AutoReverse = $true; $up.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever; $up.EasingFunction = $sine
-    $Move.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $up)
-    $wob = New-Object System.Windows.Media.Animation.DoubleAnimation -6, 6, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(1100)))
-    $wob.AutoReverse = $true; $wob.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever; $wob.EasingFunction = $sine
-    $Tilt.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $wob)
-    $fx = New-Object System.Windows.Media.Effects.DropShadowEffect
-    $fx.Color = [System.Windows.Media.ColorConverter]::ConvertFromString($Color); $fx.ShadowDepth = 0; $fx.Opacity = 0.9; $fx.BlurRadius = 4
-    $Img.Effect = $fx
-    $pulse = New-Object System.Windows.Media.Animation.DoubleAnimation 4, 18, ([System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(700)))
-    $pulse.AutoReverse = $true; $pulse.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever; $pulse.EasingFunction = $sine
-    $fx.BeginAnimation([System.Windows.Media.Effects.DropShadowEffect]::BlurRadiusProperty, $pulse)
-}
-function Stop-EggFloat($Img, $Move, $Tilt) {
-    $Move.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $null); $Move.Y = 0
-    $Tilt.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null); $Tilt.Angle = 0
-    $Img.Effect = $null
-}

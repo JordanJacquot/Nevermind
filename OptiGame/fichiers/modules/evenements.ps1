@@ -34,7 +34,6 @@ $Window.Add_SourceInitialized({
         } catch { Write-Log "Mica: $_" }
     }
 })
-foreach ($ov in $ui.TestOverlay, $ui.Overlay, $ui.NetMapOverlay) { $ov.Add_IsVisibleChanged({ try { Update-BackdropBlur } catch {} }) }
 
 $Window.Add_StateChanged({
     if ($script:StartHidden) { return }   # lancement avec Windows : la fenêtre se prépare d'abord, réduite
@@ -84,7 +83,6 @@ function Update-EmbedState {
         if ($Window.IsVisible -and -not [EmbedInfo]::IsShown($h)) { try { Hide-ToTray } catch { Write-Log "Réduction: $_" } }
     }
     Write-Log $(if ($on) { 'Fenêtre affichée dans Mindset' } else { 'Fenêtre décrochée de Mindset' })
-    try { Update-TopBarFit } catch {}
 }
 
 # Demandes déposées par un autre programme : afficher la fenêtre (nouveau lancement de Nevermind) ou fermer (Mindset)
@@ -190,9 +188,6 @@ $Window.Add_Closed({
     try { Unregister-FpsHotkey } catch {}
     try { Stop-OrgWatch; if ($script:OrgBar) { $script:OrgBar.Win.Close() } } catch {}
     try { if ($script:TrafficTimer) { $script:TrafficTimer.Stop() } } catch {}
-    try { if ($script:LogoTimer) { $script:LogoTimer.Stop() } } catch {}
-    try { if ($script:Footer) { $script:Footer.Timer.Stop() } } catch {}
-    try { if ($script:TabIcons) { foreach ($x in $script:TabIcons.Values) { $x.Timer.Stop() } } } catch {}
     try { [FrameMon]::Stop() } catch {}
     try { if ($script:LagSession) { $script:LagSession = $null; if ($script:LagTimer) { $script:LagTimer.Stop() }; [LagMon]::Stop() } } catch {}
     try { if ([NetFlow]::Running) { [NetFlow]::Stop() } } catch {}
@@ -202,7 +197,6 @@ $Window.Add_Closed({
     [System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeShutdown()
 })
 
-$ui.BtnFixAll.Add_Click({ Open-FixAll })
 $ui.BtnNetMapClose.Add_Click({ Hide-NetMap })
 $ui.BtnNetMapScan.Add_Click({ Invoke-Safe { Hide-NetMap; Invoke-NetworkScan; if (@($script:NetList).Count) { Show-NetMap } } })
 $script:SheetMode = 'fix'
@@ -257,8 +251,7 @@ $ui.BtnTestAgain.Add_Click({
 })
 $Window.Add_KeyDown({
     param($s, $e)
-    # Ctrl+K ou Ctrl+F : recherche d'un réglage
-    if (($e.Key -eq 'K' -or $e.Key -eq 'F') -and [System.Windows.Input.Keyboard]::Modifiers -eq 'Control') { Focus-Search; $e.Handled = $true; return }
+    # (Ctrl+K, la recherche : accueil-console.ps1)
     if ($e.Key -eq 'Escape' -and $ui.TestOverlay.Visibility -eq 'Visible') { Hide-TestPanel; return }
     if ($e.Key -eq 'Escape' -and $ui.SettingsOverlay.Visibility -eq 'Visible' -and $ui.Overlay.Visibility -ne 'Visible') { Hide-Settings; return }
     if ($e.Key -eq 'Escape' -and $ui.NetMapOverlay.Visibility -eq 'Visible' -and $ui.Overlay.Visibility -ne 'Visible') { Hide-NetMap; return }
@@ -306,9 +299,7 @@ $Window.Dispatcher.Add_UnhandledException({
 $ui.Tabs.Add_SelectionChanged({
     param($s, $e)
     if ($e.OriginalSource -ne $ui.Tabs) { return }
-    Update-NavBar
-    try { Start-PageTransition } catch {}
-    if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubStats) { Invoke-Safe { Update-Hub }; return }
+    if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubPret) { Invoke-Safe { Update-Hub }; return }
     if ($ui.Tabs.SelectedIndex -eq $GamesIndex) {
         Invoke-Safe {
             Build-GamesTabs
@@ -351,30 +342,12 @@ $ui.BtnCheckUpdate.Add_Click({
 $Window.Add_ContentRendered({
     if ($Splash) { try { $Splash.Close() } catch {}; $script:Splash = $null }
     if ($ui.VersionText) { $ui.VersionText.Text = "Nevermind $AppVersion" }
-    # Logo Nevermind animé (le N et le mot « glitchent » au survol et de temps en temps)
-    try { Initialize-NexoLogo $ui.Tabs.Template.FindName('LogoMarkHost', $ui.Tabs) $ui.Tabs.Template.FindName('LogoWordHost', $ui.Tabs) } catch { Write-Log "Logo: $_" }
-    # Clic sur le logo ou le nom Nevermind (en haut à gauche) : retour à l'accueil
-    foreach ($ln in 'LogoMarkHost', 'LogoWordHost') {
-        $lh = $ui.Tabs.Template.FindName($ln, $ui.Tabs)
-        if (-not $lh) { continue }
-        $lh.ToolTip = 'Retour à l''accueil'
-        $lh.Add_MouseLeftButtonUp({ Invoke-Safe { try { Hide-Settings } catch {}; if ($script:OrgViewOn) { Show-OrgView $false }; Show-Page $HubIndex } })
-    }
+    # L'en-tête des pages d'avant encore montrées (l'Organizer) : habillé par la console (Initialize-HabillageConsole)
     $script:NavBar = $ui.Tabs.Template.FindName('NavBar', $ui.Tabs)
     $script:NavCrumb = $ui.Tabs.Template.FindName('NavCrumb', $ui.Tabs)
-    $back = $ui.Tabs.Template.FindName('NavBack', $ui.Tabs)
-    if ($back) { $back.Add_Click({ Show-Page $HubIndex }) }
-    try { Initialize-AccueilConsole } catch { Write-Log "Accueil console : $_" }
-    # Roue crantée de l'interface d'avant : Paramètres (Signaler un problème est dans l'onglet Aide ; la console a sa propre barre)
-    $script:TopSettings = $ui.Tabs.Template.FindName('TopSettings', $ui.Tabs)
-    $script:SettingsGear = $ui.Tabs.Template.FindName('TopSettingsIcon', $ui.Tabs)
-    if ($script:SettingsGear) { $script:SettingsGear.RenderTransform = New-Object System.Windows.Media.RotateTransform }   # celle du modèle est figée
-    if ($script:TopSettings) { $script:TopSettings.Add_Click({ Invoke-Safe { Show-Settings } }) }
-    try { Initialize-TopBarFit } catch { Write-Log "Barre du haut: $_" }
-    try { Initialize-Search } catch { Write-Log "Recherche: $_" }
+    try { Initialize-AccueilConsole } catch { Show-EcranImpossible "accueil : $($_.Exception.Message)" }
+    if ($script:EcranImpossible) { return }   # (pas d'écran : Nevermind se ferme, rien d'autre ne démarre)
     try { Add-ThemeDecor } catch { Write-Log "Décor du thème: $_" }
-    try { Initialize-PackFooter } catch { Write-Log "Dessin de la barre du bas : $_" }
-    try { Initialize-PackTabIcons } catch { Write-Log "Icônes des onglets : $_" }
     try { Start-StartupLoader } catch { Write-Log "Chargement: $_" }
     # Premières tâches derrière l'écran de chargement : l'app n'apparaît qu'une fois prête
     $t0 = Get-Date
@@ -395,7 +368,7 @@ $Window.Add_ContentRendered({
     $script:StartGapTimer = $gapT
     try {
         Set-StartupStep 'Préparation de l''interface...' 5
-        Step-UI; [void]$script:StartGaps.Seen.Add('Build-Hub'); Build-Hub
+        $script:HubPret = $true   # (l'accueil peut se mettre à jour : Update-Hub)
         $ui.Tabs.SelectedIndex = $HubIndex
         Step-UI; [void]$script:StartGaps.Seen.Add('Update-Hub'); Update-Hub
         Step-UI; [void]$script:StartGaps.Seen.Add('Start-Live'); Start-Live

@@ -86,181 +86,26 @@ function Measure-Score($Findings) {
     @{ Score = $score; Potential = $potential; Active = $active }
 }
 
-function Show-Score([int]$Score, [int]$Bad, [int]$Warn, [int]$Potential) {
+# L'appréciation de la note (le mot et sa couleur), gardée avec l'analyse
+function Get-ScoreLook([int]$Score) {
     if ($Score -ge 85)     { $label = 'Excellent';     $color = $Colors.ok }
     elseif ($Score -ge 65) { $label = 'Bien';          $color = '#9BE15D' }
     elseif ($Score -ge 45) { $label = 'À améliorer';   $color = $Colors.warn }
     else                   { $label = 'Mal optimisé';  $color = $Colors.bad }
-    $len = [math]::PI * (130 - 10) / 10
-    $ui.ScoreRing.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new([double[]]@(($len * $Score / 100), 1000))
-    $ui.ScoreRing.Stroke = Get-Brush $color
-    $ui.ScoreText.Text = [string]$Score
-    $ui.ScoreLabel.Text = $label
-    $ui.ScoreLabel.Foreground = Get-Brush $color
-    $parts = @()
-    if ($Bad)  { $parts += "$Bad problème$(if ($Bad -gt 1) {'s'})" }
-    if ($Warn) { $parts += "$Warn à améliorer" }
-    $ui.ScoreCounts.Text = if ($parts) { $parts -join ', ' } else { 'Rien à signaler' }
-    $ui.ScorePotential.Text = if ($Potential -gt $Score) { "Jusqu'à $Potential en un clic" } else { '' }
     @{ Label = $label; Color = $color }
 }
 
 # ---------------------------------------------------------------------------
-# « Pour gagner des points » et recommandations
+# Le genre de correction (badge de la fiche) et les points ignorés
 # ---------------------------------------------------------------------------
 function Get-FixKind($f) {
     if ($f.Fix -and $f.Fix.Auto) { return @{ Text = "L'app s'en charge"; Color = $Colors.ok } }
     @{ Text = 'À faire toi-même'; Color = $Colors.info }
 }
 
-function Show-Improvements($Active) {
-    $panel = $ui.ImprovePanel
-    $panel.Children.Clear()
-    $items = @($Active | Where-Object { $_.Status -ne 'ok' -and $_.Gain -gt 0 } |
-        Sort-Object @{ Expression = { $_.Gain }; Descending = $true }, @{ Expression = { -not ($_.Fix -and $_.Fix.Auto) } })
-    $auto = @($items | Where-Object { $_.Fix -and $_.Fix.Auto })
-
-    if (-not $items.Count) {
-        [void]$panel.Children.Add((New-Text "Rien à gagner de plus : ton PC est au top pour le jeu !" 13 $Colors.ok -Semi))
-        $ui.ImproveSub.Text = ''
-        $ui.BtnFixAll.Visibility = 'Collapsed'
-        return
-    }
-    $ui.ImproveSub.Text = "$($items.Count) amélioration$(if ($items.Count -gt 1) {'s'}) possible$(if ($items.Count -gt 1) {'s'}), dont $($auto.Count) que Nevermind peut faire pour toi. Clique sur une ligne pour voir le détail."
-    if ($auto.Count) {
-        $sum = ($auto | Measure-Object Gain -Sum).Sum
-        $ui.BtnFixAll.Content = "Tout corriger (+$sum pts)"
-        $ui.BtnFixAll.Visibility = 'Visible'
-    } else {
-        $ui.BtnFixAll.Visibility = 'Collapsed'
-    }
-
-    foreach ($f in $items) {
-        Step-UI
-        $row = New-Object System.Windows.Controls.Border
-        $row.CornerRadius = [System.Windows.CornerRadius]::new(10)
-        $row.Padding = New-Thickness 12 10 12 10
-        $row.Margin = New-Thickness 0 0 0 6
-        $row.Background = Get-Brush '#10FFFFFF'
-        $row.Cursor = [System.Windows.Input.Cursors]::Hand
-        $row.Tag = $f
-        $g = New-Grid @('Auto', '*', 'Auto', 'Auto')
-
-        $pill = New-Object System.Windows.Controls.Border
-        $pill.CornerRadius = [System.Windows.CornerRadius]::new(8)
-        $pill.Width = 64
-        $pill.Padding = New-Thickness 0 5 0 5
-        $pbg = Get-Brush $Colors.ok; $pbg.Opacity = 0.16
-        $pill.Background = $pbg
-        $pt = New-Text "+$($f.Gain) pts" 13 $Colors.ok -Bold
-        $pt.HorizontalAlignment = 'Center'; $pt.TextWrapping = 'NoWrap'
-        $pill.Child = $pt
-        $pill.VerticalAlignment = 'Center'
-        Add-ToGrid $g $pill 0
-
-        $title = New-Text $f.Titre 14 '#FFFFFF' -Semi
-        $title.Margin = New-Thickness 14 0 10 0
-        $title.VerticalAlignment = 'Center'
-        Add-ToGrid $g $title 1
-
-        $k = Get-FixKind $f
-        $badge = New-Badge $k.Text $k.Color
-        $badge.Margin = New-Thickness 0 0 12 0
-        Add-ToGrid $g $badge 2
-
-        $chev = New-Text '›' 22 '#A6A1BC' -Bold
-        $chev.VerticalAlignment = 'Center'
-        $chev.Margin = New-Thickness 0 -4 0 0
-        Add-ToGrid $g $chev 3
-
-        $row.Child = $g
-        $row.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush '#252B37' })
-        $row.Add_MouseLeave({ param($s, $e) $s.Background = Get-Brush '#10FFFFFF' })
-        $row.Add_MouseLeftButtonUp({ param($s, $e) Open-Sheet @($s.Tag) })
-        [void]$panel.Children.Add($row)
-    }
-}
-
-function Add-FindingCard($Panel, $f, [switch]$Ignored) {
-    $card = New-Card
-    $g = New-Grid @('Auto', '*', 'Auto')
-    $dot = New-Object System.Windows.Shapes.Ellipse
-    $dot.Width = 12; $dot.Height = 12
-    $dot.Fill = Get-Brush $(if ($Ignored) { $Muted } else { $Colors[$f.Status] })
-    $dot.VerticalAlignment = 'Top'
-    $dot.Margin = New-Thickness 0 4 14 0
-    Add-ToGrid $g $dot 0
-
-    $sp = New-Object System.Windows.Controls.StackPanel
-    $head = New-Object System.Windows.Controls.WrapPanel
-    [void]$head.Children.Add((New-Text $f.Titre 14 '#FFFFFF' -Semi))
-    if ($f.Gain -gt 0 -and -not $Ignored) { [void]$head.Children.Add((New-Badge "+$($f.Gain) pts" $Colors.ok)) }
-    [void]$sp.Children.Add($head)
-    if ($f.Detail) {
-        $d = New-Text $f.Detail 12.5 '#A6A1BC'
-        $d.Margin = New-Thickness 0 3 0 0
-        [void]$sp.Children.Add($d)
-    }
-    Add-ToGrid $g $sp 1
-
-    $btn = $null
-    if ($Ignored) {
-        $btn = New-Button 'Ne plus ignorer'
-        $btn.Tag = $f
-        $btn.Add_Click({ param($s, $e) Invoke-Safe { Set-IgnoreFinding $s.Tag $false } })
-    } elseif ($f.Status -ne 'ok' -and $f.Fix) {
-        $btn = if ($f.Fix.Auto) { New-Button 'Corriger' 'BtnPrimary' } else { New-Button 'Comment faire' }
-        $btn.Tag = $f
-        $btn.Add_Click({ param($s, $e) Open-Sheet @($s.Tag) })
-    } elseif ($f.Action) {
-        $btn = New-Button $f.ActionLabel
-        $btn.Tag = $f.Action
-        $btn.Add_Click({ param($s, $e) Invoke-FindingAction $s.Tag })
-    }
-    if ($btn) {
-        $btn.Margin = New-Thickness 14 0 0 0
-        Add-ToGrid $g $btn 2
-    }
-    $card.Child = $g
-    if ($Ignored) { $card.Opacity = 0.75 }
-    [void]$Panel.Children.Add($card)
-}
-
-# Affiche d'abord ce qui est à corriger ; les points OK et ignorés sont repliés.
+# Les points ignorés (à régler mais mis de côté), pour l'écran : page Ton PC (ecran-pc.ps1)
 function Show-Findings($All, $Active) {
-    $panel = $ui.FindingsPanel
-    $panel.Children.Clear()
-    $issues = @($Active | Where-Object { $_.Status -ne 'ok' })
-    $script:OkFindings = @($Active | Where-Object { $_.Status -eq 'ok' })
     $script:IgnoredFindings = @($All | Where-Object { $script:Ignored -contains $_.Id -and $_.Status -ne 'ok' })
-    foreach ($f in $issues) { Step-UI; Add-FindingCard $panel $f }
-    if (-not $issues.Count) {
-        Add-FindingCard $panel ([pscustomobject]@{ Status = 'ok'; Titre = 'Rien à corriger'; Detail = 'Ton PC est bien réglé pour le jeu.'; Gain = 0; Fix = $null; Action = $null })
-    }
-    $more = New-Object System.Windows.Controls.WrapPanel
-    $more.Margin = New-Thickness 0 4 0 0
-    if ($script:OkFindings.Count) {
-        $b = New-Button $(if ($script:OkFindings.Count -gt 1) { "Voir les $($script:OkFindings.Count) points déjà OK" } else { 'Voir le point déjà OK' })
-        $b.Margin = New-Thickness 0 0 10 0
-        $b.Add_Click({
-            param($s, $e)
-            $s.Visibility = 'Collapsed'
-            foreach ($f in $script:OkFindings) { Add-FindingCard $ui.FindingsPanel $f }
-        })
-        [void]$more.Children.Add($b)
-    }
-    if ($script:IgnoredFindings.Count) {
-        $b = New-Button $(if ($script:IgnoredFindings.Count -gt 1) { "Voir les $($script:IgnoredFindings.Count) points ignorés" } else { 'Voir le point ignoré' })
-        $b.Add_Click({
-            param($s, $e)
-            $s.Visibility = 'Collapsed'
-            foreach ($f in $script:IgnoredFindings) { Add-FindingCard $ui.FindingsPanel $f -Ignored }
-        })
-        [void]$more.Children.Add($b)
-    }
-    [void]$panel.Children.Add($more)
-    $ui.FindingsSummary.Text = "$($issues.Count) point$(if ($issues.Count -gt 1) {'s'}) à regarder" +
-        $(if ($script:IgnoredFindings.Count) { ", $($script:IgnoredFindings.Count) ignoré$(if ($script:IgnoredFindings.Count -gt 1) {'s'})" } else { '' })
 }
 
 # ---------------------------------------------------------------------------

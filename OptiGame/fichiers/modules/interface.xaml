@@ -369,52 +369,11 @@
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-            <!-- Barre du haut en verre -->
-            <Border x:Name="BarreHaut" Margin="20,14,20,0" Height="60" CornerRadius="22" Background="#14FFFFFF" BorderThickness="1">
-              <Border.BorderBrush>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                  <GradientStop Color="#7000E5FF" Offset="0"/>
-                  <GradientStop Color="#18FFFFFF" Offset="0.5"/>
-                  <GradientStop Color="#70FF2EB5" Offset="1"/>
-                </LinearGradientBrush>
-              </Border.BorderBrush>
-              <DockPanel Margin="14,0,12,0">
-                <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,18,0">
-                  <Border x:Name="LogoMarkHost" Width="38" Height="38" VerticalAlignment="Center" CornerRadius="12" Padding="5" Cursor="Hand" Background="#33000000"/>
-                  <Grid x:Name="LogoWordHost" VerticalAlignment="Center" Margin="10,0,0,0" Cursor="Hand"/>
-                </StackPanel>
-                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                  <!-- Recherche d'un réglage (Ctrl+K) : suggestions au fil de la frappe -->
-                  <Border x:Name="SearchBox" Width="250" Height="36" CornerRadius="18" Margin="0,0,10,0" Background="#1AFFFFFF" BorderBrush="#22FFFFFF" BorderThickness="1">
-                    <Grid>
-                      <TextBlock Text="&#xE721;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" Foreground="#A6A1BC" VerticalAlignment="Center" Margin="14,1,0,0" IsHitTestVisible="False"/>
-                      <TextBlock x:Name="SearchHint" Text="Rechercher..." Foreground="#8E88A8" FontSize="12.5" VerticalAlignment="Center" Margin="38,0,0,0" IsHitTestVisible="False"/>
-                      <TextBlock x:Name="SearchKey" Text="Ctrl+K" Foreground="#655E7E" FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,14,0" IsHitTestVisible="False"/>
-                      <TextBox x:Name="SearchInput" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" CaretBrush="#FFFFFF" SelectionBrush="#00E5FF"
-                               FontSize="12.5" VerticalAlignment="Center" VerticalContentAlignment="Center" Margin="34,0,12,0" Padding="2,0"/>
-                    </Grid>
-                  </Border>
-                  <Button x:Name="TopSettings" Style="{StaticResource BtnSecondary}" VerticalAlignment="Center" Width="38" Height="38" Padding="0" ToolTip="Paramètres de Nevermind">
-                    <TextBlock x:Name="TopSettingsIcon" Text="&#xE713;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
-                      <TextBlock.RenderTransform><RotateTransform/></TextBlock.RenderTransform>
-                    </TextBlock>
-                  </Button>
-                </StackPanel>
-                <StackPanel x:Name="TopTabsHost" IsItemsHost="True" Orientation="Horizontal" VerticalAlignment="Center"/>
-              </DockPanel>
-            </Border>
-            <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom" VerticalOffset="8"
-                   AllowsTransparency="True" StaysOpen="True" PopupAnimation="Fade">
-              <Border Width="430" Background="#F2120E22" BorderBrush="#3300E5FF" BorderThickness="1" CornerRadius="18" Padding="8" Margin="0,0,10,10">
-                <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="4" Opacity="0.5" Color="Black"/></Border.Effect>
-                <StackPanel x:Name="SearchResults"/>
-              </Border>
-            </Popup>
-            <!-- Fil d'Ariane des pages d'outils, et numéro de version -->
+            <!-- (plus de barre du haut : on navigue dans l'écran de la console ; les onglets restent rangés ici, cachés) -->
+            <StackPanel x:Name="TopTabsHost" IsItemsHost="True" Visibility="Collapsed"/>
+            <!-- En-tête des pages d'avant encore montrées (l'Organizer) : habillé par la console (accueil-console.ps1) -->
             <Grid Grid.Row="1" Margin="34,14,34,0">
               <DockPanel x:Name="NavBar" Visibility="Collapsed" LastChildFill="False" HorizontalAlignment="Left">
-                <Button x:Name="NavBack" Style="{StaticResource BtnSecondary}" Content="←  Ordinateur" Padding="14,6" FontSize="12.5"/>
-                <TextBlock Text="›" Foreground="#655E7E" FontSize="16" Margin="12,0,10,2" VerticalAlignment="Center"/>
                 <TextBlock x:Name="NavCrumb" Foreground="#C9C3DD" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </DockPanel>
             </Grid>
@@ -442,100 +401,11 @@
                 <TextBlock Style="{StaticResource Sub}" Text="La santé de chaque composant de ton PC et ce qui freine tes jeux."/>
               </StackPanel>
             </DockPanel>
-
-            <Grid Margin="0,18,0,0">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="230"/>
-                <ColumnDefinition Width="*"/>
-              </Grid.ColumnDefinitions>
-              <Border Style="{StaticResource Card}" Margin="0,0,12,0">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                  <Grid Width="130" Height="130">
-                    <Ellipse Stroke="#22FFFFFF" StrokeThickness="10"/>
-                    <Ellipse x:Name="ScoreRing" Stroke="#4EA8FF" StrokeThickness="10" StrokeDashArray="0 1000" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
-                      <Ellipse.RenderTransform><RotateTransform Angle="-90"/></Ellipse.RenderTransform>
-                    </Ellipse>
-                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                      <TextBlock x:Name="ScoreText" Text="..." FontSize="38" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
-                      <TextBlock Text="sur 100" Foreground="#A6A1BC" FontSize="12" HorizontalAlignment="Center"/>
-                    </StackPanel>
-                  </Grid>
-                  <TextBlock x:Name="ScoreLabel" Text="Analyse en cours" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,12,0,0"/>
-                  <TextBlock x:Name="ScoreCounts" Foreground="#A6A1BC" FontSize="12" HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                  <TextBlock x:Name="ScorePotential" Foreground="#22D37A" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                </StackPanel>
-              </Border>
-              <Border Grid.Column="1" Style="{StaticResource Card}">
-                <DockPanel>
-                  <DockPanel DockPanel.Dock="Top" Margin="0,0,0,18">
-                    <TextBlock x:Name="LiveStamp" DockPanel.Dock="Right" Foreground="#655E7E" FontSize="11" VerticalAlignment="Center"/>
-                    <StackPanel Orientation="Horizontal">
-                      <Ellipse Width="8" Height="8" Fill="#22D37A" VerticalAlignment="Center" Margin="0,2,8,0"/>
-                      <TextBlock Style="{StaticResource H2}" Text="En direct"/>
-                    </StackPanel>
-                  </DockPanel>
-                  <UniformGrid x:Name="LiveGrid" Rows="1" Columns="4" VerticalAlignment="Center">
-                    <StackPanel Margin="0,0,18,0">
-                      <TextBlock Text="Processeur" Foreground="#A6A1BC" FontSize="12"/>
-                      <TextBlock x:Name="LiveCpuVal" Text="..." FontSize="28" FontWeight="Bold" Foreground="White" Margin="0,2,0,8"/>
-                      <ProgressBar x:Name="LiveCpuBar"/>
-                      <TextBlock x:Name="LiveCpuSub" Foreground="#A6A1BC" FontSize="11.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
-                    </StackPanel>
-                    <StackPanel Margin="0,0,18,0">
-                      <TextBlock Text="Mémoire vive" Foreground="#A6A1BC" FontSize="12"/>
-                      <TextBlock x:Name="LiveRamVal" Text="..." FontSize="28" FontWeight="Bold" Foreground="White" Margin="0,2,0,8"/>
-                      <ProgressBar x:Name="LiveRamBar"/>
-                      <TextBlock x:Name="LiveRamSub" Foreground="#A6A1BC" FontSize="11.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
-                    </StackPanel>
-                    <StackPanel Margin="0,0,18,0">
-                      <TextBlock Text="Carte graphique" Foreground="#A6A1BC" FontSize="12"/>
-                      <TextBlock x:Name="LiveGpuVal" Text="..." FontSize="28" FontWeight="Bold" Foreground="White" Margin="0,2,0,8"/>
-                      <ProgressBar x:Name="LiveGpuBar"/>
-                      <TextBlock x:Name="LiveGpuSub" Foreground="#A6A1BC" FontSize="11.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
-                    </StackPanel>
-                    <StackPanel x:Name="LiveTempBox">
-                      <TextBlock Text="Température GPU" Foreground="#A6A1BC" FontSize="12"/>
-                      <TextBlock x:Name="LiveTempVal" Text="..." FontSize="28" FontWeight="Bold" Foreground="White" Margin="0,2,0,8"/>
-                      <ProgressBar x:Name="LiveTempBar"/>
-                      <TextBlock x:Name="LiveTempSub" Foreground="#A6A1BC" FontSize="11.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
-                    </StackPanel>
-                  </UniformGrid>
-                </DockPanel>
-              </Border>
-            </Grid>
-
-            <Border Style="{StaticResource Card}" Margin="0,12,0,0">
-              <StackPanel>
-                <DockPanel>
-                  <Button x:Name="BtnFixAll" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Tout corriger" VerticalAlignment="Center" Margin="16,0,0,0"/>
-                  <StackPanel>
-                    <TextBlock Style="{StaticResource H2}" Text="Pour gagner des points"/>
-                    <TextBlock x:Name="ImproveSub" Style="{StaticResource Sub}" Text="Clique sur un point pour voir ce qu'il faut faire."/>
-                  </StackPanel>
-                </DockPanel>
-                <StackPanel x:Name="ImprovePanel" Margin="0,14,0,0"/>
-              </StackPanel>
-            </Border>
-
+            <!-- (le résumé de santé est lu par la page Ton PC de la console) -->
             <DockPanel Margin="0,28,0,12">
               <TextBlock x:Name="HealthSummary" DockPanel.Dock="Right" Foreground="#A6A1BC" FontSize="12" VerticalAlignment="Bottom"/>
               <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Santé des composants"/>
             </DockPanel>
-            <Grid>
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="12"/>
-                <ColumnDefinition Width="*"/>
-              </Grid.ColumnDefinitions>
-              <StackPanel x:Name="HealthLeft"/>
-              <StackPanel x:Name="HealthRight" Grid.Column="2"/>
-            </Grid>
-
-            <DockPanel Margin="0,20,0,12">
-              <TextBlock x:Name="FindingsSummary" DockPanel.Dock="Right" Foreground="#A6A1BC" FontSize="12" VerticalAlignment="Bottom"/>
-              <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Recommandations"/>
-            </DockPanel>
-            <StackPanel x:Name="FindingsPanel"/>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
@@ -747,42 +617,13 @@
                 <TextBlock Style="{StaticResource Sub}" Text="Recherche des virus et de tout ce qui pourrait être dangereux sur ton PC."/>
               </StackPanel>
             </DockPanel>
-            <Grid Margin="0,18,0,0">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="230"/>
-                <ColumnDefinition Width="*"/>
-              </Grid.ColumnDefinitions>
-              <Border Style="{StaticResource Card}" Margin="0,0,12,0">
-                <StackPanel x:Name="SecGaugeHost" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-              </Border>
-              <Border Grid.Column="1" Style="{StaticResource Card}">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                  </Grid.ColumnDefinitions>
-                  <StackPanel x:Name="SecLines" VerticalAlignment="Center"/>
-                  <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Center" MinWidth="220">
-                    <Button x:Name="BtnScanQuick" Style="{StaticResource BtnPrimary}" Content="Analyse rapide" Margin="0,0,0,8"/>
-                    <Button x:Name="BtnScanFull" Style="{StaticResource BtnSecondary}" Content="Analyse complète" Margin="0,0,0,8"/>
-                    <Button x:Name="BtnScanFolder" Style="{StaticResource BtnSecondary}" Content="Analyser un dossier" Margin="0,0,0,8"/>
-                    <Button x:Name="BtnScanUpdate" Style="{StaticResource BtnSecondary}" Content="Mettre à jour la base"/>
-                  </StackPanel>
-                </Grid>
-              </Border>
-            </Grid>
-            <TextBlock x:Name="SecScanNote" Style="{StaticResource Sub}" FontSize="12" Margin="0,10,0,0"/>
-            <DockPanel Margin="0,24,0,12">
-              <TextBlock x:Name="SecChecksSummary" DockPanel.Dock="Right" Foreground="#A6A1BC" FontSize="12" VerticalAlignment="Bottom"/>
-              <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Points à vérifier"/>
-            </DockPanel>
-            <StackPanel x:Name="SecChecks">
-              <TextBlock Text="Vérification en cours..." Foreground="#A6A1BC" FontSize="13"/>
+            <StackPanel Margin="0,18,0,0" HorizontalAlignment="Left" MinWidth="220">
+              <Button x:Name="BtnScanQuick" Style="{StaticResource BtnPrimary}" Content="Analyse rapide" Margin="0,0,0,8"/>
+              <Button x:Name="BtnScanFull" Style="{StaticResource BtnSecondary}" Content="Analyse complète" Margin="0,0,0,8"/>
+              <Button x:Name="BtnScanFolder" Style="{StaticResource BtnSecondary}" Content="Analyser un dossier" Margin="0,0,0,8"/>
+              <Button x:Name="BtnScanUpdate" Style="{StaticResource BtnSecondary}" Content="Mettre à jour la base"/>
             </StackPanel>
-            <TextBlock Style="{StaticResource H2}" FontSize="19" Text="Menaces trouvées récemment" Margin="0,24,0,12"/>
-            <StackPanel x:Name="SecHistory"/>
-            <TextBlock Style="{StaticResource Sub}" FontSize="12" Margin="0,16,0,0"
-                       Text="Les points à vérifier sont des indices, pas des preuves : un programme non signé n'est pas forcément un virus. En cas de doute, lance une analyse."/>
+            <TextBlock x:Name="SecScanNote" Style="{StaticResource Sub}" FontSize="12" Margin="0,10,0,0"/>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
@@ -853,55 +694,8 @@
             <TextBlock Text="Ordinateur"/>
           </StackPanel>
         </TabItem.Header>
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-          <StackPanel Margin="0,0,8,0">
-            <TextBlock x:Name="HubHello" Style="{StaticResource H1}" FontSize="36" Text="Salut"/>
-            <TextBlock x:Name="HubSub" Style="{StaticResource Sub}" FontSize="15" Foreground="#B9B3CC"/>
-            <Grid Margin="0,22,0,0">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="250"/>
-                <ColumnDefinition Width="250"/>
-                <ColumnDefinition Width="*"/>
-              </Grid.ColumnDefinitions>
-              <Border x:Name="HubOptCard" Style="{StaticResource Card}" Margin="0,0,16,0" Padding="16" Cursor="Hand">
-                <StackPanel x:Name="HubGaugeOpt" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-              </Border>
-              <Border x:Name="HubSecCard" Grid.Column="1" Style="{StaticResource Card}" Margin="0,0,16,0" Padding="16" Cursor="Hand">
-                <StackPanel x:Name="HubGaugeSec" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-              </Border>
-              <!-- Carte mise en avant : « À faire » quand ça vaut le coup, sinon « Ta dernière partie » (image du jeu en fond) -->
-              <Border x:Name="HubTodo" Grid.Column="2" CornerRadius="20" BorderThickness="1" MinHeight="212">
-                <Border.Background>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                    <GradientStop Color="#2200E5FF" Offset="0"/>
-                    <GradientStop Color="#22FF2EB5" Offset="1"/>
-                  </LinearGradientBrush>
-                </Border.Background>
-                <Border.BorderBrush>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                    <GradientStop Color="#AA00E5FF" Offset="0"/>
-                    <GradientStop Color="#AAFF2EB5" Offset="1"/>
-                  </LinearGradientBrush>
-                </Border.BorderBrush>
-                <Grid>
-                  <Border x:Name="HubTodoArt" CornerRadius="19" Opacity="0.85"/>
-                  <Border x:Name="HubTodoShade" CornerRadius="19" Visibility="Collapsed">
-                    <Border.Background>
-                      <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                        <GradientStop Color="#F00B0820" Offset="0"/>
-                        <GradientStop Color="#C00B0820" Offset="0.5"/>
-                        <GradientStop Color="#300B0820" Offset="1"/>
-                      </LinearGradientBrush>
-                    </Border.Background>
-                  </Border>
-                  <StackPanel x:Name="HubTodoPanel" VerticalAlignment="Center" Margin="26,22"/>
-                </Grid>
-              </Border>
-            </Grid>
-            <UniformGrid x:Name="HubCards" Columns="3" Margin="-8,18,-8,0"/>
-            <TextBlock x:Name="HubSpecs" Foreground="#655E7E" FontSize="11.5" Margin="4,14,0,0" TextWrapping="Wrap"/>
-          </StackPanel>
-        </ScrollViewer>
+        <!-- (vide : sur cette page, l'écran de la console est montré par-dessus toute la fenêtre, accueil-console.ps1) -->
+        <Grid/>
       </TabItem>
 
       <!-- Jeux : bibliothèque de tous les jeux installés, lancement et optimisation (bibliotheque.ps1) -->

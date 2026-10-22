@@ -50,39 +50,9 @@ $LiveScript = {
     }
 }
 
-function Set-Gauge($Val, $Bar, $Sub, $Value, [string]$Text, [string]$SubText, [double]$Warn = 75, [double]$Bad = 90) {
-    if ($null -eq $Value) { $Val.Text = 'N/D'; $Bar.Value = 0; $Sub.Text = $SubText; return }
-    $Val.Text = $Text
-    $Bar.Value = [math]::Min(100.0, [math]::Max(0.0, [double]$Value))
-    $Bar.Foreground = Get-Brush (Get-LoadColor $Value $Warn $Bad)
-    $Sub.Text = $SubText
-}
-
+# Toutes les secondes : l'alerte de température (les mesures, $Live, sont lues par l'écran de la console lui-même)
 function Update-LiveUI {
     if (-not $Live.Updated) { return }
-    # Sous l'écran de la console, les jauges d'avant sont cachées derrière : seule l'alerte de température compte
-    # (la console lit $Live elle-même)
-    if ($script:Kit.Actif -and $ui.EcranKit.Visibility -eq 'Visible') { Test-TempAlert; return }
-    $cpuSub = if ($Live.CpuPerf -and $Live.BaseMHz) { 'Fréquence {0:N1} GHz' -f ($Live.BaseMHz * $Live.CpuPerf / 100 / 1000) } else { '' }
-    Set-Gauge $ui.LiveCpuVal $ui.LiveCpuBar $ui.LiveCpuSub $Live.Cpu "$([int]$Live.Cpu) %" $cpuSub
-
-    if ($Live.RamTotal) {
-        $pct = 100 * $Live.RamUsed / $Live.RamTotal
-        Set-Gauge $ui.LiveRamVal $ui.LiveRamBar $ui.LiveRamSub $pct "$([int]$pct) %" "$(Format-Size $Live.RamUsed) sur $(Format-Size $Live.RamTotal)" 80 90
-    }
-
-    $gpuSub = if ($Live.VramTotal) { "VRAM {0:N1} / {1:N0} Go" -f ($Live.VramUsed / 1024), ($Live.VramTotal / 1024) } else { '' }
-    $gpuText = if ($null -ne $Live.Gpu) { "$([int]$Live.Gpu) %" } else { '' }
-    Set-Gauge $ui.LiveGpuVal $ui.LiveGpuBar $ui.LiveGpuSub $Live.Gpu $gpuText $gpuSub 101 101
-
-    if ($null -ne $Live.GpuTemp) {
-        $ui.LiveTempBox.Visibility = 'Visible'; $ui.LiveGrid.Columns = 4
-        $powerSub = if ($null -ne $Live.GpuPower) { 'Consommation {0:N0} W' -f $Live.GpuPower } else { '' }
-        Set-Gauge $ui.LiveTempVal $ui.LiveTempBar $ui.LiveTempSub $Live.GpuTemp "$([int]$Live.GpuTemp) °C" $powerSub 80 87
-    } else {
-        $ui.LiveTempBox.Visibility = 'Collapsed'; $ui.LiveGrid.Columns = 3
-    }
-    $ui.LiveStamp.Text = "Actualisé à $($Live.Updated.ToString('HH:mm:ss'))"
     Test-TempAlert
 }
 

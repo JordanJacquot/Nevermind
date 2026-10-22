@@ -1,9 +1,9 @@
-﻿# Nevermind : recherche des réglages (Ctrl+K). Barre en haut de l'interface d'avant, page « Rechercher » de la console.
-# Suggestions au fil de la frappe ; un clic ouvre la bonne page et fait clignoter le réglage.
+﻿# Nevermind : recherche des réglages (Ctrl+K), pour la page « Rechercher » de la console (ecran-divers.ps1).
+# Find-Settings trouve les réglages au fil de la frappe ; un résultat ouvre la bonne page de la console (Open-SearchEntry).
 # Chargé par OptiGame.ps1 après les pages (il connaît leurs numéros) et avant evenements.ps1.
 
 # Réglages et actions trouvables. P : page (numéro, 'jeux', 'reseau', 'trafic' ou 'overlay'), S : sous-onglet d'Optimisation gaming,
-# A : texte affiché sur la page, mis en évidence à l'arrivée, K : autres mots qui doivent le trouver,
+# A : texte affiché sur la page d'avant (repère du réglage), K : autres mots qui doivent le trouver,
 # Do : action après l'arrivée (ouvrir une fenêtre). Les accents et majuscules ne comptent pas.
 $SearchEntries = @(
     # Optimisation gaming
@@ -186,88 +186,10 @@ function Find-Settings([string]$Query, [int]$Max = 8) {
 }
 
 # ---------------------------------------------------------------------------
-# Liste des suggestions sous la barre
-# ---------------------------------------------------------------------------
-function Update-SearchResults {
-    $box = $script:Search.Results
-    $box.Children.Clear()
-    $text = [string]$script:Search.Input.Text
-    $script:Search.Hint.Visibility = if ($text) { 'Collapsed' } else { 'Visible' }
-    $script:Search.Key.Visibility = if ($text) { 'Collapsed' } else { 'Visible' }
-    if ($text.Trim()) {
-        $list = @(Find-Settings $text)
-        $head = $null
-    } else {
-        $idx = Get-SearchIndex
-        $list = @(foreach ($s in $SearchStarters) { @($idx | Where-Object { $_.T -eq $s })[0] })
-        $head = 'SUGGESTIONS'
-    }
-    $script:Search.List = $list
-    $script:Search.Sel = 0
-    if ($head) {
-        $h = New-Text $head 10.5 '#655E7E' -Semi
-        $h.Margin = New-Thickness 10 4 0 4
-        [void]$box.Children.Add($h)
-    }
-    if (-not $list.Count) {
-        $n = New-Text "Aucun réglage trouvé pour « $($text.Trim()) ». Essaie un autre mot : fps, ping, démarrage, nettoyage..." 12.5 '#A6A1BC'
-        $n.Margin = New-Thickness 10 8 10 8
-        [void]$box.Children.Add($n)
-    }
-    $script:Search.Rows = @()
-    for ($i = 0; $i -lt $list.Count; $i++) {
-        $e = $list[$i]
-        $row = New-Object System.Windows.Controls.Border
-        $row.CornerRadius = [System.Windows.CornerRadius]::new(8)
-        $row.Padding = New-Thickness 10 7 10 7
-        $row.Cursor = [System.Windows.Input.Cursors]::Hand
-        $row.Background = [System.Windows.Media.Brushes]::Transparent
-        $sp = New-Object System.Windows.Controls.StackPanel
-        $t = New-Text $e.T 13 '#FFFFFF' -Semi
-        $t.TextTrimming = 'CharacterEllipsis'; $t.TextWrapping = 'NoWrap'
-        [void]$sp.Children.Add($t)
-        $w = New-Text $e.Where 11.5 '#A6A1BC'
-        $w.TextTrimming = 'CharacterEllipsis'; $w.TextWrapping = 'NoWrap'
-        [void]$sp.Children.Add($w)
-        $row.Child = $sp
-        $row.Tag = $i
-        $row.Add_MouseEnter({ param($s, $e) Set-SearchSelection ([int]$s.Tag) })
-        $row.Add_MouseLeftButtonDown({ param($s, $e) $e.Handled = $true; $x = $script:Search.List[[int]$s.Tag]; Invoke-Safe { Open-SearchEntry $x } })
-        [void]$box.Children.Add($row)
-        $script:Search.Rows += $row
-    }
-    Set-SearchSelection 0
-    $script:Search.Popup.IsOpen = $true
-}
-
-function Set-SearchSelection([int]$Index) {
-    $rows = @($script:Search.Rows)
-    if (-not $rows.Count) { return }
-    $Index = [math]::Max(0, [math]::Min($rows.Count - 1, $Index))
-    $script:Search.Sel = $Index
-    for ($i = 0; $i -lt $rows.Count; $i++) { $rows[$i].Background = if ($i -eq $Index) { Get-Brush '#262D3A' } else { [System.Windows.Media.Brushes]::Transparent } }
-}
-
-function Update-SearchHint {
-    $empty = -not [string]$script:Search.Input.Text
-    $script:Search.Hint.Visibility = if ($empty) { 'Visible' } else { 'Collapsed' }
-    $script:Search.Key.Visibility = if ($empty) { 'Visible' } else { 'Collapsed' }
-}
-
-function Close-Search([switch]$Clear) {
-    if (-not $script:Search) { return }
-    # Texte vidé d'abord : sinon la liste se rouvrirait sur le changement de texte
-    if ($Clear) { $script:Search.Input.Text = '' }
-    $script:Search.Popup.IsOpen = $false
-}
-
-# ---------------------------------------------------------------------------
-# Aller au réglage : bonne page, bon sous-onglet, puis le réglage clignote
+# Aller au réglage : la bonne page de la console (et le bon sous-onglet de la page d'avant, cachée)
 # ---------------------------------------------------------------------------
 function Open-SearchEntry($E) {
     if (-not $E) { return }
-    Close-Search -Clear
-    [System.Windows.Input.Keyboard]::ClearFocus()
     if ($ui.TestOverlay.Visibility -eq 'Visible') { Hide-TestPanel }
     if ($ui.NetMapOverlay.Visibility -eq 'Visible') { Hide-NetMap }
     if ($ui.Overlay.Visibility -eq 'Visible' -and $script:SheetMode -ne 'display') { Close-Sheet }
@@ -275,8 +197,6 @@ function Open-SearchEntry($E) {
     if ($E.P -eq 'parametres') {
         Show-Settings $E.Tab
         Set-Status "$($E.T) : $($E.Where)"
-        $anchor = [string]$E.A
-        if ($anchor) { $null = $Window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Loaded, [Action]{ try { $el = Find-PageElement $ui.SettingsScroll $anchor; if ($el) { Show-Highlight $el } } catch { Write-Log "Recherche: $_" } }) }
         return
     }
     $page = switch ($E.P) { 'reseau' { $NetIndex } 'trafic' { $TrafficIndex } 'overlay' { $OverlayIndex } 'jeux' { $GamesIndex } default { [int]$E.P } }
@@ -286,20 +206,15 @@ function Open-SearchEntry($E) {
     elseif ($page -eq $GamesIndex) { Set-GamesView 'lib'; Show-OrgView ([bool]$E.Org) }
     if ($E.Game) { $ui.LibSearch.Text = ''; $script:LibFilter = 'Tous'; Update-LibraryView; Set-LibrarySelection $E.Game }
     Set-Status "$($E.T) : $($E.Where)"
-    # Une fois la page affichée et mise en page. (Pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind
-    # quand il tourne dans Nevermind.exe ; la demande attend dans $script:SearchPending.)
-    $script:SearchPending = @{ Page = $page; Anchor = [string]$E.A; After = $E.Do }
+    if (-not $E.Do) { return }
+    # L'action qui suit l'arrivée (ouvrir un panneau), une fois la page affichée. (Pas de GetNewClosure : le bloc
+    # perdrait les fonctions de Nevermind quand il tourne dans Nevermind.exe ; la demande attend dans $script:SearchPending.)
+    $script:SearchPending = $E.Do
     $null = $Window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Loaded, [Action]{
         $d = $script:SearchPending
         $script:SearchPending = $null
         if (-not $d) { return }
-        try {
-            if ($d.Anchor) {
-                $el = Find-PageElement $ui.Tabs.Items[$d.Page].Content $d.Anchor
-                if ($el) { Show-Highlight $el }
-            }
-            if ($d.After) { Invoke-Safe $d.After }
-        } catch { Write-Log "Recherche: $_" }
+        try { Invoke-Safe $d } catch { Write-Log "Recherche: $_" }
     })
 }
 
@@ -327,93 +242,4 @@ function Find-PageElement($Root, [string]$Text) {
         for ($i = $kids.Count - 1; $i -ge 0; $i--) { $stack.Push($kids[$i]) }
     }
     $partial
-}
-
-# Fait défiler jusqu'au réglage et entoure sa carte d'un halo cyan pendant 2 secondes
-function Show-Highlight($El) {
-    $card = $El
-    $p = $El
-    while ($p) {
-        if ($p -is [System.Windows.Controls.Border] -and $p.CornerRadius.TopLeft -ge 8 -and $p.ActualWidth -gt 200) { $card = $p; break }
-        $p = [System.Windows.LogicalTreeHelper]::GetParent($p)
-        if (-not $p) { break }
-    }
-    $card.BringIntoView()
-    $script:SearchLastHit = $card
-    $script:SearchFlashCount = 0
-    if ($card -is [System.Windows.Controls.Border]) {
-        $oldBrush = $card.ReadLocalValue([System.Windows.Controls.Border]::BorderBrushProperty)
-        $oldThick = $card.ReadLocalValue([System.Windows.Controls.Border]::BorderThicknessProperty)
-        $card.BorderThickness = New-Thickness 2 2 2 2
-        $br = Get-Brush $Colors.accent
-        $card.BorderBrush = $br
-        $fade = New-Object System.Windows.Media.Animation.ColorAnimation
-        $fade.To = [System.Windows.Media.Color]::FromArgb(0, 0x00, 0xD9, 0xF5)
-        $fade.BeginTime = [TimeSpan]::FromMilliseconds(1200)
-        $fade.Duration = [System.Windows.Duration]::new([TimeSpan]::FromMilliseconds(900))
-        $br.BeginAnimation([System.Windows.Media.SolidColorBrush]::ColorProperty, $fade)
-    }
-    $oldEffect = $card.Effect
-    $card.Effect = New-Glow $Colors.accent 22 0.9
-    $t = New-Object System.Windows.Threading.DispatcherTimer
-    $t.Interval = [TimeSpan]::FromMilliseconds(2200)
-    $state = @{ Card = $card; Effect = $oldEffect; Brush = $oldBrush; Thick = $oldThick; Timer = $t }
-    $t.Tag = $state
-    $t.Add_Tick({
-        param($s, $e)
-        $x = $s.Tag
-        $s.Stop()
-        $c = $x.Card
-        $c.Effect = $x.Effect
-        if ($c -is [System.Windows.Controls.Border]) {
-            if ($x.Brush -eq [System.Windows.DependencyProperty]::UnsetValue) { $c.ClearValue([System.Windows.Controls.Border]::BorderBrushProperty) } else { $c.BorderBrush = $x.Brush }
-            if ($x.Thick -eq [System.Windows.DependencyProperty]::UnsetValue) { $c.ClearValue([System.Windows.Controls.Border]::BorderThicknessProperty) } else { $c.BorderThickness = $x.Thick }
-        }
-    })
-    $t.Start()
-}
-
-# ---------------------------------------------------------------------------
-# Branchement (la barre fait partie du modèle de la fenêtre : appelé une fois la fenêtre affichée)
-# ---------------------------------------------------------------------------
-function Initialize-Search {
-    $tpl = $ui.Tabs.Template
-    $s = @{
-        Box = $tpl.FindName('SearchBox', $ui.Tabs); Input = $tpl.FindName('SearchInput', $ui.Tabs); Hint = $tpl.FindName('SearchHint', $ui.Tabs)
-        Key = $tpl.FindName('SearchKey', $ui.Tabs); Popup = $tpl.FindName('SearchPopup', $ui.Tabs); Results = $tpl.FindName('SearchResults', $ui.Tabs)
-        List = @(); Rows = @(); Sel = 0
-    }
-    if (-not $s.Input -or -not $s.Popup) { Write-Log 'Recherche: barre introuvable'; return }
-    $script:Search = $s
-    $s.Input.Add_TextChanged({ if ($script:Search.Input.IsKeyboardFocused) { try { Update-SearchResults } catch { Write-Log "Recherche: $_" } } else { Update-SearchHint } })
-    $s.Input.Add_GotKeyboardFocus({
-        $script:Search.Box.BorderBrush = Get-Brush $Colors.accent
-        try { Update-SearchResults } catch { Write-Log "Recherche: $_" }
-    })
-    $s.Input.Add_LostKeyboardFocus({
-        $script:Search.Box.ClearValue([System.Windows.Controls.Border]::BorderBrushProperty)
-        # Laisse le temps à un clic dans la liste d'arriver
-        $t = New-Object System.Windows.Threading.DispatcherTimer
-        $t.Interval = [TimeSpan]::FromMilliseconds(180)
-        $t.Add_Tick({ param($x, $y) $x.Stop(); if (-not $script:Search.Input.IsKeyboardFocused) { Close-Search } })
-        $t.Start()
-    })
-    $s.Input.Add_PreviewKeyDown({
-        param($src, $e)
-        switch ([string]$e.Key) {
-            'Down' { Set-SearchSelection ($script:Search.Sel + 1); $e.Handled = $true }
-            'Up' { Set-SearchSelection ($script:Search.Sel - 1); $e.Handled = $true }
-            'Return' { $x = @($script:Search.List)[$script:Search.Sel]; if ($x) { Invoke-Safe { Open-SearchEntry $x } }; $e.Handled = $true }
-            'Escape' { Close-Search -Clear; [System.Windows.Input.Keyboard]::ClearFocus(); $e.Handled = $true }
-        }
-    })
-    $Window.Add_Deactivated({ Close-Search })
-    $Window.Add_LocationChanged({ Close-Search })
-}
-
-# Ctrl+K ou Ctrl+F : va dans la barre de recherche (interface d'avant ; la console ouvre sa page « Rechercher »)
-function Focus-Search {
-    if (-not $script:Search) { return }
-    [void]$script:Search.Input.Focus()
-    $script:Search.Input.SelectAll()
 }

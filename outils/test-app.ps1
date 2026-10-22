@@ -16,6 +16,7 @@ foreach ($fn in 'Test-GameRunning', 'Update-LiveUI', 'Update-Traffic', 'Update-L
 function Show-Message([string]$Text, [string]$Icon = 'Information') { [void]$script:T.Msgs.Add("[$Icon] $Text") }
 function Confirm-Action([string]$Text) { [void]$script:T.Msgs.Add("[Question] $Text"); $false }
 function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) { [void]$script:T.Msgs.Add("[Notify] $Title : $Text") }
+function Confirm-EcranImpossible([string]$Texte) { [void]$script:T.Msgs.Add("[Question] $Texte"); $false }
 # Fausse icône près de l'horloge : rien n'apparaît sur le PC pendant le test.
 function Get-TrayIcon { if (-not $script:FakeTray) { $script:FakeTray = [pscustomobject]@{ Visible = $false } }; $script:FakeTray }
 
@@ -51,11 +52,17 @@ function Test-Step([string]$Name, [scriptblock]$Body) {
     } catch { Add-TestResult $Name $false "$($_.Exception.Message) $($_.InvocationInfo.PositionMessage)" }
 }
 function Assert-Test([bool]$Cond, [string]$Why) { if (-not $Cond) { throw $Why } }
-# Étape qui vérifie l'interface d'origine (le modèle caché derrière la console) : la console est mise de côté le temps de l'étape
+# Étape qui vérifie le moteur (l'interface d'avant, chargée et cachée derrière la console) : la console est mise de côté
+# le temps de l'étape, et Show-Page / Show-Settings ouvrent la page ou le panneau d'avant (jamais montrés dans l'appli)
 function Test-StepWpf([string]$Name, [scriptblock]$Body) {
     $kit = [bool]($script:Kit -and $script:Kit.Actif)
+    $page = ${function:Show-Page}; $param = ${function:Show-Settings}
     if ($kit) { $script:Kit.Actif = $false }
-    try { Test-Step $Name $Body } finally { if ($kit) { $script:Kit.Actif = $true } }
+    Set-Item function:script:Show-Page $script:KitShowPage; Set-Item function:script:Show-Settings $script:KitShowSettings
+    try { Test-Step $Name $Body } finally {
+        Set-Item function:script:Show-Page $page; Set-Item function:script:Show-Settings $param
+        if ($kit) { $script:Kit.Actif = $true }
+    }
 }
 
 $Window.WindowStartupLocation = 'Manual'; $Window.Left = -5000; $Window.Top = 0; $Window.Height = 900; $Window.ShowInTaskbar = $false
@@ -93,47 +100,24 @@ $script:T.Run.Add_Tick({
             }
             $script:T.Watch = $true
             Save-TestShot 'accueil'
-            Test-Step 'Accueil Ordinateur' {
-                Assert-Test ($ui.HubCards.Children.Count -eq 3) "$($ui.HubCards.Children.Count) familles au lieu de 3"
-                Assert-Test ($script:HubStats.Count -eq 8) "seulement $($script:HubStats.Count) outils"
-                Assert-Test ($ui.HubHello.Text -like ((Get-ThemeText 'Hello') -f '*')) "bonjour : $($ui.HubHello.Text)"
-                Assert-Test ($ui.HubTodoPanel.Children.Count -ge 2) 'carte « À faire » vide'
-                "3 familles, 8 outils, « $($ui.HubHello.Text) »"
-            }
-            Test-Step 'Accueil : carte mise en avant (3 cas)' {
-                if ($null -eq $script:Games) { Update-GameCache }
-                $tagOf = { (Get-TextBlockText $ui.HubTodoPanel.Children[0]) }
-                $manualF = @{ Id = 'test:manuel'; Status = 'warn'; Titre = 'Pilote à installer (test)'; Detail = 'x'; Gain = 4; Fix = @{ Auto = $false } }
-                $autoF = @{ Id = 'test:auto'; Status = 'warn'; Titre = 'Réglage en un clic (test)'; Detail = 'x'; Gain = 2; Fix = @{ Auto = $true } }
-                $realLog = $script:PlayLog
-                $game = @(Get-LibraryGames)[0]
-                try {
-                    # 1. Une correction en un clic : « À faire », le pilote en petite ligne
-                    Update-HubTodo @{ Active = @($manualF, $autoF); Score = 90 }
-                    Assert-Test ((& $tagOf) -eq 'À FAIRE') "étiquette « $(& $tagOf) » au lieu de À FAIRE"
-                    Assert-Test ((Get-TextBlockText $ui.HubTodoPanel.Children[1]) -like 'Réglage en un clic*') 'la correction en un clic n''est pas en avant'
-                    Assert-Test ($ui.HubTodoPanel.Children[-1] -is [System.Windows.Controls.Border]) 'pas de petite ligne pour le pilote'
-                    # 2. Seulement du manuel et un jeu lancé récemment : « Ta dernière partie »
-                    $s1 = 'pas de jeu installé'
-                    if ($game) {
-                        $script:PlayLog = @{ $game.Name = @{ Last = (Get-Date).ToString('s'); Seconds = 4000; Count = 3 } }
-                        Update-HubTodo @{ Active = @($manualF); Score = 96 }
-                        Assert-Test ((& $tagOf) -eq 'TA DERNIÈRE PARTIE') "étiquette « $(& $tagOf) » au lieu de TA DERNIÈRE PARTIE"
-                        Assert-Test ((Get-TextBlockText $ui.HubTodoPanel.Children[1]) -eq $game.Name) 'mauvais jeu affiché'
-                        Assert-Test ($ui.HubTodoPanel.Children[-1] -is [System.Windows.Controls.Border]) 'le pilote a disparu'
-                        Wait-TestMs 300; Save-TestShot 'accueil-derniere-partie'
-                        $s1 = "dernière partie : $($game.Name)$(if ($ui.HubTodoArt.Background) { ' (avec image)' })"
-                    }
-                    # 3. Rien joué, rien à faire : « Prêt à jouer »
-                    $script:PlayLog = @{}
-                    Update-HubTodo @{ Active = @(); Score = 100 }
-                    Assert-Test ((& $tagOf) -eq 'PRÊT À JOUER') "étiquette « $(& $tagOf) » au lieu de PRÊT À JOUER"
-                    Assert-Test (-not $ui.HubTodoArt.Background) 'image de jeu restée'
-                } finally { $script:PlayLog = $realLog; Update-Hub }
-                "à faire, $s1, prêt à jouer"
+            Test-Step 'Accueil de la console' {
+                $e = Get-EcranNevermind
+                $tu = @($e.accueil.tuiles)
+                Assert-Test ($tu.Count -eq 7) "$($tu.Count) tuiles au lieu de 7"
+                Assert-Test ($e.app.phrase -like ((Get-ThemeText 'Hello') -f '*')) "bonjour : $($e.app.phrase)"
+                $a = $script:LastAnalysis
+                Assert-Test ($tu[0].id -eq 'pc' -and $tu[0].gros -eq [int]$a.Score) "tuile Ton PC : $($tu[0].gros) au lieu de $($a.Score)"
+                # Les points à régler : les mêmes que la page Ton PC et le résumé pour Mindset
+                $fd = Get-HubFindings $a
+                $todo = @(@($fd.Important) + @($fd.Manual) | Where-Object { $_ }).Count
+                $attendu = if ($todo -eq 1) { '1 point à régler' } elseif ($todo -gt 1) { "$todo points à régler" } else { 'Au top pour jouer' }
+                Assert-Test ($tu[0].sous -eq $attendu) "tuile Ton PC : « $($tu[0].sous) » au lieu de « $attendu »"
+                Assert-Test ($script:Kit.Stats[1] -and $script:Kit.Stats[1].T) 'petit texte de la tuile Performances absent'
+                "7 tuiles, « $($e.app.phrase) », Ton PC $($tu[0].gros)/100 ($($tu[0].sous))"
             }
             Test-Step 'Tableau de bord' {
-                $ui.Tabs.SelectedIndex = 0; Wait-TestMs 800; Save-TestShot 'tableau-de-bord'
+                Show-Page 0; Wait-TestMs 300
+                Assert-Test ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:Kit.RetourEcran -eq 'tableau') "page d'avant $($ui.Tabs.SelectedIndex), écran $($script:Kit.RetourEcran)"
                 $a = $script:LastAnalysis
                 Assert-Test ($a.Score -ge 0 -and $a.Score -le 100) "score invalide : $($a.Score)"
                 Assert-Test (@($a.Findings).Count -ge 5) "seulement $(@($a.Findings).Count) points analysés"
@@ -142,10 +126,10 @@ $script:T.Run.Add_Tick({
             foreach ($pg in @(@(1, 'Gaming'), @(2, 'Démarrage'), @(3, 'Connexion'), @(4, 'Nettoyage'), @(7, 'Sauvegarde'))) {
                 $i = $pg[0]
                 Test-Step "Page $($pg[1])" {
-                    $ui.Tabs.SelectedIndex = $i; Wait-TestMs 800
-                    Assert-Test ($ui.Tabs.SelectedIndex -eq $i) 'la page ne s''ouvre pas'
-                    Save-TestShot $pg[1].ToLower()
-                    $ui.StatusText.Text
+                    # (la page de la console ; celle d'avant reste cachée)
+                    Show-Page $i; Wait-TestMs 300
+                    Assert-Test ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:Kit.RetourEcran -eq $KitPagesIndex[$i]) "page d'avant $($ui.Tabs.SelectedIndex), écran $($script:Kit.RetourEcran)"
+                    "écran « $($script:Kit.RetourEcran) »"
                 }
             }
             Test-Step 'Pilote graphique' {
@@ -154,7 +138,7 @@ $script:T.Run.Add_Tick({
                 ($f | ForEach-Object { "$($_.Titre) : $($_.Detail)" }) -join ' | '
             }
             Test-Step 'Mode jeu et profils par jeu' {
-                $ui.Tabs.SelectedIndex = 1
+                Show-Page 1
                 # Au démarrage, la liste est calculée juste après « Prêt. » : le test passe avant, on la calcule ici.
                 if ($null -eq $script:Games) { Update-GameCache }
                 Wait-TestMs 500; Save-TestShot 'gaming-reglages'; Set-GamingSubPage 'mode'; Wait-TestMs 300; Save-TestShot 'gaming-mode-jeu'; Set-GamingSubPage 'profiles'; Wait-TestMs 300; Save-TestShot 'gaming-profils'
@@ -717,43 +701,8 @@ $script:T.Run.Add_Tick({
                 $script:DesktopDir = $null
                 "raccourci créé vers $(Split-Path $exe -Leaf), démarrage automatique $(if ($auto) { 'activé' } else { 'désactivé' }) sur ce PC"
             }
-            Test-Step 'Identité Nevermind (nom, logo animé, couleurs)' {
+            Test-Step 'Identité Nevermind (nom)' {
                 Assert-Test ($Window.Title -eq 'Nevermind') "titre de la fenêtre : $($Window.Title)"
-                Assert-Test ($script:LogoMark -and $script:LogoWord -and $script:LogoWord.Text.Text -eq 'Nevermind') 'logo de la barre de gauche absent'
-                if ($script:LogoMark.Pack -and $script:LogoMark.Timer) {
-                    # Logo animé d'un pack : il joue un tour complet puis revient à sa première image
-                    Start-PackLogoShake; Wait-TestMs 150
-                    $moved = $script:LogoMark.Timer.IsEnabled
-                    Wait-TestMs ([int]($script:LogoMark.Frames.Count * $script:LogoMark.Timer.Interval.TotalMilliseconds) + 800)
-                    $rest = -not $script:LogoMark.Timer.IsEnabled -and $script:LogoMark.Frame -eq 0
-                    Assert-Test ($moved -and $rest) "logo animé du pack : lancé $moved, retour au repos $rest"
-                } elseif ($script:LogoMark.Pack -and $script:LogoMark.Glow) {
-                    # Logo d'un pack en Dofus : il lévite et brille, puis revient au repos
-                    # Relevé pendant l'animation (un seul instant peut tomber pile au mauvais moment)
-                    Start-PackLogoShake; $moved = $false
-                    for ($k = 0; $k -lt 15 -and -not $moved; $k++) { Wait-TestMs 40; $moved = $null -ne $script:LogoMark.Img.Effect -or [math]::Abs([double]$script:LogoMark.Move.Y) -gt 0.5 }
-                    Wait-TestMs 3200
-                    $rest = $null -eq $script:LogoMark.Img.Effect -and $script:LogoMark.Move.Y -eq 0
-                    Assert-Test ($moved -and $rest) "logo du pack : lévitation $moved, retour au repos $rest"
-                } elseif ($script:LogoMark.Pack) {
-                    # Logo d'un pack : la balle se secoue puis revient droite
-                    # Angle relevé plusieurs fois : la balle peut repasser par zéro pile au moment d'un seul relevé
-                    Start-PackLogoShake; $moved = $false
-                    for ($k = 0; $k -lt 15 -and -not $moved; $k++) { Wait-TestMs 25; $moved = [math]::Abs($script:LogoMark.Rot.Angle) -gt 1 }
-                    Wait-TestMs 700
-                    $rest = [math]::Abs($script:LogoMark.Rot.Angle) -lt 0.01
-                    Assert-Test ($moved -and $rest) "logo du pack : secoué $moved, retour au repos $rest"
-                } else {
-                    # Un saut de glitch déplace les calques puis les remet au repos
-                    while ($script:LogoMark.Busy) { Wait-TestMs 100 }   # un saut automatique en cours
-                    Start-NexoGlitch $script:LogoMark $script:LogoWord 1500
-                    $moved = $script:LogoMark.Busy
-                    Wait-TestMs 1900
-                    # (un saut automatique a pu partir entre-temps : on attend qu'il finisse)
-                    $fin = (Get-Date).AddSeconds(4); while ($script:LogoMark.Busy -and (Get-Date) -lt $fin) { Wait-TestMs 100 }
-                    $rest = [math]::Abs($script:LogoMark.Cyan.RenderTransform.X - $script:LogoMark.Rest[0] * $script:LogoMark.Size) -lt 0.01 -and -not $script:LogoMark.Busy
-                    Assert-Test ($moved -and $rest) "glitch : en cours $moved, retour au repos $rest"
-                }
                 # Plus aucun « OptiGame » visible dans la fenêtre (hors chemins de fichiers)
                 $seen = @()
                 foreach ($i in 0..($ui.Tabs.Items.Count - 1)) {
@@ -766,8 +715,7 @@ $script:T.Run.Add_Tick({
                     }
                 }
                 Assert-Test (-not $seen.Count) "« OptiGame » encore affiché : $(($seen | Select-Object -First 3) -join ' | ')"
-                Save-TestShot 'nexo-accueil'
-                'titre, logo animé (saut puis retour au repos), aucun ancien nom affiché'
+                'titre, aucun ancien nom dans les pages d''avant'
             }            Test-Step 'Recherche des réglages' {
                 Assert-Test ($null -ne $script:Search) 'barre de recherche non branchée'
                 $cases = @(
@@ -779,27 +727,14 @@ $script:T.Run.Add_Tick({
                     Assert-Test ($r.Count -and $r[0].T -like $c[1]) "« $($c[0]) » donne : $(($r | Select-Object -First 3 | ForEach-Object { $_.T }) -join ' | ')"
                 }
                 Assert-Test (-not @(Find-Settings 'zzzqqq').Count) 'résultats pour un mot inconnu'
-                # Suggestions affichées en tapant
-                Focus-Search; $script:Search.Input.Text = 'fps'; Wait-TestMs 200
-                Assert-Test ($script:Search.Popup.IsOpen -and @($script:Search.Rows).Count -ge 3) "suggestions : $(@($script:Search.Rows).Count)"
-                $pc = $script:Search.Popup.Child; $pc.UpdateLayout()
-                $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap([int]$pc.ActualWidth, [int]$pc.ActualHeight, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32)
-                $rtb.Render($pc)
-                $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder; $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
-                $fs = [IO.File]::Create((Join-Path $script:T.Dir 'captures\recherche-suggestions.png')); $enc.Save($fs); $fs.Close()
-                # Aller au réglage : bonne page, bon sous-onglet, réglage mis en évidence
+                # Aller au réglage : la page de la console (celle d'avant reste cachée)
                 Open-SearchEntry (@(Find-Settings 'position compteur')[0]); Wait-TestMs 400
-                Assert-Test ($ui.Tabs.SelectedIndex -eq $OverlayIndex) "page $($ui.Tabs.SelectedIndex) au lieu de l'onglet Overlay"
-                Assert-Test (-not $script:Search.Popup.IsOpen -and -not $script:Search.Input.Text) 'barre non refermée'
-                Assert-Test ($script:SearchLastHit -and $script:SearchLastHit.Effect) 'réglage non mis en évidence'
-                Assert-Test (-not $script:Search.Input.IsKeyboardFocused) 'la barre garde le focus'
-                Save-TestShot 'recherche-arrivee'
+                Assert-Test ($script:Kit.RetourEcran -eq 'overlay' -and $ui.Tabs.SelectedIndex -eq $HubIndex) "écran « $($script:Kit.RetourEcran) », page d'avant $($ui.Tabs.SelectedIndex)"
                 Open-SearchEntry (@(Find-Settings 'raccourci bureau')[0]); Wait-TestMs 400
-                $el = Find-PageElement $ui.SettingsScroll 'Raccourci et démarrage'
-                Assert-Test ($ui.SettingsOverlay.Visibility -eq 'Visible' -and $script:SettingsTab -eq 'general' -and $el) 'réglage « Raccourci et démarrage » non trouvé dans les Paramètres'
-                Hide-Settings
+                Assert-Test ($script:Kit.RetourEcran -eq 'parametres' -and $ui.SettingsOverlay.Visibility -ne 'Visible') "Paramètres : écran « $($script:Kit.RetourEcran) », panneau d'avant $($ui.SettingsOverlay.Visibility)"
+                Show-Page $HubIndex
                 Wait-TestMs 2500
-                "$($cases.Count) recherches justes (fautes de frappe comprises), suggestions affichées, arrivée sur Overlay et dans les Paramètres"
+                "$($cases.Count) recherches justes (fautes de frappe comprises), arrivée sur les pages Overlay et Paramètres de la console"
             }
             if ($script:Kit -and $script:Kit.Actif) {
                 Test-Step 'Console : toutes les pages' {
@@ -829,10 +764,67 @@ $script:T.Run.Add_Tick({
                     Show-Page $HubIndex
                     "$nb pages construites et non vides, 7 tuiles, Paramètres et Aide dans la console"
                 }
+                Test-Step 'Interface d''avant jamais montrée' {
+                    # Toutes les façons d'ouvrir une page ou les Paramètres mènent à l'écran de la console : la page d'avant
+                    # reste cachée (seuls l'Organizer et la carte du réseau ne sont pas encore passés au kit)
+                    $verifier = {
+                        param($Quoi, $Attendu)
+                        $ouverts = @('SettingsOverlay', 'NetMapOverlay', 'StartupOverlay' | Where-Object { $ui[$_].Visibility -eq 'Visible' })
+                        if ($ui.Tabs.SelectedIndex -ne $HubIndex -or $ouverts.Count) { throw "$Quoi : page d'avant n° $($ui.Tabs.SelectedIndex) $($ouverts -join ', ')" }
+                        if ($Attendu -and $script:Kit.RetourEcran -ne $Attendu) { throw "$Quoi : écran « $($script:Kit.RetourEcran) » au lieu de « $Attendu »" }
+                    }
+                    $nRech = 0
+                    try {
+                        foreach ($i in @($KitPagesIndex.Keys)) { Show-Page $i; & $verifier "page $i" $KitPagesIndex[$i] }
+                        foreach ($t in 'general', 'theme', 'jeux', 'reseau', 'maj', 'aide') { Show-Settings $t; & $verifier "Paramètres $t" $(if ($t -eq 'aide') { 'aide' } else { 'parametres' }) }
+                        foreach ($i in 0..7) { Invoke-FindingAction "tab:$i"; & $verifier "lien d'une fiche tab:$i" $KitPagesIndex[$i] }
+                        # (les résultats qui ouvrent un panneau après l'arrivée, comme la carte du réseau, sont à part)
+                        foreach ($e in @(Get-SearchIndex | Where-Object { -not $_.Do -and -not $_.Game } | Select-Object -First 70)) { Open-SearchEntry $e; & $verifier "recherche « $($e.T) »" $null; $nRech++ }
+                        Wait-TestMs 300; & $verifier 'après les gestes' $null
+                    } finally { Show-Page $HubIndex }
+                    # Sur l'accueil : l'écran est montré, au-dessus des pages d'avant, sur un fond plein
+                    $fin = (Get-Date).AddSeconds(5); while (($ui.EcranKit.Visibility -ne 'Visible' -or -not $script:Vue.Controle) -and (Get-Date) -lt $fin) { Wait-TestMs 100 }
+                    Assert-Test ($ui.EcranKit.Visibility -eq 'Visible' -and $script:Vue.Controle) 'l''écran de la console n''est pas montré sur l''accueil'
+                    $enfants = @($Window.Content.Children)
+                    $k = $enfants.IndexOf($ui.EcranKit)
+                    Assert-Test ($k -gt $enfants.IndexOf($ui.Tabs) -and $k -gt $enfants.IndexOf($ui.StatusBar) -and $k -gt $enfants.IndexOf($ui.Backdrop)) 'l''écran n''est pas au-dessus des pages d''avant'
+                    $fond = $ui.EcranKit.Background
+                    Assert-Test ($fond -is [System.Windows.Media.SolidColorBrush] -and $fond.Color.A -eq 255) 'fond de l''écran transparent : l''interface d''avant se verrait à travers'
+                    # Plus de décor de l'interface d'avant : barre du haut, recherche, accueil Ordinateur
+                    foreach ($n in 'BarreHaut', 'SearchBox', 'SearchPopup', 'LogoMarkHost', 'TopSettings', 'NavBack') { Assert-Test ($null -eq $ui.Tabs.Template.FindName($n, $ui.Tabs)) "$n encore dans la fenêtre" }
+                    foreach ($n in 'HubCards', 'HubTodo', 'HubGaugeOpt') { Assert-Test ($null -eq $Window.FindName($n)) "$n (accueil Ordinateur) encore dans la fenêtre" }
+                    "$($KitPagesIndex.Count) pages, 6 onglets des Paramètres, 8 liens de fiche, $nRech résultats de recherche : toujours l'écran de la console (au-dessus, fond plein)"
+                }
+                Test-Step 'Écran impossible : message, puis fermeture' {
+                    # Simulé : l'écran de la console ne démarre pas. La question (neutralisée ici) dit quoi faire, la raison
+                    # est notée au journal, la fenêtre est cachée et Nevermind se ferme (fermeture remplacée ici par une trace)
+                    $fermer = ${function:Close-EcranImpossible}; $permis = $script:AllowClose
+                    $avant = $script:T.Msgs.Count
+                    $script:T.Ferme = $false
+                    Set-Item function:script:Close-EcranImpossible { $script:T.Ferme = $true }
+                    try {
+                        $prevenue = Stop-VueImpossible 'essai du test (WebView2 absente)'
+                        Assert-Test ($prevenue -and $script:EcranImpossible -and -not $script:Kit.Actif) 'l''échec de l''écran n''est pas pris en compte'
+                        $q = @($script:T.Msgs | Select-Object -Skip $avant | Where-Object { $_ -like '`[Question`]*' })
+                        Assert-Test ($q.Count -eq 1 -and $q[0] -like "*n'a pas pu afficher son écran*Redémarre le PC*réinstalle Nevermind depuis Mindset*signaler le problème*") "message : $($q -join ' | ')"
+                        Assert-Test ($q[0] -notmatch '[\u2013\u2014]') 'tiret long dans le message'
+                        $j = @(Get-Content -LiteralPath $LogFile -Encoding UTF8 -Tail 40 | Where-Object { $_ -like '*Écran impossible (essai du test (WebView2 absente)) : message affiché, Nevermind se ferme*' })
+                        Assert-Test ($j.Count -ge 1) 'ligne du journal absente'
+                        Assert-Test (-not $Window.IsVisible) 'la fenêtre reste affichée'
+                        Assert-Test ($script:T.Ferme) 'Nevermind ne se ferme pas (Close-EcranImpossible pas appelée)'
+                        # Un deuxième échec juste après : pas de deuxième message
+                        [void](Stop-VueImpossible 'deuxième essai')
+                        Assert-Test (@($script:T.Msgs | Select-Object -Skip $avant | Where-Object { $_ -like '`[Question`]*' }).Count -eq 1) 'deux messages pour le même échec'
+                    } finally {
+                        Set-Item function:script:Close-EcranImpossible $fermer
+                        $script:EcranImpossible = $false; $script:AllowClose = $permis; $script:Kit.Actif = $true
+                        $Window.Show(); Show-Page $HubIndex; Wait-TestMs 500
+                    }
+                    'question claire (redémarrer, réinstaller depuis Mindset, fichier pour signaler), raison au journal, fenêtre cachée puis fermée, une seule fois'
+                }
             }
-            Test-StepWpf 'Paramètres (roue crantée)' {
-                Assert-Test ($null -eq $ui.Tabs.Template.FindName('TopReport', $ui.Tabs)) 'bouton Signaler encore dans la barre'
-                # (le panneau d'origine : la page Paramètres de la console clique sur ses réglages)
+            Test-StepWpf 'Paramètres (panneau d''avant)' {
+                # (le panneau d'origine, caché : la page Paramètres de la console clique sur ses réglages)
                 Show-Settings 'general'; Wait-TestMs 400
                 Assert-Test ($ui.SettingsOverlay.Visibility -eq 'Visible') 'les Paramètres ne s''ouvrent pas'
                 Save-TestShot 'parametres-general'
@@ -859,17 +851,8 @@ $script:T.Run.Add_Tick({
                 $ev = New-Object System.Windows.Input.KeyEventArgs ([System.Windows.Input.Keyboard]::PrimaryDevice, [System.Windows.PresentationSource]::FromVisual($Window), 0, [System.Windows.Input.Key]::Escape)
                 $ev.RoutedEvent = [System.Windows.UIElement]::KeyDownEvent; $Window.RaiseEvent($ev)
                 Assert-Test ($ui.SettingsOverlay.Visibility -ne 'Visible') 'Échap ne ferme pas les Paramètres'
-                # Fenêtre au plus étroit : les 5 onglets ne passent pas sous la recherche
-                $oldW = $Window.Width; $wasMax = $Window.WindowState
-                $Window.WindowState = 'Normal'; $Window.Width = $Window.MinWidth; Wait-TestMs 400; Update-TopBarFit; $Window.UpdateLayout()
-                $tb = $script:TopBar
-                $tabsRight = $tb.Tabs.TranslatePoint([System.Windows.Point]::new($tb.Tabs.ActualWidth, 0), $Window).X
-                $searchLeft = $tb.Search.TranslatePoint([System.Windows.Point]::new(0, 0), $Window).X
-                Save-TestShot 'barre-etroite'
-                $Window.Width = $oldW; $Window.WindowState = $wasMax; Wait-TestMs 300
-                Assert-Test ($tabsRight -le $searchLeft) "onglets jusqu'à $([int]$tabsRight) px, recherche à $([int]$searchLeft) px"
                 Show-Page $HubIndex
-                "$($seen.Count) onglets ($($seen -join ', ')), réglage synchronisé avec sa page, Échap ferme, barre du haut tenue à $([int]$Window.MinWidth) px"
+                "$($seen.Count) onglets ($($seen -join ', ')), réglage synchronisé avec sa page, Échap ferme"
             }
             Test-StepWpf 'Thèmes (5 choix)' {
                 $base = @($AppThemes.Keys | Where-Object { -not $AppThemes[$_].Pack })
@@ -946,36 +929,6 @@ $script:T.Run.Add_Tick({
                     Stop-StartupLoader; $ui.StartupOverlay.Visibility = 'Collapsed'
                     $script:ThemePack = $oldPack; $ThemePack = $oldPack
                 }
-                # Dessin animé au centre de la barre du bas
-                $oldPack3 = $ThemePack
-                try {
-                    $script:ThemePack = @{ Footer = @{ File = $pk.Loader.File; Frames = 1; Delay = 100; Height = 40 } }; $ThemePack = $script:ThemePack
-                    Initialize-PackFooter; Wait-TestMs 300
-                    Assert-Test ($ui.FooterArt.Visibility -eq 'Visible' -and $ui.FooterArt.Child -and $script:Footer.Timer.IsEnabled) 'dessin de la barre du bas absent'
-                    Assert-Test ($ui.StatusText.MaxWidth -lt $ui.StatusBar.ActualWidth / 2) "le texte d'état peut passer sous le dessin ($($ui.StatusText.MaxWidth) px)"
-                } finally {
-                    if ($script:Footer) { $script:Footer.Timer.Stop(); $script:Footer = $null }
-                    $ui.FooterArt.Child = $null; $ui.FooterArt.Visibility = 'Collapsed'; $ui.StatusText.MaxWidth = [double]::PositiveInfinity
-                    $script:ThemePack = $oldPack3; $ThemePack = $oldPack3
-                }
-                # Icône animée d'onglet : immobile au repos, animée au survol, de retour à la 1re image ensuite
-                $oldPack4 = $ThemePack; $hdr = $ui.Tabs.Items[$GamesIndex].Header; $oldIcon = $hdr.Children[0]
-                try {
-                    $script:ThemePack = @{ TabIcons = @{ jeux = @{ File = $pk.Loader.File; Frames = 1; Delay = 60 } } }; $ThemePack = $script:ThemePack
-                    Initialize-PackTabIcons
-                    $st = $script:TabIcons['jeux']
-                    Assert-Test ($st -and $hdr.Children[0] -is [System.Windows.Controls.Image] -and -not $st.Timer.IsEnabled) 'icône de l''onglet Jeux non remplacée (ou animée au repos)'
-                    $ev = New-Object System.Windows.Input.MouseEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0); $ev.RoutedEvent = [System.Windows.Input.Mouse]::MouseEnterEvent
-                    $ui.Tabs.Items[$GamesIndex].RaiseEvent($ev)
-                    Assert-Test ($st.Timer.IsEnabled -or ($st.Hop -and $st.Hop.HasAnimatedProperties)) 'icône non animée au survol'
-                    $ev = New-Object System.Windows.Input.MouseEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0); $ev.RoutedEvent = [System.Windows.Input.Mouse]::MouseLeaveEvent
-                    $ui.Tabs.Items[$GamesIndex].RaiseEvent($ev)
-                    Assert-Test (-not $st.Timer.IsEnabled -and $st.Frame -eq 0 -and (-not $st.Hop -or -not $st.Hop.HasAnimatedProperties)) 'icône toujours animée après le survol'
-                } finally {
-                    if ($script:TabIcons) { foreach ($x in $script:TabIcons.Values) { $x.Timer.Stop() }; $script:TabIcons = $null }
-                    if ($hdr.Children[0] -ne $oldIcon) { $hdr.Children.RemoveAt(0); $hdr.Children.Insert(0, $oldIcon) }
-                    $script:ThemePack = $oldPack4; $ThemePack = $oldPack4
-                }
                 # Police de pack : la fenêtre entière se charge avec (titres, onglets, boutons), et en mode « tout »
                 $oldFont = $PackFont; $oldPack2 = $ThemePack
                 try {
@@ -990,7 +943,7 @@ $script:T.Run.Add_Tick({
                     $tb = New-Text 'Test' 14; Set-PackFont $tb
                     Assert-Test ([string]$tb.FontFamily -like '*Consolas*') "police non posée : $($tb.FontFamily)"
                 } finally { $script:PackFont = $oldFont; $PackFont = $oldFont; $script:ThemePack = $oldPack2; $ThemePack = $oldPack2 }
-                "GIF détouré (reflet gardé), zip importé, carte « Pack » dans Thème, personnage qui avance avec la barre, dessin dans la barre du bas, icône d'onglet animée au survol, police du pack chargée"
+                "GIF détouré (reflet gardé), zip importé, carte « Pack » dans Thème, personnage qui avance avec la barre, police du pack chargée"
             }
             Test-Step 'Signaler un problème (Paramètres, Aide)' {
                 Show-ReportPanel; $script:ReportBox.Text = 'Le jeu rame depuis la mise à jour'; Wait-TestMs 400; Save-TestShot 'signaler'; Hide-TestPanel
@@ -1088,7 +1041,7 @@ $script:T.Run.Add_Tick({
                 Update-DeviceIdentity $dec
                 Assert-Test (-not $dec.Camera) 'un décodeur TV est pris pour une caméra'
                 $script:NetFirstScan = $false
-                $ui.Tabs.SelectedIndex = $NetIndex; Show-NetDevices; Wait-TestMs 1200; Save-TestShot 'reseau-approfondi'
+                Show-Page $NetIndex; Show-NetDevices; Wait-TestMs 1200; Save-TestShot 'reseau-approfondi'
                 Show-DeviceDetail $cam; Wait-TestMs 1200; Save-TestShot 'fiche-camera'; Hide-TestPanel
                 $script:NetList = $null
                 $ui.NetDevices.Children.Clear()
@@ -1197,7 +1150,9 @@ $script:T.Run.Add_Tick({
                 "5 situations reconnues ; vraie mesure : box $(Format-Ms $last.Stats.gw.Med), fournisseur $(if ($last.Isp) { $last.Isp } elseif ($last.Stats.isp) { Format-Ms $last.Stats.isp.Med } else { 'non trouvé' }), Internet $(Format-Ms $last.Stats.ref.Med)"
             }
             Test-Step 'Trafic : ce qui sort du PC' {
-                $ui.Tabs.SelectedIndex = $TrafficIndex
+                # Comme dans la console : la page Trafic, puis son bouton (clic:BtnTraffic)
+                Show-Page $TrafficIndex
+                if (-not ($script:TrafficTimer -and $script:TrafficTimer.IsEnabled)) { Invoke-BoutonKit 'BtnTraffic' }
                 Wait-TestMs 6000
                 $st = $script:Traffic
                 Assert-Test ($null -ne $st -and $script:TrafficTimer.IsEnabled) 'surveillance non démarrée'
@@ -1295,9 +1250,13 @@ $script:T.Run.Add_Tick({
                 "$($real.Count) programmes connectés vus en vrai, alertes simulées correctes, $lookup, comptage des octets : $(if ([TrafficMon]::CountersOk) { 'actif' } else { 'indisponible sans droits admin' })"
             }
             Test-Step 'Page Tests' {
-                $ui.Tabs.SelectedIndex = 5; Wait-TestMs 1500; Save-TestShot 'tests'
+                # (la page de la console prépare les tuiles en y arrivant : Build-TestsTab, ecran-divers.ps1)
+                Show-Page 5; Wait-TestMs 1500
+                $parLaConsole = [bool]$ui.TestsPanel.Children.Count
+                $script:Vue.Ecran = 'tests'; try { [void](Get-PagesDivers) } finally { $script:Vue.Ecran = $null }
+                Assert-Test ($script:Kit.RetourEcran -eq 'tests' -and $ui.Tabs.SelectedIndex -eq $HubIndex) "écran « $($script:Kit.RetourEcran) », page d'avant $($ui.Tabs.SelectedIndex)"
                 Assert-Test ($ui.TestsPanel.Children.Count -ge 4) "seulement $($ui.TestsPanel.Children.Count) tuiles"
-                "$($ui.TestsPanel.Children.Count) tuiles"
+                "$($ui.TestsPanel.Children.Count) tuiles$(if ($parLaConsole) { ', préparées par l''écran' })"
             }
             Test-Step 'FPS : jeux dont l''anti-triche bloque la mesure' {
                 Assert-Test ((Get-FpsVeilleJeux) -contains 'bf6.exe') 'BF6 absent des jeux guettés'
@@ -1348,7 +1307,8 @@ $script:T.Run.Add_Tick({
                 "serveur loin avec son pays, serveur de connexion reconnu, ancienne mesure corrigée, annuaire : $(if ($g.Erreur) { "injoignable ($($g.Erreur))" } else { "1.1.1.1 en $(Format-Country $g.Pays)" })"
             }
             Test-Step 'Page Sécurité' {
-                $ui.Tabs.SelectedIndex = 6; Wait-TestMs 800; Save-TestShot 'securite'
+                Show-Page 6; Wait-TestMs 300
+                Assert-Test ($script:Kit.RetourEcran -eq 'securite' -and $ui.Tabs.SelectedIndex -eq $HubIndex) "écran « $($script:Kit.RetourEcran) », page d'avant $($ui.Tabs.SelectedIndex)"
                 Assert-Test ($null -ne $script:SecurityScore) 'pas de note de protection'
                 # « C'est moi » : une tâche approuvée sort des points à vérifier, revient si sa commande change
                 $fake = @{ Mp = $null; OtherAv = @('Essai'); Exclusions = @(); Double = @(); Scripts = @(); Hidden = @(); SusStart = @()
@@ -1359,7 +1319,6 @@ $script:T.Run.Add_Tick({
                 Add-SecTrusted $c1[0].Trust
                 $script:Settings = $null
                 Assert-Test (-not @(& $taskCheck $fake).Count) 'tâche approuvée toujours signalée (après relecture des préférences)'
-                Assert-Test ($null -ne (New-TrustedCard)) 'carte des éléments approuvés non construite'
                 $fake.Tasks[0].Cmd = 'powershell -w hidden -c autre'
                 Assert-Test (@(& $taskCheck $fake).Count -eq 1) 'commande modifiée non signalée'
                 Remove-SecTrusted $c1[0].Trust[0].Key
@@ -1369,8 +1328,8 @@ $script:T.Run.Add_Tick({
                 "protection $($script:SecurityScore) sur 100, approbation vérifiée"
             }
             Test-Step 'Page Réseau (sans scan automatique)' {
-                $ui.Tabs.SelectedIndex = $NetIndex; Wait-TestMs 1000; Save-TestShot 'reseau'
-                Assert-Test ($ui.NetDevices.Children.Count -eq 0) 'un scan s''est lancé tout seul'
+                Show-Page $NetIndex; Wait-TestMs 1000
+                Assert-Test ($ui.NetDevices.Children.Count -eq 0 -and -not $script:NetScanning) 'un scan s''est lancé tout seul'
                 'aucun scan avant le clic'
             }
             Test-Step 'Historique et annulation' {
@@ -1388,7 +1347,7 @@ $script:T.Run.Add_Tick({
                 Assert-Test (-not @($errs).Count) "erreurs : $($errs -join ', ')"
                 Assert-Test ($null -eq $left) 'la valeur n''a pas été annulée'
                 Set-HistoryUndone $id
-                $ui.Tabs.SelectedIndex = 7; Wait-TestMs 600; Save-TestShot 'sauvegarde-historique'
+                Show-Page 7; Wait-TestMs 300
                 Assert-Test ($ui.HistoryPanel.Children.Count -ge 1) 'historique vide à l''écran'
                 'écrit, relu et annulé'
             }
@@ -1405,21 +1364,6 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($names -contains 'journal.txt' -and $names -contains 'erreurs.txt') "contenu : $($names -join ', ')"
                 Assert-Test ($txt -notmatch [regex]::Escape($env:USERNAME)) 'le nom d''utilisateur apparaît'
                 "$($names.Count) fichiers"
-            }
-            Test-Step 'Logo : retour à l''accueil' {
-                Show-Page $GamesIndex; Wait-TestMs 200
-                $lw = $ui.Tabs.Template.FindName('LogoWordHost', $ui.Tabs)
-                $me = New-Object System.Windows.Input.MouseButtonEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0, [System.Windows.Input.MouseButton]::Left)
-                $me.RoutedEvent = [System.Windows.UIElement]::MouseLeftButtonUpEvent
-                $lw.RaiseEvent($me); Wait-TestMs 200
-                Assert-Test ($ui.Tabs.SelectedIndex -eq $HubIndex) "page $($ui.Tabs.SelectedIndex) après le clic sur le nom au lieu de l'accueil"
-                Show-Page $NetIndex; Wait-TestMs 200
-                $lm = $ui.Tabs.Template.FindName('LogoMarkHost', $ui.Tabs)
-                $me2 = New-Object System.Windows.Input.MouseButtonEventArgs ([System.Windows.Input.Mouse]::PrimaryDevice, 0, [System.Windows.Input.MouseButton]::Left)
-                $me2.RoutedEvent = [System.Windows.UIElement]::MouseLeftButtonUpEvent
-                $lm.RaiseEvent($me2); Wait-TestMs 200
-                Assert-Test ($ui.Tabs.SelectedIndex -eq $HubIndex) "page $($ui.Tabs.SelectedIndex) après le clic sur le logo au lieu de l'accueil"
-                'nom et logo ramènent à l''accueil'
             }
             Test-Step 'Fenêtre Quitter (croix)' {
                 # La fenêtre est modale : un minuteur la regarde, la capture puis clique à la place de l'utilisateur
@@ -1478,7 +1422,8 @@ $script:T.Run.Add_Tick({
             }
             if ($script:T.Complet) {
                 Test-Step 'Lag en charge (bufferbloat)' {
-                    $ui.Tabs.SelectedIndex = 5; Wait-TestMs 300
+                    Show-Page 5; Wait-TestMs 300
+                    if (-not $ui.TestsPanel.Children.Count) { Build-TestsTab }
                     $b = @($script:TestButtons | Where-Object { $_.Content -eq 'Lag en charge' })[0]
                     Assert-Test ($null -ne $b) 'bouton absent'
                     Test-Bufferbloat $b.Tag.T $b.Tag.Ctx
@@ -1488,7 +1433,7 @@ $script:T.Run.Add_Tick({
                     Assert-Test ($r -and $r[0] -ge 0) 'pas de résultat'
                     '{0:N0} ms au repos, {1:N0} ms en téléchargement, {2:N0} ms en envoi' -f $r[0], $r[1], $r[2]
                 }
-                $ui.Tabs.SelectedIndex = $NetIndex; Wait-TestMs 300
+                Show-Page $NetIndex; Wait-TestMs 300
                 Test-Step 'Scan du réseau' {
                     Invoke-NetworkScan
                     $l = @($script:NetList)

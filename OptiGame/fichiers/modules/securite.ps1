@@ -334,49 +334,6 @@ function New-TrustButton([string]$Label, [array]$Entries, [string]$Confirm) {
     $b
 }
 
-# Carte des éléments approuvés, avec de quoi revenir en arrière.
-function New-TrustedCard {
-    $all = @(Get-SecTrusted)
-    $card = New-Card
-    $card.Padding = New-Thickness 18 14 18 14
-    $sp = New-Object System.Windows.Controls.StackPanel
-    $head = New-Grid @('Auto', '*')
-    $ic = New-Text '✓' 14 $Colors.info -Bold
-    $ic.Margin = New-Thickness 0 0 12 0; $ic.VerticalAlignment = 'Top'
-    Add-ToGrid $head $ic 0
-    $txt = New-Object System.Windows.Controls.StackPanel
-    [void]$txt.Children.Add((New-Text "$($all.Count) élément$(if ($all.Count -gt 1) {'s'}) approuvé$(if ($all.Count -gt 1) {'s'}) par toi" 14.5 '#FFFFFF' -Semi))
-    $d = New-Text 'Tu as indiqué que c''est toi qui les as mis en place : ils ne baissent plus le niveau de protection. Retire-les si tu changes d''avis.' 12.5 '#A6A1BC'
-    $d.Margin = New-Thickness 0 3 0 0
-    [void]$txt.Children.Add($d)
-    Add-ToGrid $head $txt 1
-    [void]$sp.Children.Add($head)
-    $box = New-Object System.Windows.Controls.Border
-    $box.Background = Get-Brush '#10131A'
-    $box.CornerRadius = [System.Windows.CornerRadius]::new(8)
-    $box.Padding = New-Thickness 12 8 12 8
-    $box.Margin = New-Thickness 26 10 0 0
-    $items = New-Object System.Windows.Controls.StackPanel
-    foreach ($t in $all) {
-        $line = New-Grid @('*', 'Auto')
-        $t2 = New-Text "$($t.Kind)  :  $($t.Text)" 12 '#D3CDE3'
-        $t2.TextTrimming = 'CharacterEllipsis'; $t2.TextWrapping = 'NoWrap'; $t2.ToolTip = [string]$t.Text; $t2.VerticalAlignment = 'Center'
-        Add-ToGrid $line $t2 0
-        $rb = New-Button 'Retirer' 'BtnSecondary'
-        $rb.Padding = New-Thickness 10 3 10 3; $rb.FontSize = 11.5
-        $rb.Margin = New-Thickness 10 2 0 2
-        $rb.ToolTip = 'Nevermind le signalera de nouveau s''il est toujours là.'
-        $rb.Tag = [string]$t.Key
-        $rb.Add_Click({ param($s, $e) Invoke-Safe { Remove-SecTrusted $s.Tag; if (-not $script:ScanRunning) { Update-SecurityTab } } })
-        Add-ToGrid $line $rb 1
-        [void]$items.Children.Add($line)
-    }
-    $box.Child = $items
-    [void]$sp.Children.Add($box)
-    $card.Child = $sp
-    $card
-}
-
 function Get-ThreatHistory($S) {
     $out = @()
     try {
@@ -399,6 +356,7 @@ function Get-ThreatHistory($S) {
     $out
 }
 
+# La protection vérifiée : la note et les données pour l'écran (ecran-protection.ps1), et les boutons d'analyse
 function Update-SecurityTab {
     Set-Status 'Vérification de la sécurité...'
     $S = Get-ProtectionStatus
@@ -406,78 +364,11 @@ function Update-SecurityTab {
     $score = Get-ProtectionScore $S $checks
     $mp = $S.Mp
 
-    # Jauge et état
-    $ui.SecGaugeHost.Children.Clear()
-    $col = if ($score -ge 80) { $Colors.ok } elseif ($score -ge 50) { $Colors.warn } else { $Colors.bad }
-    $g = New-Gauge 'Niveau de protection' $score 100 '{0:N0}' 'sur 100' $col 0
-    [void]$ui.SecGaugeHost.Children.Add($g.El)
-    $ui.SecLines.Children.Clear()
-    if ($mp -and $mp.AMRunningMode -eq 'Normal') {
-        [void]$ui.SecLines.Children.Add((New-StatusLine 'Antivirus' 'Microsoft Defender' 'ok'))
-        [void]$ui.SecLines.Children.Add((New-StatusLine 'Protection en direct' $(if ($mp.RealTimeProtectionEnabled) { 'Activée' } else { 'Désactivée' }) $(if ($mp.RealTimeProtectionEnabled) { 'ok' } else { 'bad' })))
-        $age = [int]$mp.AntivirusSignatureAge
-        [void]$ui.SecLines.Children.Add((New-StatusLine 'Base de virus' $(if ($age -le 0) { 'À jour (aujourd''hui)' } else { "Il y a $age jour$(if ($age -gt 1) {'s'})" }) $(if ($age -le 3) { 'ok' } else { 'warn' })))
-        $last = if ($mp.QuickScanEndTime) { $mp.QuickScanEndTime.ToString('dd/MM/yyyy à HH:mm') } else { 'Jamais' }
-        [void]$ui.SecLines.Children.Add((New-StatusLine 'Dernière analyse' $last $(if ($mp.QuickScanAge -le 14) { 'ok' } else { 'warn' })))
-    } elseif ($S.OtherAv.Count) {
-        [void]$ui.SecLines.Children.Add((New-StatusLine 'Antivirus' ($S.OtherAv -join ', ') 'ok'))
-        [void]$ui.SecLines.Children.Add((New-StatusLine 'Analyses' 'Fais-les avec ton antivirus' 'info'))
-    } else {
-        [void]$ui.SecLines.Children.Add((New-StatusLine 'Antivirus' 'Aucun antivirus actif' 'bad'))
-    }
-    [void]$ui.SecLines.Children.Add((New-StatusLine 'Pare-feu' $(if ($S.Firewall) { 'Activé' } else { 'Désactivé' }) $(if ($S.Firewall) { 'ok' } else { 'bad' })))
-    [void]$ui.SecLines.Children.Add((New-StatusLine 'Contrôle des comptes' $(if ($S.Uac) { 'Activé' } else { 'Désactivé' }) $(if ($S.Uac) { 'ok' } else { 'bad' })))
+    # Les boutons d'analyse (l'écran appuie dessus : clic:BtnScanQuick...) ne marchent qu'avec Microsoft Defender
     $defenderOk = $mp -and $mp.AMRunningMode -eq 'Normal'
     foreach ($b in $script:SecButtons) { $b.IsEnabled = [bool]$defenderOk }
     $ui.SecScanNote.Text = if ($defenderOk) { 'Les analyses utilisent Microsoft Defender, l''antivirus intégré à Windows.' } elseif ($S.OtherAv.Count) { "Ton antivirus ($($S.OtherAv -join ', ')) remplace Microsoft Defender : lance les analyses depuis ton antivirus." } else { 'Active Microsoft Defender pour pouvoir lancer une analyse.' }
-
-    # Points à vérifier
-    $ui.SecChecks.Children.Clear()
-    if ($S.Active.Count) {
-        [void]$ui.SecChecks.Children.Add((New-SecurityCard @{ Status = 'bad'; Title = "$($S.Active.Count) menace$(if ($S.Active.Count -gt 1) {'s'}) toujours active$(if ($S.Active.Count -gt 1) {'s'})"
-            Detail = 'Microsoft Defender a trouvé des virus qui ne sont pas encore supprimés.'
-            Items = @($S.Active | ForEach-Object { $_.ThreatName })
-            Actions = @(@{ Label = 'Supprimer les menaces'; Confirm = 'Supprimer toutes les menaces actives trouvées par Microsoft Defender ?'; Script = { Remove-MpThreat -ErrorAction Stop } }) }))
-    }
-    foreach ($c in ($checks | Sort-Object @{ Expression = { if ($_.Status -eq 'bad') { 0 } else { 1 } } })) { [void]$ui.SecChecks.Children.Add((New-SecurityCard $c)) }
-    if (-not $checks.Count -and -not $S.Active.Count) {
-        $ok = New-Card
-        $ok.Padding = New-Thickness 18 14 18 14
-        $row = New-Grid @('Auto', '*')
-        $ic = New-Text '✓' 18 $Colors.ok -Bold
-        $ic.Margin = New-Thickness 0 0 12 0
-        Add-ToGrid $row $ic 0
-        Add-ToGrid $row (New-Text 'Rien de suspect : pas de fichier déguisé, pas de programme caché, pas de tâche douteuse, pas de redirection.' 13.5 $Colors.ok -Semi) 1
-        $ok.Child = $row
-        [void]$ui.SecChecks.Children.Add($ok)
-    }
-    if (@(Get-SecTrusted).Count) { [void]$ui.SecChecks.Children.Add((New-TrustedCard)) }
-    $ui.SecChecksSummary.Text = if ($checks.Count) { "$($checks.Count) point$(if ($checks.Count -gt 1) {'s'}) à vérifier" } else { 'Tout est propre' }
-
-    # Historique
-    $ui.SecHistory.Children.Clear()
     $hist = @(Get-ThreatHistory $S)
-    if (-not $hist.Count) {
-        [void]$ui.SecHistory.Children.Add((New-Text 'Aucune menace trouvée sur ce PC récemment.' 13 '#A6A1BC'))
-    }
-    foreach ($h in $hist) {
-        $card = New-Card
-        $card.Padding = New-Thickness 16 10 16 10
-        $row = New-Grid @('*', 'Auto')
-        $sp = New-Object System.Windows.Controls.StackPanel
-        [void]$sp.Children.Add((New-Text "$($h.Name)" 13.5 '#FFFFFF' -Semi))
-        $sub = New-Text "$($h.When.ToString('dd/MM/yyyy HH:mm'))   $($h.File)" 12 '#A6A1BC'
-        $sub.TextTrimming = 'CharacterEllipsis'; $sub.TextWrapping = 'NoWrap'; $sub.ToolTip = $h.File
-        [void]$sp.Children.Add($sub)
-        Add-ToGrid $row $sp 0
-        $chips = New-Object System.Windows.Controls.StackPanel
-        $chips.Orientation = 'Horizontal'; $chips.VerticalAlignment = 'Center'
-        if ($h.Severity) { [void]$chips.Children.Add((New-Badge "Gravité $($h.Severity.ToLower())" $Colors.warn)) }
-        [void]$chips.Children.Add((New-Badge $h.State $(if ($h.Active) { $Colors.bad } else { $Colors.ok })))
-        Add-ToGrid $row $chips 1
-        $card.Child = $row
-        [void]$ui.SecHistory.Children.Add($card)
-    }
     $script:SecurityScore = $score
     $script:SecDonnees = @{ S = $S; Checks = $checks; Score = $score; Hist = $hist }   # (pour l'écran : ecran-protection.ps1)
     Set-Status "Sécurité : niveau de protection $score sur 100."
