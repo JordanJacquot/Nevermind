@@ -44,11 +44,14 @@ try { [void][xml][IO.File]::ReadAllText((Join-Path $app 'fichiers\modules\interf
 $tirets = Get-ChildItem -LiteralPath $racine -Recurse -File -Include '*.ps1', '*.cs', '*.xaml', '*.txt', '*.md', '*.bat' |
     Where-Object { $_.FullName -notmatch '\\(\.git|_test)\\' } | Select-String -Pattern '[\u2013\u2014]'
 foreach ($t in $tirets) { $problemes += "Tiret cadratin : $($t.Path) ligne $($t.LineNumber)" }
-# Clé publique livrée avec Nevermind : la même que celle de Mindset, sinon les copies autonomes refuseraient la mise à jour
-$cle = Join-Path $app 'fichiers\cle-publique.xml'
-$cleMindset = Join-Path (Split-Path $racine -Parent) 'Mindset\Mindset\fichiers\cle-publique.xml'
-if (-not (Test-Path -LiteralPath $cle) -or -not (Test-Path -LiteralPath $cleMindset) -or (Get-FileHash -LiteralPath $cle).Hash -ne (Get-FileHash -LiteralPath $cleMindset).Hash) {
-    $problemes += "Clé publique : OptiGame\fichiers\cle-publique.xml absente ou différente de celle de Mindset ($cleMindset)"
+# Clés publiques livrées avec Nevermind : exactement la liste de Mindset (mêmes fichiers, même contenu), sinon les copies
+# autonomes refuseraient une version signée avec une nouvelle clé, ou accepteraient encore une clé retirée
+$cles = Join-Path $app 'fichiers\cles-publiques'
+$clesMindset = Join-Path (Split-Path $racine -Parent) 'Mindset\Mindset\fichiers\cles-publiques'
+function Get-EmpreinteCles([string]$Dossier) { @(Get-ChildItem -LiteralPath $Dossier -File -Force -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName).Hash)" }) -join ';' }
+$empreinte = Get-EmpreinteCles $cles
+if (-not $empreinte -or $empreinte -ne (Get-EmpreinteCles $clesMindset)) {
+    $problemes += "Clés publiques : OptiGame\fichiers\cles-publiques absentes ou différentes de celles de Mindset ($clesMindset)"
 }
 if ($problemes) {
     $problemes | ForEach-Object { Write-Host $_ -ForegroundColor Red }

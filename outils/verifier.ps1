@@ -4,7 +4,7 @@
 #   - aucun tiret cadratin ni demi-cadratin dans les textes (.ps1, .cs, .xaml, .txt, .md, .bat) ;
 #   - chaque .ps1 est en UTF-8 avec BOM (sans BOM, PowerShell 5.1 casse les accents) ;
 #   - le fichier LICENSE est présent.
-# Mêmes contrôles que outils\publier.ps1 avant une publication (sauf la clé publique, comparée à celle de Mindset,
+# Mêmes contrôles que outils\publier.ps1 avant une publication (sauf les clés publiques (cles-publiques), comparées à celles de Mindset,
 # qui n'est pas dans ce dépôt).
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File outils\verifier.ps1

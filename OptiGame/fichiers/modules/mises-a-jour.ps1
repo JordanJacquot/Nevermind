@@ -38,20 +38,34 @@ function Test-NewerVersion([string]$Remote, [string]$Local) {
     try { return ([version]$Remote -gt [version]$Local) } catch { return $false }
 }
 
-# Signature d'un zip publié (OptiGame.zip.sig : RSA 3072, SHA-256), vérifiée avec la clé publique livrée avec
-# Nevermind (fichiers\cle-publique.xml, la même que Mindset). Un zip sans signature valide n'est jamais installé,
+# Signature d'un zip publié (OptiGame.zip.sig : RSA, SHA-256), vérifiée avec les clés publiques livrées avec
+# Nevermind (fichiers\cles-publiques\*.xml, les mêmes que Mindset). Un zip sans signature valide n'est jamais installé,
 # même s'il vient bien de GitHub : quelqu'un qui volerait l'accès au compte GitHub ne pourrait pas faire installer un faux.
-# Même logique que Test-Signature dans Mindset (signature.ps1).
-$PublicKeyFile = Join-Path $AppDir 'cle-publique.xml'
+# Une liste de clés (clé de tous les jours, clé de secours, clé suivante pendant un changement) : la signature est bonne
+# si UNE des clés la vérifie. Liste vide, fichier abîmé, clé privée ou trop courte (moins de 3072 bits) : tout est refusé.
+# Même fonction que Test-Signature dans Mindset (signature.ps1).
+$PublicKeyFile = Join-Path $AppDir 'cles-publiques'
 function Test-Signature([byte[]]$Donnees, [byte[]]$Signature, [string]$ClePublique) {
-    if (-not $Donnees -or -not $Signature -or -not (Test-Path -LiteralPath $ClePublique)) { return $false }
-    $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider
+    if (-not $Donnees -or -not $Signature -or -not $ClePublique) { return $false }
+    if (Test-Path -LiteralPath $ClePublique -PathType Container) {
+        $fichiers = @(Get-ChildItem -LiteralPath $ClePublique -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Extension -eq '.xml' } | ForEach-Object { $_.FullName })
+    } elseif (Test-Path -LiteralPath $ClePublique -PathType Leaf) { $fichiers = @($ClePublique) }
+    else { return $false }
+    if (-not $fichiers.Count) { return $false }
+    $cles = @()
     try {
-        $rsa.FromXmlString([IO.File]::ReadAllText($ClePublique, [Text.Encoding]::UTF8))
-        if ($rsa.KeySize -lt 3072 -or -not $rsa.PublicOnly) { return $false }
-        $rsa.VerifyData($Donnees, [System.Security.Cryptography.CryptoConfig]::MapNameToOID('SHA256'), $Signature)
+        foreach ($f in $fichiers) {
+            $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider
+            $cles += $rsa
+            $rsa.FromXmlString([IO.File]::ReadAllText($f, [Text.Encoding]::UTF8))
+            if ($rsa.KeySize -lt 3072 -or -not $rsa.PublicOnly) { return $false }
+        }
+        foreach ($rsa in $cles) {
+            if ($rsa.VerifyData($Donnees, [System.Security.Cryptography.CryptoConfig]::MapNameToOID('SHA256'), $Signature)) { return $true }
+        }
+        $false
     } catch { $false }
-    finally { $rsa.Dispose() }
+    finally { foreach ($rsa in $cles) { $rsa.Dispose() } }
 }
 
 function Invoke-UpdateCheck([switch]$Manual) {

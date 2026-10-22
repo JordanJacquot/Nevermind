@@ -346,6 +346,7 @@ function Invoke-Uninstall {
     foreach ($f in $files) { $cmd += " & del /f /q `"$f`"" }
     $cmd += " & rmdir /s /q `"$(Join-Path $here 'modules')`""
     $cmd += " & rmdir /s /q `"$(Join-Path $here 'outils-tiers')`""
+    $cmd += " & rmdir /s /q `"$(Join-Path $here 'cles-publiques')`""
     if ($here -ne $root) { $cmd += " & rmdir `"$here`"" }
     $cmd += " & rmdir `"$root`""
     Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $cmd -WindowStyle Hidden -WorkingDirectory $env:TEMP
