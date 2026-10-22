@@ -264,6 +264,16 @@ function Get-AideProgramme([string]$Chemin, [bool]$WindowsPermis) {
 # ---------------------------------------------------------------------------
 # -Verifier : contrôle la demande sans rien faire (tests automatiques). Renvoie un résultat simple (texte, nombre,
 # table) que l'Aide renvoie à Nevermind en JSON. Une demande refusée lève une erreur dont le message est montré tel quel.
+# Les règles du pare-feu créées par Nevermind (« Nevermind : bloque ... », ou « OptiGame : bloque ... » avant la 1.3.6)
+function Get-ReglesNevermind { @(Get-NetFirewallRule -DisplayName 'Nevermind : bloque *' -ErrorAction SilentlyContinue) + @(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue) }
+
+# Une fois, au démarrage de l'Aide : les anciennes règles prennent le nom de Nevermind (on les retrouve en cherchant « Nevermind »)
+function Rename-ReglesOptiGame {
+    foreach ($r in @(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue)) {
+        try { Set-NetFirewallRule -Name $r.Name -NewDisplayName ($r.DisplayName -replace '^OptiGame : ', 'Nevermind : ') -ErrorAction Stop } catch {}
+    }
+}
+
 function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
     switch -Exact ($Action) {
         'aide.bonjour' {
@@ -334,7 +344,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
 
         'pare-feu.bloquer' {
             $nom = Get-AideTexte $P 'Nom' 200
-            if ($nom -notmatch '^OptiGame : bloque [^*?\[\]]+$') { throw 'Demande refusée : nom de règle non valable.' }
+            if ($nom -notmatch '^(Nevermind|OptiGame) : bloque [^*?\[\]]+$') { throw 'Demande refusée : nom de règle non valable.' }
             $services = @(Get-AideListe $P 'Services')
             foreach ($s in $services) {
                 if ($s -notmatch '^[\w.\-]{1,80}$') { throw "Demande refusée : service $s non valable." }
@@ -357,15 +367,17 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
 
         'pare-feu.debloquer' {
             $nom = Get-AideTexte $P 'Nom' 200
-            if ($nom -notlike 'OptiGame : bloque *') { throw 'Demande refusée : seules les règles de Nevermind peuvent être retirées.' }
+            if ($nom -notmatch '^(Nevermind|OptiGame) : bloque ') { throw 'Demande refusée : seules les règles de Nevermind peuvent être retirées.' }
             if ($Verifier) { return 'ok' }
-            @(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq $nom }) | Remove-NetFirewallRule -ErrorAction Stop
+            # (un blocage noté sous l'ancien nom « OptiGame : bloque ... » a pu être renommé depuis : les deux noms sont cherchés)
+            $suite = $nom -replace '^(Nevermind|OptiGame) : bloque ', ''
+            @(Get-ReglesNevermind | Where-Object { $_.DisplayName -in "Nevermind : bloque $suite", "OptiGame : bloque $suite" }) | Remove-NetFirewallRule -ErrorAction Stop
             return 'ok'
         }
 
         'pare-feu.debloquer-tout' {
             if ($Verifier) { return 'ok' }
-            Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction Stop
+            @(Get-ReglesNevermind) | Remove-NetFirewallRule -ErrorAction Stop
             return 'ok'
         }
 

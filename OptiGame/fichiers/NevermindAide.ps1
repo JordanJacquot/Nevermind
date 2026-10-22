@@ -104,7 +104,7 @@ public static class AideFps
         string x; while (lignes.TryDequeue(out x)) { }
         fin = false; exePm = exe; entete = null;
         var psi = new System.Diagnostics.ProcessStartInfo(exe,
-            cible + " --output_stdout --no_console_stats --stop_existing_session --session_name OptiGame");
+            cible + " --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind");
         psi.UseShellExecute = false; psi.CreateNoWindow = true;
         psi.RedirectStandardOutput = true; psi.RedirectStandardError = true;
         var p = new System.Diagnostics.Process();
@@ -145,7 +145,7 @@ public static class AideFps
         try { p.Dispose(); } catch { }
         try
         {
-            var psi = new System.Diagnostics.ProcessStartInfo(exePm, "--terminate_existing_session --session_name OptiGame");
+            var psi = new System.Diagnostics.ProcessStartInfo(exePm, "--terminate_existing_session --session_name Nevermind");
             psi.UseShellExecute = false; psi.CreateNoWindow = true;
             using (var t = System.Diagnostics.Process.Start(psi)) { t.WaitForExit(3000); }
         }
@@ -231,6 +231,7 @@ catch {
     exit
 }
 Write-AideLog "Aide $AideVersion démarrée$(if (-not $admin) { ' SANS droits administrateur' }) (processus $PID)"
+if ($admin) { try { Rename-ReglesOptiGame } catch { Write-AideLog "Règles du pare-feu non renommées : $($_.Exception.Message)" } }
 $seul = Get-Date   # depuis quand Nevermind n'est plus ouvert
 $tours = 0
 $attente = $tuyau.BeginWaitForConnection($null, $null)

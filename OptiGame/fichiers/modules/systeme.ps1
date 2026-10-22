@@ -100,7 +100,7 @@ function Format-Size([double]$Bytes) {
 # ---------------------------------------------------------------------------
 function Restore-AllSettings {
     $errors = @()
-    try { if (@(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue).Count) { [void](Invoke-Aide 'pare-feu.debloquer-tout') } } catch { $errors += "Pare-feu: $($_.Exception.Message)" }
+    try { if (@(Get-NetFirewallRule -DisplayName 'Nevermind : bloque *' -ErrorAction SilentlyContinue).Count + @(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue).Count) { [void](Invoke-Aide 'pare-feu.debloquer-tout') } } catch { $errors += "Pare-feu: $($_.Exception.Message)" }
     foreach ($e in @($script:Backup.Registry.Values)) {
         try {
             if ($e.Existed) {

@@ -350,7 +350,7 @@ function Test-TrafficAlerts {
 function Block-TrafficApp($App) {
     if (-not $App.Path) { Show-Message 'Impossible de bloquer ce programme : son emplacement est inconnu.'; return }
     if (-not (Confirm-Action "Bloquer l'accès à Internet pour « $($App.Title) » ?`n`n$($App.Path)`n`nLe programme ne pourra plus rien envoyer ni recevoir. Tu pourras annuler depuis la page Sauvegarde (historique).")) { return }
-    $name = "OptiGame : bloque $($App.Title)"
+    $name = "Nevermind : bloque $($App.Title)"
     $svc = @($App.Services | Where-Object { $_ })
     # Un service Windows partage svchost.exe avec d'autres (DNS, réseau...) : la règle vise ce service seulement
     $targets = if ($svc.Count) { @($svc | ForEach-Object { @{ Service = $_.Name } }) } else { @(@{}) }

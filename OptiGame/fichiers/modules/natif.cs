@@ -831,7 +831,7 @@ public static class FrameMon
         try
         {
             var psi = new System.Diagnostics.ProcessStartInfo(exe,
-                "--process_id " + pid + " --output_stdout --no_console_stats --stop_existing_session --session_name OptiGame --terminate_on_proc_exit");
+                "--process_id " + pid + " --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind --terminate_on_proc_exit");
             psi.UseShellExecute = false;
             psi.CreateNoWindow = true;
             psi.RedirectStandardOutput = true;
@@ -866,7 +866,7 @@ public static class FrameMon
         {
             try
             {
-                var psi = new System.Diagnostics.ProcessStartInfo(pmExe, "--terminate_existing_session --session_name OptiGame");
+                var psi = new System.Diagnostics.ProcessStartInfo(pmExe, "--terminate_existing_session --session_name Nevermind");
                 psi.UseShellExecute = false;
                 psi.CreateNoWindow = true;
                 using (var t = System.Diagnostics.Process.Start(psi)) { t.WaitForExit(3000); }
