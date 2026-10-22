@@ -190,9 +190,6 @@ function Update-NetScanInfo {
         [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Taille du réseau' "$count adresses possibles" 'info'))
     }
     [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Box' $net.Gateway 'ok'))
-    if (-not (Test-IpPublique)) { [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Adresse Internet' 'Pas cherchée (coupé dans Paramètres, Réseau et vie privée)' 'info')); return }
-    $pub = Invoke-Async { try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; [string](Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5) } catch { '' } } | Select-Object -First 1
-    if ("$pub") { $script:PublicIp = "$pub"; [void]$ui.NetScanInfo.Children.Add((New-StatusLine 'Adresse Internet' "$pub" 'info')) }
 }
 
 function Show-NetHeroIdle {

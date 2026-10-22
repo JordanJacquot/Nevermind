@@ -77,7 +77,7 @@ Les compteurs d'octets et le repérage des serveurs en UDP passent par Nevermind
 
 - Aucune modification n'est faite sans clic de l'utilisateur, et chaque réglage modifié est sauvegardé avant d'être changé.
 - Tout est annulable, un par un depuis l'historique ou en une fois (« Tout restaurer »), sauf quatre changements qui protègent le PC et qu'on fait seulement si tu le demandes : désactiver SMBv1, passer des Wi-Fi ouverts en connexion manuelle, retirer des exclusions de l'antivirus, réactiver le pare-feu. La confirmation le dit avant, l'historique les montre comme « Définitif » avec la façon de revenir en arrière à la main, et la désinstallation les liste.
-- Aucune donnée personnelle n'est envoyée. Chaque envoi sur Internet se coupe dans Paramètres (vérification du pilote NVIDIA, adresse Internet, mesure du lag, nouveautés après une mise à jour : activés au départ ; annuaire et pays des serveurs, jaquettes : coupés au départ), ou ne part que sur un clic (tests de ping et de débit, scan et audit du réseau). La liste complète : [Code signing policy](CODE_SIGNING.md#privacy-policy).
+- Aucune donnée personnelle n'est envoyée. Chaque envoi sur Internet se coupe dans Paramètres (vérification du pilote NVIDIA, mesure du lag, nouveautés après une mise à jour : activés au départ ; annuaire et pays des serveurs, jaquettes : coupés au départ), ou ne part que sur un clic (tests de ping et de débit, scan et audit du réseau). La liste complète : [Code signing policy](CODE_SIGNING.md#privacy-policy).
 - Le code est lisible dans `OptiGame/fichiers/modules`.
 
 ## Développement

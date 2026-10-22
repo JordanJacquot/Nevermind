@@ -52,7 +52,6 @@ to systems on the Internet, and how to turn it off. Every automatic connection h
 |---|---|---|---|
 | Latest NVIDIA "Game Ready" driver version: `gfwsl.geforce.com` | When Nevermind starts, only if an NVIDIA graphics card is found | A fixed request, the same for every PC (no information about your PC) | Paramètres > Réseau et vie privée > "Vérifier le pilote NVIDIA au lancement" (when off, Nevermind only looks at the age of the installed driver) |
 | Connection measurement while you play: pings to your box, to the first server of your provider, to Cloudflare (`1.1.1.1`, with a route trace) and to the game server your game is already connected to | During each game (the game server only when the game is online) | Ping packets only | Paramètres > Jeux > "Mesurer ma connexion quand je joue" |
-| Your public IP address: `api.ipify.org` | When you open the Réseau page | A standard HTTPS request | Paramètres > Réseau et vie privée > "Afficher mon adresse Internet" (when off, the page says that the address is not looked up) |
 | What's new after an update: `api.github.com` | Once, after Nevermind has been updated | A standard HTTPS request for the notes of the new version | Paramètres > Mises à jour > "Lire les nouveautés sur Internet" |
 | Updates of a copy that is not managed by Mindset: `api.github.com` (and `github.com` to download an update you accept) | When this copy starts. A copy managed by Mindset never checks: Mindset does it (see Mindset's own policy) | A standard HTTPS request (user agent `OptiGame`) | Paramètres > Mises à jour > "Chercher une nouvelle version au lancement" (when off, only when you click "Vérifier les mises à jour"), or use Nevermind through Mindset |
 
@@ -73,7 +72,7 @@ to systems on the Internet, and how to turn it off. Every automatic connection h
 | Ping test: your box, `1.1.1.1` (Cloudflare) and `8.8.8.8` (Google) | Ping packets only |
 | Scan of your local network: only the devices of your own network (ping, ARP, mDNS, SSDP, NetBIOS, WS-Discovery, a few TCP ports, title of their web page). The first time, the list of network card manufacturers is downloaded from `standards-oui.ieee.org` | Nothing about you; a standard HTTPS request for the list |
 | Network security check: your box (UPnP), your devices, the DNS answers for `one.one.one.one`, `dns.google` and a random name that does not exist (to detect a hijacked DNS), and your public IP address (`api.ipify.org`) | Standard requests, nothing about you |
-| Window organizer for a game (Jeux page): the class icons of the characters, from the game's public database | The number of the class |
+| Window organizer for a game (Jeux page): the class icons of the characters, from the game's public database `api.dofusdb.fr` | The number of the class |
 | Links you click (your box's page, driver pages of NVIDIA, AMD and Intel, Mindset's download page) | They open in your web browser |
 
 Third party components: Nevermind shows its window with Microsoft Edge WebView2, a component of Windows; it only
@@ -145,7 +144,6 @@ partent que quand tu appuies sur un bouton.
 |---|---|---|---|
 | Dernière version du pilote NVIDIA « Game Ready » : `gfwsl.geforce.com` | Au lancement de Nevermind, seulement si une carte graphique NVIDIA est trouvée | Une demande fixe, la même pour tous les PC (rien sur ton PC) | Paramètres > Réseau et vie privée > « Vérifier le pilote NVIDIA au lancement » (coupé, Nevermind regarde seulement l'âge du pilote installé) |
 | Mesure de la connexion pendant que tu joues : pings vers ta box, le premier serveur de ton fournisseur, Cloudflare (`1.1.1.1`, avec un tracé du chemin) et le serveur auquel ton jeu est déjà connecté | Pendant chaque partie (le serveur du jeu seulement si le jeu est en ligne) | Seulement des paquets de ping | Paramètres > Jeux > « Mesurer ma connexion quand je joue » |
-| Ton adresse Internet (IP publique) : `api.ipify.org` | Quand tu ouvres la page Réseau | Une demande HTTPS ordinaire | Paramètres > Réseau et vie privée > « Afficher mon adresse Internet » (coupé, la page dit que l'adresse n'est pas cherchée) |
 | Les nouveautés après une mise à jour : `api.github.com` | Une fois, après une mise à jour de Nevermind | Une demande HTTPS ordinaire pour les notes de la nouvelle version | Paramètres > Mises à jour > « Lire les nouveautés sur Internet » |
 | Mises à jour d'une copie qui n'est pas gérée par Mindset : `api.github.com` (et `github.com` pour télécharger une mise à jour que tu acceptes) | Au lancement de cette copie. Une copie gérée par Mindset ne cherche jamais : c'est Mindset qui le fait (voir sa propre politique) | Une demande HTTPS ordinaire (nom du programme `OptiGame`) | Paramètres > Mises à jour > « Chercher une nouvelle version au lancement » (coupé, seulement quand tu cliques sur « Vérifier les mises à jour »), ou utiliser Nevermind avec Mindset |
 
@@ -166,7 +164,7 @@ partent que quand tu appuies sur un bouton.
 | Test de ping : ta box, `1.1.1.1` (Cloudflare) et `8.8.8.8` (Google) | Seulement des paquets de ping |
 | Recherche des appareils de ton réseau : seulement les appareils de ton propre réseau (ping, ARP, mDNS, SSDP, NetBIOS, WS-Discovery, quelques ports TCP, titre de leur page web). La première fois, la liste des fabricants de cartes réseau est téléchargée depuis `standards-oui.ieee.org` | Rien sur toi ; une demande HTTPS ordinaire pour la liste |
 | Vérification de la sécurité du réseau : ta box (UPnP), tes appareils, les réponses du DNS pour `one.one.one.one`, `dns.google` et un nom au hasard qui n'existe pas (pour repérer un DNS détourné), et ton adresse Internet (`api.ipify.org`) | Des demandes ordinaires, rien sur toi |
-| Organiseur de fenêtres d'un jeu (page Jeux) : les icônes des classes de personnages, depuis l'annuaire public du jeu | Le numéro de la classe |
+| Organiseur de fenêtres d'un jeu (page Jeux) : les icônes des classes de personnages, depuis l'annuaire public du jeu `api.dofusdb.fr` | Le numéro de la classe |
 | Les liens sur lesquels tu cliques (page de ta box, pages des pilotes NVIDIA, AMD et Intel, page de téléchargement de Mindset) | Ils s'ouvrent dans ton navigateur |
 
 Composants d'autres auteurs : Nevermind affiche sa fenêtre avec Microsoft Edge WebView2, un composant de Windows ; il

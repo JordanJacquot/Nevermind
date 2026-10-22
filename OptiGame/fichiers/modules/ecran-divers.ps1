@@ -106,7 +106,6 @@ function Get-PagesDivers {
                     @{ texte = 'Identifier les serveurs sans nom'; note = 'Page Trafic et Lag en ligne : cherche à qui appartient une adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public rdap.org. Seule l''adresse du serveur est envoyée.'; bascule = @{ id = 'trafic-annuaire'; oui = [bool](Test-AnnuaireServeurs) } }
                     @{ texte = 'Pays du serveur dans Lag en ligne'; note = 'Lag en ligne : cherche dans quel pays se trouve le serveur du jeu (ipinfo.io). Seule l''adresse du serveur est envoyée.'; bascule = @{ id = 'lag-pays'; oui = [bool](Test-PaysServeur) } }
                     @{ texte = 'Vérifier le pilote NVIDIA au lancement'; note = 'Si le PC a une carte NVIDIA : demande à NVIDIA (geforce.com) le numéro du dernier pilote. Rien sur ton PC n''est envoyé. Coupé : Nevermind regarde seulement l''âge de ton pilote.'; bascule = @{ id = 'pilote-nvidia'; oui = [bool](Test-PiloteNvidia) } }
-                    @{ texte = 'Afficher mon adresse Internet'; note = 'Page Réseau : demande ton adresse Internet (IP publique) au service api.ipify.org. Coupé : la page s''affiche sans elle.'; bascule = @{ id = 'ip-publique'; oui = [bool](Test-IpPublique) } }
                     @{ texte = 'Ce que Windows envoie à Microsoft'; note = 'Identifiants, réglages qui envoient plus que le minimum et envois vus en direct.'; bouton = @{ id = 'trafic-microsoft'; texte = 'Voir'; style = 'second' } }
                 ) }
                 @{ type = 'note'; texte = 'Nevermind ne déchiffre jamais tes connexions et n''envoie rien sur toi : il regarde seulement qui parle à qui depuis ton PC.' }
@@ -144,7 +143,6 @@ function Register-ActionsDivers {
     Register-ActionVue 'visite' { param($Valeur, $Ecran) Invoke-Safe { Show-Tour } }
     Register-ActionVue 'theme-mindset' { param($Valeur, $Ecran) Invoke-Safe { Open-MindsetSettings } }
     Register-ActionVue 'pilote-nvidia' { param($Valeur, $Ecran) Set-Setting 'PiloteNvidia' ([bool]$Valeur) }
-    Register-ActionVue 'ip-publique' { param($Valeur, $Ecran) Set-Setting 'IpPublique' ([bool]$Valeur) }
     Register-ActionVue 'maj-auto' { param($Valeur, $Ecran) Set-Setting 'MajAuto' ([bool]$Valeur) }
     Register-ActionVue 'nouveautes-en-ligne' { param($Valeur, $Ecran) Set-Setting 'NouveautesEnLigne' ([bool]$Valeur) }
     Register-ActionVue 'theme' { param($Valeur, $Ecran)

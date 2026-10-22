@@ -216,7 +216,7 @@ PARAMÈTRES (roue crantée en haut à droite)
   Mindset » sur la carte de Nevermind). Le raccourci est créé par Mindset.
   Jeux : mesure des FPS, mesure du lag, mode jeu, jaquettes depuis Internet.
   Réseau et vie privée : alerte nouvel appareil, identification des serveurs,
-  pays du serveur, vérification du pilote NVIDIA, adresse Internet.
+  pays du serveur, vérification du pilote NVIDIA.
   Thème : 5 ambiances pour toute l'app. Néon (celui de base), Crépuscule
   (orange, rose et or), Terminal (vert phosphore, police de code), Arcade
   (jaune, rouge et bleu sur bleu nuit) et Rubis (rouge, jaune et bleu sur gris).
@@ -257,9 +257,8 @@ SÉCURITÉ
   Internet, et comment le couper (dans Paramètres) :
   . activé au départ, chacun avec son interrupteur : la mesure du lag
     pendant les parties (pings vers ta box, ton fournisseur, Cloudflare et le
-    serveur du jeu ; Jeux), le dernier pilote NVIDIA (geforce.com) et ton
-    adresse Internet sur la page Réseau (api.ipify.org) (Réseau et vie
-    privée), les nouveautés après une mise à jour (GitHub ; Mises à jour) ;
+    serveur du jeu ; Jeux), le dernier pilote NVIDIA (geforce.com ; Réseau
+    et vie privée), les nouveautés après une mise à jour (GitHub ; Mises à jour) ;
   . coupé tant que tu ne l'as pas activé (sur sa page ou dans Paramètres) :
     identifier les serveurs sans nom dans Trafic et Lag en ligne (rdap.org)
     et le pays du serveur du jeu dans Lag en ligne (ipinfo.io), seule
