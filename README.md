@@ -137,6 +137,11 @@ Publier une mise à jour (vérifie la syntaxe, les tirets et lance le test avant
 .\outils\publier.ps1 -Version 1.2 -Notes "..." -Beta   # seulement pour ceux qui ont activé les bêtas
 ```
 
+## Code signing policy
+
+Nevermind.exe et les scripts de Nevermind seront signés gratuitement par SignPath.io, avec un certificat de la SignPath
+Foundation (demande en cours). Rôles et confidentialité : [Code signing policy](CODE_SIGNING.md).
+
 ## Licence
 
 Nevermind est sous licence MIT (voir le fichier `LICENSE`) : tu peux lire, réutiliser, modifier et redistribuer le code, en gardant la mention de licence. Les composants d'autres auteurs gardent leur propre licence : PresentMon (Intel, MIT), WebView2 (Microsoft) et Three.js (MIT), avec leurs fichiers de licence dans le dossier de l'appli.
