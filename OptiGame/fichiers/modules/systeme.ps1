@@ -148,7 +148,11 @@ function Restore-AllSettings {
         if ($r -ne 0) { $errors += "Écran $($k): fréquence non restaurée (code $r)" }
     }
     Sync-Mouse
-    Remove-Item $BackupFile -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $BackupFile, "$BackupFile.bak" -ErrorAction SilentlyContinue
+    if (-not $errors) {
+        try { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($OriginesUtilisateur, $false) } catch {}
+        try { [void](Invoke-Aide 'origines.oublier') } catch { try { [Microsoft.Win32.Registry]::LocalMachine.DeleteSubKeyTree($OriginesMachine, $false) } catch {} }
+    }
     Import-Backup
     , $errors
 }
@@ -291,6 +295,7 @@ function Invoke-Uninstall {
     if ($null -eq $script:History) { try { Import-History } catch {} }
     $restent = @(@($script:History) | Where-Object { $_ -and -not $_.Annule } | ForEach-Object { @($_.Log) } | Where-Object { $_.Type -eq 'definitif' } | ForEach-Object { "  - $($_.Quoi) (pour revenir en arrière : $($_.Retour))" } | Select-Object -Unique)
     $q = "Désinstaller Nevermind ?`n`nL'application va :`n" + ($steps -join "`n") + "`n`nLes points de restauration Windows sont conservés."
+    if ($script:BackupProbleme) { $q += "`n`nAttention : $(Get-TexteProblemeSauvegarde)" }
     if ($restent.Count) { $q += "`n`nCes changements protègent ton PC et restent en place :`n" + ($restent -join "`n") }
     if ([System.Windows.MessageBox]::Show($q, 'Désinstaller Nevermind', 'YesNo', 'Question') -ne 'Yes') { return }
 

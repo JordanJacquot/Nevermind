@@ -820,8 +820,8 @@ function Update-BackupSummary {
 }
 
 function Invoke-UndoAll {
-    if (-not (Get-BackupCount)) { Show-Message "Il n'y a aucun changement à annuler."; return }
-    if (-not (Confirm-Action "Remettre tous les réglages modifiés par Nevermind comme ils étaient avant ?")) { return }
+    if (-not (Get-BackupCount)) { Show-Message $(if ($script:BackupProbleme) { Get-TexteProblemeSauvegarde } else { "Il n'y a aucun changement à annuler." }); return }
+    if (-not (Confirm-Action "Remettre tous les réglages modifiés par Nevermind comme ils étaient avant ?$(if ($script:BackupProbleme) { "`n`nAttention : $(Get-TexteProblemeSauvegarde)" })")) { return }
     Set-Busy $true
     Set-Status 'Restauration des réglages...'
     $errors = Restore-AllSettings

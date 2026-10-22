@@ -153,6 +153,31 @@ function Get-AideCarte([int]$Index) {
     $ad
 }
 
+# Valeurs d'origine des réglages du PC, gardées par l'Aide avant leur première modification (HKLM, modifiable
+# seulement en administrateur) : une seconde copie de sauvegarde.json, qu'un nettoyeur de disque ne peut pas effacer.
+# Nevermind les relit sans droits (lecture seule) ; effacées après une restauration complète (« origines.oublier »).
+$AideOrigines = 'SOFTWARE\Mindset\Nevermind\Aide\Origines'
+function Save-AideOrigine([string]$Cle, [string]$Nom) {
+    try {
+        $id = "$Cle|$Nom"
+        $k = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey($AideOrigines)
+        try {
+            if ($null -ne $k.GetValue($id, $null)) { return }   # (la toute première valeur seulement)
+            $e = [ordered]@{ Path = $Cle; Name = $Nom; Existed = $false; Value = $null; Kind = $null }
+            $src = Open-AideCle $Cle $false
+            if ($src) {
+                try {
+                    if ($src.GetValueNames() -contains $Nom) {
+                        $v = $src.GetValue($Nom, $null, 'DoNotExpandEnvironmentNames')
+                        $e.Existed = $true; $e.Kind = $src.GetValueKind($Nom).ToString(); $e.Value = $(if ($v -is [byte[]]) { [int[]]$v } else { $v })
+                    }
+                } finally { $src.Close() }
+            }
+            $k.SetValue($id, (ConvertTo-Json -InputObject $e -Compress -Depth 3), 'String')
+        } finally { $k.Close() }
+    } catch {}
+}
+
 function Get-AideDnsOrigine([string]$Guid) {
     try {
         $k = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SOFTWARE\Mindset\Nevermind\Aide\Dns')
@@ -287,6 +312,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             $r = Get-AideRegle $cle $nom
             $v = ConvertTo-AideValeur $r (Get-AideParam $P 'Valeur') ([string](Get-AideParam $P 'Type'))
             if ($Verifier) { return 'ok' }
+            Save-AideOrigine $cle $nom
             $k = Open-AideCle $cle $true
             try { $k.SetValue($nom, $v, [Microsoft.Win32.RegistryValueKind]$r.Type) } finally { $k.Close() }
             return 'ok'
@@ -298,6 +324,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             $r = Get-AideRegle $cle $nom
             if (-not $r.Effacer) { throw "L'Aide garde ce réglage : $($r.Garde)." }
             if ($Verifier) { return 'ok' }
+            Save-AideOrigine $cle $nom
             $k = Open-AideCle $cle $false
             if ($k) { try { $k.DeleteValue($nom, $false) } finally { $k.Close() } }
             return 'ok'
@@ -372,6 +399,12 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             # (un blocage noté sous l'ancien nom « OptiGame : bloque ... » a pu être renommé depuis : les deux noms sont cherchés)
             $suite = $nom -replace '^(Nevermind|OptiGame) : bloque ', ''
             @(Get-ReglesNevermind | Where-Object { $_.DisplayName -in "Nevermind : bloque $suite", "OptiGame : bloque $suite" }) | Remove-NetFirewallRule -ErrorAction Stop
+            return 'ok'
+        }
+
+        'origines.oublier' {   # (après une restauration complète : ces valeurs ne doivent pas resservir des mois plus tard)
+            if ($Verifier) { return 'ok' }
+            try { [Microsoft.Win32.Registry]::LocalMachine.DeleteSubKeyTree($AideOrigines, $false) } catch {}
             return 'ok'
         }
 

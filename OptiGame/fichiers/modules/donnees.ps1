@@ -36,11 +36,44 @@ function Write-Log([string]$Message) {
     }
 }
 
+# La sauvegarde ne dépend pas d'un seul fichier (issue #3) : sauvegarde.json, sa copie de secours (.bak, la version
+# d'avant), et les valeurs d'origine gardées dans le registre (réglages du PC : par l'Aide, dans HKLM, protégé ;
+# réglages de l'utilisateur : par Nevermind, dans HKCU). Un fichier abîmé n'est jamais remplacé en silence par une
+# sauvegarde vide : il est mis de côté, et $script:BackupProbleme le dit (« Tout restaurer », désinstallation).
+$OriginesMachine = 'SOFTWARE\Mindset\Nevermind\Aide\Origines'
+$OriginesUtilisateur = 'Software\Mindset\Nevermind\Origines'
+function Get-CleRegNormale([string]$Path) {
+    $c = ([string]$Path).Trim() -replace '^Registry::', ''
+    $c -replace '^(HKEY_LOCAL_MACHINE|HKLM:?)\\', 'HKLM:\' -replace '^(HKEY_USERS|HKU:?)\\', 'HKU:\' -replace '^(HKEY_CURRENT_USER|HKCU:?)\\', 'HKCU:\'
+}
+function Read-OriginesRegistre {
+    @(foreach ($r in @(@([Microsoft.Win32.Registry]::LocalMachine, $OriginesMachine), @([Microsoft.Win32.Registry]::CurrentUser, $OriginesUtilisateur))) {
+        try {
+            $k = $r[0].OpenSubKey($r[1])
+            if (-not $k) { continue }
+            try { foreach ($n in $k.GetValueNames()) { try { [string]$k.GetValue($n) | ConvertFrom-Json } catch {} } } finally { $k.Close() }
+        } catch {}
+    })
+}
+function Read-FichierSauvegarde([string]$Fichier) {
+    if (-not (Test-Path -LiteralPath $Fichier)) { return $null }
+    $j = Get-Content -LiteralPath $Fichier -Raw -Encoding UTF8 | ConvertFrom-Json   # (lève une erreur si abîmé)
+    if ($null -eq $j -or -not $j.PSObject.Properties['Registry']) { throw 'contenu inattendu' }
+    $j
+}
 function Import-Backup {
     $script:Backup = @{ Registry = @{}; PowerScheme = $null; CreatedScheme = $null; Overlay = $null; Dns = @{}; Displays = @{} }
-    if (-not (Test-Path $BackupFile)) { return }
+    $script:BackupProbleme = $null
+    $j = $null
+    try { $j = Read-FichierSauvegarde $BackupFile }
+    catch {
+        Write-Log "Sauvegarde abîmée ($($_.Exception.Message)) : mise de côté"
+        $script:BackupProbleme = 'abimee'
+        try { Move-Item -LiteralPath $BackupFile -Destination (Join-Path $DataDir "sauvegarde-abimee-$(Get-Date -Format 'yyyyMMdd-HHmmss').json") -Force } catch {}
+    }
+    if ($null -eq $j) { try { $j = Read-FichierSauvegarde "$BackupFile.bak"; if ($j) { Write-Log 'Sauvegarde reprise de sa copie de secours' } } catch {} }
     try {
-        $j = Get-Content $BackupFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($null -eq $j) { throw 'pas de fichier' }
         if ($j.Registry) {
             foreach ($p in $j.Registry.PSObject.Properties) {
                 $v = $p.Value
@@ -52,7 +85,31 @@ function Import-Backup {
         if ($j.Dns) { foreach ($p in $j.Dns.PSObject.Properties) { $script:Backup.Dns[$p.Name] = [string]$p.Value } }
         if ($j.Displays) { foreach ($p in $j.Displays.PSObject.Properties) { $script:Backup.Displays[$p.Name] = [int]$p.Value } }
         if ($j.Overlay) { $script:Backup.Overlay = [string]$j.Overlay }
-    } catch { Write-Log "Lecture de la sauvegarde impossible: $_" }
+    } catch { if ($_.Exception.Message -ne 'pas de fichier') { Write-Log "Lecture de la sauvegarde impossible: $_" } }
+    # Les valeurs d'origine du registre complètent ce que le fichier n'a plus (fichier effacé, abîmé, ou plus ancien)
+    $connues = @{}; foreach ($e in @($script:Backup.Registry.Values)) { $connues["$(Get-CleRegNormale $e.Path)|$($e.Name)"] = $true }
+    $reprises = 0
+    foreach ($o in @(Read-OriginesRegistre)) {
+        if (-not $o -or -not $o.Path -or -not $o.Name) { continue }
+        $cle = "$(Get-CleRegNormale $o.Path)|$($o.Name)"
+        if ($connues[$cle]) { continue }
+        $script:Backup.Registry["$($o.Path)|$($o.Name)"] = @{ Path = [string]$o.Path; Name = [string]$o.Name; Existed = [bool]$o.Existed; Value = $o.Value; Kind = $o.Kind }
+        $connues[$cle] = $true; $reprises++
+    }
+    if ($reprises) { Write-Log "Sauvegarde : $reprises valeur(s) d'origine reprise(s) du registre" }
+    # Plus rien alors que l'historique montre des changements pas annulés : la sauvegarde a disparu
+    if (-not $script:BackupProbleme -and -not $script:Backup.Registry.Count) {
+        try {
+            if ($null -eq $script:History) { Import-History }
+            if (@(@($script:History) | Where-Object { $_ -and -not $_.Annule -and @(@($_.Log) | Where-Object { $_.Type -eq 'reg' }).Count }).Count) { $script:BackupProbleme = 'absente' }
+        } catch {}
+    }
+}
+
+# Ce que « Tout restaurer » et la désinstallation disent quand la sauvegarde a un problème
+function Get-TexteProblemeSauvegarde {
+    if (-not $script:BackupProbleme) { return '' }
+    "$(if ($script:BackupProbleme -eq 'abimee') { 'Le fichier qui garde les réglages d''origine est abîmé' } else { 'Le fichier qui garde les réglages d''origine a disparu' }) : certains réglages changés par Nevermind ne pourront peut-être pas être remis comme avant. Pour tout remettre, utilise le point de restauration de Windows créé par Nevermind (page Sauvegarde, « Restauration du système »)."
 }
 
 # Points que l'utilisateur a choisi d'ignorer (ex: un écran volontairement en 60 Hz).
@@ -115,8 +172,13 @@ function Get-RegState([string]$Path, [string]$Name) {
     $s
 }
 
+# Écrit d'abord à côté, puis remplace : un arrêt brutal ne laisse jamais un fichier à moitié écrit ; la version
+# d'avant reste en copie de secours (.bak)
 function Save-Backup {
-    $script:Backup | ConvertTo-Json -Depth 6 | Set-Content -Path $BackupFile -Encoding UTF8
+    $tmp = "$BackupFile.tmp"
+    [IO.File]::WriteAllText($tmp, ($script:Backup | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding $true))
+    if (Test-Path -LiteralPath $BackupFile) { try { Copy-Item -LiteralPath $BackupFile -Destination "$BackupFile.bak" -Force } catch {} }
+    Move-Item -LiteralPath $tmp -Destination $BackupFile -Force
 }
 
 function Get-RegValue([string]$Path, [string]$Name) {
@@ -142,6 +204,13 @@ function Save-Original([string]$Path, [string]$Name) {
     }
     $script:Backup.Registry[$key] = @{ Path = $Path; Name = $Name; Existed = $exists; Value = $val; Kind = $kind }
     Save-Backup
+    # Réglage de l'utilisateur : une copie dans son registre aussi (ceux du PC sont gardés par l'Aide, dans HKLM)
+    if (Test-RegUtilisateur $Path) {
+        try {
+            $k = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($OriginesUtilisateur)
+            try { if ($null -eq $k.GetValue($key, $null)) { $k.SetValue($key, (ConvertTo-Json -InputObject $script:Backup.Registry[$key] -Compress -Depth 3), 'String') } } finally { $k.Close() }
+        } catch {}
+    }
 }
 
 # Ouvre une clé du registre à partir d'un chemin PowerShell (HKCU:\..., HKLM:\..., Registry::HKEY_USERS\...).
