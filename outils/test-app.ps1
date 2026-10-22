@@ -65,7 +65,7 @@ function Test-StepWpf([string]$Name, [scriptblock]$Body) {
     }
 }
 
-$Window.WindowStartupLocation = 'Manual'; $Window.Left = -5000; $Window.Top = 0; $Window.Height = 900; $Window.ShowInTaskbar = $false
+$Window.WindowStartupLocation = 'Manual'; $Window.Left = -5000; $Window.Top = 0; $Window.Height = 900; $Window.ShowInTaskbar = $false; $Window.ShowActivated = $false   # (jamais au premier plan : on peut utiliser le PC pendant les tests)
 
 # Mesure de fluidité : plus long moment où la fenêtre n'a pas répondu.
 $script:T.Beat = New-Object System.Windows.Threading.DispatcherTimer
