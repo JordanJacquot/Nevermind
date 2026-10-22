@@ -22,6 +22,22 @@ $sma     = @(Get-ChildItem (Join-Path $env:windir 'Microsoft.NET\assembly\GAC_MS
 
 & (Join-Path $PSScriptRoot 'icone.ps1') -OutDir $icones | Out-Null
 New-Item -ItemType Directory -Force -Path $fich | Out-Null
+# Fichiers d'autres auteurs : chacun doit avoir l'empreinte et la signature notées dans son SOURCES.md, sinon rien
+# n'est construit (un fichier remplacé par erreur ou par un tiers ne part jamais chez les utilisateurs)
+$tiers = @(
+    ,@('lib\webview2\\Microsoft.Web.WebView2.Core.dll', 'D60E6E94245078CB56E44EBD5F360DC04BF18E460136BE93BFC4CFCA43B98505', 'Microsoft Corporation')
+    ,@('lib\webview2\\Microsoft.Web.WebView2.Wpf.dll', 'F05A06BBC03AFCB83DC98168B8D343D9015B2A533EDBFAC90C52D88894B653E4', 'Microsoft Corporation')
+    ,@('lib\webview2\\WebView2Loader.dll', '3426DCC55FDFB8B5E7AC623CF33B4CCF283FBF68A0C5A65BDDFDB4D749A8ABEE', 'Microsoft Corporation')
+    ,@('outils-tiers\PresentMon.exe', 'B2A706BC6AD475749E3B7E3409263AA1E6906D45BDCF993F6DBC0F660188F1AF', 'Intel Corporation')
+)
+foreach ($t in $tiers) {
+    $f = Join-Path $fich $t[0]
+    if (-not (Test-Path -LiteralPath $f)) { throw "Fichier tiers absent : $($t[0])" }
+    $h = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash
+    if ($h -ne $t[1]) { throw "Fichier tiers modifié : $($t[0]) (empreinte $h, attendue $($t[1]) : voir son SOURCES.md)" }
+    $s = Get-AuthenticodeSignature -LiteralPath $f
+    if ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch "CN=$([regex]::Escape($t[2]))(,|$)") { throw "Fichier tiers mal signé : $($t[0]) ($($s.Status), $($s.SignerCertificate.Subject))" }
+}
 Copy-Item (Join-Path $icones 'OptiGame.ico') (Join-Path $fich 'OptiGame.ico') -Force
 
 function Build-Exe([string]$Out, [string]$Icon, [string]$Define) {

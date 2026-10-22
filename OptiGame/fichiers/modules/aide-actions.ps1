@@ -178,6 +178,15 @@ function Save-AideOrigine([string]$Cle, [string]$Nom) {
     } catch {}
 }
 
+# PresentMon (Intel) : lancé en administrateur par l'Aide, donc seulement s'il est bien signé par Intel (voir outils-tiers\SOURCES.md)
+function Get-AidePresentMon {
+    $pm = Join-Path (Split-Path $AideDossierModules -Parent) 'outils-tiers\PresentMon.exe'
+    if (-not (Test-Path -LiteralPath $pm)) { throw 'PresentMon est absent du dossier de Nevermind.' }
+    $s = Get-AuthenticodeSignature -LiteralPath $pm
+    if ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'CN=Intel Corporation(,|$)') { throw "PresentMon n'est pas signé par Intel ($($s.Status)) : l'Aide ne le lance pas." }
+    $pm
+}
+
 function Get-AideDnsOrigine([string]$Guid) {
     try {
         $k = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SOFTWARE\Mindset\Nevermind\Aide\Dns')
@@ -492,8 +501,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             # Jeu guetté par la veille (lancée avant lui) : la mesure continue sur celle là
             $nomJeu = try { "$((Get-Process -Id $idJeu -ErrorAction Stop).ProcessName).exe" } catch { '' }
             if ($nomJeu -and [AideFps]::Rattacher($nomJeu)) { return 'rattachee' }
-            $pm = Join-Path (Split-Path $AideDossierModules -Parent) 'outils-tiers\PresentMon.exe'
-            if (-not (Test-Path -LiteralPath $pm)) { throw 'PresentMon est absent du dossier de Nevermind.' }
+            $pm = Get-AidePresentMon
             [AideFps]::Start($pm, $idJeu)
             return 'ok'
         }
@@ -503,8 +511,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             if (-not $noms.Count -or $noms.Count -gt 10 -or @($noms | Where-Object { $_ -notmatch '^[a-z0-9][a-z0-9 ._()-]{0,60}\.exe$' }).Count) { throw 'Demande refusée : noms de programmes non valables.' }
             if ($Verifier) { return 'ok' }
             if (-not ('AideFps' -as [type])) { throw 'La mesure des FPS se fait seulement dans l''Aide.' }
-            $pm = Join-Path (Split-Path $AideDossierModules -Parent) 'outils-tiers\PresentMon.exe'
-            if (-not (Test-Path -LiteralPath $pm)) { throw 'PresentMon est absent du dossier de Nevermind.' }
+            $pm = Get-AidePresentMon
             [AideFps]::Veiller($pm, [string[]]$noms)
             return 'ok'
         }
