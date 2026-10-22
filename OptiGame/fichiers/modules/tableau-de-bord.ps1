@@ -352,6 +352,7 @@ function Undo-RunLog($Log) {
                     if ($r -ne 0) { throw "Écran $($e.Device): fréquence non restaurée (code $r)" }
                 }
                 'fw' { [void](Invoke-Aide 'pare-feu.debloquer' @{ Nom = [string]$e.Name }) }
+                'definitif' { }   # (protège le PC : jamais annulé, voir Add-ChangementDefinitif)
                 'pcfg' {
                     if ($null -ne $e.Ac) { powercfg /setacvalueindex SCHEME_CURRENT $SubBattery $e.Guid ([int]$e.Ac) | Out-Null }
                     if ($null -ne $e.Dc) { powercfg /setdcvalueindex SCHEME_CURRENT $SubBattery $e.Guid ([int]$e.Dc) | Out-Null }

@@ -122,14 +122,14 @@ function Get-SecurityChecks($S) {
         [void]$list.Add(@{ Status = 'warn'; Title = "$($excl.Count) élément$(if ($excl.Count -gt 1) {'s'}) exclu$(if ($excl.Count -gt 1) {'s'}) de l'antivirus"
             Detail = 'Ces dossiers ou programmes ne sont jamais analysés. Si tu ne les as pas ajoutés toi-même (ou un jeu que tu connais), c''est suspect : les virus s''ajoutent souvent eux-mêmes en exclusion.'
             Items = @($trust | ForEach-Object { $_.Text }); Trust = $trust
-            Actions = @(@{ Label = 'Retirer les exclusions'; Confirm = 'Retirer ces exclusions de Microsoft Defender ? Ces éléments seront de nouveau analysés.'; Arg = $excl
-                           Script = { param($a) [void](Invoke-Aide 'antivirus.retirer-exclusions' @{ Elements = @($a) }) } }) })
+            Actions = @(@{ Label = 'Retirer les exclusions'; Confirm = 'Retirer ces exclusions de Microsoft Defender ? Ces éléments seront de nouveau analysés. Ce changement protège ton PC : « Tout restaurer » ne l''annulera pas (la façon de revenir en arrière est notée dans l''historique).'; Arg = $excl
+                           Script = { param($a) [void](Invoke-Aide 'antivirus.retirer-exclusions' @{ Elements = @($a) }); Add-ChangementDefinitif 'Exclusions de l''antivirus retirées' "Exclusions retirées : $(@($a) -join ', ')" 'Sécurité Windows, Protection contre les virus et menaces, « Gérer les paramètres », Exclusions : ajouter de nouveau l''élément.' } }) })
     }
 
     # Pare-feu et contrôle des comptes
     if (-not $S.Firewall) {
         [void]$list.Add(@{ Status = 'bad'; Title = 'Pare-feu désactivé'; Detail = "Le pare-feu de Windows est coupé ($($S.FirewallOff -join ', ')) : ton PC est exposé sur le réseau."
-            Actions = @(@{ Label = 'Réactiver le pare-feu'; Confirm = 'Réactiver le pare-feu de Windows sur tous les réseaux ?'; Script = { [void](Invoke-Aide 'pare-feu.activer') } }) })
+            Actions = @(@{ Label = 'Réactiver le pare-feu'; Confirm = 'Réactiver le pare-feu de Windows sur tous les réseaux ? Ce changement protège ton PC : « Tout restaurer » ne l''annulera pas (la façon de revenir en arrière est notée dans l''historique).'; Script = { [void](Invoke-Aide 'pare-feu.activer'); Add-ChangementDefinitif 'Pare-feu de Windows réactivé' 'Pare-feu réactivé sur tous les réseaux' 'Sécurité Windows, « Pare-feu et protection du réseau » : choisir le réseau et désactiver le pare-feu.' } }) })
     }
     if (-not $S.Uac) {
         [void]$list.Add(@{ Status = 'bad'; Title = 'Contrôle des comptes désactivé'; Detail = 'Les programmes peuvent modifier Windows sans te demander la permission. Il faut le réactiver (redémarrage nécessaire).'

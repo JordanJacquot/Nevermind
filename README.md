@@ -76,7 +76,7 @@ Les compteurs d'octets et le repérage des serveurs en UDP passent par Nevermind
 ### Engagements
 
 - Aucune modification n'est faite sans clic de l'utilisateur, et chaque réglage modifié est sauvegardé avant d'être changé.
-- Tout est annulable, un par un depuis l'historique ou en une fois (« Tout restaurer »).
+- Tout est annulable, un par un depuis l'historique ou en une fois (« Tout restaurer »), sauf quatre changements qui protègent le PC et qu'on fait seulement si tu le demandes : désactiver SMBv1, passer des Wi-Fi ouverts en connexion manuelle, retirer des exclusions de l'antivirus, réactiver le pare-feu. La confirmation le dit avant, l'historique les montre comme « Définitif » avec la façon de revenir en arrière à la main, et la désinstallation les liste.
 - Aucune donnée personnelle n'est envoyée. Le code est lisible dans `OptiGame/fichiers/modules`.
 
 ## Développement

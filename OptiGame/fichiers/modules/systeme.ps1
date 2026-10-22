@@ -287,7 +287,11 @@ function Invoke-Uninstall {
     $steps += "  - supprimer ses données (sauvegarde, journal, préférences)"
     if ((Test-AutoStart) -or (Test-DesktopShortcut)) { $steps += "  - retirer son raccourci du bureau et son lancement au démarrage" }
     $steps += "  - supprimer les fichiers de Nevermind de ce dossier"
+    # Les changements de sécurité définitifs restent (ils protègent le PC) : ils sont dits, avec la façon de revenir en arrière
+    if ($null -eq $script:History) { try { Import-History } catch {} }
+    $restent = @(@($script:History) | Where-Object { $_ -and -not $_.Annule } | ForEach-Object { @($_.Log) } | Where-Object { $_.Type -eq 'definitif' } | ForEach-Object { "  - $($_.Quoi) (pour revenir en arrière : $($_.Retour))" } | Select-Object -Unique)
     $q = "Désinstaller Nevermind ?`n`nL'application va :`n" + ($steps -join "`n") + "`n`nLes points de restauration Windows sont conservés."
+    if ($restent.Count) { $q += "`n`nCes changements protègent ton PC et restent en place :`n" + ($restent -join "`n") }
     if ([System.Windows.MessageBox]::Show($q, 'Désinstaller Nevermind', 'YesNo', 'Question') -ne 'Yes') { return }
 
     $errors = @()

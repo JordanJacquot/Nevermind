@@ -52,6 +52,17 @@ function Save-History {
 }
 
 # Ajoute une ligne à l'historique (seulement si quelque chose a vraiment changé). Retourne son identifiant.
+# Un changement que « Tout restaurer » n'annule pas (il protège le PC) : noté dans le journal de l'action en cours, ou
+# directement dans l'historique, avec la façon de revenir en arrière à la main
+function Add-ChangementDefinitif([string]$Titre, [string]$Quoi, [string]$Retour) {
+    $e = @{ Type = 'definitif'; Quoi = $Quoi; Retour = $Retour }
+    if ($null -ne $script:RunLog) { [void]$script:RunLog.Add($e) } else { [void](Add-History $Titre @($Quoi) @($e)) }
+}
+# Une entrée dont rien ne s'annule : seulement des changements définitifs
+function Test-HistoriqueDefinitif($H) { $l = @($H.Log); $l.Count -and -not @($l | Where-Object { $_.Type -ne 'definitif' }).Count }
+# La façon de revenir en arrière d'une entrée (changements définitifs)
+function Get-RetourDefinitif($H) { (@($H.Log) | Where-Object { $_.Type -eq 'definitif' -and $_.Retour } | ForEach-Object { [string]$_.Retour } | Select-Object -Unique) -join ' ' }
+
 function Add-History([string]$Titre, [string[]]$Details, $Log) {
     if (-not $Log -or -not @($Log).Count) { return $null }
     if ($null -eq $script:History) { Import-History }
@@ -103,9 +114,10 @@ function Update-HistoryList {
         [void]$sp.Children.Add($t)
         [void]$sp.Children.Add((New-Text $h.Date 12 '#A6A1BC'))
         Add-ToGrid $row $sp 0
-        if ($h.Annule) {
-            $b = New-Badge 'Annulé' '#A6A1BC'
+        if ($h.Annule -or (Test-HistoriqueDefinitif $h)) {
+            $b = New-Badge $(if ($h.Annule) { 'Annulé' } else { 'Définitif' }) '#A6A1BC'
             $b.VerticalAlignment = 'Center'
+            if (-not $h.Annule) { $b.ToolTip = "Pour revenir en arrière : $(Get-RetourDefinitif $h)" }
         } else {
             $b = New-Button 'Annuler'
             $b.VerticalAlignment = 'Center'
@@ -121,7 +133,7 @@ function Update-HistoryList {
 
 function Undo-HistoryEntry([string]$Id) {
     $h = @($script:History | Where-Object { $_.Id -eq $Id }) | Select-Object -First 1
-    if (-not $h -or $h.Annule) { return }
+    if (-not $h -or $h.Annule -or (Test-HistoriqueDefinitif $h)) { return }
     if (-not (Confirm-Action "Annuler ce changement ?`n`n« $($h.Titre) »`n$($h.Date)`n`nLes réglages concernés reviennent à ce qu'ils étaient juste avant.")) { return }
     Set-Busy $true
     Set-Status 'Retour en arrière...'

@@ -181,8 +181,8 @@ function Get-NetAuditChecks($R, $Devs, $Net) {
     if ($openAuto.Count) {
         Add-AuditCheck $list 'warn' 'wifi' "Connexion automatique à $(& $plural $openAuto.Count 'Wi-Fi ouvert' 'Wi-Fi ouverts')" 'Ton PC se reconnecte tout seul à ces réseaux sans protection. Un pirate peut créer un faux Wi-Fi avec le même nom pour espionner ta connexion.' $openAuto @(
             @{ Label = 'Passer en connexion manuelle'; Arg = $openAuto; After = $rerun
-               Confirm = 'Ces Wi-Fi ne se connecteront plus automatiquement. Tu pourras toujours t''y connecter en cliquant dessus. Continuer ?'
-               Script = { param($names) [void](Invoke-Aide 'wifi.manuel' @{ Profils = @($names) }) } })
+               Confirm = 'Ces Wi-Fi ne se connecteront plus automatiquement. Tu pourras toujours t''y connecter en cliquant dessus. Ce changement protège ton PC : « Tout restaurer » ne l''annulera pas (la façon de revenir en arrière est notée dans l''historique). Continuer ?'
+               Script = { param($names) [void](Invoke-Aide 'wifi.manuel' @{ Profils = @($names) }); Add-ChangementDefinitif 'Wi-Fi ouverts en connexion manuelle' "Connexion manuelle : $(@($names) -join ', ')" 'Paramètres de Windows, Réseau et Internet, Wi-Fi, « Gérer les réseaux connus » : choisir le réseau et cocher « Se connecter automatiquement ».' } })
     } elseif ($profiles.Count) {
         Add-AuditCheck $list 'ok' 'wifi' 'Aucun Wi-Fi ouvert en connexion automatique' "$(& $plural $profiles.Count 'Wi-Fi mémorisé' 'Wi-Fi mémorisés') sur ce PC, tous protégés ou en connexion manuelle."
     }
@@ -270,18 +270,19 @@ function Get-NetAuditChecks($R, $Devs, $Net) {
     $pc = $R.Pc
     if (@($pc.FirewallOff).Count) {
         Add-AuditCheck $list 'bad' 'pc' 'Pare-feu de Windows désactivé' "Il est coupé sur : $(@($pc.FirewallOff) -join ', '). Ton PC accepte alors toutes les connexions venant du réseau." $null @(
-            @{ Label = 'Réactiver le pare-feu'; After = $rerun; Confirm = 'Réactiver le pare-feu de Windows sur tous les réseaux ?'; Script = { [void](Invoke-Aide 'pare-feu.activer') } })
+            @{ Label = 'Réactiver le pare-feu'; After = $rerun; Confirm = 'Réactiver le pare-feu de Windows sur tous les réseaux ? Ce changement protège ton PC : « Tout restaurer » ne l''annulera pas (la façon de revenir en arrière est notée dans l''historique).'; Script = { [void](Invoke-Aide 'pare-feu.activer'); Add-ChangementDefinitif 'Pare-feu de Windows réactivé' 'Pare-feu réactivé sur tous les réseaux' 'Sécurité Windows, « Pare-feu et protection du réseau » : choisir le réseau et désactiver le pare-feu.' } })
     } else {
         Add-AuditCheck $list 'ok' 'pc' 'Pare-feu de Windows activé' 'Il bloque les connexions non voulues vers ce PC.'
     }
     if ($pc.Smb1 -or $pc.Smb1Client) {
         Add-AuditCheck $list 'bad' 'pc' 'Ancien partage de fichiers SMBv1 activé' 'Cette vieille version du partage de fichiers Windows est la faille utilisée par le virus WannaCry. Plus aucun appareil récent n''en a besoin.' $null @(
             @{ Label = 'Désactiver SMBv1'; Arg = [bool]$pc.Smb1Client; After = $rerun
-               Confirm = 'Désactiver SMBv1 ? Un redémarrage peut être nécessaire. Seuls de très vieux appareils (NAS ou imprimantes d''avant 2010) pourraient ne plus accéder à ce PC.'
+               Confirm = 'Désactiver SMBv1 ? Un redémarrage peut être nécessaire. Seuls de très vieux appareils (NAS ou imprimantes d''avant 2010) pourraient ne plus accéder à ce PC. Ce changement protège ton PC : « Tout restaurer » ne l''annulera pas (la façon de revenir en arrière est notée dans l''historique).'
                Script = {
                    param($client)
                    Set-Status 'Désactivation de SMBv1...'
                    [void](Invoke-Aide 'smb1.couper' @{ Client = [bool]$client } 900000)
+                   Add-ChangementDefinitif 'SMBv1 désactivé' 'Ancien partage de fichiers SMBv1 désactivé' 'Panneau de configuration, Programmes, « Activer ou désactiver des fonctionnalités Windows » : cocher « Support de partage de fichiers SMB 1.0/CIFS ».'
                } })
     } else {
         Add-AuditCheck $list 'ok' 'pc' 'SMBv1 désactivé' 'L''ancienne version du partage de fichiers (faille WannaCry) est coupée.'
