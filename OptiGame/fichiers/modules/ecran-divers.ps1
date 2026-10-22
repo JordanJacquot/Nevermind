@@ -97,13 +97,14 @@ function Get-PagesDivers {
                     @{ texte = 'Compteur de FPS à l''écran'; note = 'Affichage, style et position du compteur par-dessus le jeu.'; lien = @{ id = 'overlay'; texte = 'Ouvrir Overlay' } }
                     @{ texte = 'Mesurer ma connexion quand je joue'; note = 'Box, Internet et serveur du jeu pendant la partie, pour savoir d''où vient le lag.'; bascule = @{ id = 'lag-mesure'; oui = [bool](Test-LagMeasure) } }
                     @{ texte = 'Mode jeu : fermer des applis pendant que je joue'; note = 'Les applis choisies (Optimisation gaming, Mode jeu) sont fermées puis relancées après la partie.'; bascule = @{ id = 'modejeu'; oui = [bool](Get-Setting 'GameMode' $false) } }
-                    @{ texte = 'Jaquettes depuis Internet'; note = 'Cherche les images des jeux qui n''en ont pas (seul le nom du jeu est envoyé).'; bascule = @{ id = 'coche:ChkLibCovers'; oui = [bool](Test-CoversOnline) } }
+                    @{ texte = 'Jaquettes depuis Internet'; note = 'Cherche les images des jeux qui n''en ont pas sur la boutique Steam puis Wikipédia (seul le nom du jeu est envoyé).'; bascule = @{ id = 'coche:ChkLibCovers'; oui = [bool](Test-CoversOnline) } }
                 ) }
             ) }
             @{ id = 'reseau'; nom = 'Réseau et vie privée'; blocs = @(
                 @{ type = 'reglages'; rangs = @(
                     @{ texte = 'Me prévenir quand un nouvel appareil se connecte'; note = 'Vérifié toutes les 10 minutes sur ton réseau, tant que Nevermind est ouvert.'; bascule = @{ id = 'coche:ChkNetWatch'; oui = [bool](Get-Setting 'NetWatch' $false) } }
-                    @{ texte = 'Identifier les serveurs sans nom'; note = 'Page Trafic : cherche à qui appartient une adresse inconnue dans l''annuaire public rdap.org. Lag en ligne : cherche aussi le pays du serveur du jeu (ipinfo.io). Seule l''adresse du serveur est envoyée.'; bascule = @{ id = 'trafic-annuaire'; oui = [bool](Get-Setting 'TrafficLookup' $true) } }
+                    @{ texte = 'Identifier les serveurs sans nom'; note = 'Page Trafic et Lag en ligne : cherche à qui appartient une adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public rdap.org. Seule l''adresse du serveur est envoyée.'; bascule = @{ id = 'trafic-annuaire'; oui = [bool](Test-AnnuaireServeurs) } }
+                    @{ texte = 'Pays du serveur dans Lag en ligne'; note = 'Lag en ligne : cherche dans quel pays se trouve le serveur du jeu (ipinfo.io). Seule l''adresse du serveur est envoyée.'; bascule = @{ id = 'lag-pays'; oui = [bool](Test-PaysServeur) } }
                     @{ texte = 'Ce que Windows envoie à Microsoft'; note = 'Identifiants, réglages qui envoient plus que le minimum et envois vus en direct.'; bouton = @{ id = 'trafic-microsoft'; texte = 'Voir'; style = 'second' } }
                 ) }
                 @{ type = 'note'; texte = 'Nevermind ne déchiffre jamais tes connexions et n''envoie rien sur toi : il regarde seulement qui parle à qui depuis ton PC.' }

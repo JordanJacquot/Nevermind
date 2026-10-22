@@ -77,7 +77,7 @@ $SearchEntries = @(
     # Trafic
     @{ T = 'Ce qui sort de ton PC'; P = 'trafic'; A = 'Ce qui sort de ton PC'; K = 'trafic internet donnees envoyees programmes connexions espion' },
     @{ T = 'Identifier les serveurs sans nom'; P = 'trafic'; A = 'Identifier les serveurs sans nom'; K = 'rdap annuaire serveur ip proprietaire ipinfo' },
-    @{ T = 'Pays du serveur du jeu (Lag en ligne)'; P = 'parametres'; Tab = 'reseau'; A = 'Identifier les serveurs sans nom'; K = 'pays localisation serveur jeu lag ping ou se trouve geolocalisation ipinfo' },
+    @{ T = 'Pays du serveur du jeu (Lag en ligne)'; P = 'parametres'; Tab = 'reseau'; A = 'Pays du serveur dans Lag en ligne'; K = 'pays localisation serveur jeu lag ping ou se trouve geolocalisation ipinfo' },
     @{ T = 'Thème (couleurs de Nevermind)'; P = 'parametres'; Tab = 'theme'; K = 'theme couleur couleurs apparence design da sombre terminal arcade rubis crepuscule neon skin' },
     @{ T = 'Paramètres de Nevermind'; P = 'parametres'; Tab = 'general'; K = 'parametres reglages options configuration roue engrenage settings' },
     @{ T = 'Signaler un problème'; P = 'parametres'; Tab = 'aide'; A = 'Signaler un problème'; K = 'bug souci erreur rapport envoyer probleme aide' },

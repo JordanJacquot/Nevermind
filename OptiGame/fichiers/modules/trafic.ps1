@@ -515,7 +515,7 @@ function Update-ServerLookups {
         }
         if ($changed) { Save-ServerCache }
     }
-    if (-not (Get-Setting 'TrafficLookup' $true)) { return }
+    if (-not (Test-AnnuaireServeurs)) { return }
     $ips = New-Object System.Collections.ArrayList
     foreach ($a in @($st.Apps.Values)) {
         foreach ($d in @($a.Dest.Values)) {
@@ -728,7 +728,7 @@ function Build-TrafficPage {
     Add-ToGrid $lk $lkt 0
     $sw = New-Object System.Windows.Controls.CheckBox
     $sw.Style = $Window.FindResource('Switch')
-    $sw.IsChecked = [bool](Get-Setting 'TrafficLookup' $true)
+    $sw.IsChecked = [bool](Test-AnnuaireServeurs)
     $sw.VerticalAlignment = 'Center'; $sw.Margin = New-Thickness 16 0 0 0
     $sw.Add_Click({ param($sender, $e) Set-Setting 'TrafficLookup' ([bool]$sender.IsChecked) })
     $script:TrafficLookupSwitch = $sw

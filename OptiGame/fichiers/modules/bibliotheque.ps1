@@ -100,7 +100,10 @@ function Get-ImageBrush([string]$Path, [int]$Width) {
 $CoverDir = Join-Path $DataDir 'jaquettes'
 $CoverIndexFile = Join-Path $CoverDir 'index.json'
 
-function Test-CoversOnline { [bool](Get-Setting 'LibCoversOnline' $true) }
+# Envois vers des services extérieurs : coupés tant que l'utilisateur ne les a pas activés (page concernée ou Paramètres)
+function Test-CoversOnline { [bool](Get-Setting 'LibCoversOnline' $false) }        # jaquettes : boutique Steam puis Wikipédia (nom du jeu)
+function Test-AnnuaireServeurs { [bool](Get-Setting 'TrafficLookup' $false) }      # Trafic et Lag : propriétaire d'une adresse (rdap.org)
+function Test-PaysServeur { [bool](Get-Setting 'LagPays' $false) }                 # Lag en ligne : pays du serveur du jeu (ipinfo.io)
 
 function Get-CoverIndex {
     if ($null -ne $script:CoverIndex) { return $script:CoverIndex }

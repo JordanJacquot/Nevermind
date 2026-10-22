@@ -66,7 +66,7 @@ function Start-LagGeoLookup($S) {
     $ip = [string]$S.Server.Ip
     if (-not $script:LagGeo) { $script:LagGeo = @{} }
     if ($script:LagGeo.ContainsKey($ip)) { $g = $script:LagGeo[$ip]; $S.Server.Pays = $g.Pays; $S.Server.Ville = $g.Ville; return }
-    if (-not (Get-Setting 'TrafficLookup' $true)) { return }
+    if (-not (Test-PaysServeur)) { return }
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
     [void]$ps.AddScript($ServerGeoWork.ToString()).AddArgument($ip)
     $S.GeoJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
@@ -250,7 +250,7 @@ function Update-LagSession {
 
 function Start-LagOwnerLookup([string]$Ip) {
     if (Get-ServerOwner $Ip) { return }
-    if (-not (Get-Setting 'TrafficLookup' $true)) { return }
+    if (-not (Test-AnnuaireServeurs)) { return }
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
     [void]$ps.AddScript($ServerLookupWork.ToString()).AddArgument(@($Ip))
     if (-not $script:LagOwnerJobs) { $script:LagOwnerJobs = New-Object System.Collections.ArrayList }

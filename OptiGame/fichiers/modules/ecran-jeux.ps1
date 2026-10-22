@@ -48,7 +48,7 @@ function Get-PagesJeux {
         elseif ($grille.Count) { @{ type = 'grille'; elements = $grille } }
         else { @{ type = 'texte'; texte = 'Chargement des jaquettes...' } }
         if ($ui.LibLeftoverBar.Visibility -eq 'Visible') { @{ type = 'ligne'; icone = 'poubelle'; couleur = 'orange'; texte = [string]$ui.LibLeftoverText.Text; bouton = @{ id = 'clic:BtnLibLeftovers'; texte = 'Voir'; style = 'second' } } }
-        @{ type = 'reglages'; rangs = @(@{ texte = 'Jaquettes depuis Internet'; note = 'Les images des jeux sont cherchées sur Steam quand le jeu n''en a pas.'; bascule = @{ id = 'coche:ChkLibCovers'; oui = [bool]$ui.ChkLibCovers.IsChecked } }) }
+        @{ type = 'reglages'; rangs = @(@{ texte = 'Jaquettes depuis Internet'; note = 'Les images des jeux qui n''en ont pas sont cherchées sur la boutique Steam puis Wikipédia (seul le nom du jeu est envoyé).'; bascule = @{ id = 'coche:ChkLibCovers'; oui = [bool]$ui.ChkLibCovers.IsChecked } }) }
     )
 
     # ---- Perf. In Game : FPS
@@ -212,7 +212,7 @@ function Get-PagesJeux {
         for ($j = 0; $j -lt $acts.Count; $j++) { $blocsT += @{ type = 'bouton'; id = "trafic-al:$k`:$j"; texte = [string]$acts[$j].Label; style = $(if ($j) { 'second' }) } }
     }
     if ($actif -and -not $alertes.Count) { $blocsT += @{ type = 'pastilles'; elements = @(@{ texte = 'Rien d''anormal pour l''instant' }) } }
-    $blocsT += @{ type = 'reglages'; rangs = @(@{ texte = 'Identifier les serveurs sans nom'; note = 'Cherche à qui appartient chaque adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public des adresses Internet. Seule l''adresse du serveur est envoyée.'; bascule = @{ id = 'trafic-annuaire'; oui = [bool](Get-Setting 'TrafficLookup' $true) } }) }
+    $blocsT += @{ type = 'reglages'; rangs = @(@{ texte = 'Identifier les serveurs sans nom'; note = 'Cherche à qui appartient chaque adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public rdap.org. Seule l''adresse du serveur est envoyée.'; bascule = @{ id = 'trafic-annuaire'; oui = [bool](Test-AnnuaireServeurs) } }) }
     $blocsT += @{ type = 'ligne'; icone = 'windows'; couleur = 'doux'; texte = 'Ce que Windows envoie à Microsoft'; note = 'Les identifiants de ton PC, les réglages qui en envoient plus que le minimum, et les envois vus en direct.'; bouton = @{ id = 'trafic-microsoft'; texte = 'Voir'; style = 'second' } }
     if ($apps.Count) {
         $blocsT += @{ type = 'titre'; texte = 'Programmes qui communiquent avec Internet'; droite = "depuis $(if ($mins -lt 1) { 'moins d''une minute' } else { "$mins min" })" }
@@ -258,6 +258,7 @@ function Register-ActionsJeux {
         $c = @{ 'haut-gauche' = 'hg'; 'haut-droite' = 'hd'; 'bas-gauche' = 'bg'; 'bas-droite' = 'bd' }[[string]$Valeur]
         if ($c) { Invoke-Safe { Set-FpsOverlayCorner $c } }
     }
+    Register-ActionVue 'lag-pays' { param($Valeur, $Ecran) Set-Setting 'LagPays' ([bool]$Valeur); if ($script:LagPaysSwitch) { $script:LagPaysSwitch.IsChecked = [bool]$Valeur } }
     Register-ActionVue 'trafic-annuaire' { param($Valeur, $Ecran) Set-Setting 'TrafficLookup' ([bool]$Valeur); if ($script:TrafficLookupSwitch) { $script:TrafficLookupSwitch.IsChecked = [bool]$Valeur } }
     Register-ActionVue 'trafic-microsoft' { param($Valeur, $Ecran) Invoke-Safe { Show-WindowsPrivacy } }
 }

@@ -9,7 +9,7 @@ Nevermind vérifie la santé de ton PC (processeur, carte graphique, mémoire, d
 Nevermind s'installe avec **Mindset**, le portail de la suite : [télécharger Mindset](https://github.com/JordanJacquot/Mindset/releases/latest).
 
 1. Installe Mindset, puis installe Nevermind depuis Mindset (un clic, Mindset s'occupe du téléchargement).
-2. Ouvre Nevermind depuis Mindset ou depuis son raccourci, et accepte la demande d'autorisation de Windows.
+2. Ouvre Nevermind depuis Mindset ou depuis son raccourci. Windows ne demande aucune autorisation : Nevermind tourne sans les droits administrateur, et ce qui en a besoin (réglages de Windows, compteurs du trafic, mesure des FPS) passe par **Nevermind Aide**, installée avec lui par Mindset, qui n'accepte qu'une liste fermée d'actions.
 3. Tu avais déjà Nevermind ? Mindset reprend ta copie avec tes réglages, ta sauvegarde et tes données : rien n'est perdu.
 
 Mindset installe les mises à jour (chaque version est signée et vérifiée avant d'être installée) et crée le raccourci sur le bureau. Une copie de Nevermind qui n'est pas gérée par Mindset ne s'ouvre plus : elle propose d'installer Mindset (« Désinstaller Nevermind.exe » marche toujours, pour remettre les réglages de Windows comme avant).
@@ -68,10 +68,10 @@ Ce qui sort de ton PC, en direct. Le contenu des échanges, chiffré, n'est jama
 - **Programmes connectés** : pour chacun, les serveurs contactés, les volumes envoyés et reçus, la signature de l'éditeur. Les services Windows cachés derrière « svchost » sont affichés par leur vrai nom.
 - **Alertes** : programme non signé dans un dossier à risque, outil de Windows détourné, port utilisé par les virus ou Tor, gros envois inhabituels, prise en main à distance. Pour chaque alerte : « C'est normal, je lui fais confiance », analyse antivirus, blocage d'Internet (annulable), ouvrir l'emplacement.
 - **Type de données envoyées** : la fiche de chaque programme dit ce qu'il envoie probablement (messages et appels, jeu en ligne, statistiques d'utilisation, publicité et suivi, fichiers synchronisés, assistant IA, mises à jour...) et ce qu'il n'envoie pas, d'après le nom des serveurs et les volumes.
-- **Serveurs sans nom** identifiés automatiquement : nom officiel de l'adresse et entreprise propriétaire avec son pays, via l'annuaire public des adresses Internet (rdap.org). Seule l'adresse du serveur est envoyée, et l'option se coupe sur la page.
+- **Serveurs sans nom** identifiés automatiquement : nom officiel de l'adresse et entreprise propriétaire avec son pays, via l'annuaire public des adresses Internet (rdap.org). Seule l'adresse du serveur est envoyée. Option coupée tant que tu ne l'as pas activée (sur la page, ou dans Paramètres).
 - **Ce que Windows envoie à Microsoft** : identifiants du PC (appareil, publicité, compte), réglages qui envoient plus que le minimum (télémétrie, pubs, recherche Bing, saisie, voix...) avec un bouton « Couper » annulable, et services Windows qui parlent à Microsoft en direct.
 
-Les compteurs d'octets et le repérage des serveurs en UDP demandent les droits administrateur (Nevermind les demande au lancement).
+Les compteurs d'octets et le repérage des serveurs en UDP passent par Nevermind Aide : aucune demande de Windows.
 
 ### Engagements
 

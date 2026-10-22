@@ -84,7 +84,7 @@ function Build-SettingsPanels {
         }
     }))
     [void]$p.Children.Add((New-SettingGroup 'Bibliothèque'))
-    [void]$p.Children.Add((New-SettingSwitch 'Jaquettes depuis Internet' 'Cherche les images des jeux qui n''en ont pas (seul le nom du jeu est envoyé).' (Test-CoversOnline) {
+    [void]$p.Children.Add((New-SettingSwitch 'Jaquettes depuis Internet' 'Cherche les images des jeux qui n''en ont pas sur la boutique Steam puis Wikipédia (seul le nom du jeu est envoyé).' (Test-CoversOnline) {
         param($s, $e) $on = [bool]$s.IsChecked
         Invoke-Safe {
             Set-Setting 'LibCoversOnline' $on
@@ -104,11 +104,15 @@ function Build-SettingsPanels {
             Set-Status $(if ($on) { 'Surveillance du réseau activée.' } else { 'Surveillance du réseau désactivée.' })
         }
     }))
-    [void]$p.Children.Add((New-SettingSwitch 'Identifier les serveurs sans nom' 'Page Trafic : cherche à qui appartient une adresse inconnue dans l''annuaire public rdap.org. Lag en ligne : cherche aussi le pays du serveur du jeu (ipinfo.io). Seule l''adresse du serveur est envoyée.' ([bool](Get-Setting 'TrafficLookup' $true)) {
+    [void]$p.Children.Add((New-SettingSwitch 'Identifier les serveurs sans nom' 'Page Trafic et Lag en ligne : cherche à qui appartient une adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public rdap.org. Seule l''adresse du serveur est envoyée.' ([bool](Test-AnnuaireServeurs)) {
         param($s, $e) $on = [bool]$s.IsChecked
         Set-Setting 'TrafficLookup' $on
         if ($script:TrafficLookupSwitch) { $script:TrafficLookupSwitch.IsChecked = $on }
     }))
+    $script:LagPaysSwitch = New-SettingSwitch 'Pays du serveur dans Lag en ligne' 'Lag en ligne : cherche dans quel pays se trouve le serveur du jeu (ipinfo.io). Seule l''adresse du serveur est envoyée.' (Test-PaysServeur) {
+        param($s, $e) Set-Setting 'LagPays' ([bool]$s.IsChecked)
+    }
+    [void]$p.Children.Add($script:LagPaysSwitch)
     [void]$p.Children.Add((New-SettingAction 'Ce que Windows envoie à Microsoft' 'Identifiants, réglages qui envoient plus que le minimum et envois vus en direct.' 'Voir' { Hide-Settings; Show-Page $TrafficIndex; Invoke-Safe { Show-WindowsPrivacy } }))
     $note = New-Text 'Nevermind ne déchiffre jamais tes connexions et n''envoie rien sur toi : il regarde seulement qui parle à qui depuis ton PC.' 12 '#655E7E'
     $note.Margin = New-Thickness 4 4 0 0
