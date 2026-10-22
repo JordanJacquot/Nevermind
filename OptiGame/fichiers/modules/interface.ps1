@@ -80,7 +80,7 @@ function Show-Message([string]$Text, [string]$Icon = 'Information') {
     [System.Windows.MessageBox]::Show($Window, $Text, 'Nevermind', 'OK', $Icon) | Out-Null
 }
 
-function Confirm-Action([string]$Text) {
+function Confirm-Action([string]$Text, [string[]]$Details) {   # ($Details : seulement dans l'écran, voir accueil-console.ps1)
     ([System.Windows.MessageBox]::Show($Window, $Text, 'Nevermind', 'YesNo', 'Question')) -eq 'Yes'
 }
 

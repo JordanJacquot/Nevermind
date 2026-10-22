@@ -291,7 +291,7 @@ function Invoke-TweakFix([string[]]$Ids) {
     if (-not $sel.Count) { Show-Message 'C''est déjà réglé.'; return }
     $done = @()
     $script:RunLog = New-Object System.Collections.ArrayList
-    try { foreach ($t in $sel) { & $t.Apply; $done += $t.Titre } } finally { $log = $script:RunLog; $script:RunLog = $null }
+    try { foreach ($t in $sel) { Invoke-TweakApply $t; $done += $t.Titre } } finally { $log = $script:RunLog; $script:RunLog = $null }
     Build-GamingTab
     Update-BackupSummary
     Show-ResultSheet 'C''est fait !' (@('Réglage appliqué :') + @($done | ForEach-Object { "•  $_" }) + @('Rejoue une partie : Nevermind comparera tes FPS avant / après.')) $log $null

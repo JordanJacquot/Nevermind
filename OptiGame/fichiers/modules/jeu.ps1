@@ -241,19 +241,25 @@ function Test-GamePriority($Game) {
     (Get-RegValue "$IfeoPath\$($names[0])\PerfOptions" 'CpuPriorityClass') -eq 3
 }
 
+# Ce que change un profil de jeu (déclaration, voir Set-Declarations) : « priority » (priorité haute, chaque exécutable
+# du jeu) ou « gpu » (carte graphique puissante) ; $On = $false : les valeurs sont effacées
+function Get-ChangementsProfil($Game, [string]$What, [bool]$On) {
+    if ($What -eq 'priority') {
+        foreach ($n in (Get-GameExeNames $Game)) {
+            if ($On) { @{ Type = 'reg'; Path = "$IfeoPath\$n\PerfOptions"; Name = 'CpuPriorityClass'; Value = 3 } }
+            else { @{ Type = 'reg'; Path = "$IfeoPath\$n\PerfOptions"; Name = 'CpuPriorityClass'; Efface = $true } }
+        }
+    } else {
+        foreach ($e in @($Game.Exes)) {
+            if ($On) { @{ Type = 'reg'; Path = $DxPath; Name = $e; Value = 'GpuPreference=2;'; Kind = 'String' } }
+            else { @{ Type = 'reg'; Path = $DxPath; Name = $e; Efface = $true } }
+        }
+    }
+}
+
 function Set-GameProfile($Game, [string]$What, [bool]$On) {
     $script:RunLog = New-Object System.Collections.ArrayList
-    try {
-        if ($What -eq 'priority') {
-            foreach ($n in (Get-GameExeNames $Game)) {
-                if ($On) { Set-Reg "$IfeoPath\$n\PerfOptions" 'CpuPriorityClass' 3 } else { Clear-Reg "$IfeoPath\$n\PerfOptions" 'CpuPriorityClass' }
-            }
-        } else {
-            foreach ($e in @($Game.Exes)) {
-                if ($On) { Set-Reg $DxPath $e 'GpuPreference=2;' 'String' } else { Clear-Reg $DxPath $e }
-            }
-        }
-    } finally { $log = $script:RunLog; $script:RunLog = $null }
+    try { Set-Declarations @(Get-ChangementsProfil $Game $What $On) } finally { $log = $script:RunLog; $script:RunLog = $null }
     $label = if ($What -eq 'priority') { 'priorité haute' } else { 'carte graphique puissante' }
     [void](Add-History "Profil de $($Game.Name) : $label $(if ($On) { 'activée' } else { 'désactivée' })" @() $log)
     Update-BackupSummary

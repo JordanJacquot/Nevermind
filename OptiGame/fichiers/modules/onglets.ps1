@@ -275,7 +275,7 @@ function Invoke-ApplyTweaks {
         foreach ($r in $sel) {
             Set-Status "Application : $($r.Tweak.Titre)..."
             try {
-                & $r.Tweak.Apply
+                Invoke-TweakApply $r.Tweak
                 $done += $r.Tweak.Titre
                 if ($r.Tweak.Reboot) { $reboot = $true }
             } catch {

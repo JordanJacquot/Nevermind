@@ -230,7 +230,8 @@ function Set-OccupeVue([string]$Texte) { if ($script:Vue.Pret) { Send-OrdreVue @
 # Une question dans l'écran, dans le style de l'appli ; attend la réponse (la fenêtre reste vivante) et renvoie l'id du
 # bouton choisi ($null si l'écran n'est pas là : à l'appli de demander autrement).
 #   Read-QuestionVue 'Continuer ?' -Boutons @(@{ id = 'oui'; texte = 'Oui' }, @{ id = 'non'; texte = 'Non'; style = 'second' })
-function Read-QuestionVue([string]$Texte, [string]$Titre = '', [array]$Boutons = @(@{ id = 'oui'; texte = 'Oui' }, @{ id = 'non'; texte = 'Non'; style = 'second' })) {
+#   $Details : lignes montrées sous la question dans un bloc repliable « Détails techniques », fermé au départ
+function Read-QuestionVue([string]$Texte, [string]$Titre = '', [array]$Boutons = @(@{ id = 'oui'; texte = 'Oui' }, @{ id = 'non'; texte = 'Non'; style = 'second' }), [string[]]$Details) {
     if (-not $script:Vue.Pret -or -not $script:Vue.Controle -or $script:Vue.Controle.Visibility -ne 'Visible' -or $script:Vue.Cadre) {
         Write-Log "Question : pas posée à l'écran ($(if ($script:Vue.Cadre) { 'une autre question attend déjà' } elseif (-not $script:Vue.Pret) { 'écran pas prêt' } else { 'écran caché' }))"
         return $null
@@ -238,7 +239,9 @@ function Read-QuestionVue([string]$Texte, [string]$Titre = '', [array]$Boutons =
     Write-Log 'Question : posée à l''écran'
     $id = [guid]::NewGuid().ToString('N').Substring(0, 10)
     $script:Vue.Reponse = $null
-    Send-OrdreVue @{ kit = 'question'; id = $id; titre = $Titre; texte = $Texte; boutons = @($Boutons) }
+    $q = @{ kit = 'question'; id = $id; titre = $Titre; texte = $Texte; boutons = @($Boutons) }
+    if (@($Details | Where-Object { $_ }).Count) { $q.details = @{ titre = 'Détails techniques'; lignes = @($Details | Where-Object { $_ }) } }
+    Send-OrdreVue $q
     $cadre = New-Object System.Windows.Threading.DispatcherFrame
     $script:Vue.Cadre = $cadre
     # (si l'écran disparaît entre-temps, la question est abandonnée : la fenêtre ne reste jamais bloquée)

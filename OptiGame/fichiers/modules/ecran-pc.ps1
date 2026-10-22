@@ -169,6 +169,16 @@ function Get-FicheKit {
     $finir = { if ($liste -and $liste.Count) { [void]$blocs.Add($(if ($sorte -eq 'etapes') { @{ type = 'etapes'; elements = @($liste | ForEach-Object { @{ texte = $_ } }) } } else { @{ type = 'liste'; elements = @($liste) } })) }}
     foreach ($el in @($ui.SheetBody.Children)) {
         if ($el.Visibility -ne 'Visible') { continue }
+        # « Détails techniques » (Add-SheetDetails) : un bloc qui s'ouvre, comme dans l'historique ; ceux qui se suivent
+        # vont dans le même bloc
+        if ($el -is [System.Windows.Controls.Expander]) {
+            if ($liste) { & $finir; $liste = $null }
+            $lg = @($el.Tag.Lignes)
+            $q = @{ question = [string]$el.Header; lignes = $lg; reponse = ($lg -join ' ; '); icone = 'liste' }
+            $der = if ($blocs.Count) { $blocs[$blocs.Count - 1] } else { $null }
+            if ($der -and $der.type -eq 'faq') { $der.elements = @($der.elements) + @($q) } else { [void]$blocs.Add(@{ type = 'faq'; elements = @($q) }) }
+            continue
+        }
         if ($el -is [System.Windows.Controls.Grid]) {
             foreach ($x in $el.Children) {
                 if ($x -is [System.Windows.Controls.TextBlock] -and -not $titre) { $titre = $x.Text }

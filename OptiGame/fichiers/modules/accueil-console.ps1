@@ -230,8 +230,9 @@ function Show-Message([string]$Text, [string]$Icon = 'Information') {
     if (Test-EcranKitMontre) { $r = Read-QuestionVue $Text '' @(@{ id = 'ok'; texte = 'OK' }); if ($null -ne $r) { return } }
     [System.Windows.MessageBox]::Show($Window, $Text, 'Nevermind', 'OK', $Icon) | Out-Null
 }
-function Confirm-Action([string]$Text) {
-    if (Test-EcranKitMontre) { $r = Read-QuestionVue $Text '' @(@{ id = 'oui'; texte = 'Oui' }, @{ id = 'non'; texte = 'Non'; style = 'second' }); if ($null -ne $r) { return $r -eq 'oui' } }
+# $Details : lignes techniques montrées dans un bloc repliable « Détails techniques » (fermé au départ)
+function Confirm-Action([string]$Text, [string[]]$Details) {
+    if (Test-EcranKitMontre) { $r = Read-QuestionVue $Text '' @(@{ id = 'oui'; texte = 'Oui' }, @{ id = 'non'; texte = 'Non'; style = 'second' }) $Details; if ($null -ne $r) { return $r -eq 'oui' } }
     Write-Log 'Question : dans une fenêtre de Windows'
     $oui = ([System.Windows.MessageBox]::Show($Window, $Text, 'Nevermind', 'YesNo', 'Question')) -eq 'Yes'
     Write-Log "Question : réponse $(if ($oui) { 'oui' } else { 'non' }) (fenêtre de Windows)"

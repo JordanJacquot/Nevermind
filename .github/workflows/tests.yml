@@ -41,3 +41,8 @@ jobs:
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-aide.ps1
           exit $LASTEXITCODE
+
+      - name: "Déclarations des corrections (valeurs montrées avant confirmation, faux registre)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-declarations.ps1
+          exit $LASTEXITCODE

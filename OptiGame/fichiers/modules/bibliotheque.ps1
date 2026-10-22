@@ -966,11 +966,22 @@ function Set-GameOptimization([string]$Name, [string]$Id, [bool]$On) {
     Update-LibraryDetail
 }
 
+# Ce que change un point de « Tout optimiser » (déclaration, voir Set-Declarations) : les mêmes listes que celles appliquées
+function Get-ChangementsOptimisationJeu($Game, $It) {
+    switch ($It.Id) {
+        'priority' { Get-ChangementsProfil $Game 'priority' $true }
+        'gpu' { Get-ChangementsProfil $Game 'gpu' $true }
+        'fps' { @{ Type = 'texte'; Texte = 'Mesure des FPS de Nevermind : maintenant coupée, après activée (réglage de Nevermind, rien ne change dans Windows).' } }
+        'tweaks' { foreach ($t in @(Get-AvailableTweaks | Where-Object { @($It.Ids) -contains $_.Id })) { Get-TweakChanges $t } }
+    }
+}
+
 # « Tout optimiser » : profil du jeu, mesure des FPS, puis réglages Windows recommandés (annulable depuis Sauvegarde)
 function Invoke-GameOptimize($Game) {
     $items = @(Get-GameOptimizations $Game | Where-Object { -not $_.Ok -and ($_.Switch -or $_.Fix) -and -not $_.Optional })
     if (-not $items.Count) { Set-Status "$($Game.Name) est déjà optimisé."; return }
-    if (-not (Confirm-Action "Optimiser $($Game.Name) ?`n`n$(($items | ForEach-Object { "•  $($_.Title)" }) -join "`n")`n`nTout est annulable depuis la page Sauvegarde, où « Détails techniques » montre chaque réglage changé (avant et après).")) { return }
+    $details = @(Get-DetailsAvant @(foreach ($it in $items) { Get-ChangementsOptimisationJeu $Game $it }))
+    if (-not (Confirm-Action "Optimiser $($Game.Name) ?`n`n$(($items | ForEach-Object { "•  $($_.Title)" }) -join "`n")`n`n« Détails techniques » montre chaque réglage, sa valeur maintenant et après. Tout est annulable depuis la page Sauvegarde." $details)) { return }
     $done = @()
     foreach ($it in $items) {
         switch ($it.Id) {

@@ -328,8 +328,8 @@ function Invoke-Analysis {
             Add-Finding $F 'warn' "$($todo.Count) jeu$(if ($todo.Count -gt 1) {'x'}) sans carte graphique imposée" "Windows peut lancer ces jeux sur la puce intégrée au lieu de ta $dgpu : $list." 2 -Id 'hybrid-gpu' -Fix (New-Fix -Auto `
                 -What @("Régler $($todo.Count) jeu$(if ($todo.Count -gt 1) {'x'}) Steam / Epic sur « Hautes performances » pour qu'ils utilisent toujours la $dgpu : $list.", 'C''est le même réglage que Paramètres > Écran > Graphiques, en une seule fois.') `
                 -Why "Ton portable a deux cartes graphiques. Sur la puce intégrée, un jeu peut tourner 3 à 5 fois moins vite. Pense aussi à brancher le chargeur: sur batterie, la carte dédiée est bridée." `
-                -Run { param($a) foreach ($g in $a.Games) { foreach ($e in $g.Exes) { if ((Get-GpuPreference $e) -notmatch 'GpuPreference=2') { Set-Reg $DxPath $e 'GpuPreference=2;' 'String' } } } } `
-                -RunArgs @{ Games = $todo } -Open 'ms-settings:display-advancedgraphics' -OpenLabel 'Paramètres graphiques')
+                -Changes @(foreach ($jg in $todo) { Get-ChangementsProfil $jg 'gpu' $true | Where-Object { (Get-GpuPreference $_.Name) -notmatch 'GpuPreference=2' } }) `
+                -Open 'ms-settings:display-advancedgraphics' -OpenLabel 'Paramètres graphiques')
         } else {
             Add-Finding $F 'ok' 'Jeux sur la carte graphique dédiée' "Tes $($games.Count) jeux Steam / Epic utilisent la $dgpu." 2 -Id 'hybrid-gpu'
         }
@@ -368,7 +368,7 @@ function Invoke-Analysis {
                 Add-Finding $F $sev "Écran $i$role bridé à $cur Hz" $detail $(if ($primary) { 3 } else { 0 }) -Id $dispId -Fix (New-Fix -Auto `
                     -What @("Passer l'écran $i ($w x $h) de $cur Hz à $max Hz, sans changer sa résolution.") `
                     -Why "Plus de Hz, c'est une image plus fluide et moins de latence: c'est le réglage qui se voit le plus en jeu. Si tu utilises cet écran seulement pour des vidéos, clique sur « Ignorer (c'est voulu) »: il ne comptera plus dans ton score. Si l'écran devient noir après le changement, ne touche à rien: Nevermind revient tout seul à l'ancien réglage au bout de 15 secondes." `
-                    -Run { param($a) Set-DisplayRate $a.Device $a.Hz } -RunArgs @{ Device = $dev; Hz = $max } `
+                    -Changes @(@{ Type = 'display'; Device = $dev; Hz = $max }) `
                     -Open 'ms-settings:display-advanced' -OpenLabel 'Affichage avancé')
             } elseif ($cur -gt 60) {
                 Add-Finding $F 'ok' "Écran $i$role à $cur Hz" 'Ton écran tourne à sa fréquence maximale.' $(if ($primary) { 3 } else { 0 }) -Id $dispId
@@ -417,7 +417,7 @@ function Invoke-Analysis {
                     -Why 'Une mémoire qui fait des erreurs provoque plantages, écrans bleus et fichiers corrompus.' `
                     -Steps @('Entre dans le BIOS et remets la mémoire en réglage par défaut (désactive XMP / EXPO).', 'Relance le test mémoire de Windows avec le bouton ci-dessous.', 'Si les erreurs continuent, teste les barrettes une par une: celle qui provoque des erreurs est défectueuse.') `
                     -What @('Lancer le test mémoire de Windows (le PC redémarre, le test dure environ 15 minutes).') `
-                    -Run { Start-Process 'mdsched.exe' } -RunLabel 'Lancer le test mémoire' -NoRescan -Done 'Le test mémoire de Windows est lancé: choisis « Redémarrer maintenant ».')
+                    -Run { Start-Process 'mdsched.exe' } -Changes @(@{ Type = 'texte'; Texte = 'Lance le test mémoire de Windows (mdsched.exe) : il propose de redémarrer maintenant ou au prochain démarrage. Aucun réglage n''est changé.' }) -RunLabel 'Lancer le test mémoire' -NoRescan -Done 'Le test mémoire de Windows est lancé: choisis « Redémarrer maintenant ».')
             }
         } else {
             $c.Lines['Test mémoire Windows'] = @('Jamais lancé', $Muted)
@@ -452,7 +452,7 @@ function Invoke-Analysis {
                     -Why 'Sans profil XMP / EXPO, la mémoire tourne à une vitesse de sécurité: souvent 10 à 20 % de FPS minimum en moins dans les jeux gourmands en processeur.' `
                     -Steps @('Clique sur « Redémarrer dans le BIOS » (enregistre ton travail avant).', 'Dans le BIOS, cherche XMP (Intel), EXPO ou DOCP (AMD). Souvent dans le menu Ai Tweaker, OC ou Extreme Tweaker.', 'Choisis le Profil 1, puis enregistre et quitte avec F10.', 'Si le PC devient instable, retourne dans le BIOS et remets ce réglage sur Auto.') `
                     -What @('Redémarrer le PC directement dans le BIOS, pour que tu n''aies pas à chercher la bonne touche au démarrage.') `
-                    -Run $BiosRun -RunLabel 'Redémarrer dans le BIOS' -Confirm $BiosConfirm -NoRescan -Done $BiosDone)
+                    -Run $BiosRun -Changes $BiosChanges -RunLabel 'Redémarrer dans le BIOS' -Confirm $BiosConfirm -NoRescan -Done $BiosDone)
             } else {
                 Add-Finding $F 'ok' "Mémoire à $speed MT/s" 'Le profil XMP / EXPO semble actif.' 2 -Id 'ram-xmp'
             }
@@ -542,7 +542,7 @@ function Invoke-Analysis {
         $spaceFix = New-Fix -Auto `
             -What @('Supprimer les fichiers temporaires de Windows et de ton compte.', 'Supprimer les fichiers de mises à jour Windows déjà installées et les anciens rapports d''erreurs.', 'Tes documents, tes jeux et la corbeille ne sont pas touchés.') `
             -Why 'Windows et les jeux ralentissent quand le disque système est plein, et les mises à jour de jeux peuvent échouer. Si ça ne suffit pas, désinstalle les jeux auxquels tu ne joues plus.' `
-            -Run { Invoke-CleanAll } -Open 'tab:4' -OpenLabel 'Nettoyage'
+            -Run { Invoke-CleanAll } -Changes { Get-ChangementsNettoyage } -Open 'tab:4' -OpenLabel 'Nettoyage'
         if ($pct -lt 10)     { Add-Finding $F 'bad'  "Disque presque plein ($freeGB Go libres)" 'Windows et les jeux ralentissent quand le disque est plein.' 2 -Id 'disk-space' -Fix $spaceFix }
         elseif ($pct -lt 20) { Add-Finding $F 'warn' "Espace disque limité ($freeGB Go libres)" 'Garde au moins 20 % de libre pour de bonnes performances.' 2 -Id 'disk-space' -Fix $spaceFix }
         else                 { Add-Finding $F 'ok'   "Espace disque suffisant ($freeGB Go libres)" '' 2 -Id 'disk-space' }
@@ -577,7 +577,7 @@ function Invoke-Analysis {
                 -Why 'Les anti-triche récents vérifient que le Secure Boot est actif. Sans lui, certains jeux refusent de démarrer.' `
                 -Steps @('Clique sur « Redémarrer dans le BIOS » (enregistre ton travail avant).', 'Va dans le menu Boot (ou Sécurité) > Secure Boot et mets-le sur « Enabled ». Sur certaines cartes, il faut d''abord mettre « OS Type » sur « Windows UEFI mode ».', 'Enregistre avec F10 et redémarre.') `
                 -What @('Redémarrer le PC directement dans le BIOS.') `
-                -Run $BiosRun -RunLabel 'Redémarrer dans le BIOS' -Confirm $BiosConfirm -NoRescan -Done $BiosDone)
+                -Run $BiosRun -Changes $BiosChanges -RunLabel 'Redémarrer dans le BIOS' -Confirm $BiosConfirm -NoRescan -Done $BiosDone)
         }
     } catch { $c.Lines['Secure Boot'] = @('Non disponible', $Muted) }
     try {
@@ -683,7 +683,7 @@ function Invoke-Analysis {
             New-Fix -Auto `
                 -What @("Désactiver le lancement automatique de : $(($safe | ForEach-Object { $_.Nom }) -join ', ').", 'Ces programmes restent installés et se lancent normalement quand tu les ouvres.') `
                 -Why 'Chaque programme au démarrage ralentit l''allumage du PC et occupe de la mémoire pendant tes parties. Pour les autres, choisis toi-même dans la page Démarrage (dans Performances).' `
-                -Run { param($a) foreach ($i in $a.Items) { Set-StartupState $i $false } } -RunArgs @{ Items = $safe } `
+                -Changes @(foreach ($i in $safe) { Get-ChangementDemarrage $i $false }) `
                 -Open 'tab:2' -OpenLabel 'Démarrage'
         } else {
             New-Fix -Why 'Chaque programme au démarrage ralentit l''allumage du PC et occupe de la mémoire pendant tes parties.' `
@@ -711,7 +711,7 @@ function Invoke-Analysis {
         } else {
             $st = if ($t.Recommended -eq $false) { 'info' } else { 'warn' }
             Add-Finding $F $st $t.Titre $t.Ko (Get-TweakWeight $t) -Id "tweak:$($t.Id)" -Fix (New-Fix -Auto `
-                -What @($t.What) -Why $t.Description -Run $t.Apply -Reboot:([bool]$t.Reboot) -Restore -Open 'tab:1' -OpenLabel 'Optimisation gaming')
+                -What @($t.What) -Why $t.Description -Changes $t.Changes -Run { param($x) Invoke-TweakApply $x } -RunArgs $t -Reboot:([bool]$t.Reboot) -Restore -Open 'tab:1' -OpenLabel 'Optimisation gaming')
         }
     }
 
@@ -869,7 +869,7 @@ function Add-UpsCards($Ups, $Hints, $Data, $Cards, $F) {
             Add-Finding $F $(if ($bad) { 'bad' } else { 'warn' }) 'Onduleur : arrêt automatique mal réglé' "$(($adv.Problems | ForEach-Object { $_.Substring(0, 1).ToUpper() + $_.Substring(1) }) -join '. ')." $(if ($bad) { 2 } else { 1 }) -Id 'ups-config' -Fix (New-Fix -Auto `
                 -What $what `
                 -Why 'Pendant une coupure, l''onduleur ne tient que quelques minutes. Si Windows ne s''éteint pas proprement avant, le PC se coupe d''un coup : partie perdue, fichiers en cours d''écriture abîmés.' `
-                -Run { param($x) foreach ($k in $x.Keys) { Set-BatterySetting $k $x[$k] } } -RunArgs $adv.Fix `
+                -Changes @(foreach ($k in $adv.Fix.Keys) { @{ Type = 'pcfg'; Key = $k; Value = $adv.Fix[$k] } }) `
                 -Done 'L''onduleur éteindra le PC proprement avant d''être vide.')
         }
         # Usure et autonomie

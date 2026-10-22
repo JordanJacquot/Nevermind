@@ -51,7 +51,8 @@
 //               { type: 'pastilles', elements: [{ texte, ton }] }                un résumé en pastilles
 //               { type: 'reglages', rangs: [{ texte, note, bascule: { id, oui } | bouton: { id, texte } | lien: { id, texte }
 //                 | touches: ['Ctrl', 'F'] }] }                                    une carte de réglages
-//               { type: 'faq', elements: [{ question, reponse, icone }] }        des questions qui s'ouvrent
+//               { type: 'faq', elements: [{ question, reponse | lignes, icone }] }   des questions qui s'ouvrent (lignes :
+//                 une réponse en plusieurs lignes, comme « Détails techniques »)
 //               { type: 'jauge', texte, valeur (0 à 100), note, ton } | { type: 'liste', elements, ton }
 //               { type: 'image', url, legende, hauteur } | { type: 'courbe', titre, points, etiquettes, unite, ton }
 //               { type: 'mois', ... } | { type: 'rdv', id, heure, titre, lieu }
@@ -71,8 +72,9 @@
 // Ordres de l'appli en plus de l'état : { kit: 'message', texte, bravo }, { kit: 'aller', ecran }, { kit: 'pause' },
 // { kit: 'reprendre' }, { kit: 'mesures', valeurs: { id: { valeur, texte, note, ton } } } (les mesures en direct d'un bloc
 // « mesures » dont les éléments ont un id, sans redessiner la page), { kit: 'occupe', texte } (la pastille « en cours » ;
-// texte vide : fini), { kit: 'question', id, titre, texte, boutons: [{ id, texte, style }] } (une question par-dessus
-// l'écran ; la réponse revient en { type: 'reponse', id, valeur: id du bouton } ; Échap : le dernier bouton).
+// texte vide : fini), { kit: 'question', id, titre, texte, boutons: [{ id, texte, style }], details: { titre, lignes } }
+// (une question par-dessus l'écran ; la réponse revient en { type: 'reponse', id, valeur: id du bouton } ; Échap : le
+// dernier bouton ; details : un bloc qui s'ouvre sous le texte, fermé au départ).
 (() => {
   'use strict';
   // ---------------------------------------------------------------- petits sons de console (après le premier geste)
@@ -412,7 +414,7 @@
       case 'mesures': return `<div class="mesures">${(b.elements || []).map((x) => `<div class="mesure plaque"${x.id ? ` data-id="${esc(x.id)}"` : ''}>${anneau(x.valeur, `<span class="centre"><b class="${x.ton ? esc(x.ton) : ''}">${esc(x.texte ?? `${Math.round(+x.valeur || 0)} %`)}</b></span>`, x.ton)}<b>${esc(x.nom)}</b><span class="n">${esc(x.note)}</span></div>`).join('')}</div>`;
       case 'pastilles': return `<div class="pastilles">${(b.elements || []).map((x) => `<span class="pastille ${esc(x.ton || 'ok')}">${ico(x.ton === 'attention' || x.ton === 'urgent' ? 'alerte' : 'ok', 2.2)}${esc(x.texte)}</span>`).join('')}</div>`;
       case 'reglages': return `<div class="reglages plaque">${(b.rangs || []).map((r) => `<div class="rang"><span class="txt"><b>${esc(r.texte)}</b>${r.note ? `<span class="n">${esc(r.note)}</span>` : ''}</span>${r.bascule ? bascule(r.bascule.id, r.bascule.oui) : ''}${r.bouton ? btn(r.bouton, ' petit') : ''}${r.lien ? `<button type="button" class="raccourci plaque f" data-k="l:${esc(r.lien.id)}" data-action="${esc(r.lien.id)}"><b>${esc(r.lien.texte)}</b>${fleche()}</button>` : ''}${r.touches ? `<span class="touches">${r.touches.map((k) => `<kbd>${esc(k)}</kbd>`).join('+')}</span>` : ''}${r.valeur ? `<span class="v">${esc(r.valeur)}</span>` : ''}</div>`).join('')}</div>`;
-      case 'faq': return `<div class="faq">${(b.elements || []).map((x, i) => `<div class="question-r plaque"><button type="button" class="q f" data-k="q:${i}" data-ouvrir="1">${icone(x.icone || 'aide', x.couleur)}<b>${esc(x.question)}</b>${fleche()}</button><p>${esc(x.reponse)}</p></div>`).join('')}</div>`;
+      case 'faq': return `<div class="faq">${(b.elements || []).map((x, i) => `<div class="question-r plaque"><button type="button" class="q f" data-k="q:${i}" data-ouvrir="1">${icone(x.icone || 'aide', x.couleur)}<b>${esc(x.question)}</b>${fleche()}</button><p>${x.lignes ? x.lignes.map(esc).join('<br>') : esc(x.reponse)}</p></div>`).join('')}</div>`;
       case 'jauge': {
         const p = borne(+b.valeur || 0, 0, 100);
         return `<div class="jauge"><div class="jauge-haut"><span>${esc(b.texte)}${note}</span><span class="v${b.ton ? ` ${esc(b.ton)}` : ''}">${Math.round(p)} %</span></div>${barre(p, b.ton)}</div>`;
@@ -757,12 +759,16 @@
     question(q) {
       const fond = document.getElementById('questionM'); if (!fond) return;
       const boutons = (q.boutons?.length ? q.boutons : [{ id: 'ok', texte: 'OK' }]);
-      fond.innerHTML = `<div class="boite plasma-bord fort" role="dialog" aria-modal="true">${q.titre ? `<h3>${esc(q.titre)}</h3>` : ''}<p>${esc(q.texte).replace(/\n/g, '<br>')}</p>
+      const det = q.details?.lignes?.length ? `<div class="details question-r plaque"><button type="button" class="q" data-detail="1" aria-expanded="false">${icone('liste')}<b>${esc(q.details.titre || 'Détails techniques')}</b>${fleche()}</button><p>${q.details.lignes.map(esc).join('<br>')}</p></div>` : '';
+      fond.innerHTML = `<div class="boite plasma-bord fort" role="dialog" aria-modal="true">${q.titre ? `<h3>${esc(q.titre)}</h3>` : ''}<p>${esc(q.texte).replace(/\n/g, '<br>')}</p>${det}
         <div class="boutons">${boutons.map((b) => `<button type="button" class="btn${b.style ? ` ${esc(b.style)}` : ''}" data-rep="${esc(b.id)}">${esc(b.texte)}</button>`).join('')}</div></div>`;
       fond.classList.add('vu'); son.ok();
       const repondre = (v) => { fond.classList.remove('vu'); fond.innerHTML = ''; removeEventListener('keydown', clavier, true); envoyer({ type: 'reponse', id: q.id, valeur: v }); };
+      // Le bloc « Détails » s'ouvre et se ferme (clic, Entrée ou A) : il ne répond jamais à la question
+      const ouvrirDetails = (b) => { const o = b.parentElement.classList.toggle('ouvert'); b.setAttribute('aria-expanded', String(o)); son.tic(); };
       const clavier = (e) => {
         const t = toucheManette(e);
+        if (document.activeElement?.dataset?.detail && (t === 'Enter' || e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); ouvrirDetails(document.activeElement); return; }
         if (t === 'Escape' && e.key !== 'Escape') { e.preventDefault(); e.stopPropagation(); repondre(boutons[boutons.length - 1].id); return; }
         if (t === 'Enter' && e.key !== 'Enter') { e.preventDefault(); e.stopPropagation(); repondre(boutons[0].id); return; }
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); repondre(boutons[boutons.length - 1].id); }
@@ -772,6 +778,7 @@
       };
       addEventListener('keydown', clavier, true);
       fond.querySelectorAll('[data-rep]').forEach((b) => b.addEventListener('click', () => repondre(b.dataset.rep)));
+      fond.querySelector('[data-detail]')?.addEventListener('click', (e) => ouvrirDetails(e.currentTarget));
       fond.querySelector('[data-rep]')?.focus();
     },
     pause() { arreter(); window.kitPlasma?.pause?.(); },

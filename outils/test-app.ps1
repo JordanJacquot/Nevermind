@@ -14,7 +14,7 @@ foreach ($fn in 'Test-GameRunning', 'Update-LiveUI', 'Update-Traffic', 'Update-L
     Set-Item -Path "function:$fn" -Value ([scriptblock]::Create("`$sw = [Diagnostics.Stopwatch]::StartNew(); try { $fn-Chrono @args } finally { `$ms = `$sw.ElapsedMilliseconds; if (`$ms -gt [int]`$script:T.Slow['$fn']) { `$script:T.Slow['$fn'] = `$ms } }"))
 }
 function Show-Message([string]$Text, [string]$Icon = 'Information') { [void]$script:T.Msgs.Add("[$Icon] $Text") }
-function Confirm-Action([string]$Text) { [void]$script:T.Msgs.Add("[Question] $Text"); $false }
+function Confirm-Action([string]$Text, [string[]]$Details) { [void]$script:T.Msgs.Add("[Question] $Text"); $script:T.Details = @($Details); $false }
 function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) { [void]$script:T.Msgs.Add("[Notify] $Title : $Text") }
 function Confirm-EcranImpossible([string]$Texte) { [void]$script:T.Msgs.Add("[Question] $Texte"); $false }
 # Fausse icône près de l'horloge : rien n'apparaît sur le PC pendant le test.
@@ -122,6 +122,31 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($a.Score -ge 0 -and $a.Score -le 100) "score invalide : $($a.Score)"
                 Assert-Test (@($a.Findings).Count -ge 5) "seulement $(@($a.Findings).Count) points analysés"
                 "score $($a.Score), $(@($a.Findings).Count) points"
+            }
+            Test-Step 'Détails techniques avant correction' {
+                # Chaque correction montre ses changements (valeur maintenant et après) avant « Exécuter », lus sans rien
+                # modifier ; les confirmations répondent « Non » pendant le test
+                $corr = @($script:LastAnalysis.Findings | Where-Object { $_.Fix -and $_.Fix.Run })
+                $sans = @($corr | Where-Object { -not @(Get-DetailsAvant $_.Fix.Changes).Count } | ForEach-Object { $_.Id })
+                Assert-Test (-not $sans.Count) "corrections sans détails : $($sans -join ', ')"
+                $tw = @(Get-AvailableTweaks | Where-Object { -not @(Get-DetailsAvant $_.Changes).Count } | ForEach-Object { $_.Id })
+                Assert-Test (-not $tw.Count) "réglages sans détails : $($tw -join ', ')"
+                $detail = "$($corr.Count) corrections et $(@(Get-AvailableTweaks).Count) réglages décrits"
+                if ($corr.Count) {
+                    Open-Sheet @($corr[0]); Wait-TestMs 300
+                    $faq = @((Get-FicheKit).blocs | Where-Object { $_.type -eq 'faq' })
+                    Close-Sheet; Wait-TestMs 300
+                    Assert-Test ($faq.Count -eq 1 -and @($faq[0].elements[0].lignes).Count) "bloc « Détails techniques » absent de la fiche ($($corr[0].Id))"
+                    $detail += ", fiche « $($corr[0].Titre) » : $(@($faq[0].elements[0].lignes).Count) ligne(s)"
+                }
+                $jeu = @(Get-LibraryGames | Where-Object { @(Get-GameOptimizations $_ | Where-Object { -not $_.Ok -and ($_.Switch -or $_.Fix) -and -not $_.Optional }).Count })[0]
+                if ($jeu) {
+                    $script:T.Details = @()
+                    Invoke-GameOptimize $jeu
+                    Assert-Test (@($script:T.Details).Count) "« Tout optimiser » de $($jeu.Name) : confirmation sans détails"
+                    $detail += ", « Tout optimiser » de $($jeu.Name) : $(@($script:T.Details).Count) ligne(s)"
+                }
+                $detail
             }
             foreach ($pg in @(@(1, 'Gaming'), @(2, 'Démarrage'), @(3, 'Connexion'), @(4, 'Nettoyage'), @(7, 'Sauvegarde'))) {
                 $i = $pg[0]

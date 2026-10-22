@@ -62,6 +62,20 @@ function Set-PowerPlan {
     powercfg /setactive $target | Out-Null
 }
 
+# Ce que fera Set-PowerPlan, lu sans rien changer (même ordre de choix que lui)
+function Get-ChangementAlimentation {
+    $s = Get-ActiveScheme
+    if ($script:IsLaptop -and $s -and $s.Guid -eq $BalancedGuid) {
+        return @{ Type = 'power'; Cible = 'Utilisation normale, curseur sur « Meilleures performances » (si Windows le refuse : Performances élevées)' }
+    }
+    $liste = powercfg /list | Out-String
+    foreach ($g in @($HighPerfGuid, $script:Backup.CreatedScheme) | Where-Object { $_ }) {
+        if ($liste -match "$g\s*\((.+?)\)") { return @{ Type = 'power'; Guid = $g; Cible = $Matches[1].Trim() } }   # (son nom dans la langue de Windows)
+    }
+    @{ Type = 'power'; Cible = 'Performances élevées' }
+    @{ Type = 'texte'; Texte = 'Ce plan n''est pas proposé sur ce PC : Nevermind en crée d''abord une copie (powercfg -duplicatescheme), ou passe le curseur de Windows sur « Meilleures performances » si ce n''est pas possible.' }
+}
+
 $MousePath = 'HKCU:\Control Panel\Mouse'
 
 function Sync-Mouse {
@@ -71,12 +85,6 @@ function Sync-Mouse {
     [void][OGNative]::SystemParametersInfo(4, 0, [int[]]@($t1, $t2, $speed), 3)
 }
 
-function Disable-MouseAccel {
-    Set-Reg $MousePath 'MouseSpeed' '0' 'String'
-    Set-Reg $MousePath 'MouseThreshold1' '0' 'String'
-    Set-Reg $MousePath 'MouseThreshold2' '0' 'String'
-    Sync-Mouse
-}
 
 $AccessPaths = @(
     'HKCU:\Control Panel\Accessibility\StickyKeys',
@@ -92,20 +100,22 @@ function Test-AccessHotkeys {
     $true
 }
 
-function Disable-AccessHotkeys {
+# Raccourcis coupés : le bit 4 de « Flags » retiré, le reste gardé (calculé à partir des valeurs actuelles)
+function Get-ChangementsAccessHotkeys {
     foreach ($p in $AccessPaths) {
         $f = Get-RegValue $p 'Flags'
-        if ($null -ne $f) { Set-Reg $p 'Flags' ([string](([int]$f) -band (-bnot 4))) 'String' }
+        if ($null -ne $f) { @{ Type = 'reg'; Path = $p; Name = 'Flags'; Value = [string](([int]$f) -band (-bnot 4)); Kind = 'String' } }
     }
 }
 
 $DxPath = 'HKCU:\Software\Microsoft\DirectX\UserGpuPreferences'
 
-function Enable-WindowedOptim {
+# Optimisations en fenêtré : « SwapEffectUpgradeEnable=1 » ajouté aux réglages DirectX déjà là
+function Get-ChangementWindowedOptim {
     $cur = [string](Get-RegValue $DxPath 'DirectXUserGlobalSettings')
     $parts = @($cur -split ';' | Where-Object { $_ -and $_ -notmatch '^SwapEffectUpgradeEnable=' })
     $parts += 'SwapEffectUpgradeEnable=1'
-    Set-Reg $DxPath 'DirectXUserGlobalSettings' (($parts -join ';') + ';') 'String'
+    @{ Type = 'reg'; Path = $DxPath; Name = 'DirectXUserGlobalSettings'; Value = (($parts -join ';') + ';'); Kind = 'String' }
 }
 
 $DoPath = 'Registry::HKEY_USERS\S-1-5-20\Software\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Settings'
@@ -117,7 +127,7 @@ $Tweaks = @(
         Description = "Le processeur reste à pleine vitesse au lieu de ralentir pour économiser l'énergie, ce qui réduit les micro-saccades. Sur un portable, la batterie se vide plus vite: le réglage s'applique surtout quand il est branché."
         Ok = 'Mode performances actif: le processeur tourne à pleine vitesse.'
         Ko = "Le plan actuel laisse le processeur ralentir pour économiser l'énergie."
-        Test = { Test-PowerPlan }; Apply = { Set-PowerPlan }
+        Test = { Test-PowerPlan }; Changes = { Get-ChangementAlimentation }; Ensuite = { Set-PowerPlan }
     },
     @{
         Id = 'dvr'; What = 'Couper l''option « Enregistrer ce qui s''est passé » de la Xbox Game Bar.'; Impact = 'Important'
@@ -126,7 +136,7 @@ $Tweaks = @(
         Ok = "Désactivé: la Game Bar ne filme pas tes parties en continu."
         Ko = 'La Game Bar filme tes parties en continu, ce qui coûte des FPS.'
         Test = { (Get-RegValue 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR' 'HistoricalCaptureEnabled') -ne 1 }
-        Apply = { Set-Reg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR' 'HistoricalCaptureEnabled' 0 }
+        Changes = @(@{ Type = 'reg'; Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR'; Name = 'HistoricalCaptureEnabled'; Value = 0 })
     },
     @{
         Id = 'gamemode'; What = 'Activer le mode jeu de Windows.'; Impact = 'Moyen'
@@ -135,10 +145,10 @@ $Tweaks = @(
         Ok = 'Activé.'
         Ko = 'Désactivé: Windows peut lancer des tâches de fond pendant tes parties.'
         Test = { (Get-RegValue 'HKCU:\Software\Microsoft\GameBar' 'AutoGameModeEnabled') -ne 0 }
-        Apply = {
-            Set-Reg 'HKCU:\Software\Microsoft\GameBar' 'AutoGameModeEnabled' 1
-            Set-Reg 'HKCU:\Software\Microsoft\GameBar' 'AllowAutoGameMode' 1
-        }
+        Changes = @(
+            @{ Type = 'reg'; Path = 'HKCU:\Software\Microsoft\GameBar'; Name = 'AutoGameModeEnabled'; Value = 1 }
+            @{ Type = 'reg'; Path = 'HKCU:\Software\Microsoft\GameBar'; Name = 'AllowAutoGameMode'; Value = 1 }
+        )
     },
     @{
         Id = 'hags'; What = 'Activer la planification GPU à accélération matérielle (prise en compte au prochain redémarrage).'; Impact = 'Moyen'; Reboot = $true
@@ -147,7 +157,7 @@ $Tweaks = @(
         Ok = 'Activée.'
         Ko = 'Désactivée (ou non prise en charge par ta carte graphique).'
         Test = { (Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' 'HwSchMode') -eq 2 }
-        Apply = { Set-Reg 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers' 'HwSchMode' 2 }
+        Changes = @(@{ Type = 'reg'; Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Name = 'HwSchMode'; Value = 2 })
     },
     @{
         Id = 'windowed'; What = 'Activer « Optimisations pour les jeux en mode fenêtré » dans les paramètres graphiques de Windows.'; Impact = 'Moyen'; MinBuild = 22000
@@ -156,7 +166,7 @@ $Tweaks = @(
         Ok = 'Activées.'
         Ko = 'Désactivées: plus de latence en fenêtré et en plein écran sans bordure.'
         Test = { [string](Get-RegValue $DxPath 'DirectXUserGlobalSettings') -match 'SwapEffectUpgradeEnable=1' }
-        Apply = { Enable-WindowedOptim }
+        Changes = { Get-ChangementWindowedOptim }
     },
     @{
         Id = 'mouse'; What = 'Décocher « Améliorer la précision du pointeur » (effet immédiat, ta sensibilité en jeu ne change pas).'; Impact = 'Moyen'
@@ -165,7 +175,12 @@ $Tweaks = @(
         Ok = 'Désactivée: ta visée est constante.'
         Ko = 'Activée: le curseur dépend de la vitesse de ton geste, mauvais pour viser.'
         Test = { [string](Get-RegValue $MousePath 'MouseSpeed') -eq '0' }
-        Apply = { Disable-MouseAccel }
+        Changes = @(
+            @{ Type = 'reg'; Path = $MousePath; Name = 'MouseSpeed'; Value = '0'; Kind = 'String' }
+            @{ Type = 'reg'; Path = $MousePath; Name = 'MouseThreshold1'; Value = '0'; Kind = 'String' }
+            @{ Type = 'reg'; Path = $MousePath; Name = 'MouseThreshold2'; Value = '0'; Kind = 'String' }
+        )
+        Ensuite = { Sync-Mouse }   # (Windows relit tout de suite les réglages de la souris)
     },
     @{
         Id = 'hotkeys'; What = 'Désactiver les raccourcis clavier des touches rémanentes, filtres et bascules. Ces fonctions restent disponibles dans les paramètres d''accessibilité.'; Impact = 'Léger'
@@ -173,7 +188,7 @@ $Tweaks = @(
         Description = "Empêche la fenêtre des touches rémanentes de s'ouvrir quand tu appuies 5 fois sur Maj en pleine partie (idem pour les touches filtres et bascules)."
         Ok = 'Désactivés: plus de fenêtre surprise en pleine partie.'
         Ko = "Appuyer 5 fois sur Maj ouvre une fenêtre qui te sort du jeu."
-        Test = { Test-AccessHotkeys }; Apply = { Disable-AccessHotkeys }
+        Test = { Test-AccessHotkeys }; Changes = { Get-ChangementsAccessHotkeys }
     },
     @{
         Id = 'delivery'; What = 'Désactiver le partage des mises à jour Windows avec d''autres PC.'; Impact = 'Léger'
@@ -182,7 +197,7 @@ $Tweaks = @(
         Ok = 'Pas de partage sur Internet.'
         Ko = "Windows envoie des mises à jour à d'autres PC via ta connexion."
         Test = { (Get-RegValue $DoPath 'DownloadMode') -ne 3 }
-        Apply = { Set-Reg $DoPath 'DownloadMode' 0 }
+        Changes = @(@{ Type = 'reg'; Path = $DoPath; Name = 'DownloadMode'; Value = 0 })
     },
     @{
         Id = 'transparency'; What = 'Désactiver les effets de transparence de Windows.'; Impact = 'Léger'; Recommended = $false
@@ -191,7 +206,7 @@ $Tweaks = @(
         Ok = 'Désactivés.'
         Ko = 'Activés (impact très léger, surtout utile de les couper sur un PC modeste).'
         Test = { (Get-RegValue 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' 'EnableTransparency') -eq 0 }
-        Apply = { Set-Reg 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' 'EnableTransparency' 0 }
+        Changes = @(@{ Type = 'reg'; Path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'; Name = 'EnableTransparency'; Value = 0 })
     }
 )
 
@@ -227,6 +242,14 @@ function Test-IsLaptop($Battery, $Data) {
     if ($pcType -eq 2 -or ($chassis | Where-Object { $mobileChassis -contains $_ })) { return $true }
     if ($chassis | Where-Object { $desktopChassis -contains $_ }) { return $false }
     @($Battery).Count -gt 0
+}
+
+# Un réglage : ses changements déclarés (Changes, voir Set-Declarations), appliqués tels quels, puis ce qu'il fait en
+# plus (Ensuite : plan d'alimentation, souris relue par Windows)
+function Get-TweakChanges($Tweak) { @(Resolve-Declarations $Tweak.Changes) }
+function Invoke-TweakApply($Tweak) {
+    Set-Declarations (Get-TweakChanges $Tweak)
+    if ($Tweak.Ensuite) { & $Tweak.Ensuite }
 }
 
 function Get-AvailableTweaks {
@@ -503,8 +526,12 @@ function Get-GpuPreference([string]$Exe) {
 
 $SafeStartup = '\b(Blitz|Discord|Steam|Epic ?Games|EpicGamesLauncher|Spotify|OneDrive|Teams|Skype|EADesktop|EA app|Origin|Battle\.net|Ubisoft|Uplay|GOG Galaxy|GalaxyClient|Riot ?Client|Overwolf|Medal|Zoom|WhatsApp|Telegram|Messenger|CCleaner|MicrosoftEdgeAutoLaunch|Opera|Brave|Adobe Creative Cloud|CCXProcess|AdobeGCInvoker)\b|MicrosoftEdgeAutoLaunch|\bEA\b|EALauncher'
 
-function Set-StartupState($Item, [bool]$Enable) {
-    Clear-StartupItemsCache
+# Un programme au démarrage activé ou désactivé : sa valeur dans StartupApproved (comme le Gestionnaire des tâches)
+function Get-ChangementDemarrage($Item, [bool]$Enable) {
     $first = if ($Enable) { 2 } else { 3 }
-    Set-Reg $Item.Approved $Item.ValueName ([byte[]]@($first, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)) 'Binary'
+    @{ Type = 'reg'; Path = $Item.Approved; Name = $Item.ValueName; Value = [byte[]]@($first, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Kind = 'Binary' }
+}
+
+function Set-StartupState($Item, [bool]$Enable) {
+    Set-Declarations @(Get-ChangementDemarrage $Item $Enable)
 }

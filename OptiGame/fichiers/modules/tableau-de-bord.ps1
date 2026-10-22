@@ -31,24 +31,126 @@ function New-Fix {
         [string]$Open,
         [string]$OpenLabel = 'Ouvrir',
         [switch]$Reboot,
-        [switch]$Restore
+        [switch]$Restore,
+        $Changes
     )
+    # -Changes : ce que la correction change, déclaré à l'avance (voir Set-Declarations). Sans -Run, la correction
+    # applique exactement cette liste : ce que la fiche montre est ce qui est fait.
+    if ($null -ne $Changes -and -not $Run) { $Run = { param($c) Set-Declarations $c }; $RunArgs = $Changes }
     @{
         Auto = [bool]$Auto; What = $What; Why = $Why; Steps = $Steps
         Run = $Run; Args = $RunArgs; RunLabel = $RunLabel; Confirm = $Confirm; Done = $Done; NoRescan = [bool]$NoRescan
-        Open = $Open; OpenLabel = $OpenLabel; Reboot = [bool]$Reboot; Restore = [bool]$Restore
+        Open = $Open; OpenLabel = $OpenLabel; Reboot = [bool]$Reboot; Restore = [bool]$Restore; Changes = $Changes
     }
+}
+
+# ---------------------------------------------------------------------------
+# Ce que change chaque correction, déclaré avant de le faire (issue #7)
+# ---------------------------------------------------------------------------
+# Une correction ne calcule pas ses changements en s'exécutant : elle les décrit d'abord dans une liste. La fiche
+# montre cette liste avec la valeur actuelle de chaque réglage, lue sans rien modifier (Get-DetailsAvant), et la
+# correction applique cette même liste (Set-Declarations). Rien n'est simulé : une lecture ne peut rien changer.
+#   @{ Type = 'reg'; Path; Name; Value; Kind }      écrit une valeur du registre (Kind : DWord si absent)
+#   @{ Type = 'reg'; Path; Name; Efface = $true }   efface une valeur du registre
+#   @{ Type = 'pcfg'; Key; Value }                  réglage « batterie » du mode d'alimentation ($BatSettings), secteur et batterie
+#   @{ Type = 'display'; Device; Hz }               fréquence d'un écran
+#   @{ Type = 'power'; Cible }                      plan ou mode d'alimentation : décrit ici, fait par le code de la correction
+#   @{ Type = 'texte'; Texte }                      ce qui n'est pas une simple valeur (lancer un outil, nettoyer...)
+#   @{ Type = 'partiel' }                           la correction décide d'autres choses en s'exécutant (la liste le dit)
+# La liste peut aussi être un scriptblock qui la calcule à partir de l'état actuel, en lecture seule.
+# Vérifié par outils\tester-declarations.ps1 : chaque correction a sa liste, et pour le registre, c'est bien elle qui est écrite.
+function Resolve-Declarations($Changes) {
+    if ($Changes -is [scriptblock]) { return @(& $Changes | Where-Object { $_ }) }
+    @(@($Changes) | Where-Object { $_ })
+}
+
+function Set-Declarations($Changes) {
+    foreach ($d in (Resolve-Declarations $Changes)) {
+        switch ([string]$d.Type) {
+            'reg' {
+                if ($d.Efface) { Clear-Reg $d.Path $d.Name }
+                else { Set-Reg $d.Path $d.Name $d.Value $(if ($d.Kind) { [string]$d.Kind } else { 'DWord' }) }
+            }
+            'pcfg' { Set-BatterySetting $d.Key ([int]$d.Value) }
+            'display' { Set-DisplayRate $d.Device ([int]$d.Hz) }
+            # ('power', 'texte', 'partiel' : seulement décrits, c'est le code de la correction qui les fait)
+        }
+    }
+    Clear-StartupItemsCache   # (le registre a pu changer : la liste des programmes au démarrage sera relue)
+}
+
+# Fréquence actuelle d'un écran ($null s'il n'est plus là)
+function Get-FrequenceEcran([string]$Device) {
+    $d = @(@([OGNative]::GetDisplays()) | Where-Object { ($_ -split '\|')[0] -eq $Device })[0]
+    if ($d) { [int](($d -split '\|')[4]) } else { $null }
+}
+
+$BatNoms = @{ CritAction = 'action à batterie critique'; CritLevel = 'niveau de batterie critique'; LowLevel = 'niveau de batterie faible'; LowNotify = 'alerte de batterie faible'; LowAction = 'action à batterie faible' }
+function Format-ValeurBat([string]$Key, $V) {
+    if ($null -eq $V) { return 'inconnu' }
+    if ($Key -like '*Action') { $a = $BatActions[[int]$V]; if ($a) { return $a }; return "$V" }
+    if ($Key -eq 'LowNotify') { if ([int]$V -eq 1) { return 'activée' }; return 'coupée' }
+    "$V %"
+}
+
+# Une ligne lisible : le réglage, sa valeur actuelle (lue sans rien changer) et sa valeur après la correction
+function Format-Declaration($D, $Cache) {
+    switch ([string]$D.Type) {
+        'reg' {
+            # (certaines clés du PC ne se lisent qu'en administrateur : c'est l'Aide qui les écrit)
+            $st = $null
+            try { $ErrorActionPreference = 'Stop'; $st = Get-RegState $D.Path $D.Name } catch {} finally { $ErrorActionPreference = 'Continue' }
+            $maint = if (-not $st) { 'illisible sans droits administrateur' } elseif ($st.Existed) { Format-ValeurTech $st.Value } else { 'absente' }
+            $apres = if ($D.Efface) { 'effacée' } else { Format-ValeurTech $D.Value }
+            $pareil = $st -and $(if ($D.Efface) { -not $st.Existed } else { $st.Existed -and $maint -eq $apres })
+            return "Registre $($D.Path -replace '^Registry::', '') : valeur « $($D.Name) », maintenant $maint, après $apres$(if ($pareil) { ' (déjà comme ça)' })"
+        }
+        'pcfg' {
+            if (-not $Cache.ContainsKey('pcfg')) { $Cache.pcfg = Get-BatteryPowerSettings }
+            $cur = $Cache.pcfg[[string]$D.Key]
+            $maint = if ($cur) { "secteur $(Format-ValeurBat $D.Key $cur[0]), batterie $(Format-ValeurBat $D.Key $cur[1])" } else { 'inconnu' }
+            return "Alimentation, $($BatNoms[[string]$D.Key]) (réglage $($BatSettings[[string]$D.Key])) : maintenant $maint, après $(Format-ValeurBat $D.Key $D.Value) (secteur et batterie)"
+        }
+        'display' {
+            $hz = Get-FrequenceEcran $D.Device
+            return "Écran $($D.Device) : fréquence maintenant $(if ($null -ne $hz) { "$hz Hz" } else { 'inconnue' }), après $($D.Hz) Hz (même résolution)"
+        }
+        'power' {
+            $s = Get-ActiveScheme
+            return "Plan d'alimentation : maintenant « $(if ($s) { $s.Name } else { 'inconnu' }) », après « $($D.Cible) »$(if ($s -and $D.Guid -and $s.Guid -eq $D.Guid) { ' (déjà comme ça)' })"
+        }
+        'texte' { return [string]$D.Texte }
+        'partiel' { return 'Et d''autres changements décidés pendant l''exécution, visibles ensuite dans l''historique (page Sauvegarde).' }
+    }
+    "Changement non décrit ($($D.Type))"
+}
+
+# Les détails techniques d'une correction avant de la faire : « réglage : maintenant ..., après ... » (lecture seule)
+function Get-DetailsAvant($Changes) {
+    $cache = @{}
+    try { $liste = @(Resolve-Declarations $Changes) } catch { return @("Détails impossibles à lire : $($_.Exception.Message)") }
+    @(foreach ($d in $liste) {
+        try { Format-Declaration $d $cache } catch { "$(if ($d.Path) { "$($d.Path) « $($d.Name) »" } else { [string]$d.Type }) : valeur actuelle illisible ($($_.Exception.Message))" }
+    })
 }
 
 $BiosRun = {
     shutdown.exe /r /fw /t 10
     if ($LASTEXITCODE) { throw "Ce PC ne permet pas de redémarrer directement dans le BIOS (code $LASTEXITCODE). Redémarre et appuie sur Suppr ou F2 pendant le démarrage." }
 }
+$BiosChanges = @(@{ Type = 'texte'; Texte = 'Redémarre le PC dans 10 secondes, directement dans le BIOS (shutdown.exe /r /fw /t 10). Aucun réglage n''est changé : c''est toi qui choisis dans le BIOS.' })
 $BiosConfirm = "Le PC va redémarrer directement dans le BIOS dans 10 secondes.`n`nEnregistre ton travail et ferme tes jeux avant. Continuer ?"
 $BiosDone = 'Redémarrage dans le BIOS dans 10 secondes...'
 
 function Invoke-CleanAll {
-    [void](Invoke-CleanTargets @($CleanTargets | Where-Object { $_.Default -ne $false }))   # les catégories à garder (Claude) ne partent jamais d'office
+    [void](Invoke-CleanTargets @(Get-CleanAllTargets))
+}
+function Get-CleanAllTargets { @($CleanTargets | Where-Object { $_.Default -ne $false }) }   # les catégories à garder (Claude) ne partent jamais d'office
+
+# Ce que fait le nettoyage en un clic (déclaration de la correction « disque plein »)
+function Get-ChangementsNettoyage {
+    foreach ($t in (Get-CleanAllTargets)) { @{ Type = 'texte'; Texte = "Supprime « $($t.Titre) » : $((@($t.Paths) | Where-Object { $_ }) -join ', ')" } }
+    @{ Type = 'texte'; Texte = 'Les fichiers exacts sont choisis pendant le nettoyage (ceux de moins de 24 h ou encore utilisés sont gardés) : leur liste est notée dans le journal du nettoyage. Ils ne peuvent pas être récupérés.' }
 }
 
 function Get-DriverLink([string]$Name) {
@@ -136,6 +238,21 @@ function Add-SheetInfo([string]$Text, [string]$Color) {
     [void]$ui.SheetBody.Children.Add($b)
 }
 
+# Bloc repliable « Détails techniques » (fermé au départ) : montré dans l'écran comme celui de l'historique (Get-FicheKit)
+function Add-SheetDetails([string]$Title, [string[]]$Lines) {
+    $Lines = @($Lines | Where-Object { $_ })
+    if (-not $Lines.Count) { return }
+    $x = New-Object System.Windows.Controls.Expander
+    $x.Header = $Title; $x.IsExpanded = $false
+    $x.Foreground = Get-Brush '#A6A1BC'
+    $x.Margin = New-Thickness 0 14 0 0
+    $t = New-Text ($Lines -join "`n") 12.5 '#A6A1BC'
+    $t.Margin = New-Thickness 4 6 0 0
+    $x.Content = $t
+    $x.Tag = @{ Lignes = $Lines }
+    [void]$ui.SheetBody.Children.Add($x)
+}
+
 function Open-Sheet($Items) {
     $script:SheetMode = 'fix'
     $script:SheetItems = @($Items)
@@ -171,12 +288,14 @@ function Open-Sheet($Items) {
         if ($fix -and $fix.Why) { Add-SheetSection 'Pourquoi ça compte' @($fix.Why) }
         if ($fix -and $fix.Auto) {
             Add-SheetSection "Ce que Nevermind va faire quand tu cliques sur Exécuter" $fix.What -Bullets
+            if ($fix.Run) { Add-SheetDetails 'Détails techniques' (Get-DetailsAvant $fix.Changes) }
             $safe = 'Tu peux revenir en arrière à tout moment depuis la page Sauvegarde (dans Protection).'
             if ($fix.Restore) { $safe = 'Un point de restauration Windows est créé avant. ' + $safe }
             Add-SheetInfo $safe $Colors.ok
         } elseif ($fix) {
             if ($fix.Steps) { Add-SheetSection 'Ce que tu dois faire' $fix.Steps -Numbered }
             if ($fix.What) { Add-SheetSection "Ce que Nevermind peut faire pour t'aider" $fix.What -Bullets }
+            if ($fix.Run) { Add-SheetDetails 'Détails techniques' (Get-DetailsAvant $fix.Changes) }
         }
         if ($isIgnored) { Add-SheetInfo 'Ce point est ignoré : il ne compte plus dans ton score.' $Colors.info }
 
@@ -196,6 +315,7 @@ function Open-Sheet($Items) {
         $s.Margin = New-Thickness 0 6 0 0
         [void]$body.Children.Add($s)
         foreach ($f in $auto) { Add-SheetSection "$($f.Titre)   (+$($f.Gain) pts)" $f.Fix.What -Bullets }
+        foreach ($f in $auto) { Add-SheetDetails "Détails techniques : $($f.Titre)" (Get-DetailsAvant $f.Fix.Changes) }
         $safe = 'Un point de restauration Windows est créé avant. Tu peux tout annuler depuis la page Sauvegarde (dans Protection).'
         if ($auto | Where-Object { $_.Fix.Reboot }) { $safe += ' Certains réglages demandent un redémarrage.' }
         Add-SheetInfo $safe $Colors.ok
