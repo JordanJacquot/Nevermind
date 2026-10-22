@@ -113,6 +113,12 @@ function Build-SettingsPanels {
         param($s, $e) Set-Setting 'LagPays' ([bool]$s.IsChecked)
     }
     [void]$p.Children.Add($script:LagPaysSwitch)
+    [void]$p.Children.Add((New-SettingSwitch 'Vérifier le pilote NVIDIA au lancement' 'Si le PC a une carte NVIDIA : demande à NVIDIA (geforce.com) le numéro du dernier pilote. Rien sur ton PC n''est envoyé. Coupé : Nevermind regarde seulement l''âge de ton pilote.' (Test-PiloteNvidia) {
+        param($s, $e) Set-Setting 'PiloteNvidia' ([bool]$s.IsChecked)
+    }))
+    [void]$p.Children.Add((New-SettingSwitch 'Afficher mon adresse Internet' 'Page Réseau : demande ton adresse Internet (IP publique) au service api.ipify.org. Coupé : la page s''affiche sans elle.' (Test-IpPublique) {
+        param($s, $e) Set-Setting 'IpPublique' ([bool]$s.IsChecked)
+    }))
     [void]$p.Children.Add((New-SettingAction 'Ce que Windows envoie à Microsoft' 'Identifiants, réglages qui envoient plus que le minimum et envois vus en direct.' 'Voir' { Hide-Settings; Show-Page $TrafficIndex; Invoke-Safe { Show-WindowsPrivacy } }))
     $note = New-Text 'Nevermind ne déchiffre jamais tes connexions et n''envoie rien sur toi : il regarde seulement qui parle à qui depuis ton PC.' 12 '#655E7E'
     $note.Margin = New-Thickness 4 4 0 0

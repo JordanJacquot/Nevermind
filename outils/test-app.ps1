@@ -869,6 +869,29 @@ $script:T.Run.Add_Tick({
                 $chk.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
                 Assert-Test ((Test-CoversOnline) -ne $old -and [bool]$ui.ChkLibCovers.IsChecked -ne $old) 'réglage non repris sur la page Jeux'
                 Set-Setting 'LibCoversOnline' $old; $ui.ChkLibCovers.IsChecked = $old
+                # Envois activés au départ (pilote NVIDIA, adresse Internet) : un interrupteur chacun, ici et sur la page de la console
+                Set-SettingsTab 'reseau'
+                foreach ($o in @(@{ Nom = 'Vérifier le pilote NVIDIA au lancement'; Cle = 'PiloteNvidia'; Test = 'Test-PiloteNvidia'; Id = 'pilote-nvidia' }, @{ Nom = 'Afficher mon adresse Internet'; Cle = 'IpPublique'; Test = 'Test-IpPublique'; Id = 'ip-publique' })) {
+                    $avant = Get-Setting $o.Cle
+                    $sw = @($ui.SetNetwork.Children | ForEach-Object { $_.Child } | Where-Object { $_ -is [System.Windows.Controls.Grid] -and (Get-TextBlockText $_.Children[0].Children[0]) -eq $o.Nom })[0]
+                    Assert-Test ($null -ne $sw) "interrupteur « $($o.Nom) » introuvable"
+                    $chk = $sw.Children[1]
+                    Assert-Test ([bool]$chk.IsChecked -eq [bool](& $o.Test)) "« $($o.Nom) » : interrupteur différent du réglage"
+                    $chk.IsChecked = $false; $chk.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent)))
+                    Assert-Test (-not (& $o.Test)) "« $($o.Nom) » : ne se coupe pas"
+                    $kit = @(@((Get-PagesDivers).parametres.onglets | Where-Object { $_.id -eq 'reseau' })[0].blocs[0].rangs | Where-Object { $_.bascule.id -eq $o.Id })[0]
+                    Assert-Test ($kit -and -not $kit.bascule.oui) "« $($o.Nom) » : absent ou pas à jour sur la page Paramètres"
+                    if ($o.Cle -eq 'IpPublique' -and (Get-ActiveNet)) {
+                        Update-NetScanInfo
+                        $l = @($ui.NetScanInfo.Children | Where-Object { (Get-TextBlockText $_.Children[1]) -eq 'Adresse Internet' })[0]
+                        Assert-Test ($l -and (Get-TextBlockText $l.Children[2]) -match '^Pas cherchée') 'page Réseau : l''adresse Internet est cherchée alors que c''est coupé'
+                    }
+                    Set-Setting $o.Cle $(if ($null -eq $avant) { $true } else { [bool]$avant })
+                }
+                # Mises à jour : nouveautés lues sur GitHub, et recherche au lancement d'une copie sans Mindset
+                $maj = @(@((Get-PagesDivers).parametres.onglets | Where-Object { $_.id -eq 'maj' })[0].blocs[0].rangs | ForEach-Object { $_.bascule.id })
+                foreach ($id in @('nouveautes-en-ligne'; if (-not $Managed) { 'maj-auto' })) { Assert-Test ($maj -contains $id) "Paramètres, Mises à jour : interrupteur « $id » absent" }
+                Assert-Test ((Test-NouveautesEnLigne) -and (Test-MajAuto) -and (Test-PiloteNvidia) -and (Test-IpPublique)) 'un envoi activé au départ ne l''est plus par défaut'
                 # Signaler un problème : dans Aide
                 Set-SettingsTab 'aide'
                 Assert-Test ($ui.BtnReportProblem.IsVisible) 'Signaler un problème absent de l''onglet Aide'
@@ -877,7 +900,7 @@ $script:T.Run.Add_Tick({
                 $ev.RoutedEvent = [System.Windows.UIElement]::KeyDownEvent; $Window.RaiseEvent($ev)
                 Assert-Test ($ui.SettingsOverlay.Visibility -ne 'Visible') 'Échap ne ferme pas les Paramètres'
                 Show-Page $HubIndex
-                "$($seen.Count) onglets ($($seen -join ', ')), réglage synchronisé avec sa page, Échap ferme"
+                "$($seen.Count) onglets ($($seen -join ', ')), réglage synchronisé avec sa page, envois sur Internet désactivables, Échap ferme"
             }
             Test-StepWpf 'Thèmes (5 choix)' {
                 $base = @($AppThemes.Keys | Where-Object { -not $AppThemes[$_].Pack })

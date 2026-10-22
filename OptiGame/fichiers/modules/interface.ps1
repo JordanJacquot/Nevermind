@@ -118,11 +118,12 @@ function Wait-Handle($Handle) {
 }
 
 # Lance un script dans un fil séparé (réutilisé d'un appel à l'autre) pour que la fenêtre reste fluide.
-function Invoke-Async([scriptblock]$Script, $Argument) {
+function Invoke-Async([scriptblock]$Script, $Argument, $Argument2) {
     $ps = [PowerShell]::Create()
     if ($script:Pool) { $ps.RunspacePool = $script:Pool }
     [void]$ps.AddScript($Script.ToString())
     if ($null -ne $Argument) { [void]$ps.AddArgument($Argument) }
+    if ($null -ne $Argument2) { [void]$ps.AddArgument($Argument2) }
     $handle = $ps.BeginInvoke()
     Wait-Handle $handle
     try { $out = $ps.EndInvoke($handle) } finally { $ps.Dispose() }
@@ -138,8 +139,9 @@ function Get-VolInfo([string]$Letter) {
 }
 
 # Toutes les informations lentes à lire, rassemblées en arrière plan.
+# $nvCheck : chercher le dernier pilote NVIDIA sur Internet (Test-PiloteNvidia, lu avant : ce fil n'a pas les réglages).
 $AnalysisDataWork = {
-    param($sysDrive)
+    param($sysDrive, [bool]$nvCheck)
     $r = @{}
     $r.OS = Get-CimInstance Win32_OperatingSystem
     $r.Battery = @(Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue)
@@ -167,8 +169,8 @@ $AnalysisDataWork = {
     $r.PCType = [int](Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).PCSystemType
     $r.CPU = Get-CimInstance Win32_Processor | Select-Object -First 1
     $r.GPUs = @(Get-CimInstance Win32_VideoController)
-    # Dernier pilote NVIDIA « Game Ready » (le même pour toutes les GeForce récentes).
-    if ($r.GPUs | Where-Object { $_.Name -match 'NVIDIA|GeForce' }) {
+    # Dernier pilote NVIDIA « Game Ready » (le même pour toutes les GeForce récentes). Coupé : l'âge du pilote installé suffit.
+    if ($nvCheck -and ($r.GPUs | Where-Object { $_.Name -match 'NVIDIA|GeForce' })) {
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             $u = 'https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php?func=DriverManualLookup&psid=127&pfid=995&osID=57&languageCode=1033&beta=0&isWHQL=1&dltype=-1&dch=1&upCRD=0&qnf=0&sort1=0&numberOfResults=1'

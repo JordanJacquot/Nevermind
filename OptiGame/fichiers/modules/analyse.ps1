@@ -190,7 +190,7 @@ function Invoke-Analysis {
         Wait-Handle $pf.Handle
         try { $data = @($pf.PS.EndInvoke($pf.Handle))[0] } finally { $pf.PS.Dispose() }
     } else {
-        $data = Invoke-Async $AnalysisDataWork $env:SystemDrive | Select-Object -First 1
+        $data = Invoke-Async $AnalysisDataWork $env:SystemDrive (Test-PiloteNvidia) | Select-Object -First 1
     }
     try { Add-AideLecturePc $data } catch { Write-Log "Aide : lecture du PC ($_)" }
     $script:AnalysisData = $data

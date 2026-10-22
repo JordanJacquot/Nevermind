@@ -71,6 +71,8 @@ function Test-Signature([byte[]]$Donnees, [byte[]]$Signature, [string]$ClePubliq
 function Invoke-UpdateCheck([switch]$Manual) {
     # Géré par Mindset : c'est lui qui installe les mises à jour de Nevermind, pas de vérification ici
     if ($Managed) { $ui.UpdateStatus.Text = "Version $AppVersion. Les mises à jour de Nevermind passent par Mindset : ouvre Mindset pour les installer."; return }
+    # Recherche au lancement coupée (Paramètres, Mises à jour) : seulement quand on clique sur « Vérifier les mises à jour »
+    if (-not $Manual -and -not (Test-MajAuto)) { $ui.UpdateStatus.Text = "Version $AppVersion. Clique sur « Vérifier les mises à jour » pour chercher une nouvelle version."; return }
     $ui.UpdateStatus.Text = 'Recherche d''une nouvelle version...'
     $r = Invoke-Async $GetReleaseScript @{ Repo = $UpdateRepo; Beta = [bool](Get-Setting 'Beta' $false) } | Select-Object -First 1
     if (-not $r -or $r.Error) {
@@ -182,9 +184,12 @@ function Install-Update {
 function Show-WhatsNew([string]$Last) {
     Set-Setting 'LastVersion' $AppVersion
     if (-not $Last -or $Last -eq $AppVersion) { return }
-    $notes = [string](Invoke-Async $GetNotesScript @{ Repo = $UpdateRepo; Version = $AppVersion } | Select-Object -First 1)
+    # Notes lues sur GitHub, sauf si c'est coupé (Paramètres, Mises à jour)
+    $enLigne = Test-NouveautesEnLigne
+    $notes = if ($enLigne) { [string](Invoke-Async $GetNotesScript @{ Repo = $UpdateRepo; Version = $AppVersion } | Select-Object -First 1) } else { '' }
     $lines = @($notes -split "`r?`n" | ForEach-Object { $_.Trim() -replace '^[-*]\s+', '•  ' } | Where-Object { $_ })
-    if (-not $lines.Count) { $lines = @('Corrections et améliorations.') }
+    if (-not $enLigne) { $lines = @('Le détail des nouveautés n''est pas lu sur Internet : c''est coupé dans Paramètres, Mises à jour.') }
+    elseif (-not $lines.Count) { $lines = @('Corrections et améliorations.') }
     Show-ResultSheet "Quoi de neuf dans la version $AppVersion" $lines $null $(if ($Last -eq 'précédente') { 'Nevermind vient d''être mis à jour.' } else { "Tu avais la version $Last." })
 }
 

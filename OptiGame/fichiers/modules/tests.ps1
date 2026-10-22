@@ -840,7 +840,7 @@ function Test-3DMark {
 function Build-TestsTab {
     $ui.TestsPanel.Children.Clear()
     $script:TestButtons.Clear()
-    if (-not $script:AnalysisData) { $script:AnalysisData = Invoke-Async $AnalysisDataWork $env:SystemDrive | Select-Object -First 1 }
+    if (-not $script:AnalysisData) { $script:AnalysisData = Invoke-Async $AnalysisDataWork $env:SystemDrive (Test-PiloteNvidia) | Select-Object -First 1 }
 
     foreach ($dd in @($script:AnalysisData.Disks)) {
         $d = $dd.Disk

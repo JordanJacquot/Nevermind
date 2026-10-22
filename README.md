@@ -68,7 +68,7 @@ Ce qui sort de ton PC, en direct. Le contenu des échanges, chiffré, n'est jama
 - **Programmes connectés** : pour chacun, les serveurs contactés, les volumes envoyés et reçus, la signature de l'éditeur. Les services Windows cachés derrière « svchost » sont affichés par leur vrai nom.
 - **Alertes** : programme non signé dans un dossier à risque, outil de Windows détourné, port utilisé par les virus ou Tor, gros envois inhabituels, prise en main à distance. Pour chaque alerte : « C'est normal, je lui fais confiance », analyse antivirus, blocage d'Internet (annulable), ouvrir l'emplacement.
 - **Type de données envoyées** : la fiche de chaque programme dit ce qu'il envoie probablement (messages et appels, jeu en ligne, statistiques d'utilisation, publicité et suivi, fichiers synchronisés, assistant IA, mises à jour...) et ce qu'il n'envoie pas, d'après le nom des serveurs et les volumes.
-- **Serveurs sans nom** identifiés automatiquement : nom officiel de l'adresse et entreprise propriétaire avec son pays, via l'annuaire public des adresses Internet (rdap.org). Seule l'adresse du serveur est envoyée. Option coupée tant que tu ne l'as pas activée (sur la page, ou dans Paramètres).
+- **Serveurs sans nom** identifiés si tu actives l'option : nom officiel de l'adresse et entreprise propriétaire avec son pays, via l'annuaire public des adresses Internet (rdap.org). Seule l'adresse du serveur est envoyée. Option coupée tant que tu ne l'as pas activée (sur la page, ou dans Paramètres).
 - **Ce que Windows envoie à Microsoft** : identifiants du PC (appareil, publicité, compte), réglages qui envoient plus que le minimum (télémétrie, pubs, recherche Bing, saisie, voix...) avec un bouton « Couper » annulable, et services Windows qui parlent à Microsoft en direct.
 
 Les compteurs d'octets et le repérage des serveurs en UDP passent par Nevermind Aide : aucune demande de Windows.
@@ -77,7 +77,8 @@ Les compteurs d'octets et le repérage des serveurs en UDP passent par Nevermind
 
 - Aucune modification n'est faite sans clic de l'utilisateur, et chaque réglage modifié est sauvegardé avant d'être changé.
 - Tout est annulable, un par un depuis l'historique ou en une fois (« Tout restaurer »), sauf quatre changements qui protègent le PC et qu'on fait seulement si tu le demandes : désactiver SMBv1, passer des Wi-Fi ouverts en connexion manuelle, retirer des exclusions de l'antivirus, réactiver le pare-feu. La confirmation le dit avant, l'historique les montre comme « Définitif » avec la façon de revenir en arrière à la main, et la désinstallation les liste.
-- Aucune donnée personnelle n'est envoyée. Le code est lisible dans `OptiGame/fichiers/modules`.
+- Aucune donnée personnelle n'est envoyée. Chaque envoi sur Internet se coupe dans Paramètres (vérification du pilote NVIDIA, adresse Internet, mesure du lag, nouveautés après une mise à jour : activés au départ ; annuaire et pays des serveurs, jaquettes : coupés au départ), ou ne part que sur un clic (tests de ping et de débit, scan et audit du réseau). La liste complète : [Code signing policy](CODE_SIGNING.md#privacy-policy).
+- Le code est lisible dans `OptiGame/fichiers/modules`.
 
 ## Développement
 

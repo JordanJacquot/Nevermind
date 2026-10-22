@@ -104,6 +104,11 @@ $CoverIndexFile = Join-Path $CoverDir 'index.json'
 function Test-CoversOnline { [bool](Get-Setting 'LibCoversOnline' $false) }        # jaquettes : boutique Steam puis Wikipédia (nom du jeu)
 function Test-AnnuaireServeurs { [bool](Get-Setting 'TrafficLookup' $false) }      # Trafic et Lag : propriétaire d'une adresse (rdap.org)
 function Test-PaysServeur { [bool](Get-Setting 'LagPays' $false) }                 # Lag en ligne : pays du serveur du jeu (ipinfo.io)
+# Envois activés au départ (comme avant), qu'on peut couper dans Paramètres, Réseau et vie privée
+function Test-PiloteNvidia { [bool](Get-Setting 'PiloteNvidia' $true) }            # au lancement : dernier pilote NVIDIA (gfwsl.geforce.com)
+function Test-IpPublique { [bool](Get-Setting 'IpPublique' $true) }                # page Réseau : adresse Internet du PC (api.ipify.org)
+function Test-NouveautesEnLigne { [bool](Get-Setting 'NouveautesEnLigne' $true) }  # après une mise à jour : notes de la version (api.github.com)
+function Test-MajAuto { [bool](Get-Setting 'MajAuto' $true) }                      # copie sans Mindset : nouvelle version au lancement (api.github.com)
 
 function Get-CoverIndex {
     if ($null -ne $script:CoverIndex) { return $script:CoverIndex }

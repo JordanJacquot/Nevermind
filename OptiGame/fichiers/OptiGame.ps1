@@ -402,7 +402,7 @@ $script:BgPool = [RunspaceFactory]::CreateRunspacePool(1, 8)
 $script:BgPool.Open()
 $pfPs = [PowerShell]::Create()
 $pfPs.RunspacePool = $script:Pool
-[void]$pfPs.AddScript($AnalysisDataWork.ToString()).AddArgument($env:SystemDrive)
+[void]$pfPs.AddScript($AnalysisDataWork.ToString()).AddArgument($env:SystemDrive).AddArgument((Test-PiloteNvidia))
 $script:Prefetch = @{ PS = $pfPs; Handle = $pfPs.BeginInvoke() }
 try { Start-ProtectionPrefetch } catch { Write-Log "Sécurité, lecture de fond : $_" }
 $script:TweakRows = @()

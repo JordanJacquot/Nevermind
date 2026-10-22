@@ -43,17 +43,18 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 Nevermind has no account, no advertising, no telemetry and no statistics. It never reads the content of your
 connections and it does not send any personal data. The table below lists every connection that Nevermind makes
-to systems on the Internet, and how to turn it off. Settings are in Paramètres.
+to systems on the Internet, and how to turn it off. Every automatic connection has its own switch in Paramètres
+(the settings of Nevermind); the others only happen when you press a button.
 
 ### Automatic (on by default)
 
 | What | When | What is sent | How to turn it off |
 |---|---|---|---|
-| Latest NVIDIA "Game Ready" driver version: `gfwsl.geforce.com` | When Nevermind starts, only if an NVIDIA graphics card is found | A fixed request, the same for every PC (no information about your PC) | Not possible at the moment |
+| Latest NVIDIA "Game Ready" driver version: `gfwsl.geforce.com` | When Nevermind starts, only if an NVIDIA graphics card is found | A fixed request, the same for every PC (no information about your PC) | Paramètres > Réseau et vie privée > "Vérifier le pilote NVIDIA au lancement" (when off, Nevermind only looks at the age of the installed driver) |
 | Connection measurement while you play: pings to your box, to the first server of your provider, to Cloudflare (`1.1.1.1`, with a route trace) and to the game server your game is already connected to | During each game (the game server only when the game is online) | Ping packets only | Paramètres > Jeux > "Mesurer ma connexion quand je joue" |
-| Your public IP address: `api.ipify.org` | When you open the Réseau page | A standard HTTPS request | Not possible at the moment (do not open the page) |
-| What's new after an update: `api.github.com` | Once, after Nevermind has been updated | A standard HTTPS request for the notes of the new version | Not possible |
-| Updates of a copy that is not managed by Mindset: `api.github.com` and `github.com` | When this copy checks for updates. A copy managed by Mindset never checks: Mindset does it (see Mindset's own policy) | A standard HTTPS request (user agent `OptiGame`) | Use Nevermind through Mindset |
+| Your public IP address: `api.ipify.org` | When you open the Réseau page | A standard HTTPS request | Paramètres > Réseau et vie privée > "Afficher mon adresse Internet" (when off, the page says that the address is not looked up) |
+| What's new after an update: `api.github.com` | Once, after Nevermind has been updated | A standard HTTPS request for the notes of the new version | Paramètres > Mises à jour > "Lire les nouveautés sur Internet" |
+| Updates of a copy that is not managed by Mindset: `api.github.com` (and `github.com` to download an update you accept) | When this copy starts. A copy managed by Mindset never checks: Mindset does it (see Mindset's own policy) | A standard HTTPS request (user agent `OptiGame`) | Paramètres > Mises à jour > "Chercher une nouvelle version au lancement" (when off, only when you click "Vérifier les mises à jour"), or use Nevermind through Mindset |
 
 ### Off by default (only if you turn them on)
 
@@ -135,17 +136,18 @@ Signature gratuite du code fournie par [SignPath.io](https://about.signpath.io),
 
 Nevermind n'a ni compte, ni publicité, ni télémétrie, ni statistiques. Il ne lit jamais le contenu de tes connexions
 et n'envoie aucune donnée personnelle. Voici toutes les connexions que Nevermind fait vers Internet, et comment les
-couper. Les réglages sont dans Paramètres.
+couper. Chaque connexion automatique a son interrupteur dans Paramètres (les réglages de Nevermind) ; les autres ne
+partent que quand tu appuies sur un bouton.
 
 ### Automatiques (activées au départ)
 
 | Quoi | Quand | Ce qui est envoyé | Comment le couper |
 |---|---|---|---|
-| Dernière version du pilote NVIDIA « Game Ready » : `gfwsl.geforce.com` | Au lancement de Nevermind, seulement si une carte graphique NVIDIA est trouvée | Une demande fixe, la même pour tous les PC (rien sur ton PC) | Pas possible pour l'instant |
+| Dernière version du pilote NVIDIA « Game Ready » : `gfwsl.geforce.com` | Au lancement de Nevermind, seulement si une carte graphique NVIDIA est trouvée | Une demande fixe, la même pour tous les PC (rien sur ton PC) | Paramètres > Réseau et vie privée > « Vérifier le pilote NVIDIA au lancement » (coupé, Nevermind regarde seulement l'âge du pilote installé) |
 | Mesure de la connexion pendant que tu joues : pings vers ta box, le premier serveur de ton fournisseur, Cloudflare (`1.1.1.1`, avec un tracé du chemin) et le serveur auquel ton jeu est déjà connecté | Pendant chaque partie (le serveur du jeu seulement si le jeu est en ligne) | Seulement des paquets de ping | Paramètres > Jeux > « Mesurer ma connexion quand je joue » |
-| Ton adresse Internet (IP publique) : `api.ipify.org` | Quand tu ouvres la page Réseau | Une demande HTTPS ordinaire | Pas possible pour l'instant (ne pas ouvrir la page) |
-| Les nouveautés après une mise à jour : `api.github.com` | Une fois, après une mise à jour de Nevermind | Une demande HTTPS ordinaire pour les notes de la nouvelle version | Pas possible |
-| Mises à jour d'une copie qui n'est pas gérée par Mindset : `api.github.com` et `github.com` | Quand cette copie cherche une nouvelle version. Une copie gérée par Mindset ne cherche jamais : c'est Mindset qui le fait (voir sa propre politique) | Une demande HTTPS ordinaire (nom du programme `OptiGame`) | Utiliser Nevermind avec Mindset |
+| Ton adresse Internet (IP publique) : `api.ipify.org` | Quand tu ouvres la page Réseau | Une demande HTTPS ordinaire | Paramètres > Réseau et vie privée > « Afficher mon adresse Internet » (coupé, la page dit que l'adresse n'est pas cherchée) |
+| Les nouveautés après une mise à jour : `api.github.com` | Une fois, après une mise à jour de Nevermind | Une demande HTTPS ordinaire pour les notes de la nouvelle version | Paramètres > Mises à jour > « Lire les nouveautés sur Internet » |
+| Mises à jour d'une copie qui n'est pas gérée par Mindset : `api.github.com` (et `github.com` pour télécharger une mise à jour que tu acceptes) | Au lancement de cette copie. Une copie gérée par Mindset ne cherche jamais : c'est Mindset qui le fait (voir sa propre politique) | Une demande HTTPS ordinaire (nom du programme `OptiGame`) | Paramètres > Mises à jour > « Chercher une nouvelle version au lancement » (coupé, seulement quand tu cliques sur « Vérifier les mises à jour »), ou utiliser Nevermind avec Mindset |
 
 ### Coupées au départ (seulement si tu les actives)
 
