@@ -80,7 +80,13 @@ function Initialize-Vue($Hote) {
                 }
                 $e2.Response = $s2.Environment.CreateWebResourceResponse($null, 404, 'Not Found', '')
             })
-            $c.Add_WebMessageReceived({ param($s2, $e2) try { Receive-MessageVue $e2.WebMessageAsJson } catch { Write-Log "Écran : message ignoré ($_)" } })
+            # Le message est mis dans la file de la fenêtre au lieu d'être traité tout de suite : la WebView2 ne donne plus aucun
+            # message tant que celui-ci n'est pas fini. Une question posée après un clic (Read-QuestionVue) attendrait donc sa
+            # réponse pour toujours, et plus aucun bouton ne répondrait.
+            $c.Add_WebMessageReceived({ param($s2, $e2)
+                $json = $e2.WebMessageAsJson
+                [void]$Window.Dispatcher.BeginInvoke([Action[string]]{ param($j) try { Receive-MessageVue $j } catch { Write-Log "Écran : message ignoré ($_)" } }, $json)
+            })
             $c.Add_ProcessFailed({ param($s2, $e2) Write-Log "Écran : processus arrêté ($($e2.ProcessFailedKind)), rechargement"; $script:Vue.Pret = $false; try { $s2.Reload() } catch {} })
             $c.Navigate("https://$HoteVue/index.html")
         } catch { [void](Stop-VueImpossible "réglage impossible ($($_.Exception.Message))") }
