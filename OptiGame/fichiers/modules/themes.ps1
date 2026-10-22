@@ -55,7 +55,8 @@ $Theme = $AppThemes[$ThemeId]
 #   Console           nouvelle interface (l'écran du kit), facultatif :
 #                     { Tuiles = { pc, perf, protection, jeux, reseau, trafic, overlay = image PNG ou WebP },
 #                       Mascotte = image (PNG, WebP, GIF animé) dans un coin de l'accueil,
-#                       Chargement = { File, Effet = tourne | aucun }, Fond, FondOpacite (sinon Background, BackgroundOpacity) }
+#                       Chargement = { File, Effet = tourne | aucun }, Fond, FondOpacite (sinon Background, BackgroundOpacity),
+#                       Logo = image du logo dans la barre du haut (PNG, WebP, GIF, animée possible), à la place de Logo }
 #                     Avec ce bloc : pas de dessin en bas de l'écran, les petites icônes rondes du haut gardent leur dessin.
 # ---------------------------------------------------------------------------
 $PacksDir = Join-Path $DataDir 'packs'
@@ -120,12 +121,13 @@ function Get-ThemePack([string]$Id) {
 function Get-ThemePackConsole($C, [string]$Dir) {
     if (-not $C) { return $null }
     $image = { param($n) if ($n -is [string] -and $n -match '\A[\w .()-]{1,80}\.(png|webp|gif|jpe?g)\z' -and $n -notmatch '\.\.' -and (Test-Path -LiteralPath (Join-Path $Dir $n))) { Join-Path $Dir $n } else { $null } }
-    $r = @{ Tuiles = @{}; Mascotte = $null; Chargement = $null; Fond = $null; FondOpacite = $null }
+    $r = @{ Tuiles = @{}; Mascotte = $null; Chargement = $null; Fond = $null; FondOpacite = $null; Logo = $null }
     if ($C.Tuiles) { foreach ($pr in $C.Tuiles.PSObject.Properties) { $f = & $image $pr.Value; if ($pr.Name -match '\A[a-z]{1,20}\z' -and $f) { $r.Tuiles[$pr.Name] = $f } } }
     $r.Mascotte = & $image $C.Mascotte
     $ch = if ($C.Chargement -is [string]) { @{ File = $C.Chargement } } else { $C.Chargement }
     if ($ch -and ($f = & $image $ch.File)) { $r.Chargement = @{ File = $f; Effet = $(if ([string]$ch.Effet -eq 'aucun') { 'aucun' } else { 'tourne' }) } }
     $r.Fond = & $image $C.Fond
+    $r.Logo = & $image $C.Logo   # (le logo de la nouvelle interface, animé possible ; Logo reste l'image fixe des fenêtres)
     if ($C.FondOpacite) { $r.FondOpacite = [math]::Min(1.0, [math]::Max(0.05, [double]$C.FondOpacite)) }
     $r
 }

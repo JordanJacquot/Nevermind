@@ -259,8 +259,10 @@ function Get-PackVue {
     if (-not $t) { return $null }
     $u = { param($f) 'https://theme.local/' + [uri]::EscapeDataString([IO.Path]::GetFileName([string]$f)) }
     $p = [ordered]@{}
-    if ($t.Logo) { $p.logo = @{ url = (& $u $t.Logo); images = $t.LogoFrames; delai = $t.LogoDelay; lueur = $t.LogoGlow } }
     $c = $t.Console
+    # Console.Logo (une seule image, animée possible) passe avant Logo, qui reste l'image fixe des fenêtres
+    if ($c -and $c.Logo) { $p.logo = @{ url = (& $u $c.Logo); images = 1; lueur = $t.LogoGlow } }
+    elseif ($t.Logo) { $p.logo = @{ url = (& $u $t.Logo); images = $t.LogoFrames; delai = $t.LogoDelay; lueur = $t.LogoGlow } }
     $fond = if ($c -and $c.Fond) { $c.Fond } else { $t.Background }
     if ($fond) {
         $op = if ($c -and $c.Fond -and $c.FondOpacite) { $c.FondOpacite } else { $t.BackgroundOpacity }
