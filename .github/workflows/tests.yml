@@ -1,0 +1,43 @@
+# Vérifications automatiques à chaque envoi (push) et à chaque demande de fusion (pull request).
+# Tout tourne dans Windows PowerShell 5.1, comme l'appli. Pas de fenêtre, rien n'est installé ni modifié sur le PC.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Analyse du code (PSScriptAnalyzer, erreurs seulement)
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          if (-not (Get-Module -ListAvailable PSScriptAnalyzer)) {
+            Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser | Out-Null
+            Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          }
+          $resultats = @(Invoke-ScriptAnalyzer -Path OptiGame -Recurse -Severity Error)
+          $resultats | Format-Table -AutoSize RuleName, ScriptName, Line, Message | Out-String -Width 300 | Write-Host
+          if ($resultats.Count) { Write-Host "$($resultats.Count) erreur(s) trouvée(s) par PSScriptAnalyzer."; exit 1 }
+          Write-Host 'Aucune erreur trouvée par PSScriptAnalyzer.'
+
+      - name: Vérifications du dépôt (syntaxe, fenêtre, tirets, encodage, licence)
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\verifier.ps1
+          exit $LASTEXITCODE
+
+      - name: Tests de l'Aide administrateur (mode vérification : rien n'est modifié)
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-aide.ps1
+          exit $LASTEXITCODE

@@ -23,7 +23,7 @@ function Initialize-AideNatif {
 }
 
 # Programmes de Windows et de l'antivirus : jamais fermés, jamais bloqués, jamais de priorité changée
-$AideExesProteges = '^(csrss|lsass|lsaiso|smss|wininit|winlogon|services|svchost|System|Registry|Idle|MsMpEng|NisSrv|MpCmdRun|MpDefenderCoreService|SecurityHealthService|SecurityHealthSystray|SgrmBroker|dwm|explorer|fontdrvhost|sihost|ctfmon|conhost|audiodg|spoolsv|taskhostw|RuntimeBroker|TrustedInstaller|TiWorker|wuauclt|MoUsoCoreWorker|Nevermind|Mindset)(\.exe)?$'
+$AideExesProteges = '^(csrss|lsass|lsaiso|smss|wininit|winlogon|services|svchost|System|Registry|Idle|MsMpEng|NisSrv|MpCmdRun|MpDefenderCoreService|MpSigStub|MRT|smartscreen|MsSense|SenseCncProxy|SenseIR|SenseNdr|SenseTVM|SecurityHealthService|SecurityHealthSystray|SecurityHealthHost|SgrmBroker|dwm|explorer|fontdrvhost|sihost|ctfmon|conhost|audiodg|spoolsv|taskhostw|RuntimeBroker|TrustedInstaller|TiWorker|wuauclt|MoUsoCoreWorker|Nevermind|Mindset)(\.exe)?$'
 $AideServicesProteges = '^(WinDefend|WdNisSvc|WdFilter|Sense|SecurityHealthService|wscsvc|mpssvc|BFE|wuauserv|UsoSvc|WaaSMedicSvc|BITS|DoSvc|CryptSvc|TrustedInstaller|Dnscache|Dhcp|NlaSvc|nsi|W32Time|EventLog|RpcSs)$'
 
 # ---------------------------------------------------------------------------
@@ -45,7 +45,7 @@ $AideRegles = @(
        Garde = 'le contrôle des comptes reste allumé : l''Aide ne le coupe jamais' }
     # Profils par jeu : priorité du processeur (PerfOptions seulement, jamais d'autre valeur de cette clé sensible)
     @{ Motif = '^HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\(?<exe>[\w .()+\-]{1,100}\.exe)\\PerfOptions$'
-       Nom = 'CpuPriorityClass'; Type = 'DWord'; Min = 1; Max = 6; Effacer = $true }
+       Nom = 'CpuPriorityClass'; Type = 'DWord'; Valeurs = @(1, 2, 3, 5, 6); Effacer = $true }   # (jamais 4 : « temps réel », qui peut figer le PC)
     # Programmes lancés avec Windows pour tous les utilisateurs : seulement les marquer actifs ou coupés
     @{ Motif = '^HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\(Run|Run32|StartupFolder)$'
        NomMotif = '^[^\x00-\x1f]{1,260}$'; Type = 'Binary'; Longueur = 12; Premier = @(2, 3, 6, 7); Effacer = $true }
@@ -287,7 +287,9 @@ function Get-AideProgramme([string]$Chemin, [bool]$WindowsPermis) {
     if ($plein -ne $Chemin) { throw "Demande refusée : chemin non valable ($Chemin)." }
     if (-not [IO.File]::Exists($plein)) { throw "Ce programme n'existe plus : $plein" }
     $nom = [IO.Path]::GetFileName($plein)
-    $defender = @("$env:ProgramFiles\Windows Defender\", "${env:ProgramFiles(x86)}\Windows Defender\", "$env:ProgramData\Microsoft\Windows Defender\")
+    if ($nom -match $AideExesProteges) { throw "Demande refusée : $nom fait partie de Windows ou de l'antivirus." }
+    $defender = @("$env:ProgramFiles\Windows Defender\", "${env:ProgramFiles(x86)}\Windows Defender\", "$env:ProgramData\Microsoft\Windows Defender\",
+                  "$env:ProgramFiles\Windows Defender Advanced Threat Protection\", "$env:ProgramData\Microsoft\Windows Defender Advanced Threat Protection\")
     foreach ($d in $defender) { if ($plein.StartsWith($d, [StringComparison]::OrdinalIgnoreCase)) { throw "Demande refusée : $nom fait partie de l'antivirus." } }
     if (-not $WindowsPermis -and $plein.StartsWith("$env:windir\", [StringComparison]::OrdinalIgnoreCase)) { throw "Demande refusée : $nom fait partie de Windows." }
     $plein
@@ -584,7 +586,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
 
         'wifi.manuel' {
             $profils = @(Get-AideListe $P 'Profils')
-            if (-not $profils.Count -or $profils.Count -gt 50 -or @($profils | Where-Object { -not $_ -or $_.Length -gt 64 -or $_ -match '["\x00-\x1f]' }).Count) { throw 'Demande refusée : noms de Wi-Fi non valables.' }
+            if (-not $profils.Count -or $profils.Count -gt 50 -or @($profils | Where-Object { -not $_ -or $_.Length -gt 64 -or $_ -match '["\x00-\x1f]' -or $_ -match '\\$' }).Count) { throw 'Demande refusée : noms de Wi-Fi non valables.' }
             if ($Verifier) { return 'ok' }
             foreach ($n in $profils) { & "$env:windir\System32\netsh.exe" wlan set profileparameter "name=$n" connectionmode=manual | Out-Null }
             return 'ok'
@@ -617,7 +619,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
 
         'processus.fermer' {
             # Par nom (programme gourmand pendant une partie) ou par chemin (programme bloqué dans Trafic)
-            $nom = [string](Get-AideParam $P 'Nom'); $chemin = [string](Get-AideParam $P 'Chemin')
+            $nom = ([string](Get-AideParam $P 'Nom')).Trim(); $chemin = [string](Get-AideParam $P 'Chemin')   # (« MsMpEng  » = MsMpEng)
             if ($chemin) { $chemin = Get-AideProgramme $chemin $false; $nom = [IO.Path]::GetFileNameWithoutExtension($chemin) }
             elseif ($nom -notmatch '^[\w .()+\-]{1,100}$') { throw 'Demande refusée : nom de programme non valable.' }
             if ($nom -match $AideExesProteges) { throw "Demande refusée : $nom fait partie de Windows ou de l'antivirus." }
