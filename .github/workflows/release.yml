@@ -141,7 +141,7 @@ jobs:
           $problemes = @()
           $exes = @(Get-ChildItem -LiteralPath $racine -Filter '*.exe' -File)
           if ($exes.Count -ne 3) { throw "3 exe attendus dans $racine, trouvés : $($exes.Name -join ', ')" }
-          $nos = $exes + @(Get-ChildItem -LiteralPath $racine -Recurse -File -Include '*.ps1', '*.psm1', '*.psd1')
+          $nos = $exes + @(Get-ChildItem -LiteralPath $racine -Recurse -File | Where-Object { $_.Extension -in '.ps1', '.psm1', '.psd1' })
           foreach ($f in $nos) {
             $s = Get-AuthenticodeSignature -LiteralPath $f.FullName
             if ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'SignPath Foundation') { $problemes += "$($f.FullName) : $($s.Status) $($s.SignerCertificate.Subject)" }
