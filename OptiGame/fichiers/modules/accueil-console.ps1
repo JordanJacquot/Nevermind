@@ -99,10 +99,13 @@ function Get-EcranNevermind {
     }
 }
 
+# L'écran n'est pas regardé (fenêtre réduite ou cachée, autre page de Mindset) : voir Update-VeilleVue (vue.ps1)
+function Test-VueCachee { [bool]$script:Vue.CacheeDepuis }
+
 # Renvoie l'écran (seulement s'il a changé, et seulement s'il est à l'écran : caché, il est refait en revenant)
 function Update-EcranNevermind {
     if (-not $script:Kit.Actif) { return }
-    if (-not $script:Vue.Controle -or $ui.EcranKit.Visibility -ne 'Visible') { $script:Kit.Envoye = ''; return }
+    if (-not $script:Vue.Controle -or $ui.EcranKit.Visibility -ne 'Visible' -or (Test-VueCachee)) { $script:Kit.Envoye = ''; $script:Kit.ARefaire = $true; return }
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $e = Get-EcranNevermind
     # (les mesures en direct ont leur propre envoi, toutes les 1,6 s : elles ne comptent pas dans la comparaison, sinon
@@ -279,7 +282,7 @@ function Update-EcranKitVisible {
         if ($voir) { Update-EcranNevermind }
     }
     if ($fermer -and $script:Vue.Controle) { [void](Close-Vue) }
-    if ($voir) { Update-FicheKit; Update-PanneauKit }
+    if ($voir -and -not (Test-VueCachee)) { Update-FicheKit; Update-PanneauKit }   # (caché : relus au retour)
 }
 
 # La page d'avant encore montrée (l'Organizer) : son nom en haut, et « B Retour » en bas (Initialize-HabillageConsole)
@@ -410,6 +413,18 @@ function Close-EcranImpossible {
     $null = $Window.Dispatcher.BeginInvoke([Action]{ $Window.Close() })
 }
 
+# Toutes les 0,2 s (minuterie de Initialize-AccueilConsole). Écran caché (fenêtre réduite, autre page de Mindset, en
+# pleine partie) : rien n'est refait ni envoyé, la WebView2 reste en pause ou en veille ; l'écran est refait au retour.
+function Step-MinuterieKit {
+    try { Update-EcranKitVisible } catch {}
+    $script:KitTic++
+    if (Test-VueCachee) { $script:Kit.ARefaire = $true; return }
+    if ($script:Kit.ARefaire) { $script:Kit.ARefaire = $false; if ($ui.EcranKit.Visibility -eq 'Visible' -and -not $script:Vue.Cadre) { try { Update-EcranNevermind } catch { Write-Log "Écran : $_" } }; return }
+    # Toutes les 1,6 s : les mesures en direct ; toutes les 4 s : l'écran à jour (tests, analyses en fond...)
+    if ($script:KitTic % 8 -eq 0) { try { Send-MesuresKit } catch {} }
+    if ($script:KitTic % 20 -eq 0 -and $ui.EcranKit.Visibility -eq 'Visible' -and -not $script:Vue.Cadre) { try { Update-EcranNevermind } catch { Write-Log "Écran : $_" } }
+}
+
 function Initialize-AccueilConsole {
     $raison = Test-VuePossible
     if ($raison) { Show-EcranImpossible $raison; return }
@@ -455,13 +470,7 @@ function Initialize-AccueilConsole {
     $t = New-Object System.Windows.Threading.DispatcherTimer
     $t.Interval = [TimeSpan]::FromMilliseconds(200)
     $script:KitTic = 0
-    $t.Add_Tick({
-        try { Update-EcranKitVisible } catch {}
-        # Toutes les 1,6 s : les mesures en direct ; toutes les 4 s : l'écran à jour (tests, analyses en fond...)
-        $script:KitTic++
-        if ($script:KitTic % 8 -eq 0) { try { Send-MesuresKit } catch {} }
-        if ($script:KitTic % 20 -eq 0 -and $ui.EcranKit.Visibility -eq 'Visible' -and -not $script:Vue.Cadre) { try { Update-EcranNevermind } catch { Write-Log "Écran : $_" } }
-    })
+    $t.Add_Tick({ Step-MinuterieKit })
     $t.Start()
     $script:Kit.Minuterie = $t
     Update-EcranNevermind

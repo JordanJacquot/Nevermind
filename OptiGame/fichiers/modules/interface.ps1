@@ -97,6 +97,27 @@ function Invoke-Safe([scriptblock]$Action) {
     finally { Set-Busy $false }
 }
 
+# Filet contre les plantages (evenements.ps1) : une erreur que rien n'a attrapée (un clic, une minuterie, un message de
+# l'écran) est notée en entier au journal (message, fichier, ligne, pile d'appels), l'appli continue, et un message simple
+# le dit une seule fois par lancement : une erreur qui revient en boucle (minuterie) ne fait pas apparaître de fenêtre en boucle.
+function Write-ErreurNonGeree($Exception) {
+    $x = $Exception
+    while ($x -and $x.InnerException -and ($x -is [System.Reflection.TargetInvocationException] -or $x -is [System.Management.Automation.MethodInvocationException])) { $x = $x.InnerException }
+    $ou = ''
+    if ($x -is [System.Management.Automation.IContainsErrorRecord] -and $x.ErrorRecord -and $x.ErrorRecord.InvocationInfo) {
+        $ii = $x.ErrorRecord.InvocationInfo
+        $ou = " ($(if ($ii.ScriptName) { [IO.Path]::GetFileName($ii.ScriptName) } else { 'script' }), ligne $($ii.ScriptLineNumber))`r`n$($ii.PositionMessage)"
+    }
+    $script:ErreursNonGerees = 1 + [int]$script:ErreursNonGerees
+    # (au delà de 20, une ligne courte : un journal rempli par une minuterie en panne ne sert à rien)
+    if ($script:ErreursNonGerees -le 20) { Write-Log "ERREUR non gérée ($($script:ErreursNonGerees)) : $($x.GetType().FullName) : $($x.Message)$ou`r`n$($x.StackTrace)" }
+    elseif ($script:ErreursNonGerees % 100 -eq 0) { Write-Log "ERREUR non gérée : $($script:ErreursNonGerees) en tout, dernière : $($x.Message)" }
+    try { Set-Status 'Une erreur est survenue (elle est notée dans le journal).' } catch {}
+    if ($script:ErreurNonGereeDite) { return }
+    $script:ErreurNonGereeDite = $true
+    try { Show-Message 'Un petit problème est survenu, l''appli continue. Si ça se répète, utilise Signaler un problème (dans l''Aide).' 'Warning' } catch {}
+}
+
 # Attend la fin d'un travail en arrière plan sans jamais figer la fenêtre:
 # la fenêtre continue de tout traiter normalement (clics, animations) pendant l'attente.
 $script:WaitFrames = New-Object System.Collections.ArrayList

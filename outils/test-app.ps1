@@ -4,6 +4,8 @@ $script:T = @{
     Dir = '__TEST__'; Complet = $__COMPLET__; Captures = $__CAPTURES__
     Res = New-Object System.Collections.ArrayList; Msgs = New-Object System.Collections.ArrayList
     Clock = [Diagnostics.Stopwatch]::StartNew(); Last = 0.0; MaxGap = 0.0; Watch = $false
+    # Clé du registre à part pour les réglages d'essai (donnée par tester.ps1, effacée à la fin) : jamais ceux du PC
+    Reg = "HKCU:\$(if ($env:OPTIGAME_TEST_REG -like 'Software\MindsetTest*') { $env:OPTIGAME_TEST_REG } else { 'Software\MindsetTest' })"
 }
 function Invoke-UpdateCheck { }
 # Chronométrage des tâches répétées de l'app (qui tournent sur la fenêtre)
@@ -177,14 +179,22 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($null -eq $script:GameSession) 'session non terminée'
                 $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
                 $detail = "$(@($script:Games).Count) jeux, $($ui.GameProfilesPanel.Children.Count) lignes de profils"
-                # Profil « carte puissante » sur un faux jeu (clé de l'utilisateur, pas besoin d'être administrateur)
+                # Profil « carte puissante » sur un faux jeu (clé de l'utilisateur, pas besoin d'être administrateur), écrit
+                # dans la clé du test à la place de celle de Windows ; sa valeur d'origine doit aller dans la clé du test aussi
                 $fake = @{ Name = 'Jeu d''essai'; Exes = @('C:\OptiGameTest\OptiGameTestJeu.exe') }
-                Set-GameProfile $fake 'gpu' $true
-                $gOn = (Get-GpuPreference $fake.Exes[0]) -match 'GpuPreference=2'
-                Set-GameProfile $fake 'gpu' $false
-                $gOff = -not (Get-GpuPreference $fake.Exes[0])
+                $vraiDx = $script:DxPath; $script:DxPath = "$($script:T.Reg)\UserGpuPreferences"
+                try {
+                    Set-GameProfile $fake 'gpu' $true
+                    $gOn = (Get-GpuPreference $fake.Exes[0]) -match 'GpuPreference=2'
+                    Set-GameProfile $fake 'gpu' $false
+                    $gOff = -not (Get-GpuPreference $fake.Exes[0])
+                } finally { $script:DxPath = $vraiDx }
                 Assert-Test ($gOn -and $gOff) "carte puissante : activée=$gOn, retirée=$gOff"
-                $detail += ', profil carte puissante activé puis retiré'
+                Assert-Test ($OriginesUtilisateur -like 'Software\MindsetTest-*\Origines') "valeurs d'origine gardées dans $OriginesUtilisateur au lieu de la clé du test"
+                $ko = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($OriginesUtilisateur, $false)
+                $gardee = $false; if ($ko) { try { $gardee = [bool]@($ko.GetValueNames() | Where-Object { $_ -like '*UserGpuPreferences|C:\OptiGameTest\OptiGameTestJeu.exe' }).Count } finally { $ko.Close() } }
+                Assert-Test $gardee 'valeur d''origine du profil absente de la clé du test'
+                $detail += ', profil carte puissante activé puis retiré (clé du test)'
                 if ($admin) {
                     $g = @{ Name = 'Jeu d''essai'; Exes = @('C:\OptiGameTest\OptiGameTestJeu.exe') }
                     $key = "$IfeoPath\OptiGameTestJeu.exe"
@@ -716,7 +726,10 @@ $script:T.Run.Add_Tick({
                 $script:DesktopDir = Join-Path $DataDir 'bureau-essai'
                 New-Item -ItemType Directory -Force -Path $script:DesktopDir | Out-Null
                 $exe = Get-AppExe
-                if (-not (Test-Path -LiteralPath $exe)) { [IO.File]::WriteAllBytes($exe, [byte[]](77, 90)) }
+                # (faux programme le temps de l'étape, retiré à la fin : l'étape « Nom dans la barre des tâches » regarde la copie
+                # telle qu'elle était au lancement)
+                $fauxExe = -not (Test-Path -LiteralPath $exe)
+                if ($fauxExe) { [IO.File]::WriteAllBytes($exe, [byte[]](77, 90)) }
                 Assert-Test (-not (Test-DesktopShortcut)) 'raccourci vu avant sa création'
                 Invoke-CreateShortcut
                 Assert-Test (Test-DesktopShortcut) "raccourci absent ou mauvaise cible : $(Get-ShortcutTarget (Get-DesktopShortcutPath))"
@@ -724,6 +737,7 @@ $script:T.Run.Add_Tick({
                 $auto = Test-AutoStart
                 Assert-Test ($ui.ChkAutoStart.IsChecked -eq $auto) 'interrupteur du démarrage différent de la tâche planifiée'
                 $script:DesktopDir = $null
+                if ($fauxExe) { Remove-Item -LiteralPath $exe -Force -ErrorAction SilentlyContinue }
                 "raccourci créé vers $(Split-Path $exe -Leaf), démarrage automatique $(if ($auto) { 'activé' } else { 'désactivé' }) sur ce PC"
             }
             Test-Step 'Identité Nevermind (nom)' {
@@ -1134,11 +1148,16 @@ $script:T.Run.Add_Tick({
                 Assert-Test ((Get-MsService 'arc.msn.com').Label -eq 'Pubs et suggestions de Windows') 'serveur de pubs non reconnu'
                 $dtPid = (Get-CimInstance Win32_Service -Filter "Name='DiagTrack'").ProcessId
                 if ($dtPid) { Assert-Test (@(Get-SvcNames $dtPid | Where-Object { $_.Name -eq 'DiagTrack' }).Count -eq 1) 'service DiagTrack non retrouvé dans son svchost' }
-                # Couper puis annuler un réglage : il revient exactement comme avant
-                $k = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy'
+                # Couper puis annuler un réglage : il revient exactement comme avant (le vrai code du bouton, mais sur une
+                # copie du réglage dans la clé du test : celui de Windows n'est jamais touché)
+                $vraie = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy'
+                $k = "$($script:T.Reg)\Privacy"
+                $off = [string](@($items | Where-Object { $_.Id -eq 'tailored' })[0].Off)
+                Assert-Test ($off.Contains($vraie)) "réglage « tailored » : clé inattendue ($off)"
+                $kv = Open-RegKey $k $true; try { $kv.SetValue('TailoredExperiencesWithDiagnosticDataEnabled', 1, 'DWord') } finally { $kv.Close() }
                 $before = Get-RegState $k 'TailoredExperiencesWithDiagnosticDataEnabled'
                 $script:RunLog = New-Object System.Collections.ArrayList
-                & (@($items | Where-Object { $_.Id -eq 'tailored' })[0].Off)
+                & ([scriptblock]::Create($off.Replace($vraie, $k)))
                 $log = $script:RunLog; $script:RunLog = $null
                 Assert-Test ((Get-RegNum $k 'TailoredExperiencesWithDiagnosticDataEnabled') -eq 0) 'réglage non coupé'
                 $errs = Undo-RunLog $log
@@ -1377,8 +1396,8 @@ $script:T.Run.Add_Tick({
                 'aucun scan avant le clic'
             }
             Test-Step 'Historique et annulation' {
-                # Réglage d'essai sans effet, dans une clé créée pour l'occasion
-                $key = 'HKCU:\Software\OptiGameTest'
+                # Réglage d'essai sans effet, dans la clé du test
+                $key = "$($script:T.Reg)\Essai"
                 $script:RunLog = New-Object System.Collections.ArrayList
                 try { Set-Reg $key 'Essai' 1 } finally { $log = $script:RunLog; $script:RunLog = $null }
                 $id = Add-History 'Réglage d''essai' @() $log
@@ -1394,6 +1413,68 @@ $script:T.Run.Add_Tick({
                 Show-Page 7; Wait-TestMs 300
                 Assert-Test ($ui.HistoryPanel.Children.Count -ge 1) 'historique vide à l''écran'
                 'écrit, relu et annulé'
+            }
+            Test-Step 'Écran caché : rien refait, WebView2 laissée en veille' {
+                # Une minute d'écran simulée : 300 tours de la minuterie de l'écran (0,2 s chacun), à l'écran puis caché depuis
+                # plus d'une minute (en veille). Avant : caché, l'écran était refait toutes les 4 s et WebView2 réveillée à chaque envoi.
+                Show-Page $HubIndex; Wait-TestMs 300
+                Assert-Test ($ui.EcranKit.Visibility -eq 'Visible' -and $script:Vue.Controle) 'écran pas affiché'
+                $script:T.Refaits = 0
+                $script:T.VraiGetEcran = ${function:Get-EcranNevermind}
+                Set-Item function:script:Get-EcranNevermind { $script:T.Refaits++; & $script:T.VraiGetEcran @args }
+                $v = $script:Vue.Controle
+                $script:VueVeille.Stop()
+                try {
+                    for ($i = 0; $i -lt 300; $i++) { $script:Kit.Envoye = 'x'; Step-MinuterieKit }
+                    $visible = $script:T.Refaits
+                    # Caché depuis plus d'une minute, en veille, et un écran différent à envoyer (avant, il l'était)
+                    $v.Visibility = 'Hidden'; $script:Vue.CacheeDepuis = (Get-Date).AddSeconds(-61)
+                    if ($v.CoreWebView2) { try { [void]$v.CoreWebView2.TrySuspendAsync() } catch {} }
+                    $script:Vue.EnVeille = $true
+                    $script:T.Refaits = 0
+                    for ($i = 0; $i -lt 300; $i++) { $script:Kit.Envoye = 'x'; Step-MinuterieKit }
+                    $cache = $script:T.Refaits
+                    # Un ordre envoyé pendant la veille attend le retour, sans réveiller WebView2
+                    $pret = $script:Vue.Pret
+                    Show-MessageVue 'Message d''essai pendant la veille'
+                    $resteEnVeille = $script:Vue.EnVeille
+                    $enAttente = @($script:Vue.EnAttente).Count
+                    # Retour à l'écran : réveil, ordres en attente envoyés, écran refait au tour suivant
+                    Update-VeilleVue
+                    $script:T.Refaits = 0
+                    Step-MinuterieKit
+                    $retour = $script:T.Refaits
+                } finally {
+                    Set-Item function:script:Get-EcranNevermind $script:T.VraiGetEcran
+                    $script:Vue.CacheeDepuis = $null; $script:Vue.EnVeille = $false; $v.Visibility = 'Visible'
+                    $script:VueVeille.Start()
+                }
+                Assert-Test ($visible -ge 10) "à l'écran : refait $visible fois en 1 minute (attendu 15)"
+                Assert-Test ($cache -eq 0) "caché : refait $cache fois en 1 minute (attendu 0)"
+                Assert-Test $resteEnVeille 'WebView2 réveillée par un envoi pendant la veille'
+                if ($pret) { Assert-Test ($enAttente -eq 1 -and $null -eq $script:Vue.EnAttente) "ordre gardé pendant la veille : $enAttente, envoyé au retour : $($null -eq $script:Vue.EnAttente)" }
+                Assert-Test ($retour -eq 1 -and -not $script:Vue.EnVeille) "au retour : écran refait $retour fois, veille $($script:Vue.EnVeille)"
+                "en 1 minute : refait $visible fois à l'écran, $cache fois caché ; WebView2 laissée en veille, écran refait au retour"
+            }
+            Test-Step 'Filet contre les plantages' {
+                # Trois erreurs que rien n'attrape, sur la fenêtre (comme une minuterie en panne) : l'appli continue, chacune est
+                # notée au journal avec son fichier et sa ligne, et le message simple n'apparaît qu'une fois
+                $script:ErreurNonGereeDite = $false
+                $avant = $script:T.Msgs.Count
+                $lignesAvant = @([IO.File]::ReadAllLines($LogFile, [Text.Encoding]::UTF8)).Count
+                for ($i = 0; $i -lt 3; $i++) { [void]$Window.Dispatcher.BeginInvoke([Action]{ throw 'Erreur d''essai du filet' }) }
+                Wait-TestMs 800
+                $vus = @($script:T.Msgs | Select-Object -Skip $avant | Where-Object { $_ -like '*Un petit problème est survenu*' })
+                foreach ($m in $vus) { $script:T.Msgs.Remove($m) }   # (attendu : pas un avertissement de l'étape)
+                [FiletPlantage]::Noter((New-Object Exception 'Erreur d''essai sur un autre fil'), $false)
+                $journal = @([IO.File]::ReadAllLines($LogFile, [Text.Encoding]::UTF8) | Select-Object -Skip $lignesAvant)
+                $notees = @($journal | Where-Object { $_ -match 'ERREUR non gérée \(\d+\) : .*Erreur d''essai du filet' })
+                Assert-Test ($Window.IsLoaded) 'la fenêtre s''est fermée'
+                Assert-Test ($notees.Count -eq 3) "$($notees.Count) erreur(s) notée(s) au journal sur 3"
+                Assert-Test (($journal -join "`n") -match '\(OptiGame\.ps1, ligne \d+\)') "fichier et ligne absents du journal : $($notees[0])"
+                Assert-Test ($vus.Count -eq 1) "message montré $($vus.Count) fois (attendu : 1)"
+                Assert-Test ([FiletPlantage]::Installe -and @($journal | Where-Object { $_ -like '*ERREUR non gérée (fil *Erreur d''essai sur un autre fil*' }).Count -eq 1) 'erreurs des autres fils pas notées'
+                '3 erreurs notées (fichier, ligne), un seul message, l''appli continue'
             }
             Test-Step 'Signaler un problème' {
                 $zip = Export-ProblemReport $script:T.Dir
@@ -1901,7 +1982,7 @@ public static class ProprietesFenetre
             'attend la fin d''une action en cours (3,5 s au plus), puis ferme sans question'
         }
         $errs = @()
-        if (Test-Path -LiteralPath $LogFile) { $errs = @(Get-Content -LiteralPath $LogFile -Encoding UTF8 | Where-Object { $_ -match 'ERREUR|Échec' }) }
+        if (Test-Path -LiteralPath $LogFile) { $errs = @(Get-Content -LiteralPath $LogFile -Encoding UTF8 | Where-Object { $_ -match 'ERREUR|Échec' -and $_ -notmatch 'Erreur d''+essai' }) }   # (sauf celles provoquées par l'étape « Filet contre les plantages »)
         Add-TestResult 'Journal sans erreur' (-not $errs.Count) ($errs -join ' | ')
     } catch {
         Add-TestResult 'Déroulement du test' $false "$($_.Exception.Message) $($_.InvocationInfo.PositionMessage)"

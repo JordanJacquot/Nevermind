@@ -50,6 +50,18 @@ Edit-File $main "`$Window.Show()`r`n[System.Windows.Threading.Dispatcher]::Run()
 
 Write-Host "Test de Nevermind$(if ($Complet) { ' (complet)' }) en cours, patiente..."
 $env:OPTIGAME_TEST = '1'   # pas d'écran de chargement pendant le test
+# Registre : les réglages d'essai du test vont dans une clé à part (HKCU\Software\MindsetTest-<numéro>), effacée à la fin.
+# La vraie clé des valeurs d'origine de Nevermind est relue avant et après (lecture seule) : elle ne doit pas changer.
+$cleTest = "Software\MindsetTest-$([guid]::NewGuid().ToString('N').Substring(0, 12))"
+$env:OPTIGAME_TEST_REG = $cleTest
+$vraieOrigines = 'Software\Mindset\Nevermind\Origines'
+function Get-ValeursCle([string]$Cle) {
+    $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($Cle, $false)
+    if (-not $k) { return '(absente)' }
+    try { (@($k.GetValueNames() | Sort-Object | ForEach-Object { "$_=$($k.GetValue($_, $null, 'DoNotExpandEnvironmentNames'))" }) -join "`n") } finally { $k.Close() }
+}
+$originesAvant = Get-ValeursCle $vraieOrigines
+function Remove-CleTest { try { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($cleTest, $false) } catch {} }
 $err = Join-Path $test 'erreurs.txt'
 if ($Hote) {
     # Même lanceur que chez les utilisateurs, sans la demande de droits administrateur (test lancé tel quel)
@@ -88,9 +100,14 @@ $resteEnVie = $false
 if (-not $p.HasExited -and (Test-Path -LiteralPath $json)) {
     if (-not $p.WaitForExit(10000)) { $resteEnVie = $true; $p.Kill() }
 }
-if (-not $p.HasExited -and -not $resteEnVie -and -not $p.WaitForExit([math]::Max(0, [int]($fin - (Get-Date)).TotalMilliseconds))) { $p.Kill(); Write-Host "ÉCHEC : l'app ne s'est pas terminée en $Delai s." -ForegroundColor Red; exit 1 }
+if (-not $p.HasExited -and -not $resteEnVie -and -not $p.WaitForExit([math]::Max(0, [int]($fin - (Get-Date)).TotalMilliseconds))) { $p.Kill(); Remove-CleTest; Write-Host "ÉCHEC : l'app ne s'est pas terminée en $Delai s." -ForegroundColor Red; exit 1 }
 
 $ok = $true
+# Registre : la vraie clé des valeurs d'origine n'a pas bougé, et la clé du test est effacée
+$originesApres = Get-ValeursCle $vraieOrigines
+Remove-CleTest
+if ($originesApres -cne $originesAvant) { Write-Host "ÉCHEC  Registre du PC                          la clé HKCU\$vraieOrigines a changé pendant le test" -ForegroundColor Red; $ok = $false }
+else { Write-Host 'OK     Registre du PC                          valeurs d''origine de Nevermind inchangées' -ForegroundColor Green }
 if ($resteEnVie) { Write-Host 'ÉCHEC  Sortie du processus                 toujours en vie 10 s après la fermeture de la fenêtre (arrêté de force)' -ForegroundColor Red; $ok = $false }
 if (-not (Test-Path -LiteralPath $json)) {
     Write-Host 'ÉCHEC : aucun résultat, l''app a planté avant la fin du test.' -ForegroundColor Red

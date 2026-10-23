@@ -42,6 +42,9 @@ function Write-Log([string]$Message) {
 # sauvegarde vide : il est mis de côté, et $script:BackupProbleme le dit (« Tout restaurer », désinstallation).
 $OriginesMachine = 'SOFTWARE\Mindset\Nevermind\Aide\Origines'
 $OriginesUtilisateur = 'Software\Mindset\Nevermind\Origines'
+# Copie de test : jamais la vraie clé (les réglages d'essai des tests y restaient, et la vraie appli les reprenait).
+# Une clé à part, donnée par outils\tester.ps1 (OPTIGAME_TEST_REG, effacée à la fin du test).
+if ($env:OPTIGAME_TEST) { $OriginesUtilisateur = "$(if ($env:OPTIGAME_TEST_REG -like 'Software\MindsetTest*') { $env:OPTIGAME_TEST_REG } else { 'Software\MindsetTest' })\Origines" }
 function Get-CleRegNormale([string]$Path) {
     $c = ([string]$Path).Trim() -replace '^Registry::', ''
     $c -replace '^(HKEY_LOCAL_MACHINE|HKLM:?)\\', 'HKLM:\' -replace '^(HKEY_USERS|HKU:?)\\', 'HKU:\' -replace '^(HKEY_CURRENT_USER|HKCU:?)\\', 'HKCU:\'

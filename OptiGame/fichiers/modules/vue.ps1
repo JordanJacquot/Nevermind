@@ -200,7 +200,7 @@ function Close-Vue {
     $cap = $script:Vue.Capture
     if ($cap -and -not $cap.Tache.IsCompleted -and ((Get-Date) - $cap.Debut).TotalSeconds -lt 1) { return $false }
     if ($cap) { Save-InstantaneVue }
-    $script:Vue.Controle = $null; $script:Vue.Pret = $false; $script:Vue.CacheeDepuis = $null; $script:Vue.EnVeille = $false
+    $script:Vue.Controle = $null; $script:Vue.Pret = $false; $script:Vue.CacheeDepuis = $null; $script:Vue.EnVeille = $false; $script:Vue.EnAttente = $null; $script:Vue.EtatEnAttente = $false
     try { $script:VueVeille.Stop() } catch {}
     try { $v.Parent.Children.Remove($v) } catch {}
     if ($script:Vue.Image) { try { $script:Vue.Image.Parent.Children.Remove($script:Vue.Image) } catch {}; $script:Vue.Image = $null }
@@ -240,6 +240,10 @@ function Update-VeilleVue {
         $v.Visibility = 'Visible'
         [void]$v.Focus()
         Write-Log 'Écran : de nouveau à l''écran'
+        # Ce qui a attendu pendant la veille (voir Send-OrdreVue) : l'écran d'abord, puis les autres ordres
+        $attente = @($script:Vue.EnAttente); $script:Vue.EnAttente = $null
+        if ($script:Vue.EtatEnAttente) { $script:Vue.EtatEnAttente = $false; if ($script:Vue.Etat) { Send-OrdreVue $script:Vue.Etat } }
+        foreach ($o in $attente) { if ($null -ne $o) { Send-OrdreVue $o } }
         return
     }
     if (-not $script:Vue.CacheeDepuis) {
@@ -256,10 +260,21 @@ function Update-VeilleVue {
 # ---------------------------------------------------------------------------
 # Parler à l'écran
 # ---------------------------------------------------------------------------
+# En veille (écran caché depuis une minute) : WebView2 n'est pas réveillée pour un envoi (elle se rendormait 0,4 s après, et
+# recommençait à chaque envoi, même en pleine partie). L'ordre attend le retour à l'écran (Update-VeilleVue) : l'écran
+# complet (Send-Vue) est gardé dans $script:Vue.Etat, les autres ordres dans une petite file (les 20 derniers).
 function Send-OrdreVue($Objet) {
     $c = $script:Vue.Controle.CoreWebView2
     if (-not $c -or -not $script:Vue.Pret) { return }
-    if ($script:Vue.EnVeille) { try { $c.Resume() } catch {}; $script:Vue.EnVeille = $false }
+    if ($script:Vue.EnVeille) {
+        if ([object]::ReferenceEquals($Objet, $script:Vue.Etat)) { $script:Vue.EtatEnAttente = $true }
+        else {
+            if ($null -eq $script:Vue.EnAttente) { $script:Vue.EnAttente = New-Object System.Collections.ArrayList }
+            [void]$script:Vue.EnAttente.Add($Objet)
+            while ($script:Vue.EnAttente.Count -gt 20) { $script:Vue.EnAttente.RemoveAt(0) }
+        }
+        return
+    }
     # (« $(if (...) { ... }) » sans « else » qui ne donne rien devient {} en JSON avec PowerShell 5.1 : remis à null)
     try { $c.PostWebMessageAsJson((($Objet | ConvertTo-Json -Depth 16 -Compress) -replace '":\{\}', '":null')) } catch { Write-Log "Écran : envoi impossible ($_)" }
 }

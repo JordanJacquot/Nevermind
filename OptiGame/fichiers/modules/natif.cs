@@ -2331,3 +2331,24 @@ public static class VueNatif
         return !IsIconic(racine != IntPtr.Zero ? racine : hwnd);
     }
 }
+
+// Filet contre les plantages (evenements.ps1) : une erreur sur un autre fil que celui de la fenêtre ferme l'appli quoi qu'on
+// fasse ; sa cause complète est au moins notée au journal avant (sinon l'appli disparaît sans laisser de trace).
+public static class FiletPlantage
+{
+    static string journal;
+    public static bool Installe { get { return journal != null; } }
+    public static void Installer(string fichierJournal)
+    {
+        if (journal == null) AppDomain.CurrentDomain.UnhandledException += (s, e) => Noter(e.ExceptionObject as Exception, e.IsTerminating);
+        journal = fichierJournal;
+    }
+    public static void Noter(Exception ex, bool fatale)
+    {
+        try
+        {
+            System.IO.File.AppendAllText(journal, DateTime.Now.ToString("s") + " ERREUR " + (fatale ? "fatale" : "non gérée") + " (fil " + System.Threading.Thread.CurrentThread.ManagedThreadId + ") : " + (ex == null ? "inconnue" : ex.ToString()) + "\r\n", new System.Text.UTF8Encoding(false));
+        }
+        catch { }
+    }
+}

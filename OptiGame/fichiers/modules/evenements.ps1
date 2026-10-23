@@ -291,12 +291,14 @@ $ui.ChkBeta.Add_Click({ Invoke-Safe { Set-BetaChannel ([bool]$ui.ChkBeta.IsCheck
 Initialize-Library
 $ui.BtnShortcut.Add_Click({ Invoke-Safe { Invoke-CreateShortcut } })
 $ui.ChkAutoStart.Add_Click({ Invoke-Safe { Set-AutoStartFromUi ([bool]$ui.ChkAutoStart.IsChecked) } })
+# Filet contre les plantages : une erreur imprévue sur la fenêtre (clic, minuterie) ne la ferme plus, voir Write-ErreurNonGeree.
+# Une erreur sur un autre fil (rare : code natif) ferme l'appli quoi qu'on fasse : sa cause est au moins notée au journal.
 $Window.Dispatcher.Add_UnhandledException({
     param($s, $e)
-    Write-Log "ERREUR non gérée: $($e.Exception.Message)"
     $e.Handled = $true
-    try { Set-Status 'Une erreur est survenue (elle est notée dans le journal).' } catch {}
+    try { Write-ErreurNonGeree $e.Exception } catch {}
 })
+try { [FiletPlantage]::Installer($LogFile) } catch {}
 $ui.Tabs.Add_SelectionChanged({
     param($s, $e)
     if ($e.OriginalSource -ne $ui.Tabs) { return }
