@@ -453,7 +453,7 @@ $ServerLookupWork = {
         # Propriétaire de l'adresse (annuaire public RDAP)
         try {
             $req = [Net.HttpWebRequest]::Create("https://rdap.org/ip/$ip")
-            $req.Timeout = 8000; $req.ReadWriteTimeout = 8000; $req.UserAgent = 'OptiGame'; $req.Accept = 'application/rdap+json, application/json'
+            $req.Timeout = 8000; $req.ReadWriteTimeout = 8000; $req.UserAgent = 'Nevermind'; $req.Accept = 'application/rdap+json, application/json'
             $resp = $req.GetResponse()
             try { $sr = New-Object IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8); $o = $sr.ReadToEnd() | ConvertFrom-Json } finally { $resp.Close() }
             $r.N = [string]$o.name
@@ -724,7 +724,7 @@ function Build-TrafficPage {
     $lk.Margin = New-Thickness 0 12 0 0
     $lkt = New-Object System.Windows.Controls.StackPanel
     [void]$lkt.Children.Add((New-Text 'Identifier les serveurs sans nom' 13 '#FFFFFF' -Semi))
-    [void]$lkt.Children.Add((New-Text 'Cherche à qui appartient chaque adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public des adresses Internet (rdap.org). Lag en ligne s''en sert aussi pour le pays du serveur du jeu (ipinfo.io). Seule l''adresse du serveur est envoyée.' 11.5 '#A6A1BC'))
+    [void]$lkt.Children.Add((New-Text 'Page Trafic et Lag en ligne : cherche à qui appartient chaque adresse inconnue (Valve, Riot, Amazon...) dans l''annuaire public des adresses Internet (rdap.org). Seule l''adresse du serveur est envoyée. Le pays du serveur du jeu a sa propre option (Paramètres, Réseau et vie privée).' 11.5 '#A6A1BC'))
     Add-ToGrid $lk $lkt 0
     $sw = New-Object System.Windows.Controls.CheckBox
     $sw.Style = $Window.FindResource('Switch')

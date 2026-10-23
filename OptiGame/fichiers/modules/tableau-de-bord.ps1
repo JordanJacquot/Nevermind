@@ -316,7 +316,7 @@ function Open-Sheet($Items) {
         [void]$body.Children.Add($s)
         foreach ($f in $auto) { Add-SheetSection "$($f.Titre)   (+$($f.Gain) pts)" $f.Fix.What -Bullets }
         foreach ($f in $auto) { Add-SheetDetails "Détails techniques : $($f.Titre)" (Get-DetailsAvant $f.Fix.Changes) }
-        $safe = 'Un point de restauration Windows est créé avant. Tu peux tout annuler depuis la page Sauvegarde (dans Protection).'
+        $safe = 'Un point de restauration Windows est créé avant. Tu peux annuler ces corrections depuis la page Sauvegarde (dans Protection).'
         if ($auto | Where-Object { $_.Fix.Reboot }) { $safe += ' Certains réglages demandent un redémarrage.' }
         Add-SheetInfo $safe $Colors.ok
         $ui.SheetRun.Visibility = 'Visible'

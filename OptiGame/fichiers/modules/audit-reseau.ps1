@@ -107,7 +107,7 @@ $NetAuditWork = {
             } catch {}
         }
         try {
-            $fake = "optigame-$([guid]::NewGuid().ToString('N').Substring(0, 12)).com"
+            $fake = "nevermind-$([guid]::NewGuid().ToString('N').Substring(0, 12)).com"
             $got = @([Net.Dns]::GetHostAddresses($fake) | ForEach-Object { $_.IPAddressToString })
             if ($got.Count) { $dns.NxHijack = $got -join ', ' }
         } catch {}

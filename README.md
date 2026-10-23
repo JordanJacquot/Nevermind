@@ -2,7 +2,7 @@
 
 Analyse et optimisation gaming pour Windows 10 et 11.
 
-Nevermind vérifie la santé de ton PC (processeur, carte graphique, mémoire, disques, écrans, stabilité), lui donne un score sur 100 et t'indique ce qui freine tes jeux. Quand c'est possible, il corrige lui même en un clic, et tout peut être annulé. Il surveille aussi ton réseau et tout ce qui sort de ton PC.
+Nevermind vérifie la santé de ton PC (processeur, carte graphique, mémoire, disques, écrans, stabilité), lui donne un score sur 100 et t'indique ce qui freine tes jeux. Quand c'est possible, il corrige lui même en un clic, et tout est annulable, sauf quatre protections du PC qui restent en place (voir Engagements). Il surveille aussi ton réseau et tout ce qui sort de ton PC.
 
 ## Télécharger
 
@@ -12,7 +12,7 @@ Nevermind s'installe avec **Mindset**, le portail de la suite : [télécharger M
 2. Ouvre Nevermind depuis Mindset ou depuis son raccourci. Windows ne demande aucune autorisation : Nevermind tourne sans les droits administrateur, et ce qui en a besoin (réglages de Windows, compteurs du trafic, mesure des FPS) passe par **Nevermind Aide**, installée avec lui par Mindset, qui n'accepte qu'une liste fermée d'actions.
 3. Tu avais déjà Nevermind ? Mindset reprend ta copie avec tes réglages, ta sauvegarde et tes données : rien n'est perdu.
 
-Mindset installe les mises à jour (chaque version est signée et vérifiée avant d'être installée) et crée le raccourci sur le bureau. Une copie de Nevermind qui n'est pas gérée par Mindset ne s'ouvre plus : elle propose d'installer Mindset (« Désinstaller Nevermind.exe » marche toujours, pour remettre les réglages de Windows comme avant).
+Mindset installe les mises à jour (chaque version est signée et vérifiée avant d'être installée) et crée le raccourci sur le bureau. Une copie de Nevermind qui n'est pas gérée par Mindset ne s'ouvre plus : elle propose d'installer Mindset (« Désinstaller Nevermind.exe » marche toujours, pour remettre les réglages de Windows comme avant, sauf quatre protections du PC qui restent en place).
 
 Dans **Paramètres > Général**, Nevermind peut se lancer à chaque démarrage du PC (réduit près de l'horloge, sans demande d'autorisation de Windows). Relancer Nevermind alors qu'il est déjà ouvert (même caché près de l'horloge) ramène simplement sa fenêtre.
 
@@ -34,12 +34,12 @@ L'accueil : un bonjour, les notes Optimisation et Protection, la carte « À fai
   - réglages de Windows à l'effet reconnu (plan d'alimentation, mode jeu, Game Bar, planification GPU, accélération de la souris...) ;
   - **Mes parties** : FPS mesurés pendant tes parties (via PresentMon d'Intel), comparaison avant / après, et diagnostic quand une partie rame (carte graphique ou processeur à fond, surchauffe, mémoire, disque, programmes en arrière plan...) avec corrections guidées ;
   - **Overlay** : compteur de FPS par dessus le jeu, style complet ou discret, dans le coin de l'écran choisi, avec un aperçu ;
-  - **Lag en ligne** : pendant tes parties ou en test de 30 secondes, mesure chaque étape du chemin (PC vers box, box vers fournisseur, Internet, serveur du jeu) et explique d'où vient le lag (Wi-Fi, téléchargement en arrière plan, box, serveur loin, VPN) ;
+  - **Lag en ligne** : pendant tes parties ou en test de 30 secondes, mesure chaque étape du chemin (PC vers box, box vers fournisseur, Internet, serveur du jeu) et explique d'où vient le lag (Wi-Fi, téléchargement en arrière plan, box, serveur loin, VPN). Si tu actives l'option « Pays du serveur dans Lag en ligne », le pays du serveur du jeu est demandé à ipinfo.io (seule l'adresse du serveur est envoyée, option coupée au départ) ;
   - **Mode jeu** (ferme des applis pendant que tu joues) et **profils par jeu** (priorité haute, carte graphique puissante).
   - **Jeux reconnus** : Steam, Epic, Ubisoft Connect, EA app, GOG Galaxy, Battle.net, Riot, Rockstar, Amazon Games, Xbox / Game Pass, plus « Ajouter un jeu » pour tout le reste.
 - **Tests des composants** : vitesse et santé de chaque disque, processeur (puissance, stabilité), mémoire, capteurs de la carte graphique, débit Internet, lag en charge (bufferbloat), pixels morts.
 - **Sécurité** : niveau de protection, analyses Microsoft Defender, recherche de fichiers déguisés, programmes cachés, tâches planifiées suspectes, exclusions d'antivirus, hosts et proxy.
-- **Démarrage**, **Connexion** (ping, gigue, DNS), **Nettoyage** (liste des fichiers avant de nettoyer, journal fichier par fichier), **Sauvegarde** (tout annuler, historique, point de restauration, rapport HTML).
+- **Démarrage**, **Connexion** (ping, gigue, DNS), **Nettoyage** (liste des fichiers avant de nettoyer, journal fichier par fichier), **Sauvegarde** (« Tout restaurer », historique, point de restauration, rapport HTML).
 - **PC portables** : mode « Meilleures performances », jeux forcés sur la carte graphique dédiée, santé de la batterie.
 
 ### Jeux
@@ -77,7 +77,7 @@ Les compteurs d'octets et le repérage des serveurs en UDP passent par Nevermind
 
 - Aucune modification n'est faite sans clic de l'utilisateur, et chaque réglage modifié est sauvegardé avant d'être changé.
 - Tout est annulable, un par un depuis l'historique ou en une fois (« Tout restaurer »), sauf quatre changements qui protègent le PC et qu'on fait seulement si tu le demandes : désactiver SMBv1, passer des Wi-Fi ouverts en connexion manuelle, retirer des exclusions de l'antivirus, réactiver le pare-feu. La confirmation le dit avant, l'historique les montre comme « Définitif » avec la façon de revenir en arrière à la main, et la désinstallation les liste.
-- Aucune donnée personnelle n'est envoyée. Chaque envoi sur Internet se coupe dans Paramètres (vérification du pilote NVIDIA, mesure du lag, nouveautés après une mise à jour : activés au départ ; annuaire et pays des serveurs, jaquettes : coupés au départ), ou ne part que sur un clic (tests de ping et de débit, scan et audit du réseau). La liste complète : [Code signing policy](CODE_SIGNING.md#privacy-policy).
+- Aucune donnée personnelle n'est envoyée. Chaque envoi sur Internet se coupe dans Paramètres (vérification du pilote NVIDIA sur geforce.com, mesure du lag, nouveautés après une mise à jour sur GitHub : activés au départ ; annuaire des serveurs sur rdap.org, pays du serveur du jeu sur ipinfo.io, jaquettes sur la boutique Steam et Wikipédia : coupés au départ), ou ne part que sur un clic (tests de ping et de débit, scan et audit du réseau). La liste complète : [Code signing policy](CODE_SIGNING.md#privacy-policy).
 - Le code est lisible dans `OptiGame/fichiers/modules`.
 
 ## Développement

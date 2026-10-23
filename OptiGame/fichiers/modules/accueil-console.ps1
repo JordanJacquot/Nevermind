@@ -427,9 +427,9 @@ function Initialize-AccueilConsole {
             'Fais glisser la rangée à la souris, ou utilise les flèches du clavier : un clic sur la tuile du milieu (ou Entrée) l''ouvre, Échap revient.',
             'En haut, le logo ramène à l''accueil ; les onglets mènent aux mêmes pages, et les petites icônes à droite : la loupe pour rechercher un réglage (ou Ctrl + K), Paramètres et Aide.',
             'Un souci ? « Signaler un problème » est dans l''Aide.') },
-        @{ Title = 'Tout est annulable'; Lines = @(
+        @{ Title = 'Tu peux revenir en arrière'; Lines = @(
             'Chaque changement est sauvegardé avant d''être fait.',
-            'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde (dans Protection) garde l''historique : tu peux annuler n''importe quel changement.',
+            'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde (dans Protection) garde l''historique : tu peux annuler chaque changement, sauf quatre protections du PC qui restent en place (marquées « Définitif »).',
             'Dans Ton PC, choisis un point à régler, lis la fiche, puis « Exécuter » pour que Nevermind le corrige.') }
     )
     Register-ActionsNevermind

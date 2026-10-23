@@ -185,8 +185,8 @@ function Get-PagesPerf {
             ) }
         onglets = @(
             @{ id = 'reglages'; nom = 'Réglages Windows'; module = $modReg; blocs = @(
-                @{ type = 'titre'; texte = 'Les réglages'; droite = 'Tout est annulable' }
-            ) + $lignesReg + @(@{ type = 'note'; texte = 'Seulement des réglages à l''effet reconnu : pas de « réglages miracles ». Coche ceux que tu veux, puis « Appliquer ». Tout est annulable depuis la page Sauvegarde.' }) }
+                @{ type = 'titre'; texte = 'Les réglages'; droite = 'Chacun s''annule' }
+            ) + $lignesReg + @(@{ type = 'note'; texte = 'Seulement des réglages à l''effet reconnu : pas de « réglages miracles ». Coche ceux que tu veux, puis « Appliquer ». Chacun s''annule depuis la page Sauvegarde.' }) }
             @{ id = 'mode'; nom = 'Mode jeu'; module = $modMode; blocs = $modeJeu }
             @{ id = 'profils'; nom = 'Profils par jeu'; module = $modProfils; blocs = @($profils) }
         ) }

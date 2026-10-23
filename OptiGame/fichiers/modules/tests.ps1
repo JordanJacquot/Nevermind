@@ -334,7 +334,10 @@ function Test-DiskSpeed($Tile, $Ctx) {
     $vol = Get-VolInfo $Ctx.Letter
     if (-not $vol -or $vol.SizeRemaining -lt 1GB) { Show-Message "Il faut au moins 1 Go de libre sur le lecteur $($Ctx.Letter): pour faire ce test."; return }
     $size = if ($vol.SizeRemaining -gt 40GB) { 8GB } elseif ($vol.SizeRemaining -gt 10GB) { 2GB } else { 256MB }
-    $file = if ("$($Ctx.Letter):" -eq $env:SystemDrive) { Join-Path $env:TEMP 'OptiGame-test-disque.tmp' } else { "$($Ctx.Letter):\OptiGame-test-disque.tmp" }
+    $file = if ("$($Ctx.Letter):" -eq $env:SystemDrive) { Join-Path $env:TEMP 'Nevermind-test-disque.tmp' } else { "$($Ctx.Letter):\Nevermind-test-disque.tmp" }
+    # Fichier de test laissé sous l'ancien nom (avant la 1.3.7) par un test interrompu : retiré
+    $ancien = Join-Path (Split-Path $file -Parent) 'OptiGame-test-disque.tmp'
+    if (Test-Path -LiteralPath $ancien) { try { [IO.File]::Delete($ancien) } catch {} }
     $steps = [ordered]@{ write = 'Écriture'; read = 'Lecture'; random = 'Petits fichiers' }
     $def = @{
         Steps = $steps; Work = $DiskWork; Arg = @{ File = $file; Size = [long]$size }

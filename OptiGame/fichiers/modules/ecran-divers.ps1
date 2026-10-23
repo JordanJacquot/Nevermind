@@ -65,7 +65,7 @@ function Get-PagesDivers {
             if ($q) { @{ type = 'titre'; texte = $(if ($res.Count) { "$($res.Count) résultat$(if ($res.Count -gt 1) { 's' })" } else { 'Rien trouvé' }) } }
         ) + @(for ($k = 0; $k -lt $res.Count; $k++) { @{ type = 'ligne'; id = "res:$k"; icone = 'loupe'; couleur = 'S'; texte = [string]$res[$k].T; note = (Get-OuKit $res[$k]); valeur = 'Y aller' } }) + @(
             if ($q -and -not $res.Count) { @{ type = 'texte'; texte = 'Essaie avec un autre mot.' } }
-            if (-not $q) { @{ type = 'raccourcis'; elements = @(@{ id = 'optimisation'; nom = 'Mode jeu'; icone = 'manette'; couleur = 'P' }, @{ id = 'connexion'; nom = 'Serveur DNS'; icone = 'ondes'; couleur = 'P' }, @{ id = 'overlay'; nom = 'Compteur de FPS'; icone = 'jauge'; couleur = 'vert' }, @{ id = 'sauvegarde'; nom = 'Tout annuler'; icone = 'sauve'; couleur = 'S' }) } }
+            if (-not $q) { @{ type = 'raccourcis'; elements = @(@{ id = 'optimisation'; nom = 'Mode jeu'; icone = 'manette'; couleur = 'P' }, @{ id = 'connexion'; nom = 'Serveur DNS'; icone = 'ondes'; couleur = 'P' }, @{ id = 'overlay'; nom = 'Compteur de FPS'; icone = 'jauge'; couleur = 'vert' }, @{ id = 'sauvegarde'; nom = 'Tout restaurer'; icone = 'sauve'; couleur = 'S' }) } }
         ) }
 
     # ---- Paramètres

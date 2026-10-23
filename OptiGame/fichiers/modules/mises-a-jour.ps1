@@ -10,7 +10,7 @@ $GetReleaseScript = {
     param($a)
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $h = @{ 'User-Agent' = 'OptiGame' }
+        $h = @{ 'User-Agent' = 'Nevermind' }
         if ($a.Beta) {
             $list = Invoke-RestMethod -Uri "https://api.github.com/repos/$($a.Repo)/releases?per_page=10" -Headers $h -TimeoutSec 10
             $r = @($list) | Where-Object { -not $_.draft } | Select-Object -First 1
@@ -30,7 +30,7 @@ $GetNotesScript = {
     param($a)
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        [string](Invoke-RestMethod -Uri "https://api.github.com/repos/$($a.Repo)/releases/tags/v$($a.Version)" -Headers @{ 'User-Agent' = 'OptiGame' } -TimeoutSec 10).body
+        [string](Invoke-RestMethod -Uri "https://api.github.com/repos/$($a.Repo)/releases/tags/v$($a.Version)" -Headers @{ 'User-Agent' = 'Nevermind' } -TimeoutSec 10).body
     } catch { '' }
 }
 
@@ -106,7 +106,7 @@ function Install-Update {
     Set-Busy $true
     $ui.UpdateBanner.Visibility = 'Collapsed'
     Set-Status "Téléchargement de la version $($rel.Version)..."
-    $tmp = Join-Path $env:TEMP "OptiGame-maj-$(Get-Random)"
+    $tmp = Join-Path $env:TEMP "Nevermind-maj-$(Get-Random)"
     $zip = Join-Path $tmp 'OptiGame.zip'
     # Le zip et sa signature d'abord : rien n'est extrait avant que la signature soit vérifiée
     $res = Invoke-Async {
@@ -114,8 +114,8 @@ function Install-Update {
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             New-Item -ItemType Directory -Force -Path $a.Dir | Out-Null
-            Invoke-WebRequest -Uri $a.Url -OutFile $a.Zip -UseBasicParsing -Headers @{ 'User-Agent' = 'OptiGame' } -TimeoutSec 120
-            Invoke-WebRequest -Uri $a.SigUrl -OutFile "$($a.Zip).sig" -UseBasicParsing -Headers @{ 'User-Agent' = 'OptiGame' } -TimeoutSec 30
+            Invoke-WebRequest -Uri $a.Url -OutFile $a.Zip -UseBasicParsing -Headers @{ 'User-Agent' = 'Nevermind' } -TimeoutSec 120
+            Invoke-WebRequest -Uri $a.SigUrl -OutFile "$($a.Zip).sig" -UseBasicParsing -Headers @{ 'User-Agent' = 'Nevermind' } -TimeoutSec 30
             'OK'
         } catch { $_.Exception.Message }
     } @{ Url = $rel.Url; SigUrl = $rel.SigUrl; Dir = $tmp; Zip = $zip } | Select-Object -First 1

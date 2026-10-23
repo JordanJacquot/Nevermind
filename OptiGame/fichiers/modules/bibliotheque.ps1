@@ -174,7 +174,7 @@ $CoverWork = {
     $get = {
         param($url, $file)
         try {
-            Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing -TimeoutSec 15 -UserAgent 'OptiGame (jaquettes de la bibliotheque)' -ErrorAction Stop
+            Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing -TimeoutSec 15 -UserAgent 'Nevermind (jaquettes de la bibliotheque)' -ErrorAction Stop
             if ((Get-Item -LiteralPath $file).Length -gt 3KB) { return $true }
         } catch {}
         if (Test-Path -LiteralPath $file) { [IO.File]::Delete($file) }
@@ -195,7 +195,7 @@ $CoverWork = {
         }
         if (-not $id) {
             try {
-                $j = Invoke-RestMethod -Uri "https://store.steampowered.com/api/storesearch/?term=$([uri]::EscapeDataString($clean))&l=french&cc=FR" -TimeoutSec 10 -UserAgent 'OptiGame' -ErrorAction Stop
+                $j = Invoke-RestMethod -Uri "https://store.steampowered.com/api/storesearch/?term=$([uri]::EscapeDataString($clean))&l=french&cc=FR" -TimeoutSec 10 -UserAgent 'Nevermind' -ErrorAction Stop
                 $b = & $norm $clean
                 foreach ($it in @($j.items)) {
                     $n = & $norm $it.name
@@ -217,7 +217,7 @@ $CoverWork = {
             foreach ($lang in 'en', 'fr') {
                 Start-Sleep -Milliseconds 400   # Wikipédia refuse les demandes trop rapprochées
                 try {
-                    $s = Invoke-RestMethod -Uri "https://$lang.wikipedia.org/api/rest_v1/page/summary/$([uri]::EscapeDataString(($clean -replace ' ', '_')))" -TimeoutSec 10 -UserAgent 'OptiGame (jaquettes de la bibliotheque)' -ErrorAction Stop
+                    $s = Invoke-RestMethod -Uri "https://$lang.wikipedia.org/api/rest_v1/page/summary/$([uri]::EscapeDataString(($clean -replace ' ', '_')))" -TimeoutSec 10 -UserAgent 'Nevermind (jaquettes de la bibliotheque)' -ErrorAction Stop
                     $img = $s.originalimage
                     if ($s.type -ne 'standard' -or -not $img -or "$($s.description) $($s.extract)" -notmatch '(?i)jeu|game') { continue }
                     # L'adresse se termine par « ?utm_source=... » : l'extension est avant
@@ -387,7 +387,7 @@ function Start-LibraryGame($Game) {
     Write-Log "Bibliothèque: lancement de $($Game.Name) ($($how.Path))"
     if ($how.Kind -eq 'exe') {
         # Raccourci temporaire : le jeu démarre dans son dossier, comme depuis son icône
-        $lnk = Join-Path $env:TEMP "OptiGame-jeu-$([IO.Path]::GetFileNameWithoutExtension($how.Path)).lnk"
+        $lnk = Join-Path $env:TEMP "Nevermind-jeu-$([IO.Path]::GetFileNameWithoutExtension($how.Path)).lnk"
         $sh = New-Object -ComObject WScript.Shell
         try {
             $sc = $sh.CreateShortcut($lnk)
@@ -985,7 +985,7 @@ function Invoke-GameOptimize($Game) {
     $items = @(Get-GameOptimizations $Game | Where-Object { -not $_.Ok -and ($_.Switch -or $_.Fix) -and -not $_.Optional })
     if (-not $items.Count) { Set-Status "$($Game.Name) est déjà optimisé."; return }
     $details = @(Get-DetailsAvant @(foreach ($it in $items) { Get-ChangementsOptimisationJeu $Game $it }))
-    if (-not (Confirm-Action "Optimiser $($Game.Name) ?`n`n$(($items | ForEach-Object { "•  $($_.Title)" }) -join "`n")`n`n« Détails techniques » montre chaque réglage, sa valeur maintenant et après. Tout est annulable depuis la page Sauvegarde." $details)) { return }
+    if (-not (Confirm-Action "Optimiser $($Game.Name) ?`n`n$(($items | ForEach-Object { "•  $($_.Title)" }) -join "`n")`n`n« Détails techniques » montre chaque réglage, sa valeur maintenant et après. Chacun de ces réglages s'annule depuis la page Sauvegarde." $details)) { return }
     $done = @()
     foreach ($it in $items) {
         switch ($it.Id) {

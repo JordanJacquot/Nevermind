@@ -452,7 +452,7 @@
                 <StackPanel Margin="0,0,8,0">
                   <StackPanel x:Name="GamingPanel"/>
                   <TextBlock Style="{StaticResource Sub}" FontSize="11.5" Margin="0,8,0,0" Foreground="#655E7E"
-                             Text="Seulement des réglages à l'effet reconnu : pas de « tweaks miracles ». Tout est annulable (page Sauvegarde)."/>
+                             Text="Seulement des réglages à l'effet reconnu : pas de « tweaks miracles ». Chacun s'annule (page Sauvegarde)."/>
                 </StackPanel>
               </ScrollViewer>
             </Grid>
@@ -643,7 +643,7 @@
 
             <Border Style="{StaticResource Card}" Margin="0,18,0,10">
               <DockPanel>
-                <Button x:Name="BtnUndo" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Tout annuler" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <Button x:Name="BtnUndo" DockPanel.Dock="Right" Style="{StaticResource BtnPrimary}" Content="Tout restaurer" VerticalAlignment="Center" Margin="16,0,0,0"/>
                 <StackPanel>
                   <TextBlock Style="{StaticResource H2}" Text="Annuler les changements de Nevermind"/>
                   <TextBlock x:Name="BackupSummary" Style="{StaticResource Sub}"/>

@@ -43,7 +43,7 @@ $Window.Add_StateChanged({
 # Mindset quitté : il demande la fermeture (quitter.demande) et attend 6 s. Nevermind quitte comme par « Quitter »
 # près de l'horloge (overlay arrêté, minuteries, icône retirée), sans la question de la croix.
 # Une action en cours (optimisation, nettoyage...) a 3,5 s pour finir ; au delà, on ferme quand même : la sauvegarde
-# est écrite avant chaque réglage modifié, elle reste juste (« Tout annuler » remet tout comme avant).
+# est écrite avant chaque réglage modifié, elle reste juste (« Tout restaurer » remet tout comme avant, sauf les changements définitifs qui protègent le PC).
 function Invoke-RequestedQuit {
     if ($script:AllowClose) { return }
     $busy = [bool]($script:Starting -or $script:WaitFrames.Count -or $Window.Cursor)

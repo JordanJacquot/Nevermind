@@ -61,7 +61,7 @@ $SearchEntries = @(
     @{ T = 'Niveau de protection'; P = 6; A = 'Points à vérifier'; K = 'protection securite score pare feu' },
     @{ T = 'Approuver un point à vérifier (c''est moi)'; P = 6; A = 'Points à vérifier'; K = 'approuver ok confiance faux positif ignorer autoriser tache planifiee suspecte' },
     # Sauvegarde
-    @{ T = 'Tout annuler'; P = 7; A = 'Annuler les changements de Nevermind'; K = 'annuler restaurer revenir arriere defaire' },
+    @{ T = 'Tout restaurer'; P = 7; A = 'Annuler les changements de Nevermind'; K = 'tout annuler restaurer revenir arriere defaire' },
     @{ T = 'Historique des changements'; P = 7; A = 'Historique des changements'; K = 'historique annuler changement' },
     @{ T = 'Point de restauration Windows'; P = 7; A = 'Point de restauration Windows'; K = 'restauration systeme sauvegarde' },
     @{ T = 'Rapport du PC'; P = 7; A = 'Rapport de ton PC'; K = 'rapport export html partager configuration' },
@@ -76,7 +76,7 @@ $SearchEntries = @(
     @{ T = 'Prévenir si un nouvel appareil se connecte'; P = 'reseau'; A = 'Appareils connectés'; K = 'alerte nouvel appareil intrus surveillance notification' },
     # Trafic
     @{ T = 'Ce qui sort de ton PC'; P = 'trafic'; A = 'Ce qui sort de ton PC'; K = 'trafic internet donnees envoyees programmes connexions espion' },
-    @{ T = 'Identifier les serveurs sans nom'; P = 'trafic'; A = 'Identifier les serveurs sans nom'; K = 'rdap annuaire serveur ip proprietaire ipinfo' },
+    @{ T = 'Identifier les serveurs sans nom'; P = 'trafic'; A = 'Identifier les serveurs sans nom'; K = 'rdap annuaire serveur ip proprietaire' },
     @{ T = 'Pays du serveur du jeu (Lag en ligne)'; P = 'parametres'; Tab = 'reseau'; A = 'Pays du serveur dans Lag en ligne'; K = 'pays localisation serveur jeu lag ping ou se trouve geolocalisation ipinfo' },
     @{ T = 'Vérifier le pilote NVIDIA au lancement'; P = 'parametres'; Tab = 'reseau'; A = 'Vérifier le pilote NVIDIA au lancement'; K = 'pilote nvidia geforce dernier verification internet vie privee' },
     @{ T = 'Thème (couleurs de Nevermind)'; P = 'parametres'; Tab = 'theme'; K = 'theme couleur couleurs apparence design da sombre terminal arcade rubis crepuscule neon skin' },

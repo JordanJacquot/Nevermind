@@ -720,7 +720,7 @@ function Show-LagSession([string]$Id) {
         $c.Margin = New-Thickness 0 6 0 0
         [void]$body.Children.Add($c)
     }
-    $n = New-Text "Pings envoyés deux fois par seconde vers chaque étape. « Variation » : de combien le ping change d'un envoi à l'autre (au-dessus de 10 ms, ça se sent en jeu). « Pics » : 95 % des pings étaient en dessous. $(if (-not $s.Etw) { 'Windows a refusé la trace réseau pendant cette mesure : seul le serveur de connexion du jeu (TCP) était visible.' }) Le pays d'un serveur vient de l'annuaire public ipinfo.io (seule l'adresse du serveur est envoyée)." 11.5 '#655E7E'
+    $n = New-Text "Pings envoyés deux fois par seconde vers chaque étape. « Variation » : de combien le ping change d'un envoi à l'autre (au-dessus de 10 ms, ça se sent en jeu). « Pics » : 95 % des pings étaient en dessous. $(if (-not $s.Etw) { 'Windows a refusé la trace réseau pendant cette mesure : seul le serveur de connexion du jeu (TCP) était visible.' }) Si l'option « Pays du serveur dans Lag en ligne » est activée (Paramètres, Réseau et vie privée), le pays du serveur vient de l'annuaire public ipinfo.io (seule l'adresse du serveur est envoyée)." 11.5 '#655E7E'
     $n.Margin = New-Thickness 0 12 0 0
     [void]$body.Children.Add($n)
 }
