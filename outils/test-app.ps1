@@ -834,6 +834,60 @@ $script:T.Run.Add_Tick({
                     foreach ($n in 'HubCards', 'HubTodo', 'HubGaugeOpt') { Assert-Test ($null -eq $Window.FindName($n)) "$n (accueil Ordinateur) encore dans la fenêtre" }
                     "$($KitPagesIndex.Count) pages, 6 onglets des Paramètres, 8 liens de fiche, $nRech résultats de recherche : toujours l'écran de la console (au-dessus, fond plein)"
                 }
+                Test-Step 'Console : chiffres dans les anneaux' {
+                    # Le nombre au centre d'un anneau (et son petit texte) reste dans le rond, avec une marge : mesuré
+                    # dans l'écran (rectangles des lettres comparés au cercle intérieur de l'anneau), avec les vraies
+                    # valeurs puis les pires (« 1000 /1000 », « 1000 Mo », « 100,0 % »...) posées en direct
+                    $js = {
+                        param($Pire)
+                        "(function () {
+                          if ($(if ($Pire) { 'true' } else { 'false' })) {
+                            const m = {}, t = ['1000 Mo', '100,0 %', '144 Hz', '1 234 Mo'];
+                            document.querySelectorAll('#ecran .mesure[data-id]').forEach((el, i) => { m[el.dataset.id] = { valeur: 100, texte: t[i % 4] }; });
+                            kit.mesures(m);
+                            const b = document.querySelector('#ecran .grand-anneau .centre b'), s = document.querySelector('#ecran .grand-anneau .centre small');
+                            if (b) b.textContent = '1000'; if (s) s.textContent = '/1000';
+                            return '[]';
+                          }
+                          const res = [];
+                          document.querySelectorAll('#ecran .anneau').forEach((a) => {
+                            const c = a.querySelector('.centre'); if (!c || a.offsetParent === null) return;
+                            const ra = a.getBoundingClientRect(), cx = ra.left + ra.width / 2, cy = ra.top + ra.height / 2, ep = +(a.dataset.ep || 0.14);
+                            const r = document.body.classList.contains('avec-3d') ? (ra.width / 2) * (1 - ep) / 1.2594 : (ra.width / 2) * 0.79;
+                            let pire = 0;
+                            c.querySelectorAll('b, small').forEach((x) => { const g = document.createRange(); g.selectNodeContents(x);
+                              for (const k of g.getClientRects()) for (const [px, py] of [[k.left, k.top], [k.right, k.top], [k.left, k.bottom], [k.right, k.bottom]]) pire = Math.max(pire, Math.hypot(px - cx, py - cy) / r); });
+                            res.push({ texte: c.textContent, rapport: Math.round(pire * 1000) / 1000 });
+                          });
+                          return JSON.stringify(res);
+                        })()"
+                    }
+                    $lancer = {
+                        param($Code)
+                        $t = $script:Vue.Controle.ExecuteScriptAsync($Code); $fin = (Get-Date).AddSeconds(5)
+                        while (-not $t.IsCompleted -and (Get-Date) -lt $fin) { Wait-TestMs 50 }
+                        Assert-Test ($t.IsCompleted -and -not $t.IsFaulted) 'mesure dans l''écran sans réponse'
+                        $r = $t.Result | ConvertFrom-Json | ConvertFrom-Json; $r   # (le JSON rendu par l'écran est une chaîne JSON)
+                    }
+                    $fin = (Get-Date).AddSeconds(8); while ((-not $script:Vue.Pret -or -not $script:Vue.Controle) -and (Get-Date) -lt $fin) { Wait-TestMs 100 }
+                    Assert-Test ($script:Vue.Pret) 'écran de la console pas prêt'
+                    $vus = @(); $trop = @()
+                    try {
+                        foreach ($id in 'pc', 'protection') {
+                            Open-EcranVue $id
+                            $fin = (Get-Date).AddSeconds(5); while ($script:Vue.Ecran -ne $id -and (Get-Date) -lt $fin) { Wait-TestMs 100 }
+                            Assert-Test ($script:Vue.Ecran -eq $id) "écran « $($script:Vue.Ecran) » au lieu de « $id »"
+                            foreach ($pire in $false, $true) {
+                                if ($pire) { [void](& $lancer (& $js $true)) }
+                                Wait-TestMs 400
+                                foreach ($m in (& $lancer (& $js $false))) { $vus += "$id $($m.texte) $($m.rapport)"; if ($m.rapport -gt 0.9) { $trop += "$id « $($m.texte) » ($($m.rapport))" } }
+                            }
+                        }
+                    } finally { Open-EcranVue 'accueil'; Wait-TestMs 300 }
+                    Assert-Test ($vus.Count -ge 2) "pas d'anneau mesuré ($($vus.Count))"
+                    Assert-Test (-not $trop.Count) "texte trop près du bord de l'anneau ou dehors (1 = sur le cercle) : $($trop -join ', ')"
+                    "$($vus.Count) textes d'anneaux mesurés (vraies valeurs et pires cas), tous dans le rond"
+                }
                 Test-Step 'Console : détail d''une partie depuis Jeux' {
                     # Le chemin de la bulle « Partie terminée » (Show-PerfPage) mène à l'écran Jeux ; un clic sur une partie
                     # ouvre son détail dans l'écran (panneau). Avant : chaque nouvel état renvoyait la page de Show-Page, et

@@ -378,6 +378,38 @@
   const caseC = (id, oui, valeur) => `<button type="button" class="case f${oui ? ' oui' : ''}" data-k="x:${esc(id)}:${esc(valeur ?? '')}" data-case="${esc(id)}"${valeur != null ? ` data-valeur="${esc(valeur)}"` : ''} role="checkbox" aria-checked="${!!oui}">${ico('coche', 3)}</button>`;
   const barre = (v, ton) => `<span class="flux${ton ? ` ${esc(ton)}` : ''}"><i style="width:${borne(+v || 0, 0, 100)}%"></i></span>`;
   const anneau = (v, extra = '', ton, ep) => `<span class="anneau" data-anneau="${borne(+v || 0, 0, 100) / 100}"${ep ? ` data-ep="${ep}"` : ''}${ton === 'attention' || ton === 'urgent' ? ' data-alerte="1"' : ''} style="--p:${borne(+v || 0, 0, 100)}">${extra}</span>`;
+  // Le nombre au centre d'un anneau (et son petit texte) tient toujours dans le rond, avec une marge : s'il est trop
+  // large pour le cercle intérieur (« 100/100 », « 1000 Mo », « 1,2/16 Go »...), il est réduit d'autant, en gardant
+  // son style. Le cercle intérieur : celui de l'anneau 3D de plasma.js (tore de rayon 1, d'épaisseur data-ep, vu par
+  // une caméra de 30° à 4,7 : la toile couvre ±1,2594) ou celui de l'anneau à plat (79 %), le plus petit des deux.
+  // La boîte mesurée est celle des lettres (hauteur de la police comprise), ses coins doivent rester dans le rond.
+  const MARGE_ANNEAU = 0.86;
+  function ajusterAnneaux() {
+    ecran.querySelectorAll('.anneau > .centre').forEach((c) => {
+      const a = c.parentElement, ra = a.getBoundingClientRect(); if (ra.width < 4) return;
+      const ep = +(a.dataset.ep || 0.14), r = (ra.width / 2) * Math.min((1 - ep) / 1.2594, 0.79) * MARGE_ANNEAU;
+      const s0 = c._echelle || 1, rc = c.getBoundingClientRect(), mx = rc.left + rc.width / 2, my = rc.top + rc.height / 2;
+      const ox = mx - (ra.left + ra.width / 2), oy = my - (ra.top + ra.height / 2);
+      const coins = [];
+      c.querySelectorAll('b, small').forEach((t) => {
+        const g = document.createRange(); g.selectNodeContents(t);
+        for (const k of g.getClientRects()) for (const x of [k.left, k.right]) for (const y of [k.top, k.bottom]) coins.push([(x - mx) / s0, (y - my) / s0]);
+      });
+      if (!coins.length) return;
+      const tient = (s) => coins.every(([x, y]) => Math.hypot(ox + x * s, oy + y * s) <= r);
+      let s = 1;
+      if (!tient(1)) { let bas = 0.05, h = 1; for (let i = 0; i < 14; i++) { const m = (bas + h) / 2; if (tient(m)) bas = m; else h = m; } s = bas; }
+      if (Math.abs(s - s0) < 0.004) return;
+      c._echelle = s; c.style.transform = s < 1 ? `scale(${s.toFixed(3)})` : '';
+    });
+  }
+  let ajusterPrevu = false;
+  const ajusterBientot = () => { if (ajusterPrevu) return; ajusterPrevu = true; queueMicrotask(() => { ajusterPrevu = false; ajusterAnneaux(); }); };
+  // (aussitôt après chaque dessin d'écran, chaque mesure en direct, un changement de taille ou de police : avant que
+  // l'image ne soit peinte, sans attendre une image de plus qui peut tarder quand la fenêtre est cachée)
+  new MutationObserver(ajusterBientot).observe(ecran, { childList: true, subtree: true, characterData: true });
+  addEventListener('resize', ajusterBientot);
+  document.fonts?.addEventListener?.('loadingdone', ajusterBientot); document.fonts?.ready?.then(ajusterBientot);
 
   function bloc(b) {
     const note = b.note ? `<span class="n">${esc(b.note)}</span>` : '';
