@@ -77,8 +77,20 @@ function Initialize-Vue($Hote) {
     $cp = New-Object Microsoft.Web.WebView2.Wpf.CoreWebView2CreationProperties
     $dw = Get-VueDossier
     if ($dw.Commun) {
-        # (dossier impossible à créer : refusé tout de suite)
-        try { [void][IO.Directory]::CreateDirectory($dw.Dossier) } catch { $script:VueSansCommun = $true; Write-Log "Écran : dossier WebView2 commun impossible à créer ($($_.Exception.Message)), dossier de Nevermind utilisé"; $dw = Get-VueDossier }
+        # Le dossier commun doit pouvoir s'écrire AVANT d'être donné à WebView2 : sinon le moteur affiche lui-même une boîte
+        # d'erreur (« ne peut pas lire et écrire dans son répertoire de données ») avant que le filet ne prenne le relais.
+        # Créé s'il manque, puis un petit fichier témoin écrit et effacé dans le dossier et dans son EBWebView s'il existe.
+        $refus = $null
+        try {
+            [void][IO.Directory]::CreateDirectory($dw.Dossier)
+            foreach ($d in @($dw.Dossier, (Join-Path $dw.Dossier 'EBWebView'))) {
+                if (-not [IO.Directory]::Exists($d)) { continue }
+                $t = Join-Path $d "ecriture-$PID.tmp"
+                [IO.File]::WriteAllText($t, '1')
+                [IO.File]::Delete($t)
+            }
+        } catch { $refus = $_.Exception.Message }
+        if ($refus) { $script:VueSansCommun = $true; Write-Log "Écran : dossier WebView2 commun pas utilisable ($refus), dossier de Nevermind utilisé"; $dw = Get-VueDossier }
     }
     $cp.UserDataFolder = $dw.Dossier
     if ($dw.Profil) { $cp.ProfileName = $dw.Profil }
