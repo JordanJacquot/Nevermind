@@ -31,15 +31,18 @@ au fil de la frappe, même avec une faute de frappe. Un clic t'emmène sur la
 bonne page et le réglage s'allume en vert.
 
 Rien à installer : l'application utilise PowerShell, déjà présent dans Windows.
+Dans le Gestionnaire des tâches, Nevermind apparaît sous « Mindset », avec les
+autres applis de la suite (son programme s'appelle Mindset.exe).
 Le dossier « fichiers » contient l'application elle même : ne le supprime pas.
 
 POURQUOI WINDOWS OU L'ANTIVIRUS PEUVENT RÂLER
-Nevermind.exe n'est pas « signé » (un certificat payant chez Microsoft), et sa
+Les programmes de Nevermind (Mindset.exe, qui le fait tourner, et Nevermind.exe)
+ne sont pas « signés » (un certificat payant chez Microsoft), et sa
 petite partie NevermindAide.exe modifie les réglages de Windows avec les droits
 administrateur. C'est exactement ce que surveillent les antivirus, donc certains
 peuvent le signaler par prudence, même si le programme est sain. Tout le code
 est lisible dans le dossier « fichiers » (voir SÉCURITÉ plus bas).
-Si ton antivirus bloque Nevermind.exe :
+Si ton antivirus bloque Mindset.exe ou Nevermind.exe :
   - ajoute le dossier Nevermind dans les exclusions de ton antivirus, ou
   - utilise le lanceur de secours : fichiers\Lancer Nevermind (secours).bat
 

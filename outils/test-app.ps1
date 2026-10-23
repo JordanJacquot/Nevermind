@@ -1726,8 +1726,8 @@ $script:T.Run.Add_Tick({
                 $vraiAdmin = $script:EstAdmin; $script:EstAdmin = $false
                 try { Add-AideLecturePc $faux; $sec = @{ Exclusions = @(); Threats = @(); Active = @(); Detections = @() }; Add-AideLectureSecurite $sec } finally { $script:EstAdmin = $vraiAdmin }
                 $ch = Invoke-Aide 'lecture.chemins' @{ Pids = @("$PID") }
-                # (powershell.exe, ou Nevermind.exe quand le test tourne dans le lanceur : tester.ps1 -Hote)
-                Assert-Test ([string]$ch.PSObject.Properties["$PID"].Value -match '\\(powershell|Nevermind)\.exe$') "lecture.chemins : $(ConvertTo-Json $ch -Compress)"
+                # (powershell.exe, ou Mindset.exe quand le test tourne dans le lanceur : tester.ps1 -Hote)
+                Assert-Test ([string]$ch.PSObject.Properties["$PID"].Value -match '\\(powershell|Mindset)\.exe$') "lecture.chemins : $(ConvertTo-Json $ch -Compress)"
                 $msg = ''
                 try { [void](Invoke-Aide 'reg.ecrire' @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Valeur = 0; Type = 'DWord' }) } catch { $msg = $_.Exception.Message }
                 Assert-Test ($msg -match 'garde ce réglage') "refus attendu, reçu : $msg"
@@ -1794,6 +1794,32 @@ $script:T.Run.Add_Tick({
                 foreach ($x in $f, $ShowRequest) { try { [IO.File]::Delete($x) } catch {} }
             }
             'alerte écrite pour Mindset, clic renvoyé et action faite, numéro inconnu refusé'
+        }
+
+        Test-Step 'Dossier WebView2 (commun à la suite si géré par Mindset)' {
+            # Géré par Mindset, données dans <racine de la suite>\Nevermind : dossier commun <racine>\WebView2, profil
+            # « Nevermind ». Sinon, ou après un refus du dossier commun : ecran-webview dans ses données, comme avant.
+            $vraiGere = $Managed; $vraiDonnees = $DataDir; $vraiSans = $script:VueSansCommun
+            try {
+                $script:VueSansCommun = $false
+                $Managed = $true; $DataDir = 'D:\Mindset\Donnees\Nevermind'
+                $d = Get-VueDossier
+                Assert-Test ($d.Commun -and $d.Dossier -eq 'D:\Mindset\Donnees\WebView2' -and $d.Profil -eq 'Nevermind') "géré : $(ConvertTo-Json $d -Compress)"
+                $DataDir = Join-Path $env:LOCALAPPDATA 'Mindset\Nevermind'
+                $d = Get-VueDossier
+                Assert-Test ($d.Commun -and $d.Dossier -eq (Join-Path $env:LOCALAPPDATA 'Mindset\WebView2')) "géré (données locales) : $(ConvertTo-Json $d -Compress)"
+                $DataDir = Join-Path $env:LOCALAPPDATA 'OptiGame'   # (données pas encore déplacées : jamais %LOCALAPPDATA%\WebView2)
+                $d = Get-VueDossier
+                Assert-Test (-not $d.Commun -and $d.Dossier -eq (Join-Path $DataDir 'ecran-webview') -and -not $d.Profil) "ancien dossier : $(ConvertTo-Json $d -Compress)"
+                $Managed = $false; $DataDir = 'D:\Mindset\Donnees\Nevermind'
+                $d = Get-VueDossier
+                Assert-Test (-not $d.Commun -and $d.Dossier -eq 'D:\Mindset\Donnees\Nevermind\ecran-webview') "hors de Mindset : $(ConvertTo-Json $d -Compress)"
+                $Managed = $true; $script:VueSansCommun = $true
+                $d = Get-VueDossier
+                Assert-Test (-not $d.Commun -and $d.Dossier -eq 'D:\Mindset\Donnees\Nevermind\ecran-webview') "après un refus : $(ConvertTo-Json $d -Compress)"
+            } finally { $Managed = $vraiGere; $DataDir = $vraiDonnees; $script:VueSansCommun = $vraiSans }
+            $u = try { [string]$script:Vue.Controle.CreationProperties.UserDataFolder } catch { '' }
+            "géré : dossier commun et profil Nevermind ; sinon ecran-webview (écran de ce test : $u)"
         }
 
         Test-Step 'Fermeture demandée par Mindset' {

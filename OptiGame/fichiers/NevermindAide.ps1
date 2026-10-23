@@ -7,7 +7,8 @@
 
     Elle écoute sur un canal nommé réservé à l'utilisateur (refusé depuis le réseau), une demande par connexion :
     une ligne JSON { a = action, p = paramètres }, une ligne JSON en réponse { ok, r } ou { ok = false, e = message }.
-    Elle ne répond qu'à Nevermind.exe de ce même dossier, et ne fait que ce qui est dans modules\aide-actions.ps1.
+    Elle ne répond qu'au programme qui fait tourner Nevermind, Mindset.exe de ce même dossier, reconnu par son chemin
+    complet (Test-AideClient), et ne fait que ce qui est dans modules\aide-actions.ps1.
     Elle s'arrête toute seule quand Nevermind n'est plus ouvert.
 
     NevermindAide.ps1 -Parent <pid>  (tests) : reste ouverte tant que ce processus vit, au lieu de chercher Nevermind.
@@ -16,7 +17,6 @@ param([int]$Parent)
 $ErrorActionPreference = 'Stop'
 $AppDir = $PSScriptRoot
 $Racine = Split-Path $AppDir -Parent
-$Exe = Join-Path $Racine 'Nevermind.exe'
 $FichierActions = Join-Path $AppDir 'modules\aide-actions.ps1'
 . $FichierActions
 
@@ -215,11 +215,12 @@ $pool = [RunspaceFactory]::CreateRunspacePool(1, 6)
 $pool.Open()
 $enCours = New-Object System.Collections.ArrayList
 
-# Nevermind (la fenêtre) ouvert ? L'Aide reste tant qu'un Nevermind.exe de ce dossier tourne.
+# Nevermind (la fenêtre) ouvert ? L'Aide reste tant que Mindset.exe de ce dossier tourne. Reconnu par son chemin complet :
+# les autres applis de la suite et Mindset lui-même tournent aussi dans un « Mindset.exe ».
 function Test-NevermindOuvert {
     if ($Parent) { return [bool](Get-Process -Id $Parent -ErrorAction SilentlyContinue) }
-    foreach ($p in @(Get-Process -Name 'Nevermind' -ErrorAction SilentlyContinue)) {
-        if ([AideTuyau]::Chemin($p.Id) -eq $Exe) { return $true }
+    foreach ($p in [Diagnostics.Process]::GetProcesses()) {
+        try { if (Test-AideClient ([AideTuyau]::Chemin($p.Id)) $Racine) { return $true } } catch {} finally { $p.Dispose() }
     }
     $false
 }
@@ -257,7 +258,7 @@ try {
         $client = [AideTuyau]::Client($connecte.SafePipeHandle)
         $chemin = if ($client) { [AideTuyau]::Chemin($client) } else { '' }
         # Sans droits administrateur (tests), l'Aide ne peut rien faire de plus que son client : elle accepte tout le monde
-        if ($admin -and $chemin -ne $Exe) {
+        if ($admin -and -not (Test-AideClient $chemin $Racine)) {
             Write-AideLog "Refusé : demande venant de $(if ($chemin) { $chemin } else { "processus $client" })"
             $connecte.Dispose()
             continue

@@ -2,7 +2,7 @@
 # Authenticode gratuite par SignPath Foundation (même modèle que Mindset, issue #4 de Mindset).
 #
 # Déroulé :
-#   1. « construire » : compile Nevermind.exe, « Désinstaller Nevermind.exe » et NevermindAide.exe
+#   1. « construire » : compile Mindset.exe, Nevermind.exe (relais), « Désinstaller Nevermind.exe » et NevermindAide.exe
 #      (outils\construire.ps1) et dépose le dossier OptiGame comme artefact.
 #   2. « signer » : seulement quand la variable SIGNPATH_ACTIVE vaut true (Settings > Secrets and variables >
 #      Actions > Variables). Envoie l'artefact à SignPath, attend l'approbation manuelle de Jordan dans SignPath,
@@ -60,20 +60,21 @@ jobs:
           $ErrorActionPreference = 'Stop'
           .\outils\construire.ps1
 
-      - name: "Vérifier les trois exe"
+      - name: "Vérifier les quatre exe"
         run: |
           $ErrorActionPreference = 'Stop'
-          # Les exe à la racine du dossier : Nevermind.exe, Désinstaller Nevermind.exe, NevermindAide.exe
+          # Les exe à la racine du dossier : Mindset.exe (le programme qui fait tourner Nevermind), Nevermind.exe (relais),
+          # Désinstaller Nevermind.exe, NevermindAide.exe
           # (cherchés par motif : un nom accentué écrit ici pourrait mal passer dans le script de l'étape)
           $exes = @(Get-ChildItem -LiteralPath 'OptiGame' -Filter '*.exe' -File)
-          if ($exes.Count -ne 3) { throw "3 exe attendus dans OptiGame, trouvés : $($exes.Name -join ', ')" }
+          if ($exes.Count -ne 4) { throw "4 exe attendus dans OptiGame, trouvés : $($exes.Name -join ', ')" }
           foreach ($exe in $exes) {
             $n = $exe.Name
             $i = $exe.VersionInfo
             Write-Host "$n : produit $($i.ProductName), version du produit $($i.ProductVersion)"
             if ($i.ProductName -ne 'Nevermind') { throw "Nom de produit inattendu pour $n : $($i.ProductName)" }
             if ($i.ProductVersion -ne '${{ steps.version.outputs.version4 }}') {
-              Write-Host "::warning::La version de $n ($($i.ProductVersion)) n'est pas ${{ steps.version.outputs.version4 }} : lanceur.cs n'a pas été mis à jour par publier.ps1."
+              Write-Host "::warning::La version de $n ($($i.ProductVersion)) n'est pas ${{ steps.version.outputs.version4 }} : construire.ps1 la prend dans OptiGame.ps1."
             }
             $h = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash
             [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "$n (non signé) : SHA-256 ``$h``" + "`n")
@@ -87,7 +88,7 @@ jobs:
           Copy-Item -LiteralPath 'OptiGame' -Destination $dest -Recurse
           Get-ChildItem -LiteralPath $dest -Recurse -File | Measure-Object | ForEach-Object { Write-Host "$($_.Count) fichiers" }
 
-      # L'artefact contient un seul dossier « OptiGame » (les trois exe, LISEZMOI.txt, fichiers\...).
+      # L'artefact contient un seul dossier « OptiGame » (les quatre exe, LISEZMOI.txt, fichiers\...).
       # SignPath vérifie qu'il vient bien de ce workflow (origin verification).
       - name: "Déposer l'artefact non signé"
         id: depot
@@ -140,7 +141,7 @@ jobs:
           if (-not (Test-Path -LiteralPath "$racine\Nevermind.exe")) { throw "Dossier signé inattendu : $racine\Nevermind.exe absent" }
           $problemes = @()
           $exes = @(Get-ChildItem -LiteralPath $racine -Filter '*.exe' -File)
-          if ($exes.Count -ne 3) { throw "3 exe attendus dans $racine, trouvés : $($exes.Name -join ', ')" }
+          if ($exes.Count -ne 4) { throw "4 exe attendus dans $racine, trouvés : $($exes.Name -join ', ')" }
           $nos = $exes + @(Get-ChildItem -LiteralPath $racine -Recurse -File | Where-Object { $_.Extension -in '.ps1', '.psm1', '.psd1' })
           foreach ($f in $nos) {
             $s = Get-AuthenticodeSignature -LiteralPath $f.FullName

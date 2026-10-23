@@ -2,7 +2,9 @@
 # « OptiGame » : les versions déjà installées cherchent ce nom pour se mettre à jour.
 #
 #   OptiGame\
-#     Nevermind.exe                             <- à lancer (icône Nevermind)
+#     Mindset.exe                               <- le programme qui fait tourner Nevermind (icône Nevermind) ; toutes les
+#                                                  applis de la suite tournent dans un « Mindset.exe » de leur dossier
+#     Nevermind.exe                             <- petit relais : lance Mindset.exe de ce dossier (anciens raccourcis)
 #     Désinstaller Nevermind.exe                <- désinstallation propre
 #     NevermindAide.exe                         <- la partie administrateur (lancée par la tâche que crée Mindset)
 #     LISEZMOI.txt
@@ -40,16 +42,26 @@ foreach ($t in $tiers) {
 }
 Copy-Item (Join-Path $icones 'OptiGame.ico') (Join-Path $fich 'OptiGame.ico') -Force
 
+# Version des programmes : celle de Nevermind (OptiGame.ps1), dans un petit fichier compilé avec lanceur.cs
+$ps1 = [IO.File]::ReadAllText((Join-Path $fich 'OptiGame.ps1'), [Text.Encoding]::UTF8)
+if ($ps1 -notmatch "(?m)^\`$AppVersion = '(\d+(\.\d+){1,3})'") { throw 'Numéro de version introuvable dans OptiGame.ps1' }
+$v4 = @($Matches[1].Split('.')); while ($v4.Count -lt 4) { $v4 += '0' }
+$v4 = $v4 -join '.'
+$versionCs = Join-Path ([IO.Path]::GetTempPath()) "nevermind-version-$PID.cs"
+[IO.File]::WriteAllText($versionCs, "[assembly: System.Reflection.AssemblyVersion(`"$v4`")]`r`n[assembly: System.Reflection.AssemblyFileVersion(`"$v4`")]`r`n", (New-Object Text.UTF8Encoding($false)))
+
 function Build-Exe([string]$Out, [string]$Icon, [string]$Define) {
     $opts = @('/nologo', '/target:winexe', '/optimize+', '/platform:anycpu', "/win32icon:$Icon", "/win32manifest:$manif",
               '/reference:System.Windows.Forms.dll', '/reference:System.Web.Extensions.dll', "/reference:$sma", "/out:$Out")
     if ($Define) { $opts += "/define:$Define" }
-    & $csc @opts $source
+    & $csc @opts $source $versionCs
     if ($LASTEXITCODE) { throw "Échec de compilation de $Out" }
 }
-Build-Exe (Join-Path $app 'Nevermind.exe') (Join-Path $icones 'OptiGame.ico') ''
+Build-Exe (Join-Path $app 'Mindset.exe') (Join-Path $icones 'OptiGame.ico') ''
+Build-Exe (Join-Path $app 'Nevermind.exe') (Join-Path $icones 'OptiGame.ico') 'RELAIS'
 Build-Exe (Join-Path $app 'Désinstaller Nevermind.exe') (Join-Path $icones 'OptiGame-desinstaller.ico') 'UNINSTALL'
 Build-Exe (Join-Path $app 'NevermindAide.exe') (Join-Path $icones 'OptiGame.ico') 'AIDE'
+[IO.File]::Delete($versionCs)
 
 foreach ($old in 'OptiGame.exe', 'Désinstaller OptiGame.exe', 'Nexo.exe', 'Désinstaller Nexo.exe') { $p = Join-Path $app $old; if (Test-Path -LiteralPath $p) { [IO.File]::Delete($p) } }
 $zip = Join-Path $racine 'OptiGame.zip'

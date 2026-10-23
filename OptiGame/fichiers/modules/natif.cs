@@ -2171,7 +2171,7 @@ public static class MouseHook
 }
 
 // Identité de Nevermind dans la barre des tâches : sans elle, Windows range la fenêtre avec PowerShell
-// (icône de PowerShell). Identité propre + infos d'épinglage (une épingle relance Nevermind.exe avec son icône).
+// (icône de PowerShell). Identité propre + infos d'épinglage (une épingle relance Mindset.exe de son dossier, avec l'icône de Nevermind).
 public static class AppIdentity
 {
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern int SetCurrentProcessExplicitAppUserModelID(string id);
@@ -2252,7 +2252,7 @@ public static class EmbedInfo
 }
 
 // Échange avec l'Aide (la partie de Nevermind qui tourne en administrateur, NevermindAide.ps1) : une demande JSON par
-// connexion sur le canal réservé à l'utilisateur. Nevermind vérifie d'abord que c'est bien Nevermind.exe de son
+// connexion sur le canal réservé à l'utilisateur. Nevermind vérifie d'abord que c'est bien NevermindAide.exe de son
 // dossier qui répond (ExeAttendu), pour ne jamais envoyer ses demandes à un programme qui aurait pris le nom du canal.
 public static class AideClient
 {

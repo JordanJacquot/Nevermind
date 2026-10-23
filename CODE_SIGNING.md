@@ -9,7 +9,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 ## What is signed
 
-- `Nevermind.exe`, `Désinstaller Nevermind.exe`, `NevermindAide.exe` and the PowerShell scripts (`.ps1`) of
+- `Mindset.exe` (the program that runs Nevermind), `Nevermind.exe` (a small relay that starts it), `Désinstaller Nevermind.exe`, `NevermindAide.exe` and the PowerShell scripts (`.ps1`) of
   Nevermind, all built from this repository.
 - Files from other authors are never signed with this certificate: the Microsoft WebView2 libraries
   (`fichiers\lib\webview2`, already signed by Microsoft Corporation), PresentMon (`fichiers\outils-tiers`, already
@@ -101,7 +101,7 @@ Signature gratuite du code fournie par [SignPath.io](https://about.signpath.io),
 
 ## Ce qui est signé
 
-- `Nevermind.exe`, `Désinstaller Nevermind.exe`, `NevermindAide.exe` et les scripts PowerShell (`.ps1`) de
+- `Mindset.exe` (le programme qui fait tourner Nevermind), `Nevermind.exe` (petit relais qui le lance), `Désinstaller Nevermind.exe`, `NevermindAide.exe` et les scripts PowerShell (`.ps1`) de
   Nevermind, tous construits depuis ce dépôt.
 - Les fichiers d'autres auteurs ne sont jamais signés avec ce certificat : les bibliothèques WebView2 de Microsoft
   (`fichiers\lib\webview2`, déjà signées par Microsoft Corporation), PresentMon (`fichiers\outils-tiers`, déjà signé

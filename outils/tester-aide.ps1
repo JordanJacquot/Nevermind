@@ -313,6 +313,45 @@ foreach ($a in $refusees) {
 }
 
 # ---------------------------------------------------------------------------
+# 7. Qui peut parler à l'Aide : seulement Mindset.exe du dossier de cette copie de Nevermind (le programme qui la fait
+#    tourner), reconnu par son chemin complet. Toutes les applis de la suite tournent dans un « Mindset.exe » : un
+#    Mindset.exe ailleurs, le relais Nevermind.exe ou tout autre programme ne la pilote jamais.
+# ---------------------------------------------------------------------------
+$dossierAppli = 'C:\Program Files\Mindset\Programmes\Nevermind'
+$clients = @(
+    @("$dossierAppli\Mindset.exe", $true),
+    @('C:\PROGRAM FILES\mindset\programmes\nevermind\MINDSET.EXE', $true),   # (Windows ne tient pas compte des majuscules)
+    @("$dossierAppli\Nevermind.exe", $false),                    # le relais : il ne parle jamais à l'Aide
+    @("$dossierAppli\NevermindAide.exe", $false),
+    @("$dossierAppli\Désinstaller Nevermind.exe", $false),
+    @('C:\Program Files\Mindset\Mindset\Mindset.exe', $false),   # Mindset lui-même
+    @('C:\Program Files\Mindset\Programmes\Evermind\Mindset.exe', $false),   # une autre appli de la suite
+    @("$env:USERPROFILE\Downloads\Mindset.exe", $false),         # n'importe quel Mindset.exe posé ailleurs
+    @("$dossierAppli\fichiers\Mindset.exe", $false),
+    @("$dossierAppli\..\Nevermind\Mindset.exe", $false),         # chemin détourné (Windows donne toujours le chemin réel)
+    @("$dossierAppli\Mindset.exe.old", $false),
+    @("$dossierAppli\Mindset.exe ", $false),
+    @("$dossierAppli\Mindset", $false),
+    @("${dossierAppli}2\Mindset.exe", $false),
+    @("$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe", $false),
+    @('', $false)
+)
+foreach ($c in $clients) {
+    $nbTests++
+    $r = Test-AideClient $c[0] $dossierAppli
+    if ($r -ne $c[1]) { $echecs.Add("Client de l'Aide $(if ($c[1]) { 'refusé à tort' } else { 'accepté à tort' }) : « $($c[0]) »") }
+}
+$nbTests++
+if (Test-AideClient "$dossierAppli\Mindset.exe" '') { $echecs.Add('Client de l''Aide accepté sans dossier de référence') }
+# NevermindAide.ps1 se sert bien de ce contrôle (connexions et « Nevermind ouvert ? »), et ne cherche aucun programme par
+# son nom seul
+$codeAide = [IO.File]::ReadAllText((Join-Path $racine 'OptiGame\fichiers\NevermindAide.ps1'), [Text.Encoding]::UTF8)
+$nbTests++
+if (([regex]::Matches($codeAide, 'Test-AideClient\b')).Count -lt 2) { $echecs.Add('NevermindAide.ps1 : Test-AideClient n''est plus utilisé pour les connexions et pour savoir si Nevermind est ouvert') }
+$nbTests++
+if ($codeAide -match 'Get-Process\s+-Name|GetProcessesByName|-ne \$Exe\b') { $echecs.Add('NevermindAide.ps1 : un programme y est cherché par son nom') }
+
+# ---------------------------------------------------------------------------
 # Résultat
 # ---------------------------------------------------------------------------
 $couvertes = @($demandes.Keys | Where-Object { $avecRefus.ContainsKey($_) }).Count

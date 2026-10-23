@@ -1,25 +1,37 @@
 ﻿// Lanceur de Nevermind : exécute fichiers\OptiGame.ps1 DANS son propre processus (moteur PowerShell hébergé),
-// pour que le Gestionnaire des tâches et la barre des tâches affichent « Nevermind » avec son icône, pas « Windows PowerShell ».
+// pour que le Gestionnaire des tâches et la barre des tâches affichent son nom et son icône, pas « Windows PowerShell ».
 // Il démarre sans droits (manifeste « asInvoker ») : OptiGame.ps1 se relance lui-même en administrateur après ses
 // premiers contrôles (copie gérée par Mindset, Nevermind déjà ouvert), une seule fenêtre de confirmation de Windows.
-// Compilé trois fois par construire.ps1 : Nevermind.exe, Désinstaller Nevermind.exe (symbole UNINSTALL) et
-// NevermindAide.exe (symbole AIDE : la partie administrateur, fichiers\NevermindAide.ps1).
+// Compilé quatre fois par construire.ps1 :
+//   Mindset.exe (sans symbole) : le programme qui fait tourner Nevermind. Toutes les applis de la suite tournent dans un
+//     « Mindset.exe » de leur dossier : le Gestionnaire des tâches les range sur une seule ligne « Mindset ». Nevermind
+//     garde son identité dans la barre des tâches (AppUserModelID JordanJacquot.Nevermind, evenements.ps1) et son verrou ;
+//   Nevermind.exe (symbole RELAIS) : petit relais qui lance Mindset.exe de son dossier avec les mêmes arguments, puis se
+//     ferme aussitôt. Les anciennes versions de Mindset, les anciens raccourcis et les anciennes tâches l'appellent encore ;
+//   Désinstaller Nevermind.exe (symbole UNINSTALL) et NevermindAide.exe (symbole AIDE : la partie administrateur,
+//     fichiers\NevermindAide.ps1).
+// La version (celle d'OptiGame.ps1) est ajoutée par construire.ps1 dans un petit fichier à part.
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
 using System.Reflection;
+using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
 
+// Le titre donne le libellé de la ligne dans le Gestionnaire des tâches : « Mindset » pour le programme qui tourne
+#if UNINSTALL || AIDE || RELAIS
 [assembly: AssemblyTitle("Nevermind")]
+#else
+[assembly: AssemblyTitle("Mindset")]
+#endif
 [assembly: AssemblyProduct("Nevermind")]
 [assembly: AssemblyDescription("Nevermind")]
 [assembly: AssemblyCompany("Nevermind")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
 
 static class Lanceur
 {
@@ -63,6 +75,28 @@ static class Lanceur
         string dossier = AppDomain.CurrentDomain.BaseDirectory;
         string script = Path.Combine(Path.Combine(dossier, "fichiers"), "OptiGame.ps1");
 
+#if RELAIS
+        // Nevermind.exe : lance Mindset.exe de CE dossier (jamais un autre), avec les mêmes arguments, le même dossier de
+        // travail, les mêmes variables et les mêmes droits (une tâche « avec les droits les plus élevés » les transmet),
+        // puis se ferme aussitôt.
+        {
+            string hote = Path.Combine(dossier, "Mindset.exe");
+            try
+            {
+                var psi = new ProcessStartInfo(hote, Arguments(args));
+                psi.UseShellExecute = false;
+                psi.WorkingDirectory = Environment.CurrentDirectory;
+                using (Process.Start(psi)) { }
+                return 0;
+            }
+            catch (Exception e)
+            {
+                MessageBox.Show("Nevermind n'a pas pu démarrer :\n\n" + (File.Exists(hote) ? e.Message : "Mindset.exe est introuvable dans " + dossier) +
+                    "\n\nOuvre Mindset et réinstalle Nevermind.", "Nevermind", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return 1;
+            }
+        }
+#else
         if (!File.Exists(script))
         {
             MessageBox.Show(
@@ -139,7 +173,7 @@ static class Lanceur
                 }
             }
             // Comme pour l'Aide : aucun fil de fond ne garde le processus ouvert une fois l'app fermée. Les groupes de fils
-            // d'OptiGame.ps1 (RunspacePool) restés ouverts gardaient Nevermind.exe en vie sans fenêtre, avec son verrou :
+            // d'OptiGame.ps1 (RunspacePool) restés ouverts gardaient le programme en vie sans fenêtre, avec son verrou :
             // Mindset ne pouvait plus le rouvrir. OptiGame.ps1 les ferme ; ceci reste en filet de sécurité.
             // (La relance après une mise à jour est déjà faite par le script, avant ce point.)
             Environment.Exit(0);
@@ -162,5 +196,29 @@ static class Lanceur
         }
         return 0;
 #endif
+#endif
+    }
+
+    // Les arguments reçus, remis en une ligne de commande (guillemets et barres obliques inverses selon la règle de Windows)
+    static string Arguments(string[] args)
+    {
+        var sb = new StringBuilder();
+        foreach (string a in args)
+        {
+            if (sb.Length > 0) sb.Append(' ');
+            if (a.Length > 0 && a.IndexOfAny(new[] { ' ', '\t', '"' }) < 0) { sb.Append(a); continue; }
+            sb.Append('"');
+            int barres = 0;
+            foreach (char c in a)
+            {
+                if (c == '\\') { barres++; continue; }
+                if (c == '"') { sb.Append('\\', barres * 2 + 1); sb.Append('"'); barres = 0; continue; }
+                sb.Append('\\', barres); barres = 0;
+                sb.Append(c);
+            }
+            sb.Append('\\', barres * 2);
+            sb.Append('"');
+        }
+        return sb.ToString();
     }
 }

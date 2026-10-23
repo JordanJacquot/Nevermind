@@ -278,8 +278,10 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
     }
 }
 
-# Nevermind.exe : le programme qui fait tourner l'app (le Gestionnaire des tâches affiche « Nevermind », pas PowerShell)
-$AppExe = Join-Path (Split-Path $PSScriptRoot -Parent) 'Nevermind.exe'
+# Mindset.exe : le programme qui fait tourner l'app (outils\lanceur.cs). Toutes les applis de la suite tournent dans un
+# « Mindset.exe » de leur dossier : le Gestionnaire des tâches les range sur une seule ligne « Mindset », pas PowerShell.
+# Nevermind.exe n'est plus qu'un relais vers lui (anciens raccourcis, anciennes versions de Mindset).
+$AppExe = Join-Path (Split-Path $PSScriptRoot -Parent) 'Mindset.exe'
 # Nevermind tourne sans les droits administrateur : ce qui en a besoin passe par son Aide (NevermindAide.exe, lancée par la
 # tâche que Mindset crée, sans demande de Windows ; liste stricte dans modules\aide-actions.ps1).
 # Seule la désinstallation les demande (une fois) : elle remet les réglages de Windows comme avant (sauf les changements
@@ -324,7 +326,7 @@ try { foreach ($o in @(Get-ChildItem -LiteralPath (Split-Path $PSScriptRoot -Par
 try {
     $appRoot = if ((Split-Path $PSScriptRoot -Leaf) -eq 'fichiers') { Split-Path $PSScriptRoot -Parent } else { $PSScriptRoot }
     @(Get-ChildItem -LiteralPath $PSScriptRoot -File -Recurse -ErrorAction SilentlyContinue) +
-    @(Get-ChildItem -LiteralPath $appRoot -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(Nevermind\.exe|Désinstaller Nevermind\.exe|OptiGame\.exe|Désinstaller OptiGame\.exe|LISEZMOI\.txt)$' }) |
+    @(Get-ChildItem -LiteralPath $appRoot -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(Mindset\.exe|Nevermind\.exe|NevermindAide\.exe|Désinstaller Nevermind\.exe|OptiGame\.exe|Désinstaller OptiGame\.exe|LISEZMOI\.txt)$' }) |
         Unblock-File -ErrorAction SilentlyContinue
 } catch {}
 
@@ -423,14 +425,16 @@ $Window.Show()
 if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
     # Libère la place avant de relancer, sinon la nouvelle version croirait que Nevermind est déjà ouvert
     if ($script:InstanceMutex) { try { $script:InstanceMutex.ReleaseMutex() } catch {}; $script:InstanceMutex.Dispose(); $script:InstanceMutex = $null }
-    $relExe = Join-Path (Split-Path (Split-Path $script:Relaunch -Parent) -Parent) 'Nevermind.exe'
+    # (Mindset.exe du dossier ; Nevermind.exe s'il manque : son relais, ou le programme d'une version d'avant)
+    $relRacine = Split-Path (Split-Path $script:Relaunch -Parent) -Parent
+    $relExe = @((Join-Path $relRacine 'Mindset.exe'), (Join-Path $relRacine 'Nevermind.exe') | Where-Object { Test-Path -LiteralPath $_ })[0]
     # Relancé pendant qu'il était caché près de l'horloge (thème changé dans Mindset) : il y retourne
     $relArgs = @(if ($script:RelaunchHidden -or $Managed) { '-Demarrage' })   # (géré par Mindset : relancé caché, Mindset le raccroche)
-    if (Test-Path -LiteralPath $relExe) { if ($relArgs) { Start-Process -FilePath $relExe -ArgumentList $relArgs } else { Start-Process -FilePath $relExe } }
+    if ($relExe) { if ($relArgs) { Start-Process -FilePath $relExe -ArgumentList $relArgs } else { Start-Process -FilePath $relExe } }
     else { Start-Process -FilePath 'powershell.exe' -ArgumentList (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"") + $relArgs) }
 }
 # Fin de Nevermind : le verrou est rendu tout de suite (Mindset peut rouvrir Nevermind sans attendre la fin du processus),
-# et les groupes de fils de fond sont fermés : ouverts, ils gardaient Nevermind.exe en vie sans fenêtre après la fermeture.
+# et les groupes de fils de fond sont fermés : ouverts, ils gardaient le programme en vie sans fenêtre après la fermeture.
 # (Le lanceur termine ensuite le processus quoi qu'il arrive, Environment.Exit dans lanceur.cs.)
 if ($script:InstanceMutex) { try { $script:InstanceMutex.ReleaseMutex() } catch {}; try { $script:InstanceMutex.Dispose() } catch {}; $script:InstanceMutex = $null }
 foreach ($fils in @($script:Pool, $script:BgPool)) { if ($fils) { try { [void]$fils.BeginClose($null, $null) } catch {} } }

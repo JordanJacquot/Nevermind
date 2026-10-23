@@ -168,7 +168,10 @@ $OldAppNames = @('OptiGame', 'Nexo')
 $OldAutoStartTasks = @($OldAppNames | ForEach-Object { "$_ (démarrage)" })
 
 function Get-AppRoot { if ((Split-Path $AppDir -Leaf) -eq 'fichiers') { Split-Path $AppDir -Parent } else { $AppDir } }
-function Get-AppExe { Join-Path (Get-AppRoot) 'Nevermind.exe' }
+# Le programme à lancer : Mindset.exe du dossier (celui qui fait tourner Nevermind, outils\lanceur.cs). Nevermind.exe n'est plus
+# qu'un relais vers lui, gardé pour les anciens raccourcis et les anciennes tâches : les deux sont reconnus (Get-AppExes).
+function Get-AppExe { Join-Path (Get-AppRoot) 'Mindset.exe' }
+function Get-AppExes { @((Join-Path (Get-AppRoot) 'Mindset.exe'), (Join-Path (Get-AppRoot) 'Nevermind.exe')) }
 function Get-DesktopShortcutPath([string]$Name = 'Nevermind') {
     $desk = if ($script:DesktopDir) { $script:DesktopDir } else { [Environment]::GetFolderPath('Desktop') }
     Join-Path $desk "$Name.lnk"
@@ -183,12 +186,12 @@ function Get-ShortcutTarget([string]$Path) {
     } catch { '' }
 }
 
-function Test-DesktopShortcut { (Get-ShortcutTarget (Get-DesktopShortcutPath)) -eq (Get-AppExe) }
+function Test-DesktopShortcut { $t = Get-ShortcutTarget (Get-DesktopShortcutPath); [bool]($t -and (Get-AppExes) -contains $t) }
 
 function New-DesktopShortcut {
     $root = Get-AppRoot
     $exe = Get-AppExe
-    if (-not (Test-Path -LiteralPath $exe)) { throw "Nevermind.exe est introuvable dans le dossier $root." }
+    if (-not (Test-Path -LiteralPath $exe)) { throw "Mindset.exe est introuvable dans le dossier $root." }
     $sh = New-Object -ComObject WScript.Shell
     try {
         $lnk = $sh.CreateShortcut((Get-DesktopShortcutPath))
@@ -210,8 +213,8 @@ function Set-AutoStart([bool]$On) {
     }
     $ps1 = Join-Path $AppDir 'OptiGame.ps1'
     $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $exe = Join-Path (Split-Path $AppDir -Parent) 'Nevermind.exe'
-    $act = if (Test-Path -LiteralPath $exe) { New-ScheduledTaskAction -Execute "`"$exe`"" -Argument '-Demarrage' -WorkingDirectory $env:USERPROFILE }
+    $exe = @(Get-AppExes | Where-Object { Test-Path -LiteralPath $_ })[0]   # (Mindset.exe, ou Nevermind.exe d'une ancienne version)
+    $act = if ($exe) { New-ScheduledTaskAction -Execute "`"$exe`"" -Argument '-Demarrage' -WorkingDirectory $env:USERPROFILE }
            else { New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ps1`" -Demarrage" -WorkingDirectory $env:USERPROFILE }
     $trg = New-ScheduledTaskTrigger -AtLogOn -User $user
     $trg.Delay = 'PT15S'   # laisse Windows finir d'ouvrir la session
@@ -238,7 +241,7 @@ function Invoke-NameMigration {
     if ($Managed) { return }   # (copie de Mindset : installée par lui sous ce nom, dans un dossier protégé)
     $root = Get-AppRoot
     $newExe = Get-AppExe
-    if (-not (Test-Path -LiteralPath $newExe)) { return }   # pas encore de Nevermind.exe (copie de développement)
+    if (-not (Test-Path -LiteralPath $newExe)) { return }   # pas encore de Mindset.exe (copie de développement)
     $found = @(Get-TaskInfo $OldAutoStartTasks | ForEach-Object { $_.Name })
     foreach ($task in $OldAutoStartTasks) {
         try {
@@ -272,9 +275,10 @@ function Update-AutoStartPath {
     $t = @(Get-TaskInfo @($AutoStartTask))[0]
     if (-not $t) { return }
     $ps1 = Join-Path $AppDir 'OptiGame.ps1'
-    $exe = Join-Path (Split-Path $AppDir -Parent) 'Nevermind.exe'
-    # La tâche doit lancer Nevermind.exe de ce dossier (les anciennes lançaient PowerShell avec le script)
-    $ok = if (Test-Path -LiteralPath $exe) { $t.Exe -eq $exe -and $t.Args -eq '-Demarrage' } else { $t.Args -like "*`"$ps1`"*" }
+    $exes = @(Get-AppExes | Where-Object { Test-Path -LiteralPath $_ })
+    # La tâche doit lancer Mindset.exe de ce dossier, ou son relais Nevermind.exe (tâche d'une version d'avant : elle marche,
+    # on n'y touche pas) ; les plus anciennes lançaient PowerShell avec le script
+    $ok = if ($exes.Count) { ($exes -contains $t.Exe) -and $t.Args -eq '-Demarrage' } else { $t.Args -like "*`"$ps1`"*" }
     if (-not $ok) {
         try { Set-AutoStart $true; Write-Log "Démarrage automatique : chemin mis à jour ($ps1)" } catch { Write-Log "Démarrage automatique : $_" }
     }
@@ -428,9 +432,10 @@ function Invoke-Uninstall {
     $garder = $choix -eq 'garder'
 
     $errors = @()
-    # L'Aide ouverte garderait Nevermind.exe : on la ferme (le désinstalleur, lui, a les droits et fait tout lui-même)
+    # L'Aide ouverte garderait NevermindAide.exe : on la ferme (le désinstalleur, lui, a les droits et fait tout lui-même).
+    # Reconnue par son chemin, jamais par son nom seul (seule l'Aide de ce dossier)
     $exeAide = Join-Path (Get-AppRoot) 'NevermindAide.exe'
-    foreach ($p in @(Get-Process -Name 'NevermindAide' -ErrorAction SilentlyContinue)) { try { if ($p.Path -eq $exeAide) { $p.Kill(); [void]$p.WaitForExit(3000) } } catch {} }
+    foreach ($p in @(Get-Process -ErrorAction SilentlyContinue)) { try { if ($p.Path -eq $exeAide) { $p.Kill(); [void]$p.WaitForExit(3000) } } catch {} }
     if ($n) { $errors += Restore-AllSettings }
     if ($garder) { Write-Log "Désinstallation : réglages de Windows remis comme avant$(if ($errors) { " sauf $($errors.Count)" }), données gardées" }
     $errDonnees = Remove-DonneesDesinstallation $garder ([bool]($errors -or $script:BackupProbleme))   # (déjà une liste)
@@ -446,6 +451,7 @@ function Invoke-Uninstall {
     $here = $AppDir
     $root = if ((Split-Path $here -Leaf) -eq 'fichiers') { Split-Path $here -Parent } else { $here }
     $files = @(
+        (Join-Path $root 'Mindset.exe'),
         (Join-Path $root 'Nevermind.exe'),
         (Join-Path $root 'Désinstaller Nevermind.exe'),
         (Join-Path $root 'NevermindAide.exe'),

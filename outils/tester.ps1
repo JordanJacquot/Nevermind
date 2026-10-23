@@ -5,7 +5,8 @@
 #   .\outils\tester.ps1              test rapide (toutes les pages)
 #   .\outils\tester.ps1 -Complet     + scan du réseau, fiche d'un appareil et audit de sécurité
 #   .\outils\tester.ps1 -Captures    + captures d'écran dans _test\captures
-#   .\outils\tester.ps1 -Hote        l'app tourne dans Nevermind.exe (moteur PowerShell hébergé), comme chez les utilisateurs
+#   .\outils\tester.ps1 -Hote        l'app tourne dans Mindset.exe (moteur PowerShell hébergé), lancé par le relais Nevermind.exe,
+#                                    comme chez les utilisateurs
 #
 # Code de sortie : 0 si tout est bon, 1 sinon.
 
@@ -55,16 +56,32 @@ if ($Hote) {
     $manif = Join-Path $test 'lanceur-test.manifest'
     [IO.File]::WriteAllText($manif, ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'lanceur.manifest'), [Text.Encoding]::UTF8) -replace 'requireAdministrator', 'asInvoker'), $utf8)
     $sma = @(Get-ChildItem (Join-Path $env:windir 'Microsoft.NET\assembly\GAC_MSIL\System.Management.Automation') -Recurse -Filter 'System.Management.Automation.dll' | Select-Object -First 1)[0].FullName
-    $exe = Join-Path $app 'Nevermind.exe'
-    & (Join-Path $env:windir 'Microsoft.NET\Framework64\v4.0.30319\csc.exe') /nologo /target:winexe /platform:anycpu "/win32manifest:$manif" /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll "/reference:$sma" "/out:$exe" (Join-Path $PSScriptRoot 'lanceur.cs') | Out-Null
-    if (-not (Test-Path -LiteralPath $exe)) { Write-Host 'ÉCHEC : le lanceur ne compile pas.' -ForegroundColor Red; exit 1 }
-    $p = Start-Process $exe -PassThru
+    # Mindset.exe (le programme qui fait tourner Nevermind) et Nevermind.exe (le relais qui le lance, puis se ferme)
+    $exe = Join-Path $app 'Mindset.exe'
+    $relais = Join-Path $app 'Nevermind.exe'
+    foreach ($x in @(@($exe, ''), @($relais, '/define:RELAIS'))) {
+        $opts = @('/nologo', '/target:winexe', '/platform:anycpu', "/win32manifest:$manif", '/reference:System.Windows.Forms.dll', '/reference:System.Web.Extensions.dll', "/reference:$sma", "/out:$($x[0])")
+        if ($x[1]) { $opts += $x[1] }
+        & (Join-Path $env:windir 'Microsoft.NET\Framework64\v4.0.30319\csc.exe') @opts (Join-Path $PSScriptRoot 'lanceur.cs') | Out-Null
+        if (-not (Test-Path -LiteralPath $x[0])) { Write-Host "ÉCHEC : le lanceur ne compile pas ($(Split-Path $x[0] -Leaf))." -ForegroundColor Red; exit 1 }
+    }
+    # Lancé par le relais, comme par un ancien raccourci : le relais doit se fermer tout de suite, et le programme qui
+    # tourne doit être Mindset.exe de CE dossier (le Gestionnaire des tâches range toute la suite sous « Mindset »)
+    $r = Start-Process $relais -PassThru
+    $null = $r.Handle   # (sans lui, le code de sortie peut rester illisible)
+    if (-not $r.WaitForExit(10000)) { $r.Kill(); Write-Host 'ÉCHEC : le relais Nevermind.exe ne s''est pas fermé en 10 s.' -ForegroundColor Red; exit 1 }
+    if ($r.ExitCode) { Write-Host "ÉCHEC : le relais Nevermind.exe a rendu le code $($r.ExitCode)." -ForegroundColor Red; exit 1 }
+    $enfant = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($r.Id)" -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -eq $exe })[0]
+    if (-not $enfant) { Write-Host 'ÉCHEC : le relais n''a pas lancé Mindset.exe de son dossier.' -ForegroundColor Red; exit 1 }
+    $p = Get-Process -Id $enfant.ProcessId
+    $script:ProcessusVus = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith("$app\", [StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { "$($_.Name) ($($_.ExecutablePath))" })
+    Write-Host "Relais fermé (code 0) ; programmes du dossier de test en cours : $($script:ProcessusVus -join ', ')" -ForegroundColor DarkGray
 } else {
     $p = Start-Process powershell.exe -ArgumentList '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', "`"$main`"" -PassThru -WindowStyle Hidden -RedirectStandardError $err
 }
 $json = Join-Path $test 'resultats.json'
 # Le processus doit disparaître tout seul peu après la fermeture de la fenêtre (résultats écrits juste avant) : un
-# Nevermind.exe resté en vie sans fenêtre garde le verrou, et Mindset ne peut plus le rouvrir
+# Mindset.exe resté en vie sans fenêtre garde le verrou, et Mindset ne peut plus le rouvrir
 $fin = (Get-Date).AddSeconds($Delai)
 while (-not $p.HasExited -and (Get-Date) -lt $fin -and -not (Test-Path -LiteralPath $json)) { Start-Sleep -Milliseconds 250 }
 $resteEnVie = $false

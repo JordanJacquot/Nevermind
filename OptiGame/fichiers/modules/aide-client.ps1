@@ -55,7 +55,7 @@ function Invoke-Aide([string]$Action, $Parametres = @{}, [int]$Delai = 120000) {
         SurPlace = -not (Get-Command Wait-Handle -ErrorAction SilentlyContinue)
     }
     # Pendant la désinstallation (en administrateur, sans fenêtre ni Invoke-Async), Nevermind fait tout lui-même sur place :
-    # réveiller l'Aide la laisserait tenir Nevermind.exe, qu'il faut supprimer
+    # réveiller l'Aide la laisserait tenir NevermindAide.exe, qu'il faut supprimer
     $o = if (-not $x.SurPlace) { Invoke-Async $AideTravail $x | Select-Object -First 1 } else { & $AideTravail $x }
     if ($o.Erreur -like 'pas de tâche*') { $script:AideSansTache = $true }
     if ($o.Voie -ne $script:AideVoie) {
@@ -280,8 +280,10 @@ function Stop-FluxReseau([string]$Ou) {
     elseif ($Ou -eq 'local') { try { [NetFlow]::Stop() } catch {} }
 }
 
-# Ferme tous les programmes d'un nom : ceux de l'utilisateur sur place, ceux lancés en administrateur par l'Aide
+# Ferme tous les programmes d'un nom : ceux de l'utilisateur sur place, ceux lancés en administrateur par l'Aide.
+# Jamais ceux de la suite : Mindset et toutes ses applis (Nevermind compris) tournent dans un « Mindset.exe ».
 function Stop-ProgrammeNom([string]$Nom) {
+    if ($Nom.Trim() -match '^(Mindset|Nevermind|NevermindAide)(\.exe)?$') { throw "$Nom fait partie de la suite Mindset : Nevermind ne le ferme pas." }
     $reste = 0
     foreach ($p in @(Get-Process -Name $Nom -ErrorAction SilentlyContinue)) { try { $p.Kill() } catch { $reste++ } }
     if ($reste) { [void](Invoke-Aide 'processus.fermer' @{ Nom = $Nom }) }

@@ -16,10 +16,11 @@ if (Test-Path $IconPath) {
 
 $Window.Add_SourceInitialized({
     $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
-    # Barre des tâches : bouton Nevermind avec son icône, et une épingle qui relance Nevermind.exe (pas PowerShell)
+    # Barre des tâches : bouton Nevermind avec son icône, et une épingle qui relance Mindset.exe de ce dossier (le programme
+    # qui fait tourner Nevermind), pas PowerShell ; Nevermind.exe (son relais) s'il manque
     try {
-        $exe = Join-Path (Split-Path $AppDir -Parent) 'Nevermind.exe'
-        $relaunch = if (Test-Path -LiteralPath $exe) { "`"$exe`"" } else { '' }
+        $exe = @((Join-Path (Split-Path $AppDir -Parent) 'Mindset.exe'), (Join-Path (Split-Path $AppDir -Parent) 'Nevermind.exe') | Where-Object { Test-Path -LiteralPath $_ })[0]
+        $relaunch = if ($exe) { "`"$exe`"" } else { '' }
         [void][AppIdentity]::SetWindow($h, $AppUserModelId, $relaunch, "$IconPath,0", 'Nevermind')
     } catch { Write-Log "Barre des tâches : $_" }
     try { [OGNative]::SetDarkTitleBar($h) } catch {}

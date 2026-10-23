@@ -15,7 +15,7 @@ $AppNom      = 'Nevermind'
 $UiDir       = Join-Path $AppDir 'ui'
 $Webview2Dir = Join-Path $AppDir 'lib\webview2'
 $HoteVue     = 'nevermind.local'
-$script:Vue  = @{ Controle = $null; Pret = $false; Etat = $null; Actions = @{}; CacheeDepuis = $null; EnVeille = $false; Images = @{} }
+$script:Vue  = @{ Controle = $null; Pret = $false; Etat = $null; Actions = @{}; CacheeDepuis = $null; EnVeille = $false; Images = @{}; Hote = $null; Commun = $false }
 
 # WebView2 est-elle possible ici ? ($null si oui, sinon la raison)
 function Test-VuePossible {
@@ -35,6 +35,33 @@ function Test-VuePossible {
     $null
 }
 
+# Dossier des données de WebView2. Géré par Mindset (données dans <racine de la suite>\Nevermind) : le dossier commun de
+# la suite, <racine de la suite>\WebView2, avec le profil « Nevermind » (stockage séparé de celui de Mindset). Mindset et
+# Nevermind partagent alors les mêmes processus WebView2 : une seule ligne « Gestionnaire WebView2 » dans le Gestionnaire
+# des tâches. Les deux doivent créer WebView2 avec les mêmes options (aujourd'hui : aucune), sinon WebView2 refuse.
+# Sinon (copie hors de Mindset, données encore dans l'ancien dossier) ou après un refus du dossier commun ($script:VueSansCommun) :
+# son dossier à lui, « ecran-webview », comme avant.
+function Get-VueDossier {
+    if (-not $script:VueSansCommun -and $Managed -and $DataDir -and (Split-Path $DataDir -Leaf) -eq 'Nevermind') {
+        $suite = Split-Path $DataDir -Parent
+        if ($suite) { return @{ Dossier = (Join-Path $suite 'WebView2'); Profil = 'Nevermind'; Commun = $true } }
+    }
+    @{ Dossier = (Join-Path $DataDir 'ecran-webview'); Profil = ''; Commun = $false }
+}
+
+# Le dossier commun a été refusé (options différentes, ancienne version de Mindset encore ouverte dessus, dossier
+# illisible) : noté au journal, et l'écran est recréé tout de suite dans son dossier à lui. Il ne reste jamais vide.
+function Reset-VueSansCommun([string]$Raison) {
+    $script:VueSansCommun = $true
+    Write-Log "Écran : dossier WebView2 commun de la suite refusé ($Raison), retour au dossier de Nevermind (ecran-webview)"
+    $v = $script:Vue.Controle
+    $hote = $script:Vue.Hote
+    $script:Vue.Controle = $null; $script:Vue.Pret = $false
+    if ($v) { try { $v.Parent.Children.Remove($v) } catch {}; try { $v.Dispose() } catch {} }
+    if ($script:Vue.Image) { try { $script:Vue.Image.Parent.Children.Remove($script:Vue.Image) } catch {}; $script:Vue.Image = $null }
+    if ($hote) { Initialize-Vue $hote }
+}
+
 # Crée l'écran dans $Hote (un Grid de interface.xaml)
 function Initialize-Vue($Hote) {
     $raison = if ($script:VueVerifiee) { $null } else { Test-VuePossible }
@@ -48,11 +75,28 @@ function Initialize-Vue($Hote) {
     $vue = New-Object Microsoft.Web.WebView2.Wpf.WebView2
     $vue.DefaultBackgroundColor = [System.Drawing.ColorTranslator]::FromHtml((ConvertTo-ThemeHex '#06050F'))   # (pas d'éclair blanc à l'allumage)
     $cp = New-Object Microsoft.Web.WebView2.Wpf.CoreWebView2CreationProperties
-    $cp.UserDataFolder = Join-Path $DataDir 'ecran-webview'
+    $dw = Get-VueDossier
+    if ($dw.Commun) {
+        # (dossier impossible à créer : refusé tout de suite)
+        try { [void][IO.Directory]::CreateDirectory($dw.Dossier) } catch { $script:VueSansCommun = $true; Write-Log "Écran : dossier WebView2 commun impossible à créer ($($_.Exception.Message)), dossier de Nevermind utilisé"; $dw = Get-VueDossier }
+    }
+    $cp.UserDataFolder = $dw.Dossier
+    if ($dw.Profil) { $cp.ProfileName = $dw.Profil }
     $vue.CreationProperties = $cp
+    $script:Vue.Hote = $Hote
+    $script:Vue.Commun = $dw.Commun
+    if (-not $script:VueDossierNote -or $script:VueDossierNote -ne $dw.Dossier) { $script:VueDossierNote = $dw.Dossier; Write-Log "Écran : dossier WebView2 $($dw.Dossier)$(if ($dw.Commun) { " (commun à la suite, profil $($dw.Profil))" })" }
     $vue.Add_CoreWebView2InitializationCompleted({
         param($s, $e)
-        if (-not $e.IsSuccess) { [void](Stop-VueImpossible "initialisation refusée ($($e.InitializationException.Message))"); return }
+        if (-not $e.IsSuccess) {
+            $raisonVue = [string]$e.InitializationException.Message
+            # Refus du dossier commun : on recrée l'écran dans le dossier de Nevermind (après ce message, pas pendant)
+            if ($script:Vue.Commun -and $script:Vue.Controle -and $s -eq $script:Vue.Controle) {
+                [void]$Window.Dispatcher.BeginInvoke([Action[string]]{ param($r) try { Reset-VueSansCommun $r } catch { [void](Stop-VueImpossible "initialisation refusée ($r), puis $($_.Exception.Message)") } }, $raisonVue)
+                return
+            }
+            [void](Stop-VueImpossible "initialisation refusée ($raisonVue)"); return
+        }
         try {
             $c = $s.CoreWebView2
             $r = $c.Settings
@@ -107,7 +151,11 @@ function Initialize-Vue($Hote) {
     $vue.Add_IsVisibleChanged({ param($s, $e) if ($e.NewValue) { try { [void]$s.Focus() } catch {} } })
     # (WebView2 ne démarre qu'une fois la boucle d'affichage lancée)
     [void]$Window.Dispatcher.BeginInvoke([action]{
-        try { [void]$script:Vue.Controle.EnsureCoreWebView2Async() } catch { [void](Stop-VueImpossible "démarrage impossible ($($_.Exception.Message))") }
+        try { [void]$script:Vue.Controle.EnsureCoreWebView2Async() }
+        catch {
+            if ($script:Vue.Commun) { Reset-VueSansCommun $_.Exception.Message }
+            else { [void](Stop-VueImpossible "démarrage impossible ($($_.Exception.Message))") }
+        }
     }, [System.Windows.Threading.DispatcherPriority]::Background)
 
     # Regardée ou non (vérifié toutes les 0,4 s : ça ne coûte rien) : cachée, la vue est masquée (la page le sait et

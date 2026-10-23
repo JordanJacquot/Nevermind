@@ -51,6 +51,19 @@ $AideRegles = @(
        NomMotif = '^[^\x00-\x1f]{1,260}$'; Type = 'Binary'; Longueur = 12; Premier = @(2, 3, 6, 7); Effacer = $true }
 )
 
+# Le programme qui parle à l'Aide (son chemin complet, lu par Windows) est-il bien Nevermind ? Seulement Mindset.exe du
+# dossier de cette copie de Nevermind (le programme qui fait tourner Nevermind, voir outils\lanceur.cs). Jamais par le nom :
+# toutes les applis de la suite tournent dans un « Mindset.exe », et un Mindset.exe ailleurs (Mindset lui-même, une autre
+# appli, une copie posée par n'importe qui) n'est pas écouté. Le relais Nevermind.exe ne parle jamais à l'Aide.
+function Test-AideClient([string]$Chemin, [string]$Racine) {
+    if (-not $Chemin -or -not $Racine) { return $false }
+    try {
+        $attendu = [IO.Path]::GetFullPath((Join-Path $Racine 'Mindset.exe'))
+        # (le chemin reçu est comparé tel quel : rien n'est « nettoyé » qui pourrait faire passer un autre fichier pour lui)
+        return [string]::Equals($Chemin, $attendu, [StringComparison]::OrdinalIgnoreCase)
+    } catch { return $false }
+}
+
 # Nom du canal et du verrou de l'Aide : propres à l'utilisateur et au dossier de cette copie de Nevermind (une copie de
 # test ne parle jamais à l'Aide de la copie installée, et chacune a la sienne)
 function Get-AideSuffixe([string]$Racine) {
