@@ -172,7 +172,25 @@ function Start-FpsMesure([int]$ProcId) {
         if ([FrameMon]::StartRemote($ProcId)) { Write-Log "Mesure des FPS : par l'Aide$(if ([FrameMon]::Attached) { ', reprise de la veille lancée avant le jeu' })"; return $true }
         Write-Log "Mesure des FPS par l'Aide impossible : $([FrameMon]::LastError)"
     }
+    # Repli sur place (en administrateur si Nevermind l'est) : même contrôle que l'Aide (Get-AidePresentMon), avant chaque lancement
+    $raison = Get-RaisonRefusPresentMon $PresentMonExe
+    if ($raison) {
+        [FrameMon]::LastError = "PresentMon refusé : $raison"
+        Write-Log "Mesure des FPS : PresentMon n'est pas lancé, $raison ($PresentMonExe)"
+        Set-Status 'L''outil de mesure des FPS a été modifié : Nevermind ne le lance pas. Réinstalle Nevermind depuis Mindset.'
+        return $false
+    }
     [FrameMon]::Start($PresentMonExe, $ProcId)
+}
+
+# PresentMon (Intel) n'est lancé que s'il est bien signé par Intel (voir outils-tiers\SOURCES.md) : $null si c'est bon,
+# sinon la raison du refus (pour le journal). Un exe remplacé, même signé par un autre éditeur, est refusé.
+function Get-RaisonRefusPresentMon([string]$Exe) {
+    if (-not (Test-Path -LiteralPath $Exe -PathType Leaf)) { return 'fichier absent' }
+    try { $s = Get-AuthenticodeSignature -LiteralPath $Exe -ErrorAction Stop } catch { return "signature illisible ($($_.Exception.Message))" }
+    if ($s.Status -ne 'Valid') { return "signature non valable ($($s.Status))" }
+    if ($s.SignerCertificate.Subject -notmatch 'CN=Intel Corporation(,|$)') { return "pas signé par Intel ($($s.SignerCertificate.Subject))" }
+    $null
 }
 
 # Jeux dont l'anti-triche refuse une mesure démarrée après leur lancement (BF6 et EA Javelin), mais laisse tourner

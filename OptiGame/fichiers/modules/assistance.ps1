@@ -19,7 +19,10 @@ function ConvertFrom-HistoryEntry($E) {
             default       { $h.Value = [string]$h.Value }
         }
     }
-    if ($h.Type -eq 'dns') { $h.Servers = @(@($h.Servers) | Where-Object { $_ } | ForEach-Object { [string]$_ }) }
+    if ($h.Type -eq 'dns') {
+        $h.Servers = @(@($h.Servers) | Where-Object { $_ } | ForEach-Object { [string]$_ })
+        if ($h.ContainsKey('Nouveau')) { $h.Nouveau = @(@($h.Nouveau) | Where-Object { $_ } | ForEach-Object { [string]$_ }) }
+    }
     $h
 }
 
@@ -60,6 +63,8 @@ function Add-ChangementDefinitif([string]$Titre, [string]$Quoi, [string]$Retour)
 }
 # Une entrée dont rien ne s'annule : seulement des changements définitifs
 function Test-HistoriqueDefinitif($H) { $l = @($H.Log); $l.Count -and -not @($l | Where-Object { $_.Type -ne 'definitif' }).Count }
+# Une entrée avec des changements définitifs et d'autres annulables : une fois annulée, les définitifs restent en place
+function Test-HistoriquePartDefinitive($H) { [bool]@(@($H.Log) | Where-Object { $_.Type -eq 'definitif' }).Count }
 # La façon de revenir en arrière d'une entrée (changements définitifs)
 function Get-RetourDefinitif($H) { (@($H.Log) | Where-Object { $_.Type -eq 'definitif' -and $_.Retour } | ForEach-Object { [string]$_.Retour } | Select-Object -Unique) -join ' ' }
 
@@ -69,21 +74,45 @@ function Format-ValeurTech($V) {
     if ($V -is [array]) { $t = (@($V) | Select-Object -First 16) -join ','; if (@($V).Count -gt 16) { $t += '...' }; return $t }
     $t = [string]$V; if ($t.Length -gt 120) { $t = $t.Substring(0, 117) + '...' }; $t
 }
+# La nouvelle valeur (« Nouveau ») est notée au moment du changement ; les entrées plus anciennes n'ont que l'avant.
+function Test-ChampHisto($E, [string]$Nom) { if ($E -is [hashtable]) { return $E.ContainsKey($Nom) }; $null -ne $E.PSObject.Properties[$Nom] }
+function Format-DemarrageService([string]$T) {
+    switch ($T) { 'Automatic' { 'automatique' } 'Manual' { 'manuel' } 'Disabled' { 'désactivé' } default { $T } }
+}
+function Format-PlanAlim([string]$Guid, [string]$Nom) {
+    if (-not $Nom) {
+        $Nom = switch ($Guid) { $HighPerfGuid { 'Performances élevées' } $BalancedGuid { 'Utilisation normale' } $UltimateGuid { 'Performances optimales' } default { '' } }
+        if (-not $Nom -and $Guid -and $Guid -eq $script:Backup.CreatedScheme) { $Nom = 'copie de Performances élevées' }
+    }
+    if ($Nom) { "« $Nom » ($Guid)" } else { $Guid }
+}
+function Format-CurseurAlim([string]$Guid) { if ($Guid -eq $BestPerfOverlay) { "« Meilleures performances » ($Guid)" } else { $Guid } }
+function Format-ServeursDns($S) { $l = @(@($S) | Where-Object { $_ }); if ($l.Count) { $l -join ', ' } else { 'automatique (box)' } }
 function Get-DetailsTechniques($H) {
     @(foreach ($e in @($H.Log)) {
+        $apres = Test-ChampHisto $e 'Nouveau'
         switch ([string]$e.Type) {
             'reg' {
                 $avant = if ($e.Existed) { Format-ValeurTech $e.Value } else { 'absente' }
-                $apres = if ($e.Efface) { 'effacée' } elseif ($e.PSObject.Properties['Nouveau'] -or ($e -is [hashtable] -and $e.ContainsKey('Nouveau'))) { Format-ValeurTech $e.Nouveau } else { 'modifiée' }
-                "Registre $($e.Path) : valeur « $($e.Name) », avant $avant, après $apres"
+                $ap = if ($e.Efface) { 'effacée' } elseif ($apres) { Format-ValeurTech $e.Nouveau } else { 'modifiée' }
+                "Registre $($e.Path) : valeur « $($e.Name) », avant $avant, après $ap"
             }
-            'svc'     { "Service $($e.Name) : démarrage avant $($e.StartType)$(if ($e.Running) { ', il tournait' })" }
-            'power'   { "Plan d'alimentation changé (avant : $($e.Guid))" }
-            'pcfg'    { "Réglage d'alimentation $($e.Guid) : avant secteur $($e.Ac), batterie $($e.Dc)" }
-            'display' { "Écran $($e.Device) : fréquence avant $($e.Hz) Hz" }
-            'overlay' { "Mode de superposition de l'affichage changé (avant : $($e.Guid))" }
-            'dns'     { "DNS de la carte réseau : avant $(if (@($e.Servers).Count) { @($e.Servers) -join ', ' } else { 'automatique (box)' })" }
-            'fw'      { "Pare-feu : règle « $($e.Name) »" }
+            'svc'     { "Service $($e.Name) : démarrage avant $(Format-DemarrageService $e.StartType)$(if ($e.Running) { ', il tournait' })$(if ($apres) { ", après $(Format-DemarrageService $e.Nouveau), arrêté" })" }
+            'power'   { "Plan d'alimentation : avant $(Format-PlanAlim $e.Guid $e.Nom)$(if ($apres) { ", après $(Format-PlanAlim $e.Nouveau)" })" }
+            'pcfg' {
+                # (le nom du réglage : noté avec la valeur, ou retrouvé par son identifiant pour les anciennes entrées)
+                $k = if ($e.Key) { [string]$e.Key } else { @(@($BatSettings.Keys) | Where-Object { $BatSettings[$_] -eq $e.Guid })[0] }
+                if ($k -and $BatNoms[$k]) {
+                    "Réglage d'alimentation, $($BatNoms[$k]) : avant secteur $(Format-ValeurBat $k $e.Ac), batterie $(Format-ValeurBat $k $e.Dc)$(if ($apres) { ", après $(Format-ValeurBat $k $e.Nouveau) (secteur et batterie)" })"
+                } else {
+                    "Réglage d'alimentation $($e.Guid) : avant secteur $($e.Ac), batterie $($e.Dc)$(if ($apres) { ", après $($e.Nouveau) (secteur et batterie)" })"
+                }
+            }
+            'display' { "Écran $($e.Device) : fréquence avant $($e.Hz) Hz$(if ($apres) { ", après $($e.Nouveau) Hz" })" }
+            'overlay' { "Curseur du mode d'alimentation de Windows : avant $(Format-CurseurAlim $e.Guid)$(if ($apres) { ", après $(Format-CurseurAlim $e.Nouveau)" })" }
+            'dns'     { "DNS de la carte réseau : avant $(Format-ServeursDns $e.Servers)$(if ($apres) { ", après $(Format-ServeursDns $e.Nouveau)" })" }
+            # (une règle n'est ajoutée que pour bloquer un programme : avant, il n'y en avait pas)
+            'fw'      { "Pare-feu : règle « $($e.Name) », avant aucune règle, après Internet bloqué pour ce programme" }
             'definitif' { "$($e.Quoi) (définitif)" }
         }
     })
@@ -116,9 +145,10 @@ function Set-HistoryUndone([string]$Id) {
     Update-HistoryList
 }
 
+# (« Tout restaurer » n'annule pas les changements définitifs : une entrée qui n'a que ça reste « Définitif »)
 function Set-HistoryAllUndone {
     if ($null -eq $script:History) { Import-History }
-    foreach ($h in $script:History) { $h.Annule = $true }
+    foreach ($h in $script:History) { if (-not (Test-HistoriqueDefinitif $h)) { $h.Annule = $true } }
     Save-History
     Update-HistoryList
 }
@@ -141,9 +171,11 @@ function Update-HistoryList {
         [void]$sp.Children.Add((New-Text $h.Date 12 '#A6A1BC'))
         Add-ToGrid $row $sp 0
         if ($h.Annule -or (Test-HistoriqueDefinitif $h)) {
-            $b = New-Badge $(if ($h.Annule) { 'Annulé' } else { 'Définitif' }) '#A6A1BC'
+            $partiel = $h.Annule -and (Test-HistoriquePartDefinitive $h)
+            $b = New-Badge $(if ($partiel) { 'Annulé en partie' } elseif ($h.Annule) { 'Annulé' } else { 'Définitif' }) '#A6A1BC'
             $b.VerticalAlignment = 'Center'
-            if (-not $h.Annule) { $b.ToolTip = "Pour revenir en arrière : $(Get-RetourDefinitif $h)" }
+            if ($partiel) { $b.ToolTip = "Les protections du PC restent en place. Pour revenir en arrière : $(Get-RetourDefinitif $h)" }
+            elseif (-not $h.Annule) { $b.ToolTip = "Pour revenir en arrière : $(Get-RetourDefinitif $h)" }
         } else {
             $b = New-Button 'Annuler'
             $b.VerticalAlignment = 'Center'
@@ -191,7 +223,7 @@ function Open-Url([string]$Target) {
 # Même chose pour un programme avec des arguments : via un raccourci temporaire.
 function Start-Unelevated([string]$Path, [string]$Arguments) {
     if (-not $Arguments) { Open-Url $Path; return }
-    $lnk = Join-Path $env:TEMP "OptiGame-$([IO.Path]::GetFileNameWithoutExtension($Path)).lnk"
+    $lnk = Join-Path $env:TEMP "Nevermind-$([IO.Path]::GetFileNameWithoutExtension($Path)).lnk"
     $sh = New-Object -ComObject WScript.Shell
     $sc = $sh.CreateShortcut($lnk)
     $sc.TargetPath = $Path; $sc.Arguments = $Arguments; $sc.WorkingDirectory = Split-Path $Path -Parent
@@ -374,7 +406,7 @@ function Export-ProblemReport([string]$Dest, [string]$Description) {
         if ($env:COMPUTERNAME) { $t = $t -replace [regex]::Escape($env:COMPUTERNAME), '<pc>' }
         $t
     }
-    $tmp = Join-Path $env:TEMP "OptiGame-probleme-$(Get-Random)"
+    $tmp = Join-Path $env:TEMP "Nevermind-probleme-$(Get-Random)"
     New-Item -ItemType Directory -Force -Path $tmp | Out-Null
     try {
         $os = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
@@ -485,9 +517,9 @@ $TourSteps = @(
         'Ordinateur range les outils en trois familles : Performances, Santé du PC et Protection. Le tableau de bord montre ce qui freine tes jeux : clique sur un point, lis la fiche, puis « Exécuter » pour que Nevermind le corrige.',
         'Jeux réunit tous tes jeux : tu les lances et tu optimises chacun depuis sa fiche.',
         'Réseau scanne les appareils de ta maison et vérifie leur sécurité.') },
-    @{ Title = 'Tout est annulable'; Lines = @(
+    @{ Title = 'Tu peux revenir en arrière'; Lines = @(
         'Chaque changement est sauvegardé avant d''être fait.',
-        'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde (dans Ordinateur, famille Protection) garde l''historique : tu peux annuler n''importe quel changement.',
+        'Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde (dans Ordinateur, famille Protection) garde l''historique : tu peux annuler chaque changement, sauf quatre protections du PC qui restent en place (marquées « Définitif »).',
         'En haut, la barre de recherche trouve un réglage (ou Ctrl + K) et la roue crantée ouvre les Paramètres. « Signaler un problème » est dans l''onglet Aide des Paramètres.') }
 )
 

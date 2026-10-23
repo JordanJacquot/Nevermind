@@ -468,7 +468,7 @@ public static class OGNative
                     try
                     {
                         req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(urls[ui]);
-                        req.UserAgent = "OptiGame";
+                        req.UserAgent = "Nevermind";
                         req.Timeout = 10000;
                         req.ReadWriteTimeout = 10000;
                         if (upload)
@@ -822,6 +822,9 @@ public static class FrameMon
     }
 
     static string pmExe = "";
+    // PresentMon gardé ouvert en lecture seule de son lancement à la fermeture de sa session : personne ne peut le
+    // remplacer entre le contrôle de sa signature (aide-client.ps1) et la relance faite par Stop()
+    static System.IO.FileStream pmVerrou;
 
     public static bool Start(string exe, int pid)
     {
@@ -830,6 +833,7 @@ public static class FrameMon
         pmExe = exe;
         try
         {
+            pmVerrou = new System.IO.FileStream(exe, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read);
             var psi = new System.Diagnostics.ProcessStartInfo(exe,
                 "--process_id " + pid + " --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind --terminate_on_proc_exit");
             psi.UseShellExecute = false;
@@ -846,8 +850,10 @@ public static class FrameMon
             proc = p;
             return true;
         }
-        catch (Exception ex) { LastError = ex.Message; proc = null; return false; }
+        catch (Exception ex) { LastError = ex.Message; proc = null; FinVerrou(); return false; }
     }
+
+    static void FinVerrou() { if (pmVerrou != null) { try { pmVerrou.Dispose(); } catch { } pmVerrou = null; } }
 
     public static void Stop()
     {
@@ -873,6 +879,7 @@ public static class FrameMon
             }
             catch { }
         }
+        FinVerrou();
     }
 
     // Une ligne de PresentMon. La première donne le nom des colonnes.
@@ -1346,7 +1353,7 @@ public static class NetProbe
                     var req = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(u0);
                     req.Timeout = timeoutMs;
                     req.ReadWriteTimeout = timeoutMs;
-                    req.UserAgent = "Mozilla/5.0 OptiGame";
+                    req.UserAgent = "Mozilla/5.0 Nevermind";
                     req.AllowAutoRedirect = true;
                     req.ServerCertificateValidationCallback = delegate { return true; };
                     System.Net.HttpWebResponse resp;
@@ -1654,7 +1661,9 @@ public static class NetFlow
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     delegate void RecordCallback(IntPtr rec);
 
-    const string Session = "OptiGame-Reseau";
+    const string Session = "Nevermind-Reseau";
+    // Nom d'avant la 1.3.7 : une session restée ouverte sous ce nom après une mise à jour est fermée au démarrage
+    const string AncienneSession = "OptiGame-Reseau";
     static Guid Provider = new Guid("7DD42A49-5329-4832-8DFD-43D979153A88");
     static RecordCallback cb;
     static IntPtr logfile = IntPtr.Zero;
@@ -1696,6 +1705,8 @@ public static class NetFlow
                 foreach (var ua in ni.GetIPProperties().UnicastAddresses) local.Add(ua.Address.ToString().Split('%')[0]);
         }
         catch { }
+        IntPtr old = NewProps();
+        try { ControlTraceW(0, AncienneSession, old, 1); } catch { } finally { Marshal.FreeHGlobal(old); }
         IntPtr props = NewProps();
         try
         {

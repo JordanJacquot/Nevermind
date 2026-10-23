@@ -260,7 +260,7 @@ function New-RestorePoint {
     Write-Log "Point de restauration: $r"
     Confirm-Action ("Impossible de créer le point de restauration.`n`nMotif : $r`n`n" +
         "La protection du système est peut-être désactivée sur ce PC. Tu peux quand même continuer : " +
-        "Nevermind garde une sauvegarde de chaque réglage modifié et peut tout annuler depuis la page Sauvegarde (dans Protection).`n`nContinuer ?")
+        "Nevermind garde une sauvegarde de chaque réglage modifié et peut l'annuler depuis la page Sauvegarde (dans Protection).`n`nContinuer ?")
 }
 
 function Invoke-ApplyTweaks {
@@ -621,8 +621,8 @@ function Set-Dns([int]$Choice) {
         Save-Backup
     }
     $prev = [string](Get-RegValue "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($script:Net.Guid)" 'NameServer')
-    $dnsLog = @(@{ Type = 'dns'; IfIndex = $idx; Guid = [string]$script:Net.Guid; Servers = @($prev -split '[,\s]+' | Where-Object { $_ }) })
     $servers = $DnsChoices[$Choice]
+    $dnsLog = @(@{ Type = 'dns'; IfIndex = $idx; Guid = [string]$script:Net.Guid; Servers = @($prev -split '[,\s]+' | Where-Object { $_ }); Nouveau = @($servers | Where-Object { $_ }) })
     [void](Invoke-Aide 'dns.regler' @{ Index = $idx; Serveurs = @($servers) })
     $script:Net = Get-ActiveNet
     Update-NetInfo
@@ -813,15 +813,24 @@ function Get-BackupCount {
 function Update-BackupSummary {
     $n = Get-BackupCount
     $ui.BackupSummary.Text = if ($n) {
-        "$n réglage$(if ($n -gt 1) {'s'}) modifié$(if ($n -gt 1) {'s'}) par Nevermind. Un clic remet tout comme avant."
+        "$n réglage$(if ($n -gt 1) {'s'}) modifié$(if ($n -gt 1) {'s'}) par Nevermind. Un clic les remet comme avant (sauf les protections du PC marquées « Définitif » dans l'historique)."
     } else {
         "Nevermind n'a encore rien modifié sur ce PC."
     }
 }
 
+# Les changements définitifs (ils protègent le PC) : « Tout restaurer » ne les annule pas, il le dit avant et après.
+# Tout l'historique compte, même une entrée marquée annulée : sa part définitive, elle, est restée en place.
+function Get-ChangementsDefinitifs {
+    if ($null -eq $script:History) { try { Import-History } catch {} }
+    @(@($script:History) | Where-Object { $_ } | ForEach-Object { @($_.Log) } | Where-Object { $_.Type -eq 'definitif' } | ForEach-Object { [string]$_.Quoi } | Select-Object -Unique)
+}
+
 function Invoke-UndoAll {
     if (-not (Get-BackupCount)) { Show-Message $(if ($script:BackupProbleme) { Get-TexteProblemeSauvegarde } else { "Il n'y a aucun changement à annuler." }); return }
-    if (-not (Confirm-Action "Remettre tous les réglages modifiés par Nevermind comme ils étaient avant ?$(if ($script:BackupProbleme) { "`n`nAttention : $(Get-TexteProblemeSauvegarde)" })")) { return }
+    $restent = @(Get-ChangementsDefinitifs)
+    $texteRestent = if ($restent.Count) { "`n`nCes protections du PC restent en place (elles ne s'annulent pas, l'historique dit comment revenir en arrière à la main) :`n$(($restent | ForEach-Object { "  - $_" }) -join "`n")" } else { '' }
+    if (-not (Confirm-Action "Remettre les réglages modifiés par Nevermind comme ils étaient avant ?$texteRestent$(if ($script:BackupProbleme) { "`n`nAttention : $(Get-TexteProblemeSauvegarde)" })")) { return }
     Set-Busy $true
     Set-Status 'Restauration des réglages...'
     $errors = Restore-AllSettings
@@ -830,7 +839,7 @@ function Invoke-UndoAll {
     Build-GamingTab
     Update-StartupList
     Update-NetInfo
-    $msg = 'Tous les réglages ont été remis comme avant. Redémarre le PC pour que tout soit pris en compte.'
+    $msg = "Les réglages ont été remis comme avant. Redémarre le PC pour que tout soit pris en compte.$texteRestent"
     if ($errors) { $msg += "`n`nCertains éléments n'ont pas pu être restaurés :`n" + ($errors -join "`n") }
     Show-Message $msg
     Invoke-Analysis

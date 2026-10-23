@@ -46,3 +46,13 @@ jobs:
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-declarations.ps1
           exit $LASTEXITCODE
+
+      - name: "Contrôle de PresentMon (signature Intel, rien n'est lancé)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-presentmon.ps1
+          exit $LASTEXITCODE
+
+      - name: "Désinstalleur (choix des données, faux dossier, rien n'est supprimé sur le PC)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-desinstallation.ps1
+          exit $LASTEXITCODE

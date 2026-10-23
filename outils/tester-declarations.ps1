@@ -10,7 +10,10 @@
 #   3. que le code des corrections n'écrit pas le registre en direct (Set-Reg, Clear-Reg) : il passe par sa déclaration ;
 #   4. sur un faux registre en mémoire, que ce que chaque correction écrit vraiment (son journal, RunLog) est exactement
 #      ce qu'elle déclare ;
-#   5. que les détails montrés avant confirmation (Get-DetailsAvant) ont une ligne par changement, maintenant et après.
+#   5. que les détails montrés avant confirmation (Get-DetailsAvant) ont une ligne par changement, maintenant et après ;
+#   6. que l'historique (Get-DetailsTechniques, page Sauvegarde) montre l'avant et l'après de chaque type de changement :
+#      les vraies fonctions qui changent le PC sont lancées sur un faux PC, leur journal passe par historique.json (dans
+#      %TEMP%), et les anciennes entrées sans « après » restent lisibles.
 # Le code de Nevermind n'est pas chargé en entier : seules les fonctions utiles sont lues dans les modules (rien ne se
 # lance au chargement), et tout ce qui pourrait toucher au PC est remplacé par une fausse version.
 # Code de sortie : 0 si tout passe, 1 sinon.
@@ -294,6 +297,195 @@ $script:RunLog = New-Object System.Collections.ArrayList
 & $fix.Run $fix.Args
 Compare-Ecrit 'New-Fix sans -Run' $fix.Changes @($script:RunLog)
 $script:RunLog = $null
+
+# ---------------------------------------------------------------------------
+# 6. L'historique : avant et après pour chaque type de changement noté (issue #7)
+# ---------------------------------------------------------------------------
+# Les vraies fonctions qui changent le PC et notent le changement, à la place des fausses utilisées plus haut
+foreach ($f in 'microsoft', 'onglets', 'systeme') {
+    $tok = $null; $err = $null
+    $asts[$f] = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $modules "$f.ps1"), [ref]$tok, [ref]$err)
+    if ($err) { $echecs.Add("$f.ps1 n'est pas lisible : $($err[0].Message)") }
+}
+$ecrivains = [ordered]@{
+    'microsoft'     = 'Set-ServiceOff'
+    'optimisations' = 'Set-PowerPlan', 'Set-BestPerfOverlay'
+    'analyse'       = 'Set-BatterySetting'
+    'donnees'       = 'Set-DisplayRate'
+    'onglets'       = 'Set-Dns'
+    'assistance'    = 'ConvertFrom-HistoryEntry', 'Import-History', 'Save-History', 'Test-ChampHisto', 'Format-DemarrageService', 'Format-PlanAlim',
+                      'Format-CurseurAlim', 'Format-ServeursDns', 'Get-DetailsTechniques', 'Set-HistoryAllUndone', 'Test-HistoriqueDefinitif', 'Test-HistoriquePartDefinitive'
+}
+foreach ($f in $ecrivains.Keys) {
+    foreach ($n in $ecrivains[$f]) {
+        $def = Get-FonctionAst $f $n
+        if (-not $def) { $echecs.Add("Fonction $n introuvable dans $f.ps1"); continue }
+        . ([scriptblock]::Create($def.Extent.Text))
+    }
+}
+foreach ($f in 'optimisations', 'systeme') {
+    foreach ($aff in @($asts[$f].EndBlock.Statements | Where-Object { $_ -is [System.Management.Automation.Language.AssignmentStatementAst] })) {
+        $v = $aff.Left
+        if ($v -is [System.Management.Automation.Language.VariableExpressionAst] -and $v.VariablePath.UserPath -in 'BestPerfOverlay', 'UltimateGuid', 'DnsChoices') { . ([scriptblock]::Create($aff.Extent.Text)) }
+    }
+}
+
+# Le faux PC, suite : les gestes notés au lieu d'être faits
+Add-Type -TypeDefinition @'
+public static class OGNative {
+    public static System.Collections.Generic.List<string> Gestes = new System.Collections.Generic.List<string>();
+    public static string Curseur = "00000000-0000-0000-0000-000000000000";
+    public static string[] GetDisplays() { return new string[] { @"\\.\DISPLAY1|1920|1080|32|60" }; }
+    public static int SetRefreshRate(string device, int hz) { Gestes.Add("display:" + device + "=" + hz); return 0; }
+    public static string GetOverlay() { return Curseur; }
+    public static uint SetOverlay(string scheme) { Gestes.Add("overlay:" + scheme); Curseur = scheme; return 0; }
+}
+'@
+function script:powercfg { [void]$script:Gestes.Add("powercfg $args"); if ("$args" -match '^/list') { return 'GUID du mode de gestion de l''alimentation : 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  (Performances élevées)' } }
+$script:Reglages = @{}
+function Get-Setting([string]$Name, $Default) { if ($script:Reglages.ContainsKey($Name)) { return , $script:Reglages[$Name] }; , $Default }
+function Set-Setting([string]$Name, $Value) { $script:Reglages[$Name] = $Value }
+function Save-Backup { }
+function Invoke-Aide([string]$Action, $P) { [void]$script:Gestes.Add("aide:$Action") }
+function Get-Service { [pscustomobject]@{ Name = 'ServiceEssai'; StartType = 'Manual'; Status = 'Running' } }
+function Get-BatteryPowerSettings { @{ CritAction = @(0, 1); CritLevel = @(5, 5); LowLevel = @(10, 10); LowNotify = @(0, 0); LowAction = @(0, 0) } }
+function Get-ActiveNet { $script:Net }
+function Update-NetInfo { }
+function Write-Log { }
+function Update-HistoryList { }
+$script:IsLaptop = $false
+$script:Backup = @{ Registry = @{}; Displays = @{}; Dns = @{} }
+$script:Net = @{ IfIndex = 7; Guid = '{11111111-2222-3333-4444-555555555555}' }
+
+# Chaque type de changement, fait par la vraie fonction de Nevermind
+$script:JournalHisto = New-Object System.Collections.ArrayList
+function Add-History($T, $D, $Log) { foreach ($e in @($Log)) { [void]$script:JournalHisto.Add($e) } }
+$cas = [ordered]@{
+    'reg'               = { Set-Reg 'HKCU:\Software\Microsoft\GameBar' 'AutoGameModeEnabled' 1 }
+    'reg (effacement)'  = { Clear-Reg 'HKCU:\Software\Microsoft\GameBar' 'AutoGameModeEnabled' }
+    'svc'               = { Set-ServiceOff 'ServiceEssai' }
+    'power'             = { Set-PowerPlan }
+    'overlay'           = { $script:IsLaptop = $true; try { Test-Ok (Set-BestPerfOverlay) 'Curseur du mode d''alimentation : Set-BestPerfOverlay n''a rien fait' } finally { $script:IsLaptop = $false } }
+    'pcfg'              = { Set-BatterySetting 'CritAction' 3 }
+    'display'           = { Set-DisplayRate '\\.\DISPLAY1' 144 }
+    'dns'               = { Set-Dns 1 }
+    'dns (automatique)' = { Set-Dns 0 }
+}
+$entrees = [ordered]@{}
+foreach ($nom in $cas.Keys) {
+    Reset-FauxPc
+    Set-FauxReg "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($script:Net.Guid)" 'NameServer' '192.168.1.1' 'String'
+    $script:JournalHisto.Clear()
+    $script:RunLog = New-Object System.Collections.ArrayList
+    $global:LASTEXITCODE = 0
+    try { & $cas[$nom] } catch { Test-Ok $false "Historique, $nom : erreur sur le faux PC : $($_.Exception.Message)" }
+    $journal = @(@($script:RunLog) + @($script:JournalHisto)); $script:RunLog = $null
+    Test-Ok ($journal.Count -eq 1) "Historique, $nom : $($journal.Count) entrée(s) notée(s) au lieu d'une"
+    if ($journal.Count) { $entrees[$nom] = $journal[0] }
+}
+
+# Une ligne lisible par entrée, avec l'avant et l'après ; la même après un passage par historique.json (dans %TEMP%)
+$HistoryFile = Join-Path $env:TEMP "nevermind-test-historique-$PID.json"
+try {
+    $script:History = New-Object System.Collections.ArrayList
+    [void]$script:History.Add(@{ Id = 'essai'; Date = '01/01/2026 à 12:00'; Titre = 'Essai'; Details = @(); Log = @($entrees.Values); Annule = $false })
+    Save-History
+    $script:History = $null
+    Import-History
+    $relues = @($script:History[0].Log)
+    Test-Ok ($relues.Count -eq $entrees.Count) "Historique : $($relues.Count) entrée(s) relue(s) dans historique.json pour $($entrees.Count)"
+    $i = 0
+    foreach ($nom in @($entrees.Keys)) {
+        $e = $entrees[$nom]
+        Test-Ok ((Test-ChampHisto $e 'Nouveau') -or $e.Efface) "Historique, $nom : la nouvelle valeur (Nouveau) n'est pas notée au moment du changement"
+        $l = @(Get-DetailsTechniques @{ Log = @($e) })
+        Test-Ok ($l.Count -eq 1 -and $l[0] -match 'avant .+, après .+' -and $l[0] -notmatch 'après modifiée') "Historique, $nom : ligne sans avant ou sans après : $($l -join ' / ')"
+        if ($i -lt $relues.Count) {
+            $l2 = @(Get-DetailsTechniques @{ Log = @($relues[$i]) })
+            Test-Ok (($l -join '|') -eq ($l2 -join '|')) "Historique, $nom : ligne différente après historique.json : « $($l -join '') » puis « $($l2 -join '') »"
+        }
+        $i++
+    }
+    # Les valeurs attendues : l'après montré est bien celui qui a été fait
+    $attendu = [ordered]@{
+        'reg'               = 'avant 0, après 1$'
+        'reg (effacement)'  = 'avant 0, après effacée$'
+        'svc'               = 'démarrage avant manuel, il tournait, après désactivé, arrêté$'
+        'power'             = 'avant « Utilisation normale » \(381b4222-f694-41f0-9685-ff5bb260df2e\), après « Performances élevées » \(8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c\)$'
+        'overlay'           = "avant 00000000-0000-0000-0000-000000000000, après « Meilleures performances » \($BestPerfOverlay\)$"
+        'pcfg'              = 'action à batterie critique : avant secteur ne rien faire, batterie mise en veille, après arrêt du PC \(secteur et batterie\)$'
+        'display'           = 'fréquence avant 60 Hz, après 144 Hz$'
+        'dns'               = 'avant 192\.168\.1\.1, après 1\.1\.1\.1, 1\.0\.0\.1$'
+        'dns (automatique)' = 'avant 192\.168\.1\.1, après automatique \(box\)$'
+    }
+    foreach ($nom in $attendu.Keys) {
+        if (-not $entrees.Contains($nom)) { continue }
+        $l = [string]@(Get-DetailsTechniques @{ Log = @($entrees[$nom]) })[0]
+        Test-Ok ($l -match $attendu[$nom]) "Historique, $nom : « $l » ne correspond pas à « $($attendu[$nom]) »"
+    }
+
+    # Les anciennes entrées (d'avant la nouvelle valeur notée) : lisibles, avec seulement l'avant
+    $anciennes = @(foreach ($nom in @($entrees.Keys)) {
+        $c = @{}; foreach ($k in @($entrees[$nom].Keys)) { if ($k -notin 'Nouveau', 'NouveauType', 'Key', 'Nom') { $c[$k] = $entrees[$nom][$k] } }; $c
+    })
+    $script:History = New-Object System.Collections.ArrayList
+    [void]$script:History.Add(@{ Id = 'ancienne'; Date = '01/01/2025 à 12:00'; Titre = 'Ancienne'; Details = @(); Log = $anciennes; Annule = $false })
+    Save-History
+    $script:History = $null
+    Import-History
+    foreach ($e in @($script:History[0].Log)) {
+        $l = @(); try { $l = @(Get-DetailsTechniques @{ Log = @($e) }) } catch { Test-Ok $false "Ancienne entrée $($e.Type) : erreur $($_.Exception.Message)" }
+        Test-Ok ($l.Count -eq 1 -and $l[0] -match 'avant') "Ancienne entrée $($e.Type) : pas de ligne avec l'avant : $($l -join ' / ')"
+        if ($e.Type -ne 'reg') { Test-Ok ($l[0] -notmatch 'après') "Ancienne entrée $($e.Type) : un « après » inventé : $($l[0])" }
+    }
+    Test-Ok ([string]@(Get-DetailsTechniques @{ Log = @(@{ Type = 'pcfg'; Guid = $BatSettings.CritAction; Ac = 0; Dc = 1 }) })[0] -match 'action à batterie critique') 'Ancienne entrée pcfg : le nom du réglage n''est pas retrouvé'
+
+    # « Tout restaurer » : une entrée qui n'a que des changements définitifs reste « Définitif » ; les autres sont annulées
+    $def = @{ Type = 'definitif'; Quoi = 'SMBv1 désactivé'; Retour = 'à la main' }
+    $script:History = New-Object System.Collections.ArrayList
+    [void]$script:History.Add(@{ Id = 'def'; Titre = 'Définitif'; Details = @(); Log = @($def); Annule = $false })
+    [void]$script:History.Add(@{ Id = 'mixte'; Titre = 'Mixte'; Details = @(); Log = @($def, $entrees['reg']); Annule = $false })
+    [void]$script:History.Add(@{ Id = 'reg'; Titre = 'Registre'; Details = @(); Log = @($entrees['reg']); Annule = $false })
+    Set-HistoryAllUndone
+    Test-Ok (-not $script:History[0].Annule -and (Test-HistoriqueDefinitif $script:History[0])) 'Tout restaurer : une entrée définitive est marquée « Annulé »'
+    Test-Ok ($script:History[1].Annule -and (Test-HistoriquePartDefinitive $script:History[1]) -and -not (Test-HistoriqueDefinitif $script:History[1])) 'Tout restaurer : entrée mixte (définitive en partie) mal marquée'
+    Test-Ok ($script:History[2].Annule -and -not (Test-HistoriquePartDefinitive $script:History[2])) 'Tout restaurer : une entrée annulable n''est pas marquée « Annulé »'
+} finally { if ([IO.File]::Exists($HistoryFile)) { [IO.File]::Delete($HistoryFile) } }   # (Remove-Item est interdit dans ce test)
+Test-Ok ([string]@(Get-DetailsTechniques @{ Log = @(@{ Type = 'fw'; Name = 'Nevermind essai' }) })[0] -match 'avant .+, après .+') 'Historique, pare-feu : pas d''avant ou d''après'
+
+# Tous les types que l'historique peut contenir (ceux que « Annuler » sait défaire) sont vérifiés ci-dessus
+$undo = (Get-FonctionAst 'tableau-de-bord' 'Undo-RunLog').Body.Find({ param($n) $n -is [System.Management.Automation.Language.SwitchStatementAst] }, $true)
+$typesHisto = @($undo.Clauses | ForEach-Object { "$($_.Item1.Value)" })
+Test-Ok ($typesHisto.Count -ge 8) "Historique : seulement $($typesHisto.Count) types trouvés dans Undo-RunLog"
+$couverts = @(@($entrees.Keys) | ForEach-Object { ($_ -split ' ')[0] }) + 'fw'   # (pare-feu : une règle ajoutée seulement pour bloquer)
+foreach ($t in $typesHisto) {
+    if ($t -eq 'definitif') { continue }   # (une protection du PC décrite par une phrase, avec la façon de revenir en arrière)
+    Test-Ok ($couverts -contains $t) "Historique : le type « $t » n'est pas vérifié (avant et après)"
+}
+# Dans tous les modules, chaque changement noté pour l'historique (RunLog.Add, Add-History, journal $...Log) note sa
+# nouvelle valeur : une nouvelle fonction qui oublierait l'après est signalée ici
+$nbNotes = 0
+foreach ($fichier in Get-ChildItem -LiteralPath $modules -Filter '*.ps1') {
+    $tok = $null; $err = $null
+    $a = [System.Management.Automation.Language.Parser]::ParseFile($fichier.FullName, [ref]$tok, [ref]$err)
+    foreach ($ht in @($a.FindAll({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] -and @($n.KeyValuePairs | Where-Object { "$($_.Item1)" -eq 'Type' }).Count }, $true))) {
+        $p = $ht.Parent; $journal = $false
+        while ($p -and -not $journal) {
+            if ($p -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and "$($p.Member)" -eq 'Add' -and "$($p.Expression)" -match 'RunLog') { $journal = $true }
+            elseif ($p -is [System.Management.Automation.Language.CommandAst] -and $p.GetCommandName() -eq 'Add-History') { $journal = $true }
+            elseif ($p -is [System.Management.Automation.Language.AssignmentStatementAst] -and "$($p.Left)" -match 'Log$') { $journal = $true }
+            if ($p -is [System.Management.Automation.Language.FunctionDefinitionAst]) { break }
+            $p = $p.Parent
+        }
+        if (-not $journal) { continue }
+        $nbNotes++
+        $cles = @($ht.KeyValuePairs | ForEach-Object { "$($_.Item1)" })
+        $type = "$(@($ht.KeyValuePairs | Where-Object { "$($_.Item1)" -eq 'Type' })[0].Item2)".Trim("'", '"', ' ')
+        if ($type -in 'fw', 'definitif' -or $cles -contains 'Efface' -or $cles -contains 'Nouveau') { continue }
+        Test-Ok $false "$($fichier.Name) ligne $($ht.Extent.StartLineNumber) : changement « $type » noté pour l'historique sans sa nouvelle valeur (Nouveau)"
+    }
+}
+Test-Ok ($nbNotes -ge 9) "Historique : seulement $nbNotes endroits qui notent un changement trouvés dans les modules"
 
 # ---------------------------------------------------------------------------
 # Résultat

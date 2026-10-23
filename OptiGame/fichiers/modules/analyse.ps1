@@ -767,7 +767,7 @@ function Set-BatterySetting([string]$Key, [int]$Value) {
     $g = $BatSettings[$Key]
     $cur = (Get-BatteryPowerSettings)[$Key]
     if ($cur) {
-        if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'pcfg'; Guid = $g; Ac = $cur[0]; Dc = $cur[1] }) }
+        if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'pcfg'; Guid = $g; Key = $Key; Ac = $cur[0]; Dc = $cur[1]; Nouveau = $Value }) }
         $orig = @(Get-Setting 'PcfgOriginal' @())
         if (-not @($orig | Where-Object { ([string]$_ -split '\|')[0] -eq $g }).Count) { Set-Setting 'PcfgOriginal' @($orig + "$g|$($cur[0])|$($cur[1])") }
     }

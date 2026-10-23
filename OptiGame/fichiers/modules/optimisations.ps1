@@ -34,7 +34,7 @@ function Set-BestPerfOverlay {
     if (-not $prev) { return $false }
     if ([OGNative]::SetOverlay($BestPerfOverlay) -ne 0) { return $false }
     if (-not $script:Backup.Overlay) { $script:Backup.Overlay = $prev; Save-Backup }
-    if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'overlay'; Guid = $prev }) }
+    if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'overlay'; Guid = $prev; Nouveau = $BestPerfOverlay }) }
     $true
 }
 
@@ -58,7 +58,7 @@ function Set-PowerPlan {
     }
     if ($current -and -not $script:Backup.PowerScheme) { $script:Backup.PowerScheme = $current.Guid }
     Save-Backup
-    if ($null -ne $script:RunLog -and $current) { [void]$script:RunLog.Add(@{ Type = 'power'; Guid = $current.Guid }) }
+    if ($null -ne $script:RunLog -and $current) { [void]$script:RunLog.Add(@{ Type = 'power'; Guid = $current.Guid; Nom = [string]$current.Name; Nouveau = $target }) }
     powercfg /setactive $target | Out-Null
 }
 

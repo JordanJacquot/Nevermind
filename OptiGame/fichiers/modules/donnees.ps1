@@ -154,7 +154,7 @@ function Set-DisplayRate([string]$Device, [int]$Hz) {
     $r = [OGNative]::SetRefreshRate($Device, $Hz)
     if ($r -ne 0) { throw "Windows a refusé le changement de fréquence (code $r)." }
     if ($null -ne $script:RunLog -and $current) {
-        [void]$script:RunLog.Add(@{ Type = 'display'; Device = $Device; Hz = [int](($current -split '\|')[4]) })
+        [void]$script:RunLog.Add(@{ Type = 'display'; Device = $Device; Hz = [int](($current -split '\|')[4]); Nouveau = $Hz })
     }
 }
 
