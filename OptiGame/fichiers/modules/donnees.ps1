@@ -158,10 +158,34 @@ function Set-DisplayRate([string]$Device, [int]$Hz) {
     }
 }
 
+# Les lectures du registre passent par .NET, en lecture seule : Test-Path et Get-ItemProperty mettent plus de 30 ms à
+# dire qu'une clé de HKLM n'existe pas (une lecture par jeu pour la priorité haute : plus d'une demi-seconde de fenêtre
+# figée), .NET moins d'une milliseconde. Clé illisible sans droits administrateur : une erreur, comme avec Get-Item.
+# Ruche et sous-clé d'un chemin PowerShell (HKCU:\..., HKLM:\..., Registry::HKEY_USERS\...) ; $null pour les autres.
+function Split-RegChemin([string]$Path) {
+    $pth = $Path -replace '^Registry::', ''
+    if ($pth -match '^(HKCU:|HKEY_CURRENT_USER)\\?(.*)$')     { return @{ Ruche = [Microsoft.Win32.Registry]::CurrentUser; Cle = $matches[2] } }
+    if ($pth -match '^(HKLM:|HKEY_LOCAL_MACHINE)\\?(.*)$') { return @{ Ruche = [Microsoft.Win32.Registry]::LocalMachine; Cle = $matches[2] } }
+    if ($pth -match '^HKEY_USERS\\?(.*)$')                 { return @{ Ruche = [Microsoft.Win32.Registry]::Users; Cle = $matches[1] } }
+    $null
+}
+
 # État actuel d'une valeur du registre (pour pouvoir revenir en arrière).
 function Get-RegState([string]$Path, [string]$Name) {
     $s = @{ Existed = $false; Value = $null; Kind = $null }
-    if (Test-Path -LiteralPath $Path) {
+    $r = Split-RegChemin $Path
+    if ($r) {
+        $k = $r.Ruche.OpenSubKey($r.Cle, $false)
+        if ($k) {
+            try {
+                if ($k.GetValueNames() -contains $Name) {
+                    $s.Existed = $true
+                    $s.Value = $k.GetValue($Name, $null, 'DoNotExpandEnvironmentNames')
+                    $s.Kind = $k.GetValueKind($Name).ToString()
+                }
+            } finally { $k.Close() }
+        }
+    } elseif (Test-Path -LiteralPath $Path) {
         $item = Get-Item -LiteralPath $Path
         if ($item.GetValueNames() -contains $Name) {
             $s.Existed = $true
@@ -183,8 +207,13 @@ function Save-Backup {
 
 function Get-RegValue([string]$Path, [string]$Name) {
     try {
-        $p = Get-ItemProperty -LiteralPath $Path -Name $Name -ErrorAction Stop
-        return , $p.$Name
+        $r = Split-RegChemin $Path
+        if (-not $r) { $p = Get-ItemProperty -LiteralPath $Path -Name $Name -ErrorAction Stop; return , $p.$Name }
+        $k = $r.Ruche.OpenSubKey($r.Cle, $false)
+        if (-not $k) { return $null }
+        try { $v = $k.GetValue($Name) } finally { $k.Close() }
+        if ($null -eq $v) { return $null }
+        return , $v
     } catch { return $null }
 }
 
@@ -215,14 +244,10 @@ function Save-Original([string]$Path, [string]$Name) {
 
 # Ouvre une clé du registre à partir d'un chemin PowerShell (HKCU:\..., HKLM:\..., Registry::HKEY_USERS\...).
 function Open-RegKey([string]$Path, [bool]$Create) {
-    $pth = $Path -replace '^Registry::', ''
-    $hive = $null; $sub = ''
-    if ($pth -match '^(HKCU:|HKEY_CURRENT_USER)\\?(.*)$')     { $hive = [Microsoft.Win32.Registry]::CurrentUser; $sub = $matches[2] }
-    elseif ($pth -match '^(HKLM:|HKEY_LOCAL_MACHINE)\\?(.*)$') { $hive = [Microsoft.Win32.Registry]::LocalMachine; $sub = $matches[2] }
-    elseif ($pth -match '^HKEY_USERS\\?(.*)$')                 { $hive = [Microsoft.Win32.Registry]::Users; $sub = $matches[1] }
-    if (-not $hive) { throw "Chemin de registre non pris en charge: $Path" }
-    if ($Create) { return $hive.CreateSubKey($sub) }
-    $hive.OpenSubKey($sub, $true)
+    $r = Split-RegChemin $Path
+    if (-not $r) { throw "Chemin de registre non pris en charge: $Path" }
+    if ($Create) { return $r.Ruche.CreateSubKey($r.Cle) }
+    $r.Ruche.OpenSubKey($r.Cle, $true)
 }
 
 # Réglage de l'utilisateur (HKCU) : Nevermind l'écrit lui-même. Le reste (réglages du PC) passe par l'Aide (aide-client.ps1).
