@@ -822,18 +822,41 @@ public static class FrameMon
     }
 
     static string pmExe = "";
-    // PresentMon gardé ouvert en lecture seule de son lancement à la fermeture de sa session : personne ne peut le
-    // remplacer entre le contrôle de sa signature (aide-client.ps1) et la relance faite par Stop()
+    // PresentMon gardé ouvert en lecture seule d'avant le contrôle de sa signature à la fermeture de sa session : personne
+    // ne peut le remplacer entre ce contrôle (aide-client.ps1), son lancement et la relance faite par Stop()
     static System.IO.FileStream pmVerrou;
+    static string pmVerrouExe = "";
 
-    public static bool Start(string exe, int pid)
+    // Première étape d'un lancement : arrête la mesure en cours et ouvre PresentMon en lecture seule. Le contrôle de la
+    // signature vient APRÈS, sur le fichier ainsi bloqué ; en cas de refus, Relacher().
+    public static bool Verrouiller(string exe)
     {
         Stop();
+        try
+        {
+            pmVerrou = new System.IO.FileStream(exe, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read);
+            pmVerrouExe = exe;
+            return true;
+        }
+        catch (Exception ex) { LastError = ex.Message; FinVerrou(); return false; }
+    }
+
+    public static void Relacher() { FinVerrou(); }
+
+    // Lance PresentMon, seulement s'il a été verrouillé (Verrouiller) avant le contrôle de sa signature
+    public static bool Start(string exe, int pid)
+    {
+        if (pmVerrou == null || !string.Equals(pmVerrouExe, exe, StringComparison.OrdinalIgnoreCase))
+        {
+            LastError = "PresentMon n'a pas été verrouillé avant le contrôle de sa signature";
+            FinVerrou();
+            return false;
+        }
+        Arreter(false);
         Reset();
         pmExe = exe;
         try
         {
-            pmVerrou = new System.IO.FileStream(exe, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.Read);
             var psi = new System.Diagnostics.ProcessStartInfo(exe,
                 "--process_id " + pid + " --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind --terminate_on_proc_exit");
             psi.UseShellExecute = false;
@@ -853,9 +876,12 @@ public static class FrameMon
         catch (Exception ex) { LastError = ex.Message; proc = null; FinVerrou(); return false; }
     }
 
-    static void FinVerrou() { if (pmVerrou != null) { try { pmVerrou.Dispose(); } catch { } pmVerrou = null; } }
+    static void FinVerrou() { if (pmVerrou != null) { try { pmVerrou.Dispose(); } catch { } pmVerrou = null; } pmVerrouExe = ""; }
 
-    public static void Stop()
+    public static void Stop() { Arreter(true); }
+
+    // relacher = false : arrêt fait par Start, qui garde le verrou posé par Verrouiller
+    static void Arreter(bool relacher)
     {
         if (remoteOn)
         {
@@ -864,22 +890,24 @@ public static class FrameMon
         }
         var p = proc;
         proc = null;
-        if (p == null) return;
-        try { if (!p.HasExited) p.Kill(); } catch { }
-        try { p.Dispose(); } catch { }
-        // PresentMon arrêté de force laisse sa session de mesure ouverte dans Windows : on la ferme.
-        if (!string.IsNullOrEmpty(pmExe))
+        if (p != null)
         {
-            try
+            try { if (!p.HasExited) p.Kill(); } catch { }
+            try { p.Dispose(); } catch { }
+            // PresentMon arrêté de force laisse sa session de mesure ouverte dans Windows : on la ferme.
+            if (!string.IsNullOrEmpty(pmExe))
             {
-                var psi = new System.Diagnostics.ProcessStartInfo(pmExe, "--terminate_existing_session --session_name Nevermind");
-                psi.UseShellExecute = false;
-                psi.CreateNoWindow = true;
-                using (var t = System.Diagnostics.Process.Start(psi)) { t.WaitForExit(3000); }
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo(pmExe, "--terminate_existing_session --session_name Nevermind");
+                    psi.UseShellExecute = false;
+                    psi.CreateNoWindow = true;
+                    using (var t = System.Diagnostics.Process.Start(psi)) { t.WaitForExit(3000); }
+                }
+                catch { }
             }
-            catch { }
         }
-        FinVerrou();
+        if (relacher) FinVerrou();
     }
 
     // Une ligne de PresentMon. La première donne le nom des colonnes.

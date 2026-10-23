@@ -8,7 +8,9 @@
   (fichier `PresentMon-2.6.0-x64.exe`, même empreinte que celle publiée par GitHub pour cette version).
 - Signé par **Intel Corporation** (signature Authenticode valide).
 - Licence : MIT, `PresentMon-LICENCE.txt`.
-- Lancé seulement par Nevermind Aide (administrateur), qui vérifie avant chaque lancement que la signature est valide et
-  vient d'Intel ; `outils\construire.ps1` vérifie aussi l'empreinte avant de construire.
+- Lancé par Nevermind Aide (administrateur), ou par Nevermind lui-même quand l'Aide ne répond pas
+  (`modules\aide-client.ps1`). Les deux vérifient avant chaque lancement que la signature est valide et vient d'Intel ;
+  Nevermind garde aussi le fichier ouvert en lecture seule pendant ce contrôle et toute la mesure, pour que personne ne
+  puisse le remplacer entre-temps. `outils\construire.ps1` vérifie aussi l'empreinte avant de construire.
 - Pour changer de version : prendre le fichier `-x64.exe` de la version voulue sur la page des versions d'Intel,
   vérifier son empreinte avec celle affichée par GitHub, puis mettre à jour ce tableau et `outils\construire.ps1`.

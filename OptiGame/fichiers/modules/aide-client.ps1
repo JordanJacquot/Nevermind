@@ -172,9 +172,13 @@ function Start-FpsMesure([int]$ProcId) {
         if ([FrameMon]::StartRemote($ProcId)) { Write-Log "Mesure des FPS : par l'Aide$(if ([FrameMon]::Attached) { ', reprise de la veille lancée avant le jeu' })"; return $true }
         Write-Log "Mesure des FPS par l'Aide impossible : $([FrameMon]::LastError)"
     }
-    # Repli sur place (en administrateur si Nevermind l'est) : même contrôle que l'Aide (Get-AidePresentMon), avant chaque lancement
-    $raison = Get-RaisonRefusPresentMon $PresentMonExe
+    # Repli sur place (en administrateur si Nevermind l'est) : même contrôle que l'Aide (Get-AidePresentMon), avant chaque lancement.
+    # Le fichier est d'abord bloqué en lecture seule, puis contrôlé : celui qui est lancé est bien celui qui a été contrôlé.
+    $raison = if ([FrameMon]::Verrouiller($PresentMonExe)) { Get-RaisonRefusPresentMon $PresentMonExe }
+              elseif (Test-Path -LiteralPath $PresentMonExe -PathType Leaf) { "fichier illisible ($([FrameMon]::LastError))" }
+              else { 'fichier absent' }
     if ($raison) {
+        [FrameMon]::Relacher()
         [FrameMon]::LastError = "PresentMon refusé : $raison"
         Write-Log "Mesure des FPS : PresentMon n'est pas lancé, $raison ($PresentMonExe)"
         Set-Status 'L''outil de mesure des FPS a été modifié : Nevermind ne le lance pas. Réinstalle Nevermind depuis Mindset.'
