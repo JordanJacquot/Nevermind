@@ -834,6 +834,65 @@ $script:T.Run.Add_Tick({
                     foreach ($n in 'HubCards', 'HubTodo', 'HubGaugeOpt') { Assert-Test ($null -eq $Window.FindName($n)) "$n (accueil Ordinateur) encore dans la fenêtre" }
                     "$($KitPagesIndex.Count) pages, 6 onglets des Paramètres, 8 liens de fiche, $nRech résultats de recherche : toujours l'écran de la console (au-dessus, fond plein)"
                 }
+                Test-Step 'Console : détail d''une partie depuis Jeux' {
+                    # Le chemin de la bulle « Partie terminée » (Show-PerfPage) mène à l'écran Jeux ; un clic sur une partie
+                    # ouvre son détail dans l'écran (panneau). Avant : chaque nouvel état renvoyait la page de Show-Page, et
+                    # l'écran retournait sur Jeux aussitôt le détail ouvert (il n'apparaissait qu'un instant).
+                    $vraiesParties = if (Test-Path -LiteralPath $FpsFile) { [IO.File]::ReadAllText($FpsFile, [Text.Encoding]::UTF8) } else { $null }
+                    try {
+                        if (-not (Get-LastChangeDate)) { [void](Add-History 'Réglage d''essai FPS' @() @(@{ Type = 'reg'; Path = 'HKCU:\Software\OptiGameTest'; Name = 'X'; Existed = $false })) }
+                        $lc = Get-LastChangeDate
+                        $mkP = { param($id, $d, $avg, $low, $menu) [pscustomobject]@{ Id = $id; Date = $d.ToString('s'); Game = 'Jeu de foot d''essai'; Key = 'foot-essai'; Avg = $avg; Low1 = $low; Low01 = [math]::Round($low * 0.4, 1); Seconds = 2700; Frames = 150000; Exclusive = $false
+                            Series = @(1..160 | ForEach-Object { if ($_ -in 40..60) { 30 } else { [math]::Round($avg + 15 * [math]::Sin($_ / 9) - $(if ($_ % 37 -eq 0) { 25 } else { 0 }), 1) } }); MenuSec = $menu; MenuFps = 30
+                            Diag = [pscustomobject]@{ CpuRatio = 0.99; GpuRatio = 0.21; Stutters = 300; Cpu = 54; CpuMax = 92; Perf = 101; Ram = 61; Gpu = 37; Temp = 71; Vram = 42; Power = 33; Disk = 4; DiskAvg = 1.2; OnBattery = $false
+                                Top = @([pscustomobject]@{ Name = 'navigateur'; Pct = 6.4 }); TopMem = @([pscustomobject]@{ Name = 'navigateur'; MB = 1850 }); Path = 'C:\OptiGameTest\JeuDeFoot.exe'; Drive = 'C'; Media = 'SSD'
+                                Hz = 144; HzMax = 144; Laptop = $false; Dual = $false; Nvidia = $true; Rtx = $true; Amd = $false; GameMode = $false } } }
+                        $parties = @((& $mkP 'essaifoot1' $lc.AddDays(-3) 52 20 120), (& $mkP 'essaifoot2' $lc.AddDays(-1) 55 21 0), (& $mkP 'essaifoot3' $lc.AddMinutes(30) 58 23 660))
+                        ConvertTo-Json -InputObject $parties -Depth 6 | Set-Content -LiteralPath $FpsFile -Encoding UTF8
+                        $fin = (Get-Date).AddSeconds(8); while ((-not $script:Vue.Pret -or $ui.EcranKit.Visibility -ne 'Visible') -and (Get-Date) -lt $fin) { Wait-TestMs 100 }
+                        Assert-Test ($script:Vue.Pret) 'écran de la console pas prêt'
+                        Show-PerfPage 'fps'
+                        $fin = (Get-Date).AddSeconds(5); while ($script:Vue.Ecran -ne 'jeux' -and (Get-Date) -lt $fin) { Wait-TestMs 100 }
+                        Assert-Test ($script:Vue.Ecran -eq 'jeux') "écran « $($script:Vue.Ecran) » au lieu de Jeux"
+                        # Le geste de l'écran, comme un clic sur la partie
+                        Receive-MessageVue '{"type":"action","id":"fps:essaifoot3","ecran":"jeux"}'
+                        $fin = (Get-Date).AddSeconds(5); while ($script:Vue.Ecran -ne 'panneau' -and (Get-Date) -lt $fin) { Wait-TestMs 100 }
+                        Assert-Test ($script:Vue.Ecran -eq 'panneau') "le détail ne s'ouvre pas (écran « $($script:Vue.Ecran) », panneau d'avant $($ui.TestOverlay.Visibility))"
+                        # Il reste ouvert, même quand un nouvel état est envoyé (mesures, analyse en fond...)
+                        $script:Kit.Envoye = ''; Update-EcranNevermind
+                        $fin = (Get-Date).AddMilliseconds(2500); $parti = ''
+                        while ((Get-Date) -lt $fin) { Wait-TestMs 100; if ($script:Vue.Ecran -ne 'panneau') { $parti = $script:Vue.Ecran; break } }
+                        Assert-Test (-not $parti) "le détail se referme tout seul (retour sur « $parti »)"
+                        # Son contenu : chiffres, verdict, diagnostic, courbe, comparaison, et Fermer pour revenir
+                        $p = $script:Kit.Panneau
+                        $bl = @($p.blocs)
+                        $ch = @($bl | Where-Object { $_.type -eq 'chiffres' } | ForEach-Object { @($_.elements) })
+                        $moy = @($ch | Where-Object { $_.titre -eq 'FPS moyen' })[0]
+                        Assert-Test ($p.titre -eq 'Jeu de foot d''essai') "titre : $($p.titre)"
+                        Assert-Test ($moy -and $moy.valeur -eq '58' -and $moy.unite -eq 'FPS') "FPS moyen absent ou faux ($($moy | ConvertTo-Json -Compress))"
+                        Assert-Test (@($ch | Where-Object { $_.titre -in '1 % bas', '0,1 % bas' }).Count -eq 2) '1 % bas et 0,1 % bas absents'
+                        $cb = @($bl | Where-Object { $_.type -eq 'courbe' })[0]
+                        Assert-Test ($cb -and @($cb.points).Count -eq 160 -and $cb.unite -eq 'FPS') 'courbe des FPS absente'
+                        Assert-Test (@($ch | Where-Object { $_.titre -like 'Avant le *' }).Count -eq 1 -and @($ch | Where-Object { $_.titre -eq 'Différence' }).Count -eq 1) 'comparaison avant / après absente'
+                        Assert-Test (@($bl | Where-Object { $_.type -eq 'titre' -and $_.texte -like '*OÙ ÇA VIENT*' }).Count -eq 1) 'diagnostic absent'
+                        Assert-Test (@($bl | Where-Object { $_.type -eq 'image' }).Count -eq 0) "$(@($bl | Where-Object { $_.type -eq 'image' }).Count) image(s) au lieu des chiffres et de la courbe"
+                        Assert-Test ($p.module.titre -and @($p.module.boutons | Where-Object { $_.id -eq 'panneau:close' }).Count) 'verdict ou bouton Fermer absent'
+                        if ($script:T.Captures) {
+                            $script:T.Vu = $false
+                            Save-CaptureVue (Join-Path $script:T.Dir 'captures\console-detail-partie.png') { param($ok) $script:T.Vu = $true }
+                            $fin = (Get-Date).AddSeconds(5); while (-not $script:T.Vu -and (Get-Date) -lt $fin) { Wait-TestMs 50 }
+                        }
+                        # Fermer : retour sur Jeux
+                        Receive-MessageVue '{"type":"action","id":"panneau:close","ecran":"panneau"}'
+                        $fin = (Get-Date).AddSeconds(4); while ($script:Vue.Ecran -ne 'jeux' -and (Get-Date) -lt $fin) { Wait-TestMs 100 }
+                        Assert-Test ($script:Vue.Ecran -eq 'jeux' -and $ui.TestOverlay.Visibility -ne 'Visible') "Fermer : écran « $($script:Vue.Ecran) », panneau d'avant $($ui.TestOverlay.Visibility)"
+                        "détail ouvert et resté ouvert (état renvoyé), $($bl.Count) blocs : FPS moyen $($moy.valeur), courbe de $(@($cb.points).Count) points, comparaison, diagnostic ; Fermer ramène sur Jeux"
+                    } finally {
+                        if ($ui.TestOverlay.Visibility -eq 'Visible') { Hide-TestPanel }
+                        if ($null -ne $vraiesParties) { [IO.File]::WriteAllText($FpsFile, $vraiesParties, (New-Object Text.UTF8Encoding($true))) } else { Remove-Item -LiteralPath $FpsFile -ErrorAction SilentlyContinue }
+                        Show-Page $HubIndex; Open-EcranVue 'accueil'; Wait-TestMs 300
+                    }
+                }
                 Test-Step 'Écran impossible : message, puis fermeture' {
                     # Simulé : l'écran de la console ne démarre pas. La question (neutralisée ici) dit quoi faire, la raison
                     # est notée au journal, la fenêtre est cachée et Nevermind se ferme (fermeture remplacée ici par une trace)

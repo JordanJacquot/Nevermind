@@ -94,8 +94,11 @@ function Get-EcranNevermind {
             )
         }
         pages = $pages
-        focus = $script:Kit.Focus
-        ecran = $script:Kit.RetourEcran
+        # La page et l'élément du retour : seulement pour un écran pas encore prêt (il y va en arrivant, puis « pret » les
+        # oublie). Prêt, il y est déjà allé (Show-Page, Show-Settings) : renvoyés avec chaque nouvel état, ils le
+        # ramenaient sur cette page, par exemple aussitôt après l'ouverture du détail d'une partie.
+        focus = $(if (-not $script:Vue.Pret) { $script:Kit.Focus })
+        ecran = $(if (-not $script:Vue.Pret) { $script:Kit.RetourEcran })
     }
 }
 

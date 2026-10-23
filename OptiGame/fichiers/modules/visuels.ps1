@@ -198,6 +198,7 @@ function New-Gauge([string]$Label, [double]$Value, [double]$Max, [string]$Fmt, [
 
     $state = @{ Arc = $arc; Led = $led; Knob = $knob; Num = $num; From = 0.0; To = $Value; Cur = 0.0; Max = [math]::Max(1e-6, $Max); Fmt = $Fmt; C = $c; R = $r }
     Start-Anim { param($e, $s) Update-GaugeVisual $s ($s.From + ($s.To - $s.From) * $e) } $state 1300 $Delay
+    $root.Tag = @{ JaugeKit = $state; Titre = $Label; Unite = $Unit; Couleur = $Color }   # (dans l'écran : un chiffre, voir ecran-panneau.ps1)
     @{ El = $root; State = $state }
 }
 
@@ -298,8 +299,11 @@ function New-LiveChart([string]$Color, [string]$Unit, [string]$Fmt = '{0:N0}') {
     $border.Padding = New-Thickness 12 10 12 10
     $border.Margin = New-Thickness 0 10 0 6
     $border.Child = $cv
-    @{ El = $border; Line = $line; Fill = $fill; Dot = $dot; Halo = $halo; Bubble = $bub; BubbleText = $bubText; MaxText = $maxText; Ref = $ref; RefText = $refText; RefValue = $null
-       Values = New-Object System.Collections.ArrayList; W = $w; H = $h; Unit = $Unit; Fmt = $Fmt }
+    # (Titre et Etiquettes : ce que la courbe de l'écran écrit au-dessus et en dessous, voir ecran-panneau.ps1)
+    $chart = @{ El = $border; Line = $line; Fill = $fill; Dot = $dot; Halo = $halo; Bubble = $bub; BubbleText = $bubText; MaxText = $maxText; Ref = $ref; RefText = $refText; RefValue = $null
+       Values = New-Object System.Collections.ArrayList; W = $w; H = $h; Unit = $Unit; Fmt = $Fmt; Titre = $null; Etiquettes = $null }
+    $border.Tag = @{ CourbeKit = $chart }
+    $chart
 }
 
 function Add-ChartPoint($Chart, [double]$Value) {

@@ -3,7 +3,8 @@
 #
 # Le panneau reste celui de toujours ($ui.TestOverlay, rempli par chaque fonctionnalité) : son contenu est lu élément
 # par élément et traduit pour l'écran : textes, titres, encadrés de verdict, lignes de tableau, boutons et
-# interrupteurs (qui appuient sur les vrais), et les graphiques (courbe des FPS, du ping...) en images nettes.
+# interrupteurs (qui appuient sur les vrais), les jauges en chiffres, les courbes (FPS, ping...) en courbes de l'écran,
+# et les autres dessins en images nettes.
 # Chargé par OptiGame.ps1 après ecran-protection.ps1.
 
 $IconesPanneau = @{ FPS = 'jauge'; LAG = 'ondes'; AV = 'bouclier'; TMP = 'balai'; NET = 'courbe'; WIN = 'windows'; 'SÉCU' = 'bouclier'; DEL = 'poubelle'; '!' = 'aide' }
@@ -52,10 +53,40 @@ function Test-DessinWpf($El) {
     $false
 }
 
+# Les dessins d'avant qui ont leur équivalent dans l'écran, lus à chaque fois (une jauge ou une courbe en direct suit) :
+# une jauge (New-Gauge) devient un chiffre, une courbe (New-LiveChart) la courbe de l'écran, et un élément qui porte ses
+# blocs tout prêts (BlocKit, comme la comparaison avant / après des FPS) les donne tels quels. Une image d'un dessin
+# perdait ses chiffres (trop petite, ou pas encore dessinée) et faisait un état très lourd.
+function Test-JaugeWpf($El) { $El -is [System.Windows.FrameworkElement] -and $El.Tag -is [hashtable] -and $El.Tag.JaugeKit }
+function Get-ChiffreJaugeWpf($Tag) {
+    $s = $Tag.JaugeKit
+    @{ titre = [string]$Tag.Titre; valeur = ([string]$s.Fmt -f [double]$s.To); unite = [string]$Tag.Unite; ton = (Get-TonKit $Tag.Couleur) }
+}
+function Add-BlocKitWpf($El, $Blocs) {
+    if ($El -isnot [System.Windows.FrameworkElement] -or $El.Tag -isnot [hashtable]) { return $false }
+    $t = $El.Tag
+    if ($t.BlocKit) { foreach ($b in @($t.BlocKit)) { [void]$Blocs.Add($b) }; return $true }
+    if ($t.JaugeKit) { [void]$Blocs.Add(@{ type = 'chiffres'; elements = @(Get-ChiffreJaugeWpf $t) }); return $true }
+    if ($t.CourbeKit) {
+        $c = $t.CourbeKit
+        $dec = if ([string]$c.Fmt -match 'N(\d)') { [int]$Matches[1] } else { 1 }
+        $pts = @($c.Values | ForEach-Object { [math]::Round([double]$_, $dec) })
+        if ($pts.Count -ge 2) {
+            $b = @{ type = 'courbe'; points = $pts; unite = [string]$c.Unit
+                titre = $(if ($c.Titre) { [string]$c.Titre } elseif ($c.RefValue -and $c.RefText.Text) { [string]$c.RefText.Text } else { '' }) }
+            if ($c.Etiquettes) { $b.etiquettes = @($c.Etiquettes) }
+            [void]$Blocs.Add($b)
+        }
+        return $true
+    }
+    $false
+}
+
 # Traduit un élément (et ce qu'il contient) en blocs du kit
 function Add-BlocsWpf($El, $Blocs, $Etat) {
     if ($null -eq $El -or $Blocs.Count -gt 160) { return }
     if ($El -is [System.Windows.UIElement] -and $El.Visibility -ne 'Visible') { return }
+    if (Add-BlocKitWpf $El $Blocs) { return }
     if ($El -is [System.Windows.Controls.TextBlock]) {
         $t = Get-TexteWpf $El; if (-not $t) { return }
         $ton = Get-TonKit $El.Foreground
@@ -79,6 +110,7 @@ function Add-BlocsWpf($El, $Blocs, $Etat) {
     }
     if ('SansImageKit' -eq $El.Tag) { return }   # (un dessin animé d'avant que la console ne montre pas, le radar d'une analyse)
     if (Test-DessinWpf $El) {
+        if ($El -is [System.Windows.Shapes.Shape] -and $El.ActualWidth -lt 24 -and $El.ActualHeight -lt 24) { return }   # (une pastille de décor)
         $img = Get-ImageWpf $El
         if ($img) { [void]$Blocs.Add(@{ type = 'image'; url = $img; hauteur = [int][math]::Min(320, [math]::Max(60, $El.ActualHeight)) }) }
         return
@@ -114,6 +146,11 @@ function Add-BlocsWpf($El, $Blocs, $Etat) {
     }
     if ($El -is [System.Windows.Controls.Panel]) {
         $enfants = @($El.Children)
+        # Une rangée de jauges (New-GaugeRow) : leurs chiffres côte à côte
+        $vues = @($enfants | Where-Object { $_.Visibility -eq 'Visible' })
+        if ($vues.Count -ge 2 -and -not @($vues | Where-Object { -not (Test-JaugeWpf $_) }).Count) {
+            [void]$Blocs.Add(@{ type = 'chiffres'; elements = @($vues | ForEach-Object { Get-ChiffreJaugeWpf $_.Tag }) }); return
+        }
         if ($El -is [System.Windows.Controls.Grid]) { $enfants = @($enfants | Sort-Object { [System.Windows.Controls.Grid]::GetRow($_) }, { [System.Windows.Controls.Grid]::GetColumn($_) }) }
         foreach ($x in $enfants) { Add-BlocsWpf $x $Blocs $Etat }
         return

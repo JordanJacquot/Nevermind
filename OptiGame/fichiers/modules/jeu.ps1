@@ -788,6 +788,15 @@ function New-FpsCompare($Sessions) {
     $delta = New-Text $(if ([math]::Abs($pct) -lt 3) { 'Pareil' } else { '{0}{1:N0} %' -f $(if ($pct -gt 0) { '+' } else { '' }), $pct }) 20 $col -Bold
     $delta.VerticalAlignment = 'Center'
     Add-ToGrid $row $delta 2
+    # Dans l'écran (ecran-panneau.ps1) : les mêmes chiffres en cartes, et le détail en dessous
+    $row.Tag = @{ BlocKit = @(
+        @{ type = 'chiffres'; elements = @(
+            @{ titre = "Avant le $($lc.ToString('dd/MM'))"; valeur = ('{0:N0}' -f $b[0]); unite = 'FPS' }
+            @{ titre = 'Après'; valeur = ('{0:N0}' -f $a[0]); unite = 'FPS' }
+            @{ titre = 'Différence'; valeur = $delta.Text; ton = $(if ([math]::Abs($pct) -lt 3) { '' } elseif ($pct -gt 0) { 'ok' } else { 'attention' }) }
+        ) }
+        @{ type = 'texte'; texte = ('1 % bas : {0:N0} avant ({1} partie{2}), {3:N0} après ({4} partie{5}).' -f $b[1], $before.Count, $(if ($before.Count -gt 1) { 's' }), $a[1], $after.Count, $(if ($after.Count -gt 1) { 's' })) }
+    ) }
     $row
 }
 
@@ -825,6 +834,7 @@ function Show-FpsSession([string]$Id) {
         [void]$body.Children.Add((New-SectionTitle 'FPS PENDANT LA PARTIE'))
         $ch = New-LiveChart $Colors.info 'FPS' '{0:N0}'
         $ch.RefValue = $s.Avg; $ch.RefText.Text = ('moyenne {0:N0}' -f $s.Avg)
+        $ch.Titre = 'Moyenne {0:N0} FPS, à la fin' -f $s.Avg; $ch.Etiquettes = @('Début de la partie', 'Fin de la partie')
         # Étirée sur toute la largeur du graphique (160 points), même pour une partie courte.
         for ($k = 0; $k -lt 160; $k++) { [void]$ch.Values.Add([double]$series[[int][math]::Floor($k * $series.Count / 160)]) }
         [void]$body.Children.Add($ch.El)
