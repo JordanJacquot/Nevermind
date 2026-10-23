@@ -10,7 +10,8 @@
     OptiGame.ps1 -Demarrage  s'ouvre réduit près de l'horloge (lancement avec Windows).
     OptiGame.ps1 -Uninstall  remet les réglages comme avant et supprime l'application.
 #>
-param([switch]$Uninstall, [switch]$Demarrage)   # -Demarrage : lancé avec Windows, réduit près de l'horloge
+param([switch]$Uninstall, [switch]$Demarrage, [switch]$GarderDonnees, [switch]$SupprimerDonnees)   # -Demarrage : lancé avec Windows, réduit près de l'horloge ;
+# -GarderDonnees / -SupprimerDonnees : le choix des données à la désinstallation, sans question (voir systeme.ps1)
 
 $AppVersion = '1.3.7'
 $UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées les mises à jour
@@ -281,11 +282,12 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
 $AppExe = Join-Path (Split-Path $PSScriptRoot -Parent) 'Nevermind.exe'
 # Nevermind tourne sans les droits administrateur : ce qui en a besoin passe par son Aide (NevermindAide.exe, lancée par la
 # tâche que Mindset crée, sans demande de Windows ; liste stricte dans modules\aide-actions.ps1).
-# Seule la désinstallation les demande (une fois) : elle remet tous les réglages de Windows comme avant et retire l'Aide.
+# Seule la désinstallation les demande (une fois) : elle remet les réglages de Windows comme avant (sauf les changements
+# définitifs qui protègent le PC) et retire l'Aide.
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($Uninstall -and -not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     try {
-        Start-Process -FilePath 'powershell.exe' -Verb RunAs -ErrorAction Stop -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"", '-Uninstall')
+        Start-Process -FilePath 'powershell.exe' -Verb RunAs -ErrorAction Stop -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"", '-Uninstall') + @(if ($GarderDonnees -or $env:NEVERMIND_DONNEES -eq 'garder') { '-GarderDonnees' }) + @(if ($SupprimerDonnees -or $env:NEVERMIND_DONNEES -eq 'supprimer') { '-SupprimerDonnees' })
     } catch {
         [System.Windows.MessageBox]::Show(
             "La désinstallation de Nevermind a besoin des droits administrateur pour remettre les réglages de Windows comme avant.`n`nRelance-la et clique sur « Oui » quand Windows le demande.",
@@ -367,7 +369,7 @@ $AppDir = $PSScriptRoot
 $ModulesDir = Join-Path $AppDir 'modules'
 $missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'aide-actions.ps1', 'aide-client.ps1', 'optimisations.ps1', 'systeme.ps1', 'themes.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'reseau-avance.ps1', 'carte-reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'assistance.ps1', 'jeu.ps1', 'diagnostic-fps.ps1', 'trafic.ps1', 'microsoft.ps1', 'lag.ps1', 'bibliotheque.ps1', 'organizer.ps1', 'parametres.ps1', 'recherche.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
 if ($missing) {
-    [System.Windows.MessageBox]::Show("Des fichiers de Nevermind sont manquants :`n`n$($missing -join ', ')`n`nRetélécharge Nevermind et remplace tout le dossier.", 'OptiGame', 'OK', 'Error') | Out-Null
+    [System.Windows.MessageBox]::Show("Des fichiers de Nevermind sont manquants :`n`n$($missing -join ', ')`n`nRetélécharge Nevermind et remplace tout le dossier.", 'Nevermind', 'OK', 'Error') | Out-Null
     exit
 }
 

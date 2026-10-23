@@ -105,7 +105,18 @@ static class Lanceur
         bool uninstall = false;
 #endif
         bool demarrage = false;
-        foreach (string a in args) { if (a.Trim('-', '/').Equals("Demarrage", StringComparison.OrdinalIgnoreCase)) demarrage = true; }
+        string donnees = null;
+        foreach (string a in args)
+        {
+            string nom = a.Trim('-', '/');
+            if (nom.Equals("Demarrage", StringComparison.OrdinalIgnoreCase)) demarrage = true;
+            else if (nom.Equals("GarderDonnees", StringComparison.OrdinalIgnoreCase)) donnees = donnees == null || donnees == "garder" ? "garder" : "";
+            else if (nom.Equals("SupprimerDonnees", StringComparison.OrdinalIgnoreCase)) donnees = donnees == null || donnees == "supprimer" ? "supprimer" : "";
+        }
+        // Désinstaller Nevermind.exe -GarderDonnees / -SupprimerDonnees (lancé par le désinstalleur de Mindset) : le choix
+        // des données, sans question. Transmis au script par NEVERMIND_DONNEES, dans ce processus seulement ; une valeur
+        // héritée d'ailleurs est effacée (seule la ligne de commande compte). Les deux à la fois : la question est posée.
+        if (uninstall) Environment.SetEnvironmentVariable("NEVERMIND_DONNEES", string.IsNullOrEmpty(donnees) ? null : donnees);
 
         try
         {

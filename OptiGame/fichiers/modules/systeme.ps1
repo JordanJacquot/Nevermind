@@ -283,28 +283,158 @@ function Update-AutoStartPath {
 # ---------------------------------------------------------------------------
 # Désinstallation
 # ---------------------------------------------------------------------------
+# Les données (Mindset issue #2) : gardées, sauf si l'utilisateur demande de les supprimer. Quoi qu'il arrive, Nevermind
+# remet d'abord les réglages de Windows comme avant ; ce qui les décrivait part alors toujours : sauvegarde.json, sa copie
+# de secours, les sauvegardes abîmées mises de côté, et l'historique des changements (tout y est annulé). Une réinstallation
+# ne doit jamais « restaurer » des valeurs vieilles de plusieurs mois. L'historique n'est gardé que si des réglages n'ont
+# pas pu être remis comme avant (ou si la sauvegarde avait un problème) : il montre alors ce qui reste à défaire.
+# Partent aussi les demandes de passage (*.demande). Le reste est gardé : préférences, jeux et jaquettes, mesures (FPS,
+# lag), organiseur, appareils du réseau, thèmes, journal. « Supprimer » retire tout le dossier des données.
+# Le choix vient de la ligne de commande (« Désinstaller Nevermind.exe -GarderDonnees » ou « -SupprimerDonnees », utilisé
+# par le désinstalleur de Mindset : aucune question), sinon il est demandé dans la fenêtre de désinstallation.
+# Le lanceur (outils\lanceur.cs) le transmet par $env:NEVERMIND_DONNEES (« garder » ou « supprimer ») ; OptiGame.ps1 peut
+# aussi le recevoir en paramètres ($GarderDonnees, $SupprimerDonnees).
+function Get-ChoixDonneesImpose {
+    $s = [bool](Get-Variable -Name SupprimerDonnees -ValueOnly -ErrorAction SilentlyContinue) -or "$env:NEVERMIND_DONNEES" -eq 'supprimer'
+    $g = [bool](Get-Variable -Name GarderDonnees -ValueOnly -ErrorAction SilentlyContinue) -or "$env:NEVERMIND_DONNEES" -eq 'garder'
+    if ($s -and -not $g) { 'supprimer' } elseif ($g -and -not $s) { 'garder' } else { '' }
+}
+
+# Les données après la restauration. $GarderHistorique : des réglages n'ont pas pu être remis comme avant.
+# Renvoie la liste des erreurs (vide si tout s'est bien passé).
+function Remove-DonneesDesinstallation([bool]$Garder, [bool]$GarderHistorique) {
+    $errors = @()
+    if (-not [IO.Directory]::Exists($DataDir)) { return , $errors }
+    if (-not $Garder) {
+        try { Remove-Item -LiteralPath $DataDir -Recurse -Force -ErrorAction Stop } catch { $errors += "Données: $($_.Exception.Message)" }
+        return , $errors
+    }
+    $partent = @('sauvegarde.json', 'sauvegarde.json.bak', 'sauvegarde-abimee-*.json', '*.demande')
+    if (-not $GarderHistorique) { $partent += 'historique.json' }
+    foreach ($m in $partent) {
+        foreach ($e in @(Get-ChildItem -LiteralPath $DataDir -Filter $m -File -Force -ErrorAction SilentlyContinue)) {
+            try { [IO.File]::Delete($e.FullName) } catch { $errors += "Données ($($e.Name)): $($_.Exception.Message)" }
+        }
+    }
+    # Plus rien à garder : le dossier part aussi
+    try { if (-not @([IO.Directory]::EnumerateFileSystemEntries($DataDir)).Count) { [IO.Directory]::Delete($DataDir) } } catch {}
+    , $errors
+}
+
+# La fenêtre de désinstallation : ce qui va être fait, et la case « Supprimer aussi mes données » (décochée au départ).
+# Renvoie 'garder', 'supprimer', ou $null si l'utilisateur annule.
+# Tests (outils\tester-desinstallation.ps1) : -Essai 0 laisse la case, 1 la coche, 2 annule ; la fenêtre est alors hors
+# de l'écran, sans prendre la main, et se ferme seule. -Image : la fenêtre est aussi enregistrée en image.
+function Show-ChoixDesinstallation([string]$Texte, [int]$Essai = -1, [string]$Image = '') {
+    $xaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Désinstaller Nevermind" Width="520" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterScreen"
+        Background="#110F19" BorderBrush="#2E2843" BorderThickness="1" FontFamily="Segoe UI Variable Text, Segoe UI">
+  <Window.Resources>
+    <Style x:Key="Btn" TargetType="Button">
+      <Setter Property="Foreground" Value="#E6E1F5"/><Setter Property="FontSize" Value="13"/><Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Padding" Value="18,9"/><Setter Property="Cursor" Value="Hand"/><Setter Property="Background" Value="#14FFFFFF"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="b" CornerRadius="12" Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}" BorderBrush="#2EFFFFFF" BorderThickness="1">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="b" Property="Opacity" Value="0.85"/></Trigger></ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </Window.Resources>
+  <StackPanel Margin="28,24,28,22">
+    <TextBlock Text="Désinstaller Nevermind ?" Foreground="White" FontSize="18" FontWeight="Bold" FontFamily="Segoe UI Variable Display, Segoe UI"/>
+    <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto" Margin="0,10,0,0">
+      <TextBlock x:Name="Texte" Foreground="#A6A1BC" FontSize="13" TextWrapping="Wrap" LineHeight="19"/>
+    </ScrollViewer>
+    <CheckBox x:Name="CaseDonnees" Margin="0,18,0,0" Foreground="#E6E1F5" FontSize="13" Content="Supprimer aussi mes données (préférences, jeux, mesures, journal)"/>
+    <TextBlock x:Name="Note" Margin="20,6,0,0" FontSize="12.5" TextWrapping="Wrap" Foreground="#A6A1BC"/>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+      <Button x:Name="BtnOui" Style="{StaticResource Btn}" Content="Désinstaller" Background="#C2334B" Foreground="White" Margin="0,0,10,0"/>
+      <Button x:Name="BtnNon" Style="{StaticResource Btn}" Content="Annuler" IsCancel="True" IsDefault="True"/>
+    </StackPanel>
+  </StackPanel>
+</Window>
+'@
+    $w = [Windows.Markup.XamlReader]::Parse($xaml)
+    $w.FindName('Texte').Text = $Texte
+    $case = $w.FindName('CaseDonnees'); $note = $w.FindName('Note')
+    $majNote = {
+        if ($case.IsChecked) { $note.Text = 'Attention : tes données seront effacées pour de bon.'; $note.Foreground = [Windows.Media.BrushConverter]::new().ConvertFromString('#FF6B81') }
+        else { $note.Text = 'Tes données sont gardées : si tu réinstalles Nevermind, tu retrouveras tes préférences, tes jeux et tes mesures.'; $note.Foreground = [Windows.Media.BrushConverter]::new().ConvertFromString('#A6A1BC') }
+    }.GetNewClosure()
+    & $majNote
+    $case.Add_Checked($majNote); $case.Add_Unchecked($majNote)
+    $ico = Join-Path $AppDir 'OptiGame.ico'
+    if (Test-Path -LiteralPath $ico) {
+        try { $w.Icon = [System.Windows.Media.Imaging.BitmapDecoder]::Create((New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))), 'None', 'OnLoad').Frames | Sort-Object PixelWidth | Where-Object { $_.PixelWidth -ge 32 } | Select-Object -First 1 } catch {}
+    }
+    $etat = @{ Choix = $null }
+    $w.FindName('BtnOui').Add_Click({ $etat.Choix = if ($case.IsChecked) { 'supprimer' } else { 'garder' }; $w.Close() }.GetNewClosure())
+    $w.FindName('BtnNon').Add_Click({ $w.Close() }.GetNewClosure())
+    $w.Add_Loaded({ [void]$w.FindName('BtnNon').Focus() }.GetNewClosure())   # Entrée par erreur = Annuler
+    if ($Essai -ge 0) {
+        $w.WindowStartupLocation = 'Manual'; $w.Left = -10000; $w.Top = -10000; $w.ShowActivated = $false; $w.ShowInTaskbar = $false
+        $w.Add_ContentRendered({
+            if ($Essai -eq 1) { $case.IsChecked = $true }
+            if ($Image) {
+                $w.UpdateLayout()
+                $bmp = New-Object System.Windows.Media.Imaging.RenderTargetBitmap ([int]$w.ActualWidth), ([int]$w.ActualHeight), 96, 96, 'Pbgra32'
+                $bmp.Render($w)
+                $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
+                $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($bmp))
+                $fs = [IO.File]::Create($Image); try { $enc.Save($fs) } finally { $fs.Dispose() }
+            }
+            $bouton = if ($Essai -eq 2) { 'BtnNon' } else { 'BtnOui' }
+            $w.FindName($bouton).RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Button]::ClickEvent)))
+        }.GetNewClosure())
+    }
+    [void]$w.ShowDialog()
+    $etat.Choix
+}
+
+# Le message de fin (une fonction à part : le test de la désinstallation le lit au lieu de l'afficher)
+function Show-MessageFinDesinstallation([string]$Texte) { [System.Windows.MessageBox]::Show($Texte, 'Nevermind', 'OK', 'Information') | Out-Null }
+
 function Invoke-Uninstall {
     Import-Backup
-    $n = $script:Backup.Registry.Count + $script:Backup.Dns.Count + $script:Backup.Displays.Count + $(if ($script:Backup.PowerScheme) { 1 } else { 0 }) + $(if ($script:Backup.Overlay) { 1 } else { 0 })
+    # (services et réglages « batterie » remis par Restore-AllSettings : comptés aussi, sinon ils restaient changés)
+    $n = $script:Backup.Registry.Count + $script:Backup.Dns.Count + $script:Backup.Displays.Count + $(if ($script:Backup.PowerScheme) { 1 } else { 0 }) + $(if ($script:Backup.Overlay) { 1 } else { 0 }) +
+         @(Get-Setting 'SvcOriginal' @()).Count + @(Get-Setting 'PcfgOriginal' @()).Count
     $steps = @()
     if ($n) { $steps += "  - remettre les $n réglage$(if ($n -gt 1) {'s'}) de Windows modifié$(if ($n -gt 1) {'s'}) par Nevermind comme avant" }
-    $steps += "  - supprimer ses données (sauvegarde, journal, préférences)"
     if ((Test-AutoStart) -or (Test-DesktopShortcut)) { $steps += "  - retirer son raccourci du bureau et son lancement au démarrage" }
     $steps += "  - supprimer les fichiers de Nevermind de ce dossier"
-    # Les changements de sécurité définitifs restent (ils protègent le PC) : ils sont dits, avec la façon de revenir en arrière
+    # Les changements de sécurité définitifs restent (ils protègent le PC) : ils sont dits, avec la façon de revenir en arrière.
+    # Même dans une entrée annulée (« Tout restaurer ») : sa part définitive, elle, est toujours en place.
     if ($null -eq $script:History) { try { Import-History } catch {} }
-    $restent = @(@($script:History) | Where-Object { $_ -and -not $_.Annule } | ForEach-Object { @($_.Log) } | Where-Object { $_.Type -eq 'definitif' } | ForEach-Object { "  - $($_.Quoi) (pour revenir en arrière : $($_.Retour))" } | Select-Object -Unique)
-    $q = "Désinstaller Nevermind ?`n`nL'application va :`n" + ($steps -join "`n") + "`n`nLes points de restauration Windows sont conservés."
-    if ($script:BackupProbleme) { $q += "`n`nAttention : $(Get-TexteProblemeSauvegarde)" }
-    if ($restent.Count) { $q += "`n`nCes changements protègent ton PC et restent en place :`n" + ($restent -join "`n") }
-    if ([System.Windows.MessageBox]::Show($q, 'Désinstaller Nevermind', 'YesNo', 'Question') -ne 'Yes') { return }
+    $restent = @(@($script:History) | Where-Object { $_ } | ForEach-Object { @($_.Log) } | Where-Object { $_.Type -eq 'definitif' } | ForEach-Object { "  - $($_.Quoi) (pour revenir en arrière : $($_.Retour))" } | Select-Object -Unique)
+    $avertir = ''
+    if ($script:BackupProbleme) { $avertir += "`n`nAttention : $(Get-TexteProblemeSauvegarde)" }
+    if ($restent.Count) { $avertir += "`n`nCes changements protègent ton PC et restent en place :`n" + ($restent -join "`n") }
+    $choix = Get-ChoixDonneesImpose
+    if ($choix) {
+        # Piloté par Mindset : pas de question (l'utilisateur a déjà choisi), ce qu'il faut savoir est dit à la fin
+        Write-Log "Désinstallation demandée par Mindset (données $(if ($choix -eq 'garder') { 'gardées' } else { 'supprimées' }))"
+    } else {
+        $q = "Nevermind va :`n" + ($steps -join "`n") + "`n`nLes points de restauration Windows sont conservés." + $avertir
+        $choix = Show-ChoixDesinstallation $q
+        if (-not $choix) { return }
+    }
+    $garder = $choix -eq 'garder'
 
     $errors = @()
     # L'Aide ouverte garderait Nevermind.exe : on la ferme (le désinstalleur, lui, a les droits et fait tout lui-même)
     $exeAide = Join-Path (Get-AppRoot) 'NevermindAide.exe'
     foreach ($p in @(Get-Process -Name 'NevermindAide' -ErrorAction SilentlyContinue)) { try { if ($p.Path -eq $exeAide) { $p.Kill(); [void]$p.WaitForExit(3000) } } catch {} }
     if ($n) { $errors += Restore-AllSettings }
-    try { Remove-Item -LiteralPath $DataDir -Recurse -Force -ErrorAction Stop } catch { $errors += "Données: $($_.Exception.Message)" }
+    if ($garder) { Write-Log "Désinstallation : réglages de Windows remis comme avant$(if ($errors) { " sauf $($errors.Count)" }), données gardées" }
+    $errDonnees = Remove-DonneesDesinstallation $garder ([bool]($errors -or $script:BackupProbleme))   # (déjà une liste)
+    $errors += $errDonnees
     try { Set-AutoStart $false } catch { $errors += "Démarrage automatique: $($_.Exception.Message)" }
     foreach ($task in $OldAutoStartTasks) { try { if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction Stop } } catch {} }
     # L'Aide : sa tâche planifiée (créée par Mindset) et ce qu'elle retenait (DNS d'origine)
@@ -337,9 +467,14 @@ function Invoke-Uninstall {
     ) | Select-Object -Unique | Where-Object { Test-Path -LiteralPath $_ }
 
     $msg = 'Nevermind est désinstallé.'
+    $msg += if (-not $garder) { "`n`nSes données sont supprimées$(if ($errDonnees.Count) { ', sauf ce qui est indiqué plus bas' })." }
+            elseif ([IO.Directory]::Exists($DataDir)) { "`n`nTes données sont gardées dans $DataDir : si tu réinstalles Nevermind, tu retrouveras tes préférences, tes jeux et tes mesures." }
+            else { '' }
     if ($n) { $msg += "`n`nRedémarre le PC pour que tous les réglages d'origine soient pris en compte." }
     if ($errors) { $msg += "`n`nCertains éléments n'ont pas pu être restaurés :`n" + ($errors -join "`n") }
-    [System.Windows.MessageBox]::Show($msg, 'Nevermind', 'OK', 'Information') | Out-Null
+    # Piloté par Mindset, la question n'a pas été posée : ce qu'elle disait d'important est dit ici
+    if (Get-ChoixDonneesImpose) { $msg += $avertir }
+    Show-MessageFinDesinstallation $msg
 
     # Les fichiers sont supprimés juste après la fermeture de ce script (ils sont en cours d'utilisation).
     $cmd = 'ping 127.0.0.1 -n 4 >nul'

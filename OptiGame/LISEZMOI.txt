@@ -48,10 +48,19 @@ DÉSINSTALLATION
 ---------------
 Double clique sur « Désinstaller Nevermind.exe » (l'icône avec le rond rouge).
 L'application :
-  - remet tous les réglages de Windows qu'elle a modifiés comme avant,
-  - supprime ses données (sauvegarde, journal, préférences),
+  - remet comme avant les réglages de Windows qu'elle a modifiés, sauf quatre
+    protections du PC qui restent en place (elle les liste : SMBv1 désactivé,
+    Wi-Fi ouverts en connexion manuelle, exclusions retirées de l'antivirus,
+    pare-feu réactivé),
+  - te demande si tu gardes tes données : gardées si tu ne coches rien
+    (préférences, jeux, mesures, journal), pour les retrouver si tu
+    réinstalles Nevermind ; coche « Supprimer aussi mes données » pour tout
+    effacer. La sauvegarde des réglages de Windows part dans tous les cas,
+    puisqu'ils viennent d'être remis comme avant,
   - supprime ses fichiers. Les autres fichiers du dossier ne sont pas touchés.
 Les points de restauration Windows sont conservés.
+Lancée par la désinstallation de Mindset, elle ne pose pas la question :
+elle suit la case « Supprimer aussi mes données » de Mindset.
 Secours : fichiers\Désinstaller Nevermind (secours).bat
 
 CE QUE FAIT L'APPLICATION
@@ -200,9 +209,11 @@ Sécurité
   douteuses, exclusions de l'antivirus, fichier hosts, proxy, pare-feu.
 
 Sauvegarde
-  Annule TOUS les changements de Nevermind en un clic, ou un seul changement
-  grâce à l'historique. Crée un point de restauration Windows, exporte un
-  rapport HTML pour comparer vos PC.
+  Annule les changements de Nevermind en un clic (« Tout restaurer »), ou un
+  seul changement grâce à l'historique. Tout est annulable, sauf quatre
+  protections du PC qui restent en place (marquées « Définitif » dans
+  l'historique, avec la façon de revenir en arrière à la main). Crée un point
+  de restauration Windows, exporte un rapport HTML pour comparer vos PC.
 
 OVERLAY (onglet en haut)
   Le compteur de FPS par dessus le jeu (visible en fenêtré ou plein écran
