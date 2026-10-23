@@ -2204,6 +2204,7 @@ public static class AppIdentity
     }
 
     // pid 5 : identité ; 2 : commande de relance ; 3 : icône ; 4 : nom affiché
+    // (l'identité en dernier, comme le demande Microsoft : la barre des tâches relit la fenêtre quand elle la reçoit)
     public static bool SetWindow(IntPtr hwnd, string id, string relaunch, string icon, string name)
     {
         var iid = new Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99");
@@ -2211,8 +2212,8 @@ public static class AppIdentity
         if (SHGetPropertyStoreForWindow(hwnd, ref iid, out s) != 0 || s == null) return false;
         try
         {
-            Set(s, 5, id);
             if (!string.IsNullOrEmpty(relaunch)) { Set(s, 2, relaunch); Set(s, 3, icon); Set(s, 4, name); }
+            Set(s, 5, id);
             s.Commit();
             return true;
         }

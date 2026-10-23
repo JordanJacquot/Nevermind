@@ -81,6 +81,10 @@ Import-Fonction 'systeme' 'Get-AppRoot'
 Import-Fonction 'systeme' 'Get-ChoixDonneesImpose'
 Import-Fonction 'systeme' 'Remove-DonneesDesinstallation'
 Import-Fonction 'systeme' 'Invoke-Uninstall'
+Import-Fonction 'systeme' 'Get-AppExes'
+Import-Fonction 'systeme' 'Get-ShortcutTarget'
+Import-Fonction 'systeme' 'Get-MenuShortcutPath'
+Import-Fonction 'systeme' 'Remove-MenuShortcut'
 Import-Fonction 'systeme' 'Show-ChoixDesinstallation' 'Show-VraieFenetre'
 Import-Fonction 'donnees' 'Get-TexteProblemeSauvegarde'
 function script:Show-MessageFinDesinstallation([string]$Texte) { $script:Messages.Add($Texte) }
@@ -95,6 +99,7 @@ $script:Bac = [IO.Path]::GetFullPath($script:Bac)
 $AppDir = Join-Path $script:Bac 'Nevermind\fichiers'
 $OldAutoStartTasks = @('OptiGame (démarrage)')
 $AideMemoire = Join-Path $script:Bac 'aide-memoire'   # (à la place de la clé HKLM de l'Aide)
+$script:MenuDir = Join-Path $script:Bac 'menu'        # (à la place du menu Démarrer de l'utilisateur)
 $fichiersGardes = 'parametres.json', 'ignores.json', 'jeux.json', 'fps.json', 'lag.json', 'organizer.json', 'appareils.json', 'journal.txt', 'journal-ancien.txt', 'jaquettes\jeu.png', 'packs\theme\pack.json'
 $fichiersPartis = 'sauvegarde.json', 'sauvegarde.json.bak', 'sauvegarde-abimee-20260101-101010.json', 'afficher.demande', 'quitter.demande'
 
@@ -218,6 +223,26 @@ try {
     $verrou = [IO.File]::Open((Join-Path $d 'journal.txt'), 'Open', 'Read', 'None')
     try { Invoke-Uninstall } finally { $verrou.Dispose() }
     Test-Ok ($script:Messages[0] -match 'sauf ce qui est indiqué' -and $script:Messages[0] -match 'Données') 'Supprimer, un fichier ouvert : le message dit ce qui reste'
+    Remove-Item env:NEVERMIND_DONNEES -ErrorAction SilentlyContinue
+
+    # Le raccourci du menu Démarrer écrit par Mindset (Mindset\Nevermind.lnk, le nom de Nevermind dans la barre des tâches)
+    Test-Ok ((Get-MenuShortcutPath) -eq (Join-Path $script:Bac 'menu\Mindset\Nevermind.lnk')) 'Raccourci du menu Démarrer : cherché dans le faux menu du test'
+    $sh = New-Object -ComObject WScript.Shell
+    $lienMenu = Get-MenuShortcutPath
+    $d = New-FauxNevermind 'menu'
+    $env:NEVERMIND_DONNEES = 'garder'
+    New-Item -ItemType Directory -Force -Path (Split-Path $lienMenu) | Out-Null
+    [IO.File]::WriteAllText((Join-Path (Split-Path $AppDir) 'Mindset.exe'), 'programme')
+    $s = $sh.CreateShortcut($lienMenu); $s.TargetPath = Join-Path (Split-Path $AppDir) 'Mindset.exe'; $s.Save()
+    Invoke-Uninstall
+    Test-Ok (-not (Test-Path -LiteralPath $lienMenu) -and -not (Test-Path -LiteralPath (Split-Path $lienMenu))) 'Le raccourci du menu Démarrer vers ce Nevermind est retiré, avec le dossier « Mindset » devenu vide'
+    $d = New-FauxNevermind 'menu-autre'
+    New-Item -ItemType Directory -Force -Path (Split-Path $lienMenu) | Out-Null
+    $s = $sh.CreateShortcut($lienMenu); $s.TargetPath = Join-Path $script:Bac 'autre\Mindset.exe'; $s.Save()
+    $autre = Join-Path (Split-Path $lienMenu) 'Evermind.lnk'
+    $s = $sh.CreateShortcut($autre); $s.TargetPath = Join-Path $script:Bac 'autre\Mindset.exe'; $s.Save()
+    Invoke-Uninstall
+    Test-Ok ((Test-Path -LiteralPath $lienMenu) -and (Test-Path -LiteralPath $autre)) 'Un raccourci vers une autre copie, ou d''une autre appli, n''est pas touché'
     Remove-Item env:NEVERMIND_DONNEES -ErrorAction SilentlyContinue
 
     # -----------------------------------------------------------------------

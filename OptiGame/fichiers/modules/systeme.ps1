@@ -188,6 +188,22 @@ function Get-ShortcutTarget([string]$Path) {
 
 function Test-DesktopShortcut { $t = Get-ShortcutTarget (Get-DesktopShortcutPath); [bool]($t -and (Get-AppExes) -contains $t) }
 
+# Son raccourci du menu Démarrer (dossier « Mindset »), écrit par Mindset : il porte l'identité de Nevermind
+# (JordanJacquot.Nevermind), d'où vient le nom « Nevermind » de son bouton dans la barre des tâches. Retiré à la
+# désinstallation s'il lance ce Nevermind (le dossier aussi, s'il est alors vide).
+function Get-MenuShortcutPath {
+    $menu = if ($script:MenuDir) { $script:MenuDir } else { [Environment]::GetFolderPath('Programs') }
+    Join-Path $menu 'Mindset\Nevermind.lnk'
+}
+function Remove-MenuShortcut {
+    $l = Get-MenuShortcutPath
+    $t = Get-ShortcutTarget $l
+    if (-not $t -or (Get-AppExes) -notcontains $t) { return }
+    [IO.File]::Delete($l)
+    $d = Split-Path $l -Parent
+    if (-not @(Get-ChildItem -LiteralPath $d -Force -ErrorAction SilentlyContinue).Count) { Remove-Item -LiteralPath $d -Force -ErrorAction SilentlyContinue }
+}
+
 function New-DesktopShortcut {
     $root = Get-AppRoot
     $exe = Get-AppExe
@@ -446,6 +462,7 @@ function Invoke-Uninstall {
     try { Unregister-ScheduledTask -TaskPath '\Mindset\' -TaskName 'Nevermind (aide)' -Confirm:$false -ErrorAction SilentlyContinue } catch {}
     try { Remove-Item -LiteralPath $AideMemoire -Recurse -Force -ErrorAction SilentlyContinue } catch {}
     if (Test-DesktopShortcut) { try { [IO.File]::Delete((Get-DesktopShortcutPath)) } catch {} }
+    try { Remove-MenuShortcut } catch {}
 
     # Fichiers de l'application: uniquement ceux livrés avec Nevermind, jamais le reste du dossier.
     $here = $AppDir

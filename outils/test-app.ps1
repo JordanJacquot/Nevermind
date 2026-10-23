@@ -1517,6 +1517,55 @@ $script:T.Run.Add_Tick({
             $gap = [int]$script:T.MaxGap
             Add-TestResult 'Fluidité' ($gap -lt 3000) "plus long blocage de la fenêtre : $gap ms (étape « $($script:T.GapStep) ») ; tâches répétées les plus lentes : $(($script:T.Slow.GetEnumerator() | Sort-Object Value -Descending | ForEach-Object { "$($_.Key) $($_.Value) ms" }) -join ', ')"
         }
+        Test-Step 'Nom dans la barre des tâches' {
+            # Les propriétés de la fenêtre (SHGetPropertyStoreForWindow) : identité de Nevermind et, pour l'épingle, relance par
+            # Mindset.exe de son dossier (son hôte ; Nevermind.exe, le relais, s'il manque), nom « Nevermind » et son icône.
+            # (Le nom du bouton vient du raccourci du menu Démarrer de même identité, écrit par Mindset : voir son tester-raccourcis.ps1)
+            if (-not ('OGTest.ProprietesFenetre' -as [type])) {
+                Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace OGTest {
+public static class ProprietesFenetre
+{
+    [StructLayout(LayoutKind.Sequential, Pack = 4)] struct PK { public Guid f; public uint p; }
+    [StructLayout(LayoutKind.Explicit)] struct PV { [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public IntPtr p; [FieldOffset(16)] public long x; }
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IPropertyStore { void GetCount(out uint c); void GetAt(uint i, out PK k); void GetValue(ref PK k, out PV v); }
+    [DllImport("ole32.dll")] static extern int PropVariantClear(ref PV v);
+    [DllImport("shell32.dll", PreserveSig = false)] static extern void SHGetPropertyStoreForWindow(IntPtr h, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out IPropertyStore s);
+    // { identité, commande de relance, icône de relance, nom de relance }
+    public static string[] Lire(IntPtr h)
+    {
+        Guid iid = typeof(IPropertyStore).GUID; IPropertyStore s;
+        SHGetPropertyStoreForWindow(h, ref iid, out s);
+        try
+        {
+            string[] r = new string[4]; uint[] pids = { 5, 2, 3, 4 };
+            for (int i = 0; i < 4; i++)
+            {
+                PK k = new PK { f = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), p = pids[i] };
+                PV v; s.GetValue(ref k, out v);
+                try { r[i] = v.vt == 31 && v.p != IntPtr.Zero ? Marshal.PtrToStringUni(v.p) : ""; } finally { PropVariantClear(ref v); }
+            }
+            return r;
+        }
+        finally { Marshal.ReleaseComObject(s); }
+    }
+}
+}
+'@
+            }
+            $p = [OGTest.ProprietesFenetre]::Lire((New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle)
+            Assert-Test ($p[0] -ceq 'JordanJacquot.Nevermind') "identité de la fenêtre : « $($p[0]) »"
+            $hote = @((Join-Path (Split-Path $AppDir -Parent) 'Mindset.exe'), (Join-Path (Split-Path $AppDir -Parent) 'Nevermind.exe') | Where-Object { Test-Path -LiteralPath $_ })[0]
+            if ($hote) {
+                Assert-Test ($p[1] -eq "`"$hote`"") "commande de relance : « $($p[1]) » au lieu de « `"$hote`" »"
+                Assert-Test ($p[3] -ceq 'Nevermind') "nom de relance : « $($p[3]) »"
+                Assert-Test ($p[2] -eq "$IconPath,0") "icône de relance : « $($p[2]) »"
+                "identité $($p[0]), relance $($p[1]), nom $($p[3])"
+            } else { "identité $($p[0]) (copie sans Mindset.exe ni Nevermind.exe : pas de relance)" }
+        }
         Test-Step 'Affiché dans la fenêtre de Mindset' {
             # Comme Mindset : la fenêtre devient une fenêtre enfant d'une autre (SetParent, styles), à 960 x 700 pixels
             if (-not ('OGTest.TestEmbed' -as [type])) {
