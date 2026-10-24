@@ -84,14 +84,20 @@ function Confirm-Action([string]$Text, [string[]]$Details) {   # ($Details : seu
     ([System.Windows.MessageBox]::Show($Window, $Text, 'Nevermind', 'YesNo', 'Question')) -eq 'Yes'
 }
 
+# Message montré pour une erreur : celui écrit pour l'utilisateur (throw "..." de Nevermind) tel quel ; une erreur
+# technique (PowerShell, Windows) en mots simples, le détail (fichier, ligne) restant dans le journal.
+function Get-MessageErreur($Err) {
+    $m = [string]$Err.Exception.Message
+    if ($m -and [string]$Err.FullyQualifiedErrorId -eq $m) { return "Oups, quelque chose s'est mal passé :`n`n$m" }
+    "Oups, quelque chose s'est mal passé. Réessaie dans un moment.`n`nSi ça recommence, le détail est noté dans le journal de Nevermind."
+}
+
 # Exécute une action en affichant les erreurs au lieu de planter.
 function Invoke-Safe([scriptblock]$Action) {
     try { & $Action }
     catch {
         Write-Log "ERREUR: $($_.Exception.Message) $($_.InvocationInfo.PositionMessage)"
-        # Fichier et ligne en petit : une capture d'écran suffit pour retrouver le bug
-        $where = if ($_.InvocationInfo -and $_.InvocationInfo.ScriptName) { "`n`n($([IO.Path]::GetFileName($_.InvocationInfo.ScriptName)), ligne $($_.InvocationInfo.ScriptLineNumber))" } else { '' }
-        Show-Message "Oups, quelque chose s'est mal passé:`n`n$($_.Exception.Message)$where" 'Warning'
+        Show-Message (Get-MessageErreur $_) 'Warning'
         Set-Status 'Une erreur est survenue.'
     }
     finally { Set-Busy $false }
@@ -154,6 +160,16 @@ function Invoke-Async([scriptblock]$Script, $Argument, $Argument2) {
     Wait-Handle $handle
     try { $out = $ps.EndInvoke($handle) } finally { $ps.Dispose() }
     foreach ($o in $out) { $o }
+}
+
+# Pour une minuterie dont le passage attend (Invoke-Async, l'Aide) : pendant l'attente, la fenêtre continue et la minuterie
+# aussi. Sans ce garde, les passages se lançaient l'un dans l'autre et s'empilaient quand l'Aide était lente. Un passage
+# qui trouve le précédent pas fini ne fait rien : le suivant reprendra.
+$script:PassagesEnCours = @{}
+function Invoke-SansEmpiler([string]$Nom, [scriptblock]$Action) {
+    if ($script:PassagesEnCours.ContainsKey($Nom)) { return }
+    $script:PassagesEnCours[$Nom] = $true
+    try { & $Action } finally { $script:PassagesEnCours.Remove($Nom) }
 }
 
 # Volume d'un lecteur sans charger de module (instantané).

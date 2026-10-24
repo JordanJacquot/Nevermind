@@ -173,8 +173,22 @@ $secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule($moi.User, $droit
 $secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule((New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')), 'FullControl', 'Allow')))
 
 function New-Tuyau {
-    New-Object System.IO.Pipes.NamedPipeServerStream($NomTuyau, [System.IO.Pipes.PipeDirection]::InOut, 8,
+    New-Object System.IO.Pipes.NamedPipeServerStream($NomTuyau, [System.IO.Pipes.PipeDirection]::InOut, 32,
         [System.IO.Pipes.PipeTransmissionMode]::Byte, [System.IO.Pipes.PipeOptions]::Asynchronous, 65536, 65536, $secu)
+}
+
+# Canal suivant, ou $null quand toutes les connexions sont prises (demandes lentes qui s'entassent) : l'Aide ne s'arrête
+# pas pour autant, elle réessaie dès qu'une demande se termine (sinon PresentMon et la trace réseau seraient coupés)
+$script:TuyauxPris = $false
+function New-TuyauSuivant {
+    try {
+        $t = New-Tuyau
+        if ($script:TuyauxPris) { $script:TuyauxPris = $false; Write-AideLog 'Connexions libérées, l''Aide écoute de nouveau' }
+        $t
+    } catch {
+        if (-not $script:TuyauxPris) { $script:TuyauxPris = $true; Write-AideLog "Toutes les connexions sont prises, nouvel essai dans un instant ($($_.Exception.Message))" }
+        $null
+    }
 }
 
 # Une demande : lue, vérifiée et faite dans un fil à part (une analyse antivirus ne bloque pas les autres demandes)
@@ -234,18 +248,25 @@ catch {
 Write-AideLog "Aide $AideVersion démarrée$(if (-not $admin) { ' SANS droits administrateur' }) (processus $PID)"
 if ($admin) { try { Rename-ReglesOptiGame } catch { Write-AideLog "Règles du pare-feu non renommées : $($_.Exception.Message)" } }
 $seul = Get-Date   # depuis quand Nevermind n'est plus ouvert
-$tours = 0
+$cherche = Get-Date   # dernière recherche de Nevermind
 $attente = $tuyau.BeginWaitForConnection($null, $null)
 try {
     while ($true) {
-        if (-not $attente.AsyncWaitHandle.WaitOne(1000)) {
-            # Demandes terminées : on range
-            foreach ($j in @($enCours)) {
-                if (-not $j.H.IsCompleted) { continue }
-                try { [void]$j.PS.EndInvoke($j.H) } catch { Write-AideLog "Demande : $($_.Exception.Message)" }
-                $j.PS.Dispose(); [void]$enCours.Remove($j)
+        # (sans canal libre : courte pause, puis nouvel essai)
+        $pret = if ($tuyau) { $attente.AsyncWaitHandle.WaitOne(1000) } else { Start-Sleep -Milliseconds 200; $false }
+        # Demandes terminées : on range (aussi quand les demandes se suivent sans pause, « fps.lire » toutes les 250 ms)
+        foreach ($j in @($enCours)) {
+            if (-not $j.H.IsCompleted) { continue }
+            try { [void]$j.PS.EndInvoke($j.H) } catch { Write-AideLog "Demande : $($_.Exception.Message)" }
+            $j.PS.Dispose(); [void]$enCours.Remove($j)
+        }
+        if (-not $pret) {
+            if (-not $tuyau) {
+                $tuyau = New-TuyauSuivant
+                if ($tuyau) { $attente = $tuyau.BeginWaitForConnection($null, $null) }
             }
-            if ((++$tours % 5) -ne 0) { continue }   # Nevermind cherché toutes les 5 s
+            if (((Get-Date) - $cherche).TotalSeconds -lt 5) { continue }   # Nevermind cherché toutes les 5 s
+            $cherche = Get-Date
             if (Test-NevermindOuvert) { $seul = Get-Date }
             elseif (((Get-Date) - $seul).TotalSeconds -ge 20 -and -not $enCours.Count) { break }
             continue
@@ -253,8 +274,9 @@ try {
         $tuyau.EndWaitForConnection($attente)
         $connecte = $tuyau
         # Le canal suivant est prêt avant de traiter celui-ci : il n'y a jamais de moment sans Aide à l'écoute
-        $tuyau = New-Tuyau
-        $attente = $tuyau.BeginWaitForConnection($null, $null)
+        # (sauf quand toutes les connexions sont prises : New-TuyauSuivant)
+        $tuyau = New-TuyauSuivant
+        if ($tuyau) { $attente = $tuyau.BeginWaitForConnection($null, $null) }
         $client = [AideTuyau]::Client($connecte.SafePipeHandle)
         $chemin = if ($client) { [AideTuyau]::Chemin($client) } else { '' }
         # Sans droits administrateur (tests), l'Aide ne peut rien faire de plus que son client : elle accepte tout le monde

@@ -138,7 +138,26 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Sys
 # (dossier .git à la racine de la copie ou juste au-dessus). La copie de test n'est bloquée qu'avec OPTIGAME_TEST_BLOCAGE
 # (s'il finit par .png, la fenêtre s'y enregistre en image puis se ferme : capture pour vérifier son allure).
 $MindsetUrl = 'https://github.com/JordanJacquot/Mindset/releases/latest'
-$MindsetExe = Join-Path $(if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }) 'Mindset\Mindset\Mindset.exe'
+# Mindset installé : celui inscrit dans « Applications installées » (Program Files ou X:\Mindset\Programmes, au choix
+# à l'installation), sinon Program Files, sinon X:\Mindset\Programmes\Mindset sur chaque disque du PC.
+function Find-MindsetExe {
+    try {
+        $d = [string](Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Mindset' -ErrorAction Stop).InstallLocation
+        $e = if ($d) { [IO.Path]::Combine($d, 'Mindset.exe') } else { '' }
+        if ($e -and (Test-Path -LiteralPath $e)) { return $e }
+    } catch {}
+    $pf = Join-Path $(if ($env:ProgramW6432) { $env:ProgramW6432 } else { $env:ProgramFiles }) 'Mindset\Mindset\Mindset.exe'
+    if (Test-Path -LiteralPath $pf) { return $pf }
+    foreach ($dr in [IO.DriveInfo]::GetDrives()) {
+        try {
+            if ([string]$dr.DriveType -ne 'Fixed' -or -not $dr.IsReady) { continue }
+            $e = Join-Path $dr.RootDirectory.FullName 'Mindset\Programmes\Mindset\Mindset.exe'
+            if (Test-Path -LiteralPath $e) { return $e }
+        } catch {}
+    }
+    $pf
+}
+$MindsetExe = Find-MindsetExe
 
 function Test-WorkCopy {
     $root = Split-Path $PSScriptRoot -Parent

@@ -549,7 +549,7 @@ h2{margin:32px 0 12px;font-size:18px}
 .dot{flex:none;width:12px;height:12px;border-radius:50%;margin-top:6px}
 .tips{background:#18151F;border:1px solid #231E33;border-radius:12px;padding:12px 16px 12px 34px;color:#D3CDE3}
 </style></head><body><main>
-<h1>Opti<span>Game</span></h1>
+<h1>Never<span>mind</span></h1>
 <div class="sub">Audit de sécurité du réseau, depuis $(& $enc $env:COMPUTERNAME), le $($A.Date.ToString('dd/MM/yyyy à HH:mm'))</div>
 <div class="score"><b>$($A.Score)</b><div><div style="font-size:20px;font-weight:600">$(& $enc (Get-AuditLabel $A.Score))</div><div class="sub">Note de sécurité sur 100, $($A.Count) appareils vérifiés</div></div></div>
 $($sections -join "`n")

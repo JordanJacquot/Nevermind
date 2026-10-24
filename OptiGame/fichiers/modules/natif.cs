@@ -757,6 +757,16 @@ public static class FrameMon
     static readonly Queue<double> last10 = new Queue<double>();
     static double sum1, sum10, sampleSum;
     static int sampleCount;
+    // Très longues parties : au delà de MaxImages images gardées, une sur deux est retirée et la suite n'en garde plus
+    // qu'une par groupe de « pas » (chaque image gardée en vaut « pas »). L'image gardée est tirée au hasard dans son
+    // groupe : un rythme régulier (une image courte, une longue, comme avec la génération d'images) ne fausse rien.
+    // La mesure ne s'arrête jamais, et la moyenne de la session (totalMs, totalN) compte toutes les images.
+    public static int MaxImages = 2000000;
+    static int pas = 1, saut, choix;
+    static readonly Random hasard = new Random();
+    static double totalMs;
+    static long totalN;
+    public static int Pas { get { lock (sync) { return pas; } } }
     static int ftIndex = -1, modeIndex = -1, cpuIndex = -1, gpuIndex = -1;
     // Temps de travail du processeur et de la carte graphique pour chaque image (qui des deux freine ?).
     static double busyFt, cpuBusy, gpuBusy;
@@ -781,6 +791,7 @@ public static class FrameMon
     public static bool StartRemote(int pid)
     {
         Stop();
+        AttendreArret(8000);
         Reset();
         Attached = false;
         try { Attached = AideClient.Texte("fps.demarrer", "{\"Pid\":" + pid + "}", 15000) == "rattachee"; }
@@ -815,6 +826,7 @@ public static class FrameMon
         lock (sync)
         {
             all.Clear(); last1.Clear(); last10.Clear(); sum1 = 0; sum10 = 0; sampleSum = 0; sampleCount = 0;
+            pas = 1; saut = 0; choix = 0; totalMs = 0; totalN = 0;
             ftIndex = -1; modeIndex = -1; cpuIndex = -1; gpuIndex = -1; busyFt = 0; cpuBusy = 0; gpuBusy = 0; busyCount = 0;
         }
         LastError = "";
@@ -853,6 +865,7 @@ public static class FrameMon
             return false;
         }
         Arreter(false);
+        AttendreArret(8000);
         Reset();
         pmExe = exe;
         try
@@ -880,13 +893,30 @@ public static class FrameMon
 
     public static void Stop() { Arreter(true); }
 
+    // Arrêt de la mesure par l'Aide encore en cours (« fps.arreter », en arrière plan) : vrai s'il est fini à temps
+    static volatile System.Threading.Thread arret;
+    public static bool ArretEnCours { get { var a = arret; return a != null && a.IsAlive; } }
+    public static bool AttendreArret(int ms)
+    {
+        var a = arret;
+        if (a == null) return true;
+        bool fini = a.Join(ms);
+        if (fini && ReferenceEquals(arret, a)) arret = null;
+        return fini;
+    }
+
     // relacher = false : arrêt fait par Start, qui garde le verrou posé par Verrouiller
     static void Arreter(bool relacher)
     {
         if (remoteOn)
         {
             remoteOn = false; remoteAlive = false;
-            try { AideClient.Texte("fps.arreter", "{}", 8000); } catch { }
+            // En arrière plan : l'Aide peut mettre plusieurs secondes à arrêter PresentMon, la fenêtre ne l'attend pas.
+            // Un nouveau lancement attend la fin de cet arrêt (AttendreArret), sinon il couperait la nouvelle mesure.
+            var a = new System.Threading.Thread(() => { try { AideClient.Texte("fps.arreter", "{}", 8000); } catch { } });
+            a.IsBackground = true;
+            arret = a;
+            a.Start();
         }
         var p = proc;
         proc = null;
@@ -933,7 +963,14 @@ public static class FrameMon
             double ft;
             if (!double.TryParse(cols[ftIndex], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out ft)) return;
             if (ft <= 0 || ft > 5000) return;
-            if (all.Count < 3000000) all.Add(ft);
+            totalMs += ft; totalN++;
+            bool garder = saut == choix;
+            if (++saut >= pas) { saut = 0; choix = pas > 1 ? hasard.Next(pas) : 0; }
+            if (garder)
+            {
+                all.Add(ft);
+                if (all.Count >= Math.Max(1000, MaxImages)) Eclaircir();
+            }
             last1.Enqueue(ft); sum1 += ft;
             while (sum1 > 1000 && last1.Count > 1) sum1 -= last1.Dequeue();
             last10.Enqueue(ft); sum10 += ft;
@@ -949,13 +986,23 @@ public static class FrameMon
         }
     }
 
+    // Une image gardée sur deux (appelé sous le verrou) : la mémoire reste bornée, la session garde la même forme
+    static void Eclaircir()
+    {
+        int n = all.Count / 2;
+        for (int i = 0; i < n; i++) all[i] = all[2 * i + hasard.Next(2)];
+        all.RemoveRange(n, all.Count - n);
+        pas *= 2;
+        saut = 0;
+        choix = hasard.Next(pas);
+    }
+
     // Paliers : moments où le jeu est bloqué sur une valeur ronde, plus bas que d'habitude (menus, chargements,
     // cinématiques limités à 30 ou 60 FPS). Les images y arrivent à un rythme parfaitement régulier : ce n'est
     // pas le PC qui peine, ces moments ne comptent ni dans les FPS de la partie, ni comme des chutes.
     static readonly double[] Caps = { 24, 25, 30, 40, 45, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 170, 175, 180, 200, 240 };
     const int PlateauWindow = 30;         // images par bloc examiné
     const double PlateauMinSec = 2.0;     // un palier dure au moins 2 s d'affilée (un V-Sync qui décroche par moments, lui, reste compté)
-    static double plateauSec, plateauFps;
 
     static double CapOf(double fps)
     {
@@ -964,9 +1011,10 @@ public static class FrameMon
     }
 
     // Images de jeu (paliers retirés). Si presque toute la session est un palier, on garde tout.
-    static double[] GameFrames(double[] frames)
+    // poids : nombre d'images que vaut chaque image gardée (Pas) ; plSec, plFps : temps passé en palier, palier principal.
+    static double[] GameFrames(double[] frames, int poids, out double plSec, out double plFps)
     {
-        plateauSec = 0; plateauFps = 0;
+        plSec = 0; plFps = 0;
         int n = frames.Length;
         if (n < PlateauWindow * 4) return frames;
         var sorted = (double[])frames.Clone();
@@ -992,6 +1040,7 @@ public static class FrameMon
             int e = s;
             double dur = 0;
             while (e < blocks && cap[e] == cap[s]) { for (int i = e * PlateauWindow; i < (e + 1) * PlateauWindow; i++) dur += frames[i]; e++; }
+            dur *= poids;
             if (dur >= PlateauMinSec * 1000)
             {
                 for (int k = s; k < e; k++) drop[k] = true;
@@ -1009,37 +1058,67 @@ public static class FrameMon
             keep.Add(frames[i]); keptMs += frames[i];
         }
         // Presque tout en palier (partie bloquée à 60 du début à la fin, ou session passée dans les menus) : rien à retirer
-        if (keep.Count < 300 || keptMs < 20000 || keptMs < 0.2 * totalMs) return frames;
-        foreach (var kv in perCap) { plateauSec += kv.Value / 1000.0; if (plateauFps == 0 || kv.Value > perCap[plateauFps]) plateauFps = kv.Key; }
+        if (keep.Count < 300 || keptMs * poids < 20000 || keptMs < 0.2 * totalMs) return frames;
+        foreach (var kv in perCap) { plSec += kv.Value / 1000.0; if (plFps == 0 || kv.Value > perCap[plFps]) plFps = kv.Key; }
         return keep.ToArray();
     }
 
-    // Paliers de la dernière session analysée : { secondes passées en palier, FPS du palier principal }
-    public static double[] Plateau() { lock (sync) { GameFrames(all.ToArray()); return new double[] { plateauSec, plateauFps }; } }
+    // Paliers de la session : { secondes passées en palier, FPS du palier principal }
+    public static double[] Plateau() { return Bilan()[1]; }
+
+    // Bilan complet de la session, d'un seul calcul : { Summary, Plateau, Busy }. Sur une longue partie (2 millions
+    // d'images), les tris prennent plusieurs secondes : la fin de partie utilise BilanAsync, qui copie les images
+    // (vite, sous le verrou) puis calcule dans un autre fil. La mesure peut être arrêtée ou relancée entre temps.
+    public static double[][] Bilan() { return Calculer(Copie()); }
+
+    public static System.Threading.Tasks.Task<double[][]> BilanAsync()
+    {
+        var c = Copie();
+        return System.Threading.Tasks.Task.Run(() => Calculer(c));
+    }
+
+    class CopieSession { public double[] Images; public int Poids; public double BusyFt, CpuBusy, GpuBusy; public int BusyCount; }
+
+    static CopieSession Copie()
+    {
+        lock (sync) { return new CopieSession { Images = all.ToArray(), Poids = pas, BusyFt = busyFt, CpuBusy = cpuBusy, GpuBusy = gpuBusy, BusyCount = busyCount }; }
+    }
+
+    static double[][] Calculer(CopieSession c)
+    {
+        var sum = new double[5];
+        var plateau = new double[2];
+        var busy = new double[] { -1, -1, 0 };
+        if (c.BusyCount > 100 && c.BusyFt > 0) { busy[0] = c.CpuBusy / c.BusyFt; busy[1] = c.GpuBusy / c.BusyFt; }
+        if (c.Images.Length > 0)
+        {
+            double plSec, plFps;
+            var game = GameFrames(c.Images, c.Poids, out plSec, out plFps);
+            plateau[0] = plSec; plateau[1] = plFps;
+            var arr = (double[])game.Clone();
+            Array.Sort(arr);
+            int n = arr.Length;
+            double total = 0;
+            foreach (var f in arr) total += f;
+            sum[0] = n * 1000.0 / total;
+            sum[1] = Low(arr, 0.99);
+            sum[2] = Low(arr, 0.999);
+            sum[3] = (double)n * c.Poids;
+            sum[4] = total * c.Poids / 1000.0;
+            // Saccades : images au moins 2,5 fois plus longues que la normale et > 25 ms
+            double median = arr[n / 2];
+            double limit = Math.Max(25.0, median * 2.5);
+            int k = 0;
+            foreach (var f in game) if (f > limit) k++;
+            busy[2] = (double)k * c.Poids;
+        }
+        return new double[][] { sum, plateau, busy };
+    }
 
     // Diagnostic de la partie : { part du temps où le processeur travaille, part où la carte graphique travaille
     // (0 à 1, -1 si inconnu), nombre de saccades (images au moins 2,5 fois plus longues que la normale et > 25 ms) }
     // Les saccades sont comptées sur les images de jeu : un menu bloqué à 30 FPS n'en est pas une.
-    public static double[] Busy()
-    {
-        lock (sync)
-        {
-            var r = new double[] { -1, -1, 0 };
-            if (busyCount > 100 && busyFt > 0) { r[0] = cpuBusy / busyFt; r[1] = gpuBusy / busyFt; }
-            if (all.Count > 0)
-            {
-                var game = GameFrames(all.ToArray());
-                var arr = (double[])game.Clone();
-                Array.Sort(arr);
-                double median = arr[arr.Length / 2];
-                double limit = Math.Max(25.0, median * 2.5);
-                int n = 0;
-                foreach (var f in game) if (f > limit) n++;
-                r[2] = n;
-            }
-            return r;
-        }
-    }
+    public static double[] Busy() { return Bilan()[2]; }
 
     // FPS moyen depuis le dernier appel (pour la courbe de la partie). -1 si aucune image entre temps.
     public static double Sample()
@@ -1071,32 +1150,14 @@ public static class FrameMon
             var r = new double[3];
             if (last1.Count > 0 && sum1 > 0) r[0] = last1.Count * 1000.0 / sum1;
             r[1] = Low(last10.ToArray(), 0.99);
-            double total = 0;
-            foreach (var f in all) total += f;
-            if (total > 0) r[2] = all.Count * 1000.0 / total;
+            // (moyenne tenue à jour par Feed : plus de parcours des millions d'images deux fois par seconde)
+            if (totalMs > 0) r[2] = totalN * 1000.0 / totalMs;
             return r;
         }
     }
 
     // Bilan de la session, en jeu (paliers des menus retirés) : { FPS moyen, 1 % bas, 0,1 % bas, nombre d'images, secondes mesurées }
-    public static double[] Summary()
-    {
-        lock (sync)
-        {
-            var r = new double[5];
-            if (all.Count == 0) return r;
-            var arr = GameFrames(all.ToArray());
-            int n = arr.Length;
-            double total = 0;
-            foreach (var f in arr) total += f;
-            r[0] = n * 1000.0 / total;
-            r[1] = Low(arr, 0.99);
-            r[2] = Low(arr, 0.999);
-            r[3] = n;
-            r[4] = total / 1000.0;
-            return r;
-        }
-    }
+    public static double[] Summary() { return Bilan()[0]; }
 }
 
 // Découverte avancée des appareils du réseau : chaque appareil est interrogé avec les méthodes
@@ -1875,7 +1936,7 @@ public static class NetFlow
 // Pings continus vers plusieurs cibles (box, fournisseur, Internet, serveur du jeu) et tracé du chemin.
 public static class LagMon
 {
-    class Target { public string Host; public List<double> T = new List<double>(); public List<double> R = new List<double>(); public System.Threading.Thread Th; }
+    class Target { public string Host; public List<double> T = new List<double>(); public List<double> R = new List<double>(); public System.Threading.Thread Th; public volatile bool Off; }
     static readonly object sync = new object();
     static List<Target> targets = new List<Target>();
     static System.Diagnostics.Stopwatch clock = new System.Diagnostics.Stopwatch();
@@ -1901,7 +1962,7 @@ public static class LagMon
             using (var ping = new System.Net.NetworkInformation.Ping())
             {
                 byte[] payload = new byte[32];
-                while (running)
+                while (running && !t.Off)
                 {
                     double t0 = clock.Elapsed.TotalMilliseconds;
                     double rtt = -1;
@@ -1928,6 +1989,19 @@ public static class LagMon
         List<Target> copy;
         lock (sync) copy = new List<Target>(targets);
         foreach (var t in copy) if (t.Th != null) t.Th.Join(1500);
+    }
+
+    // Cible abandonnée (ancien serveur du jeu, adresse d'un autre joueur) : plus pingée, ses mesures restent lisibles.
+    // Sans attente : le fil s'arrête de lui même après son ping en cours.
+    public static void Remove(int idx)
+    {
+        lock (sync) { if (idx >= 0 && idx < targets.Count) targets[idx].Off = true; }
+    }
+
+    // Cibles encore pingées (pour les tests)
+    public static int Active
+    {
+        get { int n = 0; lock (sync) { foreach (var t in targets) if (!t.Off && t.Th != null && t.Th.IsAlive) n++; } return n; }
     }
 
     public static double Elapsed { get { return clock.Elapsed.TotalSeconds; } }
@@ -2102,6 +2176,9 @@ public static class WinFocus
 // Organizer Dofus : boutons de la souris (latéraux, clic molette) comme raccourcis.
 // Écoute globale de la souris dans Nevermind (aucune injection dans le jeu), active seulement quand une fenêtre Dofus est devant.
 // Un bouton choisi est « mangé » (le jeu ne le reçoit pas) et signalé à la fenêtre de Nevermind par un message.
+// L'écoute tourne sur un fil à elle, avec sa propre boucle de messages : Windows attend ce fil à chaque mouvement de la
+// souris, dans tout le PC. Sur le fil de la fenêtre (occupé parfois plusieurs centaines de millisecondes), le curseur se
+// figeait, et Windows finit par retirer une écoute trop lente sans prévenir.
 public static class MouseHook
 {
     delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
@@ -2111,14 +2188,24 @@ public static class MouseHook
     [DllImport("kernel32.dll")] static extern IntPtr GetModuleHandle(string name);
     [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr hwnd, int msg, IntPtr wp, IntPtr lp);
+    [DllImport("user32.dll")] static extern int GetMessage(out HookMsg m, IntPtr hwnd, uint min, uint max);
+    [DllImport("user32.dll")] static extern bool PeekMessage(out HookMsg m, IntPtr hwnd, uint min, uint max, uint remove);
+    [DllImport("user32.dll")] static extern bool PostThreadMessage(uint thread, int msg, IntPtr wp, IntPtr lp);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [StructLayout(LayoutKind.Sequential)] struct HookMsg { public IntPtr hwnd; public uint message; public IntPtr wParam; public IntPtr lParam; public uint time; public int x, y; }
 
     public const int Message = 0x804E;   // WM_APP + 0x4E : wParam = id du raccourci
     static HookProc proc = Callback;     // gardé vivant tant que l'écoute tourne
     static IntPtr hook = IntPtr.Zero, target = IntPtr.Zero;
     static readonly Dictionary<int, int> binds = new Dictionary<int, int>();   // (mods << 8 | bouton) -> id
     static int swallowUp;
+    static readonly object sync = new object();
+    static System.Threading.Thread fil;
+    static volatile uint filId;
 
     public static bool Running { get { return hook != IntPtr.Zero; } }
+    // Fil de Windows qui fait tourner l'écoute (0 si arrêtée) : jamais celui de la fenêtre
+    public static int ThreadId { get { return Running ? (int)filId : 0; } }
 
     // Bouton : 3 = clic molette, 4 = latéral arrière, 5 = latéral avant ; mods : 1 Alt, 2 Ctrl, 4 Maj, 8 Win
     public static void Clear() { lock (binds) binds.Clear(); }
@@ -2127,15 +2214,46 @@ public static class MouseHook
     public static bool Start(IntPtr window)
     {
         target = window;
-        if (hook != IntPtr.Zero) return true;
-        hook = SetWindowsHookEx(14, proc, GetModuleHandle(null), 0);
-        return hook != IntPtr.Zero;
+        lock (sync)
+        {
+            if (hook != IntPtr.Zero) return true;
+            var pret = new System.Threading.ManualResetEvent(false);
+            var f = new System.Threading.Thread(() =>
+            {
+                HookMsg m;
+                PeekMessage(out m, IntPtr.Zero, 0, 0, 0);   // file de messages du fil, prête avant l'arrêt (WM_QUIT)
+                filId = GetCurrentThreadId();
+                IntPtr h = SetWindowsHookEx(14, proc, GetModuleHandle(null), 0);
+                hook = h;
+                pret.Set();
+                if (h == IntPtr.Zero) return;
+                while (GetMessage(out m, IntPtr.Zero, 0, 0) > 0) { }
+                UnhookWindowsHookEx(h);
+            });
+            f.IsBackground = true;
+            f.Name = "Nevermind : boutons de la souris";
+            f.Priority = System.Threading.ThreadPriority.AboveNormal;
+            f.Start();
+            pret.WaitOne(5000);
+            if (hook == IntPtr.Zero) return false;
+            fil = f;
+            return true;
+        }
     }
 
     public static void Stop()
     {
-        if (hook != IntPtr.Zero) UnhookWindowsHookEx(hook);
-        hook = IntPtr.Zero; swallowUp = 0;
+        lock (sync)
+        {
+            var f = fil;
+            fil = null;
+            if (f != null)
+            {
+                PostThreadMessage(filId, 0x0012, IntPtr.Zero, IntPtr.Zero);   // WM_QUIT : fin de la boucle, l'écoute est retirée
+                f.Join(2000);
+            }
+            hook = IntPtr.Zero; filId = 0; swallowUp = 0;
+        }
     }
 
     static bool Down(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }

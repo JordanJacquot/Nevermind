@@ -163,7 +163,11 @@ function Test-MesuresAide {
     if ($script:EstAdmin) { return $false }
     # (sans réponse, nouvel essai dans une minute : Trafic demande toutes les 2 s)
     if ($script:MesuresAideEchec -and ((Get-Date) - $script:MesuresAideEchec).TotalSeconds -lt 60) { return $false }
+    # (un réveil déjà en cours, attendu plus bas dans la pile : pas un deuxième schtasks ni une deuxième attente de 20 s)
+    if ($script:MesuresAideReveil) { return $false }
+    $script:MesuresAideReveil = $true
     try { [void](Invoke-Aide 'aide.bonjour' @{} 10000); $script:MesuresAideEchec = $null; return $true } catch { $script:MesuresAideEchec = Get-Date; return $false }
+    finally { $script:MesuresAideReveil = $false }
 }
 
 # FPS d'un jeu (FrameMon) : $true si la mesure a démarré
@@ -227,10 +231,14 @@ function Update-FpsVeille {
     }
     $fps = (Test-FpsMeasure) -and -not $script:FpsTarget
     $flux = (Test-LagMeasure) -and -not $script:LagSession
+    $flux = Test-FluxVeilleUtile $flux   # (lag.ps1 : trace réseau seulement si un jeu guetté est installé, sinon arrêtée)
     if ($script:FpsVeilleTache -or -not ($fps -or $flux)) { return }
     if ($script:FpsVeilleDemande -and ((Get-Date) - $script:FpsVeilleDemande).TotalSeconds -lt 30) { return }
+    $noms = @(Get-FpsVeilleJeux)
+    # (lot 4, FPS) Un jeu guetté est ouvert (sa partie commence, ou il tournait déjà) : la veille reste telle quelle.
+    # Redemandée sans lui, l'Aide relancerait PresentMon sans ce jeu, juste quand sa mesure doit s'y rattacher.
+    if (@($noms | Where-Object { [Diagnostics.Process]::GetProcessesByName(($_ -replace '\.exe$', '')).Length }).Count) { return }
     $script:FpsVeilleDemande = Get-Date
-    $noms = @(Get-FpsVeilleJeux | Where-Object { -not [Diagnostics.Process]::GetProcessesByName(($_ -replace '\.exe$', '')).Length })
     if (-not $noms.Count -or -not [AideClient]::Joignable(1)) { return }
     $ps = [PowerShell]::Create()
     if ($script:BgPool) { $ps.RunspacePool = $script:BgPool }

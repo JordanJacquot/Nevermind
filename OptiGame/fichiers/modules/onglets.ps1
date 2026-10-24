@@ -910,7 +910,7 @@ th{color:#A6A1BC;font-weight:normal;width:180px}
 .ch{display:flex;justify-content:space-between;gap:12px;font-size:16px}
 .cs{margin:0 0 8px;font-size:13px}
 </style></head><body><main>
-<h1>Opti<span>Game</span></h1>
+<h1>Never<span>mind</span></h1>
 <div class="sub">Rapport de $(& $enc $env:COMPUTERNAME), le $($a.Date.ToString('dd/MM/yyyy à HH:mm'))</div>
 <div class="score"><b>$($a.Score)</b><div><div style="font-size:20px;font-weight:600">$(& $enc $a.Label)</div><div class="sub">Score d'optimisation gaming sur 100</div></div></div>
 <h2>Configuration</h2><table>$infoRows</table>

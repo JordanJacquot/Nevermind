@@ -2,8 +2,9 @@
 # sans rendre le jeu moche (on commence toujours par ce qui coûte le moins en qualité).
 # Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
 
-# Programmes du système qu'on ne propose jamais de fermer.
-$SystemProcs = '^(System|Idle|Registry|Memory Compression|smss|csrss|wininit|winlogon|services|lsass|svchost|dwm|explorer|fontdrvhost|sihost|ctfmon|conhost|audiodg|spoolsv|SearchHost|StartMenuExperienceHost|ShellExperienceHost|RuntimeBroker|TextInputHost|dllhost|WmiPrvSE|MsMpEng|NisSrv|SecurityHealthService|SgrmBroker|powershell|Nevermind|NevermindAide|Mindset|PresentMon|nvcontainer|NVDisplay\.Container|amdfendrsr|atiesrxx|atieclxx|steam|steamwebhelper|EpicGamesLauncher|EasyAntiCheat.*|BEService|vgc|vgk)$'
+# Programmes du système qu'on ne propose jamais de fermer. msedgewebview2 : il affiche les écrans de Mindset, de Nevermind
+# et d'autres applis (un seul processus partagé) ; EAAntiCheat : le fermer coupe le jeu EA en cours.
+$SystemProcs = '^(System|Idle|Registry|Memory Compression|smss|csrss|wininit|winlogon|services|lsass|svchost|dwm|explorer|fontdrvhost|sihost|ctfmon|conhost|audiodg|spoolsv|SearchHost|StartMenuExperienceHost|ShellExperienceHost|RuntimeBroker|TextInputHost|dllhost|WmiPrvSE|MsMpEng|NisSrv|SecurityHealthService|SgrmBroker|powershell|Nevermind|NevermindAide|Mindset|PresentMon|nvcontainer|NVDisplay\.Container|amdfendrsr|atiesrxx|atieclxx|steam|steamwebhelper|EpicGamesLauncher|EasyAntiCheat.*|EAAntiCheat.*|BEService|vgc|vgk|msedgewebview2)$'
 $Browsers = '^(chrome|msedge|firefox|opera|brave|vivaldi)$'
 
 # ---------------------------------------------------------------------------

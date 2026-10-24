@@ -192,7 +192,7 @@ $Window.Add_Closed({
     try { Unregister-FpsHotkey } catch {}
     try { Stop-OrgWatch; if ($script:OrgBar) { $script:OrgBar.Win.Close() } } catch {}
     try { if ($script:TrafficTimer) { $script:TrafficTimer.Stop() } } catch {}
-    try { [FrameMon]::Stop() } catch {}
+    try { [FrameMon]::Stop(); [void][FrameMon]::AttendreArret(3000) } catch {}   # (l'Aide arrête PresentMon avant la fin de Nevermind)
     try { if ($script:LagSession) { $script:LagSession = $null; if ($script:LagTimer) { $script:LagTimer.Stop() }; [LagMon]::Stop() } } catch {}
     try { if ([NetFlow]::Running) { [NetFlow]::Stop() } } catch {}
     try { if ($script:NotifyIcon) { $script:NotifyIcon.Visible = $false; $script:NotifyIcon.Dispose() } } catch {}

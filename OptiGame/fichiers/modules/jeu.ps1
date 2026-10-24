@@ -45,6 +45,7 @@ function Update-GameCache {
             $script:GameIndex[$base].ByPath[$e.ToLower()] = $g.Name
         }
     }
+    try { Update-FpsVeilleAntiTriche } catch { Write-Log "Mesure des FPS (anti-triche EA) : $_" }
     Build-GameSections
     Update-LibraryIfShown
 }
@@ -82,6 +83,45 @@ function Remove-CustomGame([string]$Exe) {
     Set-Setting 'CustomGames' @(@(Get-Setting 'CustomGames' @()) | Where-Object { $_ -and [string]$_.Exe -ne $Exe })
     Update-GameCache
     Set-Status 'Jeu retiré de la liste.'
+}
+
+# ---------------------------------------------------------------------------
+# Jeux à anti-triche EA (EA Javelin : Battlefield 6, EA SPORTS FC, FIFA...) : leur anti-triche refuse une mesure des
+# FPS démarrée après le jeu, mais laisse tourner celle qui existait avant (la veille de l'Aide, aide-client.ps1).
+# Ils sont repérés à l'installation (fichiers EAAntiCheat à côté du programme du jeu) ou à leur nom (FC25, FC27,
+# FIFA23...), et guettés dès leur première partie, sans attendre un premier refus (réglage FpsVeille, 10 jeux au plus).
+# ---------------------------------------------------------------------------
+$FpsAntiTricheNoms = '^(fc\d{2}|fifa\d{2})$'
+
+function Test-JeuAntiTricheEA([string]$Exe) {
+    if (-not $Exe) { return $false }
+    if ([IO.Path]::GetFileNameWithoutExtension($Exe) -match $FpsAntiTricheNoms) { return $true }
+    $dir = try { [IO.Path]::GetDirectoryName($Exe) } catch { '' }
+    if (-not $dir) { return $false }
+    foreach ($f in 'EAAntiCheat.GameServiceLauncher.exe', 'EAAntiCheat.Installer.exe') { if ([IO.File]::Exists([IO.Path]::Combine($dir, $f))) { return $true } }
+    [IO.Directory]::Exists([IO.Path]::Combine($dir, 'EAAntiCheat'))
+}
+
+# Noms des programmes à guetter (« fc27.exe ») : le programme principal de chaque jeu repéré
+function Get-JeuxAntiTricheEA($Games) {
+    $noms = foreach ($g in @($Games)) {
+        $exes = @(@($g.Exes) | Where-Object { $_ } | ForEach-Object { [string]$_ })
+        if (-not $exes.Count) { continue }
+        foreach ($e in $exes) { if ([IO.Path]::GetFileNameWithoutExtension($e) -match $FpsAntiTricheNoms) { [IO.Path]::GetFileName($e).ToLowerInvariant() } }
+        $base = [IO.Path]::GetFileNameWithoutExtension($exes[0])
+        if ($base.Length -ge 3 -and $base -notmatch $GenericExe -and (Test-JeuAntiTricheEA $exes[0])) { [IO.Path]::GetFileName($exes[0]).ToLowerInvariant() }
+    }
+    # (l'Aide refuse toute la veille si un seul nom n'a pas cette forme)
+    @($noms | Where-Object { $_ -match '^[a-z0-9][a-z0-9 ._()-]{0,60}\.exe$' } | Select-Object -Unique)
+}
+
+function Update-FpsVeilleAntiTriche {
+    $deja = @(Get-FpsVeilleJeux)
+    $place = [math]::Max(0, 10 - $deja.Count)
+    $nouveaux = @(Get-JeuxAntiTricheEA $script:Games | Where-Object { $deja -notcontains $_ } | Select-Object -First $place)
+    if (-not $nouveaux.Count) { return }
+    Set-Setting 'FpsVeille' @(@(Get-Setting 'FpsVeille' @()) + $nouveaux)
+    Write-Log "Mesure des FPS : anti-triche EA repéré ($($nouveaux -join ', ')), la mesure sera lancée avant le jeu"
 }
 
 function Start-GameWatch {
@@ -147,6 +187,9 @@ function Stop-GameSession {
     if (-not $s) { return }
     if ($script:FpsTarget -and $script:FpsTarget.Pid -eq $s.Pid) { Stop-FpsTarget }
     if ($script:LagSession -and $script:LagSession.Pid -eq $s.Pid) { try { Stop-LagSession } catch { Write-Log "Lag: $_" } }
+    # Veille avant les jeux à anti-triche redemandée dès le prochain passage (5 s) : un jeu relancé aussitôt (mise à jour,
+    # plantage) la trouve prête, sans attendre les 30 s entre deux demandes
+    $script:FpsVeilleDemande = $null
     $failed = @()
     foreach ($c in $s.Closed) {
         if (-not $c.Path) { $failed += $c.Name; continue }
@@ -577,14 +620,42 @@ function Stop-FpsTarget {
     if ($script:FpsTimer) { $script:FpsTimer.Stop() }
     Hide-FpsOverlay
     if (-not $t) { return }
-    $s = [FrameMon]::Summary()
-    # Menus et chargements bloqués (30, 60 FPS...) : mis à part, ils ne sont pas des chutes
-    $t.Plateau = try { [FrameMon]::Plateau() } catch { @(0, 0) }
-    $busy = [FrameMon]::Busy()
-    $err = [FrameMon]::LastError
+    # Bilan calculé dans un autre fil : sur une longue partie (millions d'images), les tris figeraient la fenêtre.
+    # Les images sont copiées tout de suite : la mesure peut s'arrêter, ou une autre partie commencer, entre temps.
+    $tache = [FrameMon]::BilanAsync()
+    $t.Err = [FrameMon]::LastError
     [FrameMon]::Stop()
     [FrameMon]::Paused = $false
-    if ($s[3] -eq 0) { Write-Log "Mesure des FPS: aucune image reçue pour $($t.Name). $err"; return }
+    if ($script:Closing) { [void]$tache.Wait(10000) }
+    if ($tache.IsCompleted) { Complete-FpsTarget $t $tache; return }
+    if (-not $script:FpsBilans) { $script:FpsBilans = New-Object System.Collections.ArrayList }
+    [void]$script:FpsBilans.Add(@{ T = $t; Tache = $tache })
+    if (-not $script:FpsBilanTimer) {
+        $script:FpsBilanTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $script:FpsBilanTimer.Interval = [TimeSpan]::FromMilliseconds(200)
+        $script:FpsBilanTimer.Add_Tick({
+            foreach ($b in @($script:FpsBilans | Where-Object { $_.Tache.IsCompleted })) {
+                [void]$script:FpsBilans.Remove($b)
+                try { Complete-FpsTarget $b.T $b.Tache } catch { Write-Log "Mesure des FPS (bilan): $_" }
+            }
+            if (-not $script:FpsBilans.Count) { $script:FpsBilanTimer.Stop() }
+        })
+    }
+    $script:FpsBilanTimer.Start()
+}
+
+# Fin de partie, une fois le bilan prêt : enregistrée, puis la bulle « Partie terminée »
+function Complete-FpsTarget($t, $Tache) {
+    $b = try { $Tache.Result } catch { Write-Log "Mesure des FPS (bilan): $($_.Exception.Message)"; return }
+    $s = $b[0]
+    # Menus et chargements bloqués (30, 60 FPS...) : mis à part, ils ne sont pas des chutes
+    $t.Plateau = $b[1]
+    $busy = $b[2]
+    if ($s[3] -eq 0) {
+        Write-Log "Mesure des FPS: aucune image reçue pour $($t.Name). $($t.Err)"
+        if ($t.Refus) { Show-Notify "Partie terminée : $($t.Name)" 'L''anti-triche de ce jeu bloque la mesure des FPS. À la prochaine partie, ouvre Nevermind avant de lancer le jeu : la mesure démarrera avant lui.' }
+        return
+    }
     if ($s[4] -lt 30 -or $s[3] -lt 300) { return }
     $diag = $null
     try { $diag = Get-FpsDiagData $t $busy } catch { Write-Log "Diagnostic FPS: $_" }
@@ -607,11 +678,19 @@ function Update-FpsTarget {
     $front = [OGNative]::GetForegroundPid() -eq $t.Pid
     [FrameMon]::Paused = -not $front
     $t.Ticks++
-    # Anti-triche qui refuse la mesure une fois le jeu lancé : retenu, elle sera lancée avant lui la prochaine fois
-    if (-not $t.Refus -and [FrameMon]::Frames -eq 0 -and ([FrameMon]::Remote -or $script:EstAdmin) -and (Test-FpsRefus ([FrameMon]::LastError))) {
-        $t.Refus = $true
-        Add-FpsVeilleJeu $t.Key
-        Set-Status "$($t.Name) : l'anti-triche du jeu bloque la mesure des FPS une fois le jeu lancé. À la prochaine partie, Nevermind la démarrera avant le jeu."
+    $sansImage = [FrameMon]::Frames -eq 0
+    if ($front -and $sansImage) { $t.SansImage++ }
+    # Anti-triche qui refuse la mesure une fois le jeu lancé : retenu, elle sera lancée avant lui la prochaine fois.
+    # Jeu déjà guetté pour son anti-triche, toujours sans aucune image après 30 s devant (lancé avant Nevermind, ou
+    # veille perdue) : c'est encore l'anti-triche, on le dit au lieu de laisser un compteur vide.
+    if (-not $t.Refus -and $sansImage) {
+        $refus = ([FrameMon]::Remote -or $script:EstAdmin) -and (Test-FpsRefus ([FrameMon]::LastError))
+        if ($refus -or ($t.SansImage -ge 60 -and @(Get-FpsVeilleJeux) -contains "$($t.Key).exe")) {
+            $t.Refus = $true
+            if ($refus) { Add-FpsVeilleJeu $t.Key }
+            Write-Log "Mesure des FPS : bloquée par l'anti-triche de $($t.Name)$(if (-not $refus) { ' (aucune image après 30 s)' })"
+            Set-Status "$($t.Name) : l'anti-triche de ce jeu bloque la mesure des FPS. À la prochaine partie, ouvre Nevermind avant de lancer le jeu : la mesure démarrera avant lui."
+        }
     }
     if ($t.Ticks % 10 -eq 0) {
         $v = [FrameMon]::Sample()
@@ -619,19 +698,22 @@ function Update-FpsTarget {
         if ($front) { Add-FpsSysSample $t }
     }
     if ($t.Ticks % 20 -eq 0) { Add-FpsProcSample $t }
-    if ([FrameMon]::LastMode -match 'Legacy') { $t.Exclusive = $true }
+    $exclusif = [string][FrameMon]::LastMode -match 'Legacy'
+    if ($exclusif) { $t.Exclusive = $true }
     $o = $script:Overlay
     if (-not $o) { return }
-    if ($t.Exclusive -and -not $t.Warned) {
+    if ($exclusif -and -not $t.Warned) {
         $t.Warned = $true
-        Write-Log "Mesure des FPS: $($t.Name) est en plein écran exclusif, l'overlay ne peut pas s'afficher."
-        Set-Status "$($t.Name) est en plein écran : le compteur ne peut pas s'afficher par-dessus, mais la mesure continue."
+        Write-Log "Mesure des FPS: $($t.Name) est en plein écran exclusif, le compteur est caché."
+        Set-Status "$($t.Name) est en plein écran : le compteur ne peut pas s'afficher par-dessus, il est caché. La mesure continue."
     }
-    if (-not $front) { if ($o.Win.IsVisible) { $o.Win.Hide() }; return }
+    # Plein écran exclusif : rien ne s'affiche par-dessus le jeu, et remettre le compteur devant toutes les 3 s peut
+    # faire sortir le jeu de son plein écran ou le faire saccader. Caché tant que le jeu y reste (revient en fenêtré).
+    if (-not $front -or $exclusif) { if ($o.Win.IsVisible) { $o.Win.Hide() }; return }
     if (-not $o.Win.IsVisible) { Set-OverlayPosition $t.Pid; $o.Win.Show() }
     $l = [FrameMon]::Live()
     if ([FrameMon]::Frames -eq 0) {
-        if ($t.Refus) { $o.Fps.Text = '?'; if ($o.Sub) { $o.Sub.Text = 'Bloqué par l''anti-triche : mesure à la prochaine partie' } }
+        if ($t.Refus) { $o.Fps.Text = '?'; if ($o.Sub) { $o.Sub.Text = 'L''anti-triche de ce jeu bloque la mesure des FPS' } }
         elseif (((Get-Date) - $t.Start).TotalSeconds -gt 8) { $o.Fps.Text = '?'; if ($o.Sub) { $o.Sub.Text = 'Aucune image reçue pour le moment.' } }
         return
     }

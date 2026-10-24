@@ -167,11 +167,11 @@ function Start-TrafficWatch {
     if (-not $script:TrafficTimer) {
         $script:TrafficTimer = New-Object System.Windows.Threading.DispatcherTimer
         $script:TrafficTimer.Interval = [TimeSpan]::FromSeconds(2)
-        $script:TrafficTimer.Add_Tick({ try { Update-Traffic } catch { Write-Log "Trafic: $_" } })
+        $script:TrafficTimer.Add_Tick({ try { Invoke-SansEmpiler 'Trafic' { Update-Traffic } } catch { Write-Log "Trafic: $_" } })
     }
     $script:TrafficTimer.Start()
     $ui.BtnTraffic.Content = 'Arrêter la surveillance'
-    Update-Traffic
+    Invoke-SansEmpiler 'Trafic' { Update-Traffic }
     Set-Status 'Surveillance de ce qui sort du PC activée.'
 }
 
@@ -292,6 +292,18 @@ function Test-GamePath([string]$Path) {
     $false
 }
 
+# Programmes de la suite Mindset (Mindset, Nevermind, Evermind, Mindcare... dans un « Mindset.exe », et l'Aide) :
+# installés par Mindset dans <disque>:\Mindset\Programmes\<appli>\ ou Program Files\Mindset\<appli>\, dossiers
+# réservés à l'administrateur. Ils ne sont pas signés, ce n'est pas suspect.
+function Test-SuitePath([string]$Path) {
+    if (-not $Path) { return $false }
+    if ($Path -match '(?i)^[a-z]:\\Mindset\\Programmes\\[^\\]+\\[^\\]+\.exe$') { return $true }
+    foreach ($pf in @($env:ProgramW6432, $env:ProgramFiles) | Where-Object { $_ }) {
+        if ($Path -match ('(?i)^' + [regex]::Escape(([string]$pf).TrimEnd('\')) + '\\Mindset\\[^\\]+\\[^\\]+\.exe$')) { return $true }
+    }
+    $false
+}
+
 function Get-TrafficAlerts {
     $st = $script:Traffic
     $alerts = @()
@@ -304,7 +316,7 @@ function Get-TrafficAlerts {
         if (-not $net.Count) { continue }
         $why = @(); $level = 'info'
         # Analysé sans rien trouver, ou jeu installé : « non signé » n'est plus un indice
-        $unsigned = $a.Sig -in 'NotSigned', 'NotTrusted' -and -not $scanned.ContainsKey($a.Key) -and -not (Test-GamePath $a.Path)
+        $unsigned = $a.Sig -in 'NotSigned', 'NotTrusted' -and -not $scanned.ContainsKey($a.Key) -and -not (Test-GamePath $a.Path) -and -not (Test-SuitePath $a.Path)
         $risky = $a.Path -match '(?i)\\(AppData\\Local\\Temp|Temp|Downloads|Téléchargements|Users\\Public)\\' -or $a.Path -match '(?i)^[a-z]:\\ProgramData\\[^\\]+\.exe$' -or $a.Path -match '(?i)\\AppData\\Roaming\\[^\\]+\.exe$'
         if ($a.Sig -eq 'HashMismatch') { $why += 'sa signature numérique est invalide (le fichier a été modifié)'; $level = 'bad' }
         if ($unsigned -and $risky) { $why += 'il n''est signé par aucun éditeur et il est rangé dans un dossier où les virus aiment se cacher'; $level = 'bad' }

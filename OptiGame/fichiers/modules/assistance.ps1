@@ -377,8 +377,9 @@ function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) {
         $id = [guid]::NewGuid().ToString('N').Substring(0, 12)
         if (-not $script:NotifyActions) { $script:NotifyActions = @{} }
         if ($OnClick) { $script:NotifyActions[$id] = $OnClick }
-        try { [IO.File]::WriteAllText((Join-Path $DataDir 'notification.demande'), (ConvertTo-Json -InputObject @{ titre = $Title; texte = $Text; id = $id } -Compress), (New-Object Text.UTF8Encoding $false)) }
-        catch { Write-Log "Notification impossible: $_" }
+        if (-not $script:NotifyFile) { $script:NotifyFile = New-Object System.Collections.ArrayList }
+        [void]$script:NotifyFile.Add(@{ Json = (ConvertTo-Json -InputObject @{ titre = $Title; texte = $Text; id = $id } -Compress); Quand = Get-Date; Titre = $Title })
+        Send-NotifySuivante
         Set-Status "$Title : $Text"
         return
     }
@@ -389,6 +390,38 @@ function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) {
         $script:NotifyIcon.ShowBalloonTip(8000, $Title, $Text, [System.Windows.Forms.ToolTipIcon]::Info)
     } catch { Write-Log "Notification impossible: $_" }
     Set-Status "$Title : $Text"
+}
+
+# Bulles pour Mindset, une à la fois. Mindset lit notification.demande toutes les 2 s puis l'efface, et chaque bulle
+# remplace celle d'avant : en fin de partie (FPS, connexion, mode jeu) elles arrivent coup sur coup, et seule la
+# dernière se voyait. La suivante part quand Mindset a pris la précédente et que celle-ci a été vue quelques secondes.
+# Écrite à côté puis renommée : Mindset ne lit jamais un fichier à moitié écrit.
+$NotifyEcart = 6
+function Send-NotifySuivante {
+    $q = $script:NotifyFile
+    if ($q -and $q.Count) {
+        $f = Join-Path $DataDir 'notification.demande'
+        # Mindset ne les prend plus (fermé ?) : une bulle vieille de 5 minutes ne sert plus à rien
+        foreach ($n in @($q | Where-Object { ((Get-Date) - $_.Quand).TotalMinutes -ge 5 })) { [void]$q.Remove($n); Write-Log "Bulle non montrée (Mindset ne l'a pas prise) : $($n.Titre)" }
+        $libre = -not [IO.File]::Exists($f) -and (-not $script:NotifyDerniere -or ((Get-Date) - $script:NotifyDerniere).TotalSeconds -ge $NotifyEcart)
+        if ($q.Count -and $libre) {
+            $n = $q[0]; $q.RemoveAt(0)
+            $tmp = "$f.ecriture"
+            try {
+                [IO.File]::WriteAllText($tmp, $n.Json, (New-Object Text.UTF8Encoding $false))
+                [IO.File]::Move($tmp, $f)
+                $script:NotifyDerniere = Get-Date
+            } catch { Write-Log "Notification impossible: $_"; try { [IO.File]::Delete($tmp) } catch {} }
+        }
+    }
+    if ($q -and $q.Count) {
+        if (-not $script:NotifyTimer) {
+            $script:NotifyTimer = New-Object System.Windows.Threading.DispatcherTimer
+            $script:NotifyTimer.Interval = [TimeSpan]::FromSeconds(1)
+            $script:NotifyTimer.Add_Tick({ try { Send-NotifySuivante } catch { Write-Log "Notification impossible: $_" } })
+        }
+        $script:NotifyTimer.Start()
+    } elseif ($script:NotifyTimer) { $script:NotifyTimer.Stop() }
 }
 
 # ---------------------------------------------------------------------------

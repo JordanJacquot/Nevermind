@@ -66,3 +66,18 @@ jobs:
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-memoire.ps1
           exit $LASTEXITCODE
+
+      - name: "Fluidité en partie (écoute de la souris sur son propre fil, Aide qui tient quand ses connexions sont prises, minuteurs qui ne s'empilent plus)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-fluidite.ps1
+          exit $LASTEXITCODE
+
+      - name: "Réseau (anciens serveurs plus pingés, box des autres joueurs écartées, suite Mindset non suspecte, trace en veille seulement avec BF6, petits textes)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-reseau.ps1
+          exit $LASTEXITCODE
+
+      - name: "Mesure des FPS (jeux à anti-triche EA guettés avant leur lancement, message clair, compteur caché en plein écran exclusif, bulles une à une, longues parties)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-fps.ps1
+          exit $LASTEXITCODE

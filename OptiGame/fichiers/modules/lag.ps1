@@ -9,6 +9,26 @@ $LagNames = @{ gw = 'Ton PC vers ta box'; isp = 'Ta box vers ton fournisseur'; r
 
 function Test-LagMeasure { [bool](Get-Setting 'LagMeasure' $true) }
 
+# Trace réseau en veille avant un jeu à anti-triche (Update-FpsVeille, aide-client.ps1) : elle tourne en administrateur
+# tant que Nevermind est ouvert et coûte du processeur pendant les téléchargements. Seulement si un des jeux guettés
+# (BF6...) est installé ; sinon, celle déjà lancée (jeu désinstallé, mesure du lag coupée) est arrêtée.
+function Test-FluxVeilleUtile([bool]$Voulue) {
+    $utile = $false
+    if ($Voulue -and $script:GameIndex) { $utile = @(Get-FpsVeilleJeux | Where-Object { $script:GameIndex.ContainsKey(([string]$_ -replace '(?i)\.exe$', '').ToLowerInvariant()) }).Count -gt 0 }
+    if ($utile) { $script:FluxVeille = $true }
+    elseif ($script:FluxVeille -and -not $script:LagSession) { $script:FluxVeille = $false; Stop-FluxVeille }
+    $utile
+}
+function Stop-FluxVeille {
+    $v = $script:FluxVeilleArret
+    if ($v) { if (-not $v.H.IsCompleted) { return }; try { $v.PS.Dispose() } catch {} }
+    Write-Log 'Lag : trace réseau en veille arrêtée (aucun jeu guetté installé, ou mesure du lag coupée)'
+    $ps = [PowerShell]::Create()
+    if ($script:BgPool) { $ps.RunspacePool = $script:BgPool }
+    [void]$ps.AddScript({ try { [void][AideClient]::Texte('flux.arreter', '{}', 15000) } catch {} }.ToString())
+    $script:FluxVeilleArret = @{ PS = $ps; H = $ps.BeginInvoke() }
+}
+
 function Get-LagSessions {
     if ($null -ne $script:LagSessions) { return $script:LagSessions.ToArray() }
     $script:LagSessions = New-Object System.Collections.ArrayList
@@ -56,8 +76,8 @@ $ServerGeoWork = {
         $req.Timeout = 8000; $req.ReadWriteTimeout = 8000; $req.UserAgent = 'Nevermind'; $req.Accept = 'application/json'
         $resp = $req.GetResponse()
         try { $o = (New-Object IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8)).ReadToEnd() | ConvertFrom-Json } finally { $resp.Close() }
-        if ($o.bogon -or -not $o.country) { return @{ Ip = $ip; Pays = ''; Ville = '' } }
-        @{ Ip = $ip; Pays = ([string]$o.country).ToUpper(); Ville = [string]$o.city }
+        if ($o.bogon -or -not $o.country) { return @{ Ip = $ip; Pays = ''; Ville = ''; Hote = '' } }
+        @{ Ip = $ip; Pays = ([string]$o.country).ToUpper(); Ville = [string]$o.city; Hote = [string]$o.hostname }
     } catch { @{ Ip = $ip; Erreur = $_.Exception.Message } }
 }
 
@@ -79,11 +99,41 @@ function Receive-LagGeo($S) {
     $g = @($r)[0]
     if (-not $g -or $g.Erreur) { Write-Log "Lag: pays du serveur inconnu ($(if ($g) { $g.Erreur }))"; return }
     if (-not $script:LagGeo) { $script:LagGeo = @{} }
-    $script:LagGeo[[string]$g.Ip] = @{ Pays = $g.Pays; Ville = $g.Ville }
+    $script:LagGeo[[string]$g.Ip] = @{ Pays = $g.Pays; Ville = $g.Ville; Hote = [string]$g.Hote }
     if ($S.Server -and $S.Server.Ip -eq $g.Ip) {
         $S.Server.Pays = $g.Pays; $S.Server.Ville = $g.Ville
         if ($g.Pays) { Write-Log "Lag: serveur $($g.Ip) situé à $(Format-ServerPlace $S.Server)" }
     }
+}
+
+# Adresse d'un particulier (la box d'un autre joueur, en pair à pair) et pas un serveur : d'après son propriétaire
+# (annuaire : lignes ADSL, fibre ou câble des fournisseurs) ou son nom (« ...abo.wanadoo.fr », « ...subs.proxad.net »).
+# $null tant que ni l'un ni l'autre n'est connu.
+$LagParticulierProprio = '(?i)(^|[^a-z])(a?dsl|xdsl|ftth|fttx|bas|ppp|pppoe|dyn|dynamic|dial|dialup|residential|broadband|cable|subscribers?|abonnes)([^a-z]|$)|proxad|wanadoo'
+$LagParticulierHote = '(?i)(^|[.-])(abo|subs|fbx|dyn|dynamic|dsl|adsl|xdsl|ftth|fttx|cable|cpe|pool|ppp|pppoe|dhcp|customer|residential|broadband)([.-]|\d|$)|\.(wanadoo|proxad|bbox|numericable|t-ipconnect)\.'
+function Test-AdresseParticulier([string]$Ip) {
+    $connu = $false
+    $e = Get-ServerOwner $Ip
+    if ($e) { $connu = $true; if ("$($e.O) $($e.N)" -match $LagParticulierProprio) { return $true } }
+    $g = if ($script:LagGeo) { $script:LagGeo[$Ip] } else { $null }
+    if ($g -and $g.Hote) { $connu = $true; if ([string]$g.Hote -match $LagParticulierHote) { return $true } }
+    if ($connu) { $false } else { $null }
+}
+
+# Le serveur suivi est abandonné (nouveau serveur, ou adresse d'un autre joueur) : il n'est plus pingé
+# (avant, chaque ancien serveur restait pingé deux fois par seconde jusqu'à la fin de la partie).
+function Remove-LagServer($S) {
+    foreach ($k in 'srv', 'proxy') { if ($null -ne $S.T[$k]) { [LagMon]::Remove([int]$S.T[$k]); $S.T.Remove($k) } }
+    if ($S.SrvJob) { try { [void]$S.SrvJob.PS.BeginStop($null, $null) } catch {}; $S.SrvJob = $null }
+    $S.Server = $null
+}
+
+# Adresse d'un autre joueur : écartée pour le reste de la partie
+function Add-LagPair($S, [string]$Ip) {
+    if (-not $S.Pairs) { $S.Pairs = @{} }
+    if ($S.Pairs.ContainsKey($Ip)) { return }
+    $S.Pairs[$Ip] = $true
+    Write-Log "Lag: $Ip écarté, c'est la box d'un autre joueur (pair à pair) et pas le serveur du jeu"
 }
 
 function Save-LagSessions {
@@ -113,7 +163,7 @@ function Start-LagSession([string]$Game, [int]$ProcId, [int]$Seconds = 0) {
     if ($gw) { $t.gw = [LagMon]::Add($gw) }
     $t.ref = [LagMon]::Add('1.1.1.1')
     $s = @{ Game = $Game; Pid = $ProcId; Start = Get-Date; Seconds = $Seconds; Gw = $gw; Wifi = [bool]($net -and $net.Wifi); Adapter = $(if ($net) { "$($net.Name) $($net.Desc)" } else { '' })
-        Etw = $etw; Flux = $flux; T = $t; Isp = ''; IspOwner = $null; Server = $null; Ticks = 0; Prev = @{}; Names = @{}; Bg = (New-Object System.Collections.ArrayList)
+        Etw = $etw; Flux = $flux; T = $t; Isp = ''; IspOwner = $null; Server = $null; Pairs = @{}; Ticks = 0; Prev = @{}; Names = @{}; Bg = (New-Object System.Collections.ArrayList)
         Signal = @(); Band = ''; Channel = ''; TraceJob = $null; SrvJob = $null; OwnerJob = $null; GeoJob = $null; Gaps = 0; MaxGap = 0; GapBase = $null }
     # Chemin vers Internet en arrière plan : le premier routeur public est celui du fournisseur
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
@@ -123,7 +173,7 @@ function Start-LagSession([string]$Game, [int]$ProcId, [int]$Seconds = 0) {
     if (-not $script:LagTimer) {
         $script:LagTimer = New-Object System.Windows.Threading.DispatcherTimer
         $script:LagTimer.Interval = [TimeSpan]::FromSeconds(2)
-        $script:LagTimer.Add_Tick({ try { Update-LagSession } catch { Write-Log "Lag: $_" } })
+        $script:LagTimer.Add_Tick({ try { Invoke-SansEmpiler 'Lag' { Update-LagSession } } catch { Write-Log "Lag: $_" } })
     }
     $script:LagTimer.Start()
     Write-Log "Lag: mesure de la connexion ($Game)$(if ($etw) { ', serveur repérable en UDP' })"
@@ -166,6 +216,11 @@ function Update-LagSession {
             if ($hop -and $hop -ne '1.1.1.1') { $s.Isp = $hop; $s.T.isp = [LagMon]::Add($hop); Start-LagOwnerLookup $hop }
         }
     }
+    # Le serveur suivi est la box d'un autre joueur (connu quelques secondes après, par l'annuaire) : écarté
+    if ($s.Server -and $s.Server.Checks -lt 30) {
+        $s.Server.Checks++
+        if (Test-AdresseParticulier $s.Server.Ip) { Add-LagPair $s $s.Server.Ip; Remove-LagServer $s }
+    }
     # Réseau par programme (droits admin) : serveur du jeu et téléchargements en arrière plan
     $flows = @()
     if ($s.Etw) { try { $flows = @(Get-FluxReseau $s.Flux) } catch {} }
@@ -179,19 +234,22 @@ function Update-LagSession {
         $s.Prev[$k] = $bytes
         if ($fpid -eq $s.Pid) {
             $pk = [double]$x[4] + [double]$x[5]
-            if ([double]$x[5] -gt 50 -and [int]$x[11] -lt 5000 -and (-not $best -or $pk -gt $best.Pk)) { $best = @{ Ip = $x[2]; Port = [int]$x[3]; Proto = $x[1]; Pk = $pk; Gaps = [int]$x[9]; MaxGap = [int]$x[10] } }
+            if ([double]$x[5] -gt 50 -and [int]$x[11] -lt 5000 -and -not $s.Pairs.ContainsKey($x[2]) -and (-not $best -or $pk -gt $best.Pk)) { $best = @{ Ip = $x[2]; Port = [int]$x[3]; Proto = $x[1]; Pk = $pk; Gaps = [int]$x[9]; MaxGap = [int]$x[10] } }
         } elseif ($fpid -ne $PID -and $fpid -gt 4) { $perPid[$fpid] = [double]$perPid[$fpid] + ($bytes - $prev) }
     }
     # Sans les droits admin : la connexion TCP du jeu (serveur de connexion, souvent dans la même région)
     if (-not $s.Etw -and $s.Pid -and -not $s.Server -and $s.Ticks -ge 3) {
         foreach ($l in @(Get-TrafficTcp)) {
             $x = ([string]$l) -split '\|'
-            if ([int]$x[0] -eq $s.Pid -and -not (Test-PrivateIp $x[1])) { $best = @{ Ip = $x[1]; Port = [int]$x[2]; Proto = 'tcp'; Pk = 0; Gaps = 0; MaxGap = 0 }; break }
+            if ([int]$x[0] -eq $s.Pid -and -not (Test-PrivateIp $x[1]) -and -not $s.Pairs.ContainsKey($x[1])) { $best = @{ Ip = $x[1]; Port = [int]$x[2]; Proto = 'tcp'; Pk = 0; Gaps = 0; MaxGap = 0 }; break }
         }
     }
+    $change = $best -and (-not $s.Server -or ($s.Server.Ip -ne $best.Ip -and $s.Ticks % 15 -eq 0))
+    if ($change -and (Test-AdresseParticulier $best.Ip)) { Add-LagPair $s $best.Ip; $best = $null }
     if ($best) {
         if (-not $s.Server -or ($s.Server.Ip -ne $best.Ip -and $s.Ticks % 15 -eq 0)) {
-            $s.Server = @{ Ip = $best.Ip; Port = $best.Port; Proto = $best.Proto; Ping = $null; Proxy = ''; Pays = ''; Ville = '' }
+            Remove-LagServer $s
+            $s.Server = @{ Ip = $best.Ip; Port = $best.Port; Proto = $best.Proto; Ping = $null; Proxy = ''; Pays = ''; Ville = ''; Checks = 0 }
             $s.T.srv = [LagMon]::Add($best.Ip)
             $s.GapBase = $best.Gaps
             Start-LagOwnerLookup $best.Ip
@@ -217,7 +275,7 @@ function Update-LagSession {
         if ($null -ne $r) {
             $s.SrvJob = $null
             $last = @($r | ForEach-Object { $x = ([string]$_) -split '\|'; if ($x[1] -and -not (Test-PrivateIp $x[1]) -and $x[1] -ne $s.Isp) { $x[1] } } | Select-Object -Last 1)[0]
-            if ($last -and $last -ne $s.Server.Ip) { $s.Server.Proxy = $last; $s.T.proxy = [LagMon]::Add($last) }
+            if ($last -and $s.Server -and $last -ne $s.Server.Ip) { $s.Server.Proxy = $last; $s.T.proxy = [LagMon]::Add($last) }
         }
     }
     # Téléchargements des autres programmes (octets par seconde)
