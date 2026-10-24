@@ -390,7 +390,7 @@ foreach ($nom in $cas.Keys) {
 # La page RAM (memoire.ps1) : sur un faux PC où Edge et Chrome se lancent en avance (jamais touchés) et où un service de mise à jour
 # démarre avec Windows, ce que « Couper ce qui est sûr » écrit est exactement ce qu'il déclare, et chaque changement est
 # montré avant (une ligne par changement) puis noté pour l'historique
-foreach ($n in 'Get-ConstatMemoire', 'Get-AppliMemoire', 'Get-SeuilsPilotes', 'Get-GenrePilote', 'Get-ChangementsMemoire') {
+foreach ($n in 'Get-ConstatMemoire', 'Get-AppliMemoire', 'Get-SeuilsPilotes', 'Get-GenrePilote', 'Get-ChangementsMemoire', 'Get-OrigineMemoire') {
     $def = Get-FonctionAst 'memoire' $n
     if (-not $def) { $echecs.Add("Fonction $n introuvable dans memoire.ps1"); continue }
     . ([scriptblock]::Create($def.Extent.Text))
@@ -400,7 +400,7 @@ function Format-Size([double]$Bytes) { "$([math]::Round($Bytes / 1MB)) Mo" }
 $fauxMem = @{ Installee = 16GB; Visible = 16GB; Disponible = 8GB; PoolNP = 0.2GB
     Processus = @(@{ Pid = 10; Nom = 'msedge.exe'; Octets = 100MB; Ligne = 'msedge.exe --no-startup-window' }, @{ Pid = 11; Nom = 'chrome.exe'; Octets = 100MB; Ligne = 'chrome.exe --no-startup-window' }, @{ Pid = 12; Nom = 'updater.exe'; Octets = 5MB })
     Services = @(@{ Nom = 'ServiceEssai'; Titre = 'Essai'; Pid = 12; Demarrage = 'Auto' }, @{ Nom = 'edgeupdate'; Titre = 'Microsoft Edge Update'; Pid = 0; Demarrage = 'Auto' }, @{ Nom = 'WSearch'; Titre = 'Windows Search'; Pid = 0; Demarrage = 'Auto' })
-    Politiques = @{} }
+    Demarrage = @() }
 $cMem = Get-ConstatMemoire $fauxMem
 $declMem = @(Get-ChangementsMemoire $cMem)
 Test-Ok (($cMem.Corrections | ForEach-Object { $_.Id } | Sort-Object) -join ',' -eq 'svc:edgeupdate') "Page RAM : corrections $(@($cMem.Corrections | ForEach-Object { $_.Id }) -join ', ')"

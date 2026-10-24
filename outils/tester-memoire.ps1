@@ -100,7 +100,7 @@ function New-FauxPc {
             New-Svc 'WinDefend' 'Antivirus Microsoft Defender' 300
             New-Svc 'MozillaMaintenance' 'Mozilla Maintenance Service' 0 'Disabled'
         )
-        Politiques = @{ EdgeBoost = $null; EdgeFond = $null; ChromeFond = $null }
+        Demarrage = @()
         Etiquettes = @() }
 }
 function Find-Appli($C, [string]$Exe) { @(@($C.Applis) | Where-Object { @($_.Exes) -contains $Exe })[0] }
@@ -124,6 +124,32 @@ Test-Ok ($null -eq (Find-Appli $c 'Memory Compression.exe') -and [math]::Abs($c.
 Test-Ok ($null -eq (Find-Appli $c 'Idle.exe')) 'Le processus inactif (Idle) est compté comme une appli'
 $mon = Find-Appli $c 'MonLogiciel.exe'
 Test-Ok ($mon -and $mon.Nb -eq 2 -and $mon.Nom -eq 'Mon Logiciel' -and @($mon.Exes) -contains 'MonLogicielAgent.exe' -and $mon.Kind -eq 'verifier') "Deux programmes d'un même logiciel : pas regroupés (« $($mon.Nom) », $($mon.Nb))"
+# D'où vient chaque appli : la page Démarrage n'est conseillée que si le programme y est vraiment (lui, un de ses
+# parents, ou un .exe nommé dans la commande : Discord se lance par « Update.exe --processStart Discord.exe »)
+$d = New-FauxPc
+$d.Processus = @($d.Processus) + @(
+    New-Proc 800 'Discord.exe' 300 'C:\Users\x\AppData\Local\Discord\app-1.0\Discord.exe' '' 'Discord'
+    New-Proc 810 'steam.exe' 50 'C:\Steam\steam.exe' '' 'Steam'
+    New-Proc 811 'steamwebhelper.exe' 200 'C:\Steam\bin\steamwebhelper.exe' '' 'Steam Client WebHelper'
+    New-Proc 820 'LEDKeeper2.exe' 100 'C:\Program Files (x86)\MSI\LEDKeeper2.exe' '' 'LEDKeeper2'
+    New-Proc 830 'Code.exe' 400 'C:\Users\x\AppData\Local\Programs\Microsoft VS Code\Code.exe' '' 'Visual Studio Code')
+foreach ($x in $d.Processus) { $x.Parent = switch ([int]$x.Pid) { 811 { 810 } 820 { 101 } default { 0 } } }
+$d.Demarrage = @('update.exe', 'discord.exe', 'steam.exe', 'onedrive.exe')
+$co = Get-ConstatMemoire $d
+foreach ($cas in @(@('Discord.exe', 'demarrage'), @('steamwebhelper.exe', 'demarrage'), @('LEDKeeper2.exe', 'windows'), @('Code.exe', 'ouvert'), @('MonLogiciel.exe', 'ouvert'))) {
+    $a = Find-Appli $co $cas[0]
+    $ok = switch ($cas[1]) {
+        'demarrage' { $a.Note -like '*coupe-le dans la page Démarrage*' }
+        'windows' { $a.Note -like '*pas dans la page Démarrage*' -and $a.Note -like '*désinstaller*' }
+        'ouvert' { $a.Note -like '*ouvert en ce moment*' -and $a.Note -notlike '*page Démarrage*' }
+    }
+    Test-Ok $ok "$($cas[0]) ($($cas[1])) : conseil « $($a.Note) »"
+}
+Test-Ok (-not @(@($co.Applis) | Where-Object { $_.Kind -eq 'windows' -and $_.Note -like '*Démarrage*' }).Count) 'Un programme de Windows renvoie à la page Démarrage'
+# Contre-épreuve : sans la page Démarrage lue, plus personne n'y est envoyé
+$d.Demarrage = @(); $co2 = Get-ConstatMemoire $d
+Test-Ok (-not @(@($co2.Applis) | Where-Object { $_.Note -like '*coupe-le dans la page Démarrage*' }).Count) 'Page Démarrage conseillée pour un programme qui n''y est pas'
+
 $explo = Find-Appli $c 'explorer.exe'
 Test-Ok ($explo.Kind -eq 'windows' -and $explo.Nom -notmatch 'apos|exploitation') "Explorateur : « $($explo.Nom) » [$($explo.Etiquette)]"
 Test-Ok ((Find-Appli $c 'MsMpEng.exe').Kind -eq 'windows') 'L''antivirus de Windows n''est pas « Windows en a besoin »'

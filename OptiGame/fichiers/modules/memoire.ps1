@@ -58,15 +58,15 @@ $AppsConnuesMemoire = @(
     @{ Motif = '^microsoftedgeupdate$'; Nom = 'Mise à jour de Microsoft Edge'; Kind = 'inutile'; Note = 'Cherche les mises à jour de Edge. Pas besoin qu''il tourne tout le temps.' }
     @{ Motif = '^(googleupdate|googlecrashhandler(64)?)$'; Nom = 'Mise à jour de Google Chrome'; Kind = 'inutile'; Note = 'Cherche les mises à jour de Chrome. Pas besoin qu''il tourne tout le temps.' }
     @{ Motif = '^(armsvc|adobearm|adobeupdateservice|acrotray)$'; Nom = 'Mise à jour d''Adobe'; Kind = 'inutile'; Note = 'Cherche les mises à jour d''Adobe. Pas besoin qu''il tourne tout le temps.' }
-    # Lumières (RGB) seulement : inutile au quotidien ; à couper dans la page Démarrage
-    @{ Motif = '^(lightingservice|ledkeeper\d*|auracreatorservice|aurawallpaperservice|signalrgb|openrgb|mysticlight.*|rzchromastreamserver|rzchromasdkservice|chromasdk.*)$'; Nom = ''; Kind = 'inutile'; Note = 'Gère les lumières (RGB) du PC. Les lumières gardent souvent leur dernière couleur sans lui : coupe-le dans la page Démarrage.' }
+    # Lumières (RGB) seulement : inutile au quotidien. Origine = $true : la phrase « d'où il vient » est ajoutée selon le PC
+    @{ Motif = '^(lightingservice|ledkeeper\d*|auracreatorservice|aurawallpaperservice|signalrgb|openrgb|mysticlight.*|rzchromastreamserver|rzchromasdkservice|chromasdk.*)$'; Nom = ''; Kind = 'inutile'; Note = 'Gère les lumières (RGB) du PC. Les lumières gardent souvent leur dernière couleur sans lui.'; Origine = $true }
     # Logiciels du fabricant qui ne servent pas au quotidien
     @{ Motif = '^(hpcommrecovery|hpsysinfo|hpdiags.*|hptouchpoint.*|hpsupportassistant|hpanalyticscomp|supportassist.*|dellsupportassist.*|asussystemanalysis|asussystemdiagnosis|asuslink.*|myasus|acerquickaccess|carecenter.*)$'; Nom = ''; Kind = 'inutile'; Note = 'Logiciel du fabricant du PC (aide, statistiques). Pas besoin qu''il tourne tout le temps.' }
     # Logiciels qui règlent aussi la souris, le casque ou les ventilateurs : à vérifier
-    @{ Motif = '^(icue|corsair.*|razer.*|rzsynapse.*|lghub.*|steelseries.*|armourycrate.*|armourysocketserver|nzxt.*|msi\.centralserver|msi_center.*|dragoncenter.*)$'; Nom = ''; Kind = 'verifier'; Note = 'Règle tes lumières, ta souris, ton casque ou tes ventilateurs. Si tu ne t''en sers pas, coupe-le dans la page Démarrage.' }
-    @{ Motif = '^(steam|steamwebhelper|gameoverlayui(64)?|eaanticheat\.gameservice|easteamlauncher|ealocalhostsvc|epicgameslauncher|epicwebhelper|eadesktop|eabackgroundservice|ubisoftconnect|upc|battle\.net|riotclientservices|goggalaxy|galaxyclient)$'; Nom = ''; Kind = 'verifier'; Note = 'Lanceur de jeux. S''il se lance avec le PC et que tu ne joues pas tout de suite, coupe-le dans la page Démarrage.' }
-    @{ Motif = '^(discord|ms-teams|teams|spotify|whatsapp|skype|zoom)$'; Nom = ''; Kind = 'verifier'; Note = 'Messagerie ou musique. Si elle se lance avec le PC sans que tu t''en serves, coupe-la dans la page Démarrage.' }
-    @{ Motif = '^onedrive$'; Nom = 'OneDrive'; Kind = 'verifier'; Note = 'Synchronise tes fichiers. Si tu ne t''en sers pas, coupe-le dans la page Démarrage.' }
+    @{ Motif = '^(icue|corsair.*|razer.*|rzsynapse.*|lghub.*|steelseries.*|armourycrate.*|armourysocketserver|nzxt.*|msi\.centralserver|msi_center.*|dragoncenter.*)$'; Nom = ''; Kind = 'verifier'; Note = 'Règle tes lumières, ta souris, ton casque ou tes ventilateurs.'; Origine = $true }
+    @{ Motif = '^(steam|steamwebhelper|gameoverlayui(64)?|eaanticheat\.gameservice|easteamlauncher|ealocalhostsvc|epicgameslauncher|epicwebhelper|eadesktop|eabackgroundservice|ubisoftconnect|upc|battle\.net|riotclientservices|goggalaxy|galaxyclient)$'; Nom = ''; Kind = 'verifier'; Note = 'Lanceur de jeux.'; Origine = $true }
+    @{ Motif = '^(discord|ms-teams|teams|spotify|whatsapp|skype|zoom)$'; Nom = ''; Kind = 'verifier'; Note = 'Messagerie ou musique.'; Origine = $true }
+    @{ Motif = '^onedrive$'; Nom = 'OneDrive'; Kind = 'verifier'; Note = 'Synchronise tes fichiers.'; Origine = $true }
     @{ Motif = '^(phoneexperiencehost|crossdeviceresume)$'; Nom = 'Lien avec le téléphone'; Kind = 'verifier'; Note = 'Relie ton téléphone au PC. Si tu ne t''en sers pas, il peut être coupé dans les paramètres de Windows.' }
     @{ Motif = '^(widgets|widgetservice)$'; Nom = 'Widgets de Windows'; Kind = 'verifier'; Note = 'Le panneau météo et actualités. Il se coupe dans les paramètres de la barre des tâches.' }
     @{ Motif = '^officeclicktorun$'; Nom = 'Microsoft Office (mises à jour)'; Kind = 'verifier'; Note = 'Met à jour Office. Utile si tu te sers de Word ou d''Excel.' }
@@ -162,13 +162,13 @@ function Find-PilotesEtiquettes([string[]]$Tags) {
 # ---------------------------------------------------------------------------
 # La lecture du PC (lecture seule, en tâche de fond) : les données que Get-ConstatMemoire calcule
 # ---------------------------------------------------------------------------
-# $Politiques : les réglages de Edge et Chrome, lus par l'interface (le registre se lit avec ses fonctions) ;
+# $Demarrage : les programmes (nom du .exe, et ceux que nomme leur commande) de la page Démarrage, lus par l'interface ;
 # $Connus : les pilotes déjà retrouvés pour une étiquette (la recherche des .sys n'est faite qu'une fois par séance).
 # Les étiquettes des pilotes ne sont lues que si leur mémoire est élevée ; celles dont le pilote n'est pas encore connu
 # ont Pilotes vide : leur recherche suit, à part (Find-PilotesEtiquettes).
-function Get-DonneesMemoire($Politiques, $Connus) {
+function Get-DonneesMemoire($Demarrage, $Connus) {
     $d = @{ Pc = $env:COMPUTERNAME; Date = Get-Date; Windir = $env:windir; Installee = 0.0; Visible = 0.0; Disponible = 0.0; Cache = 0.0; Modifiee = 0.0
-        PoolNP = 0.0; PoolP = 0.0; Processus = @(); Services = @(); Politiques = $(if ($Politiques) { $Politiques } else { @{} }); Etiquettes = @() }
+        PoolNP = 0.0; PoolP = 0.0; Processus = @(); Services = @(); Demarrage = @($Demarrage | Where-Object { $_ }); Etiquettes = @() }
     try {
         $os = Get-CimInstance Win32_OperatingSystem -Property TotalVisibleMemorySize, FreePhysicalMemory -ErrorAction Stop
         $d.Visible = [double]$os.TotalVisibleMemorySize * 1KB; $d.Disponible = [double]$os.FreePhysicalMemory * 1KB
@@ -186,13 +186,13 @@ function Get-DonneesMemoire($Politiques, $Connus) {
     try { foreach ($x in @(Get-CimInstance Win32_PerfRawData_PerfProc_Process -Property IDProcess, WorkingSetPrivate -ErrorAction Stop)) { if ([int]$x.IDProcess) { $prive[[int]$x.IDProcess] = [double]$x.WorkingSetPrivate } } } catch {}
     $infos = @{}
     try {
-        $d.Processus = @(foreach ($p in @(Get-CimInstance Win32_Process -Property ProcessId, Name, ExecutablePath, CommandLine, WorkingSetSize -ErrorAction Stop)) {
+        $d.Processus = @(foreach ($p in @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine, WorkingSetSize -ErrorAction Stop)) {
             $chemin = [string]$p.ExecutablePath
             if ($chemin -and -not $infos.ContainsKey($chemin)) { $infos[$chemin] = try { [Diagnostics.FileVersionInfo]::GetVersionInfo($chemin) } catch { $null } }
             $v = if ($chemin) { $infos[$chemin] } else { $null }
             $o = if ($prive.ContainsKey([int]$p.ProcessId)) { $prive[[int]$p.ProcessId] } else { [double]$p.WorkingSetSize }
             if ([string]$p.Name -eq 'Memory Compression') { $o = [math]::Max($o, [double]$p.WorkingSetSize) }
-            @{ Pid = [int]$p.ProcessId; Nom = [string]$p.Name; Chemin = $chemin; Ligne = [string]$p.CommandLine; Octets = $o
+            @{ Pid = [int]$p.ProcessId; Parent = [int]$p.ParentProcessId; Nom = [string]$p.Name; Chemin = $chemin; Ligne = [string]$p.CommandLine; Octets = $o
                 Produit = $(if ($v) { ([string]$v.ProductName).Trim() }); Description = $(if ($v) { ([string]$v.FileDescription).Trim() }); Societe = $(if ($v) { ([string]$v.CompanyName).Trim() }) }
         })
     } catch { Write-Log "Mémoire : liste des programmes illisible ($($_.Exception.Message))" }
@@ -245,14 +245,21 @@ function Get-AppliMemoire($P, $Services, [string]$Windir) {
     foreach ($a in $AppsConnuesMemoire) {
         if ($bas -match $a.Motif) {
             $nom = if ($a.Nom) { $a.Nom } elseif ($P.Produit -and $P.Produit -notmatch $ProduitsWindowsMemoire) { [string]$P.Produit } elseif ($P.Description) { [string]$P.Description } else { $exe }
-            return @{ Cle = "app:$nom"; Nom = $nom; Kind = $a.Kind; Note = $a.Note }
+            return @{ Cle = "app:$nom"; Nom = $nom; Kind = $a.Kind; Note = $a.Note; Origine = [bool]$a.Origine }
         }
     }
     $windows = $bas -match $ExesWindowsMemoire -or ($P.Chemin -and $Windir -and ([string]$P.Chemin).StartsWith($Windir.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase))
     # (le nom de l'appli : celui du produit, sauf pour Windows, dont chaque programme a sa description)
     $nom = if ($NomsWindowsMemoire.ContainsKey($bas)) { $NomsWindowsMemoire[$bas] } elseif ($P.Produit -and $P.Produit -notmatch $ProduitsWindowsMemoire) { [string]$P.Produit } elseif ($P.Description) { [string]$P.Description } else { $exe }
     if ($windows) { return @{ Cle = "app:$nom"; Nom = $nom; Kind = 'windows'; Note = 'Fait partie de Windows ou d''un pilote de ton matériel.' } }
-    @{ Cle = "app:$nom"; Nom = $nom; Kind = 'verifier'; Note = 'Un logiciel installé sur ce PC. S''il se lance tout seul et que tu ne t''en sers pas, coupe-le dans la page Démarrage.' }
+    @{ Cle = "app:$nom"; Nom = $nom; Kind = 'verifier'; Note = 'Un logiciel installé sur ce PC.'; Origine = $true }
+}
+
+# D'où vient une appli, et donc comment s'en passer : la page Démarrage seulement si elle y est vraiment
+function Get-OrigineMemoire($G) {
+    if ($G.AuDemarrage) { return 'Il se lance avec le PC : si tu ne t''en sers pas, coupe-le dans la page Démarrage.' }
+    if ($G.ParWindows) { return 'Il n''est pas dans la page Démarrage : c''est son logiciel qui le fait lancer par Windows. Si tu ne t''en sers pas, désinstaller ce logiciel libère cette mémoire.' }
+    'Il ne se lance pas avec le PC : il est ouvert en ce moment. Le fermer libère cette mémoire.'
 }
 
 # Le constat complet : @{ chiffres ; Applis (triées) ; Alertes ; Corrections }
@@ -270,6 +277,9 @@ function Get-ConstatMemoire($D) {
         if (-not $svcParPid.ContainsKey([int]$s.Pid)) { $svcParPid[[int]$s.Pid] = New-Object System.Collections.ArrayList }
         [void]$svcParPid[[int]$s.Pid].Add($s)
     }
+    $nomParPid = @{}; $parentParPid = @{}
+    foreach ($p in @($D.Processus)) { if ($p) { $nomParPid[[int]$p.Pid] = ([string]$p.Nom).ToLower(); $parentParPid[[int]$p.Pid] = [int]$p.Parent } }
+    $demarrage = @(@($D.Demarrage) | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLower() })
     $groupes = @{}
     $compressee = 0.0
     $edgeAvance = $false; $chromeAvance = $false
@@ -283,10 +293,17 @@ function Get-ConstatMemoire($D) {
         $a = Get-AppliMemoire $p @($svcParPid[[int]$p.Pid]) ([string]$D.Windir)
         $g = $groupes[$a.Cle]
         if (-not $g) {
-            $g = @{ Nom = $a.Nom; Kind = $a.Kind; Note = $a.Note; Octets = 0.0; Nb = 0; Exes = New-Object System.Collections.ArrayList; Services = New-Object System.Collections.ArrayList; Corrections = @() }
+            $g = @{ Nom = $a.Nom; Kind = $a.Kind; Note = $a.Note; Origine = [bool]$a.Origine; AuDemarrage = $false; ParWindows = $false; Octets = 0.0; Nb = 0; Exes = New-Object System.Collections.ArrayList; Services = New-Object System.Collections.ArrayList; Corrections = @() }
             $groupes[$a.Cle] = $g
         }
         $g.Octets += [double]$p.Octets; $g.Nb++
+        # (lui ou un de ses parents, jusqu'à 4 crans : Steam et son « WebHelper »)
+        $x = [int]$p.Pid; $nomX = "$exe.exe".ToLower()
+        for ($i = 0; $i -lt 5 -and $nomX; $i++) {
+            if ($demarrage -contains $nomX) { $g.AuDemarrage = $true; break }
+            $x = [int]$parentParPid[$x]; $nomX = if ($x) { $nomParPid[$x] } else { $null }
+        }
+        if ($nomParPid[[int]$p.Parent] -in 'services.exe', 'svchost.exe') { $g.ParWindows = $true }   # (lancé par un service ou une tâche planifiée)
         if ($g.Exes -notcontains "$exe.exe") { [void]$g.Exes.Add("$exe.exe") }
         foreach ($s in @($svcParPid[[int]$p.Pid])) { if ($s -and $g.Services -notcontains [string]$s.Nom) { [void]$g.Services.Add([string]$s.Nom) } }
     }
@@ -310,6 +327,7 @@ function Get-ConstatMemoire($D) {
         if ($g.Exes -contains 'chrome.exe' -and $chromeAvance) {
             $g.Kind = 'inutile'; $g.Note = 'Chrome reste ouvert en arrière-plan, même fenêtres fermées. Pour le couper : dans Chrome, Paramètres, puis Système, et désactive « Poursuivre l''exécution des applications en arrière-plan ».'
         }
+        if ($g.Origine) { $g.Note = "$($g.Note) $(Get-OrigineMemoire $g)" }
         $g.Etiquette = $EtiquettesMemoire[$g.Kind]
     }
     $applis = @($groupes.Values | Sort-Object { $_.Octets } -Descending)
@@ -415,7 +433,7 @@ function Format-RapportMemoire($C) {
     $l.Add('')
     $l.Add('CE QUE NEVERMIND PEUT COUPER SANS RISQUE')
     if (@($C.Corrections).Count) { foreach ($c in @($C.Corrections)) { $l.Add("  * $($c.Nom)") } }
-    else { $l.Add('  Rien : ce qui tourne est utile, ou se coupe à la main (page Démarrage).') }
+    else { $l.Add('  Rien : ce qui tourne est utile, ou se coupe à la main (voir chaque appli).') }
     $l.Add('')
     $l.Add('Rien n''a été changé sur le PC pour faire ce rapport.')
     $l -join "`r`n"
@@ -437,14 +455,14 @@ function Save-RapportMemoire($C, [string]$Dossier) {
 # du pilote), puis la recherche du pilote dans les .sys si elle est utile (le nom arrive ensuite). Le fil de fond charge
 # ce fichier lui-même (que des définitions) : il n'a besoin d'aucun autre module.
 $TravailMemoire = {
-    param([string]$Code, $Politiques, $Connus, [string[]]$Tags, [string]$Etape)
+    param([string]$Code, $Demarrage, $Connus, [string[]]$Tags, [string]$Etape)
     . ([scriptblock]::Create($Code))
     $script:JournalFond = New-Object System.Collections.Generic.List[string]
     function Write-Log([string]$Message) { $script:JournalFond.Add($Message) }
     $r = @{ Etape = $Etape }
     try {
         if ($Etape -eq 'pilotes') { $r.Pilotes = Find-PilotesEtiquettes $Tags }
-        else { $r.Donnees = Get-DonneesMemoire $Politiques $Connus }
+        else { $r.Donnees = Get-DonneesMemoire $Demarrage $Connus }
     } catch { $r.Erreur = $_.Exception.Message }
     $r.Journal = @($script:JournalFond)
     $r
@@ -456,13 +474,10 @@ function Start-ConstatMemoire([string]$Ensuite, [string]$Etape = 'donnees', [str
     if ($script:MemoireJob) { return }   # (déjà en cours : le résultat servira aussi à ce geste)
     if (-not $script:PilotesEtiquettes) { $script:PilotesEtiquettes = @{} }
     if (-not $script:MemoireCode) { $script:MemoireCode = [IO.File]::ReadAllText((Join-Path $ModulesDir 'memoire.ps1'), [Text.Encoding]::UTF8) }
-    $pol = @{
-        EdgeBoost = Get-RegValue 'HKCU:\Software\Policies\Microsoft\Edge' 'StartupBoostEnabled'
-        EdgeFond = Get-RegValue 'HKCU:\Software\Policies\Microsoft\Edge' 'BackgroundModeEnabled'
-        ChromeFond = Get-RegValue 'HKCU:\Software\Policies\Google\Chrome' 'BackgroundModeEnabled'
-    }
+    # (les programmes de la page Démarrage : pour ne conseiller d'y aller que s'ils y sont vraiment)
+    $dem = @(try { @(Get-StartupItems) | Where-Object { $_.Enabled -and $_.Exe } | ForEach-Object { ([IO.Path]::GetFileName([string]$_.Exe)).ToLower(); foreach ($m in [regex]::Matches([string]$_.Commande, '[\w.-]+\.exe')) { ([IO.Path]::GetFileName($m.Value.Trim())).ToLower() } } | Select-Object -Unique } catch { Write-Log "Mémoire : page Démarrage illisible ($($_.Exception.Message))" })
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
-    [void]$ps.AddScript($TravailMemoire.ToString()).AddArgument($script:MemoireCode).AddArgument($pol).AddArgument($script:PilotesEtiquettes.Clone()).AddArgument(@($Tags)).AddArgument($Etape)
+    [void]$ps.AddScript($TravailMemoire.ToString()).AddArgument($script:MemoireCode).AddArgument($dem).AddArgument($script:PilotesEtiquettes.Clone()).AddArgument(@($Tags)).AddArgument($Etape)
     $script:MemoireJob = @{ PS = $ps; Handle = $ps.BeginInvoke(); Debut = Get-Date; Etape = $Etape }
     $script:Kit.MemoireEnCours = $Etape
     Set-OccupeVue $(if ($Etape -eq 'pilotes') { 'Je cherche quel pilote garde la mémoire...' } else { 'Je regarde ce qui prend la mémoire...' })
