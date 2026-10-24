@@ -122,10 +122,15 @@ $r.Secondes = [math]::Round(((Get-Date) - $debut).TotalSeconds, 1)
 try { $r.Journal = [AideClient]::Appeler('{"a":"aide.journal","p":{}}', 3000, 15000) } catch { $r.Journal = "journal illisible : $($_.Exception.Message)" }
 ConvertTo-Json -InputObject $r -Compress
 '@
+# (chemin long : sur la CI, %TEMP% est en nom court « RUNNER~1 », alors que Windows donne le chemin long du client ;
+# l'Aide compare les deux tels quels et refuserait le client)
+Add-Type -Namespace TestFluidite -Name Chemins -MemberDefinition '[DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern uint GetLongPathName(string court, System.Text.StringBuilder long_, uint taille);'
 $tmp = Join-Path $env:TEMP "nevermind-test-fluidite-$PID"
 $aide = $null
 try {
     New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    $long = New-Object System.Text.StringBuilder 1024
+    if ([TestFluidite.Chemins]::GetLongPathName($tmp, $long, 1024)) { $tmp = $long.ToString() }
     $fichierClient = Join-Path $tmp 'client.ps1'
     [IO.File]::WriteAllText($fichierClient, $client, (New-Object Text.UTF8Encoding $true))
     $aideLancee = $FichierAide; $exeClient = $psExe
