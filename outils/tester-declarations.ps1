@@ -43,7 +43,7 @@ function script:powercfg { if ("$args" -match '^/list') { return 'GUID du mode d
 # 1. Lecture des modules : les fonctions et variables utiles, rien d'autre
 # ---------------------------------------------------------------------------
 $asts = @{}
-foreach ($f in 'tableau-de-bord', 'analyse', 'optimisations', 'donnees', 'assistance', 'jeu', 'bibliotheque') {
+foreach ($f in 'tableau-de-bord', 'analyse', 'optimisations', 'donnees', 'assistance', 'jeu', 'bibliotheque', 'memoire') {
     $tok = $null; $err = $null
     $asts[$f] = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $modules "$f.ps1"), [ref]$tok, [ref]$err)
     if ($err) { Write-Host "$f.ps1 n'est pas lisible : $($err[0].Message)" -ForegroundColor Red; exit 1 }
@@ -185,7 +185,8 @@ foreach ($x in @(@('optimisations', 'Set-StartupState'), @('optimisations', 'Inv
 }
 # Les fonctions qui déclarent : lecture seule
 foreach ($x in @(@('optimisations', 'Get-ChangementAlimentation'), @('optimisations', 'Get-ChangementsAccessHotkeys'), @('optimisations', 'Get-ChangementWindowedOptim'),
-                 @('optimisations', 'Get-ChangementDemarrage'), @('jeu', 'Get-ChangementsProfil'), @('bibliotheque', 'Get-ChangementsOptimisationJeu'), @('tableau-de-bord', 'Get-ChangementsNettoyage'))) {
+                 @('optimisations', 'Get-ChangementDemarrage'), @('jeu', 'Get-ChangementsProfil'), @('bibliotheque', 'Get-ChangementsOptimisationJeu'), @('tableau-de-bord', 'Get-ChangementsNettoyage'),
+                 @('memoire', 'Get-ChangementsMemoire'))) {
     Test-LectureSeule $x[1] (Get-FonctionAst $x[0] $x[1]).Body
 }
 
@@ -365,6 +366,7 @@ $cas = [ordered]@{
     'reg'               = { Set-Reg 'HKCU:\Software\Microsoft\GameBar' 'AutoGameModeEnabled' 1 }
     'reg (effacement)'  = { Clear-Reg 'HKCU:\Software\Microsoft\GameBar' 'AutoGameModeEnabled' }
     'svc'               = { Set-ServiceOff 'ServiceEssai' }
+    'svc (manuel)'      = { Set-ServiceOff 'ServiceEssai' 'Manual' }
     'power'             = { Set-PowerPlan }
     'overlay'           = { $script:IsLaptop = $true; try { Test-Ok (Set-BestPerfOverlay) 'Curseur du mode d''alimentation : Set-BestPerfOverlay n''a rien fait' } finally { $script:IsLaptop = $false } }
     'pcfg'              = { Set-BatterySetting 'CritAction' 3 }
@@ -384,6 +386,39 @@ foreach ($nom in $cas.Keys) {
     Test-Ok ($journal.Count -eq 1) "Historique, $nom : $($journal.Count) entrée(s) notée(s) au lieu d'une"
     if ($journal.Count) { $entrees[$nom] = $journal[0] }
 }
+
+# La page RAM (memoire.ps1) : sur un faux PC où Edge et Chrome se lancent en avance (jamais touchés) et où un service de mise à jour
+# démarre avec Windows, ce que « Couper ce qui est sûr » écrit est exactement ce qu'il déclare, et chaque changement est
+# montré avant (une ligne par changement) puis noté pour l'historique
+foreach ($n in 'Get-ConstatMemoire', 'Get-AppliMemoire', 'Get-SeuilsPilotes', 'Get-GenrePilote', 'Get-ChangementsMemoire') {
+    $def = Get-FonctionAst 'memoire' $n
+    if (-not $def) { $echecs.Add("Fonction $n introuvable dans memoire.ps1"); continue }
+    . ([scriptblock]::Create($def.Extent.Text))
+}
+foreach ($aff in @($asts['memoire'].EndBlock.Statements | Where-Object { $_ -is [System.Management.Automation.Language.AssignmentStatementAst] })) { . ([scriptblock]::Create($aff.Extent.Text)) }
+function Format-Size([double]$Bytes) { "$([math]::Round($Bytes / 1MB)) Mo" }
+$fauxMem = @{ Installee = 16GB; Visible = 16GB; Disponible = 8GB; PoolNP = 0.2GB
+    Processus = @(@{ Pid = 10; Nom = 'msedge.exe'; Octets = 100MB; Ligne = 'msedge.exe --no-startup-window' }, @{ Pid = 11; Nom = 'chrome.exe'; Octets = 100MB; Ligne = 'chrome.exe --no-startup-window' }, @{ Pid = 12; Nom = 'updater.exe'; Octets = 5MB })
+    Services = @(@{ Nom = 'ServiceEssai'; Titre = 'Essai'; Pid = 12; Demarrage = 'Auto' }, @{ Nom = 'edgeupdate'; Titre = 'Microsoft Edge Update'; Pid = 0; Demarrage = 'Auto' }, @{ Nom = 'WSearch'; Titre = 'Windows Search'; Pid = 0; Demarrage = 'Auto' })
+    Politiques = @{} }
+$cMem = Get-ConstatMemoire $fauxMem
+$declMem = @(Get-ChangementsMemoire $cMem)
+Test-Ok (($cMem.Corrections | ForEach-Object { $_.Id } | Sort-Object) -join ',' -eq 'svc:edgeupdate') "Page RAM : corrections $(@($cMem.Corrections | ForEach-Object { $_.Id }) -join ', ')"
+$lignesMem = @(Get-DetailsAvant $declMem)
+Test-Ok ($lignesMem.Count -eq $declMem.Count) "Page RAM : $($lignesMem.Count) ligne(s) de détails pour $($declMem.Count) changement(s)"
+Test-Ok (-not @($lignesMem | Where-Object { $_ -like 'Changement non décrit*' }).Count) "Page RAM : un changement non décrit avant confirmation : $($lignesMem -join ' / ')"
+Test-Ok (@($lignesMem | Where-Object { $_ -match '^Service edgeupdate : démarrage maintenant .+, après manuel' }).Count -eq 1) "Page RAM : ligne du service mal décrite : $($lignesMem -join ' / ')"
+Reset-FauxPc
+$script:JournalHisto.Clear()
+$script:RunLog = New-Object System.Collections.ArrayList
+try { foreach ($x in @($cMem.Corrections)) { Set-Declarations $x.Changes } } catch { Test-Ok $false "Page RAM : erreur sur le faux PC : $($_.Exception.Message)" }
+$journalMem = @($script:RunLog); $script:RunLog = $null
+Compare-Ecrit 'Page RAM' $declMem $journalMem
+$svcMem = @($journalMem | Where-Object { $_.Type -eq 'svc' })
+Test-Ok ($svcMem.Count -eq 1 -and $svcMem[0].Name -eq 'edgeupdate' -and $svcMem[0].Nouveau -eq 'Manual') "Page RAM : service noté $(@($svcMem | ForEach-Object { "$($_.Name)=$($_.Nouveau)" }) -join ', ')"
+Test-Ok (@($script:Gestes | Where-Object { $_ -eq 'aide:service.regler' }).Count -eq 1) "Page RAM : le service n'est pas passé par l'Aide une fois ($(@($script:Gestes) -join ' '))"
+Test-Ok ([bool]@(@(Get-Setting 'SvcOriginal' @()) | ForEach-Object { $_ } | Where-Object { [string]$_ -like 'edgeupdate|*' }).Count) 'Page RAM : le service n''est pas gardé pour « Tout restaurer » (SvcOriginal)'
+foreach ($e in $journalMem) { $l = @(Get-DetailsTechniques @{ Log = @($e) }); Test-Ok ($l.Count -eq 1 -and $l[0] -match 'avant .+, après .+') "Page RAM, historique : ligne sans avant ou après : $($l -join ' / ')" }
 
 # Une ligne lisible par entrée, avec l'avant et l'après ; la même après un passage par historique.json (dans %TEMP%)
 $HistoryFile = Join-Path $env:TEMP "nevermind-test-historique-$PID.json"
@@ -412,6 +447,7 @@ try {
         'reg'               = 'avant 0, après 1$'
         'reg (effacement)'  = 'avant 0, après effacée$'
         'svc'               = 'démarrage avant manuel, il tournait, après désactivé, arrêté$'
+        'svc (manuel)'      = 'démarrage avant manuel, il tournait, après manuel, arrêté$'
         'power'             = 'avant « Utilisation normale » \(381b4222-f694-41f0-9685-ff5bb260df2e\), après « Performances élevées » \(8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c\)$'
         'overlay'           = "avant 00000000-0000-0000-0000-000000000000, après « Meilleures performances » \($BestPerfOverlay\)$"
         'pcfg'              = 'action à batterie critique : avant secteur ne rien faire, batterie mise en veille, après arrêt du PC \(secteur et batterie\)$'

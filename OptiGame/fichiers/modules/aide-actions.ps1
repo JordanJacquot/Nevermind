@@ -24,7 +24,10 @@ function Initialize-AideNatif {
 
 # Programmes de Windows et de l'antivirus : jamais fermés, jamais bloqués, jamais de priorité changée
 $AideExesProteges = '^(csrss|lsass|lsaiso|smss|wininit|winlogon|services|svchost|System|Registry|Idle|MsMpEng|NisSrv|MpCmdRun|MpDefenderCoreService|MpSigStub|MRT|smartscreen|MsSense|SenseCncProxy|SenseIR|SenseNdr|SenseTVM|SecurityHealthService|SecurityHealthSystray|SecurityHealthHost|SgrmBroker|dwm|explorer|fontdrvhost|sihost|ctfmon|conhost|audiodg|spoolsv|taskhostw|RuntimeBroker|TrustedInstaller|TiWorker|wuauclt|MoUsoCoreWorker|Nevermind|Mindset)(\.exe)?$'
-$AideServicesProteges = '^(WinDefend|WdNisSvc|WdFilter|Sense|SecurityHealthService|wscsvc|mpssvc|BFE|wuauserv|UsoSvc|WaaSMedicSvc|BITS|DoSvc|CryptSvc|TrustedInstaller|Dnscache|Dhcp|NlaSvc|nsi|W32Time|EventLog|RpcSs)$'
+# Les services que la page RAM passe en « manuel » (mises à jour, logiciels du fabricant : la liste de memoire.ps1), et
+# remet comme avant. Jamais un service de Windows.
+$AideServicesMemoire = '^(edgeupdate|edgeupdatem|gupdate|gupdatem|GoogleUpdater(Internal)?Service[\d.]{0,20}|AdobeARMservice|AdobeUpdateService|MozillaMaintenance|HPAppHelperCap|HPDiagsCap|HPSysInfoCap|HpTouchpointAnalyticsService|SupportAssistAgent|DDVDataCollector|DDVCollectorSvcApi|DDVRulesProcessor|ASUSSystemAnalysis|ASUSSystemDiagnosis|ASUSLinkNear|ASUSLinkRemote|ESRV_SVC_QUEENCREEK|SystemUsageReportSvc_QUEENCREEK|NvTelemetryContainer)$'
+$AideServicesProteges ='^(WinDefend|WdNisSvc|WdFilter|Sense|SecurityHealthService|wscsvc|mpssvc|BFE|wuauserv|UsoSvc|WaaSMedicSvc|BITS|DoSvc|CryptSvc|TrustedInstaller|Dnscache|Dhcp|NlaSvc|nsi|W32Time|EventLog|RpcSs)$'
 
 # ---------------------------------------------------------------------------
 # Registre : les seules valeurs que l'Aide écrit ou efface
@@ -356,7 +359,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
 
         'service.regler' {
             $nom = [string](Get-AideParam $P 'Nom')
-            if ($nom -notin @('DiagTrack')) { throw "Demande refusée : le service $nom n'est pas dans la liste de l'Aide." }
+            if ($nom -notin @('DiagTrack') -and $nom -notmatch $AideServicesMemoire) { throw "Demande refusée : le service $nom n'est pas dans la liste de l'Aide." }
             $dem = [string](Get-AideParam $P 'Demarrage')
             if ($dem -notin @('Disabled', 'Manual', 'Automatic')) { throw "Demande refusée : type de démarrage $dem." }
             $lancer = [bool](Get-AideParam $P 'Lancer'); $arreter = [bool](Get-AideParam $P 'Arreter')

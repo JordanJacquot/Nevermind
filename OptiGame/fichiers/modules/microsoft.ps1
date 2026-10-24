@@ -63,14 +63,15 @@ function Get-DiagLevel {
     @{ Level = $(if ($null -ne $v) { $v } else { 1 }); Policy = $false; Default = ($null -eq $v) }
 }
 
-# Service arrêté et désactivé, noté pour « Revenir en arrière » et « Tout restaurer »
-function Set-ServiceOff([string]$Name) {
+# Service arrêté et désactivé (ou passé en manuel : -Demarrage Manual, page RAM), noté pour « Revenir en arrière » et
+# « Tout restaurer »
+function Set-ServiceOff([string]$Name, [string]$Demarrage = 'Disabled') {
     $s = Get-Service -Name $Name -ErrorAction Stop
     $start = [string]$s.StartType; $run = $s.Status -eq 'Running'
     $orig = @(Get-Setting 'SvcOriginal' @())
     if (-not @($orig | Where-Object { ([string]$_ -split '\|')[0] -eq $Name }).Count) { Set-Setting 'SvcOriginal' @($orig + "$Name|$start|$run") }
-    if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'svc'; Name = $Name; StartType = $start; Running = $run; Nouveau = 'Disabled' }) }
-    [void](Invoke-Aide 'service.regler' @{ Nom = $Name; Demarrage = 'Disabled'; Arreter = $run })
+    if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'svc'; Name = $Name; StartType = $start; Running = $run; Nouveau = $Demarrage }) }
+    [void](Invoke-Aide 'service.regler' @{ Nom = $Name; Demarrage = $Demarrage; Arreter = $run })
 }
 
 # Réglages qui envoient des données à Microsoft en plus du minimum.

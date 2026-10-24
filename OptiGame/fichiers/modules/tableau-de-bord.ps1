@@ -54,6 +54,7 @@ function New-Fix {
 #   @{ Type = 'reg'; Path; Name; Efface = $true }   efface une valeur du registre
 #   @{ Type = 'pcfg'; Key; Value }                  réglage « batterie » du mode d'alimentation ($BatSettings), secteur et batterie
 #   @{ Type = 'display'; Device; Hz }               fréquence d'un écran
+#   @{ Type = 'svc'; Name; Demarrage }              démarrage d'un service (Manual ou Disabled), arrêté s'il tourne (par l'Aide)
 #   @{ Type = 'power'; Cible }                      plan ou mode d'alimentation : décrit ici, fait par le code de la correction
 #   @{ Type = 'texte'; Texte }                      ce qui n'est pas une simple valeur (lancer un outil, nettoyer...)
 #   @{ Type = 'partiel' }                           la correction décide d'autres choses en s'exécutant (la liste le dit)
@@ -73,6 +74,7 @@ function Set-Declarations($Changes) {
             }
             'pcfg' { Set-BatterySetting $d.Key ([int]$d.Value) }
             'display' { Set-DisplayRate $d.Device ([int]$d.Hz) }
+            'svc' { Set-ServiceOff $d.Name $(if ($d.Demarrage) { [string]$d.Demarrage } else { 'Disabled' }) }
             # ('power', 'texte', 'partiel' : seulement décrits, c'est le code de la correction qui les fait)
         }
     }
@@ -118,6 +120,13 @@ function Format-Declaration($D, $Cache) {
         'power' {
             $s = Get-ActiveScheme
             return "Plan d'alimentation : maintenant « $(if ($s) { $s.Name } else { 'inconnu' }) », après « $($D.Cible) »$(if ($s -and $D.Guid -and $s.Guid -eq $D.Guid) { ' (déjà comme ça)' })"
+        }
+        'svc' {
+            $s = Get-Service -Name $D.Name -ErrorAction SilentlyContinue
+            $apres = Format-DemarrageService $(if ($D.Demarrage) { [string]$D.Demarrage } else { 'Disabled' })
+            if (-not $s) { return "Service $($D.Name) : absent de ce PC, rien à faire" }
+            $tourne = $s.Status -eq 'Running'
+            return "Service $($D.Name) : démarrage maintenant $(Format-DemarrageService ([string]$s.StartType))$(if ($tourne) { ', il tourne' }), après $apres$(if ($tourne) { ', arrêté' })$(if ([string]$s.StartType -eq [string]$D.Demarrage) { ' (déjà comme ça)' })"
         }
         'texte' { return [string]$D.Texte }
         'partiel' { return 'Et d''autres changements décidés pendant l''exécution, visibles ensuite dans l''historique (page Sauvegarde).' }

@@ -17,7 +17,7 @@
 $script:Kit = @{ Actif = $false; Fiches = @(); Constats = @(); Resultats = @(); Recherche = ''; Stats = @{}; Envoye = ''; Geste = [datetime]::MinValue
     PagesLourdes = @('optimisation', 'jeux', 'jeu', 'tests')
     # Les pages déjà passées au kit (les autres ouvrent encore la page d'avant)
-    PagesKit = @('pc', 'tableau', 'perf', 'optimisation', 'demarrage', 'nettoyage', 'protection', 'securite', 'connexion', 'sauvegarde', 'jeux', 'jeu', 'overlay', 'trafic', 'reseau', 'tests', 'recherche', 'parametres', 'aide') }
+    PagesKit = @('pc', 'tableau', 'perf', 'optimisation', 'demarrage', 'nettoyage', 'memoire', 'protection', 'securite', 'connexion', 'sauvegarde', 'jeux', 'jeu', 'overlay', 'trafic', 'reseau', 'tests', 'recherche', 'parametres', 'aide') }
 
 # ---------------------------------------------------------------------------
 # Ce que montre l'écran
@@ -191,7 +191,11 @@ function Register-ActionsNevermind {
     # (comme la croix de la fenêtre : sa règle habituelle s'applique, Quitter ou Réduire)
     Register-ActionVue 'fermer' { param($Valeur, $Ecran) Invoke-Safe { $Window.Close() } }
     # Les pages lourdes (profils par jeu...) ne sont préparées qu'à l'écran : en y arrivant, l'écran est refait
-    Register-ActionVue 'ecran' { param($Id, $Rien) if ($script:Kit.PagesLourdes -contains $Id) { try { Update-EcranNevermind } catch { Write-Log "Écran : $_" } } }
+    # (la page RAM lance son constat en y arrivant la première fois : en tâche de fond, avec la pastille « en cours »)
+    Register-ActionVue 'ecran' { param($Id, $Rien)
+        if ($Id -eq 'memoire' -and -not $script:Kit.Memoire -and -not $script:Kit.MemoireEnCours) { Invoke-Safe { Start-ConstatMemoire }; try { Update-EcranNevermind } catch { Write-Log "Écran : $_" }; return }
+        if ($script:Kit.PagesLourdes -contains $Id) { try { Update-EcranNevermind } catch { Write-Log "Écran : $_" } }
+    }
     # Retour (B) sur une page qui le demande : la fiche se ferme comme avec son bouton
     Register-ActionVue 'retour' { param($Valeur, $Ecran)
         if ($Ecran -eq 'fiche' -and $script:SheetMode -ne 'display') { if ($ui.SheetClose.Visibility -eq 'Visible') { Invoke-BoutonKit 'SheetClose' } else { Close-Sheet } }

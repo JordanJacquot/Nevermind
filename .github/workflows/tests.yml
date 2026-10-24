@@ -61,3 +61,8 @@ jobs:
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-donnees.ps1
           exit $LASTEXITCODE
+
+      - name: "Page RAM (regroupement par appli, étiquettes, alertes, rapport, fausses données)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-memoire.ps1
+          exit $LASTEXITCODE

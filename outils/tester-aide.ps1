@@ -113,6 +113,10 @@ $acceptees = @(
     @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\StartupFolder"; Nom = 'Truc.lnk'; Valeur = @(2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
     @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Disabled'; Arreter = $true }),
     @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Automatic'; Lancer = $true }),
+    @('service.regler', @{ Nom = 'edgeupdate'; Demarrage = 'Manual'; Arreter = $true }),   # (page RAM : passé en manuel, puis remis)
+    @('service.regler', @{ Nom = 'edgeupdate'; Demarrage = 'Automatic'; Lancer = $false }),
+    @('service.regler', @{ Nom = 'GoogleUpdaterService140.0.1.0'; Demarrage = 'Manual'; Arreter = $true }),
+    @('service.regler', @{ Nom = 'AdobeARMservice'; Demarrage = 'Manual'; Arreter = $true }),
     @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque Bloc-notes'; Programme = $notepad; Services = @() }),
     @('pare-feu.debloquer', @{ Nom = 'Nevermind : bloque Bloc-notes' }),
     @('pare-feu.debloquer', @{ Nom = 'OptiGame : bloque Bloc-notes (ancien nom)' }),
@@ -185,6 +189,11 @@ $refusees = @(
     @('service.regler', @{ Nom = 'mpssvc'; Demarrage = 'Disabled'; Arreter = $true }),
     @('service.regler', @{ Nom = 'Spooler'; Demarrage = 'Disabled' }),
     @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Boot' }),
+    @('service.regler', @{ Nom = 'WSearch'; Demarrage = 'Manual'; Arreter = $true }),
+    @('service.regler', @{ Nom = 'SysMain'; Demarrage = 'Manual' }),
+    @('service.regler', @{ Nom = 'edgeupdate2'; Demarrage = 'Manual' }),
+    @('service.regler', @{ Nom = 'GoogleUpdaterService1; calc'; Demarrage = 'Manual' }),
+    @('service.regler', @{ Nom = 'edgeupdate'; Demarrage = 'Boot' }),
     # DNS : carte inexistante, trop de serveurs, serveur inconnu
     @('dns.regler', @{ Index = 0; Serveurs = @('1.1.1.1', '1.0.0.1') }),
     @('dns.regler', @{ Index = 1; Serveurs = @('1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4', '9.9.9.9') }),

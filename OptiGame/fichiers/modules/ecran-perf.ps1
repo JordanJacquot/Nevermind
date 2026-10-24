@@ -83,6 +83,10 @@ function Get-PagesPerf {
     $cRows = @($script:CleanRows | Where-Object { $_ })
     $tout = 0.0; $choisi = 0.0
     foreach ($r in $cRows) { $tout += $r.Size; if ($r.CheckBox.IsChecked) { $choisi += $r.Size } }
+    # RAM : le constat s'il est fait, sinon la mesure en direct
+    $mem = $script:Kit.Memoire
+    $ramP = if ($mem) { [int]$mem.Pourcent } elseif ($Live.Updated -and $Live.RamTotal) { [int](100 * $Live.RamUsed / $Live.RamTotal) } else { $null }
+    $ramAlerte = $mem -and @($mem.Alertes).Count
 
     # Conseillé pour toi : les réglages de jeu encore à faire (la fiche de chaque réglage, avec « Exécuter »)
     $a = $script:LastAnalysis
@@ -98,6 +102,7 @@ function Get-PagesPerf {
                 @{ id = 'optimisation'; nom = 'Optimisation gaming'; note = 'Réglages, Mode jeu, profils par jeu'; icone = 'manette'; couleur = 'P'; etiquette = $(if ($reste) { "$reste à faire" } elseif ($total) { 'Optimisé' }); ton = $(if ($reste) { 'attention' } elseif ($total) { 'ok' } else { '' }) }
                 @{ id = 'demarrage'; nom = 'Démarrage'; note = 'Ce qui se lance avec le PC'; icone = 'marche'; couleur = 'S'; etiquette = $(if ($entrees.Count) { "$on programme$(if ($on -gt 1) { 's' })" }); ton = $(if ($conseil) { 'attention' } else { '' }) }
                 @{ id = 'nettoyage'; nom = 'Nettoyage'; note = 'Les fichiers inutiles'; icone = 'balai'; couleur = 'T'; etiquette = $(if ($cRows.Count) { Format-Size $tout }); ton = $(if ($tout -gt 1GB) { 'attention' } elseif ($cRows.Count) { 'ok' } else { '' }) }
+                @{ id = 'memoire'; nom = 'RAM'; note = 'Ce qui prend la mémoire'; icone = 'memoire'; couleur = 'P'; etiquette = $(if ($null -ne $ramP) { "$ramP %" }); ton = $(if ($ramAlerte -or $ramP -ge 80) { 'attention' } else { '' }) }
             ) }
             if ($conseils.Count) { @{ type = 'titre'; texte = 'Conseillé pour toi' } }
         ) + $conseils
@@ -239,7 +244,66 @@ function Get-PagesPerf {
             if ($dern -and $dern.Date) { @{ type = 'ligne'; icone = 'horloge'; texte = "Dernier nettoyage le $(([datetime]$dern.Date).ToString('dd/MM à HH:mm'))"; note = "$(Format-Size ([double]$dern.Freed)) libérés, $($dern.Deleted) fichier$(if ([int]$dern.Deleted -gt 1) { 's' }) supprimé$(if ([int]$dern.Deleted -gt 1) { 's' }), $($dern.Skipped) laissé$(if ([int]$dern.Skipped -gt 1) { 's' }) car utilisé$(if ([int]$dern.Skipped -gt 1) { 's' })"; bouton = $(if ($dern.File -and (Test-Path -LiteralPath ([string]$dern.File))) { @{ id = 'nett-journal'; texte = 'Ouvrir le journal'; style = 'second' } }) } }
             @{ type = 'note'; texte = 'Nevermind ne touche jamais à tes documents, à la corbeille ni aux fichiers que les jeux préparent pour l''affichage (caches de shaders) : les vider provoquerait des saccades le temps qu''ils se reconstruisent.' }
         ) }
+
+    # ---- RAM : qu'est-ce qui prend ma mémoire ?
+    $pages.memoire = Get-PageMemoireKit $mem ([string]$script:Kit.MemoireEnCours)
     $pages
+}
+
+# La page RAM (memoire.ps1 fait le constat en tâche de fond : en arrivant sur la page, puis avec « Actualiser »).
+# $EnCours : 'donnees' (lecture du PC) ou 'pilotes' (recherche du pilote qui garde la mémoire), vide sinon.
+function Get-PageMemoireKit($C, [string]$EnCours) {
+    $page = @{ titre = 'RAM'; parent = 'perf'; sous = 'Ce qui prend la mémoire de ton PC, et ce qui peut être coupé sans risque.'; icone = 'memoire'; couleur = 'P'
+        actions = @(if (-not $EnCours) { @{ id = 'memoire:analyser'; texte = 'Actualiser'; icone = 'actu' } }) }
+    if (-not $C) {
+        $page.module = @{ icone = 'memoire'; couleur = 'P'; titre = 'Je regarde ta mémoire'; texte = 'Quelques secondes : je fais le tour de ce qui tourne sur ton PC.'
+            boutons = @(if (-not $EnCours) { @{ id = 'memoire:analyser'; texte = 'Regarder' } }) }
+        $page.blocs = @(@{ type = 'texte'; texte = 'Nevermind regroupe la mémoire par appli et te dit ce qui est utile, ce qui ne sert pas au quotidien, et ce qui est à vérifier.' })
+        return $page
+    }
+    $n = @($C.Corrections).Count
+    $page.module = @{ anneau = @{ valeur = [int]$C.Pourcent; sur = 100; petit = '%'; ton = $(if ($C.Pourcent -ge 80) { 'attention' } else { '' }) }
+        titre = "$(Format-Size $C.Utilisee) utilisés sur $(Format-Size $C.Visible)"
+        texte = $(if ($n -eq 1) { '1 chose ne sert pas au quotidien et peut être coupée sans risque.' } elseif ($n) { "$n choses ne servent pas au quotidien et peuvent être coupées sans risque." } else { 'Rien à couper sans risque : ce qui reste se règle à la main (page Démarrage), ou est utile.' })
+        boutons = @(
+            if ($n) { @{ id = 'memoire:couper'; texte = "Couper ce qui est sûr ($n)" } }
+            @{ id = 'memoire:rapport'; texte = 'Créer un rapport'; style = $(if ($n) { 'second' } else { $null }) }
+        )
+        resume = @(
+            @{ nom = 'Installée'; valeur = (Format-Size $C.Installee) }
+            @{ nom = 'En cache (ne compte pas)'; valeur = (Format-Size $C.Cache) }
+            @{ nom = 'Libre tout de suite'; valeur = (Format-Size $C.Disponible) }
+        ) }
+    $alertes = @(foreach ($a in @($C.Alertes)) {
+        $suite = if ($a.Id -eq 'pilotes' -and $EnCours -eq 'pilotes') { ' Je cherche encore quel pilote en est la cause...' } else { '' }
+        @{ type = 'ligne'; icone = 'alerte'; couleur = $(if ($a.Ton -eq 'urgent') { 'rouge' } else { 'orange' }); texte = [string]$a.Titre; note = "$($a.Texte)$suite Que faire : $($a.Quoi)"; etiquette = $(if ($a.Ton -eq 'urgent') { 'Important' } else { 'À surveiller' }); ton = [string]$a.Ton }
+    })
+    $max = [math]::Max(1, [double]@($C.Applis)[0].Octets)
+    $grosses = @(@($C.Applis) | Where-Object { $_.Octets -ge 20MB } | Select-Object -First 30)
+    $petites = @(@($C.Applis) | Where-Object { $grosses -notcontains $_ })
+    $petitesOctets = 0.0; foreach ($g in $petites) { $petitesOctets += $g.Octets }
+    $lignes = @(foreach ($g in $grosses) {
+        @{ type = 'ligne'; icone = $(switch ($g.Kind) { 'windows' { 'pc' } 'inutile' { 'balai' } default { 'app' } }); couleur = $(switch ($g.Kind) { 'windows' { 'doux' } 'inutile' { 'orange' } default { 'P' } })
+            texte = "$($g.Nom)$(if ($g.Nb -gt 1) { " ($($g.Nb) processus)" })"; note = [string]$g.Note
+            barre = [int](100 * $g.Octets / $max); valeur = (Format-Size $g.Octets); etiquette = [string]$g.Etiquette
+            ton = $(switch ($g.Kind) { 'windows' { 'ok' } 'inutile' { 'attention' } default { '' } }) }
+    })
+    if ($petites.Count) { $lignes += @{ type = 'ligne'; icone = 'liste'; couleur = 'doux'; texte = "$($petites.Count) petits programmes"; note = 'Chacun prend moins de 20 Mo.'; valeur = (Format-Size $petitesOctets) } }
+    $cachee = @(foreach ($x in (Get-PartCacheeMemoire $C)) {
+        $l = @{ type = 'ligne'; icone = 'memoire'; couleur = 'doux'; texte = [string]$x.Nom; note = [string]$x.Note; valeur = (Format-Size $x.Octets) }
+        if ($x.Nom -like 'En cache*') { $l.ton = 'ok'; $l.etiquette = 'Ne compte pas' }
+        $l
+    })
+    $page.blocs = @(
+        if ($alertes.Count) { @{ type = 'titre'; texte = 'À regarder' } }
+    ) + $alertes + @(
+        @{ type = 'titre'; texte = 'Par appli'; droite = 'Du plus gros au plus petit' }
+    ) + $lignes + @(
+        @{ type = 'titre'; texte = 'La part cachée'; droite = 'Ce qui n''est à aucune appli' }
+    ) + $cachee + @(
+        @{ type = 'note'; texte = 'Nevermind ne ferme jamais une appli à ta place. « Couper ce qui est sûr » ne touche qu''aux mises à jour et aux logiciels du fabricant, rien de Windows, et se remet comme avant depuis la page Sauvegarde.' }
+    )
+    $page
 }
 
 function Register-ActionsPerf {
@@ -264,6 +328,9 @@ function Register-ActionsPerf {
         $r = @($script:CleanRows | Where-Object { $_ })[[int]$Valeur.valeur]
         if ($r -and $r.CheckBox.IsEnabled) { $r.CheckBox.IsChecked = [bool]$Valeur.oui; $script:CleanChoice[$r.Id] = [bool]$Valeur.oui; Update-CleanSelection }
     }
+    Register-ActionVue 'memoire:analyser' { param($Valeur, $Ecran) Invoke-Safe { Start-ConstatMemoire } }
+    Register-ActionVue 'memoire:couper' { param($Valeur, $Ecran) Invoke-Safe { Invoke-CorrectionMemoire } }
+    Register-ActionVue 'memoire:rapport' { param($Valeur, $Ecran) Invoke-Safe { New-RapportMemoire } }
     Register-ActionVue 'nett-journal' { param($Valeur, $Ecran) $l = Get-Setting 'LastClean' $null; if ($l -and $l.File) { $f = [string]$l.File; Invoke-Safe { Start-Process -FilePath 'notepad.exe' -ArgumentList "`"$f`"" } } }
 }
 
