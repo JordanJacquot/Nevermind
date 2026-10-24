@@ -15,7 +15,7 @@
 #      Aide lente) ne se relance plus dans elle même (Invoke-SansEmpiler), et le réveil de l'Aide n'est pas demandé deux
 #      fois en même temps (Test-MesuresAide).
 # Code de sortie : 0 si tout passe, 1 sinon.
-param([string]$FichierAide)
+param([string]$FichierAide, [switch]$CommeEnAdmin)   # (-CommeEnAdmin : passe par la copie et Mindset.exe, comme sur la CI)
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
@@ -92,43 +92,87 @@ Test-Ok ($cs -match '(?s)public static bool StartRemote\(int pid\)\s*\{\s*Stop\(
 # ---------------------------------------------------------------------------
 # 2. L'Aide ne s'arrête pas quand toutes ses connexions sont prises
 # ---------------------------------------------------------------------------
+# Le client du test (40 connexions muettes, puis « aide.bonjour » et le journal de l'Aide) tourne dans un processus à part.
+# En administrateur (machines de la CI GitHub), l'Aide a ses droits et ne répond qu'au « Mindset.exe » de son dossier,
+# comme chez Jordan : elle est alors lancée depuis une copie temporaire, à côté d'une copie de powershell.exe nommée
+# Mindset.exe qui fait le client. Sans droits (le PC de Jordan), elle accepte tout le monde : rien n'est copié.
 $psExe = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe"
-$dossierAide = Split-Path $FichierAide -Parent
-. ([scriptblock]::Create((Get-Fonction (Join-Path $dossierAide 'modules\aide-actions.ps1') 'Get-AideSuffixe')))
-[AideClient]::Suffixe = Get-AideSuffixe (Split-Path $dossierAide -Parent)
-[AideClient]::ExeAttendu = $psExe
-$aide = $null; $clients = New-Object System.Collections.ArrayList
+$enAdmin = $CommeEnAdmin -or (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$client = @'
+param($Natif, $Suffixe, $Serveur, [int]$AidePid, [int]$N, [int]$Attente)
+$ErrorActionPreference = 'Stop'
+Add-Type -TypeDefinition ([IO.File]::ReadAllText($Natif, [Text.Encoding]::UTF8))
+[AideClient]::Suffixe = $Suffixe
+[AideClient]::ExeAttendu = $Serveur
+$r = @{ Pris = 0; Vivant = $false; Rep = ''; Erreurs = @{}; Journal = ''; Secondes = 0 }
+$cl = New-Object System.Collections.ArrayList
+for ($i = 0; $i -lt $N; $i++) {
+    $c = New-Object System.IO.Pipes.NamedPipeClientStream('.', [AideClient]::Nom(), [System.IO.Pipes.PipeDirection]::InOut)
+    try { $c.Connect(400); [void]$cl.Add($c); $r.Pris++ } catch { $c.Dispose() }
+}
+Start-Sleep -Milliseconds 1500
+$r.Vivant = [bool](Get-Process -Id $AidePid -ErrorAction SilentlyContinue)
+foreach ($c in $cl) { try { $c.Dispose() } catch {} }
+$debut = Get-Date
+while (((Get-Date) - $debut).TotalSeconds -lt $Attente -and -not $r.Rep) {
+    try { $r.Rep = [AideClient]::Appeler('{"a":"aide.bonjour","p":{}}', 1000, 5000) }
+    catch { $m = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }; $r.Erreurs[$m] = 1 + [int]$r.Erreurs[$m]; Start-Sleep -Milliseconds 200 }
+}
+$r.Secondes = [math]::Round(((Get-Date) - $debut).TotalSeconds, 1)
+try { $r.Journal = [AideClient]::Appeler('{"a":"aide.journal","p":{}}', 3000, 15000) } catch { $r.Journal = "journal illisible : $($_.Exception.Message)" }
+ConvertTo-Json -InputObject $r -Compress
+'@
+$tmp = Join-Path $env:TEMP "nevermind-test-fluidite-$PID"
+$aide = $null
 try {
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    $fichierClient = Join-Path $tmp 'client.ps1'
+    [IO.File]::WriteAllText($fichierClient, $client, (New-Object Text.UTF8Encoding $true))
+    $aideLancee = $FichierAide; $exeClient = $psExe
+    if ($enAdmin) {
+        $copie = Join-Path $tmp 'fichiers'
+        New-Item -ItemType Directory -Force -Path $copie | Out-Null
+        Copy-Item -LiteralPath $FichierAide -Destination $copie
+        Copy-Item -LiteralPath (Join-Path (Split-Path $FichierAide -Parent) 'modules') -Destination $copie -Recurse
+        $aideLancee = Join-Path $copie (Split-Path $FichierAide -Leaf)
+        $exeClient = Join-Path $tmp 'Mindset.exe'
+        Copy-Item -LiteralPath $psExe -Destination $exeClient
+    }
+    $dossierAide = Split-Path $aideLancee -Parent
+    . ([scriptblock]::Create((Get-Fonction (Join-Path $dossierAide 'modules\aide-actions.ps1') 'Get-AideSuffixe')))
+    $suffixe = Get-AideSuffixe (Split-Path $dossierAide -Parent)
+    [AideClient]::Suffixe = $suffixe
+    [AideClient]::ExeAttendu = $psExe
     if ([AideClient]::Joignable(50)) { throw 'une Aide de cette copie tourne déjà : test impossible' }
-    $aide = Start-Process $psExe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$FichierAide`"", '-Parent', $PID -WindowStyle Hidden -PassThru
-    $fin = (Get-Date).AddSeconds(30)
+    $aide = Start-Process $psExe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$aideLancee`"", '-Parent', $PID -WindowStyle Hidden -PassThru
+    $fin = (Get-Date).AddSeconds(60)
     while ((Get-Date) -lt $fin -and -not [AideClient]::Joignable(100)) { Start-Sleep -Milliseconds 100 }
-    Test-Ok ([AideClient]::Joignable(100)) 'Aide : n''écoute pas après 30 s'
-    # 40 connexions qui ne disent rien (demandes lentes qui s'entassent)
-    $pris = 0
-    for ($i = 0; $i -lt 40; $i++) {
-        $c = New-Object System.IO.Pipes.NamedPipeClientStream('.', [AideClient]::Nom(), [System.IO.Pipes.PipeDirection]::InOut)
-        try { $c.Connect(400); [void]$clients.Add($c); $pris++ } catch { $c.Dispose() }
+    Test-Ok ([AideClient]::Joignable(100)) 'Aide : n''écoute pas après 60 s'
+    if ($enAdmin) {
+        # (preuve que la copie est nécessaire : l'Aide avec ses droits refuse powershell.exe, qui n'est pas Nevermind)
+        $refus = ''
+        try { [void][AideClient]::Appeler('{"a":"aide.bonjour","p":{}}', 3000, 10000) } catch { $refus = $_.Exception.Message }
+        Write-Host "Info : test lancé en administrateur, l'Aide refuse powershell.exe ($refus) ; client : $exeClient"
     }
-    Start-Sleep -Milliseconds 1500
-    $aide.Refresh()
-    Test-Ok (-not $aide.HasExited) "Aide : arrêtée après $pris connexions en attente (PresentMon et la trace réseau seraient coupés)"
-    foreach ($c in $clients) { try { $c.Dispose() } catch {} }
-    $clients.Clear()
-    # Libérée : elle répond de nouveau
-    $rep = $null; $fin = (Get-Date).AddSeconds(15)
-    while ((Get-Date) -lt $fin -and -not $rep) {
-        try { $rep = [AideClient]::Appeler('{"a":"aide.bonjour","p":{}}', 1000, 5000) } catch { Start-Sleep -Milliseconds 200 }
+    $sortie = @(& $exeClient -NoProfile -ExecutionPolicy Bypass -File $fichierClient (Join-Path $modules 'natif.cs') $suffixe $psExe $aide.Id 40 60) -join ''
+    $r = $sortie | ConvertFrom-Json
+    $journal = try { (($r.Journal | ConvertFrom-Json).r) -join "`n" } catch { [string]$r.Journal }
+    $ok = $true
+    if (-not $r.Vivant) { $ok = $false; Test-Ok $false "Aide : arrêtée après $($r.Pris) connexions en attente (PresentMon et la trace réseau seraient coupés)" }
+    if ($r.Rep -notmatch '"ok"\s*:\s*true') {
+        $ok = $false
+        $err = (@($r.Erreurs.PSObject.Properties | ForEach-Object { "$($_.Name) ($($_.Value) fois)" }) -join ' ; ')
+        Test-Ok $false "Aide : ne répond plus $($r.Secondes) s après les $($r.Pris) connexions en attente (réponse : « $($r.Rep) » ; erreurs : $err)"
     }
-    Test-Ok ($rep -match '"ok"\s*:\s*true') "Aide : ne répond plus après les connexions en attente ($rep)"
-    if ($rep) {
-        $j = [AideClient]::Appeler('{"a":"aide.journal","p":{}}', 1000, 5000)
-        Test-Ok ($j -match 'connexions sont prises' -and $j -match 'coute de nouveau') "Aide : journal sans la saturation puis la reprise ($pris connexions)"
-    }
+    elseif (-not ($journal -match 'connexions sont prises' -and $journal -match 'coute de nouveau')) { $ok = $false; Test-Ok $false "Aide : journal sans la saturation puis la reprise ($($r.Pris) connexions)" }
+    else { Test-Ok $true '' }
+    if (-not $ok) { Write-Host "Journal de l'Aide :`n$journal" }
+    else { Write-Host "Info : Aide saturée par $($r.Pris) connexions, de nouveau à l'écoute en $($r.Secondes) s" }
 } catch { Test-Ok $false "Aide : $($_.Exception.Message)" }
 finally {
-    foreach ($c in $clients) { try { $c.Dispose() } catch {} }
     if ($aide) { try { if (-not $aide.HasExited) { $aide.Kill() } } catch {} }
+    Start-Sleep -Milliseconds 300
+    try { Remove-Item -LiteralPath $tmp -Recurse -Force } catch {}
 }
 
 # ---------------------------------------------------------------------------
