@@ -831,17 +831,26 @@ function Invoke-UndoAll {
     $restent = @(Get-ChangementsDefinitifs)
     $texteRestent = if ($restent.Count) { "`n`nCes protections du PC restent en place (elles ne s'annulent pas, l'historique dit comment revenir en arrière à la main) :`n$(($restent | ForEach-Object { "  - $_" }) -join "`n")" } else { '' }
     if (-not (Confirm-Action "Remettre les réglages modifiés par Nevermind comme ils étaient avant ?$texteRestent$(if ($script:BackupProbleme) { "`n`nAttention : $(Get-TexteProblemeSauvegarde)" })")) { return }
-    Set-Busy $true
-    Set-Status 'Restauration des réglages...'
-    $errors = Restore-AllSettings
-    Set-HistoryAllUndone
-    Update-BackupSummary
-    Build-GamingTab
-    Update-StartupList
-    Update-NetInfo
-    $msg = "Les réglages ont été remis comme avant. Redémarre le PC pour que tout soit pris en compte.$texteRestent"
-    if ($errors) { $msg += "`n`nCertains éléments n'ont pas pu être restaurés :`n" + ($errors -join "`n") }
-    Show-Message $msg
+    # Ce qui n'a pas pu être remis reste dans la sauvegarde (et « à annuler » dans l'historique) : on peut réessayer
+    while ($true) {
+        Set-Busy $true
+        Set-Status 'Restauration des réglages...'
+        $errors = Restore-AllSettings; $errors = @($errors)   # (déjà une liste)
+        Set-HistoryAllUndone
+        Update-BackupSummary
+        Build-GamingTab
+        Update-StartupList
+        Update-NetInfo
+        if (-not $errors.Count) {
+            Show-Message "Les réglages ont été remis comme avant. Redémarre le PC pour que tout soit pris en compte.$texteRestent"
+            break
+        }
+        $n = Get-BackupCount
+        $msg = "Certains réglages n'ont pas pu être remis comme avant :`n" + (($errors | Select-Object -First 12 | ForEach-Object { "  - $_" }) -join "`n") +
+            $(if ($errors.Count -gt 12) { "`n  et $($errors.Count - 12) autre(s)." }) +
+            "`n`nRien n'est perdu : $(if ($n) { "Nevermind garde ces $n réglage(s) d'origine, " } else { 'Nevermind les garde, ' })tu pourras réessayer plus tard avec « Tout restaurer ». Les autres réglages sont bien remis.$texteRestent`n`nRéessayer maintenant ?"
+        if (-not (Confirm-Action $msg)) { break }
+    }
     Invoke-Analysis
 }
 

@@ -123,11 +123,16 @@ function Write-ErreurNonGeree($Exception) {
 $script:WaitFrames = New-Object System.Collections.ArrayList
 $script:WaitTimer = New-Object System.Windows.Threading.DispatcherTimer
 $script:WaitTimer.Interval = [TimeSpan]::FromMilliseconds(20)
+# (protégée de l'intérieur : une erreur ici arrêterait la minuterie pour de bon, et la fenêtre attendrait sans fin)
 $script:WaitTimer.Add_Tick({
-    foreach ($w in @($script:WaitFrames)) {
-        if ($w.H.IsCompleted) { $w.F.Continue = $false; $script:WaitFrames.Remove($w) }
-    }
-    if (-not $script:WaitFrames.Count) { $script:WaitTimer.Stop() }
+    try {
+        foreach ($w in @($script:WaitFrames)) {
+            # (une attente illisible est libérée : elle ne bloque ni les autres ni la fenêtre)
+            try { if (-not $w -or $w.H.IsCompleted) { if ($w) { $w.F.Continue = $false }; $script:WaitFrames.Remove($w) } }
+            catch { try { $w.F.Continue = $false } catch {}; $script:WaitFrames.Remove($w) }
+        }
+        if (-not $script:WaitFrames.Count) { $script:WaitTimer.Stop() }
+    } catch { Write-Log "Attente : $_" }
 })
 
 function Wait-Handle($Handle) {

@@ -56,3 +56,8 @@ jobs:
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-desinstallation.ps1
           exit $LASTEXITCODE
+
+      - name: "Données jamais perdues (fichier abîmé, copie de secours, « Tout restaurer » avec une Aide muette)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-donnees.ps1
+          exit $LASTEXITCODE

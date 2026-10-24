@@ -113,7 +113,9 @@ function Watch-Requests {
 if (-not $env:OPTIGAME_TEST) {
     $script:ShowWatch = New-Object System.Windows.Threading.DispatcherTimer
     $script:ShowWatch.Interval = [TimeSpan]::FromMilliseconds(600)
-    $script:ShowWatch.Add_Tick({ Watch-Requests })
+    # (protégée de l'intérieur : une minuterie dont le passage lève une erreur n'est plus relancée par WPF, et Nevermind
+    # n'entendrait plus les ordres de Mindset : fermer, afficher une page, clic sur une bulle)
+    $script:ShowWatch.Add_Tick({ try { Watch-Requests } catch { Write-Log "Demandes de Mindset : $_" } })
     $script:ShowWatch.Start()
 }
 # Partie en cours : le jeu n'est pas au premier plan et Nevermind est à l'écran (seul ou dans Mindset). On regarde
@@ -136,33 +138,34 @@ function Test-ThemeSansGener {
 if ($Managed -and (-not $env:OPTIGAME_TEST -or $env:OPTIGAME_SUITE)) {
     $script:SuiteWatch = New-Object System.Windows.Threading.DispatcherTimer
     $script:SuiteWatch.Interval = [TimeSpan]::FromMilliseconds(2500)
-    $script:SuiteWatch.Add_Tick({
-        $stamp = try { [IO.File]::GetLastWriteTimeUtc($SuiteFile) } catch { $script:SuiteStamp }
-        if ($stamp -eq $script:SuiteStamp -or $script:AllowClose) { return }
-        # Chargement ou action en cours : on attendra le prochain passage (date non retenue)
-        if ($script:Starting -or $script:WaitFrames.Count) { return }
-        $t = (Read-Suite).Theme
-        if (-not $t -or $t -ceq (Get-CurrentThemeKey)) { $script:SuiteStamp = $stamp; return }
-        # Partie en cours : pas de relance pendant qu'on joue. Elle attend la fin de la partie, ou que Nevermind ou
-        # Mindset soit regardé (le thème vient d'y être choisi, le jeu est en arrière-plan). Noté une fois au journal.
-        if (($script:GameSession -or $script:LagSession) -and -not (Test-ThemeSansGener)) {
-            if ($script:SuiteThemeAttente -cne $t) { $script:SuiteThemeAttente = $t; Write-Log "Thème de la suite changé dans Mindset : $t, appliqué après la partie en cours (ou dès que Nevermind ou Mindset est à l'écran)" }
+    $script:SuiteWatch.Add_Tick({ try { Watch-SuiteTheme } catch { Write-Log "Thème de la suite : $_" } })   # (protégée de l'intérieur)
+    $script:SuiteWatch.Start()
+}
+function Watch-SuiteTheme {
+    $stamp = try { [IO.File]::GetLastWriteTimeUtc($SuiteFile) } catch { $script:SuiteStamp }
+    if ($stamp -eq $script:SuiteStamp -or $script:AllowClose) { return }
+    # Chargement ou action en cours : on attendra le prochain passage (date non retenue)
+    if ($script:Starting -or $script:WaitFrames.Count) { return }
+    $t = (Read-Suite).Theme
+    if (-not $t -or $t -ceq (Get-CurrentThemeKey)) { $script:SuiteStamp = $stamp; return }
+    # Partie en cours : pas de relance pendant qu'on joue. Elle attend la fin de la partie, ou que Nevermind ou
+    # Mindset soit regardé (le thème vient d'y être choisi, le jeu est en arrière-plan). Noté une fois au journal.
+    if (($script:GameSession -or $script:LagSession) -and -not (Test-ThemeSansGener)) {
+        if ($script:SuiteThemeAttente -cne $t) { $script:SuiteThemeAttente = $t; Write-Log "Thème de la suite changé dans Mindset : $t, appliqué après la partie en cours (ou dès que Nevermind ou Mindset est à l'écran)" }
+        return
+    }
+    $script:SuiteStamp = $stamp
+    if ($t) {
+        # Pack de la suite pas (encore) installé ou illisible : thème actuel gardé, noté une fois au journal, et
+        # suite.json relu au passage suivant (le pack peut arriver juste après)
+        if ($t -like 'pack:*' -and -not (Get-ThemePack $t.Substring(5))) {
+            if ($script:SuitePackMissing -cne $t) { $script:SuitePackMissing = $t; Write-Log "Thème de la suite changé dans Mindset : $t absent ou illisible dans $PacksDir, thème actuel gardé" }
+            $script:SuiteStamp = [datetime]::MinValue
             return
         }
-        $script:SuiteStamp = $stamp
-        if ($t) {
-            # Pack de la suite pas (encore) installé ou illisible : thème actuel gardé, noté une fois au journal, et
-            # suite.json relu au passage suivant (le pack peut arriver juste après)
-            if ($t -like 'pack:*' -and -not (Get-ThemePack $t.Substring(5))) {
-                if ($script:SuitePackMissing -cne $t) { $script:SuitePackMissing = $t; Write-Log "Thème de la suite changé dans Mindset : $t absent ou illisible dans $PacksDir, thème actuel gardé" }
-                $script:SuiteStamp = [datetime]::MinValue
-                return
-            }
-            Write-Log "Thème de la suite changé dans Mindset : $t"
-            Invoke-Safe { Set-AppTheme $t }
-        }
-    })
-    $script:SuiteWatch.Start()
+        Write-Log "Thème de la suite changé dans Mindset : $t"
+        Invoke-Safe { Set-AppTheme $t }
+    }
 }
 
 # Croix (ou Alt + F4) : on demande avant de quitter. Les fermetures voulues (Quitter près de l'horloge,

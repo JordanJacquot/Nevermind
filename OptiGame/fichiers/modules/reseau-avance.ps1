@@ -300,7 +300,7 @@ function Invoke-NetDeepScan($Net, [string[]]$Subnet, $Hero) {
     foreach ($d in $added) {
         if ($d.Mac -and -not $script:KnownDevices.ContainsKey([string]$d.Mac)) { $d.New = -not $first; $script:KnownDevices[[string]$d.Mac] = $today }
     }
-    try { ConvertTo-Json -InputObject $script:KnownDevices | Set-Content -LiteralPath $KnownFile -Encoding UTF8 } catch {}
+    try { Save-JsonSur $KnownFile $script:KnownDevices } catch {}
     $hidden = @($script:NetList | Where-Object { $_.Hidden }).Count
     $cams = @($script:NetList | Where-Object { $_.Camera }).Count
     $parts = @()

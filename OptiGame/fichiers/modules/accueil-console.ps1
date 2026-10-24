@@ -473,7 +473,7 @@ function Initialize-AccueilConsole {
     $t = New-Object System.Windows.Threading.DispatcherTimer
     $t.Interval = [TimeSpan]::FromMilliseconds(200)
     $script:KitTic = 0
-    $t.Add_Tick({ Step-MinuterieKit })
+    $t.Add_Tick({ try { Step-MinuterieKit } catch { Write-Log "Écran, minuterie : $_" } })   # (protégée de l'intérieur : sinon plus jamais relancée)
     $t.Start()
     $script:Kit.Minuterie = $t
     Update-EcranNevermind

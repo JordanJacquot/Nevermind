@@ -28,9 +28,9 @@ function ConvertFrom-HistoryEntry($E) {
 
 function Import-History {
     $script:History = New-Object System.Collections.ArrayList
-    if (-not (Test-Path -LiteralPath $HistoryFile)) { return }
     try {
-        $arr = ConvertFrom-Json (Get-Content -LiteralPath $HistoryFile -Raw -Encoding UTF8)
+        $arr = Read-JsonSur $HistoryFile
+        if ($null -eq $arr) { return }
         foreach ($x in @($arr)) {
             if (-not $x) { continue }
             [void]$script:History.Add(@{
@@ -51,7 +51,7 @@ function Save-History {
         })
         [ordered]@{ Id = $h.Id; Date = $h.Date; Titre = $h.Titre; Details = @($h.Details); Log = $log; Annule = $h.Annule }
     })
-    try { ConvertTo-Json -InputObject $out -Depth 6 | Set-Content -LiteralPath $HistoryFile -Encoding UTF8 } catch { Write-Log "Écriture de l'historique impossible: $_" }
+    try { Save-JsonSur $HistoryFile $out } catch { Write-Log "Écriture de l'historique impossible: $_" }
 }
 
 # Ajoute une ligne à l'historique (seulement si quelque chose a vraiment changé). Retourne son identifiant.
@@ -145,10 +145,11 @@ function Set-HistoryUndone([string]$Id) {
     Update-HistoryList
 }
 
-# (« Tout restaurer » n'annule pas les changements définitifs : une entrée qui n'a que ça reste « Définitif »)
+# (« Tout restaurer » n'annule pas les changements définitifs : une entrée qui n'a que ça reste « Définitif ». Une entrée
+# dont un réglage n'a pas pu être remis, toujours dans la sauvegarde, reste « à annuler » : Test-HistoriqueRemis)
 function Set-HistoryAllUndone {
     if ($null -eq $script:History) { Import-History }
-    foreach ($h in $script:History) { if (-not (Test-HistoriqueDefinitif $h)) { $h.Annule = $true } }
+    foreach ($h in $script:History) { if (-not $h.Annule -and -not (Test-HistoriqueDefinitif $h) -and (Test-HistoriqueRemis $h)) { $h.Annule = $true } }
     Save-History
     Update-HistoryList
 }

@@ -12,10 +12,8 @@ function Get-PlayLog {
     if ($null -ne $script:PlayLog) { return $script:PlayLog }
     $script:PlayLog = @{}
     try {
-        if (Test-Path -LiteralPath $PlayFile) {
-            $o = Get-Content -LiteralPath $PlayFile -Raw -Encoding UTF8 | ConvertFrom-Json
-            foreach ($p in $o.PSObject.Properties) { $script:PlayLog[$p.Name] = @{ Last = [string]$p.Value.Last; Seconds = [double]$p.Value.Seconds; Count = [int]$p.Value.Count } }
-        }
+        $o = Read-JsonSur $PlayFile
+        if ($o) { foreach ($p in $o.PSObject.Properties) { $script:PlayLog[$p.Name] = @{ Last = [string]$p.Value.Last; Seconds = [double]$p.Value.Seconds; Count = [int]$p.Value.Count } } }
     } catch { Write-Log "Temps de jeu illisible: $_" }
     $script:PlayLog
 }
@@ -28,7 +26,7 @@ function Add-PlayTime([string]$Game, [datetime]$Start) {
     $e.Count++
     $e.Last = (Get-Date).ToString('s')
     $log[$Game] = $e
-    try { [IO.File]::WriteAllText($PlayFile, (ConvertTo-Json -InputObject $log -Depth 4 -Compress), (New-Object Text.UTF8Encoding($false))) } catch { Write-Log "Temps de jeu: $_" }
+    try { Save-JsonSur $PlayFile $log 4 -Compress } catch { Write-Log "Temps de jeu: $_" }
     Update-LibraryIfShown
     if ($ui.Tabs.SelectedIndex -eq $HubIndex -and $script:HubPret) { Update-Hub }
 }
@@ -113,10 +111,8 @@ function Get-CoverIndex {
     if ($null -ne $script:CoverIndex) { return $script:CoverIndex }
     $script:CoverIndex = @{}
     try {
-        if (Test-Path -LiteralPath $CoverIndexFile) {
-            $o = Get-Content -LiteralPath $CoverIndexFile -Raw -Encoding UTF8 | ConvertFrom-Json
-            foreach ($p in $o.PSObject.Properties) { $script:CoverIndex[$p.Name] = @{ Cover = [string]$p.Value.Cover; Hero = [string]$p.Value.Hero; Logo = [string]$p.Value.Logo; Date = [string]$p.Value.Date } }
-        }
+        $o = Read-JsonSur $CoverIndexFile
+        if ($o) { foreach ($p in $o.PSObject.Properties) { $script:CoverIndex[$p.Name] = @{ Cover = [string]$p.Value.Cover; Hero = [string]$p.Value.Hero; Logo = [string]$p.Value.Logo; Date = [string]$p.Value.Date } } }
     } catch {}
     $script:CoverIndex
 }
@@ -276,7 +272,7 @@ function Receive-Covers {
         $idx[$r.Name] = @{ Cover = [string]$r.Cover; Hero = [string]$r.Hero; Logo = [string]$r.Logo; Date = (Get-Date).ToString('s') }
         if ($r.Cover -or $r.Logo) { $found++ }
     }
-    try { [IO.File]::WriteAllText($CoverIndexFile, (ConvertTo-Json -InputObject $idx -Depth 3 -Compress), (New-Object Text.UTF8Encoding($false))) } catch {}
+    try { Save-JsonSur $CoverIndexFile $idx 3 -Compress } catch {}
     Write-Log "Jaquettes: $found trouvée(s) sur $(@($res).Count)"
     Set-Status "$found jaquette$(if ($found -gt 1) {'s'}) ajoutée$(if ($found -gt 1) {'s'}) à ta bibliothèque."
     if ($found) { Update-LibraryIfShown }

@@ -372,9 +372,9 @@ function Invoke-NetworkScan {
 
     # Appareils déjà vus, avec la date de leur première apparition
     $knownMap = @{}
-    if (Test-Path -LiteralPath $KnownFile) {
+    if ([IO.File]::Exists($KnownFile) -or [IO.File]::Exists("$KnownFile.bak")) {
         try {
-            $j = ConvertFrom-Json (Get-Content -LiteralPath $KnownFile -Raw -Encoding UTF8)
+            $j = Read-JsonSur $KnownFile
             if ($j -is [string]) { $knownMap[$j] = '' }
             elseif ($j -is [array]) { foreach ($m in $j) { $knownMap[[string]$m] = '' } }
             elseif ($j) { foreach ($pp in $j.PSObject.Properties) { $knownMap[$pp.Name] = [string]$pp.Value } }
@@ -399,7 +399,7 @@ function Invoke-NetworkScan {
     foreach ($dv in $list) { if ($dv.Mac -and -not $knownMap.ContainsKey([string]$dv.Mac)) { $knownMap[[string]$dv.Mac] = $today } }
     $script:KnownDevices = $knownMap
     $script:NetList = $list
-    try { ConvertTo-Json -InputObject $knownMap | Set-Content -LiteralPath $KnownFile -Encoding UTF8 } catch {}
+    try { Save-JsonSur $KnownFile $knownMap } catch {}
     $newCount = @($list | Where-Object { $_.New }).Count
 
     # Résultat
@@ -512,9 +512,9 @@ function Invoke-NetWatch {
     if (-not $r -or $r.Error) { return }
     if ($r.OuiMap) { $script:Oui = $r.OuiMap }
     $known = @{}
-    if (Test-Path -LiteralPath $KnownFile) {
+    if ([IO.File]::Exists($KnownFile) -or [IO.File]::Exists("$KnownFile.bak")) {
         try {
-            $j = ConvertFrom-Json (Get-Content -LiteralPath $KnownFile -Raw -Encoding UTF8)
+            $j = Read-JsonSur $KnownFile
             if ($j -is [string]) { $known[$j] = '' } elseif ($j -is [array]) { foreach ($x in $j) { $known[[string]$x] = '' } } elseif ($j) { foreach ($pp in $j.PSObject.Properties) { $known[$pp.Name] = [string]$pp.Value } }
         } catch {}
     }

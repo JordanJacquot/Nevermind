@@ -419,8 +419,8 @@ function Show-NetAuditResult($A) {
 }
 
 function Update-NetAuditCard {
-    if (-not $script:NetAuditSaved -and (Test-Path -LiteralPath $AuditFile)) {
-        try { $script:NetAuditSaved = ConvertFrom-Json (Get-Content -LiteralPath $AuditFile -Raw -Encoding UTF8) } catch {}
+    if (-not $script:NetAuditSaved -and ([IO.File]::Exists($AuditFile) -or [IO.File]::Exists("$AuditFile.bak"))) {
+        try { $script:NetAuditSaved = Read-JsonSur $AuditFile } catch {}
     }
     $s = $script:NetAuditSaved
     if (-not $s) {
@@ -493,7 +493,7 @@ function Invoke-NetAudit {
     $score = [int][math]::Max(0.0, 100.0 - 20 * $bad - 7 * $warn)
     $script:NetAudit = @{ Score = $score; Date = (Get-Date); Checks = $checks; Count = $count; Net = $net }
     $script:NetAuditSaved = [pscustomobject]@{ Score = $score; Date = (Get-Date).ToString('dd/MM/yyyy à HH:mm'); Bad = $bad; Warn = $warn }
-    try { ConvertTo-Json -InputObject $script:NetAuditSaved | Set-Content -LiteralPath $AuditFile -Encoding UTF8 } catch {}
+    try { Save-JsonSur $AuditFile $script:NetAuditSaved } catch {}
     Show-NetAuditResult $script:NetAudit
     Show-ResultTop
     Update-NetAuditCard

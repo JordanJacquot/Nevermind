@@ -13,10 +13,9 @@ function Get-LagSessions {
     if ($null -ne $script:LagSessions) { return $script:LagSessions.ToArray() }
     $script:LagSessions = New-Object System.Collections.ArrayList
     try {
-        if (Test-Path $LagFile) {
-            $arr = Get-Content $LagFile -Raw -Encoding UTF8 | ConvertFrom-Json
-            foreach ($s in $arr) { [void]$script:LagSessions.Add($s) }
-        }
+        # (abîmé : mis de côté et sa copie de secours reprise, jamais une liste vide qui l'écraserait)
+        $arr = Read-JsonSur $LagFile
+        if ($null -ne $arr) { foreach ($s in @($arr)) { if ($s) { [void]$script:LagSessions.Add($s) } } }
     } catch { Write-Log "Lag: historique illisible ($_)" }
     # Anciennes mesures (avant 1.0.119) : le serveur de connexion TCP était pris pour le serveur de la partie
     # (« Le serveur du jeu est loin » à tort). Leur diagnostic est refait une fois.
@@ -91,7 +90,7 @@ function Save-LagSessions {
     $null = Get-LagSessions
     $l = $script:LagSessions
     while ($l.Count -gt 30) { $l.RemoveAt(0) }
-    try { [IO.File]::WriteAllText($LagFile, (ConvertTo-Json -InputObject @($l) -Depth 8 -Compress), (New-Object Text.UTF8Encoding($false))) } catch { Write-Log "Lag: $_" }
+    try { Save-JsonSur $LagFile @($l) 8 -Compress } catch { Write-Log "Lag: $_" }
 }
 
 # ---------------------------------------------------------------------------

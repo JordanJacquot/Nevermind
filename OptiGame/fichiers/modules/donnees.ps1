@@ -36,6 +36,56 @@ function Write-Log([string]$Message) {
     }
 }
 
+# Fichiers de données (préférences, historique, mesures, jeux...) : jamais perdus. Écrits d'abord à côté (.tmp), puis
+# l'ancien est remplacé d'un coup et reste en copie de secours (.bak) : un arrêt brutal ne laisse jamais un fichier à
+# moitié écrit. À la lecture, un fichier abîmé est mis de côté (.abime-<date>), noté au journal, et sa copie de secours
+# reprise : jamais une liste vide qui écraserait tout à l'enregistrement suivant.
+function Save-TexteSur([string]$Path, [string]$Texte, [bool]$Bom = $false) {
+    $tmp = "$Path.tmp"
+    [IO.File]::WriteAllText($tmp, $Texte, (New-Object Text.UTF8Encoding $Bom))
+    if (-not [IO.File]::Exists($Path)) { [IO.File]::Move($tmp, $Path); return }
+    try { [IO.File]::Replace($tmp, $Path, "$Path.bak") }
+    catch {
+        # (disque qui ne sait pas remplacer d'un coup : copie de secours, puis copie par dessus)
+        [IO.File]::Copy($Path, "$Path.bak", $true)
+        [IO.File]::Copy($tmp, $Path, $true)
+        try { [IO.File]::Delete($tmp) } catch {}
+    }
+}
+function Save-JsonSur([string]$Path, $Objet, [int]$Profondeur = 6, [switch]$Compress, [switch]$Bom) {
+    # Fichier illisible au démarrage (pris par un autre programme) : pas réécrit, il garde peut-être plus que ce qu'on a
+    if ($script:JsonBloques -and $script:JsonBloques[$Path]) { throw "$([IO.Path]::GetFileName($Path)) n'a pas pu être lu : il n'est pas réécrit" }
+    $json = if ($Compress) { ConvertTo-Json -InputObject $Objet -Depth $Profondeur -Compress } else { ConvertTo-Json -InputObject $Objet -Depth $Profondeur }
+    Save-TexteSur $Path $json ([bool]$Bom)
+}
+# Le contenu du fichier (ou de sa copie de secours), $null s'il n'y en a pas
+function Read-JsonSur([string]$Path) {
+    if (-not $script:JsonBloques) { $script:JsonBloques = @{} }
+    $script:JsonBloques.Remove($Path)
+    $occupe = $false
+    foreach ($p in $Path, "$Path.bak") {
+        if (-not [IO.File]::Exists($p)) { continue }
+        $texte = $null; $err = $null
+        for ($i = 0; $i -lt 3 -and $null -eq $texte; $i++) {
+            try { $texte = [IO.File]::ReadAllText($p, [Text.Encoding]::UTF8) } catch { $err = $_; Start-Sleep -Milliseconds 50 }
+        }
+        # Pris par un autre programme (antivirus...) : il n'est pas abîmé, on n'y touche pas
+        if ($null -eq $texte) { Write-Log "Fichier illisible pour l'instant ($p) : $($err.Exception.Message)"; $occupe = $true; continue }
+        try {
+            if (-not $texte.Trim()) { throw 'fichier vide' }
+            $j = ConvertFrom-Json $texte
+            if ($p -ne $Path) { Write-Log "$([IO.Path]::GetFileName($Path)) repris de sa copie de secours" }
+            return $j   # (une liste arrive élément par élément : @() autour de l'appel la refait)
+        } catch {
+            $dest = "$p.abime-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+            Write-Log "Fichier abîmé ($p : $($_.Exception.Message)), mis de côté : $([IO.Path]::GetFileName($dest))"
+            try { [IO.File]::Move($p, $dest) } catch { Write-Log "Fichier abîmé pas mis de côté ($p) : $($_.Exception.Message)" }
+        }
+    }
+    if ($occupe) { $script:JsonBloques[$Path] = $true }
+    $null
+}
+
 # La sauvegarde ne dépend pas d'un seul fichier (issue #3) : sauvegarde.json, sa copie de secours (.bak, la version
 # d'avant), et les valeurs d'origine gardées dans le registre (réglages du PC : par l'Aide, dans HKLM, protégé ;
 # réglages de l'utilisateur : par Nevermind, dans HKCU). Un fichier abîmé n'est jamais remplacé en silence par une
@@ -65,7 +115,9 @@ function Read-FichierSauvegarde([string]$Fichier) {
     $j
 }
 function Import-Backup {
-    $script:Backup = @{ Registry = @{}; PowerScheme = $null; CreatedScheme = $null; Overlay = $null; Dns = @{}; Displays = @{} }
+    # Oublies : réglages déjà remis comme avant par « Tout restaurer » alors que d'autres restent à remettre. Leur copie
+    # dans le registre (gardée par l'Aide) n'est alors pas reprise : elle sert jusqu'à ce que tout soit remis.
+    $script:Backup = @{ Registry = @{}; PowerScheme = $null; CreatedScheme = $null; Overlay = $null; Dns = @{}; Displays = @{}; Oublies = @() }
     $script:BackupProbleme = $null
     $j = $null
     try { $j = Read-FichierSauvegarde $BackupFile }
@@ -88,9 +140,11 @@ function Import-Backup {
         if ($j.Dns) { foreach ($p in $j.Dns.PSObject.Properties) { $script:Backup.Dns[$p.Name] = [string]$p.Value } }
         if ($j.Displays) { foreach ($p in $j.Displays.PSObject.Properties) { $script:Backup.Displays[$p.Name] = [int]$p.Value } }
         if ($j.Overlay) { $script:Backup.Overlay = [string]$j.Overlay }
+        if ($j.PSObject.Properties['Oublies']) { $script:Backup.Oublies = @(@($j.Oublies) | Where-Object { $_ } | ForEach-Object { [string]$_ }) }
     } catch { if ($_.Exception.Message -ne 'pas de fichier') { Write-Log "Lecture de la sauvegarde impossible: $_" } }
     # Les valeurs d'origine du registre complètent ce que le fichier n'a plus (fichier effacé, abîmé, ou plus ancien)
     $connues = @{}; foreach ($e in @($script:Backup.Registry.Values)) { $connues["$(Get-CleRegNormale $e.Path)|$($e.Name)"] = $true }
+    foreach ($o in @($script:Backup.Oublies)) { $connues[$o] = $true }
     $reprises = 0
     foreach ($o in @(Read-OriginesRegistre)) {
         if (-not $o -or -not $o.Path -or -not $o.Name) { continue }
@@ -120,13 +174,11 @@ $IgnoreFile = Join-Path $DataDir 'ignores.json'
 
 function Import-Ignored {
     $script:Ignored = @()
-    if (Test-Path $IgnoreFile) {
-        try { $arr = ConvertFrom-Json (Get-Content $IgnoreFile -Raw -Encoding UTF8); $script:Ignored = @(@($arr) | ForEach-Object { [string]$_ }) } catch {}
-    }
+    try { $arr = Read-JsonSur $IgnoreFile; if ($null -ne $arr) { $script:Ignored = @(@($arr) | Where-Object { $_ } | ForEach-Object { [string]$_ }) } } catch {}
 }
 
 function Save-Ignored {
-    ConvertTo-Json -InputObject @($script:Ignored) | Set-Content -Path $IgnoreFile -Encoding UTF8
+    Save-JsonSur $IgnoreFile @($script:Ignored)
 }
 
 # Préférences de l'utilisateur (versions bêta, dernière version vue, visite guidée...).
@@ -135,9 +187,9 @@ $SettingsFile = Join-Path $DataDir 'parametres.json'
 function Get-Setting([string]$Name, $Default = $null) {
     if ($null -eq $script:Settings) {
         $script:Settings = @{}
-        if (Test-Path -LiteralPath $SettingsFile) {
-            try { $j = ConvertFrom-Json (Get-Content -LiteralPath $SettingsFile -Raw -Encoding UTF8); foreach ($p in $j.PSObject.Properties) { $script:Settings[$p.Name] = $p.Value } } catch { Write-Log "Lecture des préférences impossible: $_" }
-        }
+        # (abîmé : sa copie de secours est reprise ; elles gardent aussi SvcOriginal et PcfgOriginal, de quoi remettre
+        # les services et l'alimentation comme avant)
+        try { $j = Read-JsonSur $SettingsFile; if ($j) { foreach ($p in $j.PSObject.Properties) { $script:Settings[$p.Name] = $p.Value } } } catch { Write-Log "Lecture des préférences impossible: $_" }
     }
     if ($script:Settings.ContainsKey($Name)) { $script:Settings[$Name] } else { $Default }
 }
@@ -145,7 +197,7 @@ function Get-Setting([string]$Name, $Default = $null) {
 function Set-Setting([string]$Name, $Value) {
     [void](Get-Setting $Name)
     $script:Settings[$Name] = $Value
-    try { ConvertTo-Json -InputObject $script:Settings | Set-Content -LiteralPath $SettingsFile -Encoding UTF8 } catch { Write-Log "Écriture des préférences impossible: $_" }
+    try { Save-JsonSur $SettingsFile $script:Settings } catch { Write-Log "Écriture des préférences impossible: $_" }
 }
 
 function Set-DisplayRate([string]$Device, [int]$Hz) {
@@ -202,10 +254,7 @@ function Get-RegState([string]$Path, [string]$Name) {
 # Écrit d'abord à côté, puis remplace : un arrêt brutal ne laisse jamais un fichier à moitié écrit ; la version
 # d'avant reste en copie de secours (.bak)
 function Save-Backup {
-    $tmp = "$BackupFile.tmp"
-    [IO.File]::WriteAllText($tmp, ($script:Backup | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding $true))
-    if (Test-Path -LiteralPath $BackupFile) { try { Copy-Item -LiteralPath $BackupFile -Destination "$BackupFile.bak" -Force } catch {} }
-    Move-Item -LiteralPath $tmp -Destination $BackupFile -Force
+    Save-TexteSur $BackupFile ($script:Backup | ConvertTo-Json -Depth 6) $true
 }
 
 function Get-RegValue([string]$Path, [string]$Name) {

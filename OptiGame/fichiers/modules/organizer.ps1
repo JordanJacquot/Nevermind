@@ -25,8 +25,8 @@ function Get-OrgConfig {
         Hotkeys = @{ Next = 'Ctrl+Tab'; Prev = 'Ctrl+Maj+Tab' } }
     for ($i = 1; $i -le $OrgMaxKeys; $i++) { $c.Hotkeys["P$i"] = "F$i" }
     try {
-        if (Test-Path -LiteralPath $OrgFile) {
-            $j = Get-Content -LiteralPath $OrgFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        $j = Read-JsonSur $OrgFile
+        if ($j) {
             foreach ($k in 'On', 'Bar', 'BarAlways') { if ($null -ne $j.$k) { $c[$k] = [bool]$j.$k } }
             foreach ($k in 'BarX', 'BarY') { if ($null -ne $j.$k) { $c[$k] = [double]$j.$k } }
             $c.Order = @($j.Order | Where-Object { $_ } | ForEach-Object { [string]$_ })
@@ -40,7 +40,7 @@ function Get-OrgConfig {
 
 function Save-OrgConfig {
     $c = Get-OrgConfig
-    try { [IO.File]::WriteAllText($OrgFile, (ConvertTo-Json -InputObject $c -Depth 4), (New-Object Text.UTF8Encoding($false))) } catch { Write-Log "Organizer : enregistrement impossible : $_" }
+    try { Save-JsonSur $OrgFile $c 4 } catch { Write-Log "Organizer : enregistrement impossible : $_" }
 }
 
 # ---------------------------------------------------------------------------

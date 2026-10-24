@@ -1,0 +1,231 @@
+﻿# Tests « ne jamais perdre de données », sans droits administrateur et sans rien toucher sur le PC.
+#
+#   powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-donnees.ps1
+#
+# Ce script contrôle :
+#   1. l'écriture sûre des fichiers de données (Save-JsonSur) : à côté puis remplacé d'un coup, l'ancien en copie de
+#      secours (.bak) ; à la lecture (Read-JsonSur), un fichier abîmé est mis de côté et noté au journal, sa copie de
+#      secours reprise ; un fichier pris par un autre programme n'est jamais réécrit ;
+#   2. les préférences (Get-Setting) : un parametres.json abîmé ne fait pas perdre SvcOriginal (de quoi remettre les
+#      services comme avant) ;
+#   3. « Tout restaurer » avec une Aide administrateur qui ne répond pas : la sauvegarde garde ce qui n'a pas pu être
+#      remis, seules les entrées vraiment remises de l'historique sont marquées annulées, et « Réessayer » finit le travail ;
+#   4. les minuteries importantes (ordres de Mindset, thème de la suite, attente, écran) sont protégées de l'intérieur.
+# Le code de Nevermind n'est pas chargé en entier : seules les fonctions utiles sont lues dans les modules, et tout ce qui
+# pourrait toucher au PC (registre, Aide, services, alimentation) est remplacé par une fausse version.
+# Code de sortie : 0 si tout passe, 1 sinon.
+
+$ErrorActionPreference = 'Stop'
+$racine  = Split-Path $PSScriptRoot -Parent
+$modules = Join-Path $racine 'OptiGame\fichiers\modules'
+$echecs  = New-Object System.Collections.Generic.List[string]
+$nbTests = 0
+function Test-Ok([bool]$Condition, [string]$Message) {
+    $script:nbTests++
+    if (-not $Condition) { $script:echecs.Add($Message) }
+}
+
+# ---------------------------------------------------------------------------
+# Sécurité du test : rien ne doit pouvoir modifier le PC (une fonction passe avant une commande du même nom)
+# ---------------------------------------------------------------------------
+$script:Journal = New-Object System.Collections.Generic.List[string]
+function script:Write-Log([string]$Message) { $script:Journal.Add($Message) }
+$script:AideRepond = $false
+$script:AideAppels = New-Object System.Collections.Generic.List[string]
+function script:Invoke-Aide([string]$Action, $Params) {
+    $script:AideAppels.Add($Action)
+    if (-not $script:AideRepond) { throw 'L''Aide administrateur ne répond pas.' }
+    if ($Action -eq 'origines.oublier') { $script:FaussesOrigines = @() }   # (comme l'Aide : ses copies d'origine sont effacées)
+    'ok'
+}
+# Faux registre : rien n'est écrit dans le vrai. Les réglages du PC passent par l'Aide, comme dans Nevermind.
+$script:FauxRegistre = @{}
+function script:Write-RegValue([string]$Path, [string]$Name, $Value, [string]$Kind) {
+    if (-not (Test-RegUtilisateur $Path)) { [void](Invoke-Aide 'reg.ecrire' @{}) }
+    $script:FauxRegistre["$Path|$Name"] = $Value
+}
+function script:Remove-RegValue([string]$Path, [string]$Name) {
+    if (-not (Test-RegUtilisateur $Path)) { [void](Invoke-Aide 'reg.effacer' @{}) }
+    $script:FauxRegistre.Remove("$Path|$Name")
+}
+function script:Get-NetFirewallRule { }
+function script:powercfg { }
+function script:Sync-Mouse { }
+$script:FaussesOrigines = @()
+function script:Read-OriginesRegistre { @($script:FaussesOrigines) }   # (jamais les vraies valeurs gardées par l'Aide)
+function script:Save-History { }
+function script:Update-HistoryList { }
+
+# ---------------------------------------------------------------------------
+# Lecture des fonctions utiles dans les modules (rien ne se lance au chargement)
+# ---------------------------------------------------------------------------
+$asts = @{}
+foreach ($f in 'donnees', 'systeme', 'assistance', 'evenements', 'interface', 'accueil-console') {
+    $tok = $null; $err = $null
+    $asts[$f] = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $modules "$f.ps1"), [ref]$tok, [ref]$err)
+    if ($err) { Write-Host "$f.ps1 n'est pas lisible : $($err[0].Message)" -ForegroundColor Red; exit 1 }
+}
+function Import-Fonction([string]$Fichier, [string]$Nom) {
+    $a = $asts[$Fichier].Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $Nom }, $false)
+    if (-not $a) { Write-Host "Fonction $Nom introuvable dans $Fichier.ps1" -ForegroundColor Red; exit 1 }
+    Invoke-Expression ($a.Extent.Text -replace "^function\s+$([regex]::Escape($Nom))", "function script:$Nom")
+}
+foreach ($n in 'Save-TexteSur', 'Save-JsonSur', 'Read-JsonSur', 'Get-Setting', 'Set-Setting', 'Get-CleRegNormale', 'Read-FichierSauvegarde',
+               'Import-Backup', 'Save-Backup', 'Test-RegUtilisateur') { Import-Fonction 'donnees' $n }
+foreach ($n in 'Restore-AllSettings', 'Test-HistoriqueRemis') { Import-Fonction 'systeme' $n }
+foreach ($n in 'Set-HistoryAllUndone', 'Test-HistoriqueDefinitif') { Import-Fonction 'assistance' $n }
+
+$script:Bac = Join-Path $env:TEMP "nevermind-donnees-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+New-Item -ItemType Directory -Force -Path $script:Bac | Out-Null
+$script:Bac = [IO.Path]::GetFullPath($script:Bac)
+# (clés d'origine du test : des noms qui n'existent pas, rien n'est lu ni effacé dans le vrai registre)
+$OriginesMachine = "SOFTWARE\MindsetTest-$([guid]::NewGuid().ToString('N'))\Origines"
+$OriginesUtilisateur = "Software\MindsetTest-$([guid]::NewGuid().ToString('N'))\Origines"
+function Get-Abimes([string]$Nom) { @(Get-ChildItem -LiteralPath $script:Bac -Filter "$Nom*.abime-*" -File -ErrorAction SilentlyContinue) }
+
+try {
+    # -----------------------------------------------------------------------
+    # 1. Écriture et lecture sûres
+    # -----------------------------------------------------------------------
+    $f = Join-Path $script:Bac 'fps.json'
+    Save-JsonSur $f @(@{ Id = 'a' })
+    Save-JsonSur $f @(@{ Id = 'a' }, @{ Id = 'b' })
+    Test-Ok ([IO.File]::Exists($f) -and [IO.File]::Exists("$f.bak") -and -not [IO.File]::Exists("$f.tmp")) 'Écriture : fichier, copie de secours (.bak), pas de .tmp qui traîne'
+    $l = Read-JsonSur $f
+    Test-Ok (@($l).Count -eq 2) "Écriture : le fichier a la dernière version ($(@($l).Count) élément(s))"
+    $un = @(Read-JsonSur "$f.bak")
+    Test-Ok ($un.Count -eq 1 -and $un[0].Id -eq 'a') 'Lecture : la copie de secours a la version d''avant'
+
+    # Fichier abîmé (arrêt brutal au milieu d'une écriture) : la copie de secours est reprise, l'abîmé mis de côté
+    $script:Journal.Clear()
+    [IO.File]::WriteAllText($f, '[{"Id":"a"},{"Id":')
+    $l = Read-JsonSur $f
+    Test-Ok (@($l).Count -eq 1 -and @($l)[0].Id -eq 'a') 'Fichier abîmé : sa copie de secours est reprise (pas une liste vide)'
+    Test-Ok ((Get-Abimes 'fps.json').Count -eq 1 -and -not [IO.File]::Exists($f)) 'Fichier abîmé : mis de côté (.abime-<date>), rien n''est effacé'
+    Test-Ok (@($script:Journal | Where-Object { $_ -like 'Fichier abîmé*' }).Count -eq 1 -and @($script:Journal | Where-Object { $_ -like '*repris de sa copie de secours*' }).Count -eq 1) 'Fichier abîmé : noté au journal, et la reprise aussi'
+    Save-JsonSur $f @(@($l) + @{ Id = 'c' })
+    Test-Ok (@(Read-JsonSur $f).Count -eq 2 -and @(Read-JsonSur "$f.bak").Count -eq 1) 'Après un fichier abîmé : l''enregistrement suivant garde tout, la copie de secours reste bonne'
+
+    # Fichier vide (coupure de courant) : abîmé aussi
+    $g = Join-Path $script:Bac 'lag.json'
+    Save-JsonSur $g @(@{ N = 1 }, @{ N = 2 }); Save-JsonSur $g @(@{ N = 1 }, @{ N = 2 }, @{ N = 3 })
+    [IO.File]::WriteAllText($g, '')
+    Test-Ok (@(Read-JsonSur $g).Count -eq 2) 'Fichier vide : sa copie de secours est reprise'
+
+    # Les deux abîmés : $null (pas d'erreur), les deux mis de côté
+    $h = Join-Path $script:Bac 'jeux.json'
+    [IO.File]::WriteAllText($h, '{abîmé'); [IO.File]::WriteAllText("$h.bak", 'pas du json')
+    $r = Read-JsonSur $h
+    Test-Ok ($null -eq $r -and (Get-Abimes 'jeux.json').Count -eq 2 -and -not [IO.File]::Exists($h) -and -not [IO.File]::Exists("$h.bak")) 'Fichier et copie de secours abîmés : rien, mais les deux sont gardés de côté'
+
+    # Fichier pris par un autre programme : jamais réécrit (il garde peut-être plus que ce qu'on a lu)
+    $o = Join-Path $script:Bac 'organizer.json'
+    Save-JsonSur $o @{ Order = @('a', 'b', 'c') }
+    [IO.File]::Delete("$o.bak")
+    $verrou = [IO.File]::Open($o, 'Open', 'ReadWrite', 'None')
+    try {
+        $r = Read-JsonSur $o
+        $refuse = $false
+        try { Save-JsonSur $o @{ Order = @() } } catch { $refuse = $true }
+    } finally { $verrou.Close() }
+    Test-Ok ($null -eq $r -and $refuse) 'Fichier pris par un autre programme : pas lu, et pas réécrit vide'
+    Test-Ok (@((Read-JsonSur $o).Order).Count -eq 3 -and (Get-Abimes 'organizer.json').Count -eq 0) 'Fichier pris par un autre programme : intact, pas mis de côté'
+
+    # -----------------------------------------------------------------------
+    # 2. Préférences abîmées : SvcOriginal (de quoi remettre les services) n'est pas perdu
+    # -----------------------------------------------------------------------
+    $SettingsFile = Join-Path $script:Bac 'parametres.json'
+    $script:Settings = $null
+    Set-Setting 'SvcOriginal' @('DiagTrack|Automatic|True')
+    Set-Setting 'Theme' 'nuit'
+    Set-Setting 'Bulles' $false   # (la copie de secours est la version d'avant : elle a SvcOriginal et Theme)
+    [IO.File]::WriteAllText($SettingsFile, '{"SvcOriginal":["DiagT')
+    $script:Settings = $null
+    Test-Ok (@(Get-Setting 'SvcOriginal' @()).Count -eq 1 -and (Get-Setting 'Theme') -eq 'nuit') 'Préférences abîmées : reprises de leur copie de secours (SvcOriginal gardé)'
+    Set-Setting 'Visite' $true
+    $script:Settings = $null
+    Test-Ok (@(Get-Setting 'SvcOriginal' @()).Count -eq 1 -and (Get-Setting 'Visite') -eq $true) 'Préférences abîmées : l''enregistrement suivant ne perd rien'
+
+    # -----------------------------------------------------------------------
+    # 3. « Tout restaurer » avec une Aide qui ne répond pas
+    # -----------------------------------------------------------------------
+    $script:DataDir = $script:Bac
+    $BackupFile = Join-Path $script:Bac 'sauvegarde.json'
+    $SettingsFile = Join-Path $script:Bac 'parametres-restaurer.json'
+    $script:Settings = $null
+    Set-Setting 'SvcOriginal' @('DiagTrack|Automatic|True')
+    $script:History = $null
+    $script:Backup = @{ Registry = @{}; PowerScheme = $null; CreatedScheme = $null; Overlay = $null; Dns = @{}; Displays = @{}; Oublies = @() }
+    $pc = 'HKLM:\SOFTWARE\Policies\Test'; $moi = 'HKCU:\Software\Test'
+    $script:Backup.Registry["$pc|A"] = @{ Path = $pc; Name = 'A'; Existed = $true; Value = 1; Kind = 'DWord' }
+    $script:Backup.Registry["$moi|B"] = @{ Path = $moi; Name = 'B'; Existed = $false; Value = $null; Kind = $null }
+    $script:Backup.Dns['12'] = '192.168.1.1'
+    Save-Backup
+    # Les copies d'origine gardées dans le registre (la même valeur HKCU, et celle du PC gardée par l'Aide)
+    $script:FaussesOrigines = @(
+        [pscustomobject]@{ Path = $moi; Name = 'B'; Existed = $false; Value = $null; Kind = $null },
+        [pscustomobject]@{ Path = $pc; Name = 'A'; Existed = $true; Value = 1; Kind = 'DWord' })
+    $script:History = New-Object System.Collections.ArrayList
+    [void]$script:History.Add(@{ Id = 'moi'; Titre = 'Réglage de l''utilisateur'; Annule = $false; Log = @(@{ Type = 'reg'; Path = $moi; Name = 'B'; Existed = $false }) })
+    [void]$script:History.Add(@{ Id = 'pc'; Titre = 'Réglage du PC'; Annule = $false; Log = @(@{ Type = 'reg'; Path = $pc; Name = 'A'; Existed = $true; Value = 1; Kind = 'DWord' }) })
+    [void]$script:History.Add(@{ Id = 'svc'; Titre = 'Service'; Annule = $false; Log = @(@{ Type = 'svc'; Name = 'DiagTrack'; StartType = 'Automatic'; Running = $true }) })
+    [void]$script:History.Add(@{ Id = 'dns'; Titre = 'DNS'; Annule = $false; Log = @(@{ Type = 'dns'; Servers = @() }) })
+    [void]$script:History.Add(@{ Id = 'def'; Titre = 'Protection'; Annule = $false; Log = @(@{ Type = 'definitif'; Quoi = 'x'; Retour = 'y' }) })
+
+    $script:AideRepond = $false
+    $errors = Restore-AllSettings; $errors = @($errors)
+    Set-HistoryAllUndone
+    Test-Ok ($errors.Count -eq 3) "Aide muette : 3 réglages pas remis sont dits (dit : $($errors.Count) : $($errors -join ' / '))"
+    Test-Ok ([IO.File]::Exists($BackupFile)) 'Aide muette : la sauvegarde n''est pas effacée'
+    $j = Get-Content -LiteralPath $BackupFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    Test-Ok ([bool]$j.Registry.PSObject.Properties["$pc|A"] -and -not $j.Registry.PSObject.Properties["$moi|B"]) 'Aide muette : la sauvegarde garde le réglage du PC pas remis, et seulement lui'
+    Test-Ok ([bool]$j.Dns.PSObject.Properties['12']) 'Aide muette : la sauvegarde garde le DNS pas remis'
+    Test-Ok (@(Get-Setting 'SvcOriginal' @()).Count -eq 1) 'Aide muette : le service pas remis reste noté (SvcOriginal)'
+    Test-Ok ($script:Backup.Registry.Count -eq 1 -and $script:Backup.Registry.ContainsKey("$pc|A")) 'Aide muette : relue, la sauvegarde ne reprend pas le réglage déjà remis (copie d''origine du registre oubliée)'
+    $annules = @($script:History | Where-Object { $_.Annule } | ForEach-Object { $_.Id })
+    Test-Ok (($annules -join ',') -eq 'moi') "Aide muette : seul le changement vraiment remis est marqué annulé (marqués : $($annules -join ', '))"
+    Test-Ok (-not $script:FauxRegistre.ContainsKey("$moi|B")) 'Aide muette : le réglage de l''utilisateur est bien remis'
+
+    # « Réessayer » : l'Aide répond, tout est remis
+    $script:AideRepond = $true
+    $errors = Restore-AllSettings; $errors = @($errors)
+    Set-HistoryAllUndone
+    Test-Ok ($errors.Count -eq 0) "Réessayer : tout est remis (reste : $($errors -join ' / '))"
+    Test-Ok (-not [IO.File]::Exists($BackupFile) -and -not [IO.File]::Exists("$BackupFile.bak")) 'Réessayer : la sauvegarde part une fois tout remis'
+    Test-Ok (@(Get-Setting 'SvcOriginal' @()).Count -eq 0 -and $script:FauxRegistre["$pc|A"] -eq 1) 'Réessayer : le service et le réglage du PC sont remis'
+    $annules = @($script:History | Where-Object { $_.Annule } | ForEach-Object { $_.Id })
+    Test-Ok (($annules -join ',') -eq 'moi,pc,svc,dns') "Réessayer : tout l'historique est annulé, sauf la protection définitive (marqués : $($annules -join ', '))"
+    Test-Ok ($script:AideAppels -contains 'origines.oublier') 'Réessayer : les copies d''origine gardées par l''Aide sont oubliées'
+
+    # -----------------------------------------------------------------------
+    # 4. Minuteries importantes protégées de l'intérieur (un passage qui plante arrêterait la minuterie pour de bon)
+    # -----------------------------------------------------------------------
+    $ticks = @{}
+    foreach ($fic in 'evenements', 'interface', 'accueil-console') {
+        foreach ($c in $asts[$fic].FindAll({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and $n.Member.Value -eq 'Add_Tick' }, $true)) {
+            $ticks["$fic|$($c.Expression.Extent.Text)"] = $c.Arguments[0]
+        }
+    }
+    foreach ($m in @(@('evenements', '$script:ShowWatch', 'ordres de Mindset (quitter, afficher une page, bulles)'), @('evenements', '$script:SuiteWatch', 'thème de la suite'),
+                     @('interface', '$script:WaitTimer', 'attente des travaux en arrière plan'), @('accueil-console', '$t', 'écran d''accueil'))) {
+        $sb = $ticks["$($m[0])|$($m[1])"]
+        # (tout le passage dans un try : un seul bloc, qui est un try)
+        $st = if ($sb) { @($sb.ScriptBlock.EndBlock.Statements) } else { @() }
+        $protegee = $st.Count -eq 1 -and $st[0] -is [System.Management.Automation.Language.TryStatementAst]
+        Test-Ok ([bool]$protegee) "Minuterie « $($m[2]) » ($($m[0]).ps1) : protégée de l'intérieur (try/catch)"
+    }
+}
+catch {
+    $echecs.Add("Arrêt inattendu : $($_.Exception.Message) (ligne $($_.InvocationInfo.ScriptLineNumber))")
+}
+finally {
+    $null = & "$env:SystemRoot\System32\cmd.exe" /c rd /s /q "$($script:Bac)" 2>&1
+}
+
+if ($echecs.Count) {
+    Write-Host "$($echecs.Count) échec(s) sur $nbTests contrôles :" -ForegroundColor Red
+    $echecs | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
+    exit 1
+}
+Write-Host "Données : les $nbTests contrôles sont bons." -ForegroundColor Green
+exit 0

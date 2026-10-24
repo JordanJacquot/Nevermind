@@ -388,9 +388,9 @@ function Get-ServerCache {
     if ($null -eq $script:ServerCache) {
         $script:ServerCache = New-Object System.Collections.ArrayList
         try {
-            if (Test-Path $ServerFile) {
-                $arr = Get-Content $ServerFile -Raw -Encoding UTF8 | ConvertFrom-Json
-                foreach ($e in $arr) {
+            $arr = Read-JsonSur $ServerFile
+            if ($null -ne $arr) {
+                foreach ($e in @($arr)) {
                     $age = try { ((Get-Date) - [datetime]::ParseExact([string]$e.D, 'yyyy-MM-dd', $null)).TotalDays } catch { 999 }
                     if ($e.S -and $e.O -and $age -lt 60) { [void]$script:ServerCache.Add(@{ S = [string]$e.S; E = [string]$e.E; O = [string]$e.O; C = [string]$e.C; N = [string]$e.N; D = [string]$e.D }) }
                 }
@@ -403,7 +403,7 @@ function Get-ServerCache {
 function Save-ServerCache {
     $c = Get-ServerCache
     while ($c.Count -gt 3000) { $c.RemoveAt(0) }
-    try { [IO.File]::WriteAllText($ServerFile, (ConvertTo-Json -InputObject @($c) -Depth 3 -Compress), (New-Object Text.UTF8Encoding($false))) } catch {}
+    try { Save-JsonSur $ServerFile @($c) 3 -Compress } catch {}
 }
 
 # Propriétaire d'une adresse ($null si inconnu). Les échecs sont mémorisés tant que le cache ne change pas.

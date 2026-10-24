@@ -701,11 +701,12 @@ function Unregister-FpsHotkey {
 # Parties enregistrées
 # ---------------------------------------------------------------------------
 function Get-FpsSessions {
-    if (-not (Test-Path -LiteralPath $FpsFile)) { return @() }
     try {
-        $a = ConvertFrom-Json (Get-Content -LiteralPath $FpsFile -Raw -Encoding UTF8)
+        # (abîmé : mis de côté et sa copie de secours reprise, jamais une liste vide qui l'écraserait)
+        $a = Read-JsonSur $FpsFile
+        if ($null -eq $a) { return @() }
         @(@($a) | Where-Object { $_ } | ForEach-Object { if (-not $_.Id) { $_ | Add-Member -NotePropertyName Id -NotePropertyValue ([string]$_.Date) -Force }; $_ })
-    } catch { @() }
+    } catch { Write-Log "Lecture des FPS impossible: $_"; @() }
 }
 
 # Courbe ramenée à 160 points au plus (largeur du graphique).
@@ -728,7 +729,7 @@ function Save-FpsSession($T, $S, $Diag) {
         MenuSec = $(if ($T.Plateau) { [int]$T.Plateau[0] } else { 0 }); MenuFps = $(if ($T.Plateau) { [int]$T.Plateau[1] } else { 0 })
     }
     $list = @(@(Get-FpsSessions) + $new | Select-Object -Last 200)
-    try { ConvertTo-Json -InputObject $list -Depth 6 -Compress | Set-Content -LiteralPath $FpsFile -Encoding UTF8 } catch { Write-Log "Écriture des FPS impossible: $_" }
+    try { Save-JsonSur $FpsFile $list -Compress } catch { Write-Log "Écriture des FPS impossible: $_" }
     $new
 }
 

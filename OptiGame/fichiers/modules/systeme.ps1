@@ -98,10 +98,16 @@ function Format-Size([double]$Bytes) {
 # ---------------------------------------------------------------------------
 # Restauration de tous les réglages modifiés par Nevermind
 # ---------------------------------------------------------------------------
+# Seuls les réglages vraiment remis quittent la sauvegarde : ceux qui n'ont pas pu l'être (Aide administrateur qui ne
+# répond pas, service refusé...) y restent, avec leur valeur d'origine, pour « Réessayer » plus tard. La sauvegarde
+# n'est effacée que quand tout est remis. Renvoie la liste de ce qui n'a pas pu être remis (vide si tout est remis).
 function Restore-AllSettings {
     $errors = @()
-    try { if (@(Get-NetFirewallRule -DisplayName 'Nevermind : bloque *' -ErrorAction SilentlyContinue).Count + @(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue).Count) { [void](Invoke-Aide 'pare-feu.debloquer-tout') } } catch { $errors += "Pare-feu: $($_.Exception.Message)" }
-    foreach ($e in @($script:Backup.Registry.Values)) {
+    $script:RestaurationPareFeu = $true
+    try { if (@(Get-NetFirewallRule -DisplayName 'Nevermind : bloque *' -ErrorAction SilentlyContinue).Count + @(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue).Count) { [void](Invoke-Aide 'pare-feu.debloquer-tout') } } catch { $errors += "Pare-feu: $($_.Exception.Message)"; $script:RestaurationPareFeu = $false }
+    $oublies = New-Object System.Collections.ArrayList
+    foreach ($cle in @($script:Backup.Registry.Keys)) {
+        $e = $script:Backup.Registry[$cle]
         try {
             if ($e.Existed) {
                 $val = switch ($e.Kind) {
@@ -114,47 +120,105 @@ function Restore-AllSettings {
             } else {
                 Remove-RegValue $e.Path $e.Name
             }
+            $script:Backup.Registry.Remove($cle)
+            [void]$oublies.Add("$(Get-CleRegNormale $e.Path)|$($e.Name)")
+            # (sa copie dans le registre de l'utilisateur ne sert plus)
+            if (Test-RegUtilisateur $e.Path) {
+                try { $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($OriginesUtilisateur, $true); if ($k) { try { $k.DeleteValue($cle, $false) } finally { $k.Close() } } } catch {}
+            }
         } catch { $errors += "$($e.Path)\$($e.Name): $($_.Exception.Message)" }
     }
-    # Services arrêtés par Nevermind (télémétrie) : état d'origine
+    # Services arrêtés par Nevermind (télémétrie) : état d'origine ; ceux qui n'ont pas pu être remis restent notés
+    $svcReste = @()
     foreach ($l in @(Get-Setting 'SvcOriginal' @())) {
         $x = ([string]$l) -split '\|'
         try { [void](Invoke-Aide 'service.regler' @{ Nom = $x[0]; Demarrage = $x[1]; Lancer = ($x[2] -eq 'True') }) }
-        catch { $errors += "Service $($x[0]): $($_.Exception.Message)" }
+        catch { $errors += "Service $($x[0]): $($_.Exception.Message)"; $svcReste += [string]$l }
     }
-    Set-Setting 'SvcOriginal' @()
+    if (@(Get-Setting 'SvcOriginal' @()).Count) { Set-Setting 'SvcOriginal' @($svcReste) }
     # Réglages « batterie » changés pour l'onduleur
-    foreach ($l in @(Get-Setting 'PcfgOriginal' @())) {
+    $pcfg = @(Get-Setting 'PcfgOriginal' @())
+    $pcfgReste = @()
+    foreach ($l in $pcfg) {
         $x = ([string]$l) -split '\|'
         try {
-            if ($x[1] -ne '') { powercfg /setacvalueindex SCHEME_CURRENT e73a048d-bf27-4f12-9731-8b2076e8891f $x[0] ([int]$x[1]) | Out-Null }
-            if ($x[2] -ne '') { powercfg /setdcvalueindex SCHEME_CURRENT e73a048d-bf27-4f12-9731-8b2076e8891f $x[0] ([int]$x[2]) | Out-Null }
-        } catch { $errors += "Onduleur: $($_.Exception.Message)" }
+            if ($x[1] -ne '') { $global:LASTEXITCODE = 0; powercfg /setacvalueindex SCHEME_CURRENT e73a048d-bf27-4f12-9731-8b2076e8891f $x[0] ([int]$x[1]) | Out-Null; if ($global:LASTEXITCODE) { throw "powercfg a répondu $global:LASTEXITCODE" } }
+            if ($x[2] -ne '') { $global:LASTEXITCODE = 0; powercfg /setdcvalueindex SCHEME_CURRENT e73a048d-bf27-4f12-9731-8b2076e8891f $x[0] ([int]$x[2]) | Out-Null; if ($global:LASTEXITCODE) { throw "powercfg a répondu $global:LASTEXITCODE" } }
+        } catch { $errors += "Onduleur: $($_.Exception.Message)"; $pcfgReste += [string]$l }
     }
-    if (@(Get-Setting 'PcfgOriginal' @()).Count) { powercfg /setactive SCHEME_CURRENT | Out-Null; Set-Setting 'PcfgOriginal' @() }
-    if ($script:Backup.PowerScheme) { powercfg /setactive $script:Backup.PowerScheme | Out-Null }
-    if ($script:Backup.Overlay) { try { [void][OGNative]::SetOverlay($script:Backup.Overlay) } catch { $errors += "Mode d'alimentation: $($_.Exception.Message)" } }
-    if ($script:Backup.CreatedScheme -and $script:Backup.CreatedScheme -ne $script:Backup.PowerScheme) {
+    if ($pcfg.Count) { powercfg /setactive SCHEME_CURRENT | Out-Null; Set-Setting 'PcfgOriginal' @($pcfgReste) }
+    if ($script:Backup.PowerScheme) {
+        $global:LASTEXITCODE = 0; powercfg /setactive $script:Backup.PowerScheme | Out-Null
+        if ($global:LASTEXITCODE) { $errors += "Plan d'alimentation: pas remis (powercfg a répondu $global:LASTEXITCODE)" }
+        else {
+            if ($script:Backup.CreatedScheme -and $script:Backup.CreatedScheme -ne $script:Backup.PowerScheme) { powercfg /delete $script:Backup.CreatedScheme 2>$null | Out-Null }
+            $script:Backup.PowerScheme = $null; $script:Backup.CreatedScheme = $null
+        }
+    } elseif ($script:Backup.CreatedScheme) {
         powercfg /delete $script:Backup.CreatedScheme 2>$null | Out-Null
+        $script:Backup.CreatedScheme = $null
+    }
+    if ($script:Backup.Overlay) {
+        try {
+            $r = [OGNative]::SetOverlay($script:Backup.Overlay)
+            if ($r -ne 0) { throw "code $r" }
+            $script:Backup.Overlay = $null
+        } catch { $errors += "Mode d'alimentation: $($_.Exception.Message)" }
     }
     foreach ($k in @($script:Backup.Dns.Keys)) {
         try {
             $v = $script:Backup.Dns[$k]
             [void](Invoke-Aide 'dns.regler' @{ Index = [int]$k; Serveurs = @(([string]$v) -split '[,\s]+' | Where-Object { $_ }) })
+            $script:Backup.Dns.Remove($k)
         } catch { $errors += "DNS: $($_.Exception.Message)" }
     }
     foreach ($k in @($script:Backup.Displays.Keys)) {
         $r = [OGNative]::SetRefreshRate($k, [int]$script:Backup.Displays[$k])
-        if ($r -ne 0) { $errors += "Écran $($k): fréquence non restaurée (code $r)" }
+        if ($r -ne 0) { $errors += "Écran $($k): fréquence non restaurée (code $r)" } else { $script:Backup.Displays.Remove($k) }
     }
-    Sync-Mouse
-    Remove-Item -LiteralPath $BackupFile, "$BackupFile.bak" -ErrorAction SilentlyContinue
-    if (-not $errors) {
+    try { Sync-Mouse } catch {}
+    # Plus aucun réglage du registre à remettre : leurs copies dans le registre ne servent plus
+    $originesOubliees = $false
+    if (-not $script:Backup.Registry.Count) {
         try { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($OriginesUtilisateur, $false) } catch {}
-        try { [void](Invoke-Aide 'origines.oublier') } catch { try { [Microsoft.Win32.Registry]::LocalMachine.DeleteSubKeyTree($OriginesMachine, $false) } catch {} }
+        try { [void](Invoke-Aide 'origines.oublier'); $originesOubliees = $true }
+        catch { try { [Microsoft.Win32.Registry]::LocalMachine.DeleteSubKeyTree($OriginesMachine, $false); $originesOubliees = $true } catch {} }
+    }
+    $reste = $script:Backup.Registry.Count + $script:Backup.Dns.Count + $script:Backup.Displays.Count + [int][bool]$script:Backup.PowerScheme + [int][bool]$script:Backup.Overlay
+    if (-not $reste -and $originesOubliees) {
+        Remove-Item -LiteralPath $BackupFile, "$BackupFile.bak", "$BackupFile.tmp" -ErrorAction SilentlyContinue
+    } else {
+        # Ce qui reste à remettre est gardé ; les réglages remis sont « oubliés » (leur copie gardée par l'Aide n'est pas reprise)
+        $script:Backup.Oublies = @(@($script:Backup.Oublies) + @($oublies) | Where-Object { $_ } | Select-Object -Unique)
+        try { Save-Backup } catch { $errors += "Sauvegarde: $($_.Exception.Message)" }
+        if ($reste) { Write-Log "Tout restaurer : $reste réglage(s) pas remis, gardé(s) dans la sauvegarde" }
     }
     Import-Backup
     , $errors
+}
+
+# Une entrée de l'historique est entièrement remise quand plus rien de ce qu'elle a changé n'attend dans la sauvegarde
+# (après « Tout restaurer » : seules celles-là sont marquées annulées)
+function Test-HistoriqueRemis($H) {
+    $regReste = @{}; foreach ($e in @($script:Backup.Registry.Values)) { $regReste["$(Get-CleRegNormale $e.Path)|$($e.Name)"] = $true }
+    $svcReste = @(@(Get-Setting 'SvcOriginal' @()) | ForEach-Object { (([string]$_) -split '\|')[0] })
+    $pcfgReste = @(@(Get-Setting 'PcfgOriginal' @()) | ForEach-Object { (([string]$_) -split '\|')[0] })
+    foreach ($e in @($H.Log)) {
+        if (-not $e) { continue }
+        $resteIci = switch ([string]$e.Type) {
+            'reg'     { [bool]$regReste["$(Get-CleRegNormale ([string]$e.Path))|$($e.Name)"] }
+            'svc'     { $svcReste -contains [string]$e.Name }
+            'pcfg'    { [bool]($pcfgReste | Where-Object { $_ -and ($_ -eq [string]$e.Guid -or $_ -eq [string]$e.Key) }) }
+            'power'   { [bool]$script:Backup.PowerScheme }
+            'overlay' { [bool]$script:Backup.Overlay }
+            'dns'     { [bool]$script:Backup.Dns.Count }
+            'display' { $script:Backup.Displays.ContainsKey([string]$e.Device) }
+            'fw'      { $script:RestaurationPareFeu -eq $false }
+            default   { $false }
+        }
+        if ($resteIci) { return $false }
+    }
+    $true
 }
 
 # ---------------------------------------------------------------------------
@@ -329,8 +393,8 @@ function Remove-DonneesDesinstallation([bool]$Garder, [bool]$GarderHistorique) {
         try { Remove-Item -LiteralPath $DataDir -Recurse -Force -ErrorAction Stop } catch { $errors += "Données: $($_.Exception.Message)" }
         return , $errors
     }
-    $partent = @('sauvegarde.json', 'sauvegarde.json.bak', 'sauvegarde-abimee-*.json', '*.demande')
-    if (-not $GarderHistorique) { $partent += 'historique.json' }
+    $partent = @('sauvegarde.json', 'sauvegarde.json.bak', 'sauvegarde.json.tmp', 'sauvegarde-abimee-*.json', '*.demande')
+    if (-not $GarderHistorique) { $partent += 'historique.json', 'historique.json.bak', 'historique.json.tmp' }   # (sa copie de secours serait reprise)
     foreach ($m in $partent) {
         foreach ($e in @(Get-ChildItem -LiteralPath $DataDir -Filter $m -File -Force -ErrorAction SilentlyContinue)) {
             try { [IO.File]::Delete($e.FullName) } catch { $errors += "Données ($($e.Name)): $($_.Exception.Message)" }

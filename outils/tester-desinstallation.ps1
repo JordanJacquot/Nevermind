@@ -49,8 +49,8 @@ $script:ErreursRestauration = @()
 $script:Restaures = 0
 function script:Restore-AllSettings {
     $script:Restaures++
-    # Comme la vraie : la sauvegarde part, quoi qu'il arrive
-    Remove-Item -LiteralPath $BackupFile, "$BackupFile.bak" -ErrorAction SilentlyContinue
+    # Comme la vraie : la sauvegarde part quand tout est remis ; sinon elle garde ce qui reste (la désinstallation l'enlève ensuite)
+    if (-not @($script:ErreursRestauration).Count) { Remove-Item -LiteralPath $BackupFile, "$BackupFile.bak" -ErrorAction SilentlyContinue }
     , @($script:ErreursRestauration)
 }
 $script:Messages = New-Object System.Collections.Generic.List[string]

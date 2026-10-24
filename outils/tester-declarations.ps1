@@ -311,7 +311,8 @@ $ecrivains = [ordered]@{
     'microsoft'     = 'Set-ServiceOff'
     'optimisations' = 'Set-PowerPlan', 'Set-BestPerfOverlay'
     'analyse'       = 'Set-BatterySetting'
-    'donnees'       = 'Set-DisplayRate'
+    'donnees'       = 'Set-DisplayRate', 'Save-TexteSur', 'Save-JsonSur', 'Read-JsonSur', 'Get-CleRegNormale'
+    'systeme'       = 'Test-HistoriqueRemis'
     'onglets'       = 'Set-Dns'
     'assistance'    = 'ConvertFrom-HistoryEntry', 'Import-History', 'Save-History', 'Test-ChampHisto', 'Format-DemarrageService', 'Format-PlanAlim',
                       'Format-CurseurAlim', 'Format-ServeursDns', 'Get-DetailsTechniques', 'Set-HistoryAllUndone', 'Test-HistoriqueDefinitif', 'Test-HistoriquePartDefinitive'
@@ -450,7 +451,7 @@ try {
     Test-Ok (-not $script:History[0].Annule -and (Test-HistoriqueDefinitif $script:History[0])) 'Tout restaurer : une entrée définitive est marquée « Annulé »'
     Test-Ok ($script:History[1].Annule -and (Test-HistoriquePartDefinitive $script:History[1]) -and -not (Test-HistoriqueDefinitif $script:History[1])) 'Tout restaurer : entrée mixte (définitive en partie) mal marquée'
     Test-Ok ($script:History[2].Annule -and -not (Test-HistoriquePartDefinitive $script:History[2])) 'Tout restaurer : une entrée annulable n''est pas marquée « Annulé »'
-} finally { if ([IO.File]::Exists($HistoryFile)) { [IO.File]::Delete($HistoryFile) } }   # (Remove-Item est interdit dans ce test)
+} finally { foreach ($f in $HistoryFile, "$HistoryFile.bak", "$HistoryFile.tmp") { if ([IO.File]::Exists($f)) { [IO.File]::Delete($f) } } }   # (Remove-Item est interdit dans ce test ; la copie de secours part aussi)
 Test-Ok ([string]@(Get-DetailsTechniques @{ Log = @(@{ Type = 'fw'; Name = 'Nevermind essai' }) })[0] -match 'avant .+, après .+') 'Historique, pare-feu : pas d''avant ou d''après'
 
 # Tous les types que l'historique peut contenir (ceux que « Annuler » sait défaire) sont vérifiés ci-dessus
