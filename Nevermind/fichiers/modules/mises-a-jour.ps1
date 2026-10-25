@@ -18,8 +18,11 @@ $GetReleaseScript = {
             $r = Invoke-RestMethod -Uri "https://api.github.com/repos/$($a.Repo)/releases/latest" -Headers $h -TimeoutSec 10
         }
         if (-not $r) { return @{ Error = 'Aucune version publiée.' } }
-        # Nevermind.zip ; OptiGame.zip (son ancien nom) dans les versions publiées avant le changement de nom
-        $asset = @($r.assets | Where-Object { $_.name -eq 'Nevermind.zip' }) + @($r.assets | Where-Object { $_.name -eq 'OptiGame.zip' }) | Select-Object -First 1
+        # Nevermind.zip ; OptiGame.zip (son ancien nom) dans les versions publiées avant le changement de nom. Une copie
+        # dont le script porte l'ancien nom (installée avec le zip de compatibilité) prend le zip de compatibilité : elle
+        # garde ses noms, ceux que cherchent les Mindset 2.12.0 et plus anciens (Nevermind.zip, ils ne le reconnaîtraient plus)
+        $noms = if ($a.Ancien) { 'OptiGame.zip', 'Nevermind.zip' } else { 'Nevermind.zip', 'OptiGame.zip' }
+        $asset = @(foreach ($n in $noms) { $r.assets | Where-Object { $_.name -eq $n } }) | Select-Object -First 1
         if (-not $asset) { return @{ Error = 'Aucun fichier Nevermind.zip dans la dernière version publiée.' } }
         $sig = @($r.assets | Where-Object { $_.name -eq "$($asset.name).sig" }) | Select-Object -First 1
         @{ Version = ([string]$r.tag_name -replace '^[vV]', ''); Url = [string]$asset.browser_download_url; SigUrl = [string]$sig.browser_download_url; Beta = [bool]$r.prerelease; Notes = [string]$r.body }
@@ -75,7 +78,7 @@ function Invoke-UpdateCheck([switch]$Manual) {
     # Recherche au lancement coupée (Paramètres, Mises à jour) : seulement quand on clique sur « Vérifier les mises à jour »
     if (-not $Manual -and -not (Test-MajAuto)) { $ui.UpdateStatus.Text = "Version $AppVersion. Clique sur « Vérifier les mises à jour » pour chercher une nouvelle version."; return }
     $ui.UpdateStatus.Text = 'Recherche d''une nouvelle version...'
-    $r = Invoke-Async $GetReleaseScript @{ Repo = $UpdateRepo; Beta = [bool](Get-Setting 'Beta' $false) } | Select-Object -First 1
+    $r = Invoke-Async $GetReleaseScript @{ Repo = $UpdateRepo; Beta = [bool](Get-Setting 'Beta' $false); Ancien = ((Split-Path (Get-AppScript) -Leaf) -eq 'OptiGame.ps1') } | Select-Object -First 1
     if (-not $r -or $r.Error) {
         $ui.UpdateStatus.Text = "Version $AppVersion. Impossible de vérifier les mises à jour (pas de connexion ?)."
         if ($r.Error) { Write-Log "Mise à jour: $($r.Error)" }

@@ -700,7 +700,12 @@ function Test-Cas8 {
         Expand-Archive -LiteralPath $Paquet111 -DestinationPath $AncienNom -Force
         New-Item -ItemType Directory -Force -Path (Join-Path $AncienNom '.git') | Out-Null
         $vieux = Start-Nevermind (Join-Path $AncienNom 'OptiGame\Mindset.exe')
-        Test-Cas 'Nevermind 1.11.0 démarre (il tient Local\OptiGame-Instance, pas Local\Nevermind-Instance)' { (Wait-Jusque { Test-Verrou 'Local\OptiGame-Instance' } 120) -and -not (Test-Verrou 'Local\Nevermind-Instance') }
+        # (la machine de GitHub peut ne pas avoir de session où une fenêtre s'ouvre : Nevermind n'y démarre alors pas du tout,
+        # même 1.11.0 ; le démarrage et l'instance unique sont alors seulement vérifiés par outils\tester-renommage.ps1)
+        $lancer = Wait-Jusque { Test-Verrou 'Local\OptiGame-Instance' } 120
+        if (-not $lancer) { Add-Note 'Nevermind 1.11.0 ne démarre pas sur cette machine (aucun verrou en 120 s) : démarrages non essayés ici, voir tester-renommage.ps1'; Show-Nevermind '1.11.0 lancée' }
+        else {
+        Test-Cas 'Nevermind 1.11.0 démarre (il tient Local\OptiGame-Instance, pas Local\Nevermind-Instance)' { -not (Test-Verrou 'Local\Nevermind-Instance') }
         $neuf = Start-Nevermind "$NevermindC\Mindset.exe"
         $arrete = Wait-Jusque { $neuf.HasExited } 60
         Show-Nevermind 'pendant que 1.11.0 est ouverte'
@@ -721,6 +726,7 @@ function Test-Cas8 {
         Show-Nevermind 'après un deuxième lancement'
         Test-Cas 'un deuxième lancement s''arrête seul : une seule instance' { $arrete -and -not $neuf.HasExited -and @(Get-Nevermind $ProgrammesC).Count -eq 1 }
         Stop-Nevermind
+        }
 
         # d. Mindset 2.12.0 (ancien) : il met à jour Nevermind 1.11.0 avec le zip de compatibilité, et le lance comme avant
         Reset-Machine
@@ -730,6 +736,7 @@ function Test-Cas8 {
         Test-Cas "Mindset 2.12.0 met à jour 1.11.0 avec OptiGame.zip : fichiers\OptiGame.ps1 (le script qu'il cherche) à la version $version, sans deuxième script" {
             $r.ok -and (Get-VersionScript "$NevermindC\fichiers\OptiGame.ps1") -eq $version -and -not (Test-Path -LiteralPath "$NevermindC\fichiers\Nevermind.ps1") -and (Test-Path -LiteralPath "$NevermindC\Nevermind.exe")
         }
+        if ($lancer) {
         $p = Start-Nevermind "$NevermindC\Nevermind.exe"   # (Mindset 2.12.0 lance Nevermind.exe, le relais)
         Test-Cas 'lancé comme Mindset 2.12.0 le fait (Nevermind.exe -Demarrage), le script à l''ancien nom démarre : verrou Local\OptiGame-Instance tenu (Mindset 2.12.0 le voit ouvert)' {
             (Wait-Jusque { (Test-Verrou 'Local\OptiGame-Instance') -and (Test-Verrou 'Local\Nevermind-Instance') } 120) -and @(Get-Nevermind $ProgrammesC).Count -eq 1
@@ -737,6 +744,7 @@ function Test-Cas8 {
         Start-Sleep -Seconds 10
         Test-Cas "il reste ouvert, son journal dit « Démarrage Nevermind $version »" { @(Get-Nevermind $ProgrammesC).Count -eq 1 -and @(Get-JournalNevermind | Where-Object { $_ -match "Démarrage Nevermind $([regex]::Escape($version))" }).Count -ge 1 }
         Stop-Nevermind
+        }
 
         # e. Mindset 2.12.0 : première installation avec le zip de compatibilité
         Reset-Machine

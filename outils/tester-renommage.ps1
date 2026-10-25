@@ -66,11 +66,11 @@ $Gardees = [ordered]@{
     'Nevermind/fichiers/modules/assistance.ps1'    = @(1, 'lignes « Démarrage OptiGame » des anciens journaux')
     'Nevermind/fichiers/modules/donnees.ps1'       = @(1, 'ancien dossier de données')
     'Nevermind/fichiers/modules/interface.ps1'     = @(2, 'ancienne tâche de démarrage reconnue (script OptiGame.ps1)')
-    'Nevermind/fichiers/modules/mises-a-jour.ps1'  = @(5, 'mise à jour depuis une version publiée sous l''ancien nom')
+    'Nevermind/fichiers/modules/mises-a-jour.ps1'  = @(6, 'mise à jour depuis une version publiée sous l''ancien nom ; copie à l''ancien nom gardée sous ce nom')
     'Nevermind/fichiers/modules/natif.cs'          = @(1, 'ancienne session réseau « OptiGame-Reseau » fermée au démarrage')
     'Nevermind/fichiers/modules/systeme.ps1'       = @(12, 'anciennes tâches, anciens lanceurs et anciens fichiers retirés ; script à l''ancien nom')
     'Nevermind/fichiers/modules/tests.ps1'         = @(1, 'ancien fichier temporaire du test du disque, effacé')
-    'outils/essai-aide-reelle.ps1'                 = @(35, 'essai en vrai : anciennes Releases, Mindset 2.12.0, zip de compatibilité')
+    'outils/essai-aide-reelle.ps1'                 = @(36, 'essai en vrai : anciennes Releases, Mindset 2.12.0, zip de compatibilité')
     'outils/lanceur.cs'                            = @(4, 'ancien dossier de données ; script à l''ancien nom')
     'outils/publier.ps1'                           = @(6, 'publie aussi le zip de compatibilité')
     'outils/test-app.ps1'                          = @(5, 'test : aucun « OptiGame » affiché ; règle à l''ancien nom ; ancien dossier de données')
@@ -218,6 +218,9 @@ try {
     $script:Assets = @((New-Asset 'OptiGame.zip'), (New-Asset 'OptiGame.zip.sig'), (New-Asset 'Nevermind.zip'), (New-Asset 'Nevermind.zip.sig'))
     $r = & $GetReleaseScript @{ Repo = 'essai/essai'; Beta = $false }
     Test-Ok ($r.Url -like '*/Nevermind.zip' -and $r.SigUrl -like '*/Nevermind.zip.sig') "Mise à jour : Nevermind.zip et sa signature d'abord (reçu : $($r.Url) $($r.SigUrl) $($r.Error))"
+    $r = & $GetReleaseScript @{ Repo = 'essai/essai'; Beta = $false; Ancien = $true }
+    Test-Ok ($r.Url -like '*/OptiGame.zip' -and $r.SigUrl -like '*/OptiGame.zip.sig') "Mise à jour d'une copie au script à l'ancien nom : le zip de compatibilité (les Mindset 2.12.0 ne reconnaîtraient pas Nevermind.zip ; reçu : $($r.Url))"
+    Test-Ok ($maj -match "Ancien = \(\(Split-Path \(Get-AppScript\) -Leaf\) -eq 'OptiGame\.ps1'\)" -and $maj -match 'if \(-not \$rel -or \$Managed\) \{ return \}') 'Mise à jour autonome : jamais pour une copie gérée par Mindset, et le zip de compatibilité pour une copie à l''ancien nom'
     $script:Assets = @((New-Asset 'OptiGame.zip'), (New-Asset 'OptiGame.zip.sig'))
     $r = & $GetReleaseScript @{ Repo = 'essai/essai'; Beta = $false }
     Test-Ok ($r.Url -like '*/OptiGame.zip' -and $r.SigUrl -like '*/OptiGame.zip.sig') "Mise à jour : une version d'avant (OptiGame.zip seul) reste lisible (reçu : $($r.Url) $($r.SigUrl) $($r.Error))"
