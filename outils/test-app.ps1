@@ -613,7 +613,12 @@ $script:T.Run.Add_Tick({
                 $fake = Join-Path $fakeRoot 'Jeu desinstalle'
                 New-Item -ItemType Directory -Force -Path "$fake\data\sous" | Out-Null
                 foreach ($i in 1..30) { [IO.File]::WriteAllBytes("$fake\data\sous\f$i.bin", (New-Object byte[] 2000)) }
-                [IO.File]::WriteAllText("$fake\lecture-seule.txt", 'x'); [IO.File]::SetAttributes("$fake\lecture-seule.txt", 'ReadOnly')
+                [IO.File]::WriteAllText("$fake\lecture-seule.txt", 'x')
+                # (un vrai reste est vieux : un dossier modifié depuis moins de 7 jours est gardé par prudence, il est daté d'un mois ;
+                # la lecture seule vient après, Windows refuse de changer la date d'un fichier en lecture seule)
+                $vieux = (Get-Date).AddDays(-30)
+                foreach ($x in @(Get-ChildItem -LiteralPath $fake -Recurse -Force) + @(Get-Item -LiteralPath $fake)) { $x.LastWriteTime = $vieux }
+                [IO.File]::SetAttributes("$fake\lecture-seule.txt", 'ReadOnly')
                 $keep = Join-Path $fakeRoot 'Jeu installe'
                 New-Item -ItemType Directory -Force -Path $keep | Out-Null
                 $realLo = $script:Leftovers; $realSizes = $script:LeftoverSizes
