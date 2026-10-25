@@ -13,7 +13,8 @@
 # en administrateur, sur la CI, l'Aide ne répond qu'à lui) fait des demandes qui se servent de ces modules, toutes en
 # lecture seule. Aucun témoin ne doit apparaître, et le nettoyage ne doit jamais viser le faux dossier de Windows.
 # Canal (constat 30) : une demande de plus de 64 Ko, ou une connexion muette, est coupée (5 s au plus), et l'Aide
-# continue de répondre ensuite.
+# continue de répondre ensuite. Un canal du même nom créé avant l'Aide par un autre programme : elle s'arrête au lieu
+# de s'y joindre (audit du 25/10, 25a).
 # Seuls les processus lancés par ce test sont arrêtés. Code de sortie : 0 si tout passe, 1 sinon.
 
 $ErrorActionPreference = 'Stop'
@@ -63,7 +64,7 @@ $r.securite = Send-Demande '{"a":"lecture.securite","p":{}}'
 $r.pc       = Send-Demande '{"a":"lecture.pc","p":{}}'
 $r.dns      = Send-Demande '{"a":"dns.regler","p":{"Index":999999,"Serveurs":["6.6.6.6"]}}'
 $r.fermer   = Send-Demande '{"a":"processus.fermer","p":{"Nom":"nm-programme-inexistant"}}'
-$r.nettoyage = Send-Demande '{"a":"nettoyage.lister","p":{"Id":"wintemp","Top":1000}}'
+$r.nettoyage = Send-Demande '{"a":"nettoyage.lister","p":{"Id":"dump","Top":1000}}'
 # Une demande de 70 Ko sans fin de ligne : coupée sans attendre la suite
 $c = New-Object System.IO.Pipes.NamedPipeClientStream('.', $Nom, [System.IO.Pipes.PipeDirection]::InOut)
 try {
@@ -136,7 +137,7 @@ try {
             [IO.File]::WriteAllText((Join-Path $d "$n.psm1"), ($code -join "`r`n"), (New-Object Text.UTF8Encoding $true))
         }
     }
-    $fichierPiege = Join-Path $fauxWindows 'Temp\nevermind-piege.txt'
+    $fichierPiege = Join-Path $fauxWindows 'Minidump\nevermind-piege.txt'
     [void][IO.Directory]::CreateDirectory((Split-Path $fichierPiege))
     [IO.File]::WriteAllText($fichierPiege, 'piège')
     [IO.File]::SetLastWriteTime($fichierPiege, (Get-Date).AddDays(-3))
@@ -183,6 +184,18 @@ try {
         else { Write-Host "Info : $variante : aucun faux module chargé, 70 Ko coupés en $($r.longue) s, connexion muette coupée en $($r.muette) s" }
         try { if (-not $aide.HasExited) { $aide.Kill(); [void]$aide.WaitForExit(5000) } } catch {}
     }
+
+    # Canal pris AVANT l'Aide (audit du 25/10, 25a) : un programme crée le canal de ce nom, avec des droits larges.
+    # L'Aide doit refuser de s'y joindre et s'arrêter (avant : elle y ajoutait ses connexions, avec les droits de l'autre).
+    $large = New-Object System.IO.Pipes.PipeSecurity
+    $large.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule((New-Object Security.Principal.SecurityIdentifier('S-1-1-0')), 'FullControl', 'Allow')))
+    $occupant = New-Object System.IO.Pipes.NamedPipeServerStream($nomCanal, 'InOut', 32, 'Byte', 'Asynchronous', 4096, 4096, $large)
+    try {
+        $psi = New-Object Diagnostics.ProcessStartInfo($psExe, "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $copie 'NevermindAide.ps1')`" -Parent $PID")
+        $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
+        $aide = [Diagnostics.Process]::Start($psi); $lances.Add($aide)
+        Test-Ok ($aide.WaitForExit(60000)) 'Canal pris avant l''Aide : elle s''y joint au lieu de s''arrêter'
+    } finally { $occupant.Dispose() }
 } catch { Test-Ok $false "Test impossible : $($_.Exception.Message)" }
 finally {
     foreach ($p in $lances) { try { if (-not $p.HasExited) { $p.Kill(); [void]$p.WaitForExit(5000) } } catch {} }

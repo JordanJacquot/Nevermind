@@ -2482,3 +2482,23 @@ public static class FiletPlantage
         catch { }
     }
 }
+
+// UPnP (recherche des appareils, audit de la box) : l'adresse LOCATION ou controlURL qu'un appareil du réseau annonce
+// n'est ouverte que si c'est http:// vers l'adresse IP de cet appareil, sans nom ni identifiant. Jamais file://, un
+// partage réseau (\machine\partage, où Windows enverrait l'identité du compte) ni une autre machine.
+public static class UpnpAdresse
+{
+    public static bool Permise(string adresse, string ip)
+    {
+        if (string.IsNullOrEmpty(adresse) || string.IsNullOrEmpty(ip)) return false;
+        Uri u;
+        if (!Uri.TryCreate(adresse.Trim(), UriKind.Absolute, out u)) return false;
+        if (u.Scheme != Uri.UriSchemeHttp || u.IsUnc || u.UserInfo.Length > 0) return false;
+        if (u.HostNameType != UriHostNameType.IPv4 && u.HostNameType != UriHostNameType.IPv6) return false;
+        System.Net.IPAddress a, b;
+        if (!System.Net.IPAddress.TryParse(u.Host.Trim('[', ']'), out a) || !System.Net.IPAddress.TryParse(ip.Trim(), out b)) return false;
+        if (a.IsIPv4MappedToIPv6) a = a.MapToIPv4();
+        if (b.IsIPv4MappedToIPv6) b = b.MapToIPv4();
+        return a.Equals(b);
+    }
+}

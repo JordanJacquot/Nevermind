@@ -194,17 +194,34 @@ function Get-Setting([string]$Name, $Default = $null) {
     if ($script:Settings.ContainsKey($Name)) { $script:Settings[$Name] } else { $Default }
 }
 
-function Set-Setting([string]$Name, $Value) {
+# -Exiger : la valeur doit être écrite sur le disque (état d'origine d'un service ou de l'alimentation, sans lequel
+# « Tout restaurer » ne pourrait pas tout remettre). Sinon, rien n'est gardé en mémoire et l'erreur remonte : celui
+# qui appelle ne change rien.
+function Set-Setting([string]$Name, $Value, [switch]$Exiger) {
     [void](Get-Setting $Name)
+    $avait = $script:Settings.ContainsKey($Name); $avant = $script:Settings[$Name]
     $script:Settings[$Name] = $Value
-    try { Save-JsonSur $SettingsFile $script:Settings } catch { Write-Log "Écriture des préférences impossible: $_" }
+    try { Save-JsonSur $SettingsFile $script:Settings }
+    catch {
+        Write-Log "Écriture des préférences impossible: $_"
+        if ($Exiger) {
+            if ($avait) { $script:Settings[$Name] = $avant } else { $script:Settings.Remove($Name) }
+            throw "Nevermind n'a pas pu noter l'état d'origine (son fichier de préférences est pris par un autre programme) : rien n'a été changé. Réessaie dans un instant."
+        }
+    }
+}
+
+# L'état d'origine noté dans sauvegarde.json AVANT le changement : s'il n'a pas pu être écrit, il est oublié (le
+# prochain essai le relira) et l'erreur remonte, sans rien changer. Sinon, un 2e essai changerait sans sauvegarde.
+function Save-BackupOuOublier([scriptblock]$Oublier) {
+    try { Save-Backup } catch { & $Oublier; throw "Nevermind n'a pas pu noter l'état d'origine (sauvegarde.json : $($_.Exception.Message)) : rien n'a été changé." }
 }
 
 function Set-DisplayRate([string]$Device, [int]$Hz) {
     $current = @([OGNative]::GetDisplays()) | Where-Object { ($_ -split '\|')[0] -eq $Device } | Select-Object -First 1
     if ($current -and -not $script:Backup.Displays.ContainsKey($Device)) {
         $script:Backup.Displays[$Device] = [int](($current -split '\|')[4])
-        Save-Backup
+        Save-BackupOuOublier { $script:Backup.Displays.Remove($Device) }
     }
     $r = [OGNative]::SetRefreshRate($Device, $Hz)
     if ($r -ne 0) { throw "Windows a refusé le changement de fréquence (code $r)." }
@@ -284,7 +301,7 @@ function Save-Original([string]$Path, [string]$Name) {
         }
     }
     $script:Backup.Registry[$key] = @{ Path = $Path; Name = $Name; Existed = $exists; Value = $val; Kind = $kind }
-    Save-Backup
+    Save-BackupOuOublier { $script:Backup.Registry.Remove($key) }
     # Réglage de l'utilisateur : une copie dans son registre aussi (ceux du PC sont gardés par l'Aide, dans HKLM)
     if (Test-RegUtilisateur $Path) {
         try {

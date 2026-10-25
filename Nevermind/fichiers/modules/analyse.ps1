@@ -769,7 +769,7 @@ function Set-BatterySetting([string]$Key, [int]$Value) {
     if ($cur) {
         if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'pcfg'; Guid = $g; Key = $Key; Ac = $cur[0]; Dc = $cur[1]; Nouveau = $Value }) }
         $orig = @(Get-Setting 'PcfgOriginal' @())
-        if (-not @($orig | Where-Object { ([string]$_ -split '\|')[0] -eq $g }).Count) { Set-Setting 'PcfgOriginal' @($orig + "$g|$($cur[0])|$($cur[1])") }
+        if (-not @($orig | Where-Object { ([string]$_ -split '\|')[0] -eq $g }).Count) { Set-Setting 'PcfgOriginal' @($orig + "$g|$($cur[0])|$($cur[1])") -Exiger }   # (pas écrit : rien n'est changé)
     }
     powercfg /setacvalueindex SCHEME_CURRENT $SubBattery $g $Value | Out-Null
     powercfg /setdcvalueindex SCHEME_CURRENT $SubBattery $g $Value | Out-Null

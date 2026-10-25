@@ -65,20 +65,23 @@ $NetAuditWork = {
         $out.Ssdp = @($ssdp | Select-Object -Unique)
         [OGNative]::Progress = 18
 
-        $gwLoc = @($out.Ssdp | ForEach-Object { $p = $_ -split '\|', 3; if ($p[0] -eq $a.Gateway -and $p[1] -match 'InternetGatewayDevice|WAN(IP|PPP)Connection') { $p[2] } }) | Select-Object -First 1
+        # (la box : seulement une adresse http:// vers la passerelle elle-même, pour sa fiche comme pour ses commandes ;
+        # jamais file://, un partage réseau ni une autre machine)
+        $gwLoc = @($out.Ssdp | ForEach-Object { $p = $_ -split '\|', 3; if ($p[0] -eq $a.Gateway -and $p[1] -match 'InternetGatewayDevice|WAN(IP|PPP)Connection' -and [UpnpAdresse]::Permise($p[2], $a.Gateway)) { $p[2] } }) | Select-Object -First 1
         if ($gwLoc) {
             $igd = @{ Maps = @(); External = '' }
             try {
-                $x = [xml](Invoke-WebRequest -Uri $gwLoc -UseBasicParsing -TimeoutSec 4).Content
+                $x = [xml](Invoke-WebRequest -Uri $gwLoc -UseBasicParsing -TimeoutSec 4 -MaximumRedirection 0).Content
                 $svc = @($x.GetElementsByTagName('service') | Where-Object { $_.serviceType -match 'WAN(IP|PPP)Connection' }) | Select-Object -First 1
                 if ($svc) {
                     $ctl = [string]$svc.controlURL
-                    $url = if ($ctl -match '^https?://') { $ctl } else { ([uri]$gwLoc).GetLeftPart('Authority') + $(if ($ctl.StartsWith('/')) { $ctl } else { '/' + $ctl }) }
+                    $url = if ($ctl -match '^[a-z][a-z0-9+.-]*:' -or $ctl.StartsWith('//') -or $ctl.StartsWith('\\')) { $ctl } else { ([uri]$gwLoc).GetLeftPart('Authority') + $(if ($ctl.StartsWith('/')) { $ctl } else { '/' + $ctl }) }
+                    if (-not [UpnpAdresse]::Permise($url, $a.Gateway)) { throw "adresse de commande de la box refusée : $url" }
                     $type = [string]$svc.serviceType
                     $soap = {
                         param($action, $inner)
                         $body = "<?xml version=`"1.0`"?><s:Envelope xmlns:s=`"http://schemas.xmlsoap.org/soap/envelope/`" s:encodingStyle=`"http://schemas.xmlsoap.org/soap/encoding/`"><s:Body><u:$action xmlns:u=`"$type`">$inner</u:$action></s:Body></s:Envelope>"
-                        try { [xml](Invoke-WebRequest -Uri $url -Method Post -Body $body -ContentType 'text/xml; charset="utf-8"' -Headers @{ SOAPAction = "`"$type#$action`"" } -UseBasicParsing -TimeoutSec 3).Content } catch { $null }
+                        try { [xml](Invoke-WebRequest -Uri $url -Method Post -Body $body -ContentType 'text/xml; charset="utf-8"' -Headers @{ SOAPAction = "`"$type#$action`"" } -UseBasicParsing -TimeoutSec 3 -MaximumRedirection 0).Content } catch { $null }
                     }
                     $e = & $soap 'GetExternalIPAddress' ''
                     if ($e) { $igd.External = [string]($e.GetElementsByTagName('NewExternalIPAddress') | Select-Object -First 1).InnerText }

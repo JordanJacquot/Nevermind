@@ -77,6 +77,25 @@ function Invoke-Native([string]$Exe, [string[]]$Arguments) {
     if ($LASTEXITCODE) { throw "Échec : $Exe $($Arguments -join ' ')" }
 }
 
+# Les fichiers de Nevermind suivis par git (« Nevermind/... ») : ce sont eux, et seulement eux, qui partent dans les zips
+# (outils\zips.ps1). Tout est donc commité avant : sinon un changement pas commité partirait dans la version publiée
+# sans être dans git (et l'ancien « git add -A » commitait aussi un fichier oublié).
+function Get-FichiersGitNevermind {
+    $avant = [Console]::OutputEncoding
+    try {
+        [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
+        $s = & git -C $racine -c core.quotepath=false ls-files -z -- Nevermind 2>$null
+        if ($LASTEXITCODE) { throw 'Publication annulée : git ne donne pas la liste des fichiers.' }
+    } finally { [Console]::OutputEncoding = $avant }
+    @(($s -join '') -split "`0" | Where-Object { $_ -like 'Nevermind/*' })
+}
+if (-not $Essai) {
+    $avant = [Console]::OutputEncoding
+    try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false); $sale = @(& git -C $racine -c core.quotepath=false status --porcelain 2>$null | Where-Object { $_ }) }
+    finally { [Console]::OutputEncoding = $avant }
+    if ($sale.Count) { throw "Publication annulée : des fichiers ne sont pas commités ($(($sale | Select-Object -First 5) -join ' ; ')). Commite-les d'abord : la version publiée est celle de git." }
+}
+
 # 1. Numéro de version dans l'app et le LISEZMOI (pas en essai : rien n'est modifié)
 if (-not $Essai) {
     $c = [IO.File]::ReadAllText($ps1, [Text.Encoding]::UTF8)
@@ -117,6 +136,15 @@ foreach ($z in @(@($zips[0], 'Nevermind', 'Nevermind.ps1'), @($zips[1], 'OptiGam
     if ($dossiers.Count -ne 1 -or $dossiers[0] -ne $z[1] -or $scripts.Count -ne 1 -or $manque.Count) {
         throw "Publication annulée : $(Split-Path $z[0] -Leaf) mal construit (dossiers : $($dossiers -join ', ') ; scripts : $($scripts -join ', ') ; manque : $($manque -join ', '))"
     }
+    # Exactement les fichiers de git et les 4 programmes : rien en plus (aide-temp, thème perso...), rien en moins
+    $attendus = @(@(Get-FichiersGitNevermind) + @('Mindset.exe', 'Nevermind.exe', 'NevermindAide.exe', 'Désinstaller Nevermind.exe' | ForEach-Object { "Nevermind/$_" }) |
+        ForEach-Object { $n = $_ -replace '^Nevermind/', "$($z[1])/"; if ($z[1] -eq 'OptiGame') { $n -replace '^OptiGame/fichiers/Nevermind\.ps1$', 'OptiGame/fichiers/OptiGame.ps1' } else { $n } })
+    $fichiersZip = @($noms | Where-Object { -not $_.EndsWith('/') })
+    $enTrop = @($fichiersZip | Where-Object { $attendus -notcontains $_ })
+    $absents = @($attendus | Where-Object { $fichiersZip -notcontains $_ })
+    if ($enTrop.Count -or $absents.Count) {
+        throw "Publication annulée : $(Split-Path $z[0] -Leaf) n'a pas exactement les fichiers de git (en trop : $($enTrop -join ', ') ; absents : $($absents -join ', '))"
+    }
     Write-Host "$(Split-Path $z[0] -Leaf) : dossier $($z[1]), script fichiers\$($z[2]), $($noms.Count) fichiers, signé" -ForegroundColor Green
 }
 if ($Essai) { "Essai fini : $($zips -join ', ') et leurs signatures (clé jetable). Rien n'est publié."; return }
@@ -124,7 +152,7 @@ if ($Essai) { "Essai fini : $($zips -join ', ') et leurs signatures (clé jetabl
 # 3. Envoi sur GitHub et création de la version
 Push-Location $racine
 try {
-    Invoke-Native git @('add', '-A')
+    Invoke-Native git @('add', '--', $ps1, $lisez)   # (seulement les deux fichiers de version : tout le reste est déjà commité)
     Invoke-Native git @('commit', '-m', "Nevermind $Version", '-m', 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
     Invoke-Native git @('tag', "v$Version")
     Invoke-Native git @('push', 'origin', 'HEAD', '--tags')

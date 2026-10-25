@@ -10,7 +10,8 @@
 #   2. Trafic : les programmes de la suite Mindset (non signés) ne sont plus signalés, les autres le restent ; le clic
 #      sur la bulle d'une alerte ouvre le bon programme et n'exécute rien de caché dans son nom ;
 #   3. la trace réseau en veille (avant BF6) n'est lancée que si un jeu guetté est installé, et arrêtée sinon ;
-#   4. les petits textes : titre « Nevermind » des rapports, Mindset trouvé sur un autre disque, message d'erreur simple.
+#   4. les petits textes : titre « Nevermind » des rapports, Mindset trouvé sur un autre disque, message d'erreur simple ;
+#   5. UPnP : une adresse annoncée par un appareil n'est ouverte que si c'est http:// vers lui (audit du 25/10, constat 16).
 # Code de sortie : 0 si tout passe, 1 sinon.
 
 param([switch]$VraiLagMon)
@@ -39,7 +40,21 @@ if ($VraiLagMon) {
         $na2 = [LagMon]::Series($a).Count
         $nb = [LagMon]::Series($b).Count
         [LagMon]::Stop()
-        Write-Output "ok|$na|$na2|$nb|$actives"
+        # UPnP (audit du 25/10, constat 16) : seulement http:// vers l'appareil qui a répondu
+        $upnp = @(foreach ($c in @(
+            @('http://192.168.1.10:49152/rootDesc.xml', '192.168.1.10', $true),
+            @('http://192.168.1.10/', '192.168.1.10', $true),
+            @('file:///C:/Windows/win.ini', '192.168.1.10', $false),
+            @('file://192.168.1.10/partage/x.xml', '192.168.1.10', $false),
+            @('\\192.168.1.10\partage\x.xml', '192.168.1.10', $false),
+            @('http://192.168.1.11/rootDesc.xml', '192.168.1.10', $false),
+            @('https://192.168.1.10/rootDesc.xml', '192.168.1.10', $false),
+            @('http://moi:secret@192.168.1.10/', '192.168.1.10', $false),
+            @('http://box.local/rootDesc.xml', '192.168.1.10', $false),
+            @('', '192.168.1.10', $false))) {
+            if ([UpnpAdresse]::Permise($c[0], $c[1]) -ne $c[2]) { "$($c[0]) -> $(-not $c[2])" }
+        })
+        Write-Output "ok|$na|$na2|$nb|$actives|$($upnp -join ' ; ')"
     } catch { Write-Output "erreur|$($_.Exception.Message)" }
     exit 0
 }
@@ -205,7 +220,13 @@ else {
     Test-Ok ([int]$x[2] -eq [int]$x[1]) "LagMon : la cible abandonnée est encore pingée ($($x[1]) puis $($x[2]) mesures)"
     Test-Ok ([int]$x[3] -gt [int]$x[2]) 'LagMon : l''autre cible n''est plus pingée'
     Test-Ok ([int]$x[4] -eq 1) "LagMon : $($x[4]) cible(s) encore pingée(s) au lieu d'une"
+    Test-Ok ($x.Count -ge 6 -and -not $x[5]) "UPnP : adresses mal jugées par UpnpAdresse (natif.cs) : $(if ($x.Count -ge 6) { $x[5] } else { 'UpnpAdresse absent' })"
 }
+# UPnP : chaque adresse reçue du réseau passe par UpnpAdresse avant d'être ouverte (fiche des appareils, box, commandes)
+$texteAvance = [IO.File]::ReadAllText((Join-Path $modules 'reseau-avance.ps1'))
+$texteAudit = [IO.File]::ReadAllText((Join-Path $modules 'audit-reseau.ps1'))
+Test-Ok ($texteAvance -match '\[UpnpAdresse\]::Permise\(\$loc, \$ip\)\) \{ continue \}\s+try \{\s+\$x = \[xml\]\(Invoke-WebRequest -Uri \$loc') 'UPnP : la fiche d''un appareil est ouverte sans contrôle de son adresse (reseau-avance.ps1)'
+Test-Ok ($texteAudit -match '\[UpnpAdresse\]::Permise\(\$p\[2\], \$a\.Gateway\)' -and $texteAudit -match '\[UpnpAdresse\]::Permise\(\$url, \$a\.Gateway\)') 'UPnP : l''adresse de la box ou de ses commandes est ouverte sans contrôle (audit-reseau.ps1)'
 
 # ---------------------------------------------------------------------------
 # 2. Trafic : les programmes de la suite ne sont pas suspects

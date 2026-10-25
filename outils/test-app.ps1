@@ -1887,7 +1887,7 @@ public static class ProprietesFenetre
                 @('antivirus.retirer-exclusions', @{ Elements = @('C:\Jeux\truc.exe') }),
                 @('wifi.manuel', @{ Profils = @('Freebox-Invite', 'Gare SNCF') }),
                 @('smb1.couper', @{ Client = $true }),
-                @('nettoyage.lister', @{ Id = 'wintemp'; Top = 300 }),
+                @('nettoyage.lister', @{ Id = 'wu'; Top = 300 }),
                 @('nettoyage.lancer', @{ Id = 'dump' }),
                 @('processus.fermer', @{ Nom = 'chrome' }),
                 @('lecture.pc', @{}),

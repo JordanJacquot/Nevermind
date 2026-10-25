@@ -62,6 +62,19 @@ $Theme = $AppThemes[$ThemeId]
 $PacksDir = Join-Path $DataDir 'packs'
 if ($env:NEVERMIND_TEST -and $env:NEVERMIND_PACKS) { $PacksDir = $env:NEVERMIND_PACKS }
 
+# Les couleurs d'un pack ($j.Colors) : $null si elles sont bonnes, sinon ce qui ne va pas. P, S et T : « #RRGGBB » ;
+# Map : « RRGGBB » ou « #RRGGBB » pour chaque couleur remplacée et sa remplaçante ; NH et NS : des nombres.
+function Test-CouleursPack($Colors) {
+    foreach ($n in 'P', 'S', 'T') { if ([string]$Colors.$n -cnotmatch '\A#[0-9A-Fa-f]{6}\z') { return "$n n'est pas une couleur #RRGGBB" } }
+    if ($Colors.Map) {
+        foreach ($pr in $Colors.Map.PSObject.Properties) {
+            if ($pr.Name -cnotmatch '\A#?[0-9A-Fa-f]{6}\z' -or [string]$pr.Value -cnotmatch '\A#?[0-9A-Fa-f]{6}\z') { return 'Map contient autre chose que des couleurs' }
+        }
+    }
+    foreach ($n in 'NH', 'NS') { if ($null -ne $Colors.$n -and $null -eq ($Colors.$n -as [double])) { return "$n n'est pas un nombre" } }
+    $null
+}
+
 function Get-ThemePack([string]$Id) {
     $dir = Join-Path $PacksDir $Id
     $f = Join-Path $dir 'pack.json'
@@ -98,8 +111,12 @@ function Get-ThemePack([string]$Id) {
         if ([string]$j.FontScope -eq 'tout') { $p.FontScope = 'tout' }
     }
     if (-not $p.Name) { $p.Name = $Id }
-    # Couleurs propres au pack : un thème « pack-<dossier> » ajouté à la liste (jamais affiché comme thème de base)
-    if ($j.Colors -and $j.Colors.P -and $j.Colors.S -and $j.Colors.T) {
+    # Couleurs propres au pack : un thème « pack-<dossier> » ajouté à la liste (jamais affiché comme thème de base).
+    # Elles sont collées dans le texte de la fenêtre : seulement des couleurs « #RRGGBB » (sinon le thème de base, et
+    # une ligne au journal). Une couleur mal écrite empêchait l'appli de s'ouvrir, et un texte piégé changeait la fenêtre.
+    $pb = if ($j.Colors -and $j.Colors.P -and $j.Colors.S -and $j.Colors.T) { Test-CouleursPack $j.Colors } else { 'sans couleurs' }
+    if ($j.Colors -and $pb -and $pb -ne 'sans couleurs') { Write-Log "Pack $Id : couleurs refusées ($pb), thème de base gardé" }
+    if (-not $pb) {
         $map = @{}
         if ($j.Colors.Map) { foreach ($pr in $j.Colors.Map.PSObject.Properties) { $map[$pr.Name.TrimStart('#').ToUpper()] = ([string]$pr.Value).TrimStart('#').ToUpper() } }
         $key = "pack-$Id"

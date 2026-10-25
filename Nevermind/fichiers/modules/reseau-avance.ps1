@@ -45,8 +45,10 @@ $NetDeepWork = {
         $upnp = @()
         foreach ($ip in $locs.Keys) {
             foreach ($loc in @($locs[$ip] | Select-Object -First 3)) {
+                # (seulement http:// vers l'appareil qui a répondu : jamais file://, un partage réseau ni une autre machine)
+                if (-not [UpnpAdresse]::Permise($loc, $ip)) { continue }
                 try {
-                    $x = [xml](Invoke-WebRequest -Uri $loc -UseBasicParsing -TimeoutSec 3).Content
+                    $x = [xml](Invoke-WebRequest -Uri $loc -UseBasicParsing -TimeoutSec 3 -MaximumRedirection 0).Content
                     $dv = $x.root.device
                     if ($dv) {
                         $upnp += "$ip|$([string]$dv.friendlyName)|$([string]$dv.manufacturer)|$([string]$dv.modelName)|$([string]$dv.modelNumber)|$([string]$dv.deviceType)" -replace "`r|`n", ' '

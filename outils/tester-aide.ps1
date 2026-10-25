@@ -111,8 +111,9 @@ $acceptees = @(
     @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Valeur = 1; Type = 'DWord' }),
     @('reg.ecrire', @{ Cle = "$IfeoPath\RocketLeague.exe\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 3; Type = 'DWord' }),
     @('reg.effacer', @{ Cle = "$IfeoPath\RocketLeague.exe\PerfOptions"; Nom = 'CpuPriorityClass' }),
-    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
+    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'NevermindTestLogiciel'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
     @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\StartupFolder"; Nom = 'Truc.lnk'; Valeur = @(2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
+    @('reg.effacer', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth' }),   # (le remettre actif reste permis)
     @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Disabled'; Arreter = $true }),
     @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Automatic'; Lancer = $true }),
     @('service.regler', @{ Nom = 'edgeupdate'; Demarrage = 'Manual'; Arreter = $true }),   # (page RAM : passé en manuel, puis remis)
@@ -131,7 +132,7 @@ $acceptees = @(
     @('wifi.manuel', @{ Profils = @('Freebox-Invite', 'Gare SNCF') }),
     @('smb1.couper', @{ Client = $true }),
     @('smb1.couper', @{ Client = $false }),
-    @('nettoyage.lister', @{ Id = 'wintemp'; Top = 300 }),
+    @('nettoyage.lister', @{ Id = 'wu'; Top = 300 }),
     @('nettoyage.lancer', @{ Id = 'dump' }),
     @('processus.fermer', @{ Nom = 'chrome' }),
     @('lecture.pc', @{}),
@@ -150,7 +151,7 @@ $acceptees = @(
     @('flux.arreter', @{})
 )
 # Chaque catégorie du nettoyage
-foreach ($id in 'wintemp', 'wu', 'do', 'wer', 'dump') { $acceptees += , @('nettoyage.lancer', @{ Id = $id }); $acceptees += , @('nettoyage.lister', @{ Id = $id }) }
+foreach ($id in 'wu', 'do', 'dump') { $acceptees += , @('nettoyage.lancer', @{ Id = $id }); $acceptees += , @('nettoyage.lister', @{ Id = $id }) }
 # DNS : sur une vraie carte réseau du PC (lue seulement)
 # (ceux de la box : seulement la passerelle de cette carte ou les DNS que la box donne, lus sur ce PC)
 $dnsLocaux = @()
@@ -201,6 +202,15 @@ $refusees = @(
     @('service.regler', @{ Nom = 'edgeupdate2'; Demarrage = 'Manual' }),
     @('service.regler', @{ Nom = 'GoogleUpdaterService1; calc'; Demarrage = 'Manual' }),
     @('service.regler', @{ Nom = 'edgeupdate'; Demarrage = 'Boot' }),
+    # Audit du 25/10 (constat 8) : un service de mise à jour jamais « Désactivé » (seulement « Manuel ») ; Sécurité
+    # Windows et l'antivirus jamais coupés au démarrage
+    @('service.regler', @{ Nom = 'edgeupdate'; Demarrage = 'Disabled'; Arreter = $true }),
+    @('service.regler', @{ Nom = 'gupdate'; Demarrage = 'Disabled' }),
+    @('service.regler', @{ Nom = 'GoogleUpdaterService140.0.1.0'; Demarrage = 'Disabled' }),
+    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
+    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run32"; Nom = 'SecurityHealth'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
+    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'Windows Defender'; Valeur = @(7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
+    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\StartupFolder"; Nom = 'SecurityHealthSystray.lnk'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
     # DNS : carte inexistante, trop de serveurs, serveur inconnu
     @('dns.regler', @{ Index = 0; Serveurs = @('1.1.1.1', '1.0.0.1') }),
     @('dns.regler', @{ Index = 1; Serveurs = @('1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4', '9.9.9.9') }),
@@ -236,6 +246,10 @@ $refusees = @(
     @('nettoyage.lancer', @{ Id = '..\..' }),
     @('nettoyage.lister', @{ Id = 'C:\' }),
     @('nettoyage.lister', @{ Id = 'system32' }),
+    # (constat 3 de l'audit du 25/10 : les dossiers où les utilisateurs écrivent ne sont plus vidés par l'Aide)
+    @('nettoyage.lancer', @{ Id = 'wintemp' }),
+    @('nettoyage.lister', @{ Id = 'wintemp' }),
+    @('nettoyage.lancer', @{ Id = 'wer' }),
     # Processus : Windows et l'antivirus jamais fermés
     @('processus.fermer', @{ Nom = 'MsMpEng' }),
     @('processus.fermer', @{ Nom = 'MsMpEng  ' }),
@@ -492,7 +506,39 @@ foreach ($a in $appels) {
 $nbTests++
 if ($codeAide -notmatch "(?m)^\`$PSModuleAutoLoadingPreference = 'None'" -or $codeAide -notmatch "\`$env:PSModulePath = \`$AideDossierPS") { $echecs.Add('NevermindAide.ps1 : le chargement automatique des modules n''est plus coupé') }
 $nbTests++
-if ($AideWindows -ne [Environment]::GetFolderPath('Windows') -or $AideNettoyage['wintemp'][0] -ne (Join-Path ([Environment]::GetFolderPath('Windows')) 'Temp')) { $echecs.Add('aide-actions.ps1 : dossiers de Windows mal lus') }
+if ($AideWindows -ne [Environment]::GetFolderPath('Windows') -or $AideNettoyage['wu'][0] -ne (Join-Path ([Environment]::GetFolderPath('Windows')) 'SoftwareDistribution\Download')) { $echecs.Add('aide-actions.ps1 : dossiers de Windows mal lus') }
+# Constat 3 (audit du 25/10) : plus aucun dossier où les utilisateurs écrivent (C:\Windows\Temp, rapports d'erreurs)
+$nbTests++
+$ecrits = @(foreach ($id in $AideNettoyage.Keys) { foreach ($d in $AideNettoyage[$id]) { if ($d -match '\\Temp$|\\WER\\') { "$id ($d)" } } })
+if ($ecrits.Count) { $echecs.Add("aide-actions.ps1 : l'Aide vide encore un dossier où les utilisateurs écrivent : $($ecrits -join ', ')") }
+
+# Constat 8 (audit du 25/10) : ce que l'Aide refuse même à Nevermind
+function Test-Constat8([bool]$Ok, [string]$Message) { $script:nbTests++; if (-not $Ok) { $script:echecs.Add("Constat 8 : $Message") } }
+# Points de restauration : un par 24 h au plus
+$maintenant = [DateTime]::UtcNow
+Test-Constat8 (-not (Test-AideRestaurationRecente 0 $maintenant)) 'aucun point noté : un point est refusé'
+Test-Constat8 (Test-AideRestaurationRecente $maintenant.AddHours(-1).Ticks $maintenant) 'un point il y a 1 h : un 2e est créé'
+Test-Constat8 (-not (Test-AideRestaurationRecente $maintenant.AddHours(-25).Ticks $maintenant)) 'un point il y a 25 h : le suivant est refusé'
+Test-Constat8 (-not (Test-AideRestaurationRecente $maintenant.AddHours(3).Ticks $maintenant)) 'un point noté dans le futur (horloge changée) bloque tout'
+$texteActions = [IO.File]::ReadAllText((Join-Path $AideDossierModules 'aide-actions.ps1'))
+Test-Constat8 ($texteActions -match "(?s)'restauration\.creer' \{.*?Test-AideRestaurationRecente.*?Checkpoint-Computer.*?DerniereRestauration") 'restauration.creer ne vérifie pas le dernier point avant d''en créer un, ou ne le note pas'
+# Tâches planifiées : seulement celles du compte qui demande et du système
+$sidTest = 'S-1-5-21-1111111111-2222222222-3333333333-1001'
+Test-Constat8 (Test-AideTacheDuCompte $sidTest '' $sidTest) 'une tâche du compte qui demande est cachée'
+Test-Constat8 (-not (Test-AideTacheDuCompte 'S-1-5-21-1111111111-2222222222-3333333333-1002' '' $sidTest)) 'une tâche d''un autre compte est montrée'
+Test-Constat8 (Test-AideTacheDuCompte 'SYSTEM' '' $sidTest) 'une tâche du système est cachée'
+Test-Constat8 (Test-AideTacheDuCompte '' 'S-1-5-32-545' $sidTest) 'une tâche pour tous les utilisateurs est cachée'
+Test-Constat8 (-not (Test-AideTacheDuCompte '' 'S-1-5-32-544' $sidTest)) 'une tâche des administrateurs (autres comptes) est montrée'
+Test-Constat8 (-not (Test-AideTacheDuCompte '' '' $sidTest) -and -not (Test-AideTacheDuCompte $sidTest '' '')) 'compte inconnu : une tâche est montrée'
+Test-Constat8 ($texteActions -match "(?s)'lecture\.taches' \{.*?Test-AideTacheDuCompte") 'lecture.taches ne filtre pas les tâches par compte'
+# Exclusions de l'antivirus : leur nombre seulement
+$blocSecu = [regex]::Match($texteActions, "(?s)'lecture\.securite' \{.*?return \`$r").Value
+Test-Constat8 ($blocSecu -match 'ExclusionsNombre = ' -and $blocSecu -notmatch '[.{ ]Exclusions = ') 'lecture.securite rend encore les chemins des exclusions'
+# Programmes au démarrage : Sécurité Windows et les antivirus inscrits
+$avTest = @('C:\Program Files\AntivirusTest\avtest-service.exe')
+Test-Constat8 (Test-AideDemarrageSecurite "HKLM:\$ApprovedRoot\Run" 'AvTestUI' '"C:\Program Files\AntivirusTest\avtest-ui.exe" /nogui' $avTest) 'l''interface d''un antivirus inscrit peut être coupée au démarrage'
+Test-Constat8 (Test-AideDemarrageSecurite "HKLM:\$ApprovedRoot\Run" 'Defender' '"%ProgramFiles%\Windows Defender\MSASCuiL.exe"' $avTest) 'Microsoft Defender peut être coupé au démarrage'
+Test-Constat8 (-not (Test-AideDemarrageSecurite "HKLM:\$ApprovedRoot\Run" 'Spotify' '"C:\Program Files\Spotify\Spotify.exe" /background' $avTest)) 'un programme ordinaire est pris pour un antivirus'
 
 # ---------------------------------------------------------------------------
 # Résultat

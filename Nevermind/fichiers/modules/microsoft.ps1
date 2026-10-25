@@ -69,7 +69,7 @@ function Set-ServiceOff([string]$Name, [string]$Demarrage = 'Disabled') {
     $s = Get-Service -Name $Name -ErrorAction Stop
     $start = [string]$s.StartType; $run = $s.Status -eq 'Running'
     $orig = @(Get-Setting 'SvcOriginal' @())
-    if (-not @($orig | Where-Object { ([string]$_ -split '\|')[0] -eq $Name }).Count) { Set-Setting 'SvcOriginal' @($orig + "$Name|$start|$run") }
+    if (-not @($orig | Where-Object { ([string]$_ -split '\|')[0] -eq $Name }).Count) { Set-Setting 'SvcOriginal' @($orig + "$Name|$start|$run") -Exiger }   # (pas écrit : rien n'est changé)
     if ($null -ne $script:RunLog) { [void]$script:RunLog.Add(@{ Type = 'svc'; Name = $Name; StartType = $start; Running = $run; Nouveau = $Demarrage }) }
     [void](Invoke-Aide 'service.regler' @{ Nom = $Name; Demarrage = $Demarrage; Arreter = $run })
 }

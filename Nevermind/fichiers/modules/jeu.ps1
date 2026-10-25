@@ -168,12 +168,19 @@ function Start-GameSession([string]$Game, $Proc) {
     $sel = if (Get-Setting 'GameMode' $false) { Get-GameModeSelection } else { @() }
     $closed = @()
     $all = @(Get-Process -ErrorAction SilentlyContinue)
+    $ctx = $null
     foreach ($a in @($GameModeApps | Where-Object { $sel -contains $_.Id })) {
+        # (les noms exacts de la liste fixe de $GameModeApps, et la règle commune de la page RAM : jamais un service, un
+        # autre compte, une appli de la suite...)
         $procs = @($all | Where-Object { $_.ProcessName -match $a.Proc })
         if (-not $procs.Count) { continue }
         $path = @($procs | ForEach-Object { try { [string]$_.Path } catch { '' } } | Where-Object { $_ })[0]
-        foreach ($p in $procs) { try { $p.Kill() } catch {} }
-        $closed += @{ Name = $a.Name; Path = $path; Args = $a.Args }
+        try {
+            if (-not $ctx) { $ctx = Get-AideContexte; $ctx.Reference = Get-AideReference $PID }
+            $r = Stop-ProcessusRegle $procs '' $ctx
+        } catch { Write-Log "Mode jeu : $($a.Name) pas fermé ($($_.Exception.Message))"; continue }
+        if (@($r.Refus).Count) { Write-Log "Mode jeu : $($a.Name), $(@($r.Refus).Count) processus laissé(s) ($($r.Refus[0]))" }
+        if ($r.Fermes) { $closed += @{ Name = $a.Name; Path = $path; Args = $a.Args } }
     }
     $script:GameSession = @{ Game = $Game; Pid = $Proc.Id; Closed = $closed; Start = Get-Date }
     Write-Log "Mode jeu: $Game lancé, applis fermées: $(($closed | ForEach-Object { $_.Name }) -join ', ')"

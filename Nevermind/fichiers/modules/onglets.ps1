@@ -255,8 +255,10 @@ function New-RestorePoint {
     Set-Status 'Création du point de restauration (ça peut prendre une minute)...'
     # Windows refuse sinon plus d'un point de restauration par 24 h.
     Set-Reg 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' 'SystemRestorePointCreationFrequency' 0
-    $r = try { [void](Invoke-Aide 'restauration.creer' @{ Description = 'Nevermind' } 600000); 'OK' } catch { $_.Exception.Message }
+    $r = try { if ([string](Invoke-Aide 'restauration.creer' @{ Description = 'Nevermind' } 600000) -eq 'recent') { 'RECENT' } else { 'OK' } } catch { $_.Exception.Message }
     if ("$r" -eq 'OK') { Set-Status 'Point de restauration créé.'; return $true }
+    # (l'Aide en crée un par 24 h au plus : celui de moins de 24 h sert pour ces changements)
+    if ("$r" -eq 'RECENT') { Set-Status 'Un point de restauration de moins de 24 h existe déjà : il sert pour ces changements.'; return $true }
     Write-Log "Point de restauration: $r"
     Confirm-Action ("Impossible de créer le point de restauration.`n`nMotif : $r`n`n" +
         "La protection du système est peut-être désactivée sur ce PC. Tu peux quand même continuer : " +
@@ -618,7 +620,7 @@ function Set-Dns([int]$Choice) {
     if (-not $script:Backup.Dns.ContainsKey($key)) {
         $static = Get-RegValue "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($script:Net.Guid)" 'NameServer'
         $script:Backup.Dns[$key] = [string]$static
-        Save-Backup
+        Save-BackupOuOublier { $script:Backup.Dns.Remove($key) }
     }
     $prev = [string](Get-RegValue "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($script:Net.Guid)" 'NameServer')
     $servers = $DnsChoices[$Choice]

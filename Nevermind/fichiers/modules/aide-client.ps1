@@ -28,6 +28,20 @@ $AideAttenteWindows = 30
 $AideSchtasks = Join-Path ([Environment]::GetFolderPath('System')) 'schtasks.exe'
 $script:AideRefus = $null
 
+# Les variables que .NET lit au démarrage d'un programme, avant sa première ligne : elles peuvent lui faire charger un
+# fichier choisi. Un programme lancé par la demande de Windows les reçoit du compte, où n'importe quel programme sans
+# droits peut les poser (HKCU\Environment). Présentes : pas de demande de Windows.
+# COR_* et COMPlus_* : lues par .NET Framework (powershell.exe 5.1, NevermindAide.exe). CORECLR_* et les DOTNET_* qui
+# chargent du code : pour .NET récent. Les autres DOTNET_* ne sont pas lues par .NET Framework : sans danger ici
+# (DOTNET_TieredCompilation, que posent certains outils de développement, ne bloque donc rien).
+# (même règle dans Nevermind.ps1, pour la désinstallation)
+$AideVariablesDangereuses = '^(COR_|COMPlus_|CORECLR_|DOTNET_STARTUP_HOOKS$|DOTNET_ADDITIONAL_DEPS$|DOTNET_SHARED_STORE$)'
+function Get-VariablesDangereuses {
+    $noms = @([Environment]::GetEnvironmentVariables().Keys | ForEach-Object { [string]$_ })
+    try { $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment'); if ($k) { try { $noms += $k.GetValueNames() } finally { $k.Close() } } } catch {}
+    @($noms | Where-Object { $_ -match $AideVariablesDangereuses } | Sort-Object -Unique)
+}
+
 # La tâche de l'Aide, telle que Windows la décrit (XML de schtasks /Query, que l'utilisateur a le droit de lire) :
 #   'systeme'  la bonne : en SYSTEM, NevermindAide.exe de ce dossier, pour cet utilisateur (-Sid), active ;
 #   'autre'    une tâche à ce nom, mais pas celle-là (l'ancienne « droits les plus élevés », une tâche désactivée...) ;
@@ -104,6 +118,10 @@ $AideTravail = {
 function Invoke-Aide([string]$Action, $Parametres = @{}, [int]$Delai = 120000, [switch]$SansDemande) {
     $demander = -not $SansDemande -and -not $script:AideSansDemande -and -not $script:EstAdmin -and
                 -not ($script:AideRefus -and ((Get-Date) - $script:AideRefus).TotalSeconds -lt $AideDelaiRefus)
+    # (audit du 25/10, constat 15 : une variable lue par .NET au démarrage, et l'Aide lancée par la demande de Windows la
+    # recevrait avec les droits administrateur. Seule sa tâche SYSTEM, qui ne reçoit rien du compte, reste possible.)
+    $danger = @(if ($demander) { Get-VariablesDangereuses })
+    if ($danger.Count) { $demander = $false; Write-Log "Aide : pas de demande de Windows, variables dangereuses dans l'environnement du compte ($($danger -join ', '))" }
     $x = @{
         Demande = (ConvertTo-Json -InputObject @{ a = $Action; p = $Parametres } -Depth 8 -Compress)
         Tache = $AideTache; Lancer = -not $script:AideSansTache; Admin = $script:EstAdmin; Actions = $AideFichierActions; Delai = $Delai
@@ -124,6 +142,7 @@ function Invoke-Aide([string]$Action, $Parametres = @{}, [int]$Delai = 120000, [
     if (-not $o.Reponse) {
         Write-Log "Aide : $Action impossible ($($o.Erreur))"
         if ($o.Refus) { throw 'Nevermind a besoin de ton accord pour ça : réessaie, et clique « Oui » dans la demande de Windows.' }
+        if ($danger.Count) { throw "Par prudence, Nevermind ne demande pas les droits administrateur : un réglage caché de ton compte Windows ($($danger[0])) pourrait faire lancer un autre programme avec ces droits. Lance une analyse antivirus, puis ouvre Mindset pour réparer Nevermind." }
         throw "Nevermind a besoin de son Aide pour ça, mais elle ne répond pas ($($o.Erreur)). Ouvre Mindset et mets Nevermind à jour."
     }
     $j = $o.Reponse | ConvertFrom-Json
@@ -183,16 +202,18 @@ function Get-AideFiabiliteDisque([string]$Id) {
     if ($f) { $f.Value } else { $null }
 }
 
-# Page Sécurité ($SecDataWork) : exclusions, menaces et détections de l'antivirus
+# Page Sécurité ($SecDataWork) : nombre d'exclusions, menaces et détections de l'antivirus. L'Aide ne donne que le
+# NOMBRE d'exclusions, jamais leurs chemins (ExclusionsNombre ; la liste, Nevermind ne la voit qu'en administrateur).
 function Add-AideLectureSecurite($D) {
     if (-not $D) { return }
     $l = Get-AideLecture 'lecture.securite'
     if (-not $l) { return }
+    $nbExcl = if ($null -ne $l.ExclusionsNombre) { [int]$l.ExclusionsNombre } else { -1 }
     if ($script:EstAdmin) {
-        Write-Log "Aide : lecture de l'antivirus reçue ($(@($l.Exclusions | Where-Object { $_ }).Count) exclusion(s), $(@($l.Menaces | Where-Object { $_ }).Count) menace(s), $(@($l.Detections | Where-Object { $_ }).Count) détection(s) ; Nevermind en a lu $(@($D.Exclusions).Count), $(@($D.Threats).Count), $(@($D.Detections).Count))"
+        Write-Log "Aide : lecture de l'antivirus reçue ($nbExcl exclusion(s), $(@($l.Menaces | Where-Object { $_ }).Count) menace(s), $(@($l.Detections | Where-Object { $_ }).Count) détection(s) ; Nevermind en a lu $(@($D.Exclusions).Count), $(@($D.Threats).Count), $(@($D.Detections).Count))"
         return
     }
-    $D.Exclusions = @($l.Exclusions | Where-Object { $_ })
+    if ($nbExcl -gt @($D.Exclusions).Count) { $D.ExclusionsNombre = $nbExcl }
     $D.Threats = @(@($l.Menaces) | Where-Object { $_ } | ForEach-Object { [pscustomobject]@{ ThreatID = $_.ThreatID; ThreatName = $_.ThreatName; SeverityID = $_.SeverityID; IsActive = [bool]$_.IsActive } })
     $D.Active = @($D.Threats | Where-Object { $_.IsActive })
     $D.Detections = @(@($l.Detections) | Where-Object { $_ } | ForEach-Object { [pscustomobject]@{ ThreatID = $_.ThreatID; ThreatStatusID = $_.ThreatStatusID; InitialDetectionTime = [datetime][long]$_.Quand; Resources = @($_.Resources) } })
@@ -352,24 +373,43 @@ function Stop-FluxReseau([string]$Ou) {
     elseif ($Ou -eq 'local') { try { [NetFlow]::Stop() } catch {} }
 }
 
-# Ferme tous les programmes d'un nom : ceux de l'utilisateur sur place, ceux lancés en administrateur par l'Aide.
-# Jamais ceux de la suite : Mindset et toutes ses applis (Nevermind compris) tournent dans un « Mindset.exe ».
-function Stop-ProgrammeNom([string]$Nom) {
-    if ($Nom.Trim() -match '^(Mindset|Nevermind|NevermindAide)(\.exe)?$') { throw "$Nom fait partie de la suite Mindset : Nevermind ne le ferme pas." }
-    $reste = 0
-    foreach ($p in @(Get-Process -Name $Nom -ErrorAction SilentlyContinue)) { try { $p.Kill() } catch { $reste++ } }
-    if ($reste) { [void](Invoke-Aide 'processus.fermer' @{ Nom = $Nom }) }
+# Ferme des processus déjà choisis avec LA règle commune (Get-RefusFermeture, aide-actions.ps1 : celle de la page RAM et
+# de l'Aide) : jamais un service, Windows, l'antivirus, une appli de la suite, un autre compte ou une autre session.
+# -Chemin : seulement ce programme-là. Rend @{ Fermes ; Aide (lancés en administrateur : l'Aide les fermera, avec la
+# même règle) ; Refus (les raisons) }.
+function Stop-ProcessusRegle($Processus, [string]$Chemin, $Contexte) {
+    $r = @{ Fermes = 0; Aide = 0; Refus = @() }
+    foreach ($p in @($Processus | Where-Object { $_ })) {
+        if (-not $Contexte) { $Contexte = Get-AideContexte; $Contexte.Reference = Get-AideReference $PID }
+        $pc = ''; try { $pc = [string]$p.Path } catch {}
+        $fiche = Read-AideFiche $p.Id $pc
+        if ($Chemin -and [string]$fiche.Chemin -ne $Chemin) { if (-not $fiche.Chemin) { $r.Aide++ }; continue }
+        $refus = Get-RefusFermeture $Contexte $fiche
+        if ($refus) {
+            if ([int]$fiche.Eleve -ne 0 -and -not (Get-RefusFermeture $Contexte $fiche -ElevePermis)) { $r.Aide++ } else { $r.Refus += $refus }
+            continue
+        }
+        try { $p.Kill(); $r.Fermes++ } catch { $r.Aide++ }
+    }
+    $r
 }
 
-# Même chose pour un programme précis (son chemin). Sans droits, le chemin d'un programme lancé en administrateur est
-# illisible : ceux-là aussi passent par l'Aide.
+# Ferme tous les programmes de ce nom EXACT (« * » ou « [ » ne sont pas des jokers) que la règle commune permet : ceux de
+# l'utilisateur sur place, ceux lancés en administrateur par l'Aide. Jamais ceux de la suite : Mindset et toutes ses
+# applis (Nevermind compris) tournent dans un « Mindset.exe ».
+function Stop-ProgrammeNom([string]$Nom) {
+    $Nom = $Nom.Trim()
+    if ($Nom -match '^(Mindset|Nevermind|NevermindAide)(\.exe)?$') { throw "$Nom fait partie de la suite Mindset : Nevermind ne le ferme pas." }
+    $r = Stop-ProcessusRegle @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq $Nom })
+    if ($r.Aide) { [void](Invoke-Aide 'processus.fermer' @{ Nom = $Nom }) }
+    if (-not $r.Fermes -and -not $r.Aide -and $r.Refus.Count) { throw "Nevermind ne ferme pas $Nom (raison : $($r.Refus[0]))." }
+}
+
+# Même chose pour un programme précis (son chemin). Sans droits, le chemin d'un programme lancé en administrateur peut
+# être illisible : ceux-là aussi passent par l'Aide.
 function Stop-ProgrammeChemin([string]$Chemin) {
-    $reste = 0
-    foreach ($p in @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($Chemin)) -ErrorAction SilentlyContinue)) {
-        $pc = $null; try { $pc = $p.Path } catch {}
-        if (-not $pc) { $reste++; continue }
-        if ($pc -ne $Chemin) { continue }
-        try { $p.Kill() } catch { $reste++ }
-    }
-    if ($reste) { [void](Invoke-Aide 'processus.fermer' @{ Chemin = $Chemin }) }
+    $nom = [IO.Path]::GetFileNameWithoutExtension($Chemin)
+    $r = Stop-ProcessusRegle @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq $nom }) $Chemin
+    if ($r.Aide) { [void](Invoke-Aide 'processus.fermer' @{ Chemin = $Chemin }) }
+    if (-not $r.Fermes -and -not $r.Aide -and $r.Refus.Count) { throw "Nevermind ne ferme pas $([IO.Path]::GetFileName($Chemin)) (raison : $($r.Refus[0]))." }
 }

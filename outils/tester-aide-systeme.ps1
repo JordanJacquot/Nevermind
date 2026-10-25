@@ -145,6 +145,21 @@ Test-Ok ($script:RunAs.Count -eq 1 -and $script:RunAs[0] -eq "RunAs|$exeCopie|-S
 if (-not $enAdmin) { Test-Ok ($r -and [int]$r.Version -ge 4 -and [string]$r.Compte -eq $moiSid) "Repli par la demande de Windows : l'Aide ne répond pas ($err)" }
 foreach ($p in $lances) { try { if (-not $p.HasExited) { $p.Kill() } } catch {} }
 $fin = (Get-Date).AddSeconds(10); while ((Get-Date) -lt $fin -and [AideClient]::Joignable(50)) { Start-Sleep -Milliseconds 100 }
+# b bis. (audit du 25/10, constat 15) Une variable lue par .NET au démarrage dans l'environnement : jamais de demande de
+# Windows (le programme élevé la recevrait), et un message clair. Variable de ce processus seulement, sans effet.
+Reset-Essai (New-XmlTache $moiSid "`"$exeCopie`"" '')
+$env:COMPlus_NevermindTest = '1'
+try { $err = ''; try { [void](Invoke-Aide 'aide.bonjour' @{} 5000) } catch { $err = $_.Exception.Message } }
+finally { Remove-Item Env:\COMPlus_NevermindTest -ErrorAction SilentlyContinue }
+Test-Ok (-not $script:RunAs.Count -and $err -match 'COMPlus_NevermindTest' -and $err -match 'prudence') "Variable dangereuse : demande de Windows faite quand même, ou message pas clair ($($script:RunAs -join ' ; ') / $err)"
+$avantTc = $env:DOTNET_TieredCompilation
+$env:DOTNET_TieredCompilation = '0'   # (posée par des outils de développement, pas lue par .NET Framework : ne bloque rien)
+try { $vd = @(Get-VariablesDangereuses) } finally { $env:DOTNET_TieredCompilation = $avantTc }
+Test-Ok ($vd -notcontains 'DOTNET_TieredCompilation') 'Variable sans danger (DOTNET_TieredCompilation) prise pour dangereuse'
+$texteNevermind = Read-Fichier (Join-Path $app 'Nevermind.ps1')
+Test-Ok ($texteNevermind.Contains("-match '$AideVariablesDangereuses'")) 'Désinstallation (Nevermind.ps1) : pas la même liste de variables dangereuses que aide-client.ps1'
+Test-Ok ($texteNevermind -match "(?s)if \(\`$Uninstall -and -not \`$principal.*?COMPlus_.*?Start-Process -FilePath \(\[IO\.Path\]::Combine\(\[Environment\]::GetFolderPath\('System'\), 'WindowsPowerShell\\v1\.0\\powershell\.exe'\)\) -Verb RunAs") 'Désinstallation : demande de Windows sans le contrôle des variables dangereuses, ou powershell.exe sans son chemin complet'
+$fin = (Get-Date).AddSeconds(10); while ((Get-Date) -lt $fin -and [AideClient]::Joignable(50)) { Start-Sleep -Milliseconds 100 }
 # c. La bonne tâche : lancée ; elle ne répond pas (rien ne tourne ici) : la demande de Windows prend le relais
 Reset-Essai (New-XmlTache 'S-1-5-18' "`"$exeCopie`"" "-Sid $moiSid")
 $script:Accepter = $false

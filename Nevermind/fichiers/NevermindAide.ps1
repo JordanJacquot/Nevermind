@@ -106,7 +106,27 @@ public static class AideTuyau
     [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int flags, StringBuilder name, ref int size);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    [StructLayout(LayoutKind.Sequential)] struct SECURITY_ATTRIBUTES { public int nLength; public IntPtr lpSecurityDescriptor; public bool bInheritHandle; }
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    static extern SafePipeHandle CreateNamedPipe(string name, uint openMode, uint pipeMode, uint maxInstances, uint outSize, uint inSize, uint timeout, ref SECURITY_ATTRIBUTES sa);
     public static int Client(SafePipeHandle pipe) { uint pid; return GetNamedPipeClientProcessId(pipe, out pid) ? (int)pid : 0; }
+    // La première connexion du canal, créée avec FILE_FLAG_FIRST_PIPE_INSTANCE : Windows refuse si un autre programme a
+    // déjà un canal de ce nom (.NET ne pose ce drapeau qu'avec une seule connexion permise ; l'Aide en permet 32).
+    // Les connexions suivantes rejoignent ce canal-là, avec ses droits.
+    public static System.IO.Pipes.NamedPipeServerStream Premier(string nom, byte[] droits, int max, int taille)
+    {
+        GCHandle g = GCHandle.Alloc(droits, GCHandleType.Pinned);
+        try
+        {
+            var sa = new SECURITY_ATTRIBUTES();
+            sa.nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES)); sa.lpSecurityDescriptor = g.AddrOfPinnedObject(); sa.bInheritHandle = false;
+            // PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | FILE_FLAG_FIRST_PIPE_INSTANCE ; octets, attente, réseau refusé (PIPE_REJECT_REMOTE_CLIENTS)
+            SafePipeHandle h = CreateNamedPipe(@"\\.\pipe\" + nom, 0x3 | 0x40000000 | 0x00080000, 0x8, (uint)max, (uint)taille, (uint)taille, 0, ref sa);
+            if (h.IsInvalid) { int e = Marshal.GetLastWin32Error(); h.Dispose(); throw new System.ComponentModel.Win32Exception(e); }
+            return new System.IO.Pipes.NamedPipeServerStream(System.IO.Pipes.PipeDirection.InOut, true, false, h);
+        }
+        finally { g.Free(); }
+    }
     public static string Chemin(int pid)
     {
         IntPtr h = OpenProcess(0x1000, false, pid);   // PROCESS_QUERY_LIMITED_INFORMATION
@@ -241,21 +261,34 @@ $secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule($createur, 'FullC
 # un programme sans droits ne peut pas le donner à un canal
 if ($admin) { $secu.SetOwner($createur) }
 
-function New-Tuyau {
-    New-Object System.IO.Pipes.NamedPipeServerStream($NomTuyau, [System.IO.Pipes.PipeDirection]::InOut, 32,
+# -Premier : la toute première connexion, refusée par Windows si un autre programme a déjà pris ce nom (audit du 25/10,
+# 25a : sinon l'Aide ajoutait ses connexions à SON canal, avec SES droits). Les suivantes rejoignent le canal de l'Aide ;
+# avec les droits administrateur, chacune est vérifiée : propriétaire le système (ou les administrateurs), sinon le
+# canal a été repris par un autre programme entre-temps.
+function New-Tuyau([switch]$Premier) {
+    if ($Premier) { return [AideTuyau]::Premier($NomTuyau, $secu.GetSecurityDescriptorBinaryForm(), 32, 65536) }
+    $t = New-Object System.IO.Pipes.NamedPipeServerStream($NomTuyau, [System.IO.Pipes.PipeDirection]::InOut, 32,
         [System.IO.Pipes.PipeTransmissionMode]::Byte, [System.IO.Pipes.PipeOptions]::Asynchronous, 65536, 65536, $secu)
+    if ($admin) {
+        $o = $null
+        try { $o = $t.GetAccessControl().GetOwner([Security.Principal.SecurityIdentifier]) } catch {}
+        if (-not $o -or $o.Value -ne $createur.Value) { $t.Dispose(); $script:TuyauVole = $true; throw "canal repris par un autre programme (propriétaire $o)" }
+    }
+    $t
 }
 
 # Canal suivant, ou $null quand toutes les connexions sont prises (demandes lentes qui s'entassent) : l'Aide ne s'arrête
 # pas pour autant, elle réessaie dès qu'une demande se termine (sinon PresentMon et la trace réseau seraient coupés)
 $script:TuyauxPris = $false
+$script:TuyauVole = $false
 function New-TuyauSuivant {
     try {
         $t = New-Tuyau
         if ($script:TuyauxPris) { $script:TuyauxPris = $false; Write-AideLog 'Connexions libérées, l''Aide écoute de nouveau' }
         $t
     } catch {
-        if (-not $script:TuyauxPris) { $script:TuyauxPris = $true; Write-AideLog "Toutes les connexions sont prises, nouvel essai dans un instant ($($_.Exception.Message))" }
+        if ($script:TuyauVole) { Write-AideLog "Canal repris par un autre programme, l'Aide s'arrête ($($_.Exception.Message))" }
+        elseif (-not $script:TuyauxPris) { $script:TuyauxPris = $true; Write-AideLog "Toutes les connexions sont prises, nouvel essai dans un instant ($($_.Exception.Message))" }
         $null
     }
 }
@@ -337,7 +370,7 @@ function Test-NevermindOuvert {
     $false
 }
 
-try { $tuyau = New-Tuyau }
+try { $tuyau = New-Tuyau -Premier }
 catch {
     # Canal déjà pris par un autre programme : l'Aide ne s'en sert pas
     Write-AideLog "Canal déjà utilisé par un autre programme, l'Aide s'arrête ($($_.Exception.Message))"
@@ -358,6 +391,7 @@ try {
             try { [void]$j.PS.EndInvoke($j.H) } catch { Write-AideLog "Demande : $($_.Exception.Message)" }
             $j.PS.Dispose(); [void]$enCours.Remove($j)
         }
+        if ($script:TuyauVole) { break }
         if (-not $pret) {
             if (-not $tuyau) {
                 $tuyau = New-TuyauSuivant

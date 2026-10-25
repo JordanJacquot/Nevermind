@@ -40,6 +40,8 @@ function Get-ProtectionStatus {
         Mp = $d.Mp; OtherAv = @($d.OtherAv); FirewallOff = $off; Firewall = -not $off.Count
         Uac = (Get-RegValue 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'EnableLUA') -ne 0
         Exclusions = @($d.Exclusions); Active = @($d.Active); Threats = @($d.Threats); Detections = @($d.Detections)
+        # (nombre d'exclusions lu par l'Aide, sans leurs chemins : 0 si Nevermind voit lui-même la liste)
+        ExclusionsNombre = $(if ($d.ExclusionsNombre -gt @($d.Exclusions).Count) { [int]$d.ExclusionsNombre } else { 0 })
         Double = @($d.Double); Scripts = @($d.Scripts); Hidden = @($d.Hidden); SusStart = @($d.SusStart); Tasks = @($d.Tasks)
     }
 }
@@ -52,7 +54,7 @@ function Get-ProtectionScore($S, [array]$Checks) {
     if (($mp -and $mp.AntivirusSignatureAge -le 3) -or ($S.OtherAv.Count -and -not ($mp -and $mp.AMRunningMode -eq 'Normal'))) { $score += 15 }
     if ($S.Firewall) { $score += 15 }
     if ($S.Uac) { $score += 10 }
-    if (-not $S.Exclusions.Count) { $score += 10 }
+    if (-not $S.Exclusions.Count -and -not $S.ExclusionsNombre) { $score += 10 }
     if ($mp -and $mp.QuickScanAge -le 14) { $score += 10 } elseif ($S.OtherAv.Count) { $score += 10 }
     if (-not $S.Active.Count) { $score += 10 }
     foreach ($c in $Checks) { if ($c.Status -eq 'bad') { $score -= 10 } elseif ($c.Status -eq 'warn') { $score -= 3 } }
@@ -124,6 +126,16 @@ function Get-SecurityChecks($S) {
             Items = @($trust | ForEach-Object { $_.Text }); Trust = $trust
             Actions = @(@{ Label = 'Retirer les exclusions'; Confirm = 'Retirer ces exclusions de Microsoft Defender ? Ces éléments seront de nouveau analysés. Ce changement protège ton PC : « Tout restaurer » ne l''annulera pas (la façon de revenir en arrière est notée dans l''historique).'; Arg = $excl
                            Script = { param($a) [void](Invoke-Aide 'antivirus.retirer-exclusions' @{ Elements = @($a) }); Add-ChangementDefinitif 'Exclusions de l''antivirus retirées' "Exclusions retirées : $(@($a) -join ', ')" 'Sécurité Windows, Protection contre les virus et menaces, « Gérer les paramètres », Exclusions : ajouter de nouveau l''élément.' } }) })
+    }
+    # Sans droits : l'Aide ne donne que leur nombre (leurs chemins diraient où un virus échapperait à l'antivirus). On
+    # les regarde dans Sécurité Windows. « Je les connais » vaut pour ce nombre-là : une exclusion de plus se revoit.
+    $nbExcl = [int]$S.ExclusionsNombre
+    if (-not $excl.Count -and $nbExcl -gt 0 -and -not $trusted["exclusions|$nbExcl"]) {
+        $trust = @(New-TrustEntry 'Exclusions de l''antivirus' "exclusions|$nbExcl" "$nbExcl exclusion$(if ($nbExcl -gt 1) {'s'}) de l'antivirus")
+        [void]$list.Add(@{ Status = 'warn'; Title = "$nbExcl élément$(if ($nbExcl -gt 1) {'s'}) exclu$(if ($nbExcl -gt 1) {'s'}) de l'antivirus"
+            Detail = 'Ces dossiers ou programmes ne sont jamais analysés. Si tu ne les as pas ajoutés toi-même (ou un jeu que tu connais), c''est suspect : les virus s''ajoutent souvent eux-mêmes en exclusion. Regarde-les dans Sécurité Windows, Protection contre les virus et menaces, « Gérer les paramètres », Exclusions.'
+            Trust = $trust
+            Actions = @(@{ Label = 'Voir les exclusions'; NoRefresh = $true; Script = { Open-Url 'windowsdefender://threatsettings' } }) })
     }
 
     # Pare-feu et contrôle des comptes

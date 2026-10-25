@@ -328,8 +328,21 @@ $AppExe = Join-Path (Split-Path $PSScriptRoot -Parent) 'Mindset.exe'
 # définitifs qui protègent le PC) et retire l'Aide.
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($Uninstall -and -not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    # (audit du 25/10, constat 15) Le PowerShell élevé reçoit les variables du compte : une variable que .NET lit au
+    # démarrage (COR_*, COMPlus_*...), posée par un programme sans droits, lui ferait charger un fichier choisi.
+    # Présente : pas de demande de Windows (même règle et même liste que Get-VariablesDangereuses, modules\aide-client.ps1).
+    # Et powershell.exe est pris dans le dossier de Windows, jamais cherché ailleurs.
+    $noms = @([Environment]::GetEnvironmentVariables().Keys | ForEach-Object { [string]$_ })
+    try { $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment'); if ($k) { try { $noms += $k.GetValueNames() } finally { $k.Close() } } } catch {}
+    $danger = @($noms | Where-Object { $_ -match '^(COR_|COMPlus_|CORECLR_|DOTNET_STARTUP_HOOKS$|DOTNET_ADDITIONAL_DEPS$|DOTNET_SHARED_STORE$)' } | Sort-Object -Unique)
+    if ($danger.Count) {
+        [System.Windows.MessageBox]::Show(
+            "Par prudence, la désinstallation ne demande pas les droits administrateur : un réglage caché de ton compte Windows ($($danger[0])) pourrait faire lancer un autre programme avec ces droits.`n`nLance une analyse antivirus, puis désinstalle Nevermind depuis Mindset.",
+            'Nevermind', 'OK', 'Warning') | Out-Null
+        exit
+    }
     try {
-        Start-Process -FilePath 'powershell.exe' -Verb RunAs -ErrorAction Stop -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"", '-Uninstall') + @(if ($GarderDonnees -or $env:NEVERMIND_DONNEES -eq 'garder') { '-GarderDonnees' }) + @(if ($SupprimerDonnees -or $env:NEVERMIND_DONNEES -eq 'supprimer') { '-SupprimerDonnees' })
+        Start-Process -FilePath ([IO.Path]::Combine([Environment]::GetFolderPath('System'), 'WindowsPowerShell\v1.0\powershell.exe')) -Verb RunAs -ErrorAction Stop -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$PSCommandPath`"", '-Uninstall') + @(if ($GarderDonnees -or $env:NEVERMIND_DONNEES -eq 'garder') { '-GarderDonnees' }) + @(if ($SupprimerDonnees -or $env:NEVERMIND_DONNEES -eq 'supprimer') { '-SupprimerDonnees' })
     } catch {
         [System.Windows.MessageBox]::Show(
             "La désinstallation de Nevermind a besoin des droits administrateur pour remettre les réglages de Windows comme avant.`n`nRelance-la et clique sur « Oui » quand Windows le demande.",
@@ -465,7 +478,7 @@ if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
     # Relancé pendant qu'il était caché près de l'horloge (thème changé dans Mindset) : il y retourne
     $relArgs = @(if ($script:RelaunchHidden -or $Managed) { '-Demarrage' })   # (géré par Mindset : relancé caché, Mindset le raccroche)
     if ($relExe) { if ($relArgs) { Start-Process -FilePath $relExe -ArgumentList $relArgs } else { Start-Process -FilePath $relExe } }
-    else { Start-Process -FilePath 'powershell.exe' -ArgumentList (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"") + $relArgs) }
+    else { Start-Process -FilePath ([IO.Path]::Combine([Environment]::GetFolderPath('System'), 'WindowsPowerShell\v1.0\powershell.exe')) -ArgumentList (@('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$script:Relaunch`"") + $relArgs) }
 }
 # Fin de Nevermind : le verrou est rendu tout de suite (Mindset peut rouvrir Nevermind sans attendre la fin du processus),
 # et les groupes de fils de fond sont fermés : ouverts, ils gardaient le programme en vie sans fenêtre après la fermeture.

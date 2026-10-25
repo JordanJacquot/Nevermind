@@ -72,7 +72,7 @@ $Gardees = [ordered]@{
     'Nevermind/fichiers/modules/tests.ps1'         = @(1, 'ancien fichier temporaire du test du disque, effacé')
     'outils/essai-aide-reelle.ps1'                 = @(36, 'essai en vrai : anciennes Releases, Mindset 2.12.0, zip de compatibilité')
     'outils/lanceur.cs'                            = @(4, 'ancien dossier de données ; script à l''ancien nom')
-    'outils/publier.ps1'                           = @(6, 'publie aussi le zip de compatibilité')
+    'outils/publier.ps1'                           = @(7, 'publie aussi le zip de compatibilité, et vérifie son contenu')
     'outils/test-app.ps1'                          = @(5, 'test : aucun « OptiGame » affiché ; règle à l''ancien nom ; ancien dossier de données')
     'outils/tester-aide-systeme.ps1'               = @(4, 'contre-épreuves : fichiers de versions d''avant, relus dans git sous leur ancien chemin')
     'outils/tester-aide.ps1'                       = @(1, 'règle du pare-feu à l''ancien nom')
@@ -184,6 +184,9 @@ try {
     foreach ($f in 'fichiers\NevermindAide.ps1', 'fichiers\modules\systeme.ps1', 'fichiers\Nevermind.ico', 'Mindset.exe', 'Nevermind.exe', 'NevermindAide.exe', 'Désinstaller Nevermind.exe', 'LISEZMOI.txt') {
         [IO.File]::WriteAllText((Join-Path $app $f), $f)
     }
+    # Fichiers ignorés par git qui traînent dans le dossier (audit du 25/10, constat 24) : jamais dans les zips
+    $ignores = @('aide-temp\compile.tmp', 'fichiers\Thème-Essai\pack.json', 'fichiers\modules\brouillon-pas-commite.ps1')
+    foreach ($f in $ignores) { [void][IO.Directory]::CreateDirectory((Split-Path (Join-Path $app $f) -Parent)); [IO.File]::WriteAllText((Join-Path $app $f), 'ignoré') }
     $sortieZips = Join-Path $bac 'zips'
     $zips = @(& (Join-Path $PSScriptRoot 'zips.ps1') -Dossier $app -Sortie $sortieZips)
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -201,6 +204,8 @@ try {
     Test-Ok (-not @($en | Where-Object { $_ -notlike 'Nevermind/*' }).Count -and $en -contains 'Nevermind/fichiers/Nevermind.ps1' -and $en -notcontains 'Nevermind/fichiers/OptiGame.ps1') 'Nevermind.zip : dossier Nevermind, script fichiers\Nevermind.ps1 seul'
     Test-Ok (-not @($eo | Where-Object { $_ -notlike 'OptiGame/*' }).Count -and $eo -contains 'OptiGame/fichiers/OptiGame.ps1' -and $eo -notcontains 'OptiGame/fichiers/Nevermind.ps1') 'OptiGame.zip (compatibilité) : dossier OptiGame, script fichiers\OptiGame.ps1 seul (ce que cherchent les Mindset 2.12.0 et plus anciens)'
     Test-Ok ($eo -contains 'OptiGame/Nevermind.exe' -and $eo -contains 'OptiGame/NevermindAide.exe' -and $eo.Count -eq $en.Count) 'OptiGame.zip : le même contenu (programmes compris)'
+    $enTrop = @($en + $eo | Where-Object { $_ -match '/(aide-temp|fichiers/Thème-Essai)/|brouillon-pas-commite' })
+    Test-Ok (-not $enTrop.Count -and $en.Count -eq 9) "Zips : des fichiers ignorés par git sont dans les zips ($($enTrop -join ', ') ; $($en.Count) fichiers au lieu de 9)"
     Test-Ok ((Get-TexteEntree $zo 'OptiGame/fichiers/OptiGame.ps1') -eq (Get-TexteEntree $zn 'Nevermind/fichiers/Nevermind.ps1') -and (Get-TexteEntree $zo 'OptiGame/fichiers/OptiGame.ps1') -match "AppVersion = '9\.8\.7'") 'OptiGame.zip : le script est le même (version lisible par les anciens Mindset), seul son nom change'
     # Contre-épreuve : un dossier avec les deux scripts est refusé (deux scripts principaux)
     [IO.File]::WriteAllText((Join-Path $app 'fichiers\OptiGame.ps1'), '# ancien')

@@ -279,8 +279,9 @@ $ui.BtnUndo.Add_Click({ Invoke-Safe { Invoke-UndoAll } })
 $ui.BtnRestorePoint.Add_Click({
     Invoke-Safe {
         Set-Busy $true
-        $r = try { [void](Invoke-Aide 'restauration.creer' @{ Description = 'Nevermind (manuel)' } 600000); 'OK' } catch { $_.Exception.Message }
+        $r = try { if ([string](Invoke-Aide 'restauration.creer' @{ Description = 'Nevermind (manuel)' } 600000) -eq 'recent') { 'RECENT' } else { 'OK' } } catch { $_.Exception.Message }
         if ("$r" -eq 'OK') { Set-Status 'Point de restauration créé.'; Show-Message 'Point de restauration créé.' }
+        elseif ("$r" -eq 'RECENT') { Set-Status 'Point de restauration déjà fait aujourd''hui.'; Show-Message 'Un point de restauration a déjà été créé il y a moins de 24 h : il est toujours là, et Nevermind n''en crée qu''un par jour.' }
         else { Show-Message "Impossible de créer le point de restauration:`n`n$r`n`nLa protection du système est peut-être désactivée (Panneau de configuration > Système > Protection du système)." 'Warning' }
     }
 })

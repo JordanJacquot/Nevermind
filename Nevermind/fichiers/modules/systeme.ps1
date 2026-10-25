@@ -26,15 +26,12 @@ $CleanTargets = @(
        Desc = 'Restes laissés par tes programmes et les installations. Ce qui a moins de 24 h ou sert encore est gardé.' },
     @{ Id = 'claude'; Titre = 'Fichiers de travail de Claude'; Paths = @("$env:TEMP\claude"); Default = $false; Warn = $true; Optional = $true
        Desc = 'Captures, scripts et téléchargements des discussions Claude Code. Tes discussions ne sont pas effacées, mais une discussion en cours peut encore en avoir besoin : garde-les si tu travailles avec Claude.' },
-    # Dossiers de Windows : lus et vidés par l'Aide, qui a sa propre liste de dossiers (aide-actions.ps1, $AideNettoyage)
-    @{ Id = 'wintemp'; Titre = 'Fichiers temporaires de Windows'; Paths = $AideNettoyage['wintemp']; Aide = $true
-       Desc = 'Restes laissés par Windows et les programmes installés pour tout le PC.' },
+    # Dossiers de Windows : lus et vidés par l'Aide, qui a sa propre liste de dossiers (aide-actions.ps1, $AideNettoyage).
+    # (plus les fichiers temporaires de Windows ni les rapports d'erreurs : Windows les vide lui-même, voir $AideNettoyage)
     @{ Id = 'wu'; Titre = 'Mises à jour Windows déjà installées'; Paths = $AideNettoyage['wu']; Aide = $true
        Desc = 'Fichiers téléchargés par Windows Update, inutiles une fois les mises à jour installées.' },
     @{ Id = 'do'; Titre = 'Partage des mises à jour'; Paths = $AideNettoyage['do']; Aide = $true
        Desc = 'Morceaux de mises à jour que Windows garde pour les partager avec d''autres PC. Windows les retélécharge au besoin.' },
-    @{ Id = 'wer'; Titre = 'Rapports d''erreurs'; Paths = $AideNettoyage['wer']; Aide = $true
-       Desc = 'Rapports créés quand une appli plante, déjà envoyés ou inutiles.' },
     @{ Id = 'dump'; Titre = 'Rapports d''écran bleu'; Paths = $AideNettoyage['dump']; Aide = $true
        Desc = 'Créés lors d''un écran bleu. Utiles seulement pour comprendre un écran bleu récent.' }
 )

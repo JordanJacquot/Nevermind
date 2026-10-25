@@ -18,7 +18,9 @@
 #   7. « Fermer » sur de fausses données : qui a un bouton (chaque catégorie interdite et sa contre-épreuve, le doute,
 #      l'appli entière), la règle commune avec l'Aide, la page, le déroulé (confirmation, question, ne répond plus, rangée) ;
 #   8. la fermeture pour de vrai de programmes d'essai compilés ici (fenêtres hors de l'écran, jamais un programme de
-#      l'utilisateur) : polie, forcée, numéro repris refusé, règle relue au moment de fermer.
+#      l'utilisateur) : polie, forcée, numéro repris refusé, règle relue au moment de fermer ;
+#   9. « Fermer <programme> » (diagnostic des FPS), le blocage dans Trafic et le mode jeu : la même règle, le nom exact
+#      (un motif comme « x* » ne ferme rien), un programme de l'antivirus refusé (audit du 25/10, constat 17).
 # Code de sortie : 0 si tout passe, 1 sinon.
 
 $ErrorActionPreference = 'Stop'
@@ -726,6 +728,61 @@ try {
     try { [NmFermeture]::Relacher() } catch {}
     foreach ($x in @(try { [IO.Directory]::GetFiles($tmpFermer) } catch { })) { try { [IO.File]::Delete($x) } catch {} }
     try { [IO.Directory]::Delete($tmpFermer) } catch {}
+}
+
+# ---------------------------------------------------------------------------
+# 9. Audit du 25/10 (constat 17) : « Fermer <programme> » (diagnostic des FPS), le blocage dans Trafic et le mode jeu
+#    passent par la règle commune, avec le nom EXACT du programme. Programmes d'essai compilés ici (rien d'autre n'est
+#    fermé : ils ont des noms qu'aucun programme du PC ne porte).
+# ---------------------------------------------------------------------------
+$astClient = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $modules 'aide-client.ps1'), [ref]$null, [ref]$null)
+foreach ($n in 'Stop-ProcessusRegle', 'Stop-ProgrammeNom', 'Stop-ProgrammeChemin') {
+    $def = $astClient.Find({ param($x) $x -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $n }, $true)
+    if ($def) { . ([scriptblock]::Create($def.Extent.Text)) } else { Test-Ok $false "aide-client.ps1 : $n introuvable" }
+}
+# (seulement nos programmes d'essai : la liste des processus est filtrée sur leurs noms ; l'Aide n'est jamais appelée)
+function script:Get-Process { [Diagnostics.Process]::GetProcesses() | Where-Object { $_.ProcessName -like 'nmfauxfermer*' } }
+$script:AppelsAideFermer = New-Object System.Collections.Generic.List[string]
+function script:Invoke-Aide([string]$Action, $P) { $script:AppelsAideFermer.Add("$Action $(ConvertTo-Json $P -Compress)") }
+function script:Get-AideContexte { @{ Antivirus = @(); Windows = $env:windir; ServicesPid = [Collections.Generic.HashSet[int]]::new() } }
+$tmpNom = Join-Path $env:TEMP "nmfn-$PID"
+$fauxFermer = @{}
+try {
+    foreach ($d in 'Windows Defender', 'autre', 'a', 'b') { [void][IO.Directory]::CreateDirectory((Join-Path $tmpNom $d)) }
+    $dort = Join-Path $tmpNom 'dort.exe'
+    Add-Type -TypeDefinition 'public static class NmDort { public static void Main() { System.Threading.Thread.Sleep(90000); } }' -OutputAssembly $dort -OutputType WindowsApplication
+    $places = [ordered]@{ av = 'Windows Defender\nmfauxfermer1.exe'; ord = 'autre\nmfauxfermer2.exe'; a = 'a\nmfauxfermer3.exe'; b = 'b\nmfauxfermer3.exe' }
+    foreach ($k in $places.Keys) {
+        $exe = Join-Path $tmpNom $places[$k]; [IO.File]::Copy($dort, $exe, $true)
+        $psi = New-Object Diagnostics.ProcessStartInfo($exe); $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true
+        $fauxFermer[$k] = [Diagnostics.Process]::Start($psi)
+    }
+    Start-Sleep -Milliseconds 500
+    # Un motif n'est pas un nom : rien n'est fermé
+    Stop-ProgrammeNom 'nmfauxfermer*'
+    Start-Sleep -Milliseconds 300
+    Test-Ok (-not @($fauxFermer.Values | Where-Object { $_.HasExited }).Count) 'Fermer par nom : « nmfauxfermer* » est pris pour un motif (des programmes sont fermés)'
+    # Le programme dans un dossier « Windows Defender » : refusé par la règle commune
+    $refus = ''
+    try { Stop-ProgrammeNom 'nmfauxfermer1' } catch { $refus = $_.Exception.Message }
+    Start-Sleep -Milliseconds 300
+    Test-Ok (-not $fauxFermer.av.HasExited -and $refus -match 'antivirus') "Fermer par nom : un programme de l'antivirus n'est pas refusé (fermé : $($fauxFermer.av.HasExited), message : $refus)"
+    # Contre-épreuve : un programme ordinaire, par son nom exact
+    Stop-ProgrammeNom 'nmfauxfermer2'
+    Test-Ok ($fauxFermer.ord.WaitForExit(3000)) 'Fermer par nom : un programme ordinaire n''est pas fermé'
+    # Par chemin (blocage dans Trafic) : seulement ce programme-là, pas son homonyme d'un autre dossier
+    Stop-ProgrammeChemin (Join-Path $tmpNom $places.a)
+    Test-Ok ($fauxFermer.a.WaitForExit(3000) -and -not $fauxFermer.b.HasExited) 'Fermer par chemin : l''homonyme d''un autre dossier est fermé aussi (ou le bon ne l''est pas)'
+    Test-Ok (-not $script:AppelsAideFermer.Count) "Fermer : l'Aide est appelée pour des programmes de l'utilisateur ($($script:AppelsAideFermer -join ' | '))"
+    # Le mode jeu et les deux boutons n'ont plus de Kill() sans la règle
+    $texteJeu = [IO.File]::ReadAllText((Join-Path $modules 'jeu.ps1'))
+    Test-Ok ($texteJeu -match '(?s)function Start-GameSession\b.*?Stop-ProcessusRegle' -and $texteJeu -notmatch '(?s)function Start-GameSession\b[^}]*\.Kill\(\)') 'Mode jeu : les applis sont fermées sans la règle commune'
+} catch {
+    Test-Ok $false "Essai de fermeture par nom : erreur $($_.Exception.Message)"
+} finally {
+    foreach ($e in $fauxFermer.Values) { try { if (-not $e.HasExited) { $e.Kill() } } catch {}; try { [void]$e.WaitForExit(3000); $e.Dispose() } catch {} }   # (seulement nos programmes d'essai)
+    Start-Sleep -Milliseconds 300
+    try { [IO.Directory]::Delete($tmpNom, $true) } catch {}
 }
 # ---------------------------------------------------------------------------
 # Résultat

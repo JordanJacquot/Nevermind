@@ -7,9 +7,11 @@
 #      secours (.bak) ; à la lecture (Read-JsonSur), un fichier abîmé est mis de côté et noté au journal, sa copie de
 #      secours reprise ; un fichier pris par un autre programme n'est jamais réécrit ;
 #   2. les préférences (Get-Setting) : un parametres.json abîmé ne fait pas perdre SvcOriginal (de quoi remettre les
-#      services comme avant) ;
+#      services comme avant) ; un état d'origine qui n'a pas pu être écrit (préférences ou sauvegarde.json pris par un
+#      autre programme) : rien n'est changé (audit du 25/10, 25b) ;
 #   3. « Tout restaurer » avec une Aide administrateur qui ne répond pas : la sauvegarde garde ce qui n'a pas pu être
 #      remis, seules les entrées vraiment remises de l'historique sont marquées annulées, et « Réessayer » finit le travail ;
+#      Puis les couleurs d'un pack de thème : seulement « #RRGGBB », sinon le thème de base (audit du 25/10, constat 7) ;
 #   4. les minuteries importantes (ordres de Mindset, thème de la suite, attente, écran) sont protégées de l'intérieur.
 # Le code de Nevermind n'est pas chargé en entier : seules les fonctions utiles sont lues dans les modules, et tout ce qui
 # pourrait toucher au PC (registre, Aide, services, alimentation) est remplacé par une fausse version.
@@ -60,7 +62,7 @@ function script:Update-HistoryList { }
 # Lecture des fonctions utiles dans les modules (rien ne se lance au chargement)
 # ---------------------------------------------------------------------------
 $asts = @{}
-foreach ($f in 'donnees', 'systeme', 'assistance', 'evenements', 'interface', 'accueil-console') {
+foreach ($f in 'donnees', 'systeme', 'assistance', 'evenements', 'interface', 'accueil-console', 'microsoft') {
     $tok = $null; $err = $null
     $asts[$f] = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $modules "$f.ps1"), [ref]$tok, [ref]$err)
     if ($err) { Write-Host "$f.ps1 n'est pas lisible : $($err[0].Message)" -ForegroundColor Red; exit 1 }
@@ -71,7 +73,9 @@ function Import-Fonction([string]$Fichier, [string]$Nom) {
     Invoke-Expression ($a.Extent.Text -replace "^function\s+$([regex]::Escape($Nom))", "function script:$Nom")
 }
 foreach ($n in 'Save-TexteSur', 'Save-JsonSur', 'Read-JsonSur', 'Get-Setting', 'Set-Setting', 'Get-CleRegNormale', 'Read-FichierSauvegarde',
-               'Import-Backup', 'Save-Backup', 'Test-RegUtilisateur') { Import-Fonction 'donnees' $n }
+               'Import-Backup', 'Save-Backup', 'Test-RegUtilisateur', 'Save-Original', 'Save-BackupOuOublier') { Import-Fonction 'donnees' $n }
+Import-Fonction 'microsoft' 'Set-ServiceOff'
+function script:Get-Service { [pscustomobject]@{ Name = 'DiagTrack'; StartType = 'Automatic'; Status = 'Running' } }   # (faux service : rien n'est lu)
 foreach ($n in 'Restore-AllSettings', 'Test-HistoriqueRemis') { Import-Fonction 'systeme' $n }
 foreach ($n in 'Set-HistoryAllUndone', 'Test-HistoriqueDefinitif', 'Test-HistoriqueNote') { Import-Fonction 'assistance' $n }
 
@@ -147,6 +151,47 @@ try {
     Test-Ok (@(Get-Setting 'SvcOriginal' @()).Count -eq 1 -and (Get-Setting 'Visite') -eq $true) 'Préférences abîmées : l''enregistrement suivant ne perd rien'
 
     # -----------------------------------------------------------------------
+    # 2 bis. Audit du 25/10 (25b) : l'état d'origine doit être écrit AVANT le changement, sinon rien ne change
+    # -----------------------------------------------------------------------
+    # Préférences prises par un autre programme au lancement : le service n'est pas coupé (son origine serait perdue)
+    $SettingsFile = Join-Path $script:Bac 'parametres-bloque.json'
+    $script:Settings = $null
+    Set-Setting 'Theme' 'nuit'
+    $script:Settings = $null
+    $script:AideRepond = $true; $script:AideAppels.Clear()
+    $verrou = [IO.File]::Open($SettingsFile, 'Open', 'ReadWrite', 'None')
+    try {
+        $refuse = $false
+        try { Set-ServiceOff 'DiagTrack' } catch { $refuse = $_.Exception.Message -match 'rien n''a été changé' }
+    } finally { $verrou.Close() }
+    Test-Ok ($refuse -and -not ($script:AideAppels -contains 'service.regler')) "Préférences bloquées : le service est coupé sans que son état d'origine soit noté (refus : $refuse, demandes : $($script:AideAppels -join ', '))"
+    Test-Ok (-not @(Get-Setting 'SvcOriginal' @()).Count) 'Préférences bloquées : une origine pas écrite reste en mémoire'
+    # Contre-épreuve : fichier libre, l'origine est notée puis le service coupé
+    $script:Settings = $null; $script:JsonBloques = @{}; $script:AideAppels.Clear()
+    Set-ServiceOff 'DiagTrack'
+    $script:Settings = $null
+    Test-Ok (@(Get-Setting 'SvcOriginal' @()).Count -eq 1 -and ($script:AideAppels -contains 'service.regler')) 'Préférences libres : origine du service notée, puis service coupé'
+
+    # sauvegarde.json impossible à écrire (disque plein, fichier pris) : l'origine d'un réglage n'est pas gardée en
+    # mémoire comme si elle était écrite (au 2e essai, le réglage changeait sans sauvegarde)
+    $script:DataDir = $script:Bac
+    $BackupFile = Join-Path $script:Bac 'sauvegarde-pleine.json'
+    $script:Backup = @{ Registry = @{}; PowerScheme = $null; CreatedScheme = $null; Overlay = $null; Dns = @{}; Displays = @{}; Oublies = @() }
+    $cleEssai = "HKLM:\SOFTWARE\Policies\NevermindTest-$([guid]::NewGuid().ToString('N'))"   # (n'existe pas : rien n'est lu)
+    Save-Backup
+    $verrou = [IO.File]::Open($BackupFile, 'Open', 'ReadWrite', 'None')
+    try {
+        $refuse = $false
+        try { Save-Original $cleEssai 'X' } catch { $refuse = $true }
+        $refuse2 = $false
+        try { Save-Original $cleEssai 'X' } catch { $refuse2 = $true }
+    } finally { $verrou.Close() }
+    Test-Ok ($refuse -and $refuse2 -and -not $script:Backup.Registry.ContainsKey("$cleEssai|X")) "Sauvegarde impossible à écrire : l'origine du réglage est gardée en mémoire et le 2e essai passe (refus : $refuse / $refuse2)"
+    Save-Original $cleEssai 'X'
+    $j = Get-Content -LiteralPath $BackupFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    Test-Ok ([bool]$j.Registry.PSObject.Properties["$cleEssai|X"]) 'Sauvegarde libre : l''origine du réglage est écrite'
+
+    # -----------------------------------------------------------------------
     # 3. « Tout restaurer » avec une Aide qui ne répond pas
     # -----------------------------------------------------------------------
     $script:DataDir = $script:Bac
@@ -196,6 +241,34 @@ try {
     $annules = @($script:History | Where-Object { $_.Annule } | ForEach-Object { $_.Id })
     Test-Ok (($annules -join ',') -eq 'moi,pc,svc,dns') "Réessayer : tout l'historique est annulé, sauf la protection définitive (marqués : $($annules -join ', '))"
     Test-Ok ($script:AideAppels -contains 'origines.oublier') 'Réessayer : les copies d''origine gardées par l''Aide sont oubliées'
+
+    # -----------------------------------------------------------------------
+    # 3 bis. Audit du 25/10 (constat 7) : les couleurs d'un pack de thème, collées dans la fenêtre, sont vérifiées
+    # -----------------------------------------------------------------------
+    $astThemes = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $modules 'themes.ps1'), [ref]$null, [ref]$null)
+    foreach ($n in 'Test-CouleursPack', 'Get-ThemePack', 'Get-ThemePackConsole') {
+        $def = $astThemes.Find({ param($x) $x -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $n }, $false)
+        if ($def) { Invoke-Expression ($def.Extent.Text -replace "^function\s+$([regex]::Escape($n))", "function script:$n") } else { Test-Ok $false "themes.ps1 : $n introuvable" }
+    }
+    $AppThemes = [ordered]@{ neon = @{ Name = 'Néon'; P = '#00E5FF'; S = '#B04BFF'; T = '#FF2EB5'; Map = @{} } }
+    $PacksDir = Join-Path $script:Bac 'packs'
+    $packs = [ordered]@{
+        bon      = '{"Name":"Bon","Colors":{"P":"#112233","S":"#445566","T":"#778899","Map":{"0C0920":"#101010"}}}'
+        rouge    = '{"Name":"Rouge","Colors":{"P":"red","S":"#445566","T":"#778899"}}'
+        court    = '{"Name":"Court","Colors":{"P":"#0F0","S":"#445566","T":"#778899"}}'
+        piege    = '{"Name":"Piège","Colors":{"P":"#112233\" Background=\"{x:Static x}\"><Grid","S":"#445566","T":"#778899"}}'
+        carte    = '{"Name":"Carte","Colors":{"P":"#112233","S":"#445566","T":"#778899","Map":{"0C0920":"101010\"/><Button"}}}'
+        nombre   = '{"Name":"Nombre","Colors":{"P":"#112233","S":"#445566","T":"#778899","NH":"beaucoup"}}'
+    }
+    foreach ($k in $packs.Keys) { $d = Join-Path $PacksDir $k; [void][IO.Directory]::CreateDirectory($d); [IO.File]::WriteAllText((Join-Path $d 'pack.json'), $packs[$k]) }
+    $script:Journal.Clear()
+    $lus = @{}
+    foreach ($k in $packs.Keys) { try { $lus[$k] = Get-ThemePack $k } catch { $lus[$k] = "erreur : $($_.Exception.Message)" } }
+    Test-Ok ($AppThemes.Contains('pack-bon') -and $lus.bon.Base -eq 'pack-bon') 'Pack de thème : des couleurs bien écrites ne sont pas prises'
+    foreach ($k in 'rouge', 'court', 'piege', 'carte', 'nombre') {
+        Test-Ok (-not $AppThemes.Contains("pack-$k") -and $lus[$k] -is [hashtable] -and $lus[$k].Base -eq 'neon') "Pack de thème « $k » : couleurs pas refusées, ou le pack n'est plus lisible ($(if ($lus[$k] -is [hashtable]) { $lus[$k].Base } else { $lus[$k] }))"
+    }
+    Test-Ok (@($script:Journal | Where-Object { $_ -match 'couleurs refusées' }).Count -eq 5) "Pack de thème : les couleurs refusées ne sont pas notées au journal ($(@($script:Journal) -join ' / '))"
 
     # -----------------------------------------------------------------------
     # 4. Minuteries importantes protégées de l'intérieur (un passage qui plante arrêterait la minuterie pour de bon)

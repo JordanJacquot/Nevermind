@@ -8,7 +8,7 @@
 # distance, couper le contrôle des comptes ou le pare-feu, ajouter une exclusion à l'antivirus, mettre un DNS inconnu,
 # bloquer Internet à l'antivirus ou à Windows Update.
 
-$AideVersion = 4   # (4 : l'Aide en SYSTEM, pour l'utilisateur inscrit dans sa tâche)
+$AideVersion = 5   # (4 : l'Aide en SYSTEM, pour l'utilisateur inscrit dans sa tâche ; 5 : demandes resserrées, audit du 25/10)
 # Santé d'un disque (Get-StorageReliabilityCounter) : les champs dont Nevermind se sert
 $AideChampsDisque = @('Temperature', 'TemperatureMax', 'Wear', 'PowerOnHours', 'StartStopCycleCount', 'ReadErrorsCorrected', 'ReadErrorsUncorrected',
                       'WriteErrorsUncorrected', 'ReadLatencyMax', 'WriteLatencyMax')
@@ -277,12 +277,13 @@ function Get-AideDnsOrigine([string]$Guid) {
 
 # ---------------------------------------------------------------------------
 # Nettoyage : les dossiers de Windows que seule l'Aide peut vider (jamais un chemin envoyé par Nevermind)
+# Seulement des dossiers où un utilisateur sans droits ne peut pas écrire : l'Aide efface par le chemin, et un dossier
+# remplacé par un lien entre la liste et l'effacement lui ferait effacer ailleurs. Les fichiers temporaires de Windows
+# (C:\Windows\Temp) et les rapports d'erreurs (WER) n'en font donc plus partie : Windows les vide lui-même.
 # ---------------------------------------------------------------------------
 $AideNettoyage = [ordered]@{
-    wintemp = @("$AideWindows\Temp")
     wu      = @("$AideWindows\SoftwareDistribution\Download")
     do      = @("$AideWindows\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache")
-    wer     = @("$AideDonneesCommunes\Microsoft\Windows\WER\ReportArchive", "$AideDonneesCommunes\Microsoft\Windows\WER\ReportQueue")
     dump    = @("$AideWindows\Minidump")
 }
 
@@ -621,6 +622,67 @@ function Get-AideRefusProcessus($Contexte, [int]$Client, [int]$Id, [string]$Chem
 }
 
 # ---------------------------------------------------------------------------
+# Ce que l'Aide refuse même à Nevermind (audit du 25/10, constat 8) : tout programme du compte peut lui parler, chaque
+# demande doit donc rester sûre venant d'un programme malveillant.
+# ---------------------------------------------------------------------------
+# Un programme lancé avec Windows qui protège le PC (Sécurité Windows, un antivirus inscrit au Centre de sécurité) :
+# l'Aide ne le coupe jamais au démarrage. $Cle : la clé StartupApproved (Run, Run32 ou StartupFolder) ; $Commande : la
+# commande de cette entrée, lue dans la clé Run de Windows ($null : lue ici). $Antivirus : programmes des antivirus.
+function Test-AideDemarrageSecurite([string]$Cle, [string]$Nom, $Commande, $Antivirus) {
+    if ($Nom -match '^(SecurityHealth|Windows ?Defender|Microsoft ?Defender|Windows Security|Sécurité Windows)' -or [IO.Path]::GetFileNameWithoutExtension($Nom) -match $AideExesWindows) { return $true }
+    if ($null -eq $Commande -and $Cle -match '\\(Run|Run32)$') {
+        $sous = if ($Matches[1] -eq 'Run32') { 'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run' } else { 'SOFTWARE\Microsoft\Windows\CurrentVersion\Run' }
+        try {
+            $base = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', 'Registry64')
+            try { $k = $base.OpenSubKey($sous); if ($k) { try { $Commande = [string]$k.GetValue($Nom, '', 'DoNotExpandEnvironmentNames') } finally { $k.Close() } } } finally { $base.Close() }
+        } catch {}
+    }
+    if (-not $Commande) { return $false }
+    $chemin = ConvertFrom-AideCheminWindows ([string]$Commande)
+    if (-not $chemin) { return $false }
+    if ([IO.Path]::GetFileName($chemin) -match $AideExesWindows -or $chemin -match '\\(Windows|Microsoft) Defender( Advanced Threat Protection)?\\') { return $true }
+    if ($null -eq $Antivirus) { $Antivirus = Get-AideAntivirus }
+    Test-AideAntivirus @{ Antivirus = $Antivirus } $chemin
+}
+
+# Points de restauration : un par 24 h au plus (de nombreux points chasseraient les anciens, ceux qui servent). $Derniere :
+# l'heure du dernier (UTC, en ticks ; 0 si aucun).
+$AideRestaurationCle = 'SOFTWARE\Mindset\Nevermind\Aide'
+function Test-AideRestaurationRecente([long]$Derniere, [datetime]$Maintenant = [DateTime]::UtcNow) {
+    if ($Derniere -le 0) { return $false }
+    $ecart = $Maintenant - [DateTime]::new($Derniere, [DateTimeKind]::Utc)
+    $ecart.TotalHours -lt 24 -and $ecart.TotalMinutes -gt -5   # (une heure dans le futur : horloge changée, pas un vrai point)
+}
+function Get-AideDerniereRestauration {
+    try {
+        $k = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($AideRestaurationCle)
+        if (-not $k) { return [long]0 }
+        try { $v = $k.GetValue('DerniereRestauration', $null) } finally { $k.Close() }
+        $t = [long]0
+        if ($null -ne $v -and [long]::TryParse([string]$v, [ref]$t)) { return $t }
+    } catch {}
+    [long]0
+}
+
+# Tâches planifiées : seulement celles qui tournent pour le compte qui demande (ou pour un groupe dont il fait partie
+# d'office), et celles des comptes du système. Jamais celles des autres comptes du PC.
+$AideComptesSysteme = @('S-1-5-18', 'S-1-5-19', 'S-1-5-20')
+$AideGroupesDeTous = @('S-1-1-0', 'S-1-5-4', 'S-1-5-11', 'S-1-5-32-545')
+function ConvertTo-AideSid([string]$Compte) {
+    $c = $Compte.Trim()
+    if (-not $c) { return '' }
+    if ($c -match '^S-1-[\d-]+$') { return $c }
+    try { (New-Object Security.Principal.NTAccount($c)).Translate([Security.Principal.SecurityIdentifier]).Value } catch { '' }
+}
+function Test-AideTacheDuCompte([string]$UserId, [string]$GroupId, [string]$Sid) {
+    if (-not $Sid) { return $false }
+    $u = ConvertTo-AideSid $UserId
+    if ($u) { return ($u -eq $Sid -or $AideComptesSysteme -contains $u) }
+    $g = ConvertTo-AideSid $GroupId
+    [bool]($g -and $AideGroupesDeTous -contains $g)
+}
+
+# ---------------------------------------------------------------------------
 # Les demandes
 # ---------------------------------------------------------------------------
 # -Verifier : contrôle la demande sans rien faire (tests automatiques). Renvoie un résultat simple (texte, nombre,
@@ -652,6 +714,10 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier, [int]$Client)
             $nom = [string](Get-AideParam $P 'Nom')
             $r = Get-AideRegle $cle $nom
             $v = ConvertTo-AideValeur $r (Get-AideParam $P 'Valeur') ([string](Get-AideParam $P 'Type'))
+            # (programmes lancés avec Windows : jamais Sécurité Windows ni un antivirus)
+            if ($r.NomMotif -and $cle -match '\\StartupApproved\\' -and (Test-AideDemarrageSecurite $cle $nom $null $null)) {
+                throw "Demande refusée : $nom protège ton PC (Sécurité Windows ou antivirus), l'Aide ne le coupe jamais au démarrage."
+            }
             if ($Verifier) { return 'ok' }
             Save-AideOrigine $cle $nom
             $k = Open-AideCle $cle $true
@@ -676,6 +742,9 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier, [int]$Client)
             if ($nom -notin @('DiagTrack') -and $nom -notmatch $AideServicesMemoire) { throw "Demande refusée : le service $nom n'est pas dans la liste de l'Aide." }
             $dem = [string](Get-AideParam $P 'Demarrage')
             if ($dem -notin @('Disabled', 'Manual', 'Automatic')) { throw "Demande refusée : type de démarrage $dem." }
+            # (« Désactivé » : seulement la télémétrie. Les services de la page RAM passent en « Manuel », jamais plus : un
+            # service de mise à jour désactivé couperait pour de bon les mises à jour du navigateur)
+            if ($dem -eq 'Disabled' -and $nom -ne 'DiagTrack') { throw "Demande refusée : l'Aide ne désactive pas $nom (seulement « Manuel »), ses mises à jour doivent continuer." }
             $lancer = [bool](Get-AideParam $P 'Lancer'); $arreter = [bool](Get-AideParam $P 'Arreter')
             if ($Verifier) { return 'ok' }
             Set-Service -Name $nom -StartupType $dem -ErrorAction Stop
@@ -777,7 +846,11 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier, [int]$Client)
             $desc = [string](Get-AideParam $P 'Description')
             if ($desc -notin @('Nevermind', 'Nevermind (manuel)')) { throw 'Demande refusée : description non valable.' }
             if ($Verifier) { return 'ok' }
+            # Un par 24 h au plus : déjà un de moins de 24 h, c'est lui qui sert (« recent »)
+            if (Test-AideRestaurationRecente (Get-AideDerniereRestauration)) { return 'recent' }
             Checkpoint-Computer -Description $desc -RestorePointType MODIFY_SETTINGS -ErrorAction Stop
+            $k = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey($AideRestaurationCle)
+            try { $k.SetValue('DerniereRestauration', [string][DateTime]::UtcNow.Ticks, 'String') } finally { $k.Close() }
             return 'ok'
         }
 
@@ -818,16 +891,18 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier, [int]$Client)
             return $r
         }
 
-        # Antivirus : exclusions, menaces connues et dernières détections
+        # Antivirus : nombre d'exclusions, menaces connues et dernières détections
         'lecture.securite' {
             if ($Verifier) { return 'ok' }
             # (DetectionsLues : $true seulement si Defender a bien rendu ses détections ; sinon une liste vide ne veut pas dire
             # « aucune menace », et Nevermind affiche « Résultat inconnu »)
-            $r = @{ Exclusions = @(); Menaces = @(); Detections = @(); DetectionsLues = $false }
+            # Exclusions : leur NOMBRE seulement, jamais les chemins. Windows les cache aux comptes sans droits : elles disent
+            # où un programme malveillant échapperait à l'antivirus. (-1 : pas lues)
+            $r = @{ ExclusionsNombre = -1; Menaces = @(); Detections = @(); DetectionsLues = $false }
             try { Import-AideModule ConfigDefender/Defender } catch {}   # (antivirus de Windows absent : listes vides)
             try {
                 $pref = Get-MpPreference -ErrorAction Stop
-                $r.Exclusions = @(@($pref.ExclusionPath) + @($pref.ExclusionProcess) + @($pref.ExclusionExtension) | Where-Object { $_ -and $_ -notmatch '^N/A' } | ForEach-Object { [string]$_ })
+                $r.ExclusionsNombre = @(@($pref.ExclusionPath) + @($pref.ExclusionProcess) + @($pref.ExclusionExtension) | Where-Object { $_ -and $_ -notmatch '^N/A' }).Count
             } catch {}
             try { $r.Menaces = @(Get-MpThreat -ErrorAction Stop | ForEach-Object { @{ ThreatID = [string]$_.ThreatID; ThreatName = [string]$_.ThreatName; SeverityID = [int]$_.SeverityID; IsActive = [bool]$_.IsActive } }) } catch {}
             try {
@@ -912,10 +987,17 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier, [int]$Client)
         }
 
         # Tâches planifiées (hors Microsoft, actives) : sans droits, Windows peut en cacher. Nom, dossier, programme, arguments.
+        # Seulement celles du compte qui demande et des comptes du système (Test-AideTacheDuCompte), jamais celles des
+        # autres comptes du PC.
         'lecture.taches' {
             if ($Verifier) { return 'ok' }
+            if ($Client -le 0) { throw 'Demande refusée : programme qui fait la demande inconnu.' }
+            Initialize-AideProcessus
+            $sidClient = [AideProcessus]::Compte($Client)
+            if (-not $sidClient) { throw 'Demande refusée : compte du programme qui fait la demande illisible.' }
             Import-AideModule ScheduledTasks
             return , @(foreach ($t in @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Microsoft\*' -and $_.State -ne 'Disabled' })) {
+                if (-not (Test-AideTacheDuCompte ([string]$t.Principal.UserId) ([string]$t.Principal.GroupId) $sidClient)) { continue }
                 foreach ($act in @($t.Actions)) { @{ Nom = [string]$t.TaskName; Chemin = [string]$t.TaskPath; Exe = [string]$act.Execute; Args = [string]$act.Arguments } }
             })
         }
