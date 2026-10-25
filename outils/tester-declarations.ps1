@@ -390,7 +390,7 @@ foreach ($nom in $cas.Keys) {
 # La page RAM (memoire.ps1) : sur un faux PC où Edge et Chrome se lancent en avance (jamais touchés) et où un service de mise à jour
 # démarre avec Windows, ce que « Couper ce qui est sûr » écrit est exactement ce qu'il déclare, et chaque changement est
 # montré avant (une ligne par changement) puis noté pour l'historique
-foreach ($n in 'Get-ConstatMemoire', 'Get-AppliMemoire', 'Get-SeuilsPilotes', 'Get-GenrePilote', 'Get-ChangementsMemoire', 'Get-OrigineMemoire') {
+foreach ($n in 'Get-ConstatMemoire', 'Get-AppliMemoire', 'Get-SeuilsPilotes', 'Get-GenrePilote', 'Get-ChangementsMemoire', 'Get-OrigineMemoire', 'Test-JeuMemoire') {
     $def = Get-FonctionAst 'memoire' $n
     if (-not $def) { $echecs.Add("Fonction $n introuvable dans memoire.ps1"); continue }
     . ([scriptblock]::Create($def.Extent.Text))
