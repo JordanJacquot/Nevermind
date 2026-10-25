@@ -103,6 +103,7 @@ function Wait-Handle { }
 function Invoke-Async($Sb, $X) { & $Sb $X }
 Remove-Item Env:\OPTIGAME_TEST -ErrorAction SilentlyContinue
 . ([scriptblock]::Create($texteClient))
+$script:EstAdmin = $false   # (Nevermind sans droits, comme chez l'utilisateur, même quand le test tourne en administrateur)
 [AideClient]::ExeAttendu = $psExe   # (l'Aide de test tourne dans powershell.exe)
 if ([AideClient]::Joignable(50)) { throw 'une Aide de cette copie tourne déjà : test impossible' }
 # Le faux schtasks : rend le XML de $script:XmlTache à /Query, note chaque /Run

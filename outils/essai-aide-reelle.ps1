@@ -309,8 +309,10 @@ function Initialize-Essai {
     Test-Cas "Mindset construit ($(& git -C $MindsetGit log --oneline -1))" { Test-Path -LiteralPath (Join-Path $MindsetDepot 'Mindset\Mindset.exe') }
     Test-Cas 'son installateur crée la tâche d''aide en SYSTEM (Mindset avec le lot A2)' { [IO.File]::ReadAllText($InstallateurNeuf, [Text.Encoding]::UTF8) -match 'function Update-TachesAide' }
     # Mindset 2.10.0 (son installateur, tel que publié)
+    $ErrorActionPreference = 'Continue'   # (git écrit ses messages sur la sortie d'erreur)
     if (Test-Path -LiteralPath $Mindset210) { & git -C $MindsetGit worktree remove --force $Mindset210 2>&1 | Out-Null }
-    & git -C $MindsetGit worktree add --detach $Mindset210 v2.10.0 2>&1 | Out-Host
+    & git -C $MindsetGit worktree add --detach $Mindset210 v2.10.0 2>&1 | ForEach-Object { "$_" } | Out-Host
+    $ErrorActionPreference = 'Stop'
     Test-Cas 'Mindset 2.10.0 : son installateur crée l''ancienne tâche d''aide (droits les plus élevés, sous le compte)' { [IO.File]::ReadAllText($Installateur210, [Text.Encoding]::UTF8) -match 'New-ScheduledTaskPrincipal -UserId \$Sid -LogonType Interactive -RunLevel Highest' }
 
     # Nevermind du dépôt, construit
@@ -330,7 +332,9 @@ function Initialize-Essai {
     $d = Join-Path $Paquets '1.10.0'
     if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $d | Out-Null
-    & gh release download v1.10.0 -R JordanJacquot/Nevermind -p 'OptiGame.zip*' -D $d | Out-Host
+    $ErrorActionPreference = 'Continue'
+    & gh release download v1.10.0 -R JordanJacquot/Nevermind -p 'OptiGame.zip*' -D $d 2>&1 | ForEach-Object { "$_" } | Out-Host
+    $ErrorActionPreference = 'Stop'
     . (Join-Path $MindsetGit 'Mindset\fichiers\modules\signature.ps1')
     Test-Cas 'Release Nevermind v1.10.0 téléchargée, signée par la vraie clé' {
         Test-Signature ([IO.File]::ReadAllBytes($Paquet110)) ([IO.File]::ReadAllBytes("$Paquet110.sig")) (Join-Path $MindsetGit 'Mindset\fichiers\cles-publiques')
