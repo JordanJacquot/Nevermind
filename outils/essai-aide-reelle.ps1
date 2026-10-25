@@ -270,6 +270,7 @@ try {
             try { $c.Connect(5000); $s.R['canal'] = 'ouvert' } catch { $s.E['canal'] = "$($_.Exception.GetType().Name) : $($_.Exception.Message)" } finally { $c.Dispose() }
         }
         'lancer' {
+            $ErrorActionPreference = 'Continue'   # (le refus de Windows arrive sur la sortie d'erreur)
             $null = & $AideSchtasks /Run /TN $AideTache 2>&1; $s.R['lancer'] = $LASTEXITCODE
             $null = & $AideSchtasks /Query /TN $AideTache 2>&1; $s.R['lire'] = $LASTEXITCODE
         }
@@ -383,8 +384,14 @@ function Test-Cas2 {
     Test-Cas 'Nevermind reconnaît la tâche SYSTEM d''Élodie, la lance (dernier lancement changé), sans demande de Windows' {
         $s.Etat -eq 'systeme' -and (Get-InfoTache).Dernier -ne $avant -and -not @($s.RunAs).Count
     }
-    Test-Cas 'l''Aide répond : en SYSTEM, avec les droits administrateur, compile dans aide-temp de son dossier' {
-        $bj -and [string]$bj.Compte -eq 'S-1-5-18' -and $bj.Admin -eq $true -and [string]$bj.Temp -ieq "$NevermindC\aide-temp\"
+    # (où l'Aide compile : aide-temp, ou C:\Windows\SystemTemp que les Windows récents donnent à SYSTEM quoi que dise TEMP ;
+    # dans les deux cas, ni Élodie ni les utilisateurs ne peuvent y écrire)
+    $ecrit = { param($d) try { @((Get-Acl -LiteralPath $d).Access | Where-Object { $_.AccessControlType -eq 'Allow' -and ([int64]$_.FileSystemRights -band 0x116) -and
+        $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value -notin 'S-1-5-18', 'S-1-5-32-544', 'S-1-3-0' }).Count } catch { 99 } }
+    Test-Cas 'l''Aide répond : en SYSTEM, avec les droits administrateur, compile dans un dossier où personne d''autre que le système et les administrateurs n''écrit' {
+        $t = ([string]$bj.Temp).TrimEnd('\')
+        Write-Host "         | dossier de compilation : $t ($(& $ecrit $t) droit(s) d'écriture pour d'autres)" -ForegroundColor DarkGray
+        $bj -and [string]$bj.Compte -eq 'S-1-5-18' -and $bj.Admin -eq $true -and $t -in "$NevermindC\aide-temp", (Join-Path ([Environment]::GetFolderPath('Windows')) 'SystemTemp') -and (& $ecrit $t) -eq 0
     }
     Test-Cas 'lecture seule (lecture.taches) : la liste des tâches du PC, vue par l''Aide' { $s.R.PSObject.Properties['taches'] -and @($s.R.taches | Where-Object { $_.Nom -eq $NomTache }).Count }
     $aides = @(Get-AidesEnCours)
@@ -428,7 +435,7 @@ function Test-Cas3 {
     $ecoute = Wait-Jusque { @([IO.Directory]::GetFiles('\\.\pipe\') | Where-Object { $_ -like "*\$canal" }).Count } 60
     Test-Cas 'l''Aide d''Élodie écoute (en SYSTEM) sur son canal' { $ecoute -and @(Get-AidesEnCours | Where-Object { $_.Sid -eq 'S-1-5-18' }).Count -eq 1 }
     $s = Invoke-Client $b @{ Mode = 'canal'; Canal = $canal }
-    Test-Cas 'Bruno ne peut pas ouvrir le canal d''Élodie (accès refusé)' { -not $s.R.PSObject.Properties['canal'] -and [string]$s.E.canal -match 'UnauthorizedAccess' }
+    Test-Cas 'Bruno ne peut pas ouvrir le canal d''Élodie (accès refusé)' { -not $s.R.PSObject.Properties['canal'] -and [string]$s.E.canal -match 'denied|refus' }
     $s = Invoke-Client $e @{ Mode = 'canal'; Canal = $canal }
     Test-Cas 'contre-épreuve : Élodie, elle, ouvre son canal' { [string]$s.R.canal -eq 'ouvert' }
     try { $garde.Kill() } catch {}

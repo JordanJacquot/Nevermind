@@ -104,9 +104,13 @@ try {
         Detections = @([pscustomobject]@{ ThreatID = '9'; Quand = $apres.Ticks; Resources = @('file:_C:\Users\x\Downloads\a.exe') }, [pscustomobject]@{ ThreatID = '9'; Quand = $avant.Ticks; Resources = @('file:_C:\vieux.exe') }) }
     $r = Get-ScanThreats $debut
     Test-Ok ($r.Lu -and @($r.Menaces).Count -eq 1 -and $r.Menaces[0].Nom -eq 'Virus:Win32/Essai' -and $r.Menaces[0].Fichier -eq 'C:\Users\x\Downloads\a.exe') "Aide : la menace trouvée pendant l'analyse est lue, avec son nom et son fichier ($(@($r.Menaces).Count))"
-    $script:AideLecture = [pscustomobject]@{ Menaces = @(); Detections = @() }
+    $script:AideLecture = [pscustomobject]@{ Menaces = @(); Detections = @(); DetectionsLues = $true }
     $r = Get-ScanThreats $debut
     Test-Ok ($r.Lu -and -not @($r.Menaces).Count) 'Aide : rien trouvé, résultat lu (« Aucune menace » permis)'
+    # (lot A2) L'Aide n'a pas pu lire les détections de Defender (DetectionsLues faux) : une liste vide ne prouve rien
+    $script:AideLecture = [pscustomobject]@{ Menaces = @(); Detections = @(); DetectionsLues = $false }
+    $r = Get-ScanThreats $debut
+    Test-Ok (-not $r.Lu -and -not @($r.Menaces).Count) 'Aide : détections de Defender non lues, résultat inconnu (jamais « Aucune menace »)'
 
     # Sans droits ni Aide : une lecture vide ne prouve rien
     $script:AideLecture = $null; $script:Detections = @(); $script:DetectionsErreur = $false

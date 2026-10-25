@@ -64,6 +64,7 @@ $Utilisateur = New-Object Security.Principal.SecurityIdentifier($Sid)
 # Le dossier temporaire où PowerShell compile le code C# de l'Aide (Add-Type) : jamais le TEMP reçu (celui de SYSTEM,
 # C:\Windows\Temp, où tout utilisateur peut créer des fichiers ; ou celui de l'utilisateur), mais aide-temp, dans le
 # dossier protégé de Nevermind. Avec les droits administrateur, il est réservé au système et aux administrateurs.
+# (En SYSTEM, les Windows récents donnent de toute façon C:\Windows\SystemTemp, réservé lui aussi, quoi que dise TEMP.)
 $AideTemp = Join-Path $Racine 'aide-temp'
 try {
     $dt = [IO.Directory]::CreateDirectory($AideTemp)
