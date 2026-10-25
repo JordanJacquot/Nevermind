@@ -13,7 +13,7 @@
 
 $ErrorActionPreference = 'Stop'
 $racine = Split-Path $PSScriptRoot -Parent
-$app    = Join-Path $racine 'OptiGame'
+$app    = Join-Path $racine 'Nevermind'
 
 # Les fichiers du projet : ceux que git suit, plus les nouveaux pas encore ajoutés (hors fichiers ignorés, comme la
 # copie installée à la racine). Sans git : tout le dossier, hors .git, _test et release.

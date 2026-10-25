@@ -1,5 +1,5 @@
 ﻿# Nevermind : section Réseau : scan des appareils et fiche détaillée.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Section Réseau : scan des appareils connectés

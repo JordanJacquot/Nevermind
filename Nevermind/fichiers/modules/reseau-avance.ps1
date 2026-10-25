@@ -1,5 +1,5 @@
 ﻿# Nevermind : recherche approfondie des appareils du réseau (appareils discrets, noms, modèles, caméras).
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # Services annoncés par les appareils, en clair.
 $ServiceLabels = [ordered]@{

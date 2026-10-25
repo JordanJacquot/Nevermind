@@ -1,5 +1,5 @@
 # L'Aide de Nevermind en SYSTEM essayée en vrai sur la machine jetable de GitHub (vraies tâches planifiées, vrais
-# comptes Windows, vraie installation par l'installateur de Mindset). Lancée à la main seulement :
+# comptes Windows, vraie installation par l'installateur de Mindset), et le changement de nom (cas 8). Lancée à la main seulement :
 #   gh workflow run aide-reelle.yml -f mindset=<branche ou version de Mindset>
 # Tout le code est dans outils\essai-aide-reelle.ps1 (UTF-8 avec BOM : un nom accentué écrit ici arriverait abîmé).
 name: Aide en vrai
@@ -35,7 +35,7 @@ jobs:
           if ($LASTEXITCODE) { exit 1 }
           git -C C:\essai\mindset log --oneline -1
 
-      - name: "0. Préparation (Nevermind et Mindset construits, clé de TEST, paquets, Release v1.10.0)"
+      - name: "0. Préparation (Nevermind et Mindset construits, clé de TEST, paquets, Releases v1.10.0 et v1.11.0, Mindset 2.12.0)"
         run: .\outils\essai-aide-reelle.ps1 -Cas 0
 
       - name: "1. Installation pour un compte standard : tâche de l'Aide en SYSTEM pour lui"
@@ -65,3 +65,7 @@ jobs:
       - name: "7. La tâche SYSTEM ne voit pas l'environnement de l'utilisateur"
         if: ${{ !cancelled() }}
         run: .\outils\essai-aide-reelle.ps1 -Cas 7
+
+      - name: "8. Changement de nom : Nevermind 1.11.0 mis à jour, anciens Mindset (zip de compatibilité), une seule instance"
+        if: ${{ !cancelled() }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 8

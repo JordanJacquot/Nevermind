@@ -15,7 +15,7 @@
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
-$modules = Join-Path $racine 'OptiGame\fichiers\modules'
+$modules = Join-Path $racine 'Nevermind\fichiers\modules'
 $echecs  = New-Object System.Collections.Generic.List[string]
 $nbTests = 0
 function Test-Ok([bool]$Condition, [string]$Message) {

@@ -1,6 +1,6 @@
 ﻿# Nevermind : recherche des réglages (Ctrl+K), pour la page « Rechercher » de la console (ecran-divers.ps1).
 # Find-Settings trouve les réglages au fil de la frappe ; un résultat ouvre la bonne page de la console (Open-SearchEntry).
-# Chargé par OptiGame.ps1 après les pages (il connaît leurs numéros) et avant evenements.ps1.
+# Chargé par Nevermind.ps1 après les pages (il connaît leurs numéros) et avant evenements.ps1.
 
 # Réglages et actions trouvables. P : page (numéro, 'jeux', 'reseau', 'trafic' ou 'overlay'), S : sous-onglet d'Optimisation gaming,
 # A : texte affiché sur la page d'avant (repère du réglage), K : autres mots qui doivent le trouver,

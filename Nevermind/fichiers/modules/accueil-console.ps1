@@ -12,7 +12,7 @@
 # L'écran est par-dessus toute la fenêtre (une WebView2 se dessine toujours au-dessus), sur un fond plein. Seul ce qui
 # n'est pas encore passé au kit le cache le temps qu'il est ouvert : l'écran de chargement du démarrage, l'Organizer
 # (page Jeux d'avant) et la carte du réseau.
-# Chargé par OptiGame.ps1 après vue.ps1 ; Initialize-AccueilConsole est appelé par evenements.ps1.
+# Chargé par Nevermind.ps1 après vue.ps1 ; Initialize-AccueilConsole est appelé par evenements.ps1.
 
 $script:Kit = @{ Actif = $false; Fiches = @(); Constats = @(); Resultats = @(); Recherche = ''; Stats = @{}; Envoye = ''; Geste = [datetime]::MinValue
     PagesLourdes = @('optimisation', 'jeux', 'jeu', 'tests')
@@ -219,9 +219,9 @@ function Register-ActionsNevermind {
 
 # Retour au menu de Mindset (la console) : « menu » dans afficher-page.txt, puis le signal de Mindset (déjà ouvert).
 # (le fichier est à côté de suite.json, comme pour les Paramètres.) En test : le fichier seulement si la copie simule
-# Mindset (OPTIGAME_SUITE), et jamais le signal du vrai Mindset.
+# Mindset (NEVERMIND_SUITE), et jamais le signal du vrai Mindset.
 function Request-MenuMindset {
-    if ($EnTest -and -not $env:OPTIGAME_SUITE) { Write-Log 'Retour au menu de Mindset demandé (test : rien envoyé)'; return }
+    if ($EnTest -and -not $env:NEVERMIND_SUITE) { Write-Log 'Retour au menu de Mindset demandé (test : rien envoyé)'; return }
     try {
         [IO.File]::WriteAllText((Join-Path (Split-Path $SuiteFile) 'afficher-page.txt'), 'menu', (New-Object Text.UTF8Encoding($false)))
         if ($EnTest) { Write-Log 'Retour au menu de Mindset demandé (test : fichier seulement)'; return }

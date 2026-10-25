@@ -1,7 +1,7 @@
 ﻿# Nevermind : ce que Windows envoie à Microsoft. Les identifiants du PC, les réglages qui envoient
 # des données en plus du minimum (avec « Couper », annulable), et les envois vus en direct.
 # Le contenu est chiffré : ce qui est envoyé vient de la documentation de Microsoft, pas d'une lecture.
-# Chargé par OptiGame.ps1 après trafic.ps1.
+# Chargé par Nevermind.ps1 après trafic.ps1.
 
 $DiagKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection'
 $DiagPolicyKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection'

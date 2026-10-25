@@ -1,5 +1,5 @@
 ﻿# Nevermind : animations, jauges, courbes et petits composants visuels.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Animations

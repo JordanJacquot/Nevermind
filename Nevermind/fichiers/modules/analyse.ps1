@@ -1,5 +1,5 @@
 ﻿# Nevermind : santé des composants et analyse complète.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Santé des composants

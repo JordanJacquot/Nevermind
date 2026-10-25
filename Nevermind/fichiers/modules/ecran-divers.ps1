@@ -3,7 +3,7 @@
 # Paramètres reprend les réglages de la fenêtre d'avant (parametres.ps1), branchés sur les mêmes fonctions ; Tests lit
 # les tuiles de composants de Nevermind (tests.ps1) et appuie sur leurs vrais boutons ; un test en cours s'affiche dans
 # le panneau (ecran-panneau.ps1).
-# Chargé par OptiGame.ps1 après ecran-reseau.ps1.
+# Chargé par Nevermind.ps1 après ecran-reseau.ps1.
 
 $IconesTests = @{ SSD = 'disque'; HDD = 'disque'; USB = 'disque'; CPU = 'puce'; RAM = 'memoire'; GPU = 'ecran'; NET = 'ondes'; HZ = 'ecran'; BAT = 'eclair' }
 

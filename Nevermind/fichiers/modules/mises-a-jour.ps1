@@ -1,5 +1,5 @@
 ﻿# Nevermind : mises à jour automatiques depuis GitHub.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Mises à jour (GitHub)
@@ -18,9 +18,10 @@ $GetReleaseScript = {
             $r = Invoke-RestMethod -Uri "https://api.github.com/repos/$($a.Repo)/releases/latest" -Headers $h -TimeoutSec 10
         }
         if (-not $r) { return @{ Error = 'Aucune version publiée.' } }
-        $asset = @($r.assets | Where-Object { $_.name -eq 'OptiGame.zip' }) | Select-Object -First 1
-        if (-not $asset) { return @{ Error = 'Aucun fichier OptiGame.zip dans la dernière version publiée.' } }
-        $sig = @($r.assets | Where-Object { $_.name -eq 'OptiGame.zip.sig' }) | Select-Object -First 1
+        # Nevermind.zip ; OptiGame.zip (son ancien nom) dans les versions publiées avant le changement de nom
+        $asset = @($r.assets | Where-Object { $_.name -eq 'Nevermind.zip' }) + @($r.assets | Where-Object { $_.name -eq 'OptiGame.zip' }) | Select-Object -First 1
+        if (-not $asset) { return @{ Error = 'Aucun fichier Nevermind.zip dans la dernière version publiée.' } }
+        $sig = @($r.assets | Where-Object { $_.name -eq "$($asset.name).sig" }) | Select-Object -First 1
         @{ Version = ([string]$r.tag_name -replace '^[vV]', ''); Url = [string]$asset.browser_download_url; SigUrl = [string]$sig.browser_download_url; Beta = [bool]$r.prerelease; Notes = [string]$r.body }
     } catch { @{ Error = $_.Exception.Message } }
 }
@@ -38,7 +39,7 @@ function Test-NewerVersion([string]$Remote, [string]$Local) {
     try { return ([version]$Remote -gt [version]$Local) } catch { return $false }
 }
 
-# Signature d'un zip publié (OptiGame.zip.sig : RSA, SHA-256), vérifiée avec les clés publiques livrées avec
+# Signature d'un zip publié (Nevermind.zip.sig : RSA, SHA-256), vérifiée avec les clés publiques livrées avec
 # Nevermind (fichiers\cles-publiques\*.xml, les mêmes que Mindset). Un zip sans signature valide n'est jamais installé,
 # même s'il vient bien de GitHub : quelqu'un qui volerait l'accès au compte GitHub ne pourrait pas faire installer un faux.
 # Une liste de clés (clé de tous les jours, clé de secours, clé suivante pendant un changement) : la signature est bonne
@@ -99,7 +100,7 @@ function Install-Update {
     if (-not (Confirm-Action "Installer la version $($rel.Version) de Nevermind ?`n`nL'app va se fermer, se mettre à jour puis se relancer. Tes réglages et ta sauvegarde sont conservés.")) { return }
     $refused = "La version $($rel.Version) n'a pas été installée : sa signature numérique est {0}.`n`nPar sécurité, Nevermind n'installe que les versions signées par son auteur. Rien n'a été modifié sur ton PC.`n`nRéessaie plus tard, ou installe Mindset pour recevoir les mises à jour."
     if (-not $rel.SigUrl) {
-        Write-Log "Mise à jour $($rel.Version) refusée : pas de signature (OptiGame.zip.sig) dans la version publiée"
+        Write-Log "Mise à jour $($rel.Version) refusée : pas de signature (Nevermind.zip.sig) dans la version publiée"
         Show-Message ($refused -f 'absente') 'Warning'
         return
     }
@@ -107,7 +108,7 @@ function Install-Update {
     $ui.UpdateBanner.Visibility = 'Collapsed'
     Set-Status "Téléchargement de la version $($rel.Version)..."
     $tmp = Join-Path $env:TEMP "Nevermind-maj-$(Get-Random)"
-    $zip = Join-Path $tmp 'OptiGame.zip'
+    $zip = Join-Path $tmp 'Nevermind.zip'
     # Le zip et sa signature d'abord : rien n'est extrait avant que la signature soit vérifiée
     $res = Invoke-Async {
         param($a)
@@ -134,8 +135,10 @@ function Install-Update {
             try { Expand-Archive -LiteralPath $a.Zip -DestinationPath (Join-Path $a.Dir 'x') -Force; 'OK' } catch { $_.Exception.Message }
         } @{ Dir = $tmp; Zip = $zip } | Select-Object -First 1
     }
-    $src = Join-Path $tmp 'x\OptiGame'
-    if ("$res" -ne 'OK' -or -not (Test-Path -LiteralPath (Join-Path $src 'fichiers\OptiGame.ps1'))) {
+    # (dossier « Nevermind » et script Nevermind.ps1 ; « OptiGame » et OptiGame.ps1, leurs anciens noms, dans une version d'avant)
+    $src = @('Nevermind', 'OptiGame' | ForEach-Object { Join-Path $tmp "x\$_" } | Where-Object { Test-Path -LiteralPath $_ })[0]
+    $scriptMaj = if ($src) { @('Nevermind.ps1', 'OptiGame.ps1' | ForEach-Object { Join-Path $src "fichiers\$_" } | Where-Object { Test-Path -LiteralPath $_ })[0] }
+    if ("$res" -ne 'OK' -or -not $scriptMaj) {
         Write-Log "Échec de la mise à jour: $res"
         Show-Message "La mise à jour n'a pas pu être téléchargée.`n`n$res`n`nRéessaie plus tard." 'Warning'
         Set-Status 'Mise à jour annulée.'
@@ -175,7 +178,7 @@ function Install-Update {
         return
     }
     Write-Log "Mise à jour installée: $AppVersion -> $($rel.Version)"
-    $script:Relaunch = Join-Path $appRoot 'fichiers\OptiGame.ps1'
+    $script:Relaunch = Join-Path $appRoot "fichiers\$(Split-Path $scriptMaj -Leaf)"
     $script:AllowClose = $true
     $Window.Close()
 }
@@ -206,7 +209,7 @@ function Set-BetaChannel([bool]$On) {
 # sur le bureau (Mindset le crée). Le lancement au démarrage passe par Mindset quand il est administrateur (sa tâche
 # « \Mindset\Mindset (démarrage) » lance Nevermind selon l'interrupteur « S'ouvre avec Mindset ») ; sinon il reste ici :
 # seule la tâche planifiée de Nevermind peut l'ouvrir au démarrage sans demande de Windows.
-# (Une copie non gérée ne s'ouvre pas, sauf un dossier de travail : voir le début d'OptiGame.ps1.)
+# (Une copie non gérée ne s'ouvre pas, sauf un dossier de travail : voir le début de Nevermind.ps1.)
 function Test-DemarrageParMindset {
     if (-not $Managed) { return $false }
     if ($null -eq $script:DemarrageParMindset) {

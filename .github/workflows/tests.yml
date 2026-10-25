@@ -29,7 +29,7 @@ jobs:
             Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser | Out-Null
             Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
           }
-          $resultats = @(Invoke-ScriptAnalyzer -Path OptiGame -Recurse -Severity Error)
+          $resultats = @(Invoke-ScriptAnalyzer -Path Nevermind -Recurse -Severity Error)
           $resultats | Format-Table -AutoSize RuleName, ScriptName, Line, Message | Out-String -Width 300 | Write-Host
           if ($resultats.Count) { Write-Host "$($resultats.Count) erreur(s) trouvée(s) par PSScriptAnalyzer."; exit 1 }
           Write-Host 'Aucune erreur trouvée par PSScriptAnalyzer.'
@@ -37,6 +37,11 @@ jobs:
       - name: Vérifications du dépôt (syntaxe, fenêtre, tirets, encodage, licence)
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\verifier.ps1
+          exit $LASTEXITCODE
+
+      - name: "Changement de nom (ancien nom seulement là où il sert, lanceur et verrou compatibles, zip de compatibilité, mises à jour)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-renommage.ps1
           exit $LASTEXITCODE
 
       - name: "Tests de l'Aide administrateur (mode vérification, rien n'est modifié ; fermer seulement un programme du compte et de la session)"

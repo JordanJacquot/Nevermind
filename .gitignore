@@ -1,25 +1,21 @@
 # Copie installée à la racine (celle du raccourci du bureau)
 /fichiers/
-/OptiGame.exe
-/Désinstaller OptiGame.exe
 /LISEZMOI.txt
 
-# Fichiers générés par outils/construire.ps1
+# Fichiers générés par outils/construire.ps1 (Nevermind.zip, et OptiGame.zip : le zip de compatibilité, voir outils/zips.ps1)
+/Nevermind.zip
+/Nevermind.zip.sig
 /OptiGame.zip
 /OptiGame.zip.sig
-/OptiGame/*.exe
+/Nevermind/*.exe
 /outils/icones/
 
 # Tests
 /_test/
 
 # Lanceurs de la copie installée à la racine (mises à jour de l'app), pas des fichiers du projet
-/OptiGame.exe
-/Nexo.exe
 /Nevermind.exe
 /Mindset.exe
-/Désinstaller OptiGame.exe
-/Désinstaller Nexo.exe
 /Désinstaller Nevermind.exe
 /NevermindAide.exe
 

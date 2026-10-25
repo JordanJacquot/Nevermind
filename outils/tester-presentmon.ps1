@@ -20,7 +20,7 @@
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
-$app     = Join-Path $racine 'OptiGame\fichiers'
+$app     = Join-Path $racine 'Nevermind\fichiers'
 $modules = Join-Path $app 'modules'
 $echecs  = New-Object System.Collections.Generic.List[string]
 $nbTests = 0

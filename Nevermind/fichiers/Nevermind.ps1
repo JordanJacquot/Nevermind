@@ -7,8 +7,8 @@
     (%LOCALAPPDATA%\Mindset\Nevermind quand Nevermind est géré par Mindset)
     et peut être annulé depuis l'onglet Sauvegarde.
 
-    OptiGame.ps1 -Demarrage  s'ouvre réduit près de l'horloge (lancement avec Windows).
-    OptiGame.ps1 -Uninstall  remet les réglages comme avant et supprime l'application.
+    Nevermind.ps1 -Demarrage  s'ouvre réduit près de l'horloge (lancement avec Windows).
+    Nevermind.ps1 -Uninstall  remet les réglages comme avant et supprime l'application.
 #>
 param([switch]$Uninstall, [switch]$Demarrage, [switch]$GarderDonnees, [switch]$SupprimerDonnees)   # -Demarrage : lancé avec Windows, réduit près de l'horloge ;
 # -GarderDonnees / -SupprimerDonnees : le choix des données à la désinstallation, sans question (voir systeme.ps1)
@@ -26,7 +26,7 @@ $UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées le
 # Sécurité : ce fichier est modifiable par n'importe quel programme de
 # l'utilisateur. On n'y accepte qu'un nom de thème connu, et le dossier n'y sert qu'à comparer avec le nôtre.
 $SuiteFile = Join-Path $env:LOCALAPPDATA 'Mindset\suite.json'
-if ($env:OPTIGAME_TEST -and $env:OPTIGAME_SUITE) { $SuiteFile = $env:OPTIGAME_SUITE }   # la copie de test peut simuler Mindset
+if ($env:NEVERMIND_TEST -and $env:NEVERMIND_SUITE) { $SuiteFile = $env:NEVERMIND_SUITE }   # la copie de test peut simuler Mindset
 $SuiteThemes = @('neon', 'crepuscule', 'terminal', 'arcade', 'rubis')
 
 # Chemin complet sans « \ » final, pour comparer deux dossiers (vide s'il n'est pas valable)
@@ -69,7 +69,7 @@ function Open-DansMindset {
         $true
     } catch { $false }
 }
-if ($Managed -and -not $Demarrage -and -not $Uninstall -and -not $env:OPTIGAME_TEST) { if (Open-DansMindset) { exit } }
+if ($Managed -and -not $Demarrage -and -not $Uninstall -and -not $env:NEVERMIND_TEST) { if (Open-DansMindset) { exit } }
 
 # Nevermind déjà ouvert ? (accès refusé au verrou = il existe, mais appartient à la fenêtre lancée en administrateur)
 # Ligne du journal écrite avant le chargement des modules (Write-Log n'existe pas encore) : un lancement abandonné
@@ -78,12 +78,43 @@ function Write-LaunchNote([string]$Text) {
     try { [IO.File]::AppendAllText((Join-Path $DataDir 'journal.txt'), "$(Get-Date -Format s) $Text (processus $PID)`r`n", (New-Object Text.UTF8Encoding($false))) } catch {}
 }
 
+# Les verrous d'instance unique. Nevermind prend les deux : le sien, et celui de son ancien nom (Local\OptiGame-Instance),
+# que tient une version d'avant le changement de nom encore ouverte (relance après une mise à jour) et que les Mindset
+# 2.12.0 et plus anciens regardent pour savoir si Nevermind est ouvert.
+$InstanceNames = @('Local\Nevermind-Instance', 'Local\OptiGame-Instance')
 function Test-InstanceRunning {
-    try { $probe = [System.Threading.Mutex]::OpenExisting('Local\OptiGame-Instance'); $probe.Dispose(); return $true }
-    catch {
-        $inner = $_.Exception; while ($inner.InnerException) { $inner = $inner.InnerException }
-        return ($inner -is [System.UnauthorizedAccessException])
+    foreach ($nom in $InstanceNames) {
+        try { $probe = [System.Threading.Mutex]::OpenExisting($nom); $probe.Dispose(); return $true }
+        catch {
+            $inner = $_.Exception; while ($inner.InnerException) { $inner = $inner.InnerException }
+            if ($inner -is [System.UnauthorizedAccessException]) { return $true }
+        }
     }
+    $false
+}
+
+# Prend tous les verrous : « ok » ; « refuse » si l'un ne peut pas être ouvert (il appartient à une fenêtre lancée en
+# administrateur, donc déjà là) ; « occupe » si l'un reste tenu après $Attente ms (un autre Nevermind, de cette version
+# ou d'avant, encore ouvert). Sans « ok », aucun verrou n'est gardé.
+function Enter-Instance([int]$Attente = 5000) {
+    Exit-Instance
+    foreach ($nom in $InstanceNames) {
+        $nouveau = $false
+        try { $m = New-Object System.Threading.Mutex($true, $nom, [ref]$nouveau) } catch { Exit-Instance; return 'refuse' }
+        if (-not $nouveau) {
+            # (ancienne version encore en train de se fermer, relance après une mise à jour : elle libère la place sous peu)
+            $pris = $false
+            try { $pris = $m.WaitOne($Attente) } catch [System.Threading.AbandonedMutexException] { $pris = $true }
+            if (-not $pris) { $m.Dispose(); Exit-Instance; return 'occupe' }
+        }
+        $script:InstanceMutexes += $m
+    }
+    'ok'
+}
+# Rend les verrous (fin de Nevermind, ou relance)
+function Exit-Instance {
+    foreach ($m in @($script:InstanceMutexes)) { if ($m) { try { $m.ReleaseMutex() } catch {}; try { $m.Dispose() } catch {} } }
+    $script:InstanceMutexes = @()
 }
 
 # Dossier des données. Copie gérée : déduit de l'emplacement du programme (dossier protégé, jamais d'un fichier
@@ -135,7 +166,7 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Sys
 # Mindset, qui reprend cette copie avec ses réglages et ses données. Contrôlé avant tout le reste : pas de demande
 # des droits administrateur, pas de verrou, rien ne démarre (ni minuteries, ni icône près de l'horloge, ni overlay).
 # Restent possibles : la désinstallation (elle remet les réglages de Windows comme avant) et les dossiers de travail
-# (dossier .git à la racine de la copie ou juste au-dessus). La copie de test n'est bloquée qu'avec OPTIGAME_TEST_BLOCAGE
+# (dossier .git à la racine de la copie ou juste au-dessus). La copie de test n'est bloquée qu'avec NEVERMIND_TEST_BLOCAGE
 # (s'il finit par .png, la fenêtre s'y enregistre en image puis se ferme : capture pour vérifier son allure).
 $MindsetUrl = 'https://github.com/JordanJacquot/Mindset/releases/latest'
 # Mindset installé : celui inscrit dans « Applications installées » (Program Files ou X:\Mindset\Programmes, au choix
@@ -211,7 +242,7 @@ function Show-MindsetRequired {
     $w = [Windows.Markup.XamlReader]::Parse($xaml)
     $main = $w.FindName('BtnMain')
     $main.Content = if ($hasMindset) { 'Ouvrir Mindset' } else { 'Télécharger Mindset' }
-    $ico = Join-Path $PSScriptRoot 'OptiGame.ico'
+    $ico = Join-Path $PSScriptRoot 'Nevermind.ico'
     if (Test-Path -LiteralPath $ico) {
         try {
             $frames = [System.Windows.Media.Imaging.BitmapDecoder]::Create((New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))), 'None', 'OnLoad').Frames
@@ -227,20 +258,20 @@ function Show-MindsetRequired {
         try { Start-Process -FilePath (Join-Path $env:windir 'explorer.exe') -ArgumentList "`"$target`"" -ErrorAction Stop } catch {}
         $w.Close()
     })
-    if ("$env:OPTIGAME_TEST_BLOCAGE" -like '*.png') {
+    if ("$env:NEVERMIND_TEST_BLOCAGE" -like '*.png') {
         $w.Add_ContentRendered({
             $bmp = New-Object System.Windows.Media.Imaging.RenderTargetBitmap ([int]$w.ActualWidth), ([int]$w.ActualHeight), 96, 96, 'Pbgra32'
             $bmp.Render($w)
             $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
             $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($bmp))
-            $fs = [IO.File]::Create($env:OPTIGAME_TEST_BLOCAGE); try { $enc.Save($fs) } finally { $fs.Dispose() }
+            $fs = [IO.File]::Create($env:NEVERMIND_TEST_BLOCAGE); try { $enc.Save($fs) } finally { $fs.Dispose() }
             $w.Close()
         })
     }
     [void]$w.ShowDialog()
 }
 
-if (-not $Managed -and -not $Uninstall -and -not (Test-WorkCopy) -and (-not $env:OPTIGAME_TEST -or $env:OPTIGAME_TEST_BLOCAGE)) {
+if (-not $Managed -and -not $Uninstall -and -not (Test-WorkCopy) -and (-not $env:NEVERMIND_TEST -or $env:NEVERMIND_TEST_BLOCAGE)) {
     Show-MindsetRequired
     exit
 }
@@ -262,14 +293,8 @@ function Send-ShowRequest {
         [void][OG.Fg]::AllowSetForegroundWindow(-1)
     } catch {}
 }
-if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
-    $alreadyRunning = $false
-    try { $probe = [System.Threading.Mutex]::OpenExisting('Local\OptiGame-Instance'); $probe.Dispose(); $alreadyRunning = $true }
-    catch {
-        # Accès refusé = elle existe, mais appartient à la fenêtre lancée en administrateur
-        $inner = $_.Exception; while ($inner.InnerException) { $inner = $inner.InnerException }
-        if ($inner -is [System.UnauthorizedAccessException]) { $alreadyRunning = $true }
-    }
+if (-not $Uninstall -and -not $env:NEVERMIND_TEST) {
+    $alreadyRunning = Test-InstanceRunning
     if ($alreadyRunning -and $Demarrage) {
         # Lancé caché (Mindset lance toujours Nevermind ainsi pour l'afficher dans son onglet) alors qu'un Nevermind est
         # encore là : souvent l'ancien qui finit de se fermer. On lui laisse 5 s pour libérer la place et on continue s'il
@@ -286,11 +311,7 @@ if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
         $gone = $false
         for ($i = 0; $i -lt 25 -and [IO.File]::Exists($ShowRequest); $i++) {
             Start-Sleep -Milliseconds 200
-            try { $probe = [System.Threading.Mutex]::OpenExisting('Local\OptiGame-Instance'); $probe.Dispose() }
-            catch {
-                $inner = $_.Exception; while ($inner.InnerException) { $inner = $inner.InnerException }
-                if ($inner -isnot [System.UnauthorizedAccessException]) { $gone = $true; break }
-            }
+            if (-not (Test-InstanceRunning)) { $gone = $true; break }
         }
         if (-not $gone) { exit }
         try { [IO.File]::Delete($ShowRequest) } catch {}
@@ -318,19 +339,13 @@ if ($Uninstall -and -not $principal.IsInRole([Security.Principal.WindowsBuiltInR
 }
 
 # Instance unique (lancement direct en administrateur, ou deux clics très rapprochés)
-if (-not $Uninstall -and -not $env:OPTIGAME_TEST) {
-    $mutexNew = $false
+if (-not $Uninstall -and -not $env:NEVERMIND_TEST) {
     # (une ancienne version encore ouverte en administrateur garde un verrou que ce lancement ne peut pas ouvrir : elle est déjà là)
-    try { $script:InstanceMutex = New-Object System.Threading.Mutex($true, 'Local\OptiGame-Instance', [ref]$mutexNew) }
-    catch { if (-not $Demarrage) { Send-ShowRequest }; exit }
-    if (-not $mutexNew) {
-        # Ancienne version encore en train de se fermer (relance après une mise à jour) : elle libère la place sous peu
-        $got = $false
-        try { $got = $script:InstanceMutex.WaitOne(5000) } catch [System.Threading.AbandonedMutexException] { $got = $true }
-        if (-not $got) {
-            if (-not $Demarrage) { Send-ShowRequest } else { Write-LaunchNote 'Lancement caché abandonné : la place n''a pas été libérée en 5 s' }
-            exit
-        }
+    $verrou = Enter-Instance
+    if ($verrou -eq 'refuse') { if (-not $Demarrage) { Send-ShowRequest }; exit }
+    if ($verrou -ne 'ok') {
+        if (-not $Demarrage) { Send-ShowRequest } else { Write-LaunchNote 'Lancement caché abandonné : la place n''a pas été libérée en 5 s' }
+        exit
     }
     try { if (Test-Path -LiteralPath $ShowRequest) { [IO.File]::Delete($ShowRequest) } } catch {}
     # Vieille demande de fermeture (Mindset quitté pendant que Nevermind était fermé) : elle ne vaut pas pour ce lancement
@@ -345,7 +360,7 @@ try { foreach ($o in @(Get-ChildItem -LiteralPath (Split-Path $PSScriptRoot -Par
 try {
     $appRoot = if ((Split-Path $PSScriptRoot -Leaf) -eq 'fichiers') { Split-Path $PSScriptRoot -Parent } else { $PSScriptRoot }
     @(Get-ChildItem -LiteralPath $PSScriptRoot -File -Recurse -ErrorAction SilentlyContinue) +
-    @(Get-ChildItem -LiteralPath $appRoot -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(Mindset\.exe|Nevermind\.exe|NevermindAide\.exe|Désinstaller Nevermind\.exe|OptiGame\.exe|Désinstaller OptiGame\.exe|LISEZMOI\.txt)$' }) |
+    @(Get-ChildItem -LiteralPath $appRoot -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(Mindset\.exe|Nevermind\.exe|NevermindAide\.exe|Désinstaller Nevermind\.exe|LISEZMOI\.txt)$' }) |
         Unblock-File -ErrorAction SilentlyContinue
 } catch {}
 
@@ -353,7 +368,7 @@ try {
 # Écran de chargement, affiché pendant que l'app se prépare
 # ---------------------------------------------------------------------------
 $Splash = $null
-if (-not $env:OPTIGAME_TEST -and -not $Uninstall -and -not $Demarrage) {
+if (-not $env:NEVERMIND_TEST -and -not $Uninstall -and -not $Demarrage) {
     try {
         $Splash = New-Object System.Windows.Window
         $Splash.WindowStyle = 'None'; $Splash.ResizeMode = 'NoResize'; $Splash.WindowStartupLocation = 'CenterScreen'
@@ -363,7 +378,7 @@ if (-not $env:OPTIGAME_TEST -and -not $Uninstall -and -not $Demarrage) {
         $Splash.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#2E2843'); $Splash.BorderThickness = 1
         $sp = New-Object System.Windows.Controls.StackPanel
         $sp.VerticalAlignment = 'Center'; $sp.HorizontalAlignment = 'Center'
-        $ico = Join-Path $PSScriptRoot 'OptiGame.ico'
+        $ico = Join-Path $PSScriptRoot 'Nevermind.ico'
         if (Test-Path -LiteralPath $ico) {
             $frames = [System.Windows.Media.Imaging.BitmapDecoder]::Create((New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))), 'None', 'OnLoad').Frames
             $img = New-Object System.Windows.Controls.Image
@@ -443,7 +458,7 @@ $Window.Show()
 [System.Windows.Threading.Dispatcher]::Run()
 if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
     # Libère la place avant de relancer, sinon la nouvelle version croirait que Nevermind est déjà ouvert
-    if ($script:InstanceMutex) { try { $script:InstanceMutex.ReleaseMutex() } catch {}; $script:InstanceMutex.Dispose(); $script:InstanceMutex = $null }
+    Exit-Instance
     # (Mindset.exe du dossier ; Nevermind.exe s'il manque : son relais, ou le programme d'une version d'avant)
     $relRacine = Split-Path (Split-Path $script:Relaunch -Parent) -Parent
     $relExe = @((Join-Path $relRacine 'Mindset.exe'), (Join-Path $relRacine 'Nevermind.exe') | Where-Object { Test-Path -LiteralPath $_ })[0]
@@ -455,5 +470,5 @@ if ($script:Relaunch -and (Test-Path -LiteralPath $script:Relaunch)) {
 # Fin de Nevermind : le verrou est rendu tout de suite (Mindset peut rouvrir Nevermind sans attendre la fin du processus),
 # et les groupes de fils de fond sont fermés : ouverts, ils gardaient le programme en vie sans fenêtre après la fermeture.
 # (Le lanceur termine ensuite le processus quoi qu'il arrive, Environment.Exit dans lanceur.cs.)
-if ($script:InstanceMutex) { try { $script:InstanceMutex.ReleaseMutex() } catch {}; try { $script:InstanceMutex.Dispose() } catch {}; $script:InstanceMutex = $null }
+Exit-Instance
 foreach ($fils in @($script:Pool, $script:BgPool)) { if ($fils) { try { [void]$fils.BeginClose($null, $null) } catch {} } }

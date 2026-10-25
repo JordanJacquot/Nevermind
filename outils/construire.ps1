@@ -1,19 +1,19 @@
-﻿# Construit le dossier de Nevermind prêt à partager, puis OptiGame.zip. Le zip et son dossier gardent le nom
-# « OptiGame » : les versions déjà installées cherchent ce nom pour se mettre à jour.
+﻿# Construit le dossier de Nevermind prêt à partager, puis ses deux zips (outils\zips.ps1) : Nevermind.zip, et le zip de
+# compatibilité pour les anciennes versions de Mindset, publié aussi pendant le changement de nom.
 #
-#   OptiGame\
+#   Nevermind\
 #     Mindset.exe                               <- le programme qui fait tourner Nevermind (icône Nevermind) ; toutes les
 #                                                  applis de la suite tournent dans un « Mindset.exe » de leur dossier
 #     Nevermind.exe                             <- petit relais : lance Mindset.exe de ce dossier (anciens raccourcis)
 #     Désinstaller Nevermind.exe                <- désinstallation propre
 #     NevermindAide.exe                         <- la partie administrateur (lancée par la tâche que crée Mindset)
 #     LISEZMOI.txt
-#     fichiers\OptiGame.ps1, OptiGame.ico, lanceurs de secours (.bat)
+#     fichiers\Nevermind.ps1, Nevermind.ico, lanceurs de secours (.bat)
 #     fichiers\modules\                    <- le code découpé par partie
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
-$app     = Join-Path $racine 'OptiGame'
+$app     = Join-Path $racine 'Nevermind'
 $fich    = Join-Path $app 'fichiers'
 $icones  = Join-Path $PSScriptRoot 'icones'
 $csc     = Join-Path $env:windir 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
@@ -40,11 +40,11 @@ foreach ($t in $tiers) {
     $s = Get-AuthenticodeSignature -LiteralPath $f
     if ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch "CN=$([regex]::Escape($t[2]))(,|$)") { throw "Fichier tiers mal signé : $($t[0]) ($($s.Status), $($s.SignerCertificate.Subject))" }
 }
-Copy-Item (Join-Path $icones 'OptiGame.ico') (Join-Path $fich 'OptiGame.ico') -Force
+Copy-Item (Join-Path $icones 'Nevermind.ico') (Join-Path $fich 'Nevermind.ico') -Force
 
-# Version des programmes : celle de Nevermind (OptiGame.ps1), dans un petit fichier compilé avec lanceur.cs
-$ps1 = [IO.File]::ReadAllText((Join-Path $fich 'OptiGame.ps1'), [Text.Encoding]::UTF8)
-if ($ps1 -notmatch "(?m)^\`$AppVersion = '(\d+(\.\d+){1,3})'") { throw 'Numéro de version introuvable dans OptiGame.ps1' }
+# Version des programmes : celle de Nevermind (Nevermind.ps1), dans un petit fichier compilé avec lanceur.cs
+$ps1 = [IO.File]::ReadAllText((Join-Path $fich 'Nevermind.ps1'), [Text.Encoding]::UTF8)
+if ($ps1 -notmatch "(?m)^\`$AppVersion = '(\d+(\.\d+){1,3})'") { throw 'Numéro de version introuvable dans Nevermind.ps1' }
 $v4 = @($Matches[1].Split('.')); while ($v4.Count -lt 4) { $v4 += '0' }
 $v4 = $v4 -join '.'
 $versionCs = Join-Path ([IO.Path]::GetTempPath()) "nevermind-version-$PID.cs"
@@ -57,13 +57,10 @@ function Build-Exe([string]$Out, [string]$Icon, [string]$Define) {
     & $csc @opts $source $versionCs
     if ($LASTEXITCODE) { throw "Échec de compilation de $Out" }
 }
-Build-Exe (Join-Path $app 'Mindset.exe') (Join-Path $icones 'OptiGame.ico') ''
-Build-Exe (Join-Path $app 'Nevermind.exe') (Join-Path $icones 'OptiGame.ico') 'RELAIS'
-Build-Exe (Join-Path $app 'Désinstaller Nevermind.exe') (Join-Path $icones 'OptiGame-desinstaller.ico') 'UNINSTALL'
-Build-Exe (Join-Path $app 'NevermindAide.exe') (Join-Path $icones 'OptiGame.ico') 'AIDE'
+Build-Exe (Join-Path $app 'Mindset.exe') (Join-Path $icones 'Nevermind.ico') ''
+Build-Exe (Join-Path $app 'Nevermind.exe') (Join-Path $icones 'Nevermind.ico') 'RELAIS'
+Build-Exe (Join-Path $app 'Désinstaller Nevermind.exe') (Join-Path $icones 'Nevermind-desinstaller.ico') 'UNINSTALL'
+Build-Exe (Join-Path $app 'NevermindAide.exe') (Join-Path $icones 'Nevermind.ico') 'AIDE'
 [IO.File]::Delete($versionCs)
 
-foreach ($old in 'OptiGame.exe', 'Désinstaller OptiGame.exe', 'Nexo.exe', 'Désinstaller Nexo.exe') { $p = Join-Path $app $old; if (Test-Path -LiteralPath $p) { [IO.File]::Delete($p) } }
-$zip = Join-Path $racine 'OptiGame.zip'
-Compress-Archive -Path $app -DestinationPath $zip -Force
-"OK: $zip"
+foreach ($z in @(& (Join-Path $PSScriptRoot 'zips.ps1') -Dossier $app -Sortie $racine)) { "OK: $z" }

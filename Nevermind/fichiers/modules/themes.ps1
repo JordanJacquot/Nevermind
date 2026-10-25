@@ -2,7 +2,7 @@
 # Toute l'app est dessinée avec la palette Néon ; un thème « traduit » chaque couleur au chargement :
 # les couleurs de la marque (cyan, violet, magenta) prennent celles du thème, les gris prennent sa teinte.
 # Les couleurs d'état (vert = bien, orange, rouge, bleu info) ne changent jamais.
-# Chargé par OptiGame.ps1 juste après donnees.ps1, avant la lecture de la fenêtre (interface.ps1).
+# Chargé par Nevermind.ps1 juste après donnees.ps1, avant la lecture de la fenêtre (interface.ps1).
 
 $AppThemes = [ordered]@{
     neon = @{ Name = 'Néon'; Desc = 'Le thème de Nevermind : cyan, violet et magenta sur fond de nuit.'
@@ -28,7 +28,7 @@ $AppThemes = [ordered]@{
 
 # Thème choisi (la copie de test peut en forcer un pour les captures)
 $ThemeSetting = [string](Get-Setting 'Theme' 'neon')
-if ($env:OPTIGAME_TEST -and $env:OPTIGAME_THEME) { $ThemeSetting = $env:OPTIGAME_THEME }
+if ($env:NEVERMIND_TEST -and $env:NEVERMIND_THEME) { $ThemeSetting = $env:NEVERMIND_THEME }
 $ThemeId = @{ retro = 'arcade'; dresseur = 'rubis' }[$ThemeSetting], $ThemeSetting | Where-Object { $_ } | Select-Object -First 1   # anciens noms (1.0.63)
 if (-not $AppThemes.Contains($ThemeId)) { $ThemeId = 'neon' }
 $Theme = $AppThemes[$ThemeId]
@@ -60,7 +60,7 @@ $Theme = $AppThemes[$ThemeId]
 #                     Avec ce bloc : pas de dessin en bas de l'écran, les petites icônes rondes du haut gardent leur dessin.
 # ---------------------------------------------------------------------------
 $PacksDir = Join-Path $DataDir 'packs'
-if ($env:OPTIGAME_TEST -and $env:OPTIGAME_PACKS) { $PacksDir = $env:OPTIGAME_PACKS }
+if ($env:NEVERMIND_TEST -and $env:NEVERMIND_PACKS) { $PacksDir = $env:NEVERMIND_PACKS }
 
 function Get-ThemePack([string]$Id) {
     $dir = Join-Path $PacksDir $Id
@@ -146,9 +146,9 @@ function Test-PackSuite([string]$Id) {
 
 # Géré par Mindset : le thème choisi dans Nevermind devient celui de toute la suite (suite.json). Mindset le voit et se
 # relance avec, les autres applis gérées aussi. Seul le thème change : le reste du fichier est gardé tel quel.
-# Une copie de test n'écrit que dans le suite.json de test (OPTIGAME_SUITE), jamais dans le vrai.
+# Une copie de test n'écrit que dans le suite.json de test (NEVERMIND_SUITE), jamais dans le vrai.
 function Write-SuiteTheme([string]$Id) {
-    if (-not $Managed -or ($env:OPTIGAME_TEST -and -not $env:OPTIGAME_SUITE)) { return $false }
+    if (-not $Managed -or ($env:NEVERMIND_TEST -and -not $env:NEVERMIND_SUITE)) { return $false }
     if (-not ($Id -cin $SuiteThemes -or $Id -cmatch '\Apack:[a-z0-9-]{1,40}\z')) { return $false }
     try {
         $j = [IO.File]::ReadAllText($SuiteFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
@@ -167,7 +167,7 @@ function Write-SuiteTheme([string]$Id) {
 
 # Géré par Mindset : le thème de la suite, enregistré comme thème de Nevermind. Un des 5 thèmes, ou « pack:<id> » :
 # un pack de la suite, que Mindset installe dans les packs de Nevermind. Pack absent ou illisible : le thème actuel reste.
-if ($Managed -and $Suite.Theme -and $ThemeSetting -cne $Suite.Theme -and -not ($env:OPTIGAME_TEST -and $env:OPTIGAME_THEME)) {
+if ($Managed -and $Suite.Theme -and $ThemeSetting -cne $Suite.Theme -and -not ($env:NEVERMIND_TEST -and $env:NEVERMIND_THEME)) {
     if ($Suite.Theme -like 'pack:*' -and -not (Get-ThemePack $Suite.Theme.Substring(5))) {
         Write-Log "Thème de la suite (Mindset) : $($Suite.Theme) absent ou illisible dans $PacksDir, thème actuel gardé ($ThemeSetting)"
     } else {

@@ -13,7 +13,7 @@
 param([switch]$Complet, [switch]$Captures, [switch]$Hote, [int]$Delai = 300)
 $ErrorActionPreference = 'Stop'
 $racine = Split-Path $PSScriptRoot -Parent
-$source = Join-Path $racine 'OptiGame\fichiers'
+$source = Join-Path $racine 'Nevermind\fichiers'
 $test = Join-Path $racine '_test'
 $app = Join-Path $test 'app'
 $donnees = Join-Path $test 'donnees'
@@ -39,7 +39,7 @@ function Edit-File([string]$Path, [string]$Old, [string]$New, [switch]$Regex) {
     $c = if ($Regex) { [regex]::Replace($c, $Old, $New) } else { $c.Replace($Old, $New) }
     [IO.File]::WriteAllText($Path, $c, $utf8)
 }
-$main = Join-Path $app 'fichiers\OptiGame.ps1'
+$main = Join-Path $app 'fichiers\Nevermind.ps1'
 # (Nevermind ne demande plus les droits administrateur, sauf pour se désinstaller : rien à retirer pour le test)
 # Données à part
 Edit-File $main "`$DataDir = Resolve-DataDir" "`$DataDir = '$donnees'"
@@ -49,11 +49,11 @@ $code = $code.Replace('__TEST__', $test).Replace('$__COMPLET__', $(if ($Complet)
 Edit-File $main "`$Window.Show()`r`n[System.Windows.Threading.Dispatcher]::Run()`r`n" "$code`r`n"
 
 Write-Host "Test de Nevermind$(if ($Complet) { ' (complet)' }) en cours, patiente..."
-$env:OPTIGAME_TEST = '1'   # pas d'écran de chargement pendant le test
+$env:NEVERMIND_TEST = '1'   # pas d'écran de chargement pendant le test
 # Registre : les réglages d'essai du test vont dans une clé à part (HKCU\Software\MindsetTest-<numéro>), effacée à la fin.
 # La vraie clé des valeurs d'origine de Nevermind est relue avant et après (lecture seule) : elle ne doit pas changer.
 $cleTest = "Software\MindsetTest-$([guid]::NewGuid().ToString('N').Substring(0, 12))"
-$env:OPTIGAME_TEST_REG = $cleTest
+$env:NEVERMIND_TEST_REG = $cleTest
 $vraieOrigines = 'Software\Mindset\Nevermind\Origines'
 function Get-ValeursCle([string]$Cle) {
     $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($Cle, $false)

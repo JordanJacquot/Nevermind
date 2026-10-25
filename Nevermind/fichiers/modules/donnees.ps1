@@ -1,10 +1,10 @@
 ﻿# Nevermind : données, sauvegarde et accès au registre.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Données et sauvegarde
 # ---------------------------------------------------------------------------
-# $DataDir : choisi tout au début d'OptiGame.ps1 (Resolve-DataDir) : %LOCALAPPDATA%\OptiGame, ou
+# $DataDir : choisi tout au début de Nevermind.ps1 (Resolve-DataDir) : %LOCALAPPDATA%\OptiGame, ou
 # %LOCALAPPDATA%\Mindset\Nevermind quand Nevermind est géré par Mindset. Tous les fichiers de l'app passent par lui.
 $BackupFile = Join-Path $DataDir 'sauvegarde.json'
 $LogFile    = Join-Path $DataDir 'journal.txt'
@@ -93,8 +93,8 @@ function Read-JsonSur([string]$Path) {
 $OriginesMachine = 'SOFTWARE\Mindset\Nevermind\Aide\Origines'
 $OriginesUtilisateur = 'Software\Mindset\Nevermind\Origines'
 # Copie de test : jamais la vraie clé (les réglages d'essai des tests y restaient, et la vraie appli les reprenait).
-# Une clé à part, donnée par outils\tester.ps1 (OPTIGAME_TEST_REG, effacée à la fin du test).
-if ($env:OPTIGAME_TEST) { $OriginesUtilisateur = "$(if ($env:OPTIGAME_TEST_REG -like 'Software\MindsetTest*') { $env:OPTIGAME_TEST_REG } else { 'Software\MindsetTest' })\Origines" }
+# Une clé à part, donnée par outils\tester.ps1 (NEVERMIND_TEST_REG, effacée à la fin du test).
+if ($env:NEVERMIND_TEST) { $OriginesUtilisateur = "$(if ($env:NEVERMIND_TEST_REG -like 'Software\MindsetTest*') { $env:NEVERMIND_TEST_REG } else { 'Software\MindsetTest' })\Origines" }
 function Get-CleRegNormale([string]$Path) {
     $c = ([string]$Path).Trim() -replace '^Registry::', ''
     $c -replace '^(HKEY_LOCAL_MACHINE|HKLM:?)\\', 'HKLM:\' -replace '^(HKEY_USERS|HKU:?)\\', 'HKU:\' -replace '^(HKEY_CURRENT_USER|HKCU:?)\\', 'HKCU:\'

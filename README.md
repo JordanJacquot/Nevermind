@@ -78,13 +78,13 @@ Les compteurs d'octets et le repérage des serveurs en UDP passent par Nevermind
 - Aucune modification n'est faite sans clic de l'utilisateur, et chaque réglage modifié est sauvegardé avant d'être changé.
 - Tout est annulable, un par un depuis l'historique ou en une fois (« Tout restaurer »), sauf quatre changements qui protègent le PC et qu'on fait seulement si tu le demandes : désactiver SMBv1, passer des Wi-Fi ouverts en connexion manuelle, retirer des exclusions de l'antivirus, réactiver le pare-feu. La confirmation le dit avant, l'historique les montre comme « Définitif » avec la façon de revenir en arrière à la main, et la désinstallation les liste.
 - Aucune donnée personnelle n'est envoyée. Chaque envoi sur Internet se coupe dans Paramètres (vérification du pilote NVIDIA sur geforce.com, mesure du lag, nouveautés après une mise à jour sur GitHub : activés au départ ; annuaire des serveurs sur rdap.org, pays du serveur du jeu sur ipinfo.io, jaquettes sur la boutique Steam et Wikipédia : coupés au départ), ou ne part que sur un clic (tests de ping et de débit, scan et audit du réseau). La liste complète : [Code signing policy](CODE_SIGNING.md#privacy-policy).
-- Le code est lisible dans `OptiGame/fichiers/modules`.
+- Le code est lisible dans `Nevermind/fichiers/modules`.
 
 ## Développement
 
 ```
-OptiGame/            l'application telle qu'elle est distribuée
-  fichiers/OptiGame.ps1   point d'entrée : instance unique, droits admin, version, chargement des modules, lancement
+Nevermind/            l'application telle qu'elle est distribuée
+  fichiers/Nevermind.ps1   point d'entrée : instance unique, droits admin, version, chargement des modules, lancement
   fichiers/modules/       le code, découpé par partie (chargé dans cet ordre)
     natif.cs              fonctions natives C# (écrans, tests, scan réseau, trafic, lag...)
     interface.xaml        la fenêtre, le thème et tous les onglets
@@ -115,7 +115,7 @@ OptiGame/            l'application telle qu'elle est distribuée
     evenements.ps1        branchement des boutons et du démarrage
   fichiers/outils-tiers/  PresentMon.exe (Intel, licence MIT) pour mesurer les FPS
 outils/
-  construire.ps1     génère l'icône, compile Mindset.exe (le programme qui fait tourner Nevermind), le relais Nevermind.exe, le désinstalleur et l'Aide, crée OptiGame.zip
+  construire.ps1     génère l'icône, compile Mindset.exe (le programme qui fait tourner Nevermind), le relais Nevermind.exe, le désinstalleur et l'Aide, crée Nevermind.zip et le zip de compatibilité pour les anciennes versions de Mindset (zips.ps1)
   publier.ps1        publie une nouvelle version sur GitHub
   tester.ps1         lance le test automatique sur une copie isolée de l'app
   test-app.ps1       les étapes du test automatique

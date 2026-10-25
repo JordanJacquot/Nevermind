@@ -19,7 +19,7 @@
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
-$app     = Join-Path $racine 'OptiGame\fichiers'
+$app     = Join-Path $racine 'Nevermind\fichiers'
 $modules = Join-Path $app 'modules'
 $echecs  = New-Object System.Collections.Generic.List[string]
 $nbTests = 0
@@ -101,7 +101,7 @@ $script:Journal = New-Object System.Collections.Generic.List[string]
 function Write-Log([string]$m) { $script:Journal.Add($m) }
 function Wait-Handle { }
 function Invoke-Async($Sb, $X) { & $Sb $X }
-Remove-Item Env:\OPTIGAME_TEST -ErrorAction SilentlyContinue
+Remove-Item Env:\NEVERMIND_TEST -ErrorAction SilentlyContinue
 . ([scriptblock]::Create($texteClient))
 $script:EstAdmin = $false   # (Nevermind sans droits, comme chez l'utilisateur, même quand le test tourne en administrateur)
 [AideClient]::ExeAttendu = $psExe   # (l'Aide de test tourne dans powershell.exe)

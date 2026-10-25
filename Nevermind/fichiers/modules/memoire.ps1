@@ -14,7 +14,7 @@
 #
 # Get-DonneesMemoire lit le PC (lecture seule) ; Get-ConstatMemoire ne fait que calculer à partir de ces données, ce qui
 # permet de le tester sur de fausses données (outils\tester-memoire.ps1).
-# Chargé par OptiGame.ps1 après microsoft.ps1.
+# Chargé par Nevermind.ps1 après microsoft.ps1.
 
 $EtiquettesMemoire = @{ windows = 'Windows en a besoin'; inutile = 'Inutile au quotidien'; verifier = 'À vérifier' }
 

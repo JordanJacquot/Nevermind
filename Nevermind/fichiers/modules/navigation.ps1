@@ -1,6 +1,6 @@
 ﻿# Nevermind : numéros des pages d'avant, navigation, et ce que l'accueil sait de Nevermind (l'écran lui-même est
 # dessiné par la console : accueil-console.ps1).
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Navigation : la page n° HubIndex est celle où l'écran de la console est montré

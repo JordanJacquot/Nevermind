@@ -5,7 +5,7 @@ $script:T = @{
     Res = New-Object System.Collections.ArrayList; Msgs = New-Object System.Collections.ArrayList
     Clock = [Diagnostics.Stopwatch]::StartNew(); Last = 0.0; MaxGap = 0.0; Watch = $false
     # Clé du registre à part pour les réglages d'essai (donnée par tester.ps1, effacée à la fin) : jamais ceux du PC
-    Reg = "HKCU:\$(if ($env:OPTIGAME_TEST_REG -like 'Software\MindsetTest*') { $env:OPTIGAME_TEST_REG } else { 'Software\MindsetTest' })"
+    Reg = "HKCU:\$(if ($env:NEVERMIND_TEST_REG -like 'Software\MindsetTest*') { $env:NEVERMIND_TEST_REG } else { 'Software\MindsetTest' })"
 }
 function Invoke-UpdateCheck { }
 # Chronométrage des tâches répétées de l'app (qui tournent sur la fenêtre)
@@ -181,7 +181,7 @@ $script:T.Run.Add_Tick({
                 $detail = "$(@($script:Games).Count) jeux, $($ui.GameProfilesPanel.Children.Count) lignes de profils"
                 # Profil « carte puissante » sur un faux jeu (clé de l'utilisateur, pas besoin d'être administrateur), écrit
                 # dans la clé du test à la place de celle de Windows ; sa valeur d'origine doit aller dans la clé du test aussi
-                $fake = @{ Name = 'Jeu d''essai'; Exes = @('C:\OptiGameTest\OptiGameTestJeu.exe') }
+                $fake = @{ Name = 'Jeu d''essai'; Exes = @('C:\NevermindTest\NevermindTestJeu.exe') }
                 $vraiDx = $script:DxPath; $script:DxPath = "$($script:T.Reg)\UserGpuPreferences"
                 try {
                     Set-GameProfile $fake 'gpu' $true
@@ -192,12 +192,12 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($gOn -and $gOff) "carte puissante : activée=$gOn, retirée=$gOff"
                 Assert-Test ($OriginesUtilisateur -like 'Software\MindsetTest-*\Origines') "valeurs d'origine gardées dans $OriginesUtilisateur au lieu de la clé du test"
                 $ko = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($OriginesUtilisateur, $false)
-                $gardee = $false; if ($ko) { try { $gardee = [bool]@($ko.GetValueNames() | Where-Object { $_ -like '*UserGpuPreferences|C:\OptiGameTest\OptiGameTestJeu.exe' }).Count } finally { $ko.Close() } }
+                $gardee = $false; if ($ko) { try { $gardee = [bool]@($ko.GetValueNames() | Where-Object { $_ -like '*UserGpuPreferences|C:\NevermindTest\NevermindTestJeu.exe' }).Count } finally { $ko.Close() } }
                 Assert-Test $gardee 'valeur d''origine du profil absente de la clé du test'
                 $detail += ', profil carte puissante activé puis retiré (clé du test)'
                 if ($admin) {
-                    $g = @{ Name = 'Jeu d''essai'; Exes = @('C:\OptiGameTest\OptiGameTestJeu.exe') }
-                    $key = "$IfeoPath\OptiGameTestJeu.exe"
+                    $g = @{ Name = 'Jeu d''essai'; Exes = @('C:\NevermindTest\NevermindTestJeu.exe') }
+                    $key = "$IfeoPath\NevermindTestJeu.exe"
                     Set-GameProfile $g 'priority' $true
                     $on = Test-GamePriority $g
                     Set-GameProfile $g 'priority' $false
@@ -214,7 +214,7 @@ $script:T.Run.Add_Tick({
                 Set-Setting 'FpsMeasure' $false
                 $before = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`] Mesure des FPS*' }).Count
                 if (-not $script:HotkeyHandle) { Register-FpsHotkey }
-                # Si OptiGame est déjà ouvert sur le PC, il garde le raccourci : on appelle alors l'action directement.
+                # Si Nevermind est déjà ouvert sur le PC, il garde le raccourci : on appelle alors l'action directement.
                 if ($script:HotkeyHandle) { [void][OGNative]::SendMessage($script:HotkeyHandle, 0x0312, [IntPtr]$FpsHotkeyId, [IntPtr]::Zero); $hk = 'raccourci' }
                 else { Switch-FpsManual; $hk = 'raccourci pris par l''app déjà ouverte, action testée directement' }
                 $after = @($script:T.Msgs | Where-Object { $_ -like '`[Notify`] Mesure des FPS*' }).Count
@@ -254,7 +254,7 @@ $script:T.Run.Add_Tick({
                 Stop-FpsTarget
                 Assert-Test ($null -eq $script:FpsTarget -and $null -eq $script:Overlay) 'mesure non arrêtée'
                 # Avant / après sur des parties simulées autour d'un changement
-                [void](Add-History 'Réglage d''essai FPS' @() @(@{ Type = 'reg'; Path = 'HKCU:\Software\OptiGameTest'; Name = 'X'; Existed = $false }))
+                [void](Add-History 'Réglage d''essai FPS' @() @(@{ Type = 'reg'; Path = 'HKCU:\Software\NevermindTest'; Name = 'X'; Existed = $false }))
                 $lc = Get-LastChangeDate
                 $mk = { param($d, $avg, $low) [pscustomobject]@{ Id = [guid]::NewGuid().ToString('N').Substring(0, 10); Date = $d.ToString('s'); Game = 'Jeu d''essai'; Key = 'jeuessai'; Avg = $avg; Low1 = $low; Low01 = $low - 10; Seconds = 600; Frames = 60000; Exclusive = $false
                     Series = @(1..120 | ForEach-Object { [math]::Round($avg + 15 * [math]::Sin($_ / 7) - $(if ($_ % 29 -eq 0) { 40 } else { 0 }), 1) }) } }
@@ -376,7 +376,7 @@ $script:T.Run.Add_Tick({
                 $errs = Undo-RunLog @(@{ Type = 'dns'; IfIndex = 9999; Guid = '{00000000-0000-0000-0000-000000000000}'; Servers = @('1.1.1.1') })
                 Assert-Test ([bool](@($errs) -match 'carte réseau')) "annulation DNS : $($errs -join ' ')"
                 # Lien ouvert sans droits admin : raccourci temporaire correct (sans le lancer)
-                $lnk = Join-Path $env:TEMP 'OptiGame-test-raccourci.lnk'
+                $lnk = Join-Path $env:TEMP 'Nevermind-test-raccourci.lnk'
                 $sh = New-Object -ComObject WScript.Shell; $sc = $sh.CreateShortcut($lnk); $sc.TargetPath = "$env:windir\notepad.exe"; $sc.Arguments = '/background'; $sc.Save()
                 $chk = $sh.CreateShortcut($lnk)
                 Assert-Test ($chk.Arguments -eq '/background') 'raccourci temporaire incorrect'
@@ -894,12 +894,12 @@ $script:T.Run.Add_Tick({
                     # l'écran retournait sur Jeux aussitôt le détail ouvert (il n'apparaissait qu'un instant).
                     $vraiesParties = if (Test-Path -LiteralPath $FpsFile) { [IO.File]::ReadAllText($FpsFile, [Text.Encoding]::UTF8) } else { $null }
                     try {
-                        if (-not (Get-LastChangeDate)) { [void](Add-History 'Réglage d''essai FPS' @() @(@{ Type = 'reg'; Path = 'HKCU:\Software\OptiGameTest'; Name = 'X'; Existed = $false })) }
+                        if (-not (Get-LastChangeDate)) { [void](Add-History 'Réglage d''essai FPS' @() @(@{ Type = 'reg'; Path = 'HKCU:\Software\NevermindTest'; Name = 'X'; Existed = $false })) }
                         $lc = Get-LastChangeDate
                         $mkP = { param($id, $d, $avg, $low, $menu) [pscustomobject]@{ Id = $id; Date = $d.ToString('s'); Game = 'Jeu de foot d''essai'; Key = 'foot-essai'; Avg = $avg; Low1 = $low; Low01 = [math]::Round($low * 0.4, 1); Seconds = 2700; Frames = 150000; Exclusive = $false
                             Series = @(1..160 | ForEach-Object { if ($_ -in 40..60) { 30 } else { [math]::Round($avg + 15 * [math]::Sin($_ / 9) - $(if ($_ % 37 -eq 0) { 25 } else { 0 }), 1) } }); MenuSec = $menu; MenuFps = 30
                             Diag = [pscustomobject]@{ CpuRatio = 0.99; GpuRatio = 0.21; Stutters = 300; Cpu = 54; CpuMax = 92; Perf = 101; Ram = 61; Gpu = 37; Temp = 71; Vram = 42; Power = 33; Disk = 4; DiskAvg = 1.2; OnBattery = $false
-                                Top = @([pscustomobject]@{ Name = 'navigateur'; Pct = 6.4 }); TopMem = @([pscustomobject]@{ Name = 'navigateur'; MB = 1850 }); Path = 'C:\OptiGameTest\JeuDeFoot.exe'; Drive = 'C'; Media = 'SSD'
+                                Top = @([pscustomobject]@{ Name = 'navigateur'; Pct = 6.4 }); TopMem = @([pscustomobject]@{ Name = 'navigateur'; MB = 1850 }); Path = 'C:\NevermindTest\JeuDeFoot.exe'; Drive = 'C'; Media = 'SSD'
                                 Hz = 144; HzMax = 144; Laptop = $false; Dual = $false; Nvidia = $true; Rtx = $true; Amd = $false; GameMode = $false } } }
                         $parties = @((& $mkP 'essaifoot1' $lc.AddDays(-3) 52 20 120), (& $mkP 'essaifoot2' $lc.AddDays(-1) 55 21 0), (& $mkP 'essaifoot3' $lc.AddMinutes(30) 58 23 660))
                         ConvertTo-Json -InputObject $parties -Depth 6 | Set-Content -LiteralPath $FpsFile -Encoding UTF8
@@ -1335,7 +1335,7 @@ $script:T.Run.Add_Tick({
                 $real = @($st.Apps.Values | Where-Object { @($_.Dest.Values | Where-Object { -not $_.Private }).Count })
                 Assert-Test ($real.Count -ge 1) 'aucun programme connecté à Internet trouvé'
                 Save-TestShot 'trafic'
-                # Programmes simulés : un suspect, un légitime qui envoie beaucoup, et OptiGame lui même
+                # Programmes simulés : un suspect, un légitime qui envoie beaucoup, et Nevermind lui même
                 $mk = {
                     param($key, $name, $path, $sig, $port, $out, $in, $self)
                     $st.Apps[$key] = @{ Key = $key; Name = $name; Path = $path; Title = $name; OutClosed = 0; InClosed = 0; Out = [double]$out; In = [double]$in; Rate = 0; LastOut = 0
@@ -1351,7 +1351,7 @@ $script:T.Run.Add_Tick({
                 $u = @($alerts | Where-Object { $_.App.Key -eq 'test:upload' })[0]
                 Assert-Test ($v -and $v.Level -eq 'bad') "programme suspect non signalé ($($v.Level))"
                 Assert-Test ($u -and $u.Level -eq 'warn') 'gros envoi d''un programme inconnu non signalé'
-                Assert-Test (-not @($alerts | Where-Object { $_.App.Key -in 'test:onedrive', 'test:self' }).Count) 'OneDrive ou OptiGame signalé à tort'
+                Assert-Test (-not @($alerts | Where-Object { $_.App.Key -in 'test:onedrive', 'test:self' }).Count) 'OneDrive ou Nevermind signalé à tort'
                 # Jeu signé qui parle à un serveur sur le port 5555, jeu non signé dans Steam : rien à signaler
                 & $mk 'test:jeu' 'Jeu' 'D:\Jeux\Jeu\Binaries\Win64\Jeu-Win64-Shipping.exe' 'Valid' 5555 1MB 50MB $false
                 & $mk 'test:jeu2' 'Jeu2' 'D:\steam\steamapps\common\Jeu2\jeu2.exe' 'NotSigned' 443 1MB 50MB $false
@@ -1421,7 +1421,7 @@ $script:T.Run.Add_Tick({
                 Assert-Test ([bool](Get-ServerOwner '198.51.100.9')) 'annuaire non gardé sur le disque'
                 $lookup = "annuaire : $(if ($one.Ok) { $one.O } else { 'injoignable' })"
                 foreach ($k in 'test:virus', 'test:onedrive', 'test:self', 'test:upload') { $st.Apps.Remove($k) }
-                $errs = Undo-RunLog @(@{ Type = 'fw'; Name = 'OptiGame : bloque règle inexistante (test)' })
+                $errs = Undo-RunLog @(@{ Type = 'fw'; Name = 'Nevermind : bloque règle inexistante (test)' })
                 Stop-TrafficWatch
                 "$($real.Count) programmes connectés vus en vrai, alertes simulées correctes, $lookup, comptage des octets : $(if ([TrafficMon]::CountersOk) { 'actif' } else { 'indisponible sans droits admin' })"
             }
@@ -1584,7 +1584,7 @@ $script:T.Run.Add_Tick({
                 $notees = @($journal | Where-Object { $_ -match 'ERREUR non gérée \(\d+\) : .*Erreur d''essai du filet' })
                 Assert-Test ($Window.IsLoaded) 'la fenêtre s''est fermée'
                 Assert-Test ($notees.Count -eq 3) "$($notees.Count) erreur(s) notée(s) au journal sur 3"
-                Assert-Test (($journal -join "`n") -match '\(OptiGame\.ps1, ligne \d+\)') "fichier et ligne absents du journal : $($notees[0])"
+                Assert-Test (($journal -join "`n") -match '\(Nevermind\.ps1, ligne \d+\)') "fichier et ligne absents du journal : $($notees[0])"
                 Assert-Test ($vus.Count -eq 1) "message montré $($vus.Count) fois (attendu : 1)"
                 Assert-Test ([FiletPlantage]::Installe -and @($journal | Where-Object { $_ -like '*ERREUR non gérée (fil *Erreur d''essai sur un autre fil*' }).Count -eq 1) 'erreurs des autres fils pas notées'
                 '3 erreurs notées (fichier, ligne), un seul message, l''appli continue'
@@ -1920,8 +1920,8 @@ public static class ProprietesFenetre
                 @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Nom = 'HwSchMode'; Valeur = 9; Type = 'DWord' }),
                 @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(3, 0); Type = 'Binary' }),
                 @('service.regler', @{ Nom = 'WinDefend'; Demarrage = 'Disabled' }),
-                @('pare-feu.bloquer', @{ Nom = 'OptiGame : bloque X'; Programme = "$env:windir\System32\svchost.exe"; Services = @('wuauserv') }),
-                @('pare-feu.bloquer', @{ Nom = 'OptiGame : bloque X'; Programme = "$env:ProgramFiles\Windows Defender\MpCmdRun.exe" }),
+                @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\svchost.exe"; Services = @('wuauserv') }),
+                @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:ProgramFiles\Windows Defender\MpCmdRun.exe" }),
                 @('pare-feu.bloquer', @{ Nom = 'Règle quelconque'; Programme = "$env:windir\notepad.exe" }),
                 @('pare-feu.debloquer', @{ Nom = 'Core Networking - DNS (UDP-Out)' }),
                 @('restauration.creer', @{ Description = 'autre chose' }),

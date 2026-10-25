@@ -1,6 +1,6 @@
 ﻿# Génère les icônes de Nevermind : un N blanc « glitch » (échos cyan et magenta, tranches décalées) sur fond sombre.
-#   OptiGame.ico              icône de l'application (nom de fichier gardé pour les mises à jour)
-#   OptiGame-desinstaller.ico même icône avec un badge rouge
+#   Nevermind.ico              icône de l'application
+#   Nevermind-desinstaller.ico même icône avec un badge rouge
 param([string]$OutDir = (Join-Path $PSScriptRoot 'icones'))
 
 Add-Type -AssemblyName System.Drawing
@@ -113,8 +113,8 @@ function Save-Ico([string]$Path, [bool]$Uninstall) {
     [IO.File]::WriteAllBytes($Path, $out.ToArray())
 }
 
-Save-Ico (Join-Path $OutDir 'OptiGame.ico') $false
-Save-Ico (Join-Path $OutDir 'OptiGame-desinstaller.ico') $true
+Save-Ico (Join-Path $OutDir 'Nevermind.ico') $false
+Save-Ico (Join-Path $OutDir 'Nevermind-desinstaller.ico') $true
 
 # Aperçu pour vérifier le rendu à plusieurs tailles, sur fond clair et sombre
 $prev = New-Object Drawing.Bitmap 600, 320

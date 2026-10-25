@@ -1,5 +1,5 @@
 ﻿# Nevermind : onglet Sécurité (antivirus, points suspects, analyses Defender).
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Onglet Sécurité (antivirus Microsoft Defender + recherche de points suspects)
@@ -8,7 +8,7 @@ $MpCmd = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
 $script:SecButtons = New-Object System.Collections.ArrayList
 
 # État de l'antivirus et des protections de Windows.
-# Lecture de fond lancée dès l'ouverture de l'app (OptiGame.ps1), en même temps que l'analyse du PC :
+# Lecture de fond lancée dès l'ouverture de l'app (Nevermind.ps1), en même temps que l'analyse du PC :
 # elle tourne pendant que la fenêtre attend, au lieu de la faire hoqueter pendant qu'elle construit les pages.
 function Start-ProtectionPrefetch {
     $ps = [PowerShell]::Create()
@@ -22,7 +22,7 @@ function Get-ProtectionArgs {
     @{
         UserDirs = @((Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Downloads'), [Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('MyDocuments'))
         Folders = @(Get-SuspectFolders); StartupExes = @(Get-StartupItems | Where-Object { $_.Enabled } | ForEach-Object { $_.Exe })
-        RiskDirs = $riskDirs; Temp = $env:TEMP; Public = "$env:SystemDrive\Users\Public"; OwnTask = $AutoStartTask; OwnScript = (Join-Path $AppDir 'OptiGame.ps1')
+        RiskDirs = $riskDirs; Temp = $env:TEMP; Public = "$env:SystemDrive\Users\Public"; OwnTask = $AutoStartTask; OwnScript = (Get-AppScript)
     }
 }
 

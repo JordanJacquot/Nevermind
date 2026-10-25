@@ -1,5 +1,5 @@
 ﻿# Nevermind : audit de sécurité du réseau.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Audit de sécurité du réseau

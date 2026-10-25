@@ -1,6 +1,6 @@
 ﻿# Nevermind : diagnostic des FPS d'une partie. D'où vient le problème, et comment le régler
 # sans rendre le jeu moche (on commence toujours par ce qui coûte le moins en qualité).
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # Programmes du système qu'on ne propose jamais de fermer. msedgewebview2 : il affiche les écrans de Mindset, de Nevermind
 # et d'autres applis (un seul processus partagé) ; EAAntiCheat : le fermer coupe le jeu EA en cours.

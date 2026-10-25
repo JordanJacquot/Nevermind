@@ -344,7 +344,7 @@ catch {
     exit
 }
 Write-AideLog "Aide $AideVersion démarrée$(if ($EnSysteme) { ' en SYSTEM' } elseif (-not $admin) { ' SANS droits administrateur' }) pour $Sid (processus $PID)"
-if ($admin) { try { Rename-ReglesOptiGame } catch { Write-AideLog "Règles du pare-feu non renommées : $($_.Exception.Message)" } }
+if ($admin) { try { Rename-AnciennesRegles } catch { Write-AideLog "Règles du pare-feu non renommées : $($_.Exception.Message)" } }
 $seul = Get-Date   # depuis quand Nevermind n'est plus ouvert
 $cherche = Get-Date   # dernière recherche de Nevermind
 $attente = $tuyau.BeginWaitForConnection($null, $null)

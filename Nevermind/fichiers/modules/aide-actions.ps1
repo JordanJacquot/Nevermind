@@ -1,6 +1,6 @@
 ﻿# Nevermind : la liste stricte de ce que l'Aide accepte de faire avec les droits administrateur.
 # Chargé par NevermindAide.ps1 (l'Aide, lancée en administrateur par la tâche « \Mindset\Nevermind (aide) ») et par
-# OptiGame.ps1 (Nevermind s'en sert lui-même tant qu'il tourne en administrateur et que l'Aide ne répond pas).
+# Nevermind.ps1 (Nevermind s'en sert lui-même tant qu'il tourne en administrateur et que l'Aide ne répond pas).
 #
 # Autonome : pas de fenêtre, pas d'autre module, et aucun fichier de Nevermind n'est lu (ils sont modifiables sans
 # droits). Chaque demande est vérifiée seule : ce qui n'est pas prévu ici est refusé.
@@ -533,7 +533,7 @@ function Get-AideRefusProcessus($Contexte, [int]$Client, [int]$Id, [string]$Chem
 function Get-ReglesNevermind { Import-AideModule NetSecurity; @(Get-NetFirewallRule -DisplayName 'Nevermind : bloque *' -ErrorAction SilentlyContinue) + @(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue) }
 
 # Une fois, au démarrage de l'Aide : les anciennes règles prennent le nom de Nevermind (on les retrouve en cherchant « Nevermind »)
-function Rename-ReglesOptiGame {
+function Rename-AnciennesRegles {
     Import-AideModule NetSecurity
     foreach ($r in @(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue)) {
         try { Set-NetFirewallRule -Name $r.Name -NewDisplayName ($r.DisplayName -replace '^OptiGame : ', 'Nevermind : ') -ErrorAction Stop } catch {}

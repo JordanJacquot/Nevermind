@@ -3,7 +3,7 @@
 # La fiche (un point à régler, « Tout corriger », le résultat avec « Revenir en arrière », la vérification de l'écran
 # après un changement de fréquence, la visite guidée) reste celle de toujours (tableau-de-bord.ps1, assistance.ps1) :
 # son contenu est lu et montré dans l'écran en module déplié, et ses boutons sont ceux de la fiche (mêmes gestes).
-# Chargé par OptiGame.ps1 après accueil-console.ps1.
+# Chargé par Nevermind.ps1 après accueil-console.ps1.
 
 $TonsStatut = @{ ok = 'ok'; warn = 'attention'; bad = 'urgent'; info = '' }
 

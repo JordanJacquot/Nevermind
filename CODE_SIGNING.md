@@ -5,7 +5,7 @@
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
 > **Status:** the application to SignPath Foundation is in progress. Until it is accepted, the releases are not
-> Authenticode signed, and the notes of each [Release](../../releases) give the SHA-256 of `OptiGame.zip`.
+> Authenticode signed, and the notes of each [Release](../../releases) give the SHA-256 of `Nevermind.zip`.
 
 ## What is signed
 
@@ -19,13 +19,13 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 1. The version is tagged in this repository (`v<version>`).
 2. The [Release workflow](.github/workflows/release.yml) builds the three executables on a GitHub hosted runner, from
-   the tagged source only, and uploads the `OptiGame` folder as a workflow artifact (the folder and the zip keep the
-   former name of the app, which installed copies look for).
+   the tagged source only, and uploads the `Nevermind` folder as a workflow artifact.
 3. The workflow sends a signing request to SignPath. SignPath checks that the artifact comes from this workflow and
    this repository. **Every signing request is approved manually** by an approver (see below).
-4. The maintainer downloads the signed `OptiGame.zip` produced by the workflow, adds the detached RSA signature
-   `OptiGame.zip.sig` (Mindset and Nevermind use it to verify updates; it does not change any file inside the zip)
-   and publishes the Release.
+4. The maintainer downloads the signed `Nevermind.zip` produced by the workflow, adds the detached RSA signature
+   `Nevermind.zip.sig` (Mindset and Nevermind use it to verify updates; it does not change any file inside the zip)
+   and publishes the Release. During the transition from the former name of the app, the Release also carries a
+   compatibility zip with the same signed files under the former folder and script names, for older versions of Mindset.
 
 ## Team and roles
 
@@ -97,7 +97,7 @@ Signature gratuite du code fournie par [SignPath.io](https://about.signpath.io),
 
 > **Où on en est :** la demande auprès de la SignPath Foundation est en cours. En attendant, les versions ne sont pas
 > signées (Authenticode), et les notes de chaque [version publiée](../../releases) donnent l'empreinte SHA-256 de
-> `OptiGame.zip`.
+> `Nevermind.zip`.
 
 ## Ce qui est signé
 
@@ -111,13 +111,14 @@ Signature gratuite du code fournie par [SignPath.io](https://about.signpath.io),
 
 1. La version reçoit son étiquette dans ce dépôt (`v<version>`).
 2. Le [workflow Release](.github/workflows/release.yml) construit les trois programmes sur une machine de GitHub,
-   seulement depuis le code de cette étiquette, et dépose le dossier `OptiGame` comme artefact (le dossier et le zip
-   gardent l'ancien nom de l'appli, que les copies déjà installées cherchent).
+   seulement depuis le code de cette étiquette, et dépose le dossier `Nevermind` comme artefact.
 3. Le workflow envoie une demande de signature à SignPath, qui vérifie que l'artefact vient bien de ce workflow et de
    ce dépôt. **Chaque demande est approuvée à la main** par un approbateur (voir plus bas).
-4. Le responsable récupère le `OptiGame.zip` signé construit par le workflow, ajoute la signature RSA séparée
-   `OptiGame.zip.sig` (Mindset et Nevermind s'en servent pour vérifier les mises à jour ; elle ne change aucun
-   fichier du zip) et publie la version.
+4. Le responsable récupère le `Nevermind.zip` signé construit par le workflow, ajoute la signature RSA séparée
+   `Nevermind.zip.sig` (Mindset et Nevermind s'en servent pour vérifier les mises à jour ; elle ne change aucun
+   fichier du zip) et publie la version. Pendant le passage de l'ancien nom de l'appli au nouveau, la version contient
+   aussi un zip de compatibilité : les mêmes fichiers signés, sous les anciens noms de dossier et de script, pour les
+   anciennes versions de Mindset.
 
 ## Équipe et rôles
 

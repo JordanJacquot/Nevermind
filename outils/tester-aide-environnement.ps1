@@ -18,7 +18,7 @@
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
-$app     = Join-Path $racine 'OptiGame\fichiers'
+$app     = Join-Path $racine 'Nevermind\fichiers'
 $echecs  = New-Object System.Collections.Generic.List[string]
 $nbTests = 0
 function Test-Ok($Condition, [string]$Message) {
@@ -93,7 +93,7 @@ try {
     $copie = Join-Path $appli 'fichiers'
     [void][IO.Directory]::CreateDirectory($copie)
     Copy-Item -LiteralPath (Join-Path $app 'NevermindAide.ps1') -Destination $copie
-    Copy-Item -LiteralPath (Join-Path $app 'OptiGame.ps1') -Destination $copie   # (seulement présent : sans lui, le lanceur s'arrête avec un message)
+    Copy-Item -LiteralPath (Join-Path $app 'Nevermind.ps1') -Destination $copie   # (seulement présent : sans lui, le lanceur s'arrête avec un message)
     Copy-Item -LiteralPath (Join-Path $app 'modules') -Destination $copie -Recurse
     Copy-Item -LiteralPath $psExe -Destination (Join-Path $appli 'Mindset.exe')
     $csc = Join-Path ([Environment]::GetFolderPath('Windows')) 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'

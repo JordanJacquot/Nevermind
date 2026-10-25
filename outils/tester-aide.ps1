@@ -1,4 +1,4 @@
-﻿# Tests de l'Aide administrateur (OptiGame\fichiers\modules\aide-actions.ps1), sans droits administrateur et sans rien
+﻿# Tests de l'Aide administrateur (Nevermind\fichiers\modules\aide-actions.ps1), sans droits administrateur et sans rien
 # modifier : chaque demande passe par Invoke-AideAction ... -Verifier, qui contrôle la demande et rend 'ok' sans agir.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-aide.ps1
@@ -14,7 +14,7 @@
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
-$actions = Join-Path $racine 'OptiGame\fichiers\modules\aide-actions.ps1'
+$actions = Join-Path $racine 'Nevermind\fichiers\modules\aide-actions.ps1'
 $echecs  = New-Object System.Collections.Generic.List[string]
 $nbTests = 0
 
@@ -211,7 +211,7 @@ $refusees = @(
     @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\..\notepad.exe" }),
     @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\drivers\etc\hosts" }),
     @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\svchost.exe" }),
-    @('pare-feu.bloquer', @{ Nom = 'OptiGame : bloque X'; Programme = "$env:windir\System32\svchost.exe"; Services = @('wuauserv') }),
+    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\svchost.exe"; Services = @('wuauserv') }),
     @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\svchost.exe"; Services = @('DiagTrack', 'WinDefend') }),
     @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\svchost.exe"; Services = @('Dnscache; calc') }),
     @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\explorer.exe" }),
@@ -389,7 +389,7 @@ $nbTests++
 if (Test-AideClient "$dossierAppli\Mindset.exe" '') { $echecs.Add('Client de l''Aide accepté sans dossier de référence') }
 # NevermindAide.ps1 se sert bien de ce contrôle (connexions et « Nevermind ouvert ? »), et ne cherche aucun programme par
 # son nom seul
-$codeAide = [IO.File]::ReadAllText((Join-Path $racine 'OptiGame\fichiers\NevermindAide.ps1'), [Text.Encoding]::UTF8)
+$codeAide = [IO.File]::ReadAllText((Join-Path $racine 'Nevermind\fichiers\NevermindAide.ps1'), [Text.Encoding]::UTF8)
 $nbTests++
 if (([regex]::Matches($codeAide, 'Test-AideClient\b')).Count -lt 2) { $echecs.Add('NevermindAide.ps1 : Test-AideClient n''est plus utilisé pour les connexions et pour savoir si Nevermind est ouvert') }
 $nbTests++

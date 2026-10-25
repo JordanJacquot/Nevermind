@@ -1,7 +1,7 @@
 ﻿# Nevermind : fenêtre « Paramètres » (roue crantée en haut à droite).
 # Un onglet par famille : Général, Jeux, Réseau et vie privée, Mises à jour, Aide.
 # Les interrupteurs appellent les mêmes fonctions que les pages : un réglage changé ici est à jour partout.
-# Chargé par OptiGame.ps1 après les pages et avant recherche.ps1.
+# Chargé par Nevermind.ps1 après les pages et avant recherche.ps1.
 
 $SettingsTabs = @(
     @{ Id = 'general'; Label = 'Général'; Glyph = 0xE80F; Panel = 'SetGeneral'; Sub = 'Raccourci, lancement au démarrage et visite guidée.' },
@@ -457,9 +457,9 @@ function Set-AppTheme([string]$Id) {
     elseif (-not $AppThemes.Contains($Id)) { return }
     Set-Setting 'Theme' $Id
     Write-Log "Thème : $Id"
-    if ($env:OPTIGAME_TEST) { Set-Status "Thème « $Id » choisi (copie de test : pas de relance)."; return }
+    if ($env:NEVERMIND_TEST) { Set-Status "Thème « $Id » choisi (copie de test : pas de relance)."; return }
     $script:RelaunchHidden = -not $Window.IsVisible   # caché près de l'horloge : il y retourne après la relance
-    $script:Relaunch = Join-Path $AppDir 'OptiGame.ps1'
+    $script:Relaunch = Get-AppScript
     $script:AllowClose = $true
     $Window.Close()
 }

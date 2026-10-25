@@ -1,5 +1,5 @@
 ﻿# Nevermind : historique des changements, signalement d'un problème, visite guidée et nouveautés.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Historique des changements (chaque ligne peut être annulée séparément)
@@ -235,7 +235,7 @@ function Start-Unelevated([string]$Path, [string]$Arguments) {
 # Réaffiche la fenêtre (cachée quand elle a été réduite).
 function Show-MainWindow {
     # Géré par Mindset et pas (encore) accroché : c'est Mindset qui l'affiche, dans son onglet
-    if ($Managed -and -not $script:Embedded -and -not $env:OPTIGAME_TEST -and (Open-DansMindset)) { return }
+    if ($Managed -and -not $script:Embedded -and -not $env:NEVERMIND_TEST -and (Open-DansMindset)) { return }
     try {
         if (-not $Window.IsVisible) { $Window.Show() }
         if ($script:Embedded) { return }   # affichée dans Mindset : la montrer dans sa zone suffit, sans changer son état
@@ -249,7 +249,7 @@ function Show-MainWindow {
 function Get-TrayIcon {
     if (-not $script:NotifyIcon) {
         $ni = New-Object System.Windows.Forms.NotifyIcon
-        $ico = Join-Path $AppDir 'OptiGame.ico'
+        $ico = Join-Path $AppDir 'Nevermind.ico'
         $ni.Icon = if (Test-Path -LiteralPath $ico) { New-Object System.Drawing.Icon (New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))) } else { [System.Drawing.SystemIcons]::Information }
         $ni.Text = 'Nevermind'
         $menu = New-Object System.Windows.Forms.ContextMenuStrip

@@ -1,7 +1,7 @@
 ﻿# Nevermind : diagnostic du lag en ligne. Pendant une partie (ou un test de 30 s), mesure chaque
 # étape du chemin : PC vers box, box vers fournisseur, Internet, serveur du jeu. Puis explique d'où
 # vient le lag (Wi-Fi, téléchargement, box, serveur loin) et propose des corrections.
-# Chargé par OptiGame.ps1 après jeu.ps1 et trafic.ps1.
+# Chargé par Nevermind.ps1 après jeu.ps1 et trafic.ps1.
 
 $LagFile = Join-Path $DataDir 'lag.json'
 $LagColors = @{ gw = '#4EA8FF'; isp = '#A6A1BC'; ref = '#B18CFF'; srv = '#22D37A' }

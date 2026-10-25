@@ -3,7 +3,7 @@
 # Les réglages, programmes et catégories viennent de l'interface d'avant, toujours chargée (cases à cocher et
 # interrupteurs cachés) : l'écran les montre et les règle, puis appelle les mêmes fonctions (Invoke-ApplyTweaks,
 # Set-StartupToggle, Invoke-Clean...).
-# Chargé par OptiGame.ps1 après ecran-pc.ps1.
+# Chargé par Nevermind.ps1 après ecran-pc.ps1.
 
 # Le dernier jeu joué (lu dans les mesures de parties) : gardé 20 s, l'écran est préparé souvent
 function Get-DernierJeuKit {

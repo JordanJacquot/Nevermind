@@ -1,5 +1,5 @@
 ﻿# Nevermind : optimisations gaming, programmes au démarrage, jeux installés.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Optimisations gaming

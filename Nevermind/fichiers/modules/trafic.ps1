@@ -1,6 +1,6 @@
 ﻿# Nevermind : ce qui sort du PC. Quels programmes communiquent avec Internet, avec qui, combien,
 # et ce qui est anormal. Le contenu (chiffré en HTTPS) n'est jamais lu.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 $TrafficIndex = 11
 $LolBins = '^(powershell|pwsh|cmd|wscript|cscript|mshta|rundll32|regsvr32|certutil|bitsadmin|msbuild|installutil|regasm|regsvcs|cmstp|wmic|forfiles|msiexec|hh)$'
@@ -61,7 +61,7 @@ function Get-TrafficApp([int]$ProcId) {
     if ($ProcId -gt 4) { try { $path = [string][TrafficMon]::GetProcessPath($ProcId) } catch {} }
     if (-not $path -and $st.AidePaths) { $path = [string]$st.AidePaths[$ProcId] }
     $svc = if ($name -eq 'svchost') { @(Get-SvcNames $ProcId) } else { @() }
-    $key = if ($ProcId -eq $PID) { 'optigame' } elseif ($svc.Count) { 'svc:' + (($svc | ForEach-Object { $_.Name.ToLower() }) -join ',') } elseif ($path) { $path.ToLower() } else { "nom:$($name.ToLower())" }
+    $key = if ($ProcId -eq $PID) { 'nevermind' } elseif ($svc.Count) { 'svc:' + (($svc | ForEach-Object { $_.Name.ToLower() }) -join ',') } elseif ($path) { $path.ToLower() } else { "nom:$($name.ToLower())" }
     if (-not $st.Apps.ContainsKey($key)) {
         # Description du programme : lue en arrière plan avec sa signature (ouvrir le .exe ici réveillait l'antivirus)
         $desc = ''

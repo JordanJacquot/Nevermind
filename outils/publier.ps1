@@ -1,37 +1,44 @@
 ﻿# Publie une nouvelle version de Nevermind sur GitHub.
-# Mindset la propose ensuite et l'installe (OptiGame.zip et sa signature OptiGame.zip.sig, vérifiée avant installation).
+# Mindset la propose ensuite et l'installe (Nevermind.zip et sa signature Nevermind.zip.sig, vérifiée avant installation).
+# Pendant le changement de nom, la version contient aussi le zip de compatibilité (OptiGame.zip et sa signature, voir
+# outils\zips.ps1) : les Mindset 2.12.0 et plus anciens ne connaissent que lui.
 #
 #   .\outils\publier.ps1 -Version 1.1 -Notes "Ce qui change dans cette version"
 #   .\outils\publier.ps1 -Version 1.2 -Notes "..." -Beta    version bêta (marquée « préversion » sur GitHub)
+#   .\outils\publier.ps1 -Essai                            essai : vérifications, construction et les deux zips, signés
+#                                                          avec une clé jetable ; rien n'est modifié ni publié
 #
 # Avant de publier, le script vérifie la syntaxe de tous les fichiers, l'absence de tirets
 # cadratins et lance le test automatique (outils\tester.ps1). -SansTest saute le test (urgence).
 
 param(
-    [Parameter(Mandatory = $true)][string]$Version,
+    [string]$Version = '',
     [string]$Notes = '',
     [switch]$Beta,
-    [switch]$SansTest
+    [switch]$SansTest,
+    [switch]$Essai
 )
 $ErrorActionPreference = 'Stop'
 $racine = Split-Path $PSScriptRoot -Parent
-$app    = Join-Path $racine 'OptiGame'
-$ps1    = Join-Path $app 'fichiers\OptiGame.ps1'
+$app    = Join-Path $racine 'Nevermind'
+$ps1    = Join-Path $app 'fichiers\Nevermind.ps1'
 $lisez  = Join-Path $app 'LISEZMOI.txt'
 $utf8   = New-Object Text.UTF8Encoding($true)
 
-if ($Version -notmatch '^\d+\.\d+(\.\d+)?$') { throw "Numéro de version invalide : $Version (exemple : 1.1)" }
+if (-not $Essai -and $Version -notmatch '^\d+\.\d+(\.\d+)?$') { throw "Numéro de version invalide : $Version (exemple : 1.1)" }
 
 # Un numéro déjà publié ne doit jamais être réutilisé : GitHub garde l'ancien zip en cache.
-Push-Location $racine
-try {
-    $ErrorActionPreference = 'Continue'   # « introuvable » est la réponse attendue ici, pas une erreur
-    git rev-parse -q --verify "refs/tags/v$Version" 2>$null | Out-Null
-    $tagExiste = ($LASTEXITCODE -eq 0)
-    gh release view "v$Version" 2>$null | Out-Null
-    $releaseExiste = ($LASTEXITCODE -eq 0)
-} finally { Pop-Location; $ErrorActionPreference = 'Stop' }
-if ($tagExiste -or $releaseExiste) { throw "La version $Version existe déjà. Choisis un numéro plus grand (exemple : 1.0.2 ou 1.1)." }
+if (-not $Essai) {
+    Push-Location $racine
+    try {
+        $ErrorActionPreference = 'Continue'   # « introuvable » est la réponse attendue ici, pas une erreur
+        git rev-parse -q --verify "refs/tags/v$Version" 2>$null | Out-Null
+        $tagExiste = ($LASTEXITCODE -eq 0)
+        gh release view "v$Version" 2>$null | Out-Null
+        $releaseExiste = ($LASTEXITCODE -eq 0)
+    } finally { Pop-Location; $ErrorActionPreference = 'Stop' }
+    if ($tagExiste -or $releaseExiste) { throw "La version $Version existe déjà. Choisis un numéro plus grand (exemple : 1.0.2 ou 1.1)." }
+}
 
 # Vérifications : syntaxe, fenêtre, tirets cadratins, puis test automatique de l'app
 $problemes = @()
@@ -51,13 +58,13 @@ $clesMindset = Join-Path (Split-Path $racine -Parent) 'Mindset\Mindset\fichiers\
 function Get-EmpreinteCles([string]$Dossier) { @(Get-ChildItem -LiteralPath $Dossier -File -Force -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName).Hash)" }) -join ';' }
 $empreinte = Get-EmpreinteCles $cles
 if (-not $empreinte -or $empreinte -ne (Get-EmpreinteCles $clesMindset)) {
-    $problemes += "Clés publiques : OptiGame\fichiers\cles-publiques absentes ou différentes de celles de Mindset ($clesMindset)"
+    $problemes += "Clés publiques : Nevermind\fichiers\cles-publiques absentes ou différentes de celles de Mindset ($clesMindset)"
 }
 if ($problemes) {
     $problemes | ForEach-Object { Write-Host $_ -ForegroundColor Red }
     throw 'Publication annulée : corrige les points ci dessus.'
 }
-if (-not $SansTest) {
+if (-not $SansTest -and -not $Essai) {
     & (Join-Path $PSScriptRoot 'tester.ps1')
     if ($LASTEXITCODE) { throw 'Publication annulée : le test automatique a échoué.' }
 }
@@ -70,22 +77,49 @@ function Invoke-Native([string]$Exe, [string[]]$Arguments) {
     if ($LASTEXITCODE) { throw "Échec : $Exe $($Arguments -join ' ')" }
 }
 
-# 1. Numéro de version dans l'app et le LISEZMOI
-$c = [IO.File]::ReadAllText($ps1, [Text.Encoding]::UTF8)
-$c = [regex]::Replace($c, "(?m)^\`$AppVersion = '[^']*'", "`$AppVersion = '$Version'")
-$c = [regex]::Replace($c, '(?m)^    (OptiGame|Nexo|Nevermind) [\d\.]+\r?$', "    Nevermind $Version`r")
-[IO.File]::WriteAllText($ps1, $c, $utf8)
-$l = [IO.File]::ReadAllText($lisez, [Text.Encoding]::UTF8)
-$l = [regex]::Replace($l, '^(OptiGame|Nexo|Nevermind) [\d\.]+', "Nevermind $Version")
-[IO.File]::WriteAllText($lisez, $l, $utf8)
+# 1. Numéro de version dans l'app et le LISEZMOI (pas en essai : rien n'est modifié)
+if (-not $Essai) {
+    $c = [IO.File]::ReadAllText($ps1, [Text.Encoding]::UTF8)
+    $c = [regex]::Replace($c, "(?m)^\`$AppVersion = '[^']*'", "`$AppVersion = '$Version'")
+    $c = [regex]::Replace($c, '(?m)^    Nevermind [\d\.]+\r?$', "    Nevermind $Version`r")
+    [IO.File]::WriteAllText($ps1, $c, $utf8)
+    $l = [IO.File]::ReadAllText($lisez, [Text.Encoding]::UTF8)
+    $l = [regex]::Replace($l, '^Nevermind [\d\.]+', "Nevermind $Version")
+    [IO.File]::WriteAllText($lisez, $l, $utf8)
+}
 
-# 2. Construction des .exe et du zip, puis sa signature (Mindset et Nevermind refusent un zip sans signature valide).
-# signer.ps1 s'arrête sur une erreur s'il ne peut pas signer : la publication est alors annulée avant tout envoi.
+# 2. Construction des .exe et des deux zips (Nevermind.zip, et OptiGame.zip pour les anciens Mindset), puis leurs
+# signatures (Mindset et Nevermind refusent un zip sans signature valide). signer.ps1 s'arrête sur une erreur s'il ne
+# peut pas signer : la publication est alors annulée avant tout envoi. En essai, une clé jetable signe à sa place.
 & (Join-Path $PSScriptRoot 'construire.ps1')
-$zip = Join-Path $racine 'OptiGame.zip'
-Remove-Item -LiteralPath "$zip.sig" -ErrorAction SilentlyContinue   # jamais l'ancienne signature d'un autre zip
-& (Join-Path (Split-Path $racine -Parent) 'Mindset\outils\signer.ps1') -Fichier $zip
-if (-not (Test-Path -LiteralPath "$zip.sig")) { throw 'Publication annulée : le zip n''a pas pu être signé.' }
+$zips = @((Join-Path $racine 'Nevermind.zip'), (Join-Path $racine 'OptiGame.zip'))
+$cleEssai = $null
+if ($Essai) { $cleEssai = New-Object Security.Cryptography.RSACryptoServiceProvider(3072); $cleEssai.PersistKeyInCsp = $false }
+try {
+    foreach ($zip in $zips) {
+        if (-not (Test-Path -LiteralPath $zip)) { throw "Publication annulée : $zip n'a pas été construit." }
+        Remove-Item -LiteralPath "$zip.sig" -ErrorAction SilentlyContinue   # jamais l'ancienne signature d'un autre zip
+        if ($Essai) { [IO.File]::WriteAllBytes("$zip.sig", $cleEssai.SignData([IO.File]::ReadAllBytes($zip), [Security.Cryptography.CryptoConfig]::MapNameToOID('SHA256'))) }
+        else { & (Join-Path (Split-Path $racine -Parent) 'Mindset\outils\signer.ps1') -Fichier $zip }
+        if (-not (Test-Path -LiteralPath "$zip.sig")) { throw "Publication annulée : $(Split-Path $zip -Leaf) n'a pas pu être signé." }
+    }
+} finally { if ($cleEssai) { $cleEssai.Dispose() } }
+
+# Ce que contient chaque zip : un seul dossier, un seul script principal (Nevermind\fichiers\Nevermind.ps1, ou
+# OptiGame\fichiers\OptiGame.ps1 dans le zip de compatibilité), et les programmes
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+foreach ($z in @(@($zips[0], 'Nevermind', 'Nevermind.ps1'), @($zips[1], 'OptiGame', 'OptiGame.ps1'))) {
+    $a = [IO.Compression.ZipFile]::OpenRead($z[0])
+    try { $noms = @($a.Entries | ForEach-Object { $_.FullName.Replace('\', '/') }) } finally { $a.Dispose() }
+    $dossiers = @($noms | ForEach-Object { $_.Split('/')[0] } | Sort-Object -Unique)
+    $scripts = @($noms | Where-Object { $_ -match '^[^/]+/fichiers/[^/]+\.ps1$' -and $_ -notmatch '/NevermindAide\.ps1$' })
+    $manque = @("$($z[1])/fichiers/$($z[2])", "$($z[1])/Mindset.exe", "$($z[1])/Nevermind.exe", "$($z[1])/NevermindAide.exe" | Where-Object { $noms -notcontains $_ })
+    if ($dossiers.Count -ne 1 -or $dossiers[0] -ne $z[1] -or $scripts.Count -ne 1 -or $manque.Count) {
+        throw "Publication annulée : $(Split-Path $z[0] -Leaf) mal construit (dossiers : $($dossiers -join ', ') ; scripts : $($scripts -join ', ') ; manque : $($manque -join ', '))"
+    }
+    Write-Host "$(Split-Path $z[0] -Leaf) : dossier $($z[1]), script fichiers\$($z[2]), $($noms.Count) fichiers, signé" -ForegroundColor Green
+}
+if ($Essai) { "Essai fini : $($zips -join ', ') et leurs signatures (clé jetable). Rien n'est publié."; return }
 
 # 3. Envoi sur GitHub et création de la version
 Push-Location $racine
@@ -95,7 +129,7 @@ try {
     Invoke-Native git @('tag', "v$Version")
     Invoke-Native git @('push', 'origin', 'HEAD', '--tags')
     if (-not $Notes) { $Notes = "Nevermind $Version" }
-    $ghArgs = @('release', 'create', "v$Version", $zip, "$zip.sig", '--title', "Nevermind $Version$(if ($Beta) { ' (bêta)' })", '--notes', $Notes)
+    $ghArgs = @('release', 'create', "v$Version") + @($zips | ForEach-Object { $_, "$_.sig" }) + @('--title', "Nevermind $Version$(if ($Beta) { ' (bêta)' })", '--notes', $Notes)
     if ($Beta) { $ghArgs += '--prerelease' }
     Invoke-Native gh $ghArgs
 } finally { Pop-Location }
@@ -115,5 +149,10 @@ foreach ($f in Get-ChildItem -LiteralPath $app -Recurse -File) {
     }
     try { Copy-Item -LiteralPath $f.FullName -Destination $dest -Force -ErrorAction Stop }
     catch { Write-Host "Copie impossible (fichier utilisé ?) : $dest" -ForegroundColor Yellow }
+}
+# (le script et l'icône sous l'ancien nom : jamais deux scripts principaux dans la copie)
+foreach ($n in 'OptiGame.ps1', 'OptiGame.ico') {
+    $p = Join-Path $racine "fichiers\$n"
+    if ((Test-Path -LiteralPath $p) -and (Test-Path -LiteralPath (Join-Path $racine 'fichiers\Nevermind.ps1'))) { try { [IO.File]::Delete($p) } catch {} }
 }
 "Version $Version publiée."

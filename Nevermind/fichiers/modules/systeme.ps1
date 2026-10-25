@@ -1,5 +1,5 @@
 ﻿# Nevermind : connexion active, nettoyage, restauration et désinstallation.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Réseau
@@ -232,6 +232,12 @@ $OldAppNames = @('OptiGame', 'Nexo')
 $OldAutoStartTasks = @($OldAppNames | ForEach-Object { "$_ (démarrage)" })
 
 function Get-AppRoot { if ((Split-Path $AppDir -Leaf) -eq 'fichiers') { Split-Path $AppDir -Parent } else { $AppDir } }
+# Le script principal de cette copie : fichiers\Nevermind.ps1, ou fichiers\OptiGame.ps1 (son ancien nom) dans le zip de
+# compatibilité que reçoivent les Mindset 2.12.0 et plus anciens (outils\zips.ps1)
+function Get-AppScript {
+    foreach ($n in 'Nevermind.ps1', 'OptiGame.ps1') { $p = Join-Path $AppDir $n; if (Test-Path -LiteralPath $p) { return $p } }
+    Join-Path $AppDir 'Nevermind.ps1'
+}
 # Le programme à lancer : Mindset.exe du dossier (celui qui fait tourner Nevermind, outils\lanceur.cs). Nevermind.exe n'est plus
 # qu'un relais vers lui, gardé pour les anciens raccourcis et les anciennes tâches : les deux sont reconnus (Get-AppExes).
 function Get-AppExe { Join-Path (Get-AppRoot) 'Mindset.exe' }
@@ -291,7 +297,7 @@ function Set-AutoStart([bool]$On) {
         if (Get-AutoStartTask) { Unregister-ScheduledTask -TaskName $AutoStartTask -Confirm:$false -ErrorAction Stop }
         return
     }
-    $ps1 = Join-Path $AppDir 'OptiGame.ps1'
+    $ps1 = Get-AppScript
     $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     $exe = @(Get-AppExes | Where-Object { Test-Path -LiteralPath $_ })[0]   # (Mindset.exe, ou Nevermind.exe d'une ancienne version)
     $act = if ($exe) { New-ScheduledTaskAction -Execute "`"$exe`"" -Argument '-Demarrage' -WorkingDirectory $env:USERPROFILE }
@@ -354,7 +360,7 @@ function Update-AutoStartPath {
     if ($Managed -or (Test-DemarrageParMindset)) { return }   # (le démarrage avec Windows passe par Mindset)   # (Mindset s'en occupe : sa tâche a été reprise, on ne la recrée pas)
     $t = @(Get-TaskInfo @($AutoStartTask))[0]
     if (-not $t) { return }
-    $ps1 = Join-Path $AppDir 'OptiGame.ps1'
+    $ps1 = Get-AppScript
     $exes = @(Get-AppExes | Where-Object { Test-Path -LiteralPath $_ })
     # La tâche doit lancer Mindset.exe de ce dossier, ou son relais Nevermind.exe (tâche d'une version d'avant : elle marche,
     # on n'y touche pas) ; les plus anciennes lançaient PowerShell avec le script
@@ -376,7 +382,7 @@ function Update-AutoStartPath {
 # lag), organiseur, appareils du réseau, thèmes, journal. « Supprimer » retire tout le dossier des données.
 # Le choix vient de la ligne de commande (« Désinstaller Nevermind.exe -GarderDonnees » ou « -SupprimerDonnees », utilisé
 # par le désinstalleur de Mindset : aucune question), sinon il est demandé dans la fenêtre de désinstallation.
-# Le lanceur (outils\lanceur.cs) le transmet par $env:NEVERMIND_DONNEES (« garder » ou « supprimer ») ; OptiGame.ps1 peut
+# Le lanceur (outils\lanceur.cs) le transmet par $env:NEVERMIND_DONNEES (« garder » ou « supprimer ») ; Nevermind.ps1 peut
 # aussi le recevoir en paramètres ($GarderDonnees, $SupprimerDonnees).
 function Get-ChoixDonneesImpose {
     $s = [bool](Get-Variable -Name SupprimerDonnees -ValueOnly -ErrorAction SilentlyContinue) -or "$env:NEVERMIND_DONNEES" -eq 'supprimer'
@@ -453,7 +459,7 @@ function Show-ChoixDesinstallation([string]$Texte, [int]$Essai = -1, [string]$Im
     }.GetNewClosure()
     & $majNote
     $case.Add_Checked($majNote); $case.Add_Unchecked($majNote)
-    $ico = Join-Path $AppDir 'OptiGame.ico'
+    $ico = Join-Path $AppDir 'Nevermind.ico'
     if (Test-Path -LiteralPath $ico) {
         try { $w.Icon = [System.Windows.Media.Imaging.BitmapDecoder]::Create((New-Object IO.MemoryStream (, [IO.File]::ReadAllBytes($ico))), 'None', 'OnLoad').Frames | Sort-Object PixelWidth | Where-Object { $_.PixelWidth -ge 32 } | Select-Object -First 1 } catch {}
     }
@@ -543,8 +549,10 @@ function Invoke-Uninstall {
         (Join-Path $root 'Nexo.exe'),
         (Join-Path $root 'Désinstaller Nexo.exe'),
         (Join-Path $root 'LISEZMOI.txt'),
+        (Join-Path $here 'Nevermind.ps1'),
         (Join-Path $here 'OptiGame.ps1'),
         (Join-Path $here 'NevermindAide.ps1'),
+        (Join-Path $here 'Nevermind.ico'),
         (Join-Path $here 'OptiGame.ico'),
         (Join-Path $here 'cle-publique.xml'),
         (Join-Path $here 'Lancer Nevermind (secours).bat'),

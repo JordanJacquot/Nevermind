@@ -17,7 +17,7 @@ param([switch]$VraiLagMon)
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
-$fichiers = Join-Path $racine 'OptiGame\fichiers'
+$fichiers = Join-Path $racine 'Nevermind\fichiers'
 $modules = Join-Path $fichiers 'modules'
 
 # ---------------------------------------------------------------------------
@@ -86,7 +86,7 @@ try {
         'Get-TrafficMarks', 'Get-TrafficAlerts', 'Format-Bytes', '$LolBins', '$RemoteTools', '$SusPorts', '$UploadOk'))))
     . ([scriptblock]::Create((Get-Definitions (Join-Path $modules 'aide-client.ps1') @('$FpsVeilleConnus', 'Get-FpsVeilleJeux', 'Update-FpsVeille'))))
     . ([scriptblock]::Create((Get-Definitions (Join-Path $modules 'interface.ps1') @('Get-MessageErreur', 'Invoke-Safe'))))
-    . ([scriptblock]::Create((Get-Definitions (Join-Path $fichiers 'OptiGame.ps1') @('Find-MindsetExe'))))
+    . ([scriptblock]::Create((Get-Definitions (Join-Path $fichiers 'Nevermind.ps1') @('Find-MindsetExe'))))
 } catch { Write-Host "Chargement impossible : $($_.Exception.Message)" -ForegroundColor Red; exit 1 }
 
 # ---------------------------------------------------------------------------

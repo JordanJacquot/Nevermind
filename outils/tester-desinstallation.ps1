@@ -17,7 +17,7 @@
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
-$modules = Join-Path $racine 'OptiGame\fichiers\modules'
+$modules = Join-Path $racine 'Nevermind\fichiers\modules'
 $echecs  = New-Object System.Collections.Generic.List[string]
 $nbTests = 0
 function Test-Ok([bool]$Condition, [string]$Message) {
@@ -114,7 +114,7 @@ function New-FauxNevermind([string]$Nom) {
     }
     New-Item -ItemType Directory -Force -Path (Join-Path $AppDir 'modules') | Out-Null
     foreach ($f in 'Nevermind.exe', 'Désinstaller Nevermind.exe') { [IO.File]::WriteAllText((Join-Path (Split-Path $AppDir) $f), 'programme') }
-    [IO.File]::WriteAllText((Join-Path $AppDir 'OptiGame.ps1'), '# script')
+    [IO.File]::WriteAllText((Join-Path $AppDir 'Nevermind.ps1'), '# script')
     $script:FausseSauvegarde = @{ Registry = @{ 'a' = @{ Path = 'HKCU:\Faux'; Name = 'x' } }; Dns = @{}; Displays = @{}; PowerScheme = $null; Overlay = $null }
     $script:FauxProbleme = $null
     $script:ErreursRestauration = @()
@@ -138,8 +138,8 @@ try {
     $env:NEVERMIND_DONNEES = 'supprimer'; Test-Ok ((Get-ChoixDonneesImpose) -eq 'supprimer') 'NEVERMIND_DONNEES=supprimer : données supprimées'
     $env:NEVERMIND_DONNEES = 'n''importe quoi'; Test-Ok ((Get-ChoixDonneesImpose) -eq '') 'Une valeur inconnue n''impose rien'
     Remove-Item env:NEVERMIND_DONNEES
-    & { $GarderDonnees = [switch]$true; Test-Ok ((Get-ChoixDonneesImpose) -eq 'garder') 'Paramètre -GarderDonnees d''OptiGame.ps1 : données gardées' }
-    & { $SupprimerDonnees = [switch]$true; Test-Ok ((Get-ChoixDonneesImpose) -eq 'supprimer') 'Paramètre -SupprimerDonnees d''OptiGame.ps1 : données supprimées' }
+    & { $GarderDonnees = [switch]$true; Test-Ok ((Get-ChoixDonneesImpose) -eq 'garder') 'Paramètre -GarderDonnees de Nevermind.ps1 : données gardées' }
+    & { $SupprimerDonnees = [switch]$true; Test-Ok ((Get-ChoixDonneesImpose) -eq 'supprimer') 'Paramètre -SupprimerDonnees de Nevermind.ps1 : données supprimées' }
     & { $GarderDonnees = [switch]$true; $env:NEVERMIND_DONNEES = 'supprimer'; Test-Ok ((Get-ChoixDonneesImpose) -eq '') 'Garder et supprimer à la fois : la question est posée'; Remove-Item env:NEVERMIND_DONNEES }
 
     # -----------------------------------------------------------------------
@@ -265,10 +265,10 @@ try {
     $exe = Join-Path $lanceur 'Désinstaller Nevermind.exe'
     $null = & $csc /nologo /target:winexe /reference:System.Windows.Forms.dll /reference:System.Web.Extensions.dll "/reference:$sma" /define:UNINSTALL "/out:$exe" (Join-Path $PSScriptRoot 'lanceur.cs')
     Test-Ok ($LASTEXITCODE -eq 0) 'Le lanceur se compile (Désinstaller Nevermind.exe)'
-    # Un faux OptiGame.ps1 : il note ce qu'il reçoit, rien d'autre
+    # Un faux Nevermind.ps1 : il note ce qu'il reçoit, rien d'autre
     $sortie = Join-Path $script:Bac 'recu.txt'
     $faux = "param([switch]`$Uninstall, [switch]`$Demarrage)`r`n[IO.File]::WriteAllText('$sortie', `"`$Uninstall|`$env:NEVERMIND_DONNEES`")"
-    [IO.File]::WriteAllText((Join-Path $lanceur 'fichiers\OptiGame.ps1'), $faux, (New-Object Text.UTF8Encoding $true))
+    [IO.File]::WriteAllText((Join-Path $lanceur 'fichiers\Nevermind.ps1'), $faux, (New-Object Text.UTF8Encoding $true))
     foreach ($c in @(@('-GarderDonnees', 'True|garder'), @('-SupprimerDonnees', 'True|supprimer'), @('', 'True|'), @('-GarderDonnees -SupprimerDonnees', 'True|'))) {
         Remove-Item -LiteralPath $sortie -ErrorAction SilentlyContinue
         $env:NEVERMIND_DONNEES = 'supprimer'   # (valeur héritée : le lanceur l'ignore, seule sa ligne de commande compte)

@@ -1,7 +1,7 @@
 ﻿# Nevermind : les pages de l'écran (kit) de « Protection » : Protection, Sécurité, Connexion et Sauvegarde.
 # Les données viennent des mêmes fonctions que l'interface d'avant (Update-SecurityTab garde sa dernière vérification
 # dans $script:SecDonnees ; Invoke-NetTest, Get-ActiveNet, l'historique des changements) ; les gestes aussi.
-# Chargé par OptiGame.ps1 après ecran-perf.ps1.
+# Chargé par Nevermind.ps1 après ecran-perf.ps1.
 
 function Get-EtatSecuriteKit {
     $d = $script:SecDonnees

@@ -1,10 +1,10 @@
 ﻿<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="1.0.0.0" name="OptiGame.Lanceur"/>
+  <assemblyIdentity version="1.0.0.0" name="Nevermind.Lanceur"/>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- Démarre sans droits : OptiGame.ps1 vérifie d'abord que la copie est gérée par Mindset (sinon simple message,
+        <!-- Démarre sans droits : Nevermind.ps1 vérifie d'abord que la copie est gérée par Mindset (sinon simple message,
              sans demande de Windows), puis se relance lui-même en administrateur (une seule demande de Windows) -->
         <requestedExecutionLevel level="asInvoker" uiAccess="false"/>
       </requestedPrivileges>

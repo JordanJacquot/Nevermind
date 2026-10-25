@@ -1,10 +1,10 @@
 ﻿# Nevermind : branchement des boutons et événements de la fenêtre.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Événements
 # ---------------------------------------------------------------------------
-$IconPath = Join-Path $AppDir 'OptiGame.ico'
+$IconPath = Join-Path $AppDir 'Nevermind.ico'
 if (Test-Path $IconPath) {
     try {
         # Chargée en mémoire pour ne pas bloquer le fichier (il doit pouvoir être remplacé par une mise à jour).
@@ -110,7 +110,7 @@ function Watch-Requests {
     }
 }
 # Un nouveau lancement de Nevermind demande d'afficher cette fenêtre (elle peut être cachée près de l'horloge)
-if (-not $env:OPTIGAME_TEST) {
+if (-not $env:NEVERMIND_TEST) {
     $script:ShowWatch = New-Object System.Windows.Threading.DispatcherTimer
     $script:ShowWatch.Interval = [TimeSpan]::FromMilliseconds(600)
     # (protégée de l'intérieur : une minuterie dont le passage lève une erreur n'est plus relancée par WPF, et Nevermind
@@ -134,8 +134,8 @@ function Test-ThemeSansGener {
 # date du fichier est lue ; il n'est relu que si elle a changé. Nouveau thème (un des 5, ou un pack de la suite
 # installé par Mindset dans les packs de Nevermind) : enregistré, puis Nevermind se relance
 # (comme un changement de thème ici). Pas de boucle : après la relance, son thème est celui de la suite.
-# (Une copie de test qui simule Mindset, OPTIGAME_SUITE, le suit aussi : sans relance, voir Set-AppTheme.)
-if ($Managed -and (-not $env:OPTIGAME_TEST -or $env:OPTIGAME_SUITE)) {
+# (Une copie de test qui simule Mindset, NEVERMIND_SUITE, le suit aussi : sans relance, voir Set-AppTheme.)
+if ($Managed -and (-not $env:NEVERMIND_TEST -or $env:NEVERMIND_SUITE)) {
     $script:SuiteWatch = New-Object System.Windows.Threading.DispatcherTimer
     $script:SuiteWatch.Interval = [TimeSpan]::FromMilliseconds(2500)
     $script:SuiteWatch.Add_Tick({ try { Watch-SuiteTheme } catch { Write-Log "Thème de la suite : $_" } })   # (protégée de l'intérieur)
@@ -173,7 +173,7 @@ function Watch-SuiteTheme {
 [Microsoft.Win32.SystemEvents]::add_SessionEnding({ $script:AllowClose = $true })
 $Window.Add_Closing({
     param($s, $e)
-    if ($script:AllowClose -or $env:OPTIGAME_TEST) { return }
+    if ($script:AllowClose -or $env:NEVERMIND_TEST) { return }
     $e.Cancel = $true
     $choice = ''
     try { $choice = Show-QuitDialog } catch { Write-Log "Fenêtre Quitter : $_"; $choice = 'quit' }
@@ -392,7 +392,7 @@ $Window.Add_ContentRendered({
             Step-UI; [void]$script:StartGaps.Seen.Add('Update-HistoryList'); Update-HistoryList
         }
         Invoke-Safe {
-            if (-not $env:OPTIGAME_TEST) {
+            if (-not $env:NEVERMIND_TEST) {
                 Step-UI; [void]$script:StartGaps.Seen.Add('Invoke-NameMigration'); Invoke-NameMigration
                 Step-UI; [void]$script:StartGaps.Seen.Add('Update-AutoStartPath'); Update-AutoStartPath
             }
@@ -432,7 +432,7 @@ $Window.Add_ContentRendered({
             # (déjà accrochée dans Mindset pendant le chargement : elle y reste affichée)
             if (-not $script:Embedded) {
                 try { Hide-ToTray } catch { Write-Log "Réduction: $_" }
-                # Préparée hors de l'écran (OptiGame.ps1) : une fois cachée, elle reprend sa place au centre de l'écran
+                # Préparée hors de l'écran (Nevermind.ps1) : une fois cachée, elle reprend sa place au centre de l'écran
                 if ($Window.Left -le -30000) {
                     $wa = [System.Windows.SystemParameters]::WorkArea
                     $Window.Left = $wa.Left + [math]::Max(0.0, ($wa.Width - $Window.Width) / 2)

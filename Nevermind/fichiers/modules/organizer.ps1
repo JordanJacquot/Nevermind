@@ -2,7 +2,7 @@
 # Repère les fenêtres Dofus ouvertes (nom du perso lu dans le titre), les range dans l'ordre d'initiative,
 # et passe d'un perso à l'autre au clavier ou avec une petite barre flottante.
 # Nevermind ne touche jamais au jeu : il met seulement la bonne fenêtre devant (comme un clic dans la barre des tâches).
-# Chargé par OptiGame.ps1 après bibliotheque.ps1.
+# Chargé par Nevermind.ps1 après bibliotheque.ps1.
 
 $OrgFile = Join-Path $DataDir 'organizer.json'
 $OrgMaxKeys = 8

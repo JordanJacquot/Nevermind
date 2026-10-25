@@ -2,7 +2,7 @@
 # plus proche qu'il répond vite), l'audit de sécurité, les appareils à vérifier et la liste des appareils.
 # Les appareils viennent du scan de Nevermind ($script:NetList) ; la fiche d'un appareil s'ouvre dans le panneau
 # (ecran-panneau.ps1).
-# Chargé par OptiGame.ps1 après ecran-jeux.ps1.
+# Chargé par Nevermind.ps1 après ecran-jeux.ps1.
 
 # L'icône et la famille (couleur) d'un appareil dans le système solaire, d'après sa sorte
 $SortesReseau = @{

@@ -1,6 +1,6 @@
-﻿// Lanceur de Nevermind : exécute fichiers\OptiGame.ps1 DANS son propre processus (moteur PowerShell hébergé),
+﻿// Lanceur de Nevermind : exécute fichiers\Nevermind.ps1 DANS son propre processus (moteur PowerShell hébergé),
 // pour que le Gestionnaire des tâches et la barre des tâches affichent son nom et son icône, pas « Windows PowerShell ».
-// Il démarre sans droits (manifeste « asInvoker ») : OptiGame.ps1 se relance lui-même en administrateur après ses
+// Il démarre sans droits (manifeste « asInvoker ») : Nevermind.ps1 se relance lui-même en administrateur après ses
 // premiers contrôles (copie gérée par Mindset, Nevermind déjà ouvert), une seule fenêtre de confirmation de Windows.
 // Compilé quatre fois par construire.ps1 :
 //   Mindset.exe (sans symbole) : le programme qui fait tourner Nevermind. Toutes les applis de la suite tournent dans un
@@ -10,7 +10,7 @@
 //     ferme aussitôt. Les anciennes versions de Mindset, les anciens raccourcis et les anciennes tâches l'appellent encore ;
 //   Désinstaller Nevermind.exe (symbole UNINSTALL) et NevermindAide.exe (symbole AIDE : la partie administrateur,
 //     fichiers\NevermindAide.ps1).
-// La version (celle d'OptiGame.ps1) est ajoutée par construire.ps1 dans un petit fichier à part.
+// La version (celle de Nevermind.ps1) est ajoutée par construire.ps1 dans un petit fichier à part.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -35,7 +35,7 @@ using System.Windows.Forms;
 
 static class Lanceur
 {
-    // Dossier des données, même règle que Resolve-DataDir (OptiGame.ps1) : si %LOCALAPPDATA%\Mindset\suite.json note
+    // Dossier des données, même règle que Resolve-DataDir (Nevermind.ps1) : si %LOCALAPPDATA%\Mindset\suite.json note
     // cette copie comme celle de Mindset (et que l'ancien dossier a été renommé), <X>:\Mindset\Donnees\Nevermind pour un
     // programme dans <X>:\Mindset\Programmes\Nevermind, sinon %LOCALAPPDATA%\Mindset\Nevermind ; autrement
     // %LOCALAPPDATA%\OptiGame. Le dossier lu dans suite.json ne sert qu'à comparer.
@@ -73,7 +73,11 @@ static class Lanceur
     {
         Application.EnableVisualStyles();
         string dossier = AppDomain.CurrentDomain.BaseDirectory;
-        string script = Path.Combine(Path.Combine(dossier, "fichiers"), "OptiGame.ps1");
+        // Le script de Nevermind : fichiers\Nevermind.ps1, ou à défaut fichiers\OptiGame.ps1 (son ancien nom, gardé dans le zip
+        // de compatibilité que reçoivent les Mindset 2.12.0 et plus anciens)
+        string script = Path.Combine(Path.Combine(dossier, "fichiers"), "Nevermind.ps1");
+        string ancienScript = Path.Combine(Path.Combine(dossier, "fichiers"), "OptiGame.ps1");
+        if (!File.Exists(script) && File.Exists(ancienScript)) script = ancienScript;
 
 #if RELAIS
         // Nevermind.exe : lance Mindset.exe de CE dossier (jamais un autre), avec les mêmes arguments, le même dossier de
@@ -182,8 +186,8 @@ static class Lanceur
                 }
             }
             // Comme pour l'Aide : aucun fil de fond ne garde le processus ouvert une fois l'app fermée. Les groupes de fils
-            // d'OptiGame.ps1 (RunspacePool) restés ouverts gardaient le programme en vie sans fenêtre, avec son verrou :
-            // Mindset ne pouvait plus le rouvrir. OptiGame.ps1 les ferme ; ceci reste en filet de sécurité.
+            // de Nevermind.ps1 (RunspacePool) restés ouverts gardaient le programme en vie sans fenêtre, avec son verrou :
+            // Mindset ne pouvait plus le rouvrir. Nevermind.ps1 les ferme ; ceci reste en filet de sécurité.
             // (La relance après une mise à jour est déjà faite par le script, avant ce point.)
             Environment.Exit(0);
         }

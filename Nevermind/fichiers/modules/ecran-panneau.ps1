@@ -5,7 +5,7 @@
 # par élément et traduit pour l'écran : textes, titres, encadrés de verdict, lignes de tableau, boutons et
 # interrupteurs (qui appuient sur les vrais), les jauges en chiffres, les courbes (FPS, ping...) en courbes de l'écran,
 # et les autres dessins en images nettes.
-# Chargé par OptiGame.ps1 après ecran-protection.ps1.
+# Chargé par Nevermind.ps1 après ecran-protection.ps1.
 
 $IconesPanneau = @{ FPS = 'jauge'; LAG = 'ondes'; AV = 'bouclier'; TMP = 'balai'; NET = 'courbe'; WIN = 'windows'; 'SÉCU' = 'bouclier'; DEL = 'poubelle'; '!' = 'aide' }
 

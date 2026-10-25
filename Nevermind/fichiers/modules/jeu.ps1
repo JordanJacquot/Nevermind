@@ -1,5 +1,5 @@
 ﻿# Nevermind : mode jeu automatique, profils par jeu et alerte de température.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Mode jeu automatique : ferme des applis quand un jeu démarre, les relance à la fin

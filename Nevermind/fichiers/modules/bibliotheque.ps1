@@ -1,7 +1,7 @@
 ﻿# Nevermind : section « Jeux », la bibliothèque de tous les jeux installés (comme celle de Steam).
 # Jaquettes, recherche, filtre par launcher ; double clic ou « Lancer » pour jouer (par le launcher du jeu) ;
 # temps de jeu, dernières parties et optimisation du jeu sélectionné.
-# Chargé par OptiGame.ps1 après jeu.ps1 (liste des jeux) et diagnostic-fps.ps1.
+# Chargé par Nevermind.ps1 après jeu.ps1 (liste des jeux) et diagnostic-fps.ps1.
 
 $PlayFile = Join-Path $DataDir 'jeux.json'
 
@@ -237,7 +237,7 @@ $CoverWork = {
 }
 
 function Start-CoverDownload {
-    if ($script:CoverJob -or -not (Test-CoversOnline) -or $env:OPTIGAME_TEST) { return }
+    if ($script:CoverJob -or -not (Test-CoversOnline) -or $env:NEVERMIND_TEST) { return }
     $idx = Get-CoverIndex
     $todo = @(Get-LibraryGames | Where-Object {
         $c = $idx[$_.Name]

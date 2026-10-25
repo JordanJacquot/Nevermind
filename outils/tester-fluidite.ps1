@@ -19,7 +19,7 @@ param([string]$FichierAide, [switch]$CommeEnAdmin)   # (-CommeEnAdmin : passe pa
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
-$app     = Join-Path $racine 'OptiGame\fichiers'
+$app     = Join-Path $racine 'Nevermind\fichiers'
 $modules = Join-Path $app 'modules'
 if (-not $FichierAide) { $FichierAide = Join-Path $app 'NevermindAide.ps1' }
 $echecs  = New-Object System.Collections.Generic.List[string]

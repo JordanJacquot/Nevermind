@@ -1,5 +1,5 @@
 ﻿# Nevermind : mesures en direct, onglets Gaming, Démarrage, Connexion, Nettoyage et Sauvegarde.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Mesures en direct (dans un fil séparé pour ne pas ralentir la fenêtre)

@@ -3,7 +3,7 @@
 # Les données viennent des mêmes fonctions que l'interface d'avant (Get-LibraryGames, Get-PlayLog, Get-FpsSessions,
 # Get-LagSessions, $script:Traffic...) ; le détail d'une partie, d'une mesure ou d'un programme s'ouvre dans le panneau
 # (ecran-panneau.ps1).
-# Chargé par OptiGame.ps1 après ecran-panneau.ps1.
+# Chargé par Nevermind.ps1 après ecran-panneau.ps1.
 
 # Les jaquettes des jeux (adresse pour l'écran) : gardées tant que les jeux et les jaquettes trouvées ne changent pas
 function Get-JaquetteKit($Jeu) {

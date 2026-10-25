@@ -1,5 +1,5 @@
-﻿// OptiGame : fonctions natives (écrans, souris, barre de titre sombre, tests, réseau).
-// Compilé au lancement par OptiGame.ps1 (Add-Type).
+﻿// Nevermind : fonctions natives (écrans, souris, barre de titre sombre, tests, réseau).
+// Compilé au lancement par Nevermind.ps1 (Add-Type).
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;

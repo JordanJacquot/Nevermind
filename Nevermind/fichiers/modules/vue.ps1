@@ -8,9 +8,9 @@
 # minuteries) ; au bout d'une minute cachée, WebView2 est mise en veille (TrySuspendAsync), et se réveille au retour.
 # Sans WebView2 (très rare : Windows 11 l'a toujours), ou si elle ne démarre pas, l'appli en est prévenue (action
 # « impossible », Register-ActionVue) pour expliquer quoi faire ; sans cette action, un message remplace l'écran vide.
-# Chargé par OptiGame.ps1 avant accueil-console.ps1, qui crée l'écran (Initialize-AccueilConsole).
+# Chargé par Nevermind.ps1 avant accueil-console.ps1, qui crée l'écran (Initialize-AccueilConsole).
 
-$EnTest      = [bool]$env:OPTIGAME_TEST
+$EnTest      = [bool]$env:NEVERMIND_TEST
 $AppNom      = 'Nevermind'
 $UiDir       = Join-Path $AppDir 'ui'
 $Webview2Dir = Join-Path $AppDir 'lib\webview2'
@@ -112,7 +112,7 @@ function Initialize-Vue($Hote) {
         try {
             $c = $s.CoreWebView2
             $r = $c.Settings
-            $r.AreDevToolsEnabled = [bool]$env:OPTIGAME_DEV; $r.AreDefaultContextMenusEnabled = $false; $r.IsZoomControlEnabled = $false
+            $r.AreDevToolsEnabled = [bool]$env:NEVERMIND_DEV; $r.AreDefaultContextMenusEnabled = $false; $r.IsZoomControlEnabled = $false
             $r.AreBrowserAcceleratorKeysEnabled = $false; $r.IsStatusBarEnabled = $false; $r.IsPasswordAutosaveEnabled = $false; $r.IsGeneralAutofillEnabled = $false
             $c.SetVirtualHostNameToFolderMapping($HoteVue, $UiDir, [Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind]::Deny)
             # Les images et la police d'un thème perso : son dossier, en lecture seule, sous https://theme.local/
@@ -412,7 +412,7 @@ function Receive-MessageVue([string]$Json) {
             }
             if (-not $script:Vue.CacheeDepuis) { [void]$script:Vue.Controle.Focus() }   # (le clavier, si elle est déjà à l'écran)
             if ($script:Vue.Etat) { Send-OrdreVue $script:Vue.Etat }
-            if ($EnTest -and $env:OPTIGAME_ECRAN) { Open-EcranVue $env:OPTIGAME_ECRAN }   # (tests : capture d'une page)
+            if ($EnTest -and $env:NEVERMIND_ECRAN) { Open-EcranVue $env:NEVERMIND_ECRAN }   # (tests : capture d'une page)
             if ($script:Vue.Actions['pret']) { & $script:Vue.Actions['pret'] $null $null }
         }
         'erreur' { Write-Log "Écran : erreur ($([string]$m.texte))" }

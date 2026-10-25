@@ -1,5 +1,5 @@
 ﻿# Nevermind : constats, score, fiches de correction et retour en arrière.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Tableau de bord

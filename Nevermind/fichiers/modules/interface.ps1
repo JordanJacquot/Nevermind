@@ -1,5 +1,5 @@
 ﻿# Nevermind : chargement de la fenêtre et aides pour l'interface.
-# Chargé par OptiGame.ps1, qui définit $AppDir et $ModulesDir.
+# Chargé par Nevermind.ps1, qui définit $AppDir et $ModulesDir.
 
 # ---------------------------------------------------------------------------
 # Interface (la fenêtre est décrite dans interface.xaml)
@@ -309,9 +309,9 @@ $SecDataWork = {
             # Lancement de Nevermind au démarrage : notre propre tâche (même nom, même commande, script de Nevermind présent), pas une menace.
             # Le dossier de l'app peut avoir bougé (autre copie, mise à jour) : on vérifie la forme exacte de la commande, pas le chemin.
             if ($a.OwnTask -and $t2.TaskName -eq $a.OwnTask -and $t2.TaskPath -eq '\' -and $exe -match '\\Nevermind\.exe$' -and $argsTxt -eq '-Demarrage' -and
-                (Test-Path -LiteralPath (Join-Path (Split-Path $exe -Parent) 'fichiers\OptiGame.ps1'))) { continue }
+                @('Nevermind.ps1', 'OptiGame.ps1' | Where-Object { Test-Path -LiteralPath (Join-Path (Split-Path $exe -Parent) "fichiers\$_") }).Count) { continue }
             if ($a.OwnTask -and $t2.TaskName -eq $a.OwnTask -and $t2.TaskPath -eq '\' -and $exe -match '\\WindowsPowerShell\\v1\.0\\powershell\.exe$' -and
-                $argsTxt -match '^-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "([^"]+\\fichiers\\OptiGame\.ps1)" -Demarrage$' -and
+                $argsTxt -match '^-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "([^"]+\\fichiers\\(?:Nevermind|OptiGame)\.ps1)" -Demarrage$' -and
                 ($Matches[1] -eq $a.OwnScript -or (Test-Path -LiteralPath $Matches[1]))) { continue }
             # L'installateur de Mindset (la suite) : sa tâche exacte, et son script que seul un administrateur peut modifier (ni le fichier
             # ni son dossier ne donnent de droit d'écriture à Tout le monde, aux Utilisateurs ou à l'utilisateur lui-même)

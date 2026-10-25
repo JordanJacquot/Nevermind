@@ -1,5 +1,5 @@
 ﻿# Nevermind : demander à l'Aide ce que Nevermind ne peut pas faire sans les droits administrateur.
-# Chargé par OptiGame.ps1 après systeme.ps1 (Get-AppExe) et aide-actions.ps1.
+# Chargé par Nevermind.ps1 après systeme.ps1 (Get-AppExe) et aide-actions.ps1.
 #
 # L'Aide (NevermindAide.ps1) est lancée par la tâche planifiée « \Mindset\Nevermind (aide) », que Mindset crée quand il
 # installe Nevermind : pas de demande de Windows. Elle ne fait que ce qui est dans aide-actions.ps1.
@@ -19,7 +19,7 @@ $script:EstAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Pri
 [AideClient]::ExeAttendu = $AideExe
 [AideClient]::Suffixe = Get-AideSuffixe (Get-AppRoot)
 # La copie de test ne réveille jamais la vraie Aide (celle de la copie installée), et ne fait aucune demande de Windows
-if ($env:OPTIGAME_TEST) { $script:AideSansTache = $true; $script:AideSansDemande = $true }
+if ($env:NEVERMIND_TEST) { $script:AideSansTache = $true; $script:AideSansDemande = $true }
 # Demande de Windows refusée : pas de nouvelle demande avant 10 minutes. Attentes (en secondes) de l'Aide lancée par sa
 # tâche, puis par la demande de Windows (une fois « Oui » cliqué).
 $AideDelaiRefus = 600
