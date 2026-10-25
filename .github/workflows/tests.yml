@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Récupérer le code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # (contre-épreuves : l'ancien code est relu dans git)
 
       - name: Analyse du code (PSScriptAnalyzer, erreurs seulement)
         run: |

@@ -234,8 +234,11 @@ $secu = New-Object System.IO.Pipes.PipeSecurity
 $secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule((New-Object Security.Principal.SecurityIdentifier('S-1-5-2')), 'FullControl', 'Deny')))
 $droitsUtilisateur = if ($admin) { 'ReadWrite' } else { 'ReadWrite, CreateNewInstance' }   # Aide sans droits : tests seulement
 $secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule($Utilisateur, $droitsUtilisateur, 'Allow')))
-$createur = if ($EnSysteme) { 'S-1-5-18' } else { 'S-1-5-32-544' }
-$secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule((New-Object Security.Principal.SecurityIdentifier($createur)), 'FullControl', 'Allow')))
+$createur = New-Object Security.Principal.SecurityIdentifier($(if ($EnSysteme) { 'S-1-5-18' } else { 'S-1-5-32-544' }))
+$secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule($createur, 'FullControl', 'Allow')))
+# Propriétaire du canal : le système ou les administrateurs, que Nevermind vérifie (natif.cs, AideClient.ServeurAccepte) ;
+# un programme sans droits ne peut pas le donner à un canal
+if ($admin) { $secu.SetOwner($createur) }
 
 function New-Tuyau {
     New-Object System.IO.Pipes.NamedPipeServerStream($NomTuyau, [System.IO.Pipes.PipeDirection]::InOut, 32,

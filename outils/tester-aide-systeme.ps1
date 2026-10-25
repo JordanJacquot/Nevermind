@@ -36,8 +36,9 @@ function Get-Fonction([string]$Texte, [string]$Nom) {
 function Read-Fichier([string]$Chemin) { [IO.File]::ReadAllText($Chemin, [Text.Encoding]::UTF8) }
 # Un fichier tel qu'il était dans git avant le lot A2 (Nevermind 1.10.0, et la page Sécurité avant DetectionsLues)
 function Read-Git([string]$Ref, [string]$Chemin) {
-    $t = & git -C $racine show "$($Ref):$Chemin" 2>$null
-    if ($LASTEXITCODE) { return $null }
+    $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try { $t = & git -C $racine show "$($Ref):$Chemin" 2>$null } catch { $t = $null } finally { $ErrorActionPreference = $eap }
+    if ($LASTEXITCODE -or -not $t) { Write-Host "Info : $Chemin ($Ref) absent de git ici, contre-épreuve sautée"; return $null }
     ($t -join "`n")
 }
 $psExe  = Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'

@@ -1,0 +1,67 @@
+# L'Aide de Nevermind en SYSTEM essayée en vrai sur la machine jetable de GitHub (vraies tâches planifiées, vrais
+# comptes Windows, vraie installation par l'installateur de Mindset). Lancée à la main seulement :
+#   gh workflow run aide-reelle.yml -f mindset=<branche ou version de Mindset>
+# Tout le code est dans outils\essai-aide-reelle.ps1 (UTF-8 avec BOM : un nom accentué écrit ici arriverait abîmé).
+name: Aide en vrai
+
+on:
+  workflow_dispatch:
+    inputs:
+      mindset:
+        description: "Branche (ou version) de Mindset dont l'installateur crée la tâche de l'Aide"
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  essai:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: powershell
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Récupérer Mindset
+        run: |
+          git clone --quiet https://github.com/JordanJacquot/Mindset.git C:\essai\mindset
+          git -C C:\essai\mindset checkout --quiet "${{ inputs.mindset }}"
+          if ($LASTEXITCODE) { exit 1 }
+          git -C C:\essai\mindset log --oneline -1
+
+      - name: "0. Préparation (Nevermind et Mindset construits, clé de TEST, paquets, Release v1.10.0)"
+        run: .\outils\essai-aide-reelle.ps1 -Cas 0
+
+      - name: "1. Installation pour un compte standard : tâche de l'Aide en SYSTEM pour lui"
+        if: ${{ !cancelled() }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 1
+
+      - name: "2. Son Mindset.exe lance la tâche et obtient des actions en lecture seule"
+        if: ${{ !cancelled() }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 2
+
+      - name: "3. Un autre compte : ni la tâche ni le canal"
+        if: ${{ !cancelled() }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 3
+
+      - name: "4. Mise à jour depuis Nevermind 1.10.0 : l'ancienne tâche remplacée"
+        if: ${{ !cancelled() }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 4
+
+      - name: "5. Tâche ancienne, cassée ou désactivée : la demande de Windows"
+        if: ${{ !cancelled() }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 5
+
+      - name: "6. Désinstallation : plus aucune tâche"
+        if: ${{ !cancelled() }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 6
+
+      - name: "7. La tâche SYSTEM ne voit pas l'environnement de l'utilisateur"
+        if: ${{ !cancelled() }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 7
