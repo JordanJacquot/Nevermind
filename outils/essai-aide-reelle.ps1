@@ -325,7 +325,11 @@ function Initialize-Essai {
         if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force }
         New-Item -ItemType Directory -Force -Path $d | Out-Null
         Copy-Item -LiteralPath $og -Destination $d -Recurse
-        if ($genre -eq 'essai') { [IO.File]::WriteAllText((Join-Path $d 'OptiGame\fichiers\OptiGame.ps1'), $TexteClient, (New-Object Text.UTF8Encoding $true)) }
+        if ($genre -eq 'essai') {
+            # (le même numéro de version que le vrai : Mindset refuse un zip dont il ne peut pas lire la version)
+            $versionVraie = [regex]::Match([IO.File]::ReadAllText((Join-Path $og 'fichiers\OptiGame.ps1')), "(?m)^\`$AppVersion\s*=\s*'[^']+'").Value
+            [IO.File]::WriteAllText((Join-Path $d 'OptiGame\fichiers\OptiGame.ps1'), "$versionVraie`r`n$TexteClient", (New-Object Text.UTF8Encoding $true))
+        }
         Compress-Archive -Path (Join-Path $d 'OptiGame') -DestinationPath (Join-Path $d 'OptiGame.zip') -Force
         New-Signature (Join-Path $d 'OptiGame.zip')
     }
