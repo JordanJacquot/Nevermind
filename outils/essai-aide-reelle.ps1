@@ -491,6 +491,8 @@ function Test-Cas4 {
     $f = Join-Path $Sorties "mindset-$([guid]::NewGuid().ToString('N').Substring(0, 8)).json"
     & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -File $InstallateurNeuf -Action mindset -Source (Join-Path $MindsetDepot 'Mindset') -Version '9.9.1' -Sid $e.Sid -Resultat $f | Out-Host
     Test-Cas 'Mindset installé pour Élodie' { (Read-Json $f).ok }
+    # (Nevermind retiré d'abord : Mindset refuse d'installer une version plus ancienne que celle en place, 1.10.0 après 1.11.0)
+    Remove-Item -LiteralPath $NevermindC -Recurse -Force -ErrorAction SilentlyContinue
     $r = Install-Appli $Installateur210 $Paquet110 $e.Sid 'OptiGame'
     Test-Cas 'Nevermind 1.10.0 réinstallé par Mindset 2.10.0 : l''ancienne tâche est revenue' { $t = Get-InfoTache; (ConvertTo-Sid $t.Compte) -eq $e.Sid }
     $f = Join-Path $Sorties "taches-$([guid]::NewGuid().ToString('N').Substring(0, 8)).json"
