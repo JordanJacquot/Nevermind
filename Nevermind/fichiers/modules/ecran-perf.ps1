@@ -306,7 +306,7 @@ function Get-PageMemoireKit($C, [string]$EnCours, [bool]$Fermeture) {
     ) + $lignes + @(
         @{ type = 'titre'; texte = 'La part cachée'; droite = 'Ce qui n''est à aucune appli' }
     ) + $cachee + @(
-        @{ type = 'note'; texte = 'Nevermind ne ferme une appli que si tu cliques sur « Fermer », d''abord comme avec la croix pour te laisser enregistrer. Jamais Windows, un service, ton antivirus, les applis de Mindset ni ce qui appartient à un autre compte. « Couper ce qui est sûr » ne touche qu''aux mises à jour et aux logiciels du fabricant, rien de Windows, et se remet comme avant depuis la page Sauvegarde.' }
+        @{ type = 'note'; texte = 'Nevermind ne ferme une appli que si tu cliques sur « Fermer », d''abord comme avec la croix pour te laisser enregistrer. Jamais ton jeu, Windows, un service, ton antivirus, les applis de Mindset ni ce qui appartient à un autre compte. « Couper ce qui est sûr » ne touche qu''aux mises à jour et aux logiciels du fabricant, rien de Windows, et se remet comme avant depuis la page Sauvegarde.' }
     )
     $page
 }

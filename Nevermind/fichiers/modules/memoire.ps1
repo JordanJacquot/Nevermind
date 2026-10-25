@@ -14,7 +14,8 @@
 # Fermer une appli (bouton « Fermer » d'une ligne, seulement quand l'utilisateur clique) : seulement une appli dont TOUS
 # les processus passent la règle de fermeture, la même que celle de l'Aide (Get-RefusFermeture, aide-actions.ps1 : même
 # compte et même session que Nevermind, jamais un service, un antivirus, un processus protégé, Windows, le Microsoft
-# Store, la suite Mindset, un programme lancé en administrateur), et jamais une appli « Windows en a besoin ». Le
+# Store, la suite Mindset, un programme lancé en administrateur), et jamais une appli « Windows en a besoin », un jeu, ni
+# un lanceur de jeux pendant une partie (page RAM seulement, Test-JeuMemoire). Le
 # processus est gardé ouvert (sa « poignée ») depuis la lecture jusqu'à la fermeture : Windows ne redonne pas son numéro
 # à un autre programme tant qu'elle est ouverte, et son heure de démarrage et son chemin sont revérifiés avant chaque
 # geste. D'abord poliment (comme la croix : WM_CLOSE à ses fenêtres, il peut demander d'enregistrer), puis, seulement si
@@ -84,6 +85,29 @@ $AppsConnuesMemoire = @(
     @{ Motif = '^(avastsvc|avastui|avgsvc|avgui|mcshield|mfemms|mcapexe|modulecoreservice|nortonsecurity|ns|nsbu|bdagent|bdservicehost|vsserv|avp|avpui|ekrn|egui|mbamservice|mbamtray|mbam)$'; Nom = ''; Kind = 'verifier'; Note = 'Antivirus en plus de celui de Windows. Un seul suffit : garde celui que tu as choisi.'; Jamais = $true }
     @{ Motif = '^(vmmem|vmmemwsl|vmwp)$'; Nom = 'Machine virtuelle'; Kind = 'verifier'; Note = 'Une machine virtuelle ou Linux (WSL) est ouverte. La fermer libère cette mémoire.' }
 )
+
+# Les jeux : jamais de bouton « Fermer » (la personne est souvent en pleine partie et veut fermer ce qui tourne AUTOUR
+# de son jeu). Un jeu : un programme d'un jeu installé que Nevermind connaît (sa bibliothèque), le jeu en cours, un jeu
+# appris par la mesure des FPS (FpsVeille), ou, dans le doute, tout programme rangé dans un dossier de jeux.
+$DossiersJeuxMemoire = '\\(steamapps\\common|Epic Games|EA Games|Origin Games|Ubisoft Game Launcher\\games|GOG Games|GOG Galaxy\\Games|Riot Games|Battle\.net|XboxGames|Rockstar Games|Electronic Arts)\\'
+# Les lanceurs de jeux (pas des jeux) : fermables, sauf pendant une partie (les fermer peut couper le jeu)
+$LanceursMemoire = '^(steam|steamwebhelper|gameoverlayui(64)?|easteamlauncher|ealocalhostsvc|ealauncher|epicgameslauncher|epicwebhelper|eadesktop|eabackgroundservice|origin|ubisoftconnect|upc|uplaywebcore|battle\.net|battle\.net launcher|riotclientservices|riotclientux|riotclientuxrender|goggalaxy|galaxyclient|galaxyclient helper|xboxpcapp)$'
+# Ce que Nevermind sait des jeux, sans rien recalculer : la bibliothèque déjà lue ($script:Games), les jeux appris par
+# la mesure des FPS, le jeu en cours ($script:GameSession). Lu sur le fil de la fenêtre quand le constat arrive.
+function Get-JeuxMemoire {
+    @{ Exes = @(foreach ($g in @($script:Games | Where-Object { $_ })) { foreach ($e in @($g.Exes)) { if ($e) { ([string]$e).ToLowerInvariant() } } })
+       Noms = @(try { @(Get-FpsVeilleJeux) | ForEach-Object { (([string]$_) -replace '(?i)\.exe$', '').ToLowerInvariant() } } catch { })
+       EnCours = $(if ($script:GameSession) { [int]$script:GameSession.Pid } else { 0 }) }
+}
+# Un programme est-il un jeu ? ($Jeux : Get-JeuxMemoire ; un lanceur n'en est jamais un)
+function Test-JeuMemoire($P, [string]$Image, $Jeux) {
+    $exe = (([string]$P.Nom) -replace '(?i)\.exe$', '').ToLowerInvariant()
+    if ($exe -match $LanceursMemoire) { return $false }
+    if ($Jeux -and [int]$Jeux.EnCours -and [int]$P.Pid -eq [int]$Jeux.EnCours) { return $true }
+    if ($Jeux -and $Image -and @($Jeux.Exes) -contains $Image.ToLowerInvariant()) { return $true }
+    if ($Jeux -and @($Jeux.Noms) -contains $exe) { return $true }
+    [bool]($Image -and $Image -match $DossiersJeuxMemoire)
+}
 
 # Les pilotes reconnus à leur nom ou à leur fabricant : le genre de matériel, pour l'alerte des pilotes
 function Get-GenrePilote([string]$Texte) {
@@ -413,6 +437,7 @@ function Get-ConstatMemoire($D) {
     if (@($D.Services).Count) { $ctxFermer.ServicesPid = [Collections.Generic.HashSet[int]]::new(); foreach ($s in @($D.Services)) { if ($s -and [int]$s.Pid) { [void]$ctxFermer.ServicesPid.Add([int]$s.Pid) } } }
     foreach ($p in @($D.Processus)) { if ($p) { $ctxFermer.Processus[[int]$p.Pid] = @{ Parent = [int]$p.Parent; Chemin = $(if ($p.Image) { [string]$p.Image } else { [string]$p.Chemin }) } } }
     $regle = [bool](Get-Command Get-RefusFermeture -ErrorAction SilentlyContinue)
+    $unJeu = $false   # (un jeu tourne : ses lanceurs ne sont pas fermés non plus)
     $groupes = @{}
     $compressee = 0.0
     $edgeAvance = $false; $chromeAvance = $false
@@ -438,6 +463,8 @@ function Get-ConstatMemoire($D) {
         # Fermable ? La règle de l'Aide sur ce processus ; sans poignée gardée (Debut), pas vérifiable : non
         $refus = if (-not $regle) { 'règle de fermeture absente' } elseif (-not [long]$p.Debut) { 'pas pu être vérifié' }
                  else { Get-RefusFermeture $ctxFermer @{ Id = [int]$p.Pid; Chemin = $image; Session = $p.Session; Compte = $p.Compte; Protection = $p.Protection; Eleve = $p.Eleve } }
+        if (Test-JeuMemoire $p $image $D.Jeux) { $g.Jeu = $true; $unJeu = $true }
+        elseif ($exe -match $LanceursMemoire) { $g.Lanceur = $true }
         if ($refus) { [void]$g.Refus.Add("$exe : $refus") } else { [void]$g.Cibles.Add(@{ Pid = [int]$p.Pid; Debut = [long]$p.Debut; Chemin = $image; Octets = [double]$p.Octets }) }
         # (lui ou un de ses parents, jusqu'à 4 crans : Steam et son « WebHelper »)
         $x = [int]$p.Pid; $nomX = "$exe.exe".ToLower()
@@ -474,6 +501,8 @@ function Get-ConstatMemoire($D) {
         # Le bouton « Fermer » : toute l'appli, et seulement si chacun de ses processus peut l'être
         if ($g.Kind -eq 'windows') { [void]$g.Refus.Add('fait partie de Windows (étiquette)') }
         if ($g.Jamais) { [void]$g.Refus.Add('jamais fermée par Nevermind') }
+        if ($g.Jeu) { [void]$g.Refus.Add('est un jeu'); $g.Note = 'Ton jeu : Nevermind ne le ferme pas.' }
+        elseif ($g.Lanceur -and $unJeu) { [void]$g.Refus.Add('sert au jeu en cours'); $g.Note = "$($g.Note) Sert à ton jeu en cours : Nevermind ne le ferme pas pendant la partie." }
         if (@($g.Services).Count) { [void]$g.Refus.Add('contient un service') }
         $g.Fermable = -not $g.Refus.Count -and $g.Cibles.Count -gt 0
     }
@@ -681,6 +710,7 @@ function Receive-ResultatMemoire($X) {
         return
     }
     if (-not $X.Donnees) { Complete-ConstatMemoire; return }
+    try { $X.Donnees.Jeux = Get-JeuxMemoire } catch { Write-Log "Mémoire : jeux illisibles ($($_.Exception.Message))" }
     $script:MemoireDonnees = $X.Donnees
     $c = Get-ConstatMemoire $X.Donnees
     $script:Kit.Memoire = $c
@@ -816,6 +846,7 @@ function Start-FermetureMemoire([int]$Index) {
     if (-not $g -or -not $g.Fermable) { return }
     if ($script:MemoireFermeture) { Show-MessageVue "Je ferme déjà $($script:MemoireFermeture.Nom) : attends un instant."; return }
     if ($script:MemoireJob) { Show-MessageVue 'Je relis la mémoire : réessaie dans un instant.'; return }
+    if ($g.Lanceur -and $script:GameSession) { Show-MessageVue "$($g.Nom) sert à ton jeu en cours : Nevermind ne le ferme pas pendant la partie."; return }   # (jeu lancé depuis la lecture)
     $octets = 0.0; foreach ($x in @($g.Cibles)) { $octets += [double]$x.Octets }
     if (-not (Confirm-Action "Fermer $($g.Nom) ? Environ $(Format-Size $octets) libérés.`n`nIl se ferme comme avec la croix : s'il a quelque chose à enregistrer, il te le demandera.")) { return }
     if (-not $script:MemoireCode) { $script:MemoireCode = [IO.File]::ReadAllText((Join-Path $ModulesDir 'aide-actions.ps1'), [Text.Encoding]::UTF8) + "`r`n" + [IO.File]::ReadAllText((Join-Path $ModulesDir 'memoire.ps1'), [Text.Encoding]::UTF8) }

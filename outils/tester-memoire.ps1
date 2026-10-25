@@ -482,6 +482,60 @@ Test-Ok ((Get-RefusFermeture $ctxA $ficheA) -match 'administrateur' -and -not (G
 $ficheA.Chemin = 'C:\Program Files\WindowsApps\X_1.0\x.exe'
 Test-Ok ((Get-RefusFermeture $ctxA $ficheA -ElevePermis) -match 'Store') 'Règle : l''Aide fermerait une appli du Store'
 
+# Les jeux : jamais de bouton (un clic malheureux en pleine partie) ; les lanceurs oui, sauf pendant une partie
+$monJeu = { New-Proc 850 'MonJeu.exe' 900 'D:\Jeux\MonJeu\MonJeu.exe' '' 'Mon Jeu' }
+$steamL = { New-Proc 860 'steam.exe' 60 'C:\Program Files (x86)\Steam\steam.exe' '' 'Steam' }
+$epicL = { New-Proc 861 'EpicGamesLauncher.exe' 70 'C:\Program Files (x86)\Epic Games\Launcher\Portal\Binaries\Win64\EpicGamesLauncher.exe' '' 'Epic Games Launcher' }
+function Get-ConstatJeux([array]$Procs, $Jeux) { $d = New-FauxPcFermer $Procs; $d.Jeux = $Jeux; Get-ConstatMemoire $d }
+$sansJeu = @{ Exes = @(); Noms = @(); EnCours = 0 }
+$casJeux = @(
+    ,@('jeu installé (bibliothèque)', @{ Exes = @('d:\jeux\monjeu\monjeu.exe'); Noms = @(); EnCours = 0 })
+    ,@('jeu en cours', @{ Exes = @(); Noms = @(); EnCours = 850 })
+    ,@('jeu appris par la mesure des FPS', @{ Exes = @(); Noms = @('monjeu'); EnCours = 0 })
+)
+foreach ($cas in $casJeux) {
+    $l = Get-LigneFermer (Get-ConstatJeux @(& $monJeu) $cas[1]) 'MonJeu.exe'
+    Test-Ok (-not $l.Fermable -and (@($l.Refus) -join ' ') -match 'jeu' -and $l.Note -eq 'Ton jeu : Nevermind ne le ferme pas.') "Jeux, $($cas[0]) : bouton proposé ou note fausse ($(@($l.Refus) -join ' / ') ; $($l.Note))"
+}
+$l = Get-LigneFermer (Get-ConstatJeux @(& $monJeu) $sansJeu) 'MonJeu.exe'
+Test-Ok ($l.Fermable) "Jeux, contre-épreuve : un programme inconnu hors des dossiers de jeux n'a pas de bouton ($(@($l.Refus) -join ' / '))"
+Test-Ok ((Get-LigneFermer (Get-ConstatJeux @(& $monJeu) @{ Exes = @('d:\jeux\autre\monjeu.exe'); Noms = @('autre'); EnCours = 851 }) 'MonJeu.exe').Fermable) 'Jeux, contre-épreuve : un autre jeu (autre chemin, autre nom, autre numéro) retire le bouton'
+foreach ($dossier in 'C:\Steam\steamapps\common\Inconnu', 'D:\Epic Games\Inconnu', 'C:\Program Files\EA Games\Inconnu', 'C:\Riot Games\Inconnu', 'C:\XboxGames\Inconnu\Content', 'C:\GOG Games\Inconnu') {
+    $l = Get-LigneFermer (Get-ConstatJeux @(New-Proc 870 'inconnu.exe' 300 "$dossier\inconnu.exe") $sansJeu) 'inconnu.exe'
+    Test-Ok (-not $l.Fermable -and $l.Note -like 'Ton jeu*') "Jeux : programme inconnu sous $dossier a un bouton"
+}
+Test-Ok ((Get-LigneFermer (Get-ConstatJeux @(New-Proc 870 'inconnu.exe' 300 'C:\Program Files\Inconnu\inconnu.exe') $sansJeu) 'inconnu.exe').Fermable) 'Jeux, contre-épreuve : le même programme hors des dossiers de jeux n''a pas de bouton'
+# Les lanceurs : bouton sans jeu (même rangé dans un dossier de jeux, comme Epic) ; pas de bouton pendant une partie
+$c = Get-ConstatJeux @((& $steamL), (& $epicL)) $sansJeu
+Test-Ok ((Get-LigneFermer $c 'steam.exe').Fermable -and (Get-LigneFermer $c 'EpicGamesLauncher.exe').Fermable) 'Lanceurs sans jeu en cours : pas de bouton'
+foreach ($jeuxEnCours in @(@{ Exes = @(); Noms = @(); EnCours = 850 }, $sansJeu)) {
+    $procs = @((& $steamL), (& $epicL), (& $monJeu))
+    if (-not $jeuxEnCours.EnCours) { $procs += New-Proc 871 'jeu.exe' 500 'C:\Program Files (x86)\Steam\steamapps\common\Jeu\jeu.exe' }   # (un jeu reconnu à son dossier)
+    $c = Get-ConstatJeux $procs $jeuxEnCours
+    foreach ($e in 'steam.exe', 'EpicGamesLauncher.exe') {
+        $l = Get-LigneFermer $c $e
+        Test-Ok (-not $l.Fermable -and $l.Note -match 'Sert à ton jeu en cours') "Lanceur $e pendant une partie : bouton proposé ou note absente ($($l.Note))"
+    }
+}
+# Au clic, un jeu lancé depuis la lecture : le lanceur n'est pas fermé
+$cl = Get-ConstatJeux @(& $steamL) $sansJeu
+$script:Kit = @{ Memoire = $cl }; $script:MemoireJob = $null; $script:MemoireFermeture = $null
+$script:GameSession = @{ Pid = 999; Game = 'Mon Jeu' }
+$messagesJeu = New-Object System.Collections.ArrayList
+function Show-MessageVue([string]$Texte) { [void]$messagesJeu.Add($Texte) }
+function Confirm-Action([string]$Text) { [void]$messagesJeu.Add("confirmer:$Text"); $false }
+Start-FermetureMemoire ([array]::IndexOf(@($cl.Applis), (Get-LigneFermer $cl 'steam.exe')))
+Test-Ok ($messagesJeu.Count -eq 1 -and $messagesJeu[0] -match 'sert à ton jeu en cours' -and -not $script:MemoireFermeture) "Lanceur, jeu lancé depuis la lecture : fermeture proposée ($($messagesJeu -join ' | '))"
+$messagesJeu.Clear(); $script:GameSession = $null
+Start-FermetureMemoire ([array]::IndexOf(@($cl.Applis), (Get-LigneFermer $cl 'steam.exe')))
+Test-Ok ($messagesJeu.Count -eq 1 -and $messagesJeu[0] -like 'confirmer:Fermer Steam*') "Lanceur sans jeu : pas de confirmation de fermeture ($($messagesJeu -join ' | '))"
+# Ce que Nevermind sait des jeux, sans rien recalculer : bibliothèque déjà lue, jeux appris, jeu en cours
+$script:Games = @(@{ Name = 'Mon Jeu'; Exes = @('D:\Jeux\MonJeu\MonJeu.exe') }); $script:GameSession = @{ Pid = 850 }
+function Get-FpsVeilleJeux { @('bf6.exe') }
+$j = Get-JeuxMemoire
+Test-Ok (@($j.Exes) -contains 'd:\jeux\monjeu\monjeu.exe' -and @($j.Noms) -contains 'bf6' -and $j.EnCours -eq 850) "Jeux connus de Nevermind mal lus ($(@($j.Exes) -join ',') / $(@($j.Noms) -join ',') / $($j.EnCours))"
+$script:Games = $null; $script:GameSession = $null
+
 # La page : « Fermer » sur la ligne fermable, avec le bon numéro ; pas sur Windows ; plus aucun pendant une fermeture
 $c = Get-ConstatMemoire (New-FauxPcFermer @(& $discord))
 $p = Get-PageMemoireKit $c
