@@ -471,12 +471,30 @@ function Watch-Uninstall($Game) {
 # (sauvegardes, fichiers ajoutés, mods). Pas des jeux : la place qu'ils prennent est signalée, et ils
 # peuvent être supprimés définitivement (sans passer par la corbeille, pour libérer la place tout de suite).
 # ---------------------------------------------------------------------------
-$LeftoverSizeWork = {
-    param($dirs)
-    foreach ($d in $dirs) {
-        $sum = 0.0
-        try { foreach ($f in [IO.Directory]::EnumerateFiles($d, '*', 'AllDirectories')) { try { $sum += (New-Object IO.FileInfo $f).Length } catch {} } } catch {}
-        "$d|$sum"
+# Taille d'un reste, et s'il a bougé depuis moins de 7 jours (lui ou n'importe quel fichier dedans) : Steam y travaille
+# peut-être (mise à jour, réinstallation), il n'est alors ni proposé ni supprimé. Un dossier qui n'a pas pu être parcouru
+# en entier compte comme récent (prudence). Autonome (tourne dans un fil séparé).
+function Measure-LeftoverDir {
+    param([string]$Dir, [int]$Jours = 7)
+    $limite = [DateTime]::UtcNow.AddDays(-$Jours)
+    $r = @{ Taille = 0.0; Recent = $false }
+    try {
+        $di = New-Object IO.DirectoryInfo $Dir
+        if ($di.LastWriteTimeUtc -gt $limite) { $r.Recent = $true }
+        foreach ($i in $di.EnumerateFileSystemInfos('*', 'AllDirectories')) {
+            if ($i.LastWriteTimeUtc -gt $limite) { $r.Recent = $true }
+            if ($i -is [IO.FileInfo]) { try { $r.Taille += $i.Length } catch {} }
+        }
+    } catch { $r.Recent = $true }
+    $r
+}
+
+# Fil séparé : « dossier|taille|récent (1 ou 0) » pour chaque reste
+function Measure-LeftoverDirs {
+    param($Dirs)
+    foreach ($d in $Dirs) {
+        $m = Measure-LeftoverDir $d
+        "$d|$($m.Taille)|$(if ($m.Recent) { 1 } else { 0 })"
     }
 }
 
@@ -488,7 +506,7 @@ function Update-LeftoverBar {
     if ($missing.Count -and -not $script:LeftoverJob) {
         # Taille calculée en arrière plan (un dossier peut contenir des centaines de milliers de fichiers)
         $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
-        [void]$ps.AddScript($LeftoverSizeWork.ToString()).AddArgument($missing)
+        [void]$ps.AddScript("function Measure-LeftoverDir {${function:Measure-LeftoverDir}}`nfunction Measure-LeftoverDirs {${function:Measure-LeftoverDirs}}`nMeasure-LeftoverDirs `$args[0]").AddArgument($missing)
         $script:LeftoverJob = @{ PS = $ps; Handle = $ps.BeginInvoke() }
         $t = New-Object System.Windows.Threading.DispatcherTimer
         $t.Interval = [TimeSpan]::FromMilliseconds(500)
@@ -497,7 +515,8 @@ function Update-LeftoverBar {
             $j = $script:LeftoverJob
             if (-not $j -or -not $j.Handle.IsCompleted) { return }
             $s.Stop(); $script:LeftoverJob = $null
-            try { foreach ($l in @($j.PS.EndInvoke($j.Handle))) { $x = ([string]$l) -split '\|'; $script:LeftoverSizes[$x[0]] = [double]$x[1] } } catch {} finally { $j.PS.Dispose() }
+            if (-not $script:LeftoverRecents) { $script:LeftoverRecents = @{} }
+            try { foreach ($l in @($j.PS.EndInvoke($j.Handle))) { $x = ([string]$l) -split '\|'; $script:LeftoverSizes[$x[0]] = [double]$x[1]; $script:LeftoverRecents[$x[0]] = $x[2] -ne '0' } } catch {} finally { $j.PS.Dispose() }
             Update-LeftoverBar
         })
         $t.Start()
@@ -508,15 +527,20 @@ function Update-LeftoverBar {
     if (-not $big.Count) { $ui.LibLeftoverBar.Visibility = 'Collapsed'; return }
     $size = ($big | ForEach-Object { $script:LeftoverSizes[$_.Dir] } | Measure-Object -Sum).Sum
     $names = (@($big | Select-Object -First 3 | ForEach-Object { $_.Name }) -join ', ') + $(if ($big.Count -gt 3) { '...' })
-    $ui.LibLeftoverText.Text = "$($big.Count) jeu$(if ($big.Count -gt 1) {'x'}) désinstallé$(if ($big.Count -gt 1) {'s'}) $(if ($big.Count -gt 1) { 'ont' } else { 'a' }) laissé $(if ($big.Count -gt 1) { 'leur dossier' } else { 'son dossier' }) sur le disque ($names) : $(Format-Size $size) à récupérer."
+    $ui.LibLeftoverText.Text = "$($big.Count) jeu$(if ($big.Count -gt 1) {'x'}) désinstallé$(if ($big.Count -gt 1) {'s'}) $(if ($big.Count -gt 1) { 'ont' } else { 'a' }) laissé $(if ($big.Count -gt 1) { 'leur dossier' } else { 'son dossier' }) sur le disque ($names) : $(Format-Size $size) à récupérer.$(Get-LeftoverIncompletText)"
     $ui.LibLeftoverBar.Visibility = 'Visible'
     if ($ui.TestOverlay.Visibility -eq 'Visible' -and $script:LeftoverPanelOpen) { Show-Leftovers }
 }
 
-# Restes de plus de 50 Mo, les plus gros d'abord
+# Analyse incomplète (une fiche de Steam illisible) : dit en une phrase, à la suite de la liste
+function Get-LeftoverIncompletText {
+    if (@($script:LeftoversIncomplets).Count) { ' Analyse incomplète : une fiche de Steam n''a pas pu être lue, les dossiers de cette bibliothèque ne sont pas proposés.' } else { '' }
+}
+
+# Restes de plus de 50 Mo, les plus gros d'abord (jamais un dossier qui a bougé depuis moins de 7 jours)
 function Get-BigLeftovers {
     if (-not $script:LeftoverSizes) { return @() }
-    @($script:Leftovers | Where-Object { $_ -and $script:LeftoverSizes.ContainsKey($_.Dir) -and $script:LeftoverSizes[$_.Dir] -ge 50MB -and (Test-Path -LiteralPath $_.Dir) } |
+    @($script:Leftovers | Where-Object { $_ -and $script:LeftoverSizes.ContainsKey($_.Dir) -and $script:LeftoverSizes[$_.Dir] -ge 50MB -and -not ($script:LeftoverRecents -and $script:LeftoverRecents[$_.Dir]) -and (Test-Path -LiteralPath $_.Dir) } |
         Sort-Object @{ Expression = { $script:LeftoverSizes[$_.Dir] }; Descending = $true })
 }
 
@@ -530,7 +554,7 @@ function Show-Leftovers {
     $ui.TestProgress.Value = 100; $ui.TestPct.Text = ''
     Set-TestState 'info' "$($list.Count) dossier$(if ($list.Count -gt 1) {'s'})"
     $body = $ui.TestBody
-    $intro = New-Text 'Ces jeux ne sont plus installés (Steam ne les connaît plus), mais leur dossier est resté sur le disque. La suppression est définitive : ils ne passent pas par la corbeille, la place est libérée tout de suite et ils ne peuvent pas être récupérés. S''ils contiennent des sauvegardes ou des mods, ouvre-les pour vérifier avant.' 12.5 '#A6A1BC'
+    $intro = New-Text ('Ces jeux ne sont plus installés (Steam ne les connaît plus), mais leur dossier est resté sur le disque. La suppression est définitive : ils ne passent pas par la corbeille, la place est libérée tout de suite et ils ne peuvent pas être récupérés. S''ils contiennent des sauvegardes ou des mods, ouvre-les pour vérifier avant.' + (Get-LeftoverIncompletText)) 12.5 '#A6A1BC'
     $intro.Margin = New-Thickness 0 0 0 10
     [void]$body.Children.Add($intro)
     if ($list.Count -gt 1) {
@@ -568,21 +592,35 @@ function Show-Leftovers {
 
 # Suppression définitive, en arrière plan (un dossier peut compter des centaines de milliers de fichiers).
 # Les fichiers en lecture seule sont débloqués si la première tentative échoue.
-$LeftoverDeleteWork = {
-    param($dirs, $state)
-    foreach ($d in $dirs) {
-        $state.Current = $d
-        $err = ''
-        try { [IO.Directory]::Delete($d, $true) }
-        catch {
-            try {
-                foreach ($f in [IO.Directory]::EnumerateFiles($d, '*', 'AllDirectories')) { try { [IO.File]::SetAttributes($f, 'Normal') } catch {} }
-                [IO.Directory]::Delete($d, $true)
-            } catch { $err = $_.Exception.Message }
+# Juste avant de supprimer, les fiches de Steam sont relues : Steam a pu réinstaller ou remettre à jour le jeu depuis
+# l'analyse. Gardé si une fiche le cite, si une fiche n'a pas pu être lue, ou s'il a bougé depuis moins de 7 jours.
+# Résultat de chaque dossier : « dossier|raison si pas supprimé|garde (plus proposé) ». Autonome (tourne dans un fil séparé,
+# avec Read-SteamManifests et Measure-LeftoverDir).
+function Remove-LeftoverDirs {
+    param($Dirs, $State)
+    foreach ($d in $Dirs) {
+        $State.Current = $d
+        $err = ''; $garde = $false
+        if ($d -notmatch '(?i)^(.+\\steamapps)\\common\\([^\\]+)$') { $err = 'ce n''est pas un dossier de jeu de Steam' }
+        else {
+            $steamApps = $Matches[1]; $nom = $Matches[2].ToLower()
+            $fiches = Read-SteamManifests $steamApps
+            if (-not $fiches.Complet) { $err = 'gardé par prudence, une fiche de Steam n''a pas pu être lue (réessaie plus tard)' }
+            elseif ($fiches.Ids.ContainsKey($nom)) { $err = 'gardé, Steam s''en sert de nouveau (jeu réinstallé ou en cours de mise à jour)'; $garde = $true }
+            elseif ((Measure-LeftoverDir $d).Recent) { $err = 'gardé par prudence, il a été modifié il y a moins de 7 jours'; $garde = $true }
         }
-        if (-not $err -and [IO.Directory]::Exists($d)) { $err = 'des fichiers sont encore utilisés' }
-        [void]$state.Results.Add("$d|$err")
-        $state.Done++
+        if (-not $err) {
+            try { [IO.Directory]::Delete($d, $true) }
+            catch {
+                try {
+                    foreach ($f in [IO.Directory]::EnumerateFiles($d, '*', 'AllDirectories')) { try { [IO.File]::SetAttributes($f, 'Normal') } catch {} }
+                    [IO.Directory]::Delete($d, $true)
+                } catch { $err = "$($_.Exception.Message) (ferme le jeu ou son launcher, puis réessaie)" }
+            }
+            if (-not $err -and [IO.Directory]::Exists($d)) { $err = 'des fichiers sont encore utilisés (ferme le jeu ou son launcher, puis réessaie)' }
+        }
+        [void]$State.Results.Add("$d|$err|$(if ($garde) { 'garde' })")
+        $State.Done++
     }
 }
 
@@ -602,7 +640,7 @@ function Remove-Leftovers([array]$List, [switch]$Force) {
     if (-not $Force -and -not (Confirm-Action "Supprimer définitivement $what ($(Format-Size $size)) ?`n`nIls ne passent pas par la corbeille : la place est libérée tout de suite, mais ils ne pourront pas être récupérés. Les sauvegardes ou mods qu'ils contiennent seront perdus.")) { return }
     $state = [hashtable]::Synchronized(@{ Done = 0; Current = ''; Results = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList)) })
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
-    [void]$ps.AddScript($LeftoverDeleteWork.ToString()).AddArgument(@($ok | ForEach-Object { [string]$_.Dir })).AddArgument($state)
+    [void]$ps.AddScript("function Read-SteamManifests {${function:Read-SteamManifests}}`nfunction Measure-LeftoverDir {${function:Measure-LeftoverDir}}`nfunction Remove-LeftoverDirs {${function:Remove-LeftoverDirs}}`nRemove-LeftoverDirs `$args[0] `$args[1]").AddArgument(@($ok | ForEach-Object { [string]$_.Dir })).AddArgument($state)
     $script:LeftoverDelete = @{ PS = $ps; Handle = $ps.BeginInvoke(); State = $state; Items = $ok; Size = $size }
     Write-Log "Bibliothèque: suppression définitive de $($ok.Count) reste(s) de jeux ($(Format-Size $size))"
     if ($ui.TestOverlay.Visibility -eq 'Visible' -and $script:LeftoverPanelOpen) { Show-Leftovers }
@@ -626,9 +664,15 @@ function Receive-LeftoverDelete($Timer) {
     $script:LeftoverDelete = $null
     $freed = 0.0; $fail = @()
     foreach ($r in @($st.Results)) {
-        $x = ([string]$r) -split '\|', 2
+        # « dossier|raison|garde » (la raison peut contenir une barre : elle est entre le premier et le dernier champ)
+        $x = @(([string]$r) -split '\|')
+        $raison = if ($x.Count -gt 2) { $x[1..($x.Count - 2)] -join '|' } else { [string]$x[1] }
         $it = @($j.Items | Where-Object { $_.Dir -eq $x[0] })[0]
-        if ($x[1]) { $fail += "$(if ($it) { $it.Name } else { $x[0] }) : $($x[1])" }
+        if ($raison) {
+            $fail += "$(if ($it) { $it.Name } else { $x[0] }) : $raison"
+            # Plus proposé : Steam s'en sert de nouveau, ou il vient de bouger
+            if ($x.Count -gt 2 -and $x[-1] -eq 'garde') { $script:Leftovers = @($script:Leftovers | Where-Object { $_.Dir -ne $x[0] }) }
+        }
         else { $freed += [double]$script:LeftoverSizes[$x[0]]; $script:Leftovers = @($script:Leftovers | Where-Object { $_.Dir -ne $x[0] }) }
     }
     Write-Log "Bibliothèque: $(Format-Size $freed) libérés$(if ($fail.Count) { ", échecs : $($fail -join ' | ')" })"
@@ -637,7 +681,7 @@ function Receive-LeftoverDelete($Timer) {
     if ($script:LeftoverPanelOpen) { if (@(Get-BigLeftovers).Count) { Show-Leftovers } else { $script:LeftoverPanelOpen = $false; Hide-TestPanel } }
     if (-not $script:TestRunning) {
         $lines = @("$(Format-Size $freed) libérés sur le disque.")
-        if ($fail.Count) { $lines += 'Pas supprimés (ferme le jeu ou son launcher, puis réessaie) :'; $lines += @($fail | ForEach-Object { "•  $_" }) }
+        if ($fail.Count) { $lines += 'Pas supprimés :'; $lines += @($fail | ForEach-Object { "•  $_" }) }
         Show-ResultSheet $(if ($fail.Count) { 'Suppression terminée, avec des exceptions' } else { 'Place libérée' }) $lines $null $null
     }
     $script:LastLeftoverFreed = $freed

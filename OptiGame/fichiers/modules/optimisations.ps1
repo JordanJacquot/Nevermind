@@ -343,13 +343,88 @@ function Read-StartupItems {
     }
 }
 
+# Bibliothèques Steam : le dossier de Steam, puis celles de libraryfolders.vdf. Steam écrit ce fichier en UTF-8 sans BOM :
+# lu sans encodage, « D:\Jeux Société » deviendrait un chemin introuvable et ses jeux disparaîtraient.
+# Autonome (tourne dans un fil séparé).
+function Get-SteamLibraries {
+    param([string]$Steam)
+    $libs = @($Steam)
+    $vdf = Join-Path $Steam 'steamapps\libraryfolders.vdf'
+    if (Test-Path -LiteralPath $vdf) {
+        foreach ($m in [regex]::Matches((Get-Content -LiteralPath $vdf -Raw -Encoding UTF8), '"path"\s+"([^"]+)"')) { $libs += ($m.Groups[1].Value -replace '\\\\', '\') }
+    }
+    $libs
+}
+
+# Fiches d'installation (appmanifest_*.acf) d'un dossier « steamapps » : { Complet, Noms, Ids }, rangés par dossier
+# d'installation en minuscules. Complet = $false si une fiche n'a pas pu être lue en entier (Steam la réécrit pendant une
+# mise à jour, un antivirus la tient...) : aucun dossier de cette bibliothèque ne passe alors pour un reste de jeu.
+# Autonome (tourne dans un fil séparé, et juste avant de supprimer un reste).
+function Read-SteamManifests {
+    param([string]$SteamApps)
+    $r = @{ Complet = $true; Noms = @{}; Ids = @{} }
+    if (-not [IO.Directory]::Exists($SteamApps)) { return $r }
+    $fiches = @()
+    try { $fiches = @([IO.Directory]::GetFiles($SteamApps, 'appmanifest_*.acf') | Where-Object { $_ -match '(?i)\.acf$' }) } catch { $r.Complet = $false; return $r }
+    foreach ($f in $fiches) {
+        $txt = $null
+        try { $txt = [IO.File]::ReadAllText($f, [Text.Encoding]::UTF8) } catch {}
+        if (-not $txt -or $txt -notmatch '"installdir"\s+"([^"]+)"') { $r.Complet = $false; continue }
+        $dir = $Matches[1].ToLower()
+        if ($txt -match '"name"\s+"([^"]+)"') { $r.Noms[$dir] = $Matches[1] }
+        $r.Ids[$dir] = if ($txt -match '"appid"\s+"(\d+)"') { $Matches[1] } elseif ([IO.Path]::GetFileName($f) -match '(\d+)') { $Matches[1] } else { '0' }
+    }
+    $r
+}
+
+# Jeux Steam : { Dirs (jeux installés, complétés par Get-InstalledGames), Restes, Common (dossiers « steamapps\common ») }.
+# Reste (Leftover) : dossier de « steamapps\common » qu'aucune fiche ne cite, seulement si toutes les fiches de sa
+# bibliothèque ont été lues et s'il n'a pas bougé depuis 7 jours (Steam y travaille peut-être). Une bibliothèque dont une
+# fiche est illisible est signalée par un élément Incomplet (Leftover aussi, pour ne jamais passer pour un jeu).
+# Autonome (tourne dans un fil séparé).
+function Get-SteamGames {
+    param([string]$Steam)
+    $notGames = '^(wallpaper_engine|Steamworks Shared|SteamVR|Steam Controller Configs|Steamworks Common Redistributables|GameSave|Minecraft Launcher)$'
+    $r = @{ Dirs = @(); Restes = @(); Common = @() }
+    $limite = (Get-Date).AddDays(-7)
+    $seen = @{}
+    foreach ($lib in @(Get-SteamLibraries $Steam)) {
+        $key = $lib.TrimEnd('\').ToLower()
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        # Vrai nom de chaque jeu (« Rocket League » au lieu du dossier « rocketleague »).
+        $fiches = Read-SteamManifests (Join-Path $lib 'steamapps')
+        $common = Join-Path $lib 'steamapps\common'
+        if (-not (Test-Path -LiteralPath $common)) { continue }
+        $r.Common += $common.ToLower()
+        if (-not $fiches.Complet) { $r.Restes += @{ Name = ''; Dir = $lib; Exes = @(); Source = 'Steam'; Leftover = $true; Incomplet = $true } }
+        foreach ($sd in @(Get-ChildItem -LiteralPath $common -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch $notGames })) {
+            $low = $sd.Name.ToLower()
+            $id = $fiches.Ids[$low]
+            if (-not $id) {
+                # Pas de fiche d'installation : Steam a désinstallé le jeu mais laissé son dossier (sauvegardes, fichiers en trop)
+                if ($fiches.Complet -and $sd.LastWriteTime -lt $limite) { $r.Restes += @{ Name = $sd.Name; Dir = $sd.FullName; Exes = @(); Source = 'Steam'; Leftover = $true } }
+                continue
+            }
+            $r.Dirs += @{ Name = $(if ($fiches.Noms[$low]) { $fiches.Noms[$low] } else { $sd.Name }); Dir = $sd.FullName; Exe = $null; Source = 'Steam'; AppId = $id; Launch = "steam://rungameid/$id"; Uninstall = "steam://uninstall/$id" }
+        }
+    }
+    $r
+}
+
+# Fil séparé qui calcule la liste des jeux (Get-InstalledGames et les fonctions Steam qu'elle appelle)
+function Get-InstalledGamesWork {
+    [scriptblock]::Create("function Get-SteamLibraries {${function:Get-SteamLibraries}}`nfunction Read-SteamManifests {${function:Read-SteamManifests}}`nfunction Get-SteamGames {${function:Get-SteamGames}}`nfunction Get-InstalledGames {${function:Get-InstalledGames}}`nGet-InstalledGames")
+}
+
 # Jeux installés, tous launchers confondus : Steam, Epic, Ubisoft Connect, EA app, GOG Galaxy, Battle.net,
 # Riot, Rockstar, Amazon Games, Xbox / Game Pass. Chaque jeu : { Name, Exes (exécutables probables), Source, Dir,
 # AppId (Steam), Launch : comment le lancer par son launcher (adresse steam://, uplay://... ; vide = son exécutable),
 # Uninstall : comment le désinstaller (adresse, « exe|programme|arguments », ou la commande déclarée à Windows), Icon }.
-# Leftover = $true : dossier d'un jeu Steam désinstallé (pas un jeu, à proposer au nettoyage).
+# Leftover = $true : dossier d'un jeu Steam désinstallé (pas un jeu, à proposer au nettoyage) ; avec Incomplet = $true,
+# bibliothèque Steam dont une fiche n'a pas pu être lue (analyse incomplète : aucun reste proposé dans celle-là).
 # Art : visuels fournis par le launcher lui même (Ankama : jaquette, grande image, logo).
-# Autonome (tourne dans un fil séparé) : n'utilise aucune autre fonction de Nevermind.
+# Autonome (tourne dans un fil séparé, voir Get-InstalledGamesWork) : n'utilise que les fonctions Steam ci-dessus.
 function Get-InstalledGames {
     $bad = 'unins|setup|install|redist|dxsetup|directx|crash|report|easyanticheat|anticheat|eac_|beservice|battleye|_be$|update|helper|prereq|dotnet|webhelper|vcredist|python|java|browser|error|cleanup|touchup|repair|bootstrapper|resourcecompiler|^ui(32|64)$|diagnos|benchmark_?tool|ubisoftgamelauncher|uplay|^upc$|link2ea|socialclub|rockstarservice|cefsharp|leagueclient|riotclient|vanguard|^vgc$|blizzard ?error|agent$|gamelaunchhelper|launcher|snoretoast|notifier'
     $notGames = '^(wallpaper_engine|Steamworks Shared|SteamVR|Steam Controller Configs|Steamworks Common Redistributables|GameSave|Minecraft Launcher)$'
@@ -363,38 +438,8 @@ function Get-InstalledGames {
     $steamCommon = @()
     $steam = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
     if ($steam) {
-        $steam = $steam -replace '/', '\'
-        $libs = @($steam)
-        $vdf = Join-Path $steam 'steamapps\libraryfolders.vdf'
-        if (Test-Path -LiteralPath $vdf) {
-            foreach ($m in [regex]::Matches((Get-Content -LiteralPath $vdf -Raw), '"path"\s+"([^"]+)"')) { $libs += ($m.Groups[1].Value -replace '\\\\', '\') }
-        }
-        $seen = @{}
-        foreach ($lib in $libs) {
-            $key = $lib.TrimEnd('\').ToLower()
-            if ($seen.ContainsKey($key)) { continue }
-            $seen[$key] = $true
-            # Vrai nom de chaque jeu (« Rocket League » au lieu du dossier « rocketleague »).
-            $names = @{}; $ids = @{}
-            foreach ($acf in @(Get-ChildItem -LiteralPath (Join-Path $lib 'steamapps') -Filter 'appmanifest_*.acf' -File -ErrorAction SilentlyContinue)) {
-                $txt = Get-Content -LiteralPath $acf.FullName -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-                if ($txt -match '"installdir"\s+"([^"]+)"') {
-                    $installDir = $Matches[1].ToLower()
-                    if ($txt -match '"name"\s+"([^"]+)"') { $names[$installDir] = $Matches[1] }
-                    if ($txt -match '"appid"\s+"(\d+)"') { $ids[$installDir] = $Matches[1] }
-                }
-            }
-            $common = Join-Path $lib 'steamapps\common'
-            if (Test-Path -LiteralPath $common) {
-                $steamCommon += $common.ToLower()
-                foreach ($sd in @(Get-ChildItem -LiteralPath $common -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch $notGames })) {
-                    $id = $ids[$sd.Name.ToLower()]
-                    # Pas de fiche d'installation : Steam a désinstallé le jeu mais laissé son dossier (sauvegardes, fichiers en trop)
-                    if (-not $id) { $games += @{ Name = $sd.Name; Dir = $sd.FullName; Exes = @(); Source = 'Steam'; Leftover = $true }; continue }
-                    $dirs += @{ Name = $(if ($names[$sd.Name.ToLower()]) { $names[$sd.Name.ToLower()] } else { $sd.Name }); Dir = $sd.FullName; Exe = $null; Source = 'Steam'; AppId = $id; Launch = "steam://rungameid/$id"; Uninstall = "steam://uninstall/$id" }
-                }
-            }
-        }
+        $s = Get-SteamGames ($steam -replace '/', '\')
+        $games += @($s.Restes); $dirs += @($s.Dirs); $steamCommon += @($s.Common)
     }
     # Epic Games
     foreach ($m in @(Get-ChildItem "$env:ProgramData\Epic\EpicGamesLauncher\Data\Manifests\*.item" -ErrorAction SilentlyContinue)) {

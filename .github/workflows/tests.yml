@@ -72,6 +72,16 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-memoire.ps1
           exit $LASTEXITCODE
 
+      - name: "Restes de jeux Steam (bibliothèque au nom accentué, fiche verrouillée, fiches relues avant de supprimer, rien de récent supprimé, fausse bibliothèque)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-bibliotheque.ps1
+          exit $LASTEXITCODE
+
+      - name: "Sécurité (tâches pas désactivées dites comme telles, jamais « Aucune menace » sans résultat lu, fausses commandes)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-securite.ps1
+          exit $LASTEXITCODE
+
       - name: "Fluidité en partie (écoute de la souris sur son propre fil, Aide qui tient quand ses connexions sont prises, minuteurs qui ne s'empilent plus)"
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-fluidite.ps1

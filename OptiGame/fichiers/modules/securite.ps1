@@ -216,11 +216,31 @@ function Get-SecurityChecks($S) {
             Detail = 'Ces tâches lancent en cachette des commandes qui téléchargent ou exécutent du code, ou des programmes rangés dans des dossiers temporaires. C''est une technique classique des virus pour revenir après chaque redémarrage.'
             Items = @($trust | ForEach-Object { $_.Text }); Trust = $trust
             Actions = @(@{ Label = 'Désactiver ces tâches'; Arg = $susTasks; Confirm = 'Désactiver ces tâches planifiées ? Tu pourras les réactiver dans le Planificateur de tâches.'
-                           Script = { param($a) foreach ($x in $a) { Disable-ScheduledTask -TaskName $x.Name -TaskPath $x.Path -ErrorAction SilentlyContinue | Out-Null } } },
+                           Script = { param($a) Disable-SuspectTasks $a } },
                         @{ Label = 'Planificateur de tâches'; Script = { Start-Process 'taskschd.msc' } }) })
     }
     Set-Status 'Vérification terminée.'
     $list
+}
+
+# « Désactiver ces tâches » : chaque tâche est désactivée puis relue. Sans droits, Windows refuse celles qu'un administrateur
+# a créées : jamais comptées comme faites. Aucune désactivée : une erreur (rien n'est noté comme fait dans l'historique) ;
+# une partie seulement : un message qui nomme celles qui restent.
+function Disable-SuspectTasks([array]$Tasks) {
+    $faites = @(); $ratees = @()
+    foreach ($x in @($Tasks | Where-Object { $_ })) {
+        $ok = $false
+        try {
+            Disable-ScheduledTask -TaskName $x.Name -TaskPath $x.Path -ErrorAction Stop | Out-Null
+            $ok = [string](Get-ScheduledTask -TaskName $x.Name -TaskPath $x.Path -ErrorAction Stop).State -eq 'Disabled'
+        } catch { Write-Log "Sécurité : tâche « $($x.Path)$($x.Name) » non désactivée ($($_.Exception.Message))" }
+        if ($ok) { $faites += [string]$x.Name } else { $ratees += [string]$x.Name }
+    }
+    if (-not $ratees.Count) { return }
+    $plus = $ratees.Count -gt 1
+    $txt = "Je n'ai pas pu désactiver $(if ($plus) { 'ces tâches' } else { 'cette tâche' }) : $($ratees -join ', ').`n`nWindows ne me laisse pas faire : $(if ($plus) { 'elles ont sans doute été créées' } else { 'elle a sans doute été créée' }) par un administrateur. Lance une analyse rapide de Defender, et si tu ne $(if ($plus) { 'les' } else { 'la' }) reconnais pas, demande de l'aide à quelqu'un de confiance."
+    if (-not $faites.Count) { throw $txt }
+    Show-Message "$($faites.Count) tâche$(if ($faites.Count -gt 1) {'s'}) désactivée$(if ($faites.Count -gt 1) {'s'}).`n`n$txt" 'Warning'
 }
 
 # ---------------------------------------------------------------------------
@@ -389,6 +409,32 @@ $ScanWork = {
     } catch { @{ Error = $_.Exception.GetBaseException().Message } }
 }
 
+# Menaces trouvées depuis le début d'une analyse : { Lu ($false = résultat inconnu), Menaces = @(@{ Nom; Fichier }) }.
+# Sans droits, Nevermind ne peut pas se fier à sa propre lecture (Windows peut répondre « rien » sans erreur) : l'Aide lit
+# les détections en administrateur (lecture.securite). Sans Aide ni droits, une liste vide reste « résultat inconnu »,
+# jamais « aucune menace » ; une lecture qui échoue aussi.
+function Get-ScanThreats([datetime]$Start) {
+    $depuis = $Start.AddSeconds(-5)
+    $det = $null; $noms = @{}; $fiable = $false
+    if (-not $script:EstAdmin) {
+        $l = Get-AideLecture 'lecture.securite'
+        if ($l) {
+            $det = @(@($l.Detections) | Where-Object { $_ } | ForEach-Object { @{ Id = [string]$_.ThreatID; Quand = [datetime][long]$_.Quand; Res = @($_.Resources) } })
+            foreach ($m in @(@($l.Menaces) | Where-Object { $_ })) { $noms[[string]$m.ThreatID] = [string]$m.ThreatName }
+            $fiable = $true
+        }
+    }
+    if (-not $fiable) {
+        try {
+            $det = @(Get-MpThreatDetection -ErrorAction Stop | ForEach-Object { @{ Id = [string]$_.ThreatID; Quand = [datetime]$_.InitialDetectionTime; Res = @($_.Resources) } })
+            $fiable = [bool]$script:EstAdmin
+        } catch { Write-Log "Analyse Defender : détections non lues ($($_.Exception.Message))"; $det = @() }
+        try { foreach ($t in @(Get-MpThreat -ErrorAction Stop)) { $noms[[string]$t.ThreatID] = [string]$t.ThreatName } } catch {}
+    }
+    $menaces = @(@($det) | Where-Object { $_ -and $_.Quand -ge $depuis } | ForEach-Object { @{ Nom = [string]$noms[$_.Id]; Fichier = ((@($_.Res) | Select-Object -First 1) -replace '^file:_', '') } })
+    @{ Lu = $fiable -or $menaces.Count -gt 0; Menaces = $menaces }
+}
+
 # -Fixe : sans animation (sous la console, le panneau est montré dans l'écran et le radar reste caché derrière)
 function New-Radar([switch]$Fixe) {
     $g = New-Object System.Windows.Controls.Grid
@@ -498,13 +544,15 @@ function Invoke-DefenderScan([string]$Type, [string[]]$Paths, [string]$Title) {
         [void]$body.Children.Add((New-Verdict 'bad' "L'analyse n'a pas pu se faire : $($r.Error)"))
         return
     }
-    $found = @()
-    try { $found = @(Get-MpThreatDetection -ErrorAction Stop | Where-Object { $_.InitialDetectionTime -ge $start.AddSeconds(-5) }) } catch {}
-    $threatNames = @{}
-    try { foreach ($t2 in @(Get-MpThreat -ErrorAction Stop)) { $threatNames[[string]$t2.ThreatID] = $t2.ThreatName } } catch {}
+    $lu = Get-ScanThreats $start
+    $found = @($lu.Menaces)
     $time.Text = '{0:00}:{1:00}' -f [math]::Floor($dur.TotalMinutes), $dur.Seconds
-    $script:LastScanResult = if ($found.Count) { 'threats' } else { 'clean' }
-    if (-not $found.Count) {
+    $script:LastScanResult = if ($found.Count) { 'threats' } elseif ($lu.Lu) { 'clean' } else { 'unknown' }
+    if (-not $lu.Lu) {
+        # Résultat pas lu : jamais « Aucune menace »
+        Set-TestState 'warn' 'Résultat inconnu'
+        [void]$body.Children.Add((New-Verdict 'warn' 'L''analyse est terminée, mais je n''ai pas pu lire son résultat. Pour le voir, ouvre Sécurité Windows, puis « Protection contre les virus et menaces ».'))
+    } elseif (-not $found.Count) {
         $radar.Shield.Fill = Get-Brush $Colors.ok
         $check = New-Text '✓' 30 '#07060C' -Bold
         $check.HorizontalAlignment = 'Center'; $check.VerticalAlignment = 'Center'
@@ -515,17 +563,13 @@ function Invoke-DefenderScan([string]$Type, [string[]]$Paths, [string]$Title) {
         Start-WpfAnim $scale ([System.Windows.Media.ScaleTransform]::ScaleXProperty) 1 600
         Start-WpfAnim $scale ([System.Windows.Media.ScaleTransform]::ScaleYProperty) 1 600
         Set-TestState 'ok' 'Aucune menace'
-        [void]$body.Children.Add((New-Verdict 'ok' "Aucune menace trouvée. Analyse terminée en " + $(if ($dur.TotalSeconds -lt 60) { "moins d'une minute." } else { "$([int][math]::Round($dur.TotalMinutes)) min." })))
+        [void]$body.Children.Add((New-Verdict 'ok' ("Aucune menace trouvée. Analyse terminée en " + $(if ($dur.TotalSeconds -lt 60) { "moins d'une minute." } else { "$([int][math]::Round($dur.TotalMinutes)) min." }))))
     } else {
         $radar.Shield.Stroke = Get-Brush $Colors.bad
         $radar.Shield.Fill = Get-Brush '#3A1A1A'
         $radar.Shield.Effect = New-Glow $Colors.bad 20 0.6
         Set-TestState 'bad' "$($found.Count) menace$(if ($found.Count -gt 1) {'s'}) trouvée$(if ($found.Count -gt 1) {'s'})"
-        foreach ($d in $found) {
-            $name = $threatNames[[string]$d.ThreatID]
-            $file = (@($d.Resources) | Select-Object -First 1) -replace '^file:_', ''
-            [void]$body.Children.Add((New-Verdict 'bad' "$name   $file"))
-        }
+        foreach ($d in $found) { [void]$body.Children.Add((New-Verdict 'bad' "$($d.Nom)   $($d.Fichier)")) }
         $del = New-Button 'Supprimer les menaces' 'BtnPrimary'
         $del.HorizontalAlignment = 'Left'
         $del.Margin = New-Thickness 0 14 0 0

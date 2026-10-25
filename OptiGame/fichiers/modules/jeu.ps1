@@ -29,9 +29,12 @@ function Get-GameModeSelection {
 
 # Liste des jeux (tous les launchers, plus ceux ajoutés à la main), calculée une fois en arrière plan.
 function Update-GameCache {
-    $all = @(Invoke-Async ([scriptblock]::Create("function Get-InstalledGames {${function:Get-InstalledGames}}; Get-InstalledGames")))
+    $all = @(Invoke-Async (Get-InstalledGamesWork))
     # Dossiers laissés par des jeux désinstallés : pas des jeux, proposés au nettoyage dans la bibliothèque
-    $script:Leftovers = @($all | Where-Object { $_.Leftover })
+    $script:Leftovers = @($all | Where-Object { $_.Leftover -and -not $_.Incomplet })
+    # Bibliothèque Steam dont une fiche d'installation n'a pas pu être lue : aucun reste n'y est proposé (analyse incomplète)
+    $script:LeftoversIncomplets = @($all | Where-Object { $_.Incomplet } | ForEach-Object { [string]$_.Dir })
+    if ($script:LeftoversIncomplets.Count) { Write-Log "Bibliothèque: analyse des restes de jeux incomplète, une fiche de Steam n'a pas pu être lue ($($script:LeftoversIncomplets -join ', '))" }
     $found = @($all | Where-Object { -not $_.Leftover })
     $script:Games = @($found) + @(Get-CustomGames | Where-Object { $p = $_.Exes[0]; -not @($found | Where-Object { @($_.Exes) -contains $p }).Count })
     $script:GameIndex = @{}
