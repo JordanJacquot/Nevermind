@@ -316,7 +316,7 @@ $ecrivains = [ordered]@{
     'systeme'       = 'Test-HistoriqueRemis'
     'onglets'       = 'Set-Dns'
     'assistance'    = 'ConvertFrom-HistoryEntry', 'Import-History', 'Save-History', 'Test-ChampHisto', 'Format-DemarrageService', 'Format-PlanAlim',
-                      'Format-CurseurAlim', 'Format-ServeursDns', 'Get-DetailsTechniques', 'Set-HistoryAllUndone', 'Test-HistoriqueDefinitif', 'Test-HistoriquePartDefinitive'
+                      'Format-CurseurAlim', 'Format-ServeursDns', 'Get-DetailsTechniques', 'Set-HistoryAllUndone', 'Test-HistoriqueDefinitif', 'Test-HistoriqueNote', 'Test-HistoriquePartDefinitive'
 }
 foreach ($f in $ecrivains.Keys) {
     foreach ($n in $ecrivains[$f]) {
@@ -483,10 +483,12 @@ try {
     [void]$script:History.Add(@{ Id = 'def'; Titre = 'Définitif'; Details = @(); Log = @($def); Annule = $false })
     [void]$script:History.Add(@{ Id = 'mixte'; Titre = 'Mixte'; Details = @(); Log = @($def, $entrees['reg']); Annule = $false })
     [void]$script:History.Add(@{ Id = 'reg'; Titre = 'Registre'; Details = @(); Log = @($entrees['reg']); Annule = $false })
+    [void]$script:History.Add(@{ Id = 'note'; Titre = 'Fermé : Discord'; Details = @(); Log = @(@{ Type = 'note'; Quoi = 'Discord fermé'; Chemins = @('C:\x\Discord.exe') }); Annule = $false })   # (une appli fermée depuis la page RAM : rien à remettre)
     Set-HistoryAllUndone
     Test-Ok (-not $script:History[0].Annule -and (Test-HistoriqueDefinitif $script:History[0])) 'Tout restaurer : une entrée définitive est marquée « Annulé »'
     Test-Ok ($script:History[1].Annule -and (Test-HistoriquePartDefinitive $script:History[1]) -and -not (Test-HistoriqueDefinitif $script:History[1])) 'Tout restaurer : entrée mixte (définitive en partie) mal marquée'
     Test-Ok ($script:History[2].Annule -and -not (Test-HistoriquePartDefinitive $script:History[2])) 'Tout restaurer : une entrée annulable n''est pas marquée « Annulé »'
+    Test-Ok (-not $script:History[3].Annule -and (Test-HistoriqueNote $script:History[3]) -and -not (Test-HistoriqueNote $script:History[2]) -and [string]@(Get-DetailsTechniques $script:History[3])[0] -match 'Discord fermé : C:') 'Tout restaurer : une appli fermée (seulement notée) est marquée « Annulé », ou mal décrite'
 } finally { foreach ($f in $HistoryFile, "$HistoryFile.bak", "$HistoryFile.tmp") { if ([IO.File]::Exists($f)) { [IO.File]::Delete($f) } } }   # (Remove-Item est interdit dans ce test ; la copie de secours part aussi)
 Test-Ok ([string]@(Get-DetailsTechniques @{ Log = @(@{ Type = 'fw'; Name = 'Nevermind essai' }) })[0] -match 'avant .+, après .+') 'Historique, pare-feu : pas d''avant ou d''après'
 
@@ -518,7 +520,7 @@ foreach ($fichier in Get-ChildItem -LiteralPath $modules -Filter '*.ps1') {
         $nbNotes++
         $cles = @($ht.KeyValuePairs | ForEach-Object { "$($_.Item1)" })
         $type = "$(@($ht.KeyValuePairs | Where-Object { "$($_.Item1)" -eq 'Type' })[0].Item2)".Trim("'", '"', ' ')
-        if ($type -in 'fw', 'definitif' -or $cles -contains 'Efface' -or $cles -contains 'Nouveau') { continue }
+        if ($type -in 'fw', 'definitif', 'note' -or $cles -contains 'Efface' -or $cles -contains 'Nouveau') { continue }
         Test-Ok $false "$($fichier.Name) ligne $($ht.Extent.StartLineNumber) : changement « $type » noté pour l'historique sans sa nouvelle valeur (Nouveau)"
     }
 }

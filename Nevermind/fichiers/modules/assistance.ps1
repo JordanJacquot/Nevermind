@@ -63,6 +63,8 @@ function Add-ChangementDefinitif([string]$Titre, [string]$Quoi, [string]$Retour)
 }
 # Une entrée dont rien ne s'annule : seulement des changements définitifs
 function Test-HistoriqueDefinitif($H) { $l = @($H.Log); $l.Count -and -not @($l | Where-Object { $_.Type -ne 'definitif' }).Count }
+# Une entrée seulement notée, sans rien à remettre (une appli fermée depuis la page RAM : Type 'note')
+function Test-HistoriqueNote($H) { $l = @($H.Log); $l.Count -and -not @($l | Where-Object { $_.Type -ne 'note' }).Count }
 # Une entrée avec des changements définitifs et d'autres annulables : une fois annulée, les définitifs restent en place
 function Test-HistoriquePartDefinitive($H) { [bool]@(@($H.Log) | Where-Object { $_.Type -eq 'definitif' }).Count }
 # La façon de revenir en arrière d'une entrée (changements définitifs)
@@ -114,6 +116,7 @@ function Get-DetailsTechniques($H) {
             # (une règle n'est ajoutée que pour bloquer un programme : avant, il n'y en avait pas)
             'fw'      { "Pare-feu : règle « $($e.Name) », avant aucune règle, après Internet bloqué pour ce programme" }
             'definitif' { "$($e.Quoi) (définitif)" }
+            'note'    { "$($e.Quoi)$(if (@($e.Chemins).Count) { " : $(@($e.Chemins) -join ', ')" })" }
         }
     })
 }
@@ -149,7 +152,7 @@ function Set-HistoryUndone([string]$Id) {
 # dont un réglage n'a pas pu être remis, toujours dans la sauvegarde, reste « à annuler » : Test-HistoriqueRemis)
 function Set-HistoryAllUndone {
     if ($null -eq $script:History) { Import-History }
-    foreach ($h in $script:History) { if (-not $h.Annule -and -not (Test-HistoriqueDefinitif $h) -and (Test-HistoriqueRemis $h)) { $h.Annule = $true } }
+    foreach ($h in $script:History) { if (-not $h.Annule -and -not (Test-HistoriqueDefinitif $h) -and -not (Test-HistoriqueNote $h) -and (Test-HistoriqueRemis $h)) { $h.Annule = $true } }
     Save-History
     Update-HistoryList
 }
@@ -171,12 +174,12 @@ function Update-HistoryList {
         [void]$sp.Children.Add($t)
         [void]$sp.Children.Add((New-Text $h.Date 12 '#A6A1BC'))
         Add-ToGrid $row $sp 0
-        if ($h.Annule -or (Test-HistoriqueDefinitif $h)) {
+        if ($h.Annule -or (Test-HistoriqueDefinitif $h) -or (Test-HistoriqueNote $h)) {
             $partiel = $h.Annule -and (Test-HistoriquePartDefinitive $h)
-            $b = New-Badge $(if ($partiel) { 'Annulé en partie' } elseif ($h.Annule) { 'Annulé' } else { 'Définitif' }) '#A6A1BC'
+            $b = New-Badge $(if ($partiel) { 'Annulé en partie' } elseif ($h.Annule) { 'Annulé' } elseif (Test-HistoriqueNote $h) { 'Noté' } else { 'Définitif' }) '#A6A1BC'
             $b.VerticalAlignment = 'Center'
             if ($partiel) { $b.ToolTip = "Les protections du PC restent en place. Pour revenir en arrière : $(Get-RetourDefinitif $h)" }
-            elseif (-not $h.Annule) { $b.ToolTip = "Pour revenir en arrière : $(Get-RetourDefinitif $h)" }
+            elseif (-not $h.Annule -and -not (Test-HistoriqueNote $h)) { $b.ToolTip = "Pour revenir en arrière : $(Get-RetourDefinitif $h)" }
         } else {
             $b = New-Button 'Annuler'
             $b.VerticalAlignment = 'Center'
@@ -192,7 +195,7 @@ function Update-HistoryList {
 
 function Undo-HistoryEntry([string]$Id) {
     $h = @($script:History | Where-Object { $_.Id -eq $Id }) | Select-Object -First 1
-    if (-not $h -or $h.Annule -or (Test-HistoriqueDefinitif $h)) { return }
+    if (-not $h -or $h.Annule -or (Test-HistoriqueDefinitif $h) -or (Test-HistoriqueNote $h)) { return }
     if (-not (Confirm-Action "Annuler ce changement ?`n`n« $($h.Titre) »`n$($h.Date)`n`nLes réglages concernés reviennent à ce qu'ils étaient juste avant.")) { return }
     Set-Busy $true
     Set-Status 'Retour en arrière...'

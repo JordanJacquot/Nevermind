@@ -126,6 +126,7 @@ function Get-PagesProtection {
         if ($dt -match '^(\d{2}/\d{2})/\d{4} à (\d{2}:\d{2})$') { $jour = $Matches[1]; $heure = $Matches[2] }
         $l = @{ type = 'ligne'; quand = @($jour, $heure); texte = [string]$h.Titre; note = (@($h.Details) -join ', '); fait = [bool]$h.Annule }
         if ($h.Annule) { $l.etiquette = 'Annulé' }
+        elseif (Test-HistoriqueNote $h) { $l.etiquette = 'Noté' }   # (une appli fermée : rien à remettre)
         elseif (Test-HistoriqueDefinitif $h) { $l.etiquette = 'Définitif'; $l.note = (@(@($h.Details) -join ', ') + "Pour revenir en arrière : $(Get-RetourDefinitif $h)" | Where-Object { $_ }) -join '. ' }
         else { $l.bouton = @{ id = "hist:$($h.Id)"; texte = 'Annuler'; style = 'second' } }
         $l

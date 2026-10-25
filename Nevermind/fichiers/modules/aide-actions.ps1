@@ -46,7 +46,9 @@ function Initialize-AideNatif {
 }
 
 # Programmes de Windows et de l'antivirus : jamais fermés, jamais bloqués, jamais de priorité changée
-$AideExesProteges = '^(csrss|lsass|lsaiso|smss|wininit|winlogon|services|svchost|System|Registry|Idle|MsMpEng|NisSrv|MpCmdRun|MpDefenderCoreService|MpSigStub|MRT|smartscreen|MsSense|SenseCncProxy|SenseIR|SenseNdr|SenseTVM|SecurityHealthService|SecurityHealthSystray|SecurityHealthHost|SgrmBroker|dwm|explorer|fontdrvhost|sihost|ctfmon|conhost|audiodg|spoolsv|taskhostw|RuntimeBroker|TrustedInstaller|TiWorker|wuauclt|MoUsoCoreWorker|Nevermind|Mindset)(\.exe)?$'
+$AideExesWindows = '^(csrss|lsass|lsaiso|smss|wininit|winlogon|services|svchost|System|Registry|Idle|MsMpEng|NisSrv|MpCmdRun|MpDefenderCoreService|MpSigStub|MRT|smartscreen|MsSense|SenseCncProxy|SenseIR|SenseNdr|SenseTVM|SecurityHealthService|SecurityHealthSystray|SecurityHealthHost|SgrmBroker|dwm|explorer|fontdrvhost|sihost|ctfmon|conhost|audiodg|spoolsv|taskhostw|RuntimeBroker|TrustedInstaller|TiWorker|wuauclt|MoUsoCoreWorker|ApplicationFrameHost)(\.exe)?$'
+# (plus, pour les demandes par nom : Nevermind et Mindset, le nom de toutes les applis de la suite)
+$AideExesProteges = $AideExesWindows -replace '\)\(\\\.exe\)\?\$$', '|Nevermind|Mindset)(\.exe)?$'
 # Les services que la page RAM passe en « manuel » (mises à jour, logiciels du fabricant : la liste de memoire.ps1), et
 # remet comme avant. Jamais un service de Windows.
 $AideServicesMemoire = '^(edgeupdate|edgeupdatem|gupdate|gupdatem|GoogleUpdater(Internal)?Service[\d.]{0,20}|AdobeARMservice|AdobeUpdateService|MozillaMaintenance|HPAppHelperCap|HPDiagsCap|HPSysInfoCap|HpTouchpointAnalyticsService|SupportAssistAgent|DDVDataCollector|DDVCollectorSvcApi|DDVRulesProcessor|ASUSSystemAnalysis|ASUSSystemDiagnosis|ASUSLinkNear|ASUSLinkRemote|ESRV_SVC_QUEENCREEK|SystemUsageReportSvc_QUEENCREEK|NvTelemetryContainer)$'
@@ -434,6 +436,29 @@ public static class AideProcessus
         finally { CloseHandle(h); }
     }
 
+    // Lancé en administrateur : 0 non, 1 oui, -1 inconnu (jeton illisible : traité comme oui)
+    public static int Eleve(int pid)
+    {
+        IntPtr h = OpenProcess(Lecture, false, pid);
+        if (h == IntPtr.Zero) return -1;
+        IntPtr jeton = IntPtr.Zero, info = IntPtr.Zero;
+        try
+        {
+            if (!OpenProcessToken(h, 0x8, out jeton)) return -1;   // TOKEN_QUERY
+            info = Marshal.AllocHGlobal(4);
+            int requis;
+            if (!GetTokenInformation(jeton, 20, info, 4, out requis)) return -1;   // TokenElevation
+            return Marshal.ReadInt32(info) != 0 ? 1 : 0;
+        }
+        catch { return -1; }
+        finally
+        {
+            if (info != IntPtr.Zero) Marshal.FreeHGlobal(info);
+            if (jeton != IntPtr.Zero) CloseHandle(jeton);
+            CloseHandle(h);
+        }
+    }
+
     public static string Chemin(int pid)
     {
         IntPtr h = OpenProcess(Lecture, false, pid);
@@ -467,20 +492,26 @@ function ConvertFrom-AideCheminWindows([string]$Texte) {
 
 # Ce que Windows déclare, lu une fois par demande : les programmes des antivirus inscrits au Centre de sécurité, et les
 # services (programme et processus). Pas de liste à tenir à jour : un nouvel antivirus est reconnu tout seul.
+# (la page RAM s'en sert aussi : Reference, le programme pour qui on ferme, est ajouté par celui qui demande)
 function Get-AideContexte {
-    $c = @{ Antivirus = [Collections.Generic.List[string]]::new()
+    $c = @{ Antivirus = Get-AideAntivirus; Windows = $AideWindows
             ServicesExe = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
             ServicesPid = [Collections.Generic.HashSet[int]]::new() }
-    try {   # (absent des Windows Server : aucun antivirus inscrit)
-        foreach ($av in @(Get-CimInstance -Namespace 'root\SecurityCenter2' -ClassName AntiVirusProduct -OperationTimeoutSec 5 -ErrorAction Stop)) {
-            foreach ($x in [string]$av.pathToSignedProductExe, [string]$av.pathToSignedReportingExe) { $p = ConvertFrom-AideCheminWindows $x; if ($p) { $c.Antivirus.Add($p) } }
-        }
-    } catch {}
     foreach ($s in @(Get-CimInstance -ClassName Win32_Service -OperationTimeoutSec 10 -ErrorAction Stop)) {
         $p = ConvertFrom-AideCheminWindows ([string]$s.PathName); if ($p) { [void]$c.ServicesExe.Add($p) }
         if ([int]$s.ProcessId -gt 0) { [void]$c.ServicesPid.Add([int]$s.ProcessId) }
     }
     $c
+}
+# Les programmes des antivirus inscrits au Centre de sécurité de Windows (chemins complets)
+function Get-AideAntivirus {
+    $l = [Collections.Generic.List[string]]::new()
+    try {   # (absent des Windows Server : aucun antivirus inscrit)
+        foreach ($av in @(Get-CimInstance -Namespace 'root\SecurityCenter2' -ClassName AntiVirusProduct -OperationTimeoutSec 5 -ErrorAction Stop)) {
+            foreach ($x in [string]$av.pathToSignedProductExe, [string]$av.pathToSignedReportingExe) { $p = ConvertFrom-AideCheminWindows $x; if ($p) { $l.Add($p) } }
+        }
+    } catch {}
+    , $l
 }
 
 # Un programme d'antivirus ? Son dossier entier compte (moteur, service, interface), sauf dans le dossier de Windows où
@@ -510,18 +541,83 @@ function Get-AideRefusProgramme($Contexte, [string]$Chemin, [switch]$ServicePerm
     $null
 }
 
-# Pourquoi ce processus ne peut pas être fermé ($null : il peut l'être) : seulement un programme du même compte et de la
-# même session que le programme qui fait la demande (Nevermind), jamais un service, un processus protégé ou l'antivirus.
-function Get-AideRefusProcessus($Contexte, [int]$Client, [int]$Id, [string]$Chemin) {
+# ---------------------------------------------------------------------------
+# Fermer un processus : LA règle, une seule, pour l'Aide (« processus.fermer ») et pour la page RAM de Nevermind
+# (memoire.ps1, bouton « Fermer »). Seulement un programme ordinaire, du même compte et de la même session que celui qui
+# demande (Nevermind). Jamais : un service, un processus protégé (moteur d'antivirus), un programme d'antivirus (inscrit
+# au Centre de sécurité, ou de Microsoft Defender), un programme de Windows (son nom ou son dossier), une appli du
+# Microsoft Store, une appli de la suite Mindset (reconnue à son emplacement), un programme lancé en administrateur
+# quand celui qui demande ne l'est pas. Dans le doute (compte, session, chemin ou protection illisible) : refusé.
+# ---------------------------------------------------------------------------
+# Ce que Windows dit d'un processus (une « fiche ») : @{ Id; Chemin; Session; Compte; Protection; Eleve }
+# (Protection et Eleve : 0 non, 1 oui, -1 illisible). Les tests donnent de fausses fiches à Get-RefusFermeture.
+function Read-AideFiche([int]$Id, [string]$Chemin) {
     Initialize-AideProcessus
-    if ($Contexte.ServicesPid.Contains($Id)) { return 'est un service' }
-    $session = [AideProcessus]::Session($Client); $compte = [AideProcessus]::Compte($Client)
-    if ($session -lt 0 -or -not $compte) { return 'programme qui fait la demande inconnu' }
-    if ([AideProcessus]::Session($Id) -ne $session) { return 'ne tourne pas dans ta session' }
-    if ([AideProcessus]::Compte($Id) -ne $compte) { return 'n''appartient pas à ton compte' }
-    if ([AideProcessus]::Protection($Id) -ne 0) { return 'est protégé par Windows (antivirus)' }
-    if ($Chemin -and (Test-AideAntivirus $Contexte $Chemin)) { return 'est un programme de ton antivirus' }
+    $c = [AideProcessus]::Chemin($Id); if (-not $c) { $c = $Chemin }
+    @{ Id = $Id; Chemin = $c; Session = [AideProcessus]::Session($Id); Compte = [AideProcessus]::Compte($Id); Protection = [AideProcessus]::Protection($Id); Eleve = [AideProcessus]::Eleve($Id) }
+}
+# Celui pour qui on ferme (Nevermind) : @{ Id; Session; Compte; Eleve }
+function Get-AideReference([int]$Id) {
+    Initialize-AideProcessus
+    @{ Id = $Id; Session = [AideProcessus]::Session($Id); Compte = [AideProcessus]::Compte($Id); Eleve = [AideProcessus]::Eleve($Id) }
+}
+
+# Les dossiers de la suite Mindset, reconnue à son EMPLACEMENT (toutes ses applis s'appellent Mindset.exe : un
+# Mindset.exe ailleurs n'est pas protégé par cette règle) : ses programmes (Program Files\Mindset, X:\Mindset\Programmes)
+# et le dossier « ia » des données de Mindcare, d'où tourne son assistant.
+function Test-AideCheminSuite([string]$Chemin) {
+    if (-not $Chemin) { return $false }
+    if ($AideProgrammes -and $Chemin.StartsWith("$AideProgrammes\Mindset\", [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    $Chemin -match '^[A-Za-z]:\\Mindset\\(Programmes|Donnees\\Mindcare\\ia)\\' -or $Chemin -match '\\AppData\\Local\\Mindset\\Mindcare( \(travail\))?\\ia\\'
+}
+# Une appli de la suite : à son emplacement, celui qui demande lui-même, ou (si le contexte connaît les processus,
+# @{ pid = @{ Parent; Chemin } }) un processus lancé par la suite (sa WebView2) ou qui a lancé celui qui demande
+function Test-AideSuite($Contexte, [int]$Id, [string]$Chemin) {
+    if (Test-AideCheminSuite $Chemin) { return $true }
+    $ref = if ($Contexte.Reference) { [int]$Contexte.Reference.Id } else { 0 }
+    if ($ref -and $Id -eq $ref) { return $true }
+    $procs = $Contexte.Processus
+    if (-not $procs) { return $false }
+    $x = $Id
+    for ($i = 0; $i -lt 8; $i++) {
+        $p = $procs[$x]; if (-not $p) { break }
+        $x = [int]$p.Parent; if ($x -le 4) { break }
+        if ($x -eq $ref -or (Test-AideCheminSuite ([string]$procs[$x].Chemin))) { return $true }
+    }
+    $x = $ref
+    for ($i = 0; $ref -and $i -lt 8; $i++) {
+        $p = $procs[$x]; if (-not $p) { break }
+        $x = [int]$p.Parent; if ($x -le 4) { break }
+        if ($x -eq $Id) { return $true }
+    }
+    $false
+}
+
+# Pourquoi ce processus ne peut pas être fermé ($null : il peut l'être). $Contexte : Get-AideContexte (Antivirus,
+# ServicesPid, Windows), plus Reference (Get-AideReference) et, si connus, Processus. -ElevePermis : l'Aide, en
+# administrateur, ferme aussi un programme de l'utilisateur lancé en administrateur.
+function Get-RefusFermeture($Contexte, $Fiche, [switch]$ElevePermis) {
+    $id = [int]$Fiche.Id; $chemin = [string]$Fiche.Chemin; $ref = $Contexte.Reference
+    if ($id -le 4) { return 'fait partie de Windows' }
+    if ($null -eq $Contexte.ServicesPid -or $Contexte.ServicesPid.Contains($id)) { return 'est un service' }
+    if (-not $ref -or $null -eq $ref.Session -or [int]$ref.Session -lt 0 -or -not $ref.Compte) { return 'programme qui fait la demande inconnu' }
+    if ($null -eq $Fiche.Session -or [int]$Fiche.Session -ne [int]$ref.Session) { return 'ne tourne pas dans ta session' }
+    if (-not $Fiche.Compte -or [string]$Fiche.Compte -ne [string]$ref.Compte) { return 'n''appartient pas à ton compte' }
+    if ($null -eq $Fiche.Protection -or [int]$Fiche.Protection -ne 0) { return 'est protégé par Windows (antivirus)' }
+    if (-not $chemin) { return 'emplacement illisible' }
+    $windows = if ($Contexte.Windows) { ([string]$Contexte.Windows).TrimEnd('\') } else { $AideWindows }
+    if ([IO.Path]::GetFileName($chemin) -match $AideExesWindows -or $chemin.StartsWith("$windows\", [StringComparison]::OrdinalIgnoreCase)) { return 'fait partie de Windows' }
+    if ((Test-AideAntivirus $Contexte $chemin) -or $chemin -match '\\(Windows|Microsoft) Defender( Advanced Threat Protection)?\\') { return 'est un programme de ton antivirus' }
+    if ($chemin -match '\\WindowsApps\\') { return 'est une appli du Microsoft Store' }
+    if (Test-AideSuite $Contexte $id $chemin) { return 'fait partie de la suite Mindset' }
+    if (-not $ElevePermis -and [int]$ref.Eleve -ne 1 -and ($null -eq $Fiche.Eleve -or [int]$Fiche.Eleve -ne 0)) { return 'tourne en administrateur' }
     $null
+}
+
+# Pour l'Aide : la même règle, au nom du programme qui fait la demande (Nevermind, -Client)
+function Get-AideRefusProcessus($Contexte, [int]$Client, [int]$Id, [string]$Chemin) {
+    $Contexte.Reference = Get-AideReference $Client
+    Get-RefusFermeture $Contexte (Read-AideFiche $Id $Chemin) -ElevePermis
 }
 
 # ---------------------------------------------------------------------------

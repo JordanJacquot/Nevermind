@@ -73,7 +73,7 @@ function Import-Fonction([string]$Fichier, [string]$Nom) {
 foreach ($n in 'Save-TexteSur', 'Save-JsonSur', 'Read-JsonSur', 'Get-Setting', 'Set-Setting', 'Get-CleRegNormale', 'Read-FichierSauvegarde',
                'Import-Backup', 'Save-Backup', 'Test-RegUtilisateur') { Import-Fonction 'donnees' $n }
 foreach ($n in 'Restore-AllSettings', 'Test-HistoriqueRemis') { Import-Fonction 'systeme' $n }
-foreach ($n in 'Set-HistoryAllUndone', 'Test-HistoriqueDefinitif') { Import-Fonction 'assistance' $n }
+foreach ($n in 'Set-HistoryAllUndone', 'Test-HistoriqueDefinitif', 'Test-HistoriqueNote') { Import-Fonction 'assistance' $n }
 
 $script:Bac = Join-Path $env:TEMP "nevermind-donnees-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
 New-Item -ItemType Directory -Force -Path $script:Bac | Out-Null

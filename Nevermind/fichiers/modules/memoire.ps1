@@ -9,12 +9,21 @@
 #
 # Les corrections : seulement ce qui est sûr (des services de mise à jour ou de logiciels du fabricant passés en
 # « manuel »). Elles sont déclarées (Get-ChangementsMemoire), montrées
-# avant, notées dans l'historique et remises par « Tout restaurer ». Jamais un service de Windows, jamais un processus
-# fermé.
+# avant, notées dans l'historique et remises par « Tout restaurer ». Jamais un service de Windows.
+#
+# Fermer une appli (bouton « Fermer » d'une ligne, seulement quand l'utilisateur clique) : seulement une appli dont TOUS
+# les processus passent la règle de fermeture, la même que celle de l'Aide (Get-RefusFermeture, aide-actions.ps1 : même
+# compte et même session que Nevermind, jamais un service, un antivirus, un processus protégé, Windows, le Microsoft
+# Store, la suite Mindset, un programme lancé en administrateur), et jamais une appli « Windows en a besoin ». Le
+# processus est gardé ouvert (sa « poignée ») depuis la lecture jusqu'à la fermeture : Windows ne redonne pas son numéro
+# à un autre programme tant qu'elle est ouverte, et son heure de démarrage et son chemin sont revérifiés avant chaque
+# geste. D'abord poliment (comme la croix : WM_CLOSE à ses fenêtres, il peut demander d'enregistrer), puis, seulement si
+# l'appli ne répond plus ou s'est rangée près de l'horloge, « Forcer la fermeture » sur demande. Fait par Nevermind
+# lui-même, sans droits administrateur ni l'Aide ; noté dans l'historique (rien à restaurer).
 #
 # Get-DonneesMemoire lit le PC (lecture seule) ; Get-ConstatMemoire ne fait que calculer à partir de ces données, ce qui
 # permet de le tester sur de fausses données (outils\tester-memoire.ps1).
-# Chargé par Nevermind.ps1 après microsoft.ps1.
+# Chargé par Nevermind.ps1 après microsoft.ps1 ; a besoin de aide-actions.ps1 (la règle de fermeture), chargé avant.
 
 $EtiquettesMemoire = @{ windows = 'Windows en a besoin'; inutile = 'Inutile au quotidien'; verifier = 'À vérifier' }
 
@@ -49,12 +58,14 @@ $NomsWindowsMemoire = @{ msmpeng = 'Antivirus de Windows (Microsoft Defender)'; 
 # Les applis connues : leur nom en clair, leur étiquette et une phrase. Motif : le nom du programme (sans .exe).
 $AppsConnuesMemoire = @(
     @{ Motif = '^msedge$'; Nom = 'Microsoft Edge'; Kind = 'verifier'; Note = 'Ton navigateur. Le fermer libère cette mémoire.' }
-    @{ Motif = '^msedgewebview2$'; Nom = 'Affichage des applis (WebView2)'; Kind = 'verifier'; Note = 'Sert à afficher l''intérieur de certaines applis, dont Nevermind et Mindset. Part quand ces applis sont fermées.' }
+    # (Jamais : pas de bouton « Fermer », même si chaque processus passe la règle)
+    @{ Motif = '^msedgewebview2$'; Nom = 'Affichage des applis (WebView2)'; Kind = 'verifier'; Note = 'Sert à afficher l''intérieur de certaines applis, dont Nevermind et Mindset. Part quand ces applis sont fermées.'; Jamais = $true }
     @{ Motif = '^chrome$'; Nom = 'Google Chrome'; Kind = 'verifier'; Note = 'Ton navigateur. Le fermer libère cette mémoire.' }
     @{ Motif = '^firefox$'; Nom = 'Firefox'; Kind = 'verifier'; Note = 'Ton navigateur. Le fermer libère cette mémoire.' }
     @{ Motif = '^(opera|opera_gx)$'; Nom = 'Opera'; Kind = 'verifier'; Note = 'Ton navigateur. Le fermer libère cette mémoire.' }
     @{ Motif = '^brave$'; Nom = 'Brave'; Kind = 'verifier'; Note = 'Ton navigateur. Le fermer libère cette mémoire.' }
-    @{ Motif = '^(mindset|nevermind|nevermindaide)$'; Nom = 'Mindset et ses applis'; Kind = 'verifier'; Note = 'Les applis de la suite Mindset, dont Nevermind ouvert en ce moment.' }
+    # (Ensemble : une seule ligne, quel que soit leur dossier ; leur protection vient de leur emplacement, voir aide-actions.ps1)
+    @{ Motif = '^(mindset|nevermind|nevermindaide)$'; Nom = 'Mindset et ses applis'; Kind = 'verifier'; Note = 'Les applis de la suite Mindset, dont Nevermind ouvert en ce moment.'; Ensemble = $true }
     @{ Motif = '^microsoftedgeupdate$'; Nom = 'Mise à jour de Microsoft Edge'; Kind = 'inutile'; Note = 'Cherche les mises à jour de Edge. Pas besoin qu''il tourne tout le temps.' }
     @{ Motif = '^(googleupdate|googlecrashhandler(64)?)$'; Nom = 'Mise à jour de Google Chrome'; Kind = 'inutile'; Note = 'Cherche les mises à jour de Chrome. Pas besoin qu''il tourne tout le temps.' }
     @{ Motif = '^(armsvc|adobearm|adobeupdateservice|acrotray)$'; Nom = 'Mise à jour d''Adobe'; Kind = 'inutile'; Note = 'Cherche les mises à jour d''Adobe. Pas besoin qu''il tourne tout le temps.' }
@@ -70,7 +81,7 @@ $AppsConnuesMemoire = @(
     @{ Motif = '^(phoneexperiencehost|crossdeviceresume)$'; Nom = 'Lien avec le téléphone'; Kind = 'verifier'; Note = 'Relie ton téléphone au PC. Si tu ne t''en sers pas, il peut être coupé dans les paramètres de Windows.' }
     @{ Motif = '^(widgets|widgetservice)$'; Nom = 'Widgets de Windows'; Kind = 'verifier'; Note = 'Le panneau météo et actualités. Il se coupe dans les paramètres de la barre des tâches.' }
     @{ Motif = '^officeclicktorun$'; Nom = 'Microsoft Office (mises à jour)'; Kind = 'verifier'; Note = 'Met à jour Office. Utile si tu te sers de Word ou d''Excel.' }
-    @{ Motif = '^(avastsvc|avastui|avgsvc|avgui|mcshield|mfemms|mcapexe|modulecoreservice|nortonsecurity|ns|nsbu|bdagent|bdservicehost|vsserv|avp|avpui|ekrn|egui|mbamservice|mbamtray|mbam)$'; Nom = ''; Kind = 'verifier'; Note = 'Antivirus en plus de celui de Windows. Un seul suffit : garde celui que tu as choisi.' }
+    @{ Motif = '^(avastsvc|avastui|avgsvc|avgui|mcshield|mfemms|mcapexe|modulecoreservice|nortonsecurity|ns|nsbu|bdagent|bdservicehost|vsserv|avp|avpui|ekrn|egui|mbamservice|mbamtray|mbam)$'; Nom = ''; Kind = 'verifier'; Note = 'Antivirus en plus de celui de Windows. Un seul suffit : garde celui que tu as choisi.'; Jamais = $true }
     @{ Motif = '^(vmmem|vmmemwsl|vmwp)$'; Nom = 'Machine virtuelle'; Kind = 'verifier'; Note = 'Une machine virtuelle ou Linux (WSL) est ouverte. La fermer libère cette mémoire.' }
 )
 
@@ -126,6 +137,112 @@ public static class NmPoolMemoire {
     }
 }
 '@
+
+# ---------------------------------------------------------------------------
+# Fermer une appli : les processus gardés ouverts depuis la lecture, leurs fenêtres
+# ---------------------------------------------------------------------------
+# Garder(pid) ouvre le processus et garde sa poignée (Windows ne redonne pas son numéro à un autre programme tant qu'elle
+# est ouverte) ; rend son heure de démarrage, 0 si Nevermind ne peut pas le fermer (lancé en administrateur, autre
+# compte...). Chaque geste revérifie, sur cette poignée, l'heure de démarrage et le chemin (Verifier : 1 c'est bien lui,
+# 0 il est déjà fermé, -1 pas le même ou plus de poignée).
+$NativeFermetureMemoire = @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class NmFermeture {
+    [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint acces, bool heritage, int pid);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll")] static extern bool GetProcessTimes(IntPtr h, out long creation, out long fin, out long noyau, out long utilisateur);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int options, StringBuilder nom, ref int taille);
+    [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr h, uint ms);
+    [DllImport("kernel32.dll")] static extern bool TerminateProcess(IntPtr h, uint code);
+    delegate bool RappelFenetre(IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumWindows(RappelFenetre rappel, IntPtr l);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr w, out uint pid);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr w);
+    [DllImport("user32.dll")] static extern int GetWindowTextLength(IntPtr w);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr w, StringBuilder nom, int taille);
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr w, uint quoi);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr w, uint message, IntPtr a, IntPtr b);
+    [DllImport("user32.dll")] static extern bool IsHungAppWindow(IntPtr w);
+    const uint Acces = 0x1000 | 0x0001 | 0x00100000;   // lire (limité), fermer, attendre
+    const uint Actif = 0x102;                          // WAIT_TIMEOUT : toujours là
+    static readonly Dictionary<int, IntPtr> gardes = new Dictionary<int, IntPtr>();
+    static readonly object verrou = new object();
+
+    public static long Garder(int pid) {
+        IntPtr h = OpenProcess(Acces, false, pid);
+        if (h == IntPtr.Zero) return 0;
+        long c, f, k, u;
+        if (!GetProcessTimes(h, out c, out f, out k, out u) || WaitForSingleObject(h, 0) != Actif) { CloseHandle(h); return 0; }
+        lock (verrou) { IntPtr avant; if (gardes.TryGetValue(pid, out avant)) CloseHandle(avant); gardes[pid] = h; }
+        return c;
+    }
+    public static void Relacher() { lock (verrou) { foreach (IntPtr h in gardes.Values) CloseHandle(h); gardes.Clear(); } }
+    public static int Nombre() { lock (verrou) { return gardes.Count; } }
+    static IntPtr Poignee(int pid) { lock (verrou) { IntPtr h; return gardes.TryGetValue(pid, out h) ? h : IntPtr.Zero; } }
+
+    public static int Verifier(int pid, long debut, string chemin) {
+        IntPtr h = Poignee(pid);
+        if (h == IntPtr.Zero) return -1;
+        long c, f, k, u;
+        if (!GetProcessTimes(h, out c, out f, out k, out u) || c != debut) return -1;
+        if (WaitForSingleObject(h, 0) != Actif) return 0;
+        var sb = new StringBuilder(1024); int n = sb.Capacity;
+        if (!QueryFullProcessImageName(h, 0, sb, ref n) || !string.Equals(sb.ToString(), chemin, StringComparison.OrdinalIgnoreCase)) return -1;
+        return 1;
+    }
+    // 1 toujours là, 0 fermé, -1 plus de poignée
+    public static int Vivant(int pid) { IntPtr h = Poignee(pid); if (h == IntPtr.Zero) return -1; return WaitForSingleObject(h, 0) == Actif ? 1 : 0; }
+
+    static readonly string[] Techniques = { "IME", "MSCTFIME UI", "tooltips_class32", "GDI+ Hook Window Class", "OleMainThreadWndClass", "CicMarshalWndClass", "SystemUserAdapterWindowClass" };
+    // Ses fenêtres de premier niveau (énumérées une à une : CloseMainWindow ne voit pas les fenêtres cachées). -Visibles :
+    // seulement celles à l'écran, boîtes de dialogue comprises. Sinon : celles à fermer (pas les boîtes d'une autre
+    // fenêtre visible, qui partent avec elle), visibles ou cachées avec un titre, sans les fenêtres techniques de Windows.
+    public static IntPtr[] Fenetres(int pid, bool visibles) {
+        var l = new List<IntPtr>();
+        RappelFenetre rappel = (w, x) => {
+            uint p; GetWindowThreadProcessId(w, out p);
+            if (p != (uint)pid) return true;
+            bool vue = IsWindowVisible(w);
+            if (visibles) { if (vue) l.Add(w); return true; }
+            IntPtr proprio = GetWindow(w, 4);   // GW_OWNER : une boîte d'une fenêtre à l'écran part avec elle (un propriétaire caché ne compte pas)
+            if (proprio != IntPtr.Zero && IsWindowVisible(proprio)) return true;
+            if (vue) { l.Add(w); return true; }
+            if (GetWindowTextLength(w) == 0) return true;
+            var sb = new StringBuilder(256); GetClassName(w, sb, 256); string cl = sb.ToString();
+            if (Array.IndexOf(Techniques, cl) >= 0 || cl.StartsWith(".NET-BroadcastEventWindow")) return true;
+            l.Add(w); return true;
+        };
+        EnumWindows(rappel, IntPtr.Zero);
+        GC.KeepAlive(rappel);
+        return l.ToArray();
+    }
+    // Poliment, comme la croix : WM_CLOSE à ses fenêtres. Rend le nombre de fenêtres, -1 pas le même, -2 déjà fermé.
+    public static int FermerPoliment(int pid, long debut, string chemin) {
+        int v = Verifier(pid, debut, chemin);
+        if (v == 0) return -2;
+        if (v < 0) return -1;
+        int n = 0;
+        foreach (IntPtr w in Fenetres(pid, false)) if (PostMessage(w, 0x0010, IntPtr.Zero, IntPtr.Zero)) n++;
+        return n;
+    }
+    // De force (ce qui n'est pas enregistré est perdu) : 1 fait, -1 pas le même, -2 déjà fermé, -3 refusé par Windows
+    public static int Forcer(int pid, long debut, string chemin) {
+        int v = Verifier(pid, debut, chemin);
+        if (v == 0) return -2;
+        if (v < 0) return -1;
+        return TerminateProcess(Poignee(pid), 1) ? 1 : -3;
+    }
+    // Une de ses fenêtres à l'écran ne répond plus
+    public static bool Bloque(int pid) { foreach (IntPtr w in Fenetres(pid, true)) if (IsHungAppWindow(w)) return true; return false; }
+}
+'@
+function Initialize-FermetureMemoire {
+    if ('NmFermeture' -as [type]) { return }
+    try { Add-Type -TypeDefinition $NativeFermetureMemoire } catch { if (-not ('NmFermeture' -as [type])) { throw } }
+}
 
 # Les plus grosses étiquettes de la mémoire des pilotes : @{ Tag; Octets }
 function Get-EtiquettesPool([int]$Nombre = 3) {
@@ -185,6 +302,11 @@ function Get-DonneesMemoire($Demarrage, $Connus) {
     $prive = @{}
     try { foreach ($x in @(Get-CimInstance Win32_PerfRawData_PerfProc_Process -Property IDProcess, WorkingSetPrivate -ErrorAction Stop)) { if ([int]$x.IDProcess) { $prive[[int]$x.IDProcess] = [double]$x.WorkingSetPrivate } } } catch {}
     $infos = @{}
+    # Pour le bouton « Fermer » : ce que Windows dit de chaque processus (Read-AideFiche), et pour ceux du même compte et
+    # de la même session que Nevermind, leur poignée gardée jusqu'à la prochaine lecture (Debut : leur heure de démarrage)
+    $fiches = $true
+    try { Initialize-AideProcessus; Initialize-FermetureMemoire; [NmFermeture]::Relacher(); $d.Moi = Get-AideReference $PID; $d.Antivirus = @((Get-AideAntivirus) | ForEach-Object { [string]$_ }) }
+    catch { $fiches = $false; Write-Log "Mémoire : fermeture des applis impossible ($($_.Exception.Message))" }
     try {
         $d.Processus = @(foreach ($p in @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine, WorkingSetSize -ErrorAction Stop)) {
             $chemin = [string]$p.ExecutablePath
@@ -192,8 +314,14 @@ function Get-DonneesMemoire($Demarrage, $Connus) {
             $v = if ($chemin) { $infos[$chemin] } else { $null }
             $o = if ($prive.ContainsKey([int]$p.ProcessId)) { $prive[[int]$p.ProcessId] } else { [double]$p.WorkingSetSize }
             if ([string]$p.Name -eq 'Memory Compression') { $o = [math]::Max($o, [double]$p.WorkingSetSize) }
-            @{ Pid = [int]$p.ProcessId; Parent = [int]$p.ParentProcessId; Nom = [string]$p.Name; Chemin = $chemin; Ligne = [string]$p.CommandLine; Octets = $o
+            $x = @{ Pid = [int]$p.ProcessId; Parent = [int]$p.ParentProcessId; Nom = [string]$p.Name; Chemin = $chemin; Ligne = [string]$p.CommandLine; Octets = $o
                 Produit = $(if ($v) { ([string]$v.ProductName).Trim() }); Description = $(if ($v) { ([string]$v.FileDescription).Trim() }); Societe = $(if ($v) { ([string]$v.CompanyName).Trim() }) }
+            if ($fiches -and [int]$p.ProcessId -gt 4) {
+                $f = Read-AideFiche ([int]$p.ProcessId) $chemin
+                $x.Image = [string]$f.Chemin; $x.Session = $f.Session; $x.Compte = $f.Compte; $x.Protection = $f.Protection; $x.Eleve = $f.Eleve
+                $x.Debut = if ([int]$p.ProcessId -ne $PID -and $f.Compte -and $f.Compte -eq $d.Moi.Compte -and $f.Session -eq $d.Moi.Session) { [NmFermeture]::Garder([int]$p.ProcessId) } else { [long]0 }
+            }
+            $x
         })
     } catch { Write-Log "Mémoire : liste des programmes illisible ($($_.Exception.Message))" }
     try {
@@ -245,7 +373,7 @@ function Get-AppliMemoire($P, $Services, [string]$Windir) {
     foreach ($a in $AppsConnuesMemoire) {
         if ($bas -match $a.Motif) {
             $nom = if ($a.Nom) { $a.Nom } elseif ($P.Produit -and $P.Produit -notmatch $ProduitsWindowsMemoire) { [string]$P.Produit } elseif ($P.Description) { [string]$P.Description } else { $exe }
-            return @{ Cle = "app:$nom"; Nom = $nom; Kind = $a.Kind; Note = $a.Note; Origine = [bool]$a.Origine }
+            return @{ Cle = "app:$nom"; Nom = $nom; Kind = $a.Kind; Note = $a.Note; Origine = [bool]$a.Origine; Jamais = [bool]$a.Jamais; Ensemble = [bool]$a.Ensemble }
         }
     }
     $windows = $bas -match $ExesWindowsMemoire -or ($P.Chemin -and $Windir -and ([string]$P.Chemin).StartsWith($Windir.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase))
@@ -280,6 +408,11 @@ function Get-ConstatMemoire($D) {
     $nomParPid = @{}; $parentParPid = @{}
     foreach ($p in @($D.Processus)) { if ($p) { $nomParPid[[int]$p.Pid] = ([string]$p.Nom).ToLower(); $parentParPid[[int]$p.Pid] = [int]$p.Parent } }
     $demarrage = @(@($D.Demarrage) | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLower() })
+    # La règle de fermeture (aide-actions.ps1) sur ce qui a été lu : services lus, antivirus, Nevermind lui-même (Moi)
+    $ctxFermer = @{ Antivirus = @($D.Antivirus | Where-Object { $_ }); Windows = [string]$D.Windir; Reference = $D.Moi; Processus = @{}; ServicesPid = $null }
+    if (@($D.Services).Count) { $ctxFermer.ServicesPid = [Collections.Generic.HashSet[int]]::new(); foreach ($s in @($D.Services)) { if ($s -and [int]$s.Pid) { [void]$ctxFermer.ServicesPid.Add([int]$s.Pid) } } }
+    foreach ($p in @($D.Processus)) { if ($p) { $ctxFermer.Processus[[int]$p.Pid] = @{ Parent = [int]$p.Parent; Chemin = $(if ($p.Image) { [string]$p.Image } else { [string]$p.Chemin }) } } }
+    $regle = [bool](Get-Command Get-RefusFermeture -ErrorAction SilentlyContinue)
     $groupes = @{}
     $compressee = 0.0
     $edgeAvance = $false; $chromeAvance = $false
@@ -291,12 +424,21 @@ function Get-ConstatMemoire($D) {
         if ($exe -eq 'msedge' -and [string]$p.Ligne -match '--no-startup-window') { $edgeAvance = $true }
         if ($exe -eq 'chrome' -and [string]$p.Ligne -match '--no-startup-window') { $chromeAvance = $true }
         $a = Get-AppliMemoire $p @($svcParPid[[int]$p.Pid]) ([string]$D.Windir)
-        $g = $groupes[$a.Cle]
+        # (une appli = un dossier de programme : Chrome et Chrome Canary, même nom, sont deux lignes, fermées à part)
+        $image = if ($p.Image) { [string]$p.Image } else { [string]$p.Chemin }
+        $cle = $a.Cle
+        if ($a.Kind -ne 'windows' -and $cle -like 'app:*' -and -not $a.Ensemble -and $image) { $cle = "$cle|$(([IO.Path]::GetDirectoryName($image)).ToLowerInvariant())" }
+        $g = $groupes[$cle]
         if (-not $g) {
-            $g = @{ Nom = $a.Nom; Kind = $a.Kind; Note = $a.Note; Origine = [bool]$a.Origine; AuDemarrage = $false; ParWindows = $false; Octets = 0.0; Nb = 0; Exes = New-Object System.Collections.ArrayList; Services = New-Object System.Collections.ArrayList; Corrections = @() }
-            $groupes[$a.Cle] = $g
+            $g = @{ Cle = $cle; Nom = $a.Nom; Kind = $a.Kind; Note = $a.Note; Origine = [bool]$a.Origine; Jamais = [bool]$a.Jamais; AuDemarrage = $false; ParWindows = $false; Octets = 0.0; Nb = 0; Exes = New-Object System.Collections.ArrayList; Services = New-Object System.Collections.ArrayList; Corrections = @()
+                Cibles = New-Object System.Collections.ArrayList; Refus = New-Object System.Collections.ArrayList }
+            $groupes[$cle] = $g
         }
         $g.Octets += [double]$p.Octets; $g.Nb++
+        # Fermable ? La règle de l'Aide sur ce processus ; sans poignée gardée (Debut), pas vérifiable : non
+        $refus = if (-not $regle) { 'règle de fermeture absente' } elseif (-not [long]$p.Debut) { 'pas pu être vérifié' }
+                 else { Get-RefusFermeture $ctxFermer @{ Id = [int]$p.Pid; Chemin = $image; Session = $p.Session; Compte = $p.Compte; Protection = $p.Protection; Eleve = $p.Eleve } }
+        if ($refus) { [void]$g.Refus.Add("$exe : $refus") } else { [void]$g.Cibles.Add(@{ Pid = [int]$p.Pid; Debut = [long]$p.Debut; Chemin = $image; Octets = [double]$p.Octets }) }
         # (lui ou un de ses parents, jusqu'à 4 crans : Steam et son « WebHelper »)
         $x = [int]$p.Pid; $nomX = "$exe.exe".ToLower()
         for ($i = 0; $i -lt 5 -and $nomX; $i++) {
@@ -329,6 +471,11 @@ function Get-ConstatMemoire($D) {
         }
         if ($g.Origine) { $g.Note = "$($g.Note) $(Get-OrigineMemoire $g)" }
         $g.Etiquette = $EtiquettesMemoire[$g.Kind]
+        # Le bouton « Fermer » : toute l'appli, et seulement si chacun de ses processus peut l'être
+        if ($g.Kind -eq 'windows') { [void]$g.Refus.Add('fait partie de Windows (étiquette)') }
+        if ($g.Jamais) { [void]$g.Refus.Add('jamais fermée par Nevermind') }
+        if (@($g.Services).Count) { [void]$g.Refus.Add('contient un service') }
+        $g.Fermable = -not $g.Refus.Count -and $g.Cibles.Count -gt 0
     }
     $applis = @($groupes.Values | Sort-Object { $_.Octets } -Descending)
     $totalApplis = 0.0; foreach ($g in $applis) { $totalApplis += $g.Octets }
@@ -472,8 +619,10 @@ $TravailMemoire = {
 function Start-ConstatMemoire([string]$Ensuite, [string]$Etape = 'donnees', [string[]]$Tags) {
     if ($Ensuite -and @($script:MemoireApres) -notcontains $Ensuite) { $script:MemoireApres = @(@($script:MemoireApres | Where-Object { $_ }) + $Ensuite) }
     if ($script:MemoireJob) { return }   # (déjà en cours : le résultat servira aussi à ce geste)
+    if ($script:MemoireFermeture) { return }   # (une appli se ferme : ses processus restent gardés, la liste est relue après)
     if (-not $script:PilotesEtiquettes) { $script:PilotesEtiquettes = @{} }
-    if (-not $script:MemoireCode) { $script:MemoireCode = [IO.File]::ReadAllText((Join-Path $ModulesDir 'memoire.ps1'), [Text.Encoding]::UTF8) }
+    # (le fil de fond charge aussi la règle de fermeture, aide-actions.ps1 : que des définitions)
+    if (-not $script:MemoireCode) { $script:MemoireCode = [IO.File]::ReadAllText((Join-Path $ModulesDir 'aide-actions.ps1'), [Text.Encoding]::UTF8) + "`r`n" + [IO.File]::ReadAllText((Join-Path $ModulesDir 'memoire.ps1'), [Text.Encoding]::UTF8) }
     # (les programmes de la page Démarrage : pour ne conseiller d'y aller que s'ils y sont vraiment)
     $dem = @(try { @(Get-StartupItems) | Where-Object { $_.Enabled -and $_.Exe } | ForEach-Object { ([IO.Path]::GetFileName([string]$_.Exe)).ToLower(); foreach ($m in [regex]::Matches([string]$_.Commande, '[\w.-]+\.exe')) { ([IO.Path]::GetFileName($m.Value.Trim())).ToLower() } } | Select-Object -Unique } catch { Write-Log "Mémoire : page Démarrage illisible ($($_.Exception.Message))" })
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
@@ -554,6 +703,7 @@ function Complete-ConstatMemoire {
     Set-OccupeVue ''
     try { Update-EcranNevermind } catch { Write-Log "Écran : $_" }
     $apres = @($script:MemoireApres); $script:MemoireApres = @()
+    if ($apres -contains 'relire') { Start-ConstatMemoire ($(if ($apres -contains 'rapport') { 'rapport' } else { '' })); return }   # (une appli fermée pendant la lecture)
     if ($apres -contains 'rapport') {
         if ($script:Kit.Memoire) { New-RapportMemoire } else { Show-MessageVue 'Le rapport n''a pas pu être fait : la mémoire du PC n''a pas pu être lue.' }
     }
@@ -581,6 +731,191 @@ function Invoke-CorrectionMemoire {
     if ($rates.Count) { $lines += 'Pas pu être fait :'; $lines += @($rates | ForEach-Object { "   $_" }) }
     Set-Status 'Mémoire : ce qui est sûr est coupé.'
     Show-ResultSheet $(if ($faits.Count) { "C'est fait !" } else { 'Rien n''a pu être coupé' }) $lines $log 'La mémoire revient tout de suite pour ce qui tournait, et au prochain allumage du PC pour le reste.'
+}
+
+# ---------------------------------------------------------------------------
+# « Fermer » une appli (une ligne de la page) : poliment, puis de force seulement si elle ne répond plus ou s'est rangée
+# ---------------------------------------------------------------------------
+# Le contexte de la règle, relu juste avant de fermer (services, antivirus ; Nevermind lui-même pour référence)
+function Get-ContexteFermeture { $c = Get-AideContexte; $c.Reference = Get-AideReference $PID; $c }
+
+# Le geste sur chaque processus de l'appli ($Cibles : @{ Pid; Debut; Chemin; Octets } lus avec la liste), après avoir
+# revérifié sur sa poignée qu'il s'agit bien de lui (même heure de démarrage, même chemin) et qu'il est toujours
+# fermable (la règle, relue). $Mode : 'poli' (WM_CLOSE à ses fenêtres) ou 'force'.
+# Rend @{ Faits (les cibles touchées) ; Deja (déjà fermées) ; Refuses (@{ Pid; Raison }) }.
+function Invoke-FermetureMemoire($Cibles, $Contexte, [string]$Mode) {
+    Initialize-AideProcessus; Initialize-FermetureMemoire
+    $r = @{ Faits = New-Object System.Collections.ArrayList; Deja = New-Object System.Collections.ArrayList; Refuses = New-Object System.Collections.ArrayList }
+    foreach ($c in @($Cibles | Where-Object { $_ })) {
+        $id = [int]$c.Pid; $debut = [long]$c.Debut; $chemin = [string]$c.Chemin
+        $v = [NmFermeture]::Verifier($id, $debut, $chemin)
+        if ($v -eq 0) { [void]$r.Deja.Add($c); continue }
+        if ($v -lt 0) { [void]$r.Refuses.Add(@{ Pid = $id; Raison = 'n''est plus le même programme (numéro repris, ou plus vérifiable)' }); continue }
+        $refus = Get-RefusFermeture $Contexte (Read-AideFiche $id $chemin)
+        if ($refus) { [void]$r.Refuses.Add(@{ Pid = $id; Raison = $refus }); continue }
+        $n = if ($Mode -eq 'force') { [NmFermeture]::Forcer($id, $debut, $chemin) } else { [NmFermeture]::FermerPoliment($id, $debut, $chemin) }
+        if ($n -eq -2) { [void]$r.Deja.Add($c) }
+        elseif ($n -eq -1) { [void]$r.Refuses.Add(@{ Pid = $id; Raison = 'n''est plus le même programme (numéro repris)' }) }
+        elseif ($n -eq -3) { [void]$r.Refuses.Add(@{ Pid = $id; Raison = 'Windows refuse de le fermer' }) }
+        else { [void]$r.Faits.Add($c) }
+    }
+    $r
+}
+
+# Toujours là ? (sur sa poignée gardée : pas de numéro repris)
+function Test-VivantFermeture($Cible) { [NmFermeture]::Vivant([int]$Cible.Pid) -eq 1 }
+
+# Après la fermeture polie, ce qui reste : 'bloquee' (une fenêtre ne répond plus), 'question' (une fenêtre est encore
+# là et répond : souvent « Enregistrer les modifications ? »), 'rangee' (plus aucune fenêtre à l'écran : rangée près de
+# l'horloge, ou en fond)
+function Get-EtatFermeture($Restants) {
+    $visibles = 0; $bloquee = $false
+    foreach ($c in @($Restants | Where-Object { $_ })) {
+        $id = [int]$c.Pid
+        $visibles += @([NmFermeture]::Fenetres($id, $true)).Count
+        if ([NmFermeture]::Bloque($id)) { $bloquee = $true }
+        elseif (@([NmFermeture]::Fenetres($id, $true)).Count) {
+            # (la poignée gardée empêche que ce numéro soit à un autre programme)
+            try { $p = [Diagnostics.Process]::GetProcessById($id); if (-not $p.Responding) { $bloquee = $true }; $p.Dispose() } catch {}
+        }
+    }
+    if ($bloquee) { 'bloquee' } elseif ($visibles) { 'question' } else { 'rangee' }
+}
+
+# Ce que Nevermind dit quand l'appli n'est pas fermée au bout de 5 s ; Forcer : « Forcer la fermeture » est proposé
+function Get-MessageFermeture([string]$Nom, [string]$Etat) {
+    switch ($Etat) {
+        'bloquee' { @{ Forcer = $true; Texte = "$Nom ne répond plus.`n`nForcer la fermeture ? Ce qui n'est pas enregistré dans $Nom sera perdu." } }
+        'question' { @{ Forcer = $false; Texte = "$Nom te pose une question : regarde sa fenêtre (par exemple pour enregistrer ton travail) et réponds-lui. Il se fermera ensuite." } }
+        default { @{ Forcer = $true; Texte = "$Nom s'est rangé près de l'horloge au lieu de se fermer : il tourne encore en fond.`n`nFerme-le depuis son icône près de l'horloge, ou force la fermeture. Ce qui n'est pas enregistré dans $Nom sera perdu." } }
+    }
+}
+
+# Le travail de fond d'un geste (la règle relit les services : une seconde environ)
+$TravailFermeture = {
+    param([string]$Code, $Cibles, [string]$Mode)
+    . ([scriptblock]::Create($Code))
+    $script:JournalFond = New-Object System.Collections.Generic.List[string]
+    function Write-Log([string]$Message) { $script:JournalFond.Add($Message) }
+    $r = @{ Mode = $Mode }
+    try { $x = Invoke-FermetureMemoire $Cibles (Get-ContexteFermeture) $Mode; $r.Faits = @($x.Faits); $r.Deja = @($x.Deja); $r.Refuses = @($x.Refuses) }
+    catch { $r.Erreur = $_.Exception.Message }
+    $r.Journal = @($script:JournalFond)
+    $r
+}
+function Start-TravailFermeture($Cibles, [string]$Mode) {
+    $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
+    [void]$ps.AddScript($TravailFermeture.ToString()).AddArgument($script:MemoireCode).AddArgument(@($Cibles)).AddArgument($Mode)
+    @{ PS = $ps; Handle = $ps.BeginInvoke() }
+}
+
+# Le clic sur « Fermer » d'une ligne ($Index : sa place dans la liste des applis)
+function Start-FermetureMemoire([int]$Index) {
+    $c = $script:Kit.Memoire
+    $g = if ($c) { @($c.Applis)[$Index] } else { $null }
+    if (-not $g -or -not $g.Fermable) { return }
+    if ($script:MemoireFermeture) { Show-MessageVue "Je ferme déjà $($script:MemoireFermeture.Nom) : attends un instant."; return }
+    if ($script:MemoireJob) { Show-MessageVue 'Je relis la mémoire : réessaie dans un instant.'; return }
+    $octets = 0.0; foreach ($x in @($g.Cibles)) { $octets += [double]$x.Octets }
+    if (-not (Confirm-Action "Fermer $($g.Nom) ? Environ $(Format-Size $octets) libérés.`n`nIl se ferme comme avec la croix : s'il a quelque chose à enregistrer, il te le demandera.")) { return }
+    if (-not $script:MemoireCode) { $script:MemoireCode = [IO.File]::ReadAllText((Join-Path $ModulesDir 'aide-actions.ps1'), [Text.Encoding]::UTF8) + "`r`n" + [IO.File]::ReadAllText((Join-Path $ModulesDir 'memoire.ps1'), [Text.Encoding]::UTF8) }
+    $chemins = @(@($g.Cibles) | ForEach-Object { [string]$_.Chemin } | Select-Object -Unique)
+    $script:MemoireFermeture = @{ Nom = [string]$g.Nom; Chemins = $chemins; Cibles = @($g.Cibles); Octets = $octets; Mode = 'poli'; Etape = 'travail'; Faits = @(); Refuses = @()
+        Job = (Start-TravailFermeture $g.Cibles 'poli'); Debut = Get-Date }
+    Write-Log "Mémoire : fermeture polie de $($g.Nom) ($(@($g.Cibles).Count) processus, $($chemins -join ', '))"
+    Set-OccupeVue "Je ferme $($g.Nom)..."
+    try { Update-EcranNevermind } catch {}
+    if (-not $script:FermetureTimer) {
+        $script:FermetureTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $script:FermetureTimer.Interval = [TimeSpan]::FromMilliseconds(250)
+        $script:FermetureTimer.Add_Tick({
+            try { Update-FermetureMemoire }
+            catch {
+                Write-Log "Mémoire, fermeture : $($_.Exception.Message)"
+                try { $script:FermetureTimer.Stop() } catch {}
+                $script:MemoireFermeture = $null; Set-OccupeVue ''; Request-RelectureMemoire
+            }
+        })
+    }
+    $script:FermetureTimer.Start()
+}
+
+# Toutes les 250 ms (jamais d'attente sur le fil de la fenêtre) : le travail de fond, puis l'attente de la fermeture
+function Update-FermetureMemoire {
+    $f = $script:MemoireFermeture
+    if (-not $f) { $script:FermetureTimer.Stop(); return }
+    if ($f.Etape -eq 'travail') {
+        if (-not $f.Job.Handle.IsCompleted) {
+            if (((Get-Date) - $f.Debut).TotalSeconds -lt 60) { return }
+            try { $f.Job.PS.Stop() } catch {}
+        }
+        $x = @(Get-JobResult $f.Job)[0]
+        if ($x -is [psobject]) { $x = $x.psobject.BaseObject }
+        Receive-TravailFermeture $x
+        return
+    }
+    # (attente : jusqu'à ce que tout soit fermé, 5 s pour la fermeture polie, 3 s pour la forcée)
+    $restants = @(@($f.Faits) | Where-Object { Test-VivantFermeture $_ })
+    if (-not $restants.Count) { Complete-FermetureMemoire; return }
+    if (((Get-Date) - $f.Debut).TotalSeconds -lt $(if ($f.Mode -eq 'force') { 3 } else { 5 })) { return }
+    $script:FermetureTimer.Stop()
+    if ($f.Mode -eq 'force') { Complete-FermetureMemoire; return }
+    $m = Get-MessageFermeture $f.Nom (Get-EtatFermeture $restants)
+    Write-Log "Mémoire : $($f.Nom) pas fermé au bout de 5 s ($($restants.Count) processus restent)"
+    Set-OccupeVue ''
+    if (-not $m.Forcer) { Show-Message $m.Texte; Complete-FermetureMemoire; return }
+    $r = Read-QuestionVue $m.Texte '' @(@{ id = 'forcer'; texte = 'Forcer la fermeture' }, @{ id = 'non'; texte = 'Laisser ouvert'; style = 'second' })
+    $forcer = if ($null -ne $r) { $r -eq 'forcer' } else { Confirm-Action $m.Texte }
+    if (-not $forcer -or -not $script:MemoireFermeture) { Complete-FermetureMemoire; return }
+    $f.Mode = 'force'; $f.Etape = 'travail'; $f.Debut = Get-Date
+    $f.Job = Start-TravailFermeture $restants 'force'
+    Write-Log "Mémoire : fermeture forcée de $($f.Nom) ($($restants.Count) processus)"
+    Set-OccupeVue "Je force la fermeture de $($f.Nom)..."
+    $script:FermetureTimer.Start()
+}
+
+# Le résultat du travail de fond : on attend la fermeture (ou rien n'a pu être fait)
+function Receive-TravailFermeture($X) {
+    $f = $script:MemoireFermeture
+    if (-not $X) { $X = @{ Erreur = 'pas de résultat' } }
+    foreach ($l in @($X.Journal)) { if ($l) { Write-Log $l } }
+    if ($X.Erreur) { Write-Log "Mémoire, fermeture de $($f.Nom) : $($X.Erreur)" }
+    foreach ($r in @($X.Refuses)) { if ($r) { Write-Log "Mémoire : processus $($r.Pid) pas fermé, il $($r.Raison)" } }
+    $f.Refuses = @($f.Refuses) + @($X.Refuses | Where-Object { $_ })
+    if ($f.Mode -eq 'poli') { $f.Faits = @(@($X.Faits) + @($X.Deja) | Where-Object { $_ }) }
+    $f.Etape = 'attente'; $f.Debut = Get-Date
+    if ($X.Erreur -or -not @($X.Faits).Count) { $f.Debut = [datetime]::MinValue }   # (rien d'envoyé : pas d'attente)
+}
+
+# La fin : ce qui est fermé est noté dans l'historique (nom, chemin, polie ou forcée, mémoire ; jamais le titre d'une
+# fenêtre), le message, puis la liste est relue
+function Complete-FermetureMemoire {
+    $f = $script:MemoireFermeture
+    $script:MemoireFermeture = $null
+    try { $script:FermetureTimer.Stop() } catch {}
+    Set-OccupeVue ''
+    if (-not $f) { return }
+    $fermes = @(@($f.Cibles) | Where-Object { -not (Test-VivantFermeture $_) })
+    $reste = @($f.Cibles).Count - $fermes.Count
+    $octets = 0.0; foreach ($x in $fermes) { $octets += [double]$x.Octets }
+    if ($fermes.Count) {
+        $mode = if ($f.Mode -eq 'force') { 'fermeture forcée' } else { 'fermeture polie (comme la croix)' }
+        $titre = if ($reste) { "Fermé en partie : $($f.Nom)" } else { "Fermé : $($f.Nom)" }
+        try { [void](Add-History $titre (@($f.Chemins) + @($mode, "environ $(Format-Size $octets) libérés (estimation)")) @(@{ Type = 'note'; Quoi = "$($f.Nom) fermé ($mode)"; Chemins = @($f.Chemins); Mode = $f.Mode; Octets = $octets; Processus = $fermes.Count })) }
+        catch { Write-Log "Mémoire : historique impossible ($($_.Exception.Message))" }
+        Write-Log "Mémoire : $($f.Nom) fermé ($mode), $($fermes.Count) processus, environ $(Format-Size $octets)$(if ($reste) { ", $reste restent" })"
+        if ($reste) { Show-MessageVue "$($f.Nom) est fermé en partie : $reste processus tournent encore." }
+        else { Show-MessageVue "$($f.Nom) est fermé. Environ $(Format-Size $octets) de mémoire libérés (estimation)." }
+    } elseif (@($f.Refuses).Count -and -not @($f.Faits).Count) {
+        Show-MessageVue "$($f.Nom) n'a pas été fermé : il a changé depuis que Nevermind a regardé la mémoire. La liste est relue."
+    }
+    Request-RelectureMemoire
+}
+
+# La liste relue après une fermeture (après la lecture en cours, s'il y en a une)
+function Request-RelectureMemoire {
+    if ($script:MemoireJob) { if (@($script:MemoireApres) -notcontains 'relire') { $script:MemoireApres = @(@($script:MemoireApres | Where-Object { $_ }) + 'relire') }; return }
+    Start-ConstatMemoire
 }
 
 # « Créer un rapport » : le fichier sur le Bureau

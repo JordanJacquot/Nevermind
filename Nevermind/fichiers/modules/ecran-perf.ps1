@@ -246,13 +246,13 @@ function Get-PagesPerf {
         ) }
 
     # ---- RAM : qu'est-ce qui prend ma mémoire ?
-    $pages.memoire = Get-PageMemoireKit $mem ([string]$script:Kit.MemoireEnCours)
+    $pages.memoire = Get-PageMemoireKit $mem ([string]$script:Kit.MemoireEnCours) ([bool]$script:MemoireFermeture)
     $pages
 }
 
 # La page RAM (memoire.ps1 fait le constat en tâche de fond : en arrivant sur la page, puis avec « Actualiser »).
 # $EnCours : 'donnees' (lecture du PC) ou 'pilotes' (recherche du pilote qui garde la mémoire), vide sinon.
-function Get-PageMemoireKit($C, [string]$EnCours) {
+function Get-PageMemoireKit($C, [string]$EnCours, [bool]$Fermeture) {
     $page = @{ titre = 'RAM'; parent = 'perf'; sous = 'Ce qui prend la mémoire de ton PC, et ce qui peut être coupé sans risque.'; icone = 'memoire'; couleur = 'P'
         actions = @(if (-not $EnCours) { @{ id = 'memoire:analyser'; texte = 'Actualiser'; icone = 'actu' } }) }
     if (-not $C) {
@@ -282,11 +282,16 @@ function Get-PageMemoireKit($C, [string]$EnCours) {
     $grosses = @(@($C.Applis) | Where-Object { $_.Octets -ge 20MB } | Select-Object -First 30)
     $petites = @(@($C.Applis) | Where-Object { $grosses -notcontains $_ })
     $petitesOctets = 0.0; foreach ($g in $petites) { $petitesOctets += $g.Octets }
+    # (« Fermer » : seulement une appli que la règle de fermeture accepte en entier, voir memoire.ps1 ; pas pendant
+    # qu'une autre se ferme. Le numéro est sa place dans la liste des applis du constat.)
+    $toutes = @($C.Applis)
     $lignes = @(foreach ($g in $grosses) {
-        @{ type = 'ligne'; icone = $(switch ($g.Kind) { 'windows' { 'pc' } 'inutile' { 'balai' } default { 'app' } }); couleur = $(switch ($g.Kind) { 'windows' { 'doux' } 'inutile' { 'orange' } default { 'P' } })
+        $l = @{ type = 'ligne'; icone = $(switch ($g.Kind) { 'windows' { 'pc' } 'inutile' { 'balai' } default { 'app' } }); couleur = $(switch ($g.Kind) { 'windows' { 'doux' } 'inutile' { 'orange' } default { 'P' } })
             texte = "$($g.Nom)$(if ($g.Nb -gt 1) { " ($($g.Nb) processus)" })"; note = [string]$g.Note
             barre = [int](100 * $g.Octets / $max); valeur = (Format-Size $g.Octets); etiquette = [string]$g.Etiquette
             ton = $(switch ($g.Kind) { 'windows' { 'ok' } 'inutile' { 'attention' } default { '' } }) }
+        if ($g.Fermable -and -not $Fermeture) { $l.bouton = @{ id = "memoire-fermer:$([array]::IndexOf($toutes, $g))"; texte = 'Fermer'; style = 'second' } }
+        $l
     })
     if ($petites.Count) { $lignes += @{ type = 'ligne'; icone = 'liste'; couleur = 'doux'; texte = "$($petites.Count) petits programmes"; note = 'Chacun prend moins de 20 Mo.'; valeur = (Format-Size $petitesOctets) } }
     $cachee = @(foreach ($x in (Get-PartCacheeMemoire $C)) {
@@ -301,7 +306,7 @@ function Get-PageMemoireKit($C, [string]$EnCours) {
     ) + $lignes + @(
         @{ type = 'titre'; texte = 'La part cachée'; droite = 'Ce qui n''est à aucune appli' }
     ) + $cachee + @(
-        @{ type = 'note'; texte = 'Nevermind ne ferme jamais une appli à ta place. « Couper ce qui est sûr » ne touche qu''aux mises à jour et aux logiciels du fabricant, rien de Windows, et se remet comme avant depuis la page Sauvegarde.' }
+        @{ type = 'note'; texte = 'Nevermind ne ferme une appli que si tu cliques sur « Fermer », d''abord comme avec la croix pour te laisser enregistrer. Jamais Windows, un service, ton antivirus, les applis de Mindset ni ce qui appartient à un autre compte. « Couper ce qui est sûr » ne touche qu''aux mises à jour et aux logiciels du fabricant, rien de Windows, et se remet comme avant depuis la page Sauvegarde.' }
     )
     $page
 }
@@ -347,6 +352,7 @@ function Invoke-ActionPerf([string]$Id, $Valeur) {
         if ($g) { Invoke-Safe { Set-GameProfile $g $quoi ([bool]$Valeur) }; $script:Kit.Profils = $null }
         return $true
     }
+    if ($Id -match '^memoire-fermer:(\d+)$') { $k = [int]$Matches[1]; Invoke-Safe { Start-FermetureMemoire $k }; return $true }
     if ($Id -match '^nett-voir:(\d+)$') {
         $r = @($script:CleanRows | Where-Object { $_ })[[int]$Matches[1]]
         if ($r) { $info = Get-CleanInfo $r.Target 300; Invoke-Safe { Show-CleanFiles $r.Target $info } }
