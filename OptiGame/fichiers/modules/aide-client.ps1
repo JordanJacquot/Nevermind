@@ -39,7 +39,7 @@ $AideTravail = {
         try {
             . $x.Actions
             $d = $x.Demande | ConvertFrom-Json
-            $r = Invoke-AideAction ([string]$d.a) $d.p
+            $r = Invoke-AideAction ([string]$d.a) $d.p -Client $PID
             $rep = ConvertTo-Json -InputObject @{ ok = $true; r = $r } -Depth 8 -Compress
         } catch { $rep = ConvertTo-Json -InputObject @{ ok = $false; e = $_.Exception.Message } -Compress }
     }

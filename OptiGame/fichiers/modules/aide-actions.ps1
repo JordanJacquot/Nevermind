@@ -14,6 +14,29 @@ $AideChampsDisque = @('Temperature', 'TemperatureMax', 'Wear', 'PowerOnHours', '
                       'WriteErrorsUncorrected', 'ReadLatencyMax', 'WriteLatencyMax')
 $AideMemoire = 'HKLM:\SOFTWARE\Mindset\Nevermind\Aide'   # ce que l'Aide retient elle-même (modifiable seulement en administrateur)
 $AideDossierModules = $PSScriptRoot   # (dossier protégé de Nevermind : natif.cs et PresentMon y sont lus)
+# Les dossiers de Windows, tels que Windows les donne : jamais lus dans $env: (la tâche planifiée de l'Aide reprend les
+# variables de l'utilisateur, qu'un programme sans droits peut changer). Ni Documents ni AppData : l'utilisateur peut
+# les déplacer, même lus ainsi.
+$AideWindows = [Environment]::GetFolderPath('Windows')
+$AideProgrammes = [Environment]::GetFolderPath('ProgramFiles')
+$AideProgrammesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
+$AideDonneesCommunes = [Environment]::GetFolderPath('CommonApplicationData')
+
+# Modules de Windows : l'Aide coupe leur chargement automatique (NevermindAide.ps1), un module posé ailleurs par un
+# programme sans droits ne peut donc pas passer pour celui de Windows. Chaque demande charge ceux dont elle se sert,
+# par leur chemin complet dans le dossier de Windows (les modules de base sont déjà là). tester-aide vérifie qu'aucune
+# commande d'un autre module n'est utilisée sans ce chargement.
+$AideDossierPS = [IO.Path]::Combine([Environment]::GetFolderPath('System'), 'WindowsPowerShell\v1.0\Modules')
+# (« ConfigDefender/Defender » : le premier présent sur ce Windows)
+function Import-AideModule([string[]]$Noms) {
+    foreach ($choix in $Noms) {
+        $noms = $choix -split '/'
+        if (Get-Module -Name $noms) { continue }
+        $n = @($noms | Where-Object { [IO.Directory]::Exists([IO.Path]::Combine($AideDossierPS, $_)) })[0]
+        if (-not $n) { throw "Module de Windows introuvable : $choix" }
+        Import-Module -Name ([IO.Path]::Combine($AideDossierPS, $n)) -Global -ErrorAction Stop
+    }
+}
 
 # Les mesureurs de Nevermind (natif.cs : compteurs TCP, trace réseau), chargés dans l'Aide à la première mesure
 function Initialize-AideNatif {
@@ -162,8 +185,45 @@ function Test-AideAdresseLocale([string]$Ip) {
     ($o[0] -eq 0xfe -and ($o[1] -band 0xc0) -eq 0x80) -or (($o[0] -band 0xfe) -eq 0xfc)   # fe80::/10, fc00::/7
 }
 
+# Les adresses du réseau local qu'un DNS peut avoir sur cette carte : sa passerelle (la box) et les serveurs DNS donnés
+# par la box (DHCP). Une autre adresse privée n'est pas acceptée : elle pourrait être un faux DNS posé sur le réseau.
+function ConvertTo-AideIp([string]$Texte) {
+    $a = $null
+    if (-not [Net.IPAddress]::TryParse(([string]$Texte).Trim(), [ref]$a)) { return $null }
+    $t = $a.ToString() -replace '%.*$', ''
+    if ($t -in '0.0.0.0', '::') { return $null }
+    $t
+}
+function Get-AideDnsLocaux($Carte) {
+    $r = [Collections.Generic.List[string]]::new()
+    Import-AideModule NetTCPIP
+    try {
+        foreach ($rt in @(Get-NetRoute -InterfaceIndex $Carte.ifIndex -DestinationPrefix '0.0.0.0/0', '::/0' -ErrorAction Stop)) {
+            $ip = ConvertTo-AideIp ([string]$rt.NextHop); if ($ip) { $r.Add($ip) }
+        }
+    } catch {}
+    $guid = '{' + ([string]$Carte.InterfaceGuid).Trim('{', '}') + '}'
+    foreach ($base in 'Tcpip', 'Tcpip6') {
+        try {
+            $k = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Services\$base\Parameters\Interfaces\$guid")
+            if (-not $k) { continue }
+            try {
+                foreach ($nom in 'DhcpNameServer', 'DhcpDefaultGateway') {
+                    foreach ($x in @($k.GetValue($nom, $null))) { foreach ($y in ([string]$x -split '[,\s]+')) { $ip = ConvertTo-AideIp $y; if ($ip) { $r.Add($ip) } } }
+                }
+                $b = $k.GetValue('Dhcpv6DNSServers', $null)
+                if ($b -is [byte[]]) {
+                    for ($i = 0; $i + 16 -le $b.Length; $i += 16) { $ip = ConvertTo-AideIp ([Net.IPAddress]::new([byte[]]$b[$i..($i + 15)]).ToString()); if ($ip) { $r.Add($ip) } }
+                }
+            } finally { $k.Close() }
+        } catch {}
+    }
+    , @($r | Select-Object -Unique)
+}
+
 function Get-AideCarte([int]$Index) {
     if ($Index -le 0) { throw 'Demande refusée : carte réseau non valable.' }
+    Import-AideModule NetAdapter
     $ad = Get-NetAdapter -InterfaceIndex $Index -IncludeHidden -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $ad) { throw 'La carte réseau de ce réglage n''existe plus sur ce PC.' }
     $ad
@@ -217,11 +277,11 @@ function Get-AideDnsOrigine([string]$Guid) {
 # Nettoyage : les dossiers de Windows que seule l'Aide peut vider (jamais un chemin envoyé par Nevermind)
 # ---------------------------------------------------------------------------
 $AideNettoyage = [ordered]@{
-    wintemp = @("$env:windir\Temp")
-    wu      = @("$env:windir\SoftwareDistribution\Download")
-    do      = @("$env:windir\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache")
-    wer     = @("$env:ProgramData\Microsoft\Windows\WER\ReportArchive", "$env:ProgramData\Microsoft\Windows\WER\ReportQueue")
-    dump    = @("$env:windir\Minidump")
+    wintemp = @("$AideWindows\Temp")
+    wu      = @("$AideWindows\SoftwareDistribution\Download")
+    do      = @("$AideWindows\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache")
+    wer     = @("$AideDonneesCommunes\Microsoft\Windows\WER\ReportArchive", "$AideDonneesCommunes\Microsoft\Windows\WER\ReportQueue")
+    dump    = @("$AideWindows\Minidump")
 }
 
 # Parcours d'un dossier sans suivre les liens (jonctions, liens symboliques) : on ne sort jamais du dossier prévu.
@@ -304,11 +364,164 @@ function Get-AideProgramme([string]$Chemin, [bool]$WindowsPermis) {
     if (-not [IO.File]::Exists($plein)) { throw "Ce programme n'existe plus : $plein" }
     $nom = [IO.Path]::GetFileName($plein)
     if ($nom -match $AideExesProteges) { throw "Demande refusée : $nom fait partie de Windows ou de l'antivirus." }
-    $defender = @("$env:ProgramFiles\Windows Defender\", "${env:ProgramFiles(x86)}\Windows Defender\", "$env:ProgramData\Microsoft\Windows Defender\",
-                  "$env:ProgramFiles\Windows Defender Advanced Threat Protection\", "$env:ProgramData\Microsoft\Windows Defender Advanced Threat Protection\")
+    $defender = @("$AideProgrammes\Windows Defender\", "$AideProgrammesX86\Windows Defender\", "$AideDonneesCommunes\Microsoft\Windows Defender\",
+                  "$AideProgrammes\Windows Defender Advanced Threat Protection\", "$AideDonneesCommunes\Microsoft\Windows Defender Advanced Threat Protection\")
     foreach ($d in $defender) { if ($plein.StartsWith($d, [StringComparison]::OrdinalIgnoreCase)) { throw "Demande refusée : $nom fait partie de l'antivirus." } }
-    if (-not $WindowsPermis -and $plein.StartsWith("$env:windir\", [StringComparison]::OrdinalIgnoreCase)) { throw "Demande refusée : $nom fait partie de Windows." }
+    if (-not $WindowsPermis -and $plein.StartsWith("$AideWindows\", [StringComparison]::OrdinalIgnoreCase)) { throw "Demande refusée : $nom fait partie de Windows." }
     $plein
+}
+
+# Ce que Windows dit d'un processus, même pour un autre compte : sa session, son compte, s'il est protégé (les moteurs
+# d'antivirus tournent en processus protégés). Chargé à la première demande qui s'en sert.
+function Initialize-AideProcessus {
+    if ('AideProcessus' -as [type]) { return }
+    try {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Security.Principal;
+using System.Text;
+public static class AideProcessus
+{
+    [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll")] static extern bool ProcessIdToSessionId(uint pid, out uint session);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool GetProcessInformation(IntPtr h, int classe, out uint info, int taille);
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int flags, StringBuilder name, ref int size);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr h, uint access, out IntPtr jeton);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool GetTokenInformation(IntPtr jeton, int classe, IntPtr info, int taille, out int requis);
+    const uint Lecture = 0x1000;   // PROCESS_QUERY_LIMITED_INFORMATION
+
+    // Session Windows du processus, -1 si inconnue
+    public static int Session(int pid) { uint s; return ProcessIdToSessionId((uint)pid, out s) ? (int)s : -1; }
+
+    // Compte du processus (SID), "" si Windows ne le dit pas
+    public static string Compte(int pid)
+    {
+        IntPtr h = OpenProcess(Lecture, false, pid);
+        if (h == IntPtr.Zero) return "";
+        IntPtr jeton = IntPtr.Zero, info = IntPtr.Zero;
+        try
+        {
+            if (!OpenProcessToken(h, 0x8, out jeton)) return "";   // TOKEN_QUERY
+            int requis;
+            GetTokenInformation(jeton, 1, IntPtr.Zero, 0, out requis);   // TokenUser
+            if (requis <= 0) return "";
+            info = Marshal.AllocHGlobal(requis);
+            if (!GetTokenInformation(jeton, 1, info, requis, out requis)) return "";
+            return new SecurityIdentifier(Marshal.ReadIntPtr(info)).Value;
+        }
+        catch { return ""; }
+        finally
+        {
+            if (info != IntPtr.Zero) Marshal.FreeHGlobal(info);
+            if (jeton != IntPtr.Zero) CloseHandle(jeton);
+            CloseHandle(h);
+        }
+    }
+
+    // Niveau de protection : 0 aucun, 1 protégé (antivirus, Windows), -1 inconnu (traité comme protégé)
+    public static int Protection(int pid)
+    {
+        IntPtr h = OpenProcess(Lecture, false, pid);
+        if (h == IntPtr.Zero) return -1;
+        try
+        {
+            uint niveau;
+            if (!GetProcessInformation(h, 7, out niveau, 4)) return -1;   // ProcessProtectionLevelInfo
+            return niveau == 0xFFFFFFFE ? 0 : 1;   // PROTECTION_LEVEL_NONE
+        }
+        finally { CloseHandle(h); }
+    }
+
+    public static string Chemin(int pid)
+    {
+        IntPtr h = OpenProcess(Lecture, false, pid);
+        if (h == IntPtr.Zero) return "";
+        try { var sb = new StringBuilder(1024); int n = sb.Capacity; return QueryFullProcessImageName(h, 0, sb, ref n) ? sb.ToString() : ""; }
+        finally { CloseHandle(h); }
+    }
+}
+'@
+    } catch { if (-not ('AideProcessus' -as [type])) { throw } }   # (une autre demande l'a chargé au même moment)
+}
+
+# Un chemin écrit par Windows (« %ProgramFiles%\...\x.exe », « "C:\...\x.exe" -k ... ») : le programme seul, chemin complet.
+# Les variables sont remplacées par les vrais dossiers de Windows, jamais par celles de l'utilisateur.
+function ConvertFrom-AideCheminWindows([string]$Texte) {
+    $t = ([string]$Texte).Trim()
+    if ($t.StartsWith('"')) { $t = $t.Substring(1); $i = $t.IndexOf('"'); if ($i -ge 0) { $t = $t.Substring(0, $i) } }
+    else { $i = $t.IndexOf('.exe', [StringComparison]::OrdinalIgnoreCase); if ($i -ge 0) { $t = $t.Substring(0, $i + 4) } }
+    $vars = @{ windir = $AideWindows; systemroot = $AideWindows; programfiles = $AideProgrammes; programw6432 = $AideProgrammes
+               'programfiles(x86)' = $AideProgrammesX86; programdata = $AideDonneesCommunes; allusersprofile = $AideDonneesCommunes
+               commonprogramfiles = "$AideProgrammes\Common Files"; 'commonprogramfiles(x86)' = "$AideProgrammesX86\Common Files" }
+    foreach ($m in @([regex]::Matches($t, '%([^%]{1,40})%'))) {
+        $v = $vars[$m.Groups[1].Value.ToLowerInvariant()]
+        if (-not $v) { return $null }   # (variable inconnue : on ne devine pas)
+        $t = $t.Replace($m.Value, $v)
+    }
+    if ($t -match '^\\SystemRoot\\') { $t = $AideWindows + $t.Substring(11) }
+    if ($t -notmatch '^[A-Za-z]:\\' -or $t -notmatch '\.exe$') { return $null }   # (« windowsdefender:// »...)
+    try { [IO.Path]::GetFullPath($t) } catch { $null }
+}
+
+# Ce que Windows déclare, lu une fois par demande : les programmes des antivirus inscrits au Centre de sécurité, et les
+# services (programme et processus). Pas de liste à tenir à jour : un nouvel antivirus est reconnu tout seul.
+function Get-AideContexte {
+    $c = @{ Antivirus = [Collections.Generic.List[string]]::new()
+            ServicesExe = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            ServicesPid = [Collections.Generic.HashSet[int]]::new() }
+    try {   # (absent des Windows Server : aucun antivirus inscrit)
+        foreach ($av in @(Get-CimInstance -Namespace 'root\SecurityCenter2' -ClassName AntiVirusProduct -OperationTimeoutSec 5 -ErrorAction Stop)) {
+            foreach ($x in [string]$av.pathToSignedProductExe, [string]$av.pathToSignedReportingExe) { $p = ConvertFrom-AideCheminWindows $x; if ($p) { $c.Antivirus.Add($p) } }
+        }
+    } catch {}
+    foreach ($s in @(Get-CimInstance -ClassName Win32_Service -OperationTimeoutSec 10 -ErrorAction Stop)) {
+        $p = ConvertFrom-AideCheminWindows ([string]$s.PathName); if ($p) { [void]$c.ServicesExe.Add($p) }
+        if ([int]$s.ProcessId -gt 0) { [void]$c.ServicesPid.Add([int]$s.ProcessId) }
+    }
+    $c
+}
+
+# Un programme d'antivirus ? Son dossier entier compte (moteur, service, interface), sauf dans le dossier de Windows où
+# seul le fichier déclaré compte.
+function Test-AideAntivirus($Contexte, [string]$Chemin) {
+    foreach ($av in $Contexte.Antivirus) {
+        if ([string]::Equals($av, $Chemin, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+        $d = [IO.Path]::GetDirectoryName($av)
+        if ($d.StartsWith("$AideWindows\", [StringComparison]::OrdinalIgnoreCase) -or $d.Length -le 3) { continue }
+        if ($Chemin.StartsWith("$d\", [StringComparison]::OrdinalIgnoreCase)) { return $true }
+    }
+    $false
+}
+
+# Pourquoi ce programme ne peut pas être fermé ni bloqué ($null : il peut l'être). -ServicePermis : svchost.exe pour un
+# service précis (la règle du pare-feu ne vise que ce service, déjà vérifié par $AideServicesProteges).
+function Get-AideRefusProgramme($Contexte, [string]$Chemin, [switch]$ServicePermis) {
+    if (Test-AideAntivirus $Contexte $Chemin) { return 'est un programme de ton antivirus' }
+    if ($ServicePermis) { return $null }
+    if ($Contexte.ServicesExe.Contains($Chemin)) { return 'fait tourner un service de Windows' }
+    Initialize-AideProcessus
+    foreach ($p in [Diagnostics.Process]::GetProcesses()) {
+        try {
+            if ([string]::Equals([AideProcessus]::Chemin($p.Id), $Chemin, [StringComparison]::OrdinalIgnoreCase) -and [AideProcessus]::Protection($p.Id) -ne 0) { return 'est protégé par Windows (antivirus)' }
+        } finally { $p.Dispose() }
+    }
+    $null
+}
+
+# Pourquoi ce processus ne peut pas être fermé ($null : il peut l'être) : seulement un programme du même compte et de la
+# même session que le programme qui fait la demande (Nevermind), jamais un service, un processus protégé ou l'antivirus.
+function Get-AideRefusProcessus($Contexte, [int]$Client, [int]$Id, [string]$Chemin) {
+    Initialize-AideProcessus
+    if ($Contexte.ServicesPid.Contains($Id)) { return 'est un service' }
+    $session = [AideProcessus]::Session($Client); $compte = [AideProcessus]::Compte($Client)
+    if ($session -lt 0 -or -not $compte) { return 'programme qui fait la demande inconnu' }
+    if ([AideProcessus]::Session($Id) -ne $session) { return 'ne tourne pas dans ta session' }
+    if ([AideProcessus]::Compte($Id) -ne $compte) { return 'n''appartient pas à ton compte' }
+    if ([AideProcessus]::Protection($Id) -ne 0) { return 'est protégé par Windows (antivirus)' }
+    if ($Chemin -and (Test-AideAntivirus $Contexte $Chemin)) { return 'est un programme de ton antivirus' }
+    $null
 }
 
 # ---------------------------------------------------------------------------
@@ -317,16 +530,19 @@ function Get-AideProgramme([string]$Chemin, [bool]$WindowsPermis) {
 # -Verifier : contrôle la demande sans rien faire (tests automatiques). Renvoie un résultat simple (texte, nombre,
 # table) que l'Aide renvoie à Nevermind en JSON. Une demande refusée lève une erreur dont le message est montré tel quel.
 # Les règles du pare-feu créées par Nevermind (« Nevermind : bloque ... », ou « OptiGame : bloque ... » avant la 1.3.6)
-function Get-ReglesNevermind { @(Get-NetFirewallRule -DisplayName 'Nevermind : bloque *' -ErrorAction SilentlyContinue) + @(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue) }
+function Get-ReglesNevermind { Import-AideModule NetSecurity; @(Get-NetFirewallRule -DisplayName 'Nevermind : bloque *' -ErrorAction SilentlyContinue) + @(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue) }
 
 # Une fois, au démarrage de l'Aide : les anciennes règles prennent le nom de Nevermind (on les retrouve en cherchant « Nevermind »)
 function Rename-ReglesOptiGame {
+    Import-AideModule NetSecurity
     foreach ($r in @(Get-NetFirewallRule -DisplayName 'OptiGame : bloque *' -ErrorAction SilentlyContinue)) {
         try { Set-NetFirewallRule -Name $r.Name -NewDisplayName ($r.DisplayName -replace '^OptiGame : ', 'Nevermind : ') -ErrorAction Stop } catch {}
     }
 }
 
-function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
+# -Client : le processus qui fait la demande (Nevermind), lu par Windows sur le canal ; « processus.fermer » ne ferme que
+# ce qui tourne sous son compte et dans sa session.
+function Invoke-AideAction([string]$Action, $P, [switch]$Verifier, [int]$Client) {
     switch -Exact ($Action) {
         'aide.bonjour' {
             $admin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -377,8 +593,12 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             $ad = Get-AideCarte $index
             $guid = ([string]$ad.InterfaceGuid).Trim('{', '}').ToLower()
             $texte = ($serveurs -join ',')
-            $connu = (-not $serveurs.Count) -or @($AideDnsChoix | Where-Object { ($_ -join ',') -eq $texte }).Count -gt 0 -or
-                     -not @($serveurs | Where-Object { -not (Test-AideAdresseLocale $_) }).Count
+            $connu = (-not $serveurs.Count) -or @($AideDnsChoix | Where-Object { ($_ -join ',') -eq $texte }).Count -gt 0
+            if (-not $connu) {
+                # Ceux de la box : des adresses privées, et seulement la passerelle de cette carte ou les DNS que la box donne
+                $locaux = Get-AideDnsLocaux $ad
+                $connu = -not @($serveurs | Where-Object { -not (Test-AideAdresseLocale $_) -or (ConvertTo-AideIp $_) -notin $locaux }).Count
+            }
             $origine = Get-AideDnsOrigine $guid
             if (-not $connu -and $null -ne $origine -and (@($origine -split '[,\s]+' | Where-Object { $_ }) -join ',') -eq $texte) { $connu = $true }
             if (-not $connu) { throw "L'Aide garde ce réglage : elle ne met que des DNS connus (Cloudflare, Google, Quad9), ceux de ta box, ou ceux que tu avais avant Nevermind." }
@@ -390,6 +610,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
                 $k = [Microsoft.Win32.Registry]::LocalMachine.CreateSubKey('SOFTWARE\Mindset\Nevermind\Aide\Dns')
                 try { $k.SetValue($guid, $avant, 'String') } finally { $k.Close() }
             }
+            Import-AideModule DnsClient
             if ($serveurs.Count) { Set-DnsClientServerAddress -InterfaceIndex $ad.ifIndex -ServerAddresses $serveurs -ErrorAction Stop }
             else { Set-DnsClientServerAddress -InterfaceIndex $ad.ifIndex -ResetServerAddresses -ErrorAction Stop }
             Clear-DnsClientCache -ErrorAction SilentlyContinue
@@ -406,8 +627,12 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             }
             $prog = Get-AideProgramme ([string](Get-AideParam $P 'Programme')) $true
             $court = [IO.Path]::GetFileName($prog)
-            if ($court -match $AideExesProteges -and -not ($court -eq 'svchost.exe' -and $services.Count)) { throw "Demande refusée : $court est indispensable à Windows ou à l'antivirus." }
+            $pourService = $court -eq 'svchost.exe' -and $services.Count
+            if ($court -match $AideExesProteges -and -not $pourService) { throw "Demande refusée : $court est indispensable à Windows ou à l'antivirus." }
+            $refus = Get-AideRefusProgramme (Get-AideContexte) $prog -ServicePermis:$pourService
+            if ($refus) { throw "Demande refusée : $court $refus." }
             if ($Verifier) { return 'ok' }
+            Import-AideModule NetSecurity
             $cibles = if ($services.Count) { @($services | ForEach-Object { @{ Service = $_ } }) } else { @(@{}) }
             foreach ($t in $cibles) {
                 foreach ($dir in 'Outbound', 'Inbound') {
@@ -425,6 +650,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             if ($Verifier) { return 'ok' }
             # (un blocage noté sous l'ancien nom « OptiGame : bloque ... » a pu être renommé depuis : les deux noms sont cherchés)
             $suite = $nom -replace '^(Nevermind|OptiGame) : bloque ', ''
+            Import-AideModule NetSecurity
             @(Get-ReglesNevermind | Where-Object { $_.DisplayName -in "Nevermind : bloque $suite", "OptiGame : bloque $suite" }) | Remove-NetFirewallRule -ErrorAction Stop
             return 'ok'
         }
@@ -437,12 +663,14 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
 
         'pare-feu.debloquer-tout' {
             if ($Verifier) { return 'ok' }
+            Import-AideModule NetSecurity
             @(Get-ReglesNevermind) | Remove-NetFirewallRule -ErrorAction Stop
             return 'ok'
         }
 
         'pare-feu.activer' {
             if ($Verifier) { return 'ok' }
+            Import-AideModule NetSecurity
             Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled True -ErrorAction Stop
             return 'ok'
         }
@@ -459,6 +687,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             $el = @(Get-AideListe $P 'Elements')
             if (-not $el.Count -or $el.Count -gt 200 -or @($el | Where-Object { -not $_ -or $_.Length -gt 1000 -or $_ -match '[\x00-\x1f]' }).Count) { throw 'Demande refusée : liste d''exclusions non valable.' }
             if ($Verifier) { return 'ok' }
+            Import-AideModule ConfigDefender/Defender
             foreach ($x in $el) {
                 Remove-MpPreference -ExclusionPath $x -ErrorAction SilentlyContinue
                 Remove-MpPreference -ExclusionProcess $x -ErrorAction SilentlyContinue
@@ -473,12 +702,13 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
         'lecture.pc' {
             if ($Verifier) { return 'ok' }
             $r = @{ SecureBoot = $null; TpmOk = $false; Tpm = $null; Fiabilite = @{} }
-            try { $r.SecureBoot = [bool](Confirm-SecureBootUEFI -ErrorAction Stop) } catch {}
+            try { Import-AideModule SecureBoot; $r.SecureBoot = [bool](Confirm-SecureBootUEFI -ErrorAction Stop) } catch {}
             try {
                 $t = @(Get-CimInstance -Namespace 'root\cimv2\security\microsofttpm' -ClassName Win32_Tpm -OperationTimeoutSec 3 -ErrorAction Stop)
                 $r.TpmOk = $true
                 if ($t.Count) { $r.Tpm = @{ SpecVersion = [string]$t[0].SpecVersion } }
             } catch {}
+            try { Import-AideModule Storage } catch {}   # (sans lui : aucune santé de disque, le reste est rendu)
             foreach ($d in @(Get-PhysicalDisk -ErrorAction SilentlyContinue)) {
                 $rel = $null
                 try { $rel = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch {}
@@ -494,6 +724,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
         'lecture.securite' {
             if ($Verifier) { return 'ok' }
             $r = @{ Exclusions = @(); Menaces = @(); Detections = @() }
+            try { Import-AideModule ConfigDefender/Defender } catch {}   # (antivirus de Windows absent : listes vides)
             try {
                 $pref = Get-MpPreference -ErrorAction Stop
                 $r.Exclusions = @(@($pref.ExclusionPath) + @($pref.ExclusionProcess) + @($pref.ExclusionExtension) | Where-Object { $_ -and $_ -notmatch '^N/A' } | ForEach-Object { [string]$_ })
@@ -582,6 +813,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
         # Tâches planifiées (hors Microsoft, actives) : sans droits, Windows peut en cacher. Nom, dossier, programme, arguments.
         'lecture.taches' {
             if ($Verifier) { return 'ok' }
+            Import-AideModule ScheduledTasks
             return , @(foreach ($t in @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Microsoft\*' -and $_.State -ne 'Disabled' })) {
                 foreach ($act in @($t.Actions)) { @{ Nom = [string]$t.TaskName; Chemin = [string]$t.TaskPath; Exe = [string]$act.Execute; Args = [string]$act.Arguments } }
             })
@@ -604,15 +836,16 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             $profils = @(Get-AideListe $P 'Profils')
             if (-not $profils.Count -or $profils.Count -gt 50 -or @($profils | Where-Object { -not $_ -or $_.Length -gt 64 -or $_ -match '["\x00-\x1f]' -or $_ -match '\\$' }).Count) { throw 'Demande refusée : noms de Wi-Fi non valables.' }
             if ($Verifier) { return 'ok' }
-            foreach ($n in $profils) { & "$env:windir\System32\netsh.exe" wlan set profileparameter "name=$n" connectionmode=manual | Out-Null }
+            foreach ($n in $profils) { & ([IO.Path]::Combine([Environment]::GetFolderPath('System'), 'netsh.exe')) wlan set profileparameter "name=$n" connectionmode=manual | Out-Null }
             return 'ok'
         }
 
         'smb1.couper' {
-            $client = [bool](Get-AideParam $P 'Client')
+            $smbClient = [bool](Get-AideParam $P 'Client')
             if ($Verifier) { return 'ok' }
+            Import-AideModule SmbShare, Dism
             Set-SmbServerConfiguration -EnableSMB1Protocol $false -Force -Confirm:$false -ErrorAction SilentlyContinue
-            if ($client) { Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -ErrorAction SilentlyContinue | Out-Null }
+            if ($smbClient) { Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart -ErrorAction SilentlyContinue | Out-Null }
             return 'ok'
         }
 
@@ -639,12 +872,18 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier) {
             if ($chemin) { $chemin = Get-AideProgramme $chemin $false; $nom = [IO.Path]::GetFileNameWithoutExtension($chemin) }
             elseif ($nom -notmatch '^[\w .()+\-]{1,100}$') { throw 'Demande refusée : nom de programme non valable.' }
             if ($nom -match $AideExesProteges) { throw "Demande refusée : $nom fait partie de Windows ou de l'antivirus." }
+            $ctx = Get-AideContexte
+            if ($chemin) { $refus = Get-AideRefusProgramme $ctx $chemin; if ($refus) { throw "Demande refusée : $([IO.Path]::GetFileName($chemin)) $refus." } }
             if ($Verifier) { return 'ok' }
+            if ($Client -le 0) { throw 'Demande refusée : programme qui fait la demande inconnu.' }
             $n = 0
-            foreach ($pr in @(Get-Process -Name $nom -ErrorAction SilentlyContinue)) {
+            # (par son nom exact : « [ » ou « * » dans un nom de programme ne sont pas des jokers)
+            foreach ($pr in @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -eq $nom })) {
                 $pc = $null; try { $pc = $pr.Path } catch {}
-                if (-not $pc -or $pc.StartsWith("$env:windir\", [StringComparison]::OrdinalIgnoreCase)) { continue }
+                if (-not $pc -or $pc.StartsWith("$AideWindows\", [StringComparison]::OrdinalIgnoreCase)) { continue }
                 if ($chemin -and $pc -ne $chemin) { continue }
+                # Seulement un programme de l'utilisateur, dans sa session : jamais un service, l'antivirus, un autre compte
+                if (Get-AideRefusProcessus $ctx $Client $pr.Id $pc) { continue }
                 try { $pr.Kill(); $n++ } catch {}
             }
             return $n

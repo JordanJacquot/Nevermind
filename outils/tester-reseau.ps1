@@ -7,7 +7,8 @@
 #   1. Lag en ligne : quand le serveur du jeu change, l'ancien n'est plus pingé ; la box d'un autre joueur (pair à
 #      pair, reconnue par son propriétaire ou son nom) n'est jamais prise pour le serveur du jeu. Un faux LagMon note
 #      ce qui est pingé ; le vrai LagMon (natif.cs) est vérifié à part, dans un autre PowerShell, sur 127.0.0.1 seulement ;
-#   2. Trafic : les programmes de la suite Mindset (non signés) ne sont plus signalés, les autres le restent ;
+#   2. Trafic : les programmes de la suite Mindset (non signés) ne sont plus signalés, les autres le restent ; le clic
+#      sur la bulle d'une alerte ouvre le bon programme et n'exécute rien de caché dans son nom ;
 #   3. la trace réseau en veille (avant BF6) n'est lancée que si un jeu guetté est installé, et arrêtée sinon ;
 #   4. les petits textes : titre « Nevermind » des rapports, Mindset trouvé sur un autre disque, message d'erreur simple.
 # Code de sortie : 0 si tout passe, 1 sinon.
@@ -228,6 +229,37 @@ foreach ($c in $autres) { Test-Ok (@($alertes | Where-Object { $_.App.Path -eq $
 $script:Traffic = @{ Apps = @{} }
 $a = New-App 'D:\Mindset\Programmes\Mindset\Mindset.exe' 'HashMismatch'; $script:Traffic.Apps[$a.Key] = $a
 Test-Ok (@(Get-TrafficAlerts).Count -eq 1) 'Trafic : un programme de la suite à la signature invalide n''est plus signalé'
+$script:Traffic = $null
+
+# Bulle « Activité réseau à vérifier » (constat 10) : le chemin du programme n'entre jamais dans le code du clic. Un
+# dossier « d’Arthur » (apostrophe typographique, que PowerShell prend pour un guillemet) cassait la bulle et sautait
+# les alertes suivantes ; un nom piégé faisait exécuter du code au clic.
+try {
+    . ([scriptblock]::Create((Get-Definitions (Join-Path $modules 'trafic.ps1') @('Test-TrafficAlerts'))))
+    . ([scriptblock]::Create((Get-Definitions (Join-Path $modules 'assistance.ps1') @('New-ActionNotif'))))
+} catch { Test-Ok $false "Trafic : chargement impossible ($($_.Exception.Message))" }
+$script:Bulles = New-Object System.Collections.Generic.List[object]
+function script:Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) { $script:Bulles.Add($OnClick) }
+$script:Ouverts = New-Object System.Collections.Generic.List[string]
+function script:Show-Page($i) {}
+function script:Show-TrafficApp([string]$Key) { $script:Ouverts.Add($Key) }
+$TrafficIndex = 3
+$script:codeexecute = 0
+$pieges = @("C:\Jeux d’Arthur\app.exe", "C:\Users\Joueur\Downloads\a’; `$script:codeexecute = 1; ’.exe", "C:\Users\Joueur\Downloads\b'; `$script:codeexecute = 2; '.exe",
+            'C:\Users\Joueur\Downloads\c$($script:codeexecute = 3).exe', 'C:\Users\Joueur\Downloads\d`$script:codeexecute.exe')
+$script:Traffic = @{ Apps = @{}; Notified = @{} }
+foreach ($c in $pieges) { $a = New-App $c; $script:Traffic.Apps[$a.Key] = $a }
+$erreur = ''
+try { Test-TrafficAlerts } catch { $erreur = $_.Exception.Message }
+Test-Ok (-not $erreur) "Trafic : la recherche d'alertes s'arrête sur un nom de programme ($erreur)"
+Test-Ok ($script:Bulles.Count -eq $pieges.Count) "Trafic : $($script:Bulles.Count) bulle(s) au lieu de $($pieges.Count)"
+foreach ($b in $script:Bulles) { try { & $b } catch { Test-Ok $false "Trafic : clic sur la bulle en erreur ($($_.Exception.Message))" } }
+Test-Ok ($script:codeexecute -eq 0) "Trafic : du code caché dans un nom de programme a été exécuté au clic ($script:codeexecute)"
+foreach ($c in $pieges) { Test-Ok ($script:Ouverts -ccontains $c.ToLower()) "Trafic : le clic n'ouvre pas le bon programme ($c)" }
+Test-Ok ($script:ActionsNotif.Count -eq 0) "Trafic : $($script:ActionsNotif.Count) donnée(s) de bulle gardée(s) après le clic"
+# Bulles jamais cliquées : 50 gardées au plus
+foreach ($i in 1..60) { [void](New-ActionNotif 'Show-TrafficApp $d' "x$i") }
+Test-Ok ($script:ActionsNotif.Count -eq 50) "Trafic : $($script:ActionsNotif.Count) données de bulles gardées au lieu de 50 au plus"
 $script:Traffic = $null
 
 # ---------------------------------------------------------------------------

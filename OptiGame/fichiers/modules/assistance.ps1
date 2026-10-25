@@ -369,14 +369,27 @@ function Set-AutoStartFromUi([bool]$On) {
     Set-Status $(if ($On) { 'Nevermind se lancera au démarrage du PC, réduit près de l''horloge.' } else { 'Nevermind ne se lancera plus au démarrage du PC.' })
 }
 
+# Ce que fait le clic sur une bulle, pour une donnée (nom de programme, numéro de partie...) : le code ne contient jamais
+# la donnée elle-même, seulement un numéro sûr qui la retrouve dans $script:ActionsNotif. Un nom de fichier avec une
+# apostrophe ou piégé (« a’; commande; ’.exe ») ne peut donc rien exécuter. $Code reçoit la donnée dans $d.
+# Chaque donnée est retirée au clic ; les 50 dernières seulement sont gardées (bulles jamais cliquées).
+function New-ActionNotif([string]$Code, $Donnee) {
+    if (-not $script:ActionsNotif) { $script:ActionsNotif = [ordered]@{} }
+    $guid = [guid]::NewGuid().ToString('N')
+    $script:ActionsNotif[$guid] = $Donnee
+    while ($script:ActionsNotif.Count -gt 50) { $script:ActionsNotif.RemoveAt(0) }
+    [scriptblock]::Create("if (-not `$script:ActionsNotif -or -not `$script:ActionsNotif.Contains('$guid')) { return }; `$d = `$script:ActionsNotif['$guid']; `$script:ActionsNotif.Remove('$guid'); $Code")
+}
+
 function Show-Notify([string]$Title, [string]$Text, [scriptblock]$OnClick) {
     if ($script:Closing) { Write-Log "$Title : $Text"; return }   # l'app se ferme : la bulle disparaîtrait aussitôt
     if ($Managed) {
         # Géré par Mindset : la bulle est montrée par Mindset, sur son icône (notification.demande). Un clic dessus revient
         # ici par afficher.demande (« notif:<numéro> ») pour faire ce qu'elle annonçait (Watch-Requests).
         $id = [guid]::NewGuid().ToString('N').Substring(0, 12)
-        if (-not $script:NotifyActions) { $script:NotifyActions = @{} }
+        if (-not $script:NotifyActions) { $script:NotifyActions = [ordered]@{} }
         if ($OnClick) { $script:NotifyActions[$id] = $OnClick }
+        while ($script:NotifyActions.Count -gt 50) { $script:NotifyActions.RemoveAt(0) }   # (bulles jamais cliquées)
         if (-not $script:NotifyFile) { $script:NotifyFile = New-Object System.Collections.ArrayList }
         [void]$script:NotifyFile.Add(@{ Json = (ConvertTo-Json -InputObject @{ titre = $Title; texte = $Text; id = $id } -Compress); Quand = Get-Date; Titre = $Title })
         Send-NotifySuivante

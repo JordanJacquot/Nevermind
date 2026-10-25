@@ -37,9 +37,14 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\verifier.ps1
           exit $LASTEXITCODE
 
-      - name: "Tests de l'Aide administrateur (mode vérification, rien n'est modifié)"
+      - name: "Tests de l'Aide administrateur (mode vérification, rien n'est modifié ; fermer seulement un programme du compte et de la session)"
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-aide.ps1
+          exit $LASTEXITCODE
+
+      - name: "Aide face à un environnement piégé (faux modules PowerShell, faux dossiers de Windows, canal limité à 64 Ko et 5 s)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-aide-environnement.ps1
           exit $LASTEXITCODE
 
       - name: "Déclarations des corrections (valeurs montrées avant confirmation, faux registre)"

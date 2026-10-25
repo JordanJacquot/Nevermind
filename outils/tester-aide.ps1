@@ -88,9 +88,11 @@ $DiagKey       = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataC
 $DiagPolicyKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection'
 $DnsChoices    = @(@(), @('1.1.1.1', '1.0.0.1'), @('8.8.8.8', '8.8.4.4'), @('9.9.9.9', '149.112.112.112'))
 $notepad = @("$env:windir\notepad.exe", "$env:windir\System32\notepad.exe", "$env:windir\System32\cmd.exe") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-$carte = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' })[0]
+# (la carte qui mène à Internet de préférence : celle qui a une passerelle)
+$avecPasserelle = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | ForEach-Object { [int]$_.ifIndex })
+$carte = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | Sort-Object { $i = [array]::IndexOf($avecPasserelle, [int]$_.ifIndex); if ($i -lt 0) { 999 } else { $i } })[0]
 if (-not $carte) { $carte = @(Get-NetAdapter -ErrorAction SilentlyContinue)[0] }
-function Test-Fichier([string]$Chemin) { Test-Path -LiteralPath $Chemin -PathType Leaf }
+function Test-Fichier([string]$Chemin) { try { Test-Path -LiteralPath $Chemin -PathType Leaf -ErrorAction Stop } catch { $false } }
 
 # ---------------------------------------------------------------------------
 # 3. Demandes acceptées : toutes celles que Nevermind fait vraiment
@@ -150,9 +152,14 @@ $acceptees = @(
 # Chaque catégorie du nettoyage
 foreach ($id in 'wintemp', 'wu', 'do', 'wer', 'dump') { $acceptees += , @('nettoyage.lancer', @{ Id = $id }); $acceptees += , @('nettoyage.lister', @{ Id = $id }) }
 # DNS : sur une vraie carte réseau du PC (lue seulement)
+# (ceux de la box : seulement la passerelle de cette carte ou les DNS que la box donne, lus sur ce PC)
+$dnsLocaux = @()
 if ($carte) {
     foreach ($choix in $DnsChoices) { $acceptees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @($choix) }) }
-    $acceptees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('192.168.1.254') })
+    $locaux = Get-AideDnsLocaux $carte
+    $dnsLocaux = @($locaux | Where-Object { Test-AideAdresseLocale $_ })
+    foreach ($ip in $dnsLocaux) { $acceptees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @($ip) }) }
+    if (-not $dnsLocaux.Count) { Write-Host 'Info : aucune box (passerelle ou DNS donné par DHCP en adresse privée) sur la carte de ce PC : DNS de la box non essayé.' }
 }
 
 # ---------------------------------------------------------------------------
@@ -262,6 +269,34 @@ $refusees = @(
 # Selon ce qui existe sur ce PC (lu seulement)
 if ($carte) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('6.6.6.6') }) }
 if ($carte) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('1.1.1.1', '6.6.6.6') }) }
+# Une adresse privée qui n'est ni la box ni un DNS donné par elle : un faux DNS posé sur le réseau local (constat 12)
+if ($carte) {
+    foreach ($ip in '10.254.254.253', '192.168.1.254', '172.31.254.254', 'fd12:3456::53', 'fe80::dead:beef') {
+        if ((ConvertTo-AideIp $ip) -notin $dnsLocaux) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @($ip) }) }
+    }
+    if ($dnsLocaux.Count) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @($dnsLocaux[0], '10.254.254.253') }) }
+}
+# Les antivirus inscrits au Centre de sécurité de Windows (lus sur ce PC ; aucun sur les Windows Server de la CI)
+$ctxTest = Get-AideContexte
+$nbAntivirus = 0
+foreach ($av in $ctxTest.Antivirus) {
+    if (-not (Test-Fichier $av)) { continue }
+    $nbAntivirus++
+    $refusees += , @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = $av })
+    if (-not $av.StartsWith("$env:windir\", [StringComparison]::OrdinalIgnoreCase)) { $refusees += , @('processus.fermer', @{ Chemin = $av }) }
+    # (un autre programme du même dossier : le moteur, l'interface...)
+    $voisin = @(Get-ChildItem -LiteralPath (Split-Path $av) -Filter *.exe -ErrorAction SilentlyContinue | Where-Object { $_.FullName -ne $av } | Select-Object -First 1)
+    if ($voisin -and -not $av.StartsWith("$env:windir\", [StringComparison]::OrdinalIgnoreCase)) { $refusees += , @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = $voisin[0].FullName }) }
+}
+# Les services (leur programme) : jamais fermés ni bloqués en entier. Hors du dossier de Windows pour « fermer » (le
+# dossier de Windows est déjà refusé), dans Windows pour « bloquer » (permis pour les autres programmes de Windows).
+$exeServices = @($ctxTest.ServicesExe | Where-Object { (Test-Fichier $_) -and [IO.Path]::GetFileName($_) -notmatch $AideExesProteges })
+$horsWindows = @($exeServices | Where-Object { -not $_.StartsWith("$env:windir\", [StringComparison]::OrdinalIgnoreCase) -and -not (Test-AideAntivirus $ctxTest $_) } | Select-Object -First 3)
+$dansWindows = @($exeServices | Where-Object { $_.StartsWith("$env:windir\", [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 3)
+foreach ($s in $horsWindows) { $refusees += , @('processus.fermer', @{ Chemin = $s }); $refusees += , @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = $s }) }
+foreach ($s in $dansWindows) { $refusees += , @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = $s }) }
+Write-Host "Info : $nbAntivirus programme(s) d'antivirus inscrit(s), $($horsWindows.Count) + $($dansWindows.Count) programme(s) de service essayés."
+if (-not $dansWindows.Count) { $echecs.Add('Services : aucun programme de service trouvé dans le dossier de Windows (Win32_Service illisible ?)') }
 foreach ($p in "$env:ProgramFiles\Windows Defender\MpCmdRun.exe", "$env:ProgramFiles\Windows Defender\MsMpEng.exe", "$env:ProgramFiles\Windows Defender\ConfigSecurityPolicy.exe") {
     if (Test-Fichier $p) {
         $refusees += , @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = $p })
@@ -359,6 +394,105 @@ $nbTests++
 if (([regex]::Matches($codeAide, 'Test-AideClient\b')).Count -lt 2) { $echecs.Add('NevermindAide.ps1 : Test-AideClient n''est plus utilisé pour les connexions et pour savoir si Nevermind est ouvert') }
 $nbTests++
 if ($codeAide -match 'Get-Process\s+-Name|GetProcessesByName|-ne \$Exe\b') { $echecs.Add('NevermindAide.ps1 : un programme y est cherché par son nom') }
+
+# ---------------------------------------------------------------------------
+# 8. Fermer un programme (constat 12) : seulement un programme du compte et de la session de celui qui demande (Nevermind),
+#    jamais un service, un processus protégé (antivirus) ni le programme d'un autre compte. Essayé sur un programme de
+#    ce test seulement (une copie de ping.exe qui attend), sans droits ; les processus de Windows sont seulement lus.
+# ---------------------------------------------------------------------------
+$tmpFermer = Join-Path $env:TEMP "nevermind-test-aide-$PID"
+$essai = $null
+try {
+    [void][IO.Directory]::CreateDirectory($tmpFermer)
+    $exeEssai = Join-Path $tmpFermer 'nm-essai-fermer.exe'
+    [IO.File]::Copy((Join-Path $env:windir 'System32\PING.EXE'), $exeEssai, $true)
+    $exeEssai = (Get-Item -LiteralPath $exeEssai).FullName   # (chemin long, celui que Windows donne)
+    $psi = New-Object Diagnostics.ProcessStartInfo($exeEssai, '-n 60 127.0.0.1')
+    $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.RedirectStandardOutput = $true
+    $essai = [Diagnostics.Process]::Start($psi)
+    Start-Sleep -Milliseconds 300
+    $ctxP = Get-AideContexte
+    $nbTests++
+    $r = Get-AideRefusProcessus $ctxP $PID $essai.Id $exeEssai
+    if ($r) { $echecs.Add("Fermer : un programme de l'utilisateur, dans sa session, est refusé ($r)") }
+    # Un service : jamais
+    $pidService = @($ctxP.ServicesPid | Where-Object { $_ -gt 4 } | Select-Object -First 1)[0]
+    $nbTests++
+    if (-not $pidService) { $echecs.Add('Fermer : aucun service en cours trouvé (Win32_Service illisible ?)') }
+    elseif (-not (Get-AideRefusProcessus $ctxP $PID $pidService '')) { $echecs.Add("Fermer : un service (processus $pidService) peut être fermé") }
+    # Des processus de Windows d'une autre session ou d'un autre compte (csrss, wininit, smss...) : jamais
+    foreach ($n in 'csrss', 'wininit', 'smss', 'lsass', 'MsMpEng') {
+        foreach ($pr in @(Get-Process -Name $n -ErrorAction SilentlyContinue)) {
+            $nbTests++
+            if (-not (Get-AideRefusProcessus $ctxP $PID $pr.Id '')) { $echecs.Add("Fermer : $n (processus $($pr.Id)) peut être fermé") }
+            $pr.Dispose()
+        }
+    }
+    # Le niveau de protection est bien lu : ce programme-ci n'est pas protégé, csrss l'est (lisible en administrateur)
+    $nbTests++
+    if ([AideProcessus]::Protection($essai.Id) -ne 0) { $echecs.Add('Fermer : un programme ordinaire est vu comme protégé') }
+    $csrss = @(Get-Process -Name csrss -ErrorAction SilentlyContinue)[0]
+    if ($csrss) { Write-Host "Info : protection de csrss lue : $([AideProcessus]::Protection($csrss.Id)) (1 protégé, -1 illisible sans droits)" }
+    # Demandé au nom d'un programme d'une autre session (un service) : rien n'est fermé
+    $nbTests++
+    $n = Invoke-AideAction 'processus.fermer' @{ Chemin = $exeEssai } -Client $pidService
+    if ($n -ne 0 -or $essai.HasExited) { $echecs.Add("Fermer : un programme a été fermé à la demande d'un autre compte ou d'une autre session ($n)") }
+    # Sans client connu : refusé
+    $nbTests++
+    $message = $null
+    try { [void](Invoke-AideAction 'processus.fermer' @{ Chemin = $exeEssai }) } catch { $message = $_.Exception.Message }
+    if ($message -notmatch 'Demande refusée') { $echecs.Add('Fermer : accepté sans savoir qui le demande') }
+    # Demandé par ce test (même compte, même session) : fermé
+    $nbTests++
+    $n = Invoke-AideAction 'processus.fermer' @{ Chemin = $exeEssai } -Client $PID
+    if ($n -ne 1 -or -not $essai.WaitForExit(5000)) { $echecs.Add("Fermer : le programme du test n'a pas été fermé ($n)") }
+} catch { $echecs.Add("Fermer : $($_.Exception.Message)") }
+finally {
+    if ($essai) { try { if (-not $essai.HasExited) { $essai.Kill() } } catch {}; $essai.Dispose() }
+    Start-Sleep -Milliseconds 200
+    try { [IO.Directory]::Delete($tmpFermer, $true) } catch {}
+}
+
+# ---------------------------------------------------------------------------
+# 9. Aucun dossier de Windows lu dans les variables d'environnement (constat 1) : l'Aide les prend chez Windows
+# ---------------------------------------------------------------------------
+$codeActions = [IO.File]::ReadAllText($actions, [Text.Encoding]::UTF8)
+$nbTests++
+$lignesEnv = @($codeActions -split "`n" | Where-Object { $_ -notmatch '^\s*#' -and $_ -match '\$env:|\$\{env:' })
+if ($lignesEnv.Count) { $echecs.Add("aide-actions.ps1 lit encore des variables d'environnement : $($lignesEnv[0].Trim())") }
+# Modules : l'Aide coupe leur chargement automatique. Toute commande d'un module autre que ceux de base doit être
+# précédée, dans sa fonction ou sa demande, d'un Import-AideModule de ce module (sinon : commande introuvable chez
+# l'utilisateur seulement, en administrateur).
+$base = 'Microsoft.PowerShell.Core', 'Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Security', 'CimCmdlets'
+$astAide = [System.Management.Automation.Language.Parser]::ParseInput($codeAide, [ref]$null, [ref]$null)
+$fonctionsAide = @(foreach ($a in $ast, $astAide) { $a.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | ForEach-Object { $_.Name } })
+$appels = @(foreach ($a in @(@('aide-actions.ps1', $ast), @('NevermindAide.ps1', $astAide))) {
+    foreach ($cmd in $a[1].FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+        $nom = $cmd.GetCommandName()
+        if ($nom -and $nom -notin $fonctionsAide) { , @($a[0], $cmd, $nom) }
+    }
+})
+# (le module de chaque commande, demandé à un PowerShell propre : ce test remplace certaines commandes par des pièges)
+$propre = [PowerShell]::Create()
+[void]$propre.AddScript('param($Noms) $r = @{}; foreach ($n in $Noms) { $c = Get-Command -Name $n -ErrorAction SilentlyContinue; if ($c) { $r[$n] = [string]$c.ModuleName } }; $r').AddArgument([string[]]@($appels | ForEach-Object { $_[2] } | Select-Object -Unique))
+$modulesDe = @($propre.Invoke())[0]; $propre.Dispose()
+foreach ($a in $appels) {
+    $fichier, $cmd, $nom = $a
+    $nbTests++
+    $module = $modulesDe[$nom]
+    if (-not $module) { $echecs.Add("$fichier : commande « $nom » introuvable dans les modules de Windows"); continue }
+    if ($module -in $base) { continue }
+    if ($fichier -eq 'NevermindAide.ps1') { $echecs.Add("NevermindAide.ps1 : « $nom » (module $module) n'est pas chargé au démarrage de l'Aide"); continue }
+    $p = $cmd.Parent
+    while ($p -and -not ($p -is [System.Management.Automation.Language.FunctionDefinitionAst]) -and -not ($p -is [System.Management.Automation.Language.StatementBlockAst] -and $p.Parent -is [System.Management.Automation.Language.SwitchStatementAst])) { $p = $p.Parent }
+    $imports = if ($p) { @($p.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Import-AideModule' }, $true)) } else { @() }
+    $charges = @($imports | ForEach-Object { $_.CommandElements | Select-Object -Skip 1 | ForEach-Object { $_.Extent.Text -split '\s*[,/]\s*' } })
+    if ($charges -notcontains $module) { $echecs.Add("aide-actions.ps1 ligne $($cmd.Extent.StartLineNumber) : « $nom » (module $module) sans Import-AideModule $module avant") }
+}
+$nbTests++
+if ($codeAide -notmatch "(?m)^\`$PSModuleAutoLoadingPreference = 'None'" -or $codeAide -notmatch "\`$env:PSModulePath = \`$AideDossierPS") { $echecs.Add('NevermindAide.ps1 : le chargement automatique des modules n''est plus coupé') }
+$nbTests++
+if ($AideWindows -ne [Environment]::GetFolderPath('Windows') -or $AideNettoyage['wintemp'][0] -ne (Join-Path ([Environment]::GetFolderPath('Windows')) 'Temp')) { $echecs.Add('aide-actions.ps1 : dossiers de Windows mal lus') }
 
 # ---------------------------------------------------------------------------
 # Résultat

@@ -420,8 +420,9 @@ function Stop-LagSession {
     Save-LagSessions
     Write-Log "Lag: $($s.Game), $([int]($dur / 60)) min, $($rec.Diag.Title)$(if ($rec.Server -and $rec.Server.Pays) { ", serveur $(if (Test-LagConnexionOnly $rec) { 'de connexion ' })situé à $(Format-ServerPlace $rec.Server)" })"
     Request-LagPanel
-    # (pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind, « Show-Page » introuvable au clic)
-    $open = [scriptblock]::Create("Show-PerfPage 'lag'; Show-LagSession '$([string]$obj.Id -replace "'", "''")'")
+    # (pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind, « Show-Page » introuvable au clic ; le numéro
+    # de la session n'entre jamais dans le code : New-ActionNotif)
+    $open = New-ActionNotif 'Show-PerfPage ''lag''; Show-LagSession $d' ([string]$obj.Id)
     if ($rec.Quick) { if (-not $script:TestRunning) { Show-LagSession $obj.Id } }
     else { Show-Notify "Connexion pendant $($s.Game)" "$($rec.Diag.Title). Clique pour voir le détail." $open }
 }

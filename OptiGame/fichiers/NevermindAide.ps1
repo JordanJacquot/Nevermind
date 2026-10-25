@@ -14,6 +14,31 @@
     NevermindAide.ps1 -Parent <pid>  (tests) : reste ouverte tant que ce processus vit, au lieu de chercher Nevermind.
 #>
 param([int]$Parent)
+# Avant toute commande : les modules de PowerShell ne viennent que du dossier de Windows, chargés par leur chemin complet.
+# La tâche planifiée donne à l'Aide les variables de l'utilisateur (PSModulePath compris) : sans ça, un programme sans
+# droits pourrait glisser un faux module « ScheduledTasks » ou « NetAdapter » que l'Aide chargerait en administrateur.
+# NevermindAide.exe remet aussi ces variables avant d'ouvrir PowerShell (outils\lanceur.cs) ; ceci couvre le reste
+# (tests lancés par powershell.exe). Les dossiers de Windows sont lus par [Environment]::GetFolderPath, jamais dans $env:.
+# (certains modules de Windows, comme Storage, chargent leurs fichiers depuis $env:windir : les variables des dossiers de
+# Windows sont donc remises elles aussi, avant le premier module)
+$AideDossierPS = [IO.Path]::Combine([Environment]::GetFolderPath('System'), 'WindowsPowerShell\v1.0\Modules')
+$env:windir = [Environment]::GetFolderPath('Windows')
+$env:SystemRoot = $env:windir
+$env:ProgramFiles = [Environment]::GetFolderPath('ProgramFiles')
+$env:ProgramW6432 = $env:ProgramFiles
+${env:ProgramFiles(x86)} = [Environment]::GetFolderPath('ProgramFilesX86')
+$env:ProgramData = [Environment]::GetFolderPath('CommonApplicationData')
+$env:ALLUSERSPROFILE = $env:ProgramData
+$env:PSModulePath = $AideDossierPS
+$PSModuleAutoLoadingPreference = 'None'
+# Les modules de base, tout de suite ; les modules lourds (réseau, pare-feu, disques...) seulement quand une demande s'en
+# sert, toujours par leur chemin complet (Import-AideModule, modules\aide-actions.ps1)
+$AideModulesWindows = [Collections.Generic.List[string]]::new()
+foreach ($m in 'Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Security', 'CimCmdlets') {
+    $c = [IO.Path]::Combine($AideDossierPS, $m)
+    Import-Module -Name $c -Global -ErrorAction Stop
+    $AideModulesWindows.Add($c)
+}
 $ErrorActionPreference = 'Stop'
 $AppDir = $PSScriptRoot
 $Racine = Split-Path $AppDir -Parent
@@ -199,9 +224,24 @@ $Traitement = {
     $resume = ''
     try {
         $enc = New-Object Text.UTF8Encoding($false)
-        $lecteur = New-Object IO.StreamReader($t, $enc, $false, 65536, $true)
         $ecrivain = New-Object IO.StreamWriter($t, $enc, 65536, $true)
-        $ligne = $lecteur.ReadLine()
+        # La demande : une ligne de 64 Ko au plus, arrivée en 5 s au plus. Sinon la connexion est coupée (un client muet
+        # ou bavard ne bloque plus un fil de l'Aide et ne lui fait pas garder des mégaoctets en mémoire).
+        $tampon = New-Object byte[] 65536; $lu = 0; $fin = -1
+        $limite = [DateTime]::UtcNow.AddSeconds(5)
+        while ($fin -lt 0) {
+            if ($lu -ge $tampon.Length) { throw 'demande trop longue (plus de 64 Ko), connexion coupée' }
+            $reste = [int][math]::Ceiling(($limite - [DateTime]::UtcNow).TotalMilliseconds)
+            if ($reste -le 0) { throw 'demande trop lente (plus de 5 s), connexion coupée' }
+            $lecture = $t.ReadAsync($tampon, $lu, $tampon.Length - $lu)
+            if (-not $lecture.Wait($reste)) { throw 'demande trop lente (plus de 5 s), connexion coupée' }
+            $n = $lecture.Result
+            if ($n -le 0) { break }
+            $i = [Array]::IndexOf($tampon, [byte]10, $lu, $n)
+            $lu += $n
+            if ($i -ge 0) { $fin = $i }
+        }
+        $ligne = $enc.GetString($tampon, 0, $(if ($fin -ge 0) { $fin } else { $lu })).TrimEnd("`r")
         if ($ligne) {
             $action = ''
             try {
@@ -209,7 +249,7 @@ $Traitement = {
                 $action = [string]$d.a
                 # Le journal de l'Aide (« Signaler un problème » de Nevermind), sans compter cette demande-ci ; il est gardé
                 if ($action -eq 'aide.journal') { $r = @($c.Lignes.ToArray()) }
-                else { $r = Invoke-AideAction $action $d.p }
+                else { $r = Invoke-AideAction $action $d.p -Client $c.Client }
                 $rep = @{ ok = $true; r = $r }
                 $resume = if ($action -ne 'aide.journal') { "$action : fait" }
             } catch {
@@ -225,7 +265,12 @@ $Traitement = {
     if ($resume) { [void]$c.Lignes.Add("$(Get-Date -Format s) $resume"); while ($c.Lignes.Count -gt 200) { $c.Lignes.RemoveAt(0) } }
 }
 
-$pool = [RunspaceFactory]::CreateRunspacePool(1, 6)
+# Les fils qui traitent les demandes : mêmes modules (chemin complet), et aucun chargement automatique non plus
+$issFils = [Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+$issFils.ExecutionPolicy = 'Bypass'
+$issFils.ImportPSModule([string[]]$AideModulesWindows.ToArray())
+$issFils.Variables.Add((New-Object Management.Automation.Runspaces.SessionStateVariableEntry('PSModuleAutoLoadingPreference', 'None', '')))
+$pool = [RunspaceFactory]::CreateRunspacePool(1, 6, $issFils, $Host)
 $pool.Open()
 $enCours = New-Object System.Collections.ArrayList
 
@@ -288,7 +333,7 @@ try {
         $seul = Get-Date
         $ps = [PowerShell]::Create()
         $ps.RunspacePool = $pool
-        [void]$ps.AddScript($Traitement.ToString()).AddArgument(@{ Tuyau = $connecte; Actions = $FichierActions; Lignes = $Lignes })
+        [void]$ps.AddScript($Traitement.ToString()).AddArgument(@{ Tuyau = $connecte; Actions = $FichierActions; Lignes = $Lignes; Client = $client })
         [void]$enCours.Add(@{ PS = $ps; H = $ps.BeginInvoke() })
     }
 } catch {

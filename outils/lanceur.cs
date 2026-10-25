@@ -115,6 +115,7 @@ static class Lanceur
             try
             {
                 Directory.SetCurrentDirectory(Environment.GetFolderPath(Environment.SpecialFolder.System));
+                EnvironnementAide();
                 InitialSessionState issAide = InitialSessionState.CreateDefault();
                 issAide.ExecutionPolicy = Microsoft.PowerShell.ExecutionPolicy.Bypass;
                 using (Runspace rsAide = RunspaceFactory.CreateRunspace(issAide))
@@ -198,6 +199,33 @@ static class Lanceur
 #endif
 #endif
     }
+
+#if AIDE
+    // L'Aide tourne en administrateur, mais la tâche planifiée lui donne les variables d'environnement de l'utilisateur,
+    // qu'un programme sans droits peut changer (HKCU\Environment). Avant d'ouvrir le moteur PowerShell, les dossiers de
+    // Windows sont remis tels que Windows les donne (pas lus dans ces variables), et les modules de PowerShell ne sont
+    // cherchés que dans le dossier de Windows : un faux module posé dans Documents ou ailleurs n'est jamais chargé.
+    // (LocalApplicationData et Documents ne sont pas repris ici : même lus par GetFolderPath, l'utilisateur peut les
+    // déplacer. L'Aide ne s'en sert pas.)
+    static void EnvironnementAide()
+    {
+        string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        string systeme = Environment.GetFolderPath(Environment.SpecialFolder.System);
+        string programmes = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        string programmesX86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        string communes = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        if (string.IsNullOrEmpty(windows) || string.IsNullOrEmpty(systeme) || string.IsNullOrEmpty(programmes) || string.IsNullOrEmpty(communes))
+            throw new InvalidOperationException("dossiers de Windows introuvables");
+        Environment.SetEnvironmentVariable("windir", windows);
+        Environment.SetEnvironmentVariable("SystemRoot", windows);
+        Environment.SetEnvironmentVariable("ProgramFiles", programmes);
+        Environment.SetEnvironmentVariable("ProgramW6432", programmes);
+        Environment.SetEnvironmentVariable("ProgramFiles(x86)", string.IsNullOrEmpty(programmesX86) ? programmes : programmesX86);
+        Environment.SetEnvironmentVariable("ProgramData", communes);
+        Environment.SetEnvironmentVariable("ALLUSERSPROFILE", communes);
+        Environment.SetEnvironmentVariable("PSModulePath", Path.Combine(systeme, @"WindowsPowerShell\v1.0\Modules"));
+    }
+#endif
 
     // Les arguments reçus, remis en une ligne de commande (guillemets et barres obliques inverses selon la règle de Windows)
     static string Arguments(string[] args)

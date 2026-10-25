@@ -1903,7 +1903,9 @@ public static class ProprietesFenetre
             $carte = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' })[0]
             if ($carte) {
                 foreach ($choix in $DnsChoices) { $acceptees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @($choix) }) }
-                $acceptees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('192.168.1.254') })
+                # (ceux de la box : seulement la passerelle de cette carte ou les DNS que la box donne)
+                $locaux = Get-AideDnsLocaux $carte
+                foreach ($ip in @($locaux | Where-Object { Test-AideAdresseLocale $_ })) { $acceptees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @($ip) }) }
             }
             # Chaque catégorie du nettoyage confiée à l'Aide existe dans sa liste à elle
             foreach ($c in @($CleanTargets | Where-Object { $_.Aide })) { $acceptees += , @('nettoyage.lancer', @{ Id = $c.Id }) }
@@ -1939,6 +1941,7 @@ public static class ProprietesFenetre
                 @('inconnue', @{})
             )
             if ($carte) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('6.6.6.6') }) }
+            if ($carte -and '10.254.254.253' -notin $locaux) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('10.254.254.253') }) }
             foreach ($a in $acceptees) {
                 try { [void](Invoke-AideAction $a[0] $a[1] -Verifier) } catch { throw "refusé à tort : $($a[0]) $(ConvertTo-Json $a[1] -Compress) ($($_.Exception.Message))" }
             }

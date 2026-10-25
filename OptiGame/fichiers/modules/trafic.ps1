@@ -352,8 +352,9 @@ function Test-TrafficAlerts {
         if ($al.Level -eq 'info' -or $st.Notified.ContainsKey($al.App.Key)) { continue }
         $st.Notified[$al.App.Key] = $true
         Write-Log "Trafic anormal: $($al.App.Name) ($($al.App.Path)) : $($al.Why -join ' ; ')"
-        # (pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind, « Show-Page » introuvable au clic)
-        $open = [scriptblock]::Create("Show-Page `$TrafficIndex; Show-TrafficApp '$([string]$al.App.Key -replace "'", "''")'")
+        # (pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind, « Show-Page » introuvable au clic ; la clé,
+        # tirée du chemin du programme, n'entre jamais dans le code : New-ActionNotif)
+        $open = New-ActionNotif 'Show-Page $TrafficIndex; Show-TrafficApp $d' ([string]$al.App.Key)
         Show-Notify "Activité réseau à vérifier : $($al.App.Title)" "$($al.Why[0]). Clique pour voir." $open
     }
 }

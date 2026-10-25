@@ -661,8 +661,9 @@ function Complete-FpsTarget($t, $Tache) {
     try { $diag = Get-FpsDiagData $t $busy } catch { Write-Log "Diagnostic FPS: $_" }
     $saved = Save-FpsSession $t $s $diag
     Build-FpsPanel
-    # (pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind, « Show-Page » introuvable au clic)
-    $open = [scriptblock]::Create("Show-PerfPage 'fps'; Show-FpsSession '$([string]$saved.Id -replace "'", "''")'")
+    # (pas de GetNewClosure : le bloc perdrait les fonctions de Nevermind, « Show-Page » introuvable au clic ; le numéro
+    # de la partie n'entre jamais dans le code : New-ActionNotif)
+    $open = New-ActionNotif 'Show-PerfPage ''fps''; Show-FpsSession $d' ([string]$saved.Id)
     if ($saved -and (Test-FpsProblem $saved)) {
         Show-Notify "Partie terminée : $($t.Name)" ('{0:N0} FPS en moyenne, avec des chutes. Nevermind a regardé d''où ça vient : clique ici pour voir et corriger.' -f $s[0]) $open
     } else {
