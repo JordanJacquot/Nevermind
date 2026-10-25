@@ -47,6 +47,11 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-aide-environnement.ps1
           exit $LASTEXITCODE
 
+      - name: "Aide en SYSTEM (seulement la tâche SYSTEM de l'utilisateur, sinon la demande de Windows ; canal, aide-temp, aucune fenêtre ; résultat inconnu si Defender n'est pas lu)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils	ester-aide-systeme.ps1
+          exit $LASTEXITCODE
+
       - name: "Déclarations des corrections (valeurs montrées avant confirmation, faux registre)"
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-declarations.ps1

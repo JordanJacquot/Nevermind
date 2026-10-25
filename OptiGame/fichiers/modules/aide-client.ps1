@@ -3,31 +3,83 @@
 #
 # L'Aide (NevermindAide.ps1) est lancée par la tâche planifiée « \Mindset\Nevermind (aide) », que Mindset crée quand il
 # installe Nevermind : pas de demande de Windows. Elle ne fait que ce qui est dans aide-actions.ps1.
+# Cette tâche tourne en SYSTEM, pour l'utilisateur inscrit dans ses arguments (-Sid) : Nevermind ne s'en sert que si
+# c'est bien elle (Get-AideEtatTache). Sinon, ou si elle ne répond pas, une action demandée par l'utilisateur passe par
+# la demande normale de Windows (il clique « Oui »), JAMAIS par l'ancienne tâche « avec les droits les plus élevés »
+# (jusqu'à Nevermind 1.10.0), qui reprenait l'environnement de l'utilisateur : Mindset la remplace.
 # Tant que Nevermind tourne lui-même en administrateur, il fait la demande lui-même (même liste stricte) quand l'Aide ne
 # répond pas : une installation dont la tâche manque continue de marcher.
 
 $AideTache = '\Mindset\Nevermind (aide)'
 $AideFichierActions = Join-Path $ModulesDir 'aide-actions.ps1'
+$AideExe = Join-Path (Get-AppRoot) 'NevermindAide.exe'
+$AideSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $script:EstAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 # Seule l'Aide de cette copie de Nevermind est écoutée (vérifié par AideClient à chaque échange)
-[AideClient]::ExeAttendu = Join-Path (Get-AppRoot) 'NevermindAide.exe'
+[AideClient]::ExeAttendu = $AideExe
 [AideClient]::Suffixe = Get-AideSuffixe (Get-AppRoot)
-# La copie de test ne réveille jamais la vraie Aide (celle de la copie installée)
-if ($env:OPTIGAME_TEST) { $script:AideSansTache = $true }
+# La copie de test ne réveille jamais la vraie Aide (celle de la copie installée), et ne fait aucune demande de Windows
+if ($env:OPTIGAME_TEST) { $script:AideSansTache = $true; $script:AideSansDemande = $true }
+# Demande de Windows refusée : pas de nouvelle demande avant 10 minutes. Attentes (en secondes) de l'Aide lancée par sa
+# tâche, puis par la demande de Windows (une fois « Oui » cliqué).
+$AideDelaiRefus = 600
+$AideAttenteTache = 20
+$AideAttenteWindows = 30
+$AideSchtasks = Join-Path ([Environment]::GetFolderPath('System')) 'schtasks.exe'
+$script:AideRefus = $null
 
-# En arrière plan : réveille l'Aide si besoin (sa tâche planifiée), envoie la demande, rapporte la réponse.
-# Sans réponse et avec les droits administrateur, Nevermind fait la demande lui-même.
+# La tâche de l'Aide, telle que Windows la décrit (XML de schtasks /Query, que l'utilisateur a le droit de lire) :
+#   'systeme'  la bonne : en SYSTEM, NevermindAide.exe de ce dossier, pour cet utilisateur (-Sid), active ;
+#   'autre'    une tâche à ce nom, mais pas celle-là (l'ancienne « droits les plus élevés », une tâche désactivée...) ;
+#   ''         pas de tâche (ou illisible pour cet utilisateur).
+function Get-AideEtatTache([string]$Xml, [string]$Exe, [string]$Sid) {
+    if (-not $Xml) { return '' }
+    $x = $null
+    try { $x = [xml]$Xml } catch { return 'autre' }
+    $compte = [string]$x.Task.Principals.Principal.UserId
+    if ($compte -and $compte -notmatch '^S-1-') { try { $compte = (New-Object Security.Principal.NTAccount($compte)).Translate([Security.Principal.SecurityIdentifier]).Value } catch { $compte = '' } }
+    $actions = @($x.Task.Actions.Exec)
+    $active = [string]$x.Task.Settings.Enabled -ne 'false'
+    if ($compte -eq 'S-1-5-18' -and $active -and $actions.Count -eq 1 -and ([string]$actions[0].Command).Trim('"') -ieq $Exe -and
+        ([string]$actions[0].Arguments).Trim() -ceq "-Sid $Sid") { return 'systeme' }
+    'autre'
+}
+function Read-AideTache([string]$Tache, [string]$Schtasks) {
+    try {
+        $t = @(& $Schtasks /Query /TN $Tache /XML 2>$null)
+        if ($LASTEXITCODE -ne 0 -or -not $t.Count) { return '' }
+        $t -join "`n"
+    } catch { '' }
+}
+
+# En arrière plan : réveille l'Aide si besoin (sa tâche SYSTEM, sinon la demande de Windows si elle est permise), envoie
+# la demande, rapporte la réponse. Sans réponse et avec les droits administrateur, Nevermind fait la demande lui-même.
 $AideTravail = {
     param($x)
-    $rep = $null; $voie = ''; $erreur = ''
+    $rep = $null; $voie = ''; $erreur = ''; $etat = $null; $refus = $false
     try {
         if ($x.SurPlace) { throw 'désinstallation' }
         if (-not [AideClient]::Joignable(200) -and $x.Lancer) {
-            $null = & "$env:SystemRoot\System32\schtasks.exe" /Run /TN $x.Tache 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                $fin = (Get-Date).AddSeconds(20)
+            . ([scriptblock]::Create($x.Fonctions))
+            $etat = Get-AideEtatTache (Read-AideTache $x.Tache $x.Schtasks) $x.Exe $x.Sid
+            if ($etat -eq 'systeme') {
+                $null = & $x.Schtasks /Run /TN $x.Tache 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    $fin = (Get-Date).AddSeconds($x.AttenteTache)
+                    while ((Get-Date) -lt $fin -and -not [AideClient]::Joignable(200)) { Start-Sleep -Milliseconds 150 }
+                    if (-not [AideClient]::Joignable(1)) { $erreur = 'la tâche de l''Aide ne répond pas' }
+                } else { $erreur = 'la tâche de l''Aide n''a pas démarré' }
+            } elseif ($etat -eq 'autre') { $erreur = 'ancienne tâche de l''Aide (Mindset la remplacera)' }
+            else { $erreur = 'pas de tâche pour l''Aide' }
+        }
+        # Repli : la demande normale de Windows (l'utilisateur clique « Oui »), jamais une autre tâche
+        if (-not [AideClient]::Joignable(1) -and $x.Demander) {
+            try {
+                Start-Process -FilePath $x.Exe -ArgumentList '-Sid', $x.Sid -Verb RunAs -WorkingDirectory ([Environment]::GetFolderPath('System')) -ErrorAction Stop | Out-Null
+                $fin = (Get-Date).AddSeconds($x.AttenteWindows)
                 while ((Get-Date) -lt $fin -and -not [AideClient]::Joignable(200)) { Start-Sleep -Milliseconds 150 }
-            } else { $erreur = 'pas de tâche pour l''Aide' }
+                if (-not [AideClient]::Joignable(1)) { $erreur = 'l''Aide lancée par la demande de Windows ne répond pas' }
+            } catch { $refus = $true; $erreur = 'demande de Windows refusée' }
         }
         if ([AideClient]::Joignable(200)) { $rep = [AideClient]::Appeler($x.Demande, 3000, $x.Delai); $voie = 'aide' }
         elseif (-not $erreur) { $erreur = 'l''Aide ne répond pas' }
@@ -43,27 +95,35 @@ $AideTravail = {
             $rep = ConvertTo-Json -InputObject @{ ok = $true; r = $r } -Depth 8 -Compress
         } catch { $rep = ConvertTo-Json -InputObject @{ ok = $false; e = $_.Exception.Message } -Compress }
     }
-    @{ Reponse = $rep; Voie = $voie; Erreur = $erreur }
+    @{ Reponse = $rep; Voie = $voie; Erreur = $erreur; Etat = $etat; Refus = $refus }
 }
 
 # Fait faire une action de la liste de l'Aide et renvoie son résultat. Une demande refusée ou ratée lève une erreur
 # avec le message de l'Aide, comme le faisait la commande de Windows avant.
-function Invoke-Aide([string]$Action, $Parametres = @{}, [int]$Delai = 120000) {
+# -SansDemande : jamais de demande de Windows (lectures et mesures en fond : seulement l'Aide déjà lancée ou sa tâche)
+function Invoke-Aide([string]$Action, $Parametres = @{}, [int]$Delai = 120000, [switch]$SansDemande) {
+    $demander = -not $SansDemande -and -not $script:AideSansDemande -and -not $script:EstAdmin -and
+                -not ($script:AideRefus -and ((Get-Date) - $script:AideRefus).TotalSeconds -lt $AideDelaiRefus)
     $x = @{
         Demande = (ConvertTo-Json -InputObject @{ a = $Action; p = $Parametres } -Depth 8 -Compress)
         Tache = $AideTache; Lancer = -not $script:AideSansTache; Admin = $script:EstAdmin; Actions = $AideFichierActions; Delai = $Delai
+        Exe = $AideExe; Sid = $AideSid; Demander = $demander; Schtasks = $AideSchtasks; AttenteTache = $AideAttenteTache; AttenteWindows = $AideAttenteWindows
+        Fonctions = "function Get-AideEtatTache {${function:Get-AideEtatTache}}`nfunction Read-AideTache {${function:Read-AideTache}}"
         SurPlace = -not (Get-Command Wait-Handle -ErrorAction SilentlyContinue)
     }
     # Pendant la désinstallation (en administrateur, sans fenêtre ni Invoke-Async), Nevermind fait tout lui-même sur place :
     # réveiller l'Aide la laisserait tenir NevermindAide.exe, qu'il faut supprimer
     $o = if (-not $x.SurPlace) { Invoke-Async $AideTravail $x | Select-Object -First 1 } else { & $AideTravail $x }
-    if ($o.Erreur -like 'pas de tâche*') { $script:AideSansTache = $true }
+    # (tâche absente ou pas la bonne : plus de schtasks jusqu'au prochain lancement de Nevermind ; la demande de Windows reste)
+    if ($o.Etat -in '', 'autre' -and $null -ne $o.Etat) { $script:AideSansTache = $true }
+    if ($o.Refus) { $script:AideRefus = Get-Date }
     if ($o.Voie -ne $script:AideVoie) {
         $script:AideVoie = $o.Voie
-        Write-Log "Aide : $(switch ($o.Voie) { 'aide' { 'les actions administrateur passent par l''Aide' } 'local' { "Nevermind fait lui-même les actions administrateur ($($o.Erreur))" } default { "indisponible ($($o.Erreur))" } })"
+        Write-Log "Aide : $(switch ($o.Voie) { 'aide' { "les actions administrateur passent par l'Aide$(if ($o.Erreur) { " ($($o.Erreur), demande de Windows acceptée)" })" } 'local' { "Nevermind fait lui-même les actions administrateur ($($o.Erreur))" } default { "indisponible ($($o.Erreur))" } })"
     }
     if (-not $o.Reponse) {
         Write-Log "Aide : $Action impossible ($($o.Erreur))"
+        if ($o.Refus) { throw 'Nevermind a besoin de ton accord pour ça : réessaie, et clique « Oui » dans la demande de Windows.' }
         throw "Nevermind a besoin de son Aide pour ça, mais elle ne répond pas ($($o.Erreur)). Ouvre Mindset et mets Nevermind à jour."
     }
     $j = $o.Reponse | ConvertFrom-Json
@@ -71,16 +131,19 @@ function Invoke-Aide([string]$Action, $Parametres = @{}, [int]$Delai = 120000) {
     $j.r
 }
 
-# Réveille l'Aide au lancement (en arrière plan) : la première action ne l'attend pas
+# Réveille l'Aide au lancement (en arrière plan) : la première action ne l'attend pas. Seulement par sa tâche SYSTEM, si
+# c'est bien elle (jamais de demande de Windows au lancement).
 function Start-AideFond {
     if (-not (Get-Command Wait-Handle -ErrorAction SilentlyContinue) -or $script:AideSansTache) { return }
     $ps = [PowerShell]::Create()
     if ($script:BgPool) { $ps.RunspacePool = $script:BgPool }
     [void]$ps.AddScript({
-        param($t)
+        param($t, $f, $exe, $sid, $schtasks)
         if ([AideClient]::Joignable(50)) { return }
-        $null = & "$env:SystemRoot\System32\schtasks.exe" /Run /TN $t 2>&1
-    }.ToString()).AddArgument($AideTache)
+        . ([scriptblock]::Create($f))
+        if ((Get-AideEtatTache (Read-AideTache $t $schtasks) $exe $sid) -ne 'systeme') { return }
+        $null = & $schtasks /Run /TN $t 2>&1
+    }.ToString()).AddArgument($AideTache).AddArgument("function Get-AideEtatTache {${function:Get-AideEtatTache}}`nfunction Read-AideTache {${function:Read-AideTache}}").AddArgument($AideExe).AddArgument($AideSid).AddArgument($AideSchtasks)
     [void]$ps.BeginInvoke()
 }
 
@@ -90,7 +153,7 @@ function Start-AideFond {
 # ---------------------------------------------------------------------------
 function Get-AideLecture([string]$Action, $Parametres = @{}) {
     if ($script:EstAdmin -and -not [AideClient]::Joignable(1)) { return $null }
-    try { Invoke-Aide $Action $Parametres 60000 } catch { $null }
+    try { Invoke-Aide $Action $Parametres 60000 -SansDemande } catch { $null }
 }
 
 # Analyse du PC ($AnalysisDataWork) : Secure Boot, puce TPM et santé des disques
@@ -137,16 +200,17 @@ function Add-AideLectureSecurite($D) {
     # dossier temporaire ou public)
     try {
         $tmp = $env:TEMP; $pub = "$env:SystemDrive\Users\Public"
-        $D.Tasks = @(foreach ($t2 in @(Invoke-Aide 'lecture.taches' @{} 60000 | Where-Object { $_ })) {
+        $D.Tasks = @(foreach ($t2 in @(Invoke-Aide 'lecture.taches' @{} 60000 -SansDemande | Where-Object { $_ })) {
             $exe = [Environment]::ExpandEnvironmentVariables([string]$t2.Exe).Trim('"')
             $argsTxt = [string]$t2.Args
-            # L'installateur de Mindset (la suite) : sa tâche exacte, et son script que seul un administrateur peut modifier (ni le fichier
+            # L'installateur de Mindset (la suite) : sa tâche exacte (en SYSTEM pour l'utilisateur -Sid depuis Mindset 2.10.0), et son script que seul un administrateur peut modifier (ni le fichier
             # ni son dossier ne donnent de droit d'écriture à Tout le monde, aux Utilisateurs ou à l'utilisateur lui-même)
             $protege = { param($f) try { $sids = @('S-1-1-0', 'S-1-5-11', 'S-1-5-32-545', [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
                 -not @(foreach ($x in $f, (Split-Path $f -Parent)) { (Get-Acl -LiteralPath $x).Access | Where-Object { $_.AccessControlType -eq 'Allow' -and ([int64]$_.FileSystemRights -band 0xD0046) -and
                     ($sids -contains $(try { $_.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { '' })) } }).Count } catch { $false } }
             if ([string]$t2.Chemin -eq '\Mindset\' -and [string]$t2.Nom -eq 'Mindset (installation)' -and $exe -match '\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe$' -and
-                $argsTxt -match '^-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "([^"]+\\fichiers\\installer-admin\.ps1)" -Action demande -Demande "[^"]+\\installation\.demande"$' -and (Test-Path -LiteralPath $Matches[1]) -and (& $protege $Matches[1])) { continue }
+                $argsTxt -match '^-NoProfile (-NonInteractive )?-ExecutionPolicy Bypass -WindowStyle Hidden -File "(?<script>[^"]+\\fichiers\\installer-admin\.ps1)" -Action demande (-Sid S-1-5-21-[\d-]+ )?-Demande "[^"]+\\installation\.demande"$' -and
+                (Test-Path -LiteralPath $Matches['script']) -and (& $protege $Matches['script'])) { continue }
             $cachee = $exe -match '(powershell|pwsh|cmd|wscript|cscript|mshta)(\.exe)?$' -and $argsTxt -match '(-enc|-encodedcommand|frombase64|downloadstring|downloadfile|invoke-expression|\biex\b|-w(indowstyle)?\s+h(idden)?|http)'
             $risque = $exe -like "$tmp*" -or $exe -like "$pub*"
             if ($cachee -or $risque) { @{ Name = [string]$t2.Nom; Path = [string]$t2.Chemin; Cmd = "$exe $argsTxt".Trim(); Bad = $cachee } }
@@ -166,7 +230,7 @@ function Test-MesuresAide {
     # (un réveil déjà en cours, attendu plus bas dans la pile : pas un deuxième schtasks ni une deuxième attente de 20 s)
     if ($script:MesuresAideReveil) { return $false }
     $script:MesuresAideReveil = $true
-    try { [void](Invoke-Aide 'aide.bonjour' @{} 10000); $script:MesuresAideEchec = $null; return $true } catch { $script:MesuresAideEchec = Get-Date; return $false }
+    try { [void](Invoke-Aide 'aide.bonjour' @{} 10000 -SansDemande); $script:MesuresAideEchec = $null; return $true } catch { $script:MesuresAideEchec = Get-Date; return $false }
     finally { $script:MesuresAideReveil = $false }
 }
 
@@ -256,7 +320,7 @@ function Update-FpsVeille {
 function Get-TrafficTcp {
     if (Test-MesuresAide) {
         try {
-            $r = Invoke-Aide 'trafic.tcp' @{} 15000
+            $r = Invoke-Aide 'trafic.tcp' @{} 15000 -SansDemande
             $script:TrafficCountersOk = [bool]$r.CompteursOk
             if (-not $script:TrafficAideNote) { $script:TrafficAideNote = $true; Write-Log "Trafic : compteurs lus par l'Aide (comptage $(if ($r.CompteursOk) { 'actif' } else { 'refusé' }))" }
             return @($r.Lignes | Where-Object { $_ } | ForEach-Object { [string]$_ })
@@ -272,19 +336,19 @@ function Start-FluxReseau {
     # (refus de l'Aide, en administrateur : seul celui là peut venir d'un anti-triche)
     $script:FluxErreur = ''
     if (Test-MesuresAide) {
-        try { [void](Invoke-Aide 'flux.demarrer' @{} 20000); Write-Log "Lag : trace réseau par l'Aide"; return 'aide' }
+        try { [void](Invoke-Aide 'flux.demarrer' @{} 20000 -SansDemande); Write-Log "Lag : trace réseau par l'Aide"; return 'aide' }
         catch { $script:FluxErreur = $_.Exception.Message; Write-Log "Lag : trace réseau par l'Aide impossible ($($_.Exception.Message))" }
     }
     try { if ([NetFlow]::Start()) { return 'local' }; Write-Log "Lag: repérage du serveur limité ($([NetFlow]::LastError))" } catch { Write-Log "Lag: $_" }
     ''
 }
 function Get-FluxReseau([string]$Ou) {
-    if ($Ou -eq 'aide') { return @(Invoke-Aide 'flux.lire' @{} 15000 | Where-Object { $_ } | ForEach-Object { [string]$_ }) }
+    if ($Ou -eq 'aide') { return @(Invoke-Aide 'flux.lire' @{} 15000 -SansDemande | Where-Object { $_ } | ForEach-Object { [string]$_ }) }
     if ($Ou -eq 'local') { return @([NetFlow]::Snapshot()) }
     @()
 }
 function Stop-FluxReseau([string]$Ou) {
-    if ($Ou -eq 'aide') { try { [void](Invoke-Aide 'flux.arreter' @{} 15000) } catch {} }
+    if ($Ou -eq 'aide') { try { [void](Invoke-Aide 'flux.arreter' @{} 15000 -SansDemande) } catch {} }
     elseif ($Ou -eq 'local') { try { [NetFlow]::Stop() } catch {} }
 }
 

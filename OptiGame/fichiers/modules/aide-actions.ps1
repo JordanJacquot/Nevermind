@@ -8,7 +8,7 @@
 # distance, couper le contrôle des comptes ou le pare-feu, ajouter une exclusion à l'antivirus, mettre un DNS inconnu,
 # bloquer Internet à l'antivirus ou à Windows Update.
 
-$AideVersion = 3
+$AideVersion = 4   # (4 : l'Aide en SYSTEM, pour l'utilisateur inscrit dans sa tâche)
 # Santé d'un disque (Get-StorageReliabilityCounter) : les champs dont Nevermind se sert
 $AideChampsDisque = @('Temperature', 'TemperatureMax', 'Wear', 'PowerOnHours', 'StartStopCycleCount', 'ReadErrorsCorrected', 'ReadErrorsUncorrected',
                       'WriteErrorsUncorrected', 'ReadLatencyMax', 'WriteLatencyMax')
@@ -545,8 +545,10 @@ function Rename-ReglesOptiGame {
 function Invoke-AideAction([string]$Action, $P, [switch]$Verifier, [int]$Client) {
     switch -Exact ($Action) {
         'aide.bonjour' {
-            $admin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-            return @{ Version = $AideVersion; Admin = $admin; Pid = $PID }
+            $moi = [Security.Principal.WindowsIdentity]::GetCurrent()
+            $admin = (New-Object Security.Principal.WindowsPrincipal($moi)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+            # (Compte : S-1-5-18 quand l'Aide tourne en SYSTEM ; Temp : où elle compile, jamais un dossier de l'utilisateur)
+            return @{ Version = $AideVersion; Admin = $admin; Pid = $PID; Compte = $moi.User.Value; Temp = [IO.Path]::GetTempPath() }
         }
 
         'reg.ecrire' {
@@ -723,7 +725,9 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier, [int]$Client)
         # Antivirus : exclusions, menaces connues et dernières détections
         'lecture.securite' {
             if ($Verifier) { return 'ok' }
-            $r = @{ Exclusions = @(); Menaces = @(); Detections = @() }
+            # (DetectionsLues : $true seulement si Defender a bien rendu ses détections ; sinon une liste vide ne veut pas dire
+            # « aucune menace », et Nevermind affiche « Résultat inconnu »)
+            $r = @{ Exclusions = @(); Menaces = @(); Detections = @(); DetectionsLues = $false }
             try { Import-AideModule ConfigDefender/Defender } catch {}   # (antivirus de Windows absent : listes vides)
             try {
                 $pref = Get-MpPreference -ErrorAction Stop
@@ -734,6 +738,7 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier, [int]$Client)
                 $r.Detections = @(Get-MpThreatDetection -ErrorAction Stop | Sort-Object InitialDetectionTime -Descending | Select-Object -First 15 | ForEach-Object {
                     @{ ThreatID = [string]$_.ThreatID; ThreatStatusID = [int]$_.ThreatStatusID; Quand = [long]([datetime]$_.InitialDetectionTime).Ticks; Resources = @(@($_.Resources) | ForEach-Object { [string]$_ }) }
                 })
+                $r.DetectionsLues = $true
             } catch {}
             return $r
         }

@@ -97,21 +97,18 @@ static class Lanceur
             }
         }
 #else
-        if (!File.Exists(script))
-        {
-            MessageBox.Show(
-                "Le dossier « fichiers » est introuvable à côté de ce programme.\n\n" +
-                "Extrais d'abord tout le zip (clic droit sur le zip, puis « Extraire tout »), " +
-                "puis lance Nevermind depuis le dossier extrait.",
-                "Nevermind", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return 1;
-        }
-
 #if AIDE
         // NevermindAide.exe : la partie administrateur de Nevermind (fichiers\NevermindAide.ps1), lancée par la tâche
-        // « \Mindset\Nevermind (aide) ». Programme à part : Mindset et le Gestionnaire des tâches ne la confondent pas
-        // avec Nevermind. Sans fenêtre ; en cas de problème, rien n'est écrit (dossier modifiable sans droits).
+        // « \Mindset\Nevermind (aide) », en SYSTEM, avec -Sid <utilisateur> (inscrit par l'administrateur qui a créé la
+        // tâche), ou par la demande de Windows. Programme à part : Mindset et le Gestionnaire des tâches ne la confondent
+        // pas avec Nevermind. Aucune fenêtre, jamais (en SYSTEM, personne ne la verrait et elle bloquerait l'Aide) ; en
+        // cas de problème, rien n'est écrit (dossier modifiable sans droits).
         {
+            string scriptAide = Path.Combine(Path.Combine(dossier, "fichiers"), "NevermindAide.ps1");
+            if (!File.Exists(scriptAide)) return 1;
+            string sid = null;
+            for (int i = 0; i + 1 < args.Length; i++)
+                if (args[i].Trim('-', '/').Equals("Sid", StringComparison.OrdinalIgnoreCase)) sid = args[i + 1];
             try
             {
                 Directory.SetCurrentDirectory(Environment.GetFolderPath(Environment.SpecialFolder.System));
@@ -124,7 +121,8 @@ static class Lanceur
                     using (PowerShell psAide = PowerShell.Create())
                     {
                         psAide.Runspace = rsAide;
-                        psAide.AddCommand(Path.Combine(Path.Combine(dossier, "fichiers"), "NevermindAide.ps1"));
+                        psAide.AddCommand(scriptAide);
+                        if (sid != null) psAide.AddParameter("Sid", sid);   // (vérifié par le script)
                         psAide.Invoke();
                     }
                 }
@@ -134,6 +132,16 @@ static class Lanceur
             return 0;
         }
 #else
+        if (!File.Exists(script))
+        {
+            MessageBox.Show(
+                "Le dossier « fichiers » est introuvable à côté de ce programme.\n\n" +
+                "Extrais d'abord tout le zip (clic droit sur le zip, puis « Extraire tout »), " +
+                "puis lance Nevermind depuis le dossier extrait.",
+                "Nevermind", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return 1;
+        }
+
 #if UNINSTALL
         bool uninstall = true;
 #else
@@ -201,8 +209,9 @@ static class Lanceur
     }
 
 #if AIDE
-    // L'Aide tourne en administrateur, mais la tâche planifiée lui donne les variables d'environnement de l'utilisateur,
-    // qu'un programme sans droits peut changer (HKCU\Environment). Avant d'ouvrir le moteur PowerShell, les dossiers de
+    // L'Aide tourne en administrateur. En SYSTEM, elle ne reçoit rien de l'utilisateur ; mais lancée par la demande de
+    // Windows (ou par une ancienne tâche « droits les plus élevés »), elle reçoit ses variables d'environnement, qu'un
+    // programme sans droits peut changer (HKCU\Environment). Avant d'ouvrir le moteur PowerShell, les dossiers de
     // Windows sont remis tels que Windows les donne (pas lus dans ces variables), et les modules de PowerShell ne sont
     // cherchés que dans le dossier de Windows : un faux module posé dans Documents ou ailleurs n'est jamais chargé.
     // (LocalApplicationData et Documents ne sont pas repris ici : même lus par GetFolderPath, l'utilisateur peut les

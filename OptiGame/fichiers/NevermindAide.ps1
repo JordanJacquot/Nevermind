@@ -4,6 +4,11 @@
     Lancée par NevermindAide.exe, depuis la tâche planifiée « \Mindset\Nevermind (aide) » que Mindset crée à
     l'installation (donc sans demande de Windows). Le programme est dans le dossier protégé de Mindset : seul un
     administrateur peut le modifier.
+    La tâche tourne en SYSTEM : elle ne reprend rien de l'utilisateur (ni ses variables d'environnement, ni ses modules).
+    L'utilisateur pour qui elle travaille est inscrit dans ses arguments (-Sid) par l'administrateur qui l'a créée, jamais
+    déduit d'autre chose. Si la tâche manque ou ne répond pas, Nevermind passe par la demande de Windows (l'utilisateur
+    clique « Oui ») : l'Aide tourne alors sous le compte qui a accepté, pour l'utilisateur -Sid.
+    Aucune fenêtre (en SYSTEM, personne ne la verrait), et aucun dossier de l'utilisateur n'est utilisé.
 
     Elle écoute sur un canal nommé réservé à l'utilisateur (refusé depuis le réseau), une demande par connexion :
     une ligne JSON { a = action, p = paramètres }, une ligne JSON en réponse { ok, r } ou { ok = false, e = message }.
@@ -11,9 +16,10 @@
     complet (Test-AideClient), et ne fait que ce qui est dans modules\aide-actions.ps1.
     Elle s'arrête toute seule quand Nevermind n'est plus ouvert.
 
+    NevermindAide.ps1 -Sid <utilisateur>  l'utilisateur servi (obligatoire en SYSTEM ; sinon, par défaut, le compte de l'Aide)
     NevermindAide.ps1 -Parent <pid>  (tests) : reste ouverte tant que ce processus vit, au lieu de chercher Nevermind.
 #>
-param([int]$Parent)
+param([int]$Parent, [string]$Sid)
 # Avant toute commande : les modules de PowerShell ne viennent que du dossier de Windows, chargés par leur chemin complet.
 # La tâche planifiée donne à l'Aide les variables de l'utilisateur (PSModulePath compris) : sans ça, un programme sans
 # droits pourrait glisser un faux module « ScheduledTasks » ou « NetAdapter » que l'Aide chargerait en administrateur.
@@ -42,13 +48,46 @@ foreach ($m in 'Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Utility'
 $ErrorActionPreference = 'Stop'
 $AppDir = $PSScriptRoot
 $Racine = Split-Path $AppDir -Parent
+
+# Pour qui l'Aide travaille. En SYSTEM : seulement l'utilisateur inscrit dans la tâche (-Sid), sinon elle ne démarre pas.
+# Lancée par la demande de Windows : l'utilisateur -Sid (celui qui l'a demandée : l'administrateur qui a accepté a vu
+# la demande), ou à défaut son propre compte.
+$moi = [Security.Principal.WindowsIdentity]::GetCurrent()
+$admin = (New-Object Security.Principal.WindowsPrincipal($moi)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$EnSysteme = $moi.User.Value -eq 'S-1-5-18'
+if ($Sid -cnotmatch '^S-1-5-21-\d+-\d+-\d+-\d+\z') {
+    if ($EnSysteme) { exit }
+    $Sid = $moi.User.Value
+}
+$Utilisateur = New-Object Security.Principal.SecurityIdentifier($Sid)
+
+# Le dossier temporaire où PowerShell compile le code C# de l'Aide (Add-Type) : jamais le TEMP reçu (celui de SYSTEM,
+# C:\Windows\Temp, où tout utilisateur peut créer des fichiers ; ou celui de l'utilisateur), mais aide-temp, dans le
+# dossier protégé de Nevermind. Avec les droits administrateur, il est réservé au système et aux administrateurs.
+$AideTemp = Join-Path $Racine 'aide-temp'
+try {
+    $dt = [IO.Directory]::CreateDirectory($AideTemp)
+    if ($dt.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'lien' }
+    if ($admin) {
+        $acl = New-Object Security.AccessControl.DirectorySecurity
+        $acl.SetAccessRuleProtection($true, $false)
+        foreach ($s in 'S-1-5-18', 'S-1-5-32-544') {
+            $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier($s)), 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+        }
+        $dt.SetAccessControl($acl)
+    }
+    $env:TEMP = $AideTemp; $env:TMP = $AideTemp
+} catch {
+    if ($admin) { exit }   # (avec les droits administrateur, rien n'est compilé ailleurs)
+}
+
 $FichierActions = Join-Path $AppDir 'modules\aide-actions.ps1'
 . $FichierActions
 
 # Journal gardé en mémoire (200 dernières lignes) : Nevermind le demande (« aide.journal ») et l'écrit dans le sien.
-# L'Aide n'écrit aucun fichier : en administrateur, écrire dans un dossier modifiable sans droits permettrait à un
-# programme d'y glisser un lien et de lui faire écrire ailleurs. Rien n'est réglable par variable d'environnement non
-# plus (la tâche planifiée reprend celles de l'utilisateur).
+# L'Aide n'écrit aucun fichier (sauf la compilation dans aide-temp) : en administrateur, écrire dans un dossier
+# modifiable sans droits permettrait à un programme d'y glisser un lien et de lui faire écrire ailleurs. Rien n'est
+# réglable par variable d'environnement non plus.
 $Lignes = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList))
 function Write-AideLog([string]$Message) {
     [void]$Lignes.Add("$(Get-Date -Format s) $Message")
@@ -182,20 +221,21 @@ public static class AideFps
 # Une seule Aide à la fois
 $creee = $false
 $Suffixe = Get-AideSuffixe $Racine
-$verrou = New-Object System.Threading.Mutex($true, "Local\Nevermind-Aide-$Suffixe", [ref]$creee)
+$verrou = New-Object System.Threading.Mutex($true, "Local\Nevermind-Aide-$Sid-$Suffixe", [ref]$creee)
 if (-not $creee) { exit }
 
-$moi = [Security.Principal.WindowsIdentity]::GetCurrent()
-$admin = (New-Object Security.Principal.WindowsPrincipal($moi)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$NomTuyau = "Nevermind-Aide-$($moi.User.Value)-$Suffixe"
+# Le canal porte le compte de l'utilisateur servi : Nevermind le retrouve avec le sien
+$NomTuyau = "Nevermind-Aide-$Sid-$Suffixe"
 
-# Droits du canal : l'utilisateur lit et écrit, les administrateurs (l'Aide) créent les connexions, le réseau est refusé.
+# Droits du canal, posés ici un par un : l'utilisateur servi lit et écrit (lui seul, aucun autre compte), le réseau est
+# refusé, et seule l'Aide crée les connexions : le système en SYSTEM, sinon les administrateurs (demande de Windows).
 # L'utilisateur sans droits ne peut donc pas ouvrir lui-même un faux canal à ce nom tant que l'Aide tourne.
 $secu = New-Object System.IO.Pipes.PipeSecurity
 $secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule((New-Object Security.Principal.SecurityIdentifier('S-1-5-2')), 'FullControl', 'Deny')))
 $droitsUtilisateur = if ($admin) { 'ReadWrite' } else { 'ReadWrite, CreateNewInstance' }   # Aide sans droits : tests seulement
-$secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule($moi.User, $droitsUtilisateur, 'Allow')))
-$secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule((New-Object Security.Principal.SecurityIdentifier('S-1-5-32-544')), 'FullControl', 'Allow')))
+$secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule($Utilisateur, $droitsUtilisateur, 'Allow')))
+$createur = if ($EnSysteme) { 'S-1-5-18' } else { 'S-1-5-32-544' }
+$secu.AddAccessRule((New-Object System.IO.Pipes.PipeAccessRule((New-Object Security.Principal.SecurityIdentifier($createur)), 'FullControl', 'Allow')))
 
 function New-Tuyau {
     New-Object System.IO.Pipes.NamedPipeServerStream($NomTuyau, [System.IO.Pipes.PipeDirection]::InOut, 32,
@@ -274,12 +314,21 @@ $pool = [RunspaceFactory]::CreateRunspacePool(1, 6, $issFils, $Host)
 $pool.Open()
 $enCours = New-Object System.Collections.ArrayList
 
-# Nevermind (la fenêtre) ouvert ? L'Aide reste tant que Mindset.exe de ce dossier tourne. Reconnu par son chemin complet :
-# les autres applis de la suite et Mindset lui-même tournent aussi dans un « Mindset.exe ».
+# Le programme qui parle à l'Aide est-il Nevermind, de l'utilisateur servi ? Mindset.exe de ce dossier (son chemin
+# complet) et, avec les droits administrateur, sous le compte -Sid : en SYSTEM, l'Aide voit aussi les programmes des
+# autres comptes ouverts sur le PC, qui peuvent utiliser la même copie de Nevermind.
+Initialize-AideProcessus
+function Test-ClientServi([int]$Id, [string]$Chemin) {
+    if (-not (Test-AideClient $Chemin $Racine)) { return $false }
+    -not $admin -or [AideProcessus]::Compte($Id) -eq $Sid
+}
+
+# Nevermind (la fenêtre) ouvert ? L'Aide reste tant que Mindset.exe de ce dossier tourne pour l'utilisateur servi. Reconnu
+# par son chemin complet : les autres applis de la suite et Mindset lui-même tournent aussi dans un « Mindset.exe ».
 function Test-NevermindOuvert {
     if ($Parent) { return [bool](Get-Process -Id $Parent -ErrorAction SilentlyContinue) }
     foreach ($p in [Diagnostics.Process]::GetProcesses()) {
-        try { if (Test-AideClient ([AideTuyau]::Chemin($p.Id)) $Racine) { return $true } } catch {} finally { $p.Dispose() }
+        try { if (Test-ClientServi $p.Id ([AideTuyau]::Chemin($p.Id))) { return $true } } catch {} finally { $p.Dispose() }
     }
     $false
 }
@@ -290,7 +339,7 @@ catch {
     Write-AideLog "Canal déjà utilisé par un autre programme, l'Aide s'arrête ($($_.Exception.Message))"
     exit
 }
-Write-AideLog "Aide $AideVersion démarrée$(if (-not $admin) { ' SANS droits administrateur' }) (processus $PID)"
+Write-AideLog "Aide $AideVersion démarrée$(if ($EnSysteme) { ' en SYSTEM' } elseif (-not $admin) { ' SANS droits administrateur' }) pour $Sid (processus $PID)"
 if ($admin) { try { Rename-ReglesOptiGame } catch { Write-AideLog "Règles du pare-feu non renommées : $($_.Exception.Message)" } }
 $seul = Get-Date   # depuis quand Nevermind n'est plus ouvert
 $cherche = Get-Date   # dernière recherche de Nevermind
@@ -325,8 +374,8 @@ try {
         $client = [AideTuyau]::Client($connecte.SafePipeHandle)
         $chemin = if ($client) { [AideTuyau]::Chemin($client) } else { '' }
         # Sans droits administrateur (tests), l'Aide ne peut rien faire de plus que son client : elle accepte tout le monde
-        if ($admin -and -not (Test-AideClient $chemin $Racine)) {
-            Write-AideLog "Refusé : demande venant de $(if ($chemin) { $chemin } else { "processus $client" })"
+        if ($admin -and -not (Test-ClientServi $client $chemin)) {
+            Write-AideLog "Refusé : demande venant de $(if ($chemin) { $chemin } else { "processus $client" })$(if ($client) { " (compte $([AideProcessus]::Compte($client)))" })"
             $connecte.Dispose()
             continue
         }

@@ -2394,6 +2394,16 @@ public static class AideClient
         finally { CloseHandle(h); }
     }
 
+    // Le canal est-il bien celui de l'Aide ? Créé par le système (l'Aide en SYSTEM, dont un programme sans droits ne peut
+    // pas lire le chemin) ou par les administrateurs (l'Aide lancée par la demande de Windows) : un programme sans droits
+    // ne peut pas donner ces propriétaires à un canal. Sinon, celui qui répond doit être NevermindAide.exe de ce dossier
+    // (Aide sans droits : tests).
+    public static bool ServeurAccepte(string chemin, string proprietaire)
+    {
+        if (proprietaire == "S-1-5-18" || proprietaire == "S-1-5-32-544") return true;
+        return !string.IsNullOrEmpty(chemin) && !string.IsNullOrEmpty(ExeAttendu) && string.Equals(chemin, ExeAttendu, StringComparison.OrdinalIgnoreCase);
+    }
+
     // L'Aide écoute-t-elle ? (sans s'y connecter)
     public static bool Joignable(int ms) { return WaitNamedPipe(@"\\.\pipe\" + Nom(), (uint)Math.Max(1, ms)); }
 
@@ -2406,8 +2416,10 @@ public static class AideClient
             c.Connect(connexionMs);
             uint pid;
             string serveur = GetNamedPipeServerProcessId(c.SafePipeHandle, out pid) ? Chemin((int)pid) : "";
-            if (!string.Equals(serveur, ExeAttendu, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Le programme qui répond à la place de l'Aide n'est pas Nevermind (" + (serveur == "" ? "inconnu" : serveur) + ").");
+            string proprietaire = "";
+            try { proprietaire = c.GetAccessControl().GetOwner(typeof(System.Security.Principal.SecurityIdentifier)).Value; } catch { }
+            if (!ServeurAccepte(serveur, proprietaire))
+                throw new InvalidOperationException("Le programme qui répond à la place de l'Aide n'est pas Nevermind (" + (serveur == "" ? "inconnu, canal de " + (proprietaire == "" ? "?" : proprietaire) : serveur) + ").");
             var enc = new System.Text.UTF8Encoding(false);
             var ecrivain = new System.IO.StreamWriter(c, enc, 65536, true);
             ecrivain.WriteLine(demande);

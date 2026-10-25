@@ -514,7 +514,9 @@ function Invoke-Uninstall {
     $errors = @()
     # L'Aide ouverte garderait NevermindAide.exe : on la ferme (le désinstalleur, lui, a les droits et fait tout lui-même).
     # Reconnue par son chemin, jamais par son nom seul (seule l'Aide de ce dossier)
+    # (l'Aide en SYSTEM : d'abord arrêtée par sa tâche, que Windows arrête même quand le processus refuse d'être fermé)
     $exeAide = Join-Path (Get-AppRoot) 'NevermindAide.exe'
+    try { Stop-ScheduledTask -TaskPath '\Mindset\' -TaskName 'Nevermind (aide)' -ErrorAction SilentlyContinue } catch {}
     foreach ($p in @(Get-Process -ErrorAction SilentlyContinue)) { try { if ($p.Path -eq $exeAide) { $p.Kill(); [void]$p.WaitForExit(3000) } } catch {} }
     if ($n) { $errors += Restore-AllSettings }
     if ($garder) { Write-Log "Désinstallation : réglages de Windows remis comme avant$(if ($errors) { " sauf $($errors.Count)" }), données gardées" }
@@ -569,6 +571,7 @@ function Invoke-Uninstall {
     $cmd += " & rmdir /s /q `"$(Join-Path $here 'modules')`""
     $cmd += " & rmdir /s /q `"$(Join-Path $here 'outils-tiers')`""
     $cmd += " & rmdir /s /q `"$(Join-Path $here 'cles-publiques')`""
+    $cmd += " & rmdir /s /q `"$(Join-Path $root 'aide-temp')`""   # (où l'Aide compile)
     if ($here -ne $root) { $cmd += " & rmdir `"$here`"" }
     $cmd += " & rmdir `"$root`""
     Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $cmd -WindowStyle Hidden -WorkingDirectory $env:TEMP

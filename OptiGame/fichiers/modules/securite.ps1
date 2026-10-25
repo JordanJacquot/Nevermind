@@ -421,7 +421,7 @@ function Get-ScanThreats([datetime]$Start) {
         if ($l) {
             $det = @(@($l.Detections) | Where-Object { $_ } | ForEach-Object { @{ Id = [string]$_.ThreatID; Quand = [datetime][long]$_.Quand; Res = @($_.Resources) } })
             foreach ($m in @(@($l.Menaces) | Where-Object { $_ })) { $noms[[string]$m.ThreatID] = [string]$m.ThreatName }
-            $fiable = $true
+            $fiable = [bool]$l.DetectionsLues   # (lecture de Defender ratée dans l'Aide : résultat inconnu, pas « aucune menace »)
         }
     }
     if (-not $fiable) {
