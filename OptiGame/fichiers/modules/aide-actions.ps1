@@ -500,7 +500,7 @@ function Test-AideAntivirus($Contexte, [string]$Chemin) {
 function Get-AideRefusProgramme($Contexte, [string]$Chemin, [switch]$ServicePermis) {
     if (Test-AideAntivirus $Contexte $Chemin) { return 'est un programme de ton antivirus' }
     if ($ServicePermis) { return $null }
-    if ($Contexte.ServicesExe.Contains($Chemin)) { return 'fait tourner un service de Windows' }
+    if ($Contexte.ServicesExe.Contains($Chemin)) { return 'fait tourner un service (un programme qui tourne en fond pour Windows ou un logiciel)' }
     Initialize-AideProcessus
     foreach ($p in [Diagnostics.Process]::GetProcesses()) {
         try {
