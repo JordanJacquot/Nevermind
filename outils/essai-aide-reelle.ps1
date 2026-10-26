@@ -1326,9 +1326,10 @@ function Test-Cas11 {
     $sortie = Join-Path $Sorties 'banc.txt'; $erreurs = Join-Path $Sorties 'banc-erreurs.txt'
     $p = Start-Process -FilePath $PowerShellExe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$dest\outils\$(Split-Path $Banc -Leaf)", '-Exe', "$dest\NevermindAide.exe" `
         -Credential $b.Cred -LoadUserProfile -WorkingDirectory $dest -RedirectStandardOutput $sortie -RedirectStandardError $erreurs -PassThru
+    $null = $p.Handle   # (sans ce handle gardé, PowerShell 5.1 ne rend pas le code de sortie)
     $fini = $p.WaitForExit(1800000)
     if (-not $fini) { try { $p.Kill() } catch {} }
-    foreach ($f in $sortie, $erreurs) { foreach ($l in @(Get-Content -LiteralPath $f -Encoding UTF8 -ErrorAction SilentlyContinue)) { Write-Host "         | $l" -ForegroundColor DarkGray } }
+    foreach ($f in $sortie, $erreurs) { foreach ($l in @(Get-Content -LiteralPath $f -Encoding Oem -ErrorAction SilentlyContinue)) { Write-Host "         | $l" -ForegroundColor DarkGray } }
     Test-Cas "banc lancé sous « Banc Essai » (sans droits) : PowerShell et Rust répondent pareil (code $(if ($fini) { $p.ExitCode } else { 'trop long' }))" { $fini -and $p.ExitCode -eq 0 }
     Stop-Aides
 }
