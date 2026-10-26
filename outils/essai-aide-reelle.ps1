@@ -3,7 +3,14 @@
 # par l'installateur de Mindset : JAMAIS sur un vrai PC. Le script refuse de tourner hors de GitHub Actions.
 #
 #   .\outils\essai-aide-reelle.ps1 -Cas 0     préparation (Nevermind construit, Mindset construit, clé de TEST, paquets)
-#   .\outils\essai-aide-reelle.ps1 -Cas N     un cas (1 à 8), voir la liste plus bas
+#   .\outils\essai-aide-reelle.ps1 -Cas N     un cas (1 à 10), voir la liste plus bas
+#   -Aide <exe>     (avec -Cas 0) le NevermindAide.exe à juger, mis dans les paquets à la place de celui que construit
+#                   outils\construire.ps1 (le lanceur C#) : par exemple l'exe Rust construit dans le même run
+#   -Aides <a;b>    (avec -Cas 10) les NevermindAide.exe à comparer, l'un après l'autre sur la même machine ; sans
+#                   -Aides, celui des paquets, deux fois
+#
+# Tout ce qui est vérifié l'est de l'extérieur (tâches, canal, processus, registre, réponses) : le même essai juge
+# n'importe quel NevermindAide.exe qui garde la même ligne de commande (-Sid) et le même canal.
 #
 # Le client est le vrai Mindset.exe de Nevermind (outils\lanceur.cs), installé par Mindset dans Program Files\Mindset,
 # lancé sous le compte voulu : dans le paquet d'essai, seul fichiers\Nevermind.ps1 est remplacé par un petit client qui
@@ -26,8 +33,14 @@
 #   8. changement de nom (OptiGame devient Nevermind) : Nevermind 1.11.0 installé par Mindset 2.12.0 puis mis à jour par le
 #      nouveau Mindset (Nevermind.zip) ; la version renommée refuse de démarrer tant que 1.11.0 est ouverte, puis démarre
 #      seule avec ses deux verrous, une seule instance ; Mindset 2.12.0 met à jour et installe avec le zip de compatibilité
+#   9. l'Aide lancée en secours par la demande de Windows (sous le compte qui accepte, avec les droits administrateur),
+#      dans un environnement piégé (variables, dossiers du profil, modules) : pour son propre compte elle répond, sans
+#      jamais rien prendre du piège ; jamais de canal pour un « SID » qui n'est pas un compte d'utilisateur
+#  10. tout optimiser puis tout restaurer : l'état de la machine (registre, services, DNS, pare-feu, plans
+#      d'alimentation, tâches) relevé avant, après l'optimisation et après la restauration ; la restauration remet
+#      tout, et deux NevermindAide.exe (-Aides) donnent les mêmes états et les mêmes réponses
 # Code de sortie 1 si un cas échoue.
-param([int]$Cas = -1)
+param([int]$Cas = -1, [string]$Aide = '', [string]$Aides = '')
 
 if ($env:GITHUB_ACTIONS -ne 'true') {
     Write-Host 'Refusé : cet essai crée des comptes Windows et des tâches planifiées, et installe Nevermind pour de vrai. Il ne tourne que sur la machine jetable de GitHub Actions.' -ForegroundColor Red
@@ -156,6 +169,74 @@ function Get-AidesEnCours {
         [pscustomobject]@{ Id = [int]$p.ProcessId; Sid = $sid; Session = [int]$p.SessionId; Chemin = [string]$p.ExecutablePath }
     }
 }
+# Les variables d'environnement d'un processus qui tourne (lues dans sa mémoire, de l'extérieur : n'importe quel
+# NevermindAide.exe, quel que soit son langage). L'essai tourne en administrateur ; le droit de déboguer est pris pour lire
+# un processus de SYSTEM ou d'un autre compte.
+function Get-EnvProcessus([int]$Id) {
+    if (-not ('EssaiEnv' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class EssaiEnv
+{
+    [StructLayout(LayoutKind.Sequential)] struct PBI { public IntPtr R1; public IntPtr Peb; public IntPtr R2a; public IntPtr R2b; public IntPtr Id; public IntPtr R3; }
+    [DllImport("ntdll.dll")] static extern int NtQueryInformationProcess(IntPtr h, int classe, ref PBI pbi, int taille, out int lu);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint acces, bool herite, int pid);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool ReadProcessMemory(IntPtr h, IntPtr adresse, byte[] tampon, IntPtr taille, out IntPtr lu);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    static byte[] Lire(IntPtr h, IntPtr a, int n)
+    {
+        var b = new byte[n]; IntPtr lu;
+        if (!ReadProcessMemory(h, a, b, (IntPtr)n, out lu)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        return b;
+    }
+    // Processus 64 bits : PEB + 0x20 = ProcessParameters ; ProcessParameters + 0x80 = Environment, + 0x3F0 = EnvironmentSize
+    public static Dictionary<string, string> Variables(int pid)
+    {
+        IntPtr h = OpenProcess(0x0410, false, pid);   // PROCESS_QUERY_INFORMATION | PROCESS_VM_READ
+        if (h == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+        try
+        {
+            var pbi = new PBI(); int lu;
+            int s = NtQueryInformationProcess(h, 0, ref pbi, Marshal.SizeOf(typeof(PBI)), out lu);
+            if (s != 0) throw new InvalidOperationException("NtQueryInformationProcess : " + s.ToString("X"));
+            IntPtr pp = (IntPtr)BitConverter.ToInt64(Lire(h, IntPtr.Add(pbi.Peb, 0x20), 8), 0);
+            IntPtr env = (IntPtr)BitConverter.ToInt64(Lire(h, IntPtr.Add(pp, 0x80), 8), 0);
+            long taille = BitConverter.ToInt64(Lire(h, IntPtr.Add(pp, 0x3F0), 8), 0);
+            if (taille <= 0 || taille > 4 * 1024 * 1024) taille = 32768;
+            byte[] o = null;
+            while (o == null && taille >= 2) { try { o = Lire(h, env, (int)taille); } catch { taille /= 2; } }
+            if (o == null) throw new InvalidOperationException("environnement illisible");
+            var r = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string l in Encoding.Unicode.GetString(o).Split('\0'))
+            {
+                if (l.Length == 0) break;
+                int i = l.IndexOf('=', 1);   // (les variables « =C: » commencent par =)
+                if (i > 0) r[l.Substring(0, i)] = l.Substring(i + 1);
+            }
+            return r;
+        }
+        finally { CloseHandle(h); }
+    }
+}
+'@
+    }
+    try { [Diagnostics.Process]::EnterDebugMode() } catch {}
+    [EssaiEnv]::Variables($Id)
+}
+# Le canal d'une Aide : celui de ce compte et de ce dossier de Nevermind (même calcul que l'Aide, aide-actions.ps1)
+function Get-NomCanal([string]$Sid, [string]$Dossier) {
+    if (-not (Get-Command Get-AideSuffixe -ErrorAction SilentlyContinue)) {
+        $actions = Join-Path $Depot 'Nevermind\fichiers\modules\aide-actions.ps1'
+        . ([scriptblock]::Create(([System.Management.Automation.Language.Parser]::ParseFile($actions, [ref]$null, [ref]$null)).Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-AideSuffixe' }, $true).Extent.Text))
+        Set-Item -Path function:global:Get-AideSuffixe -Value ${function:Get-AideSuffixe}
+    }
+    "Nevermind-Aide-$Sid-$(Get-AideSuffixe $Dossier)"
+}
+function Test-Canal([string]$Nom) { [bool]@([IO.Directory]::GetFiles('\\.\pipe\') | Where-Object { $_ -like "*\$Nom" }).Count }
 function Stop-Aides {
     foreach ($d in '\Mindset\', '\MindsetEssai\') { foreach ($t in @(Get-ScheduledTask -TaskPath $d -ErrorAction SilentlyContinue)) { try { Stop-ScheduledTask -TaskPath $d -TaskName $t.TaskName -ErrorAction SilentlyContinue } catch {} } }
     foreach ($p in @(Get-AidesEnCours)) { try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch { & "$env:SystemRoot\System32\taskkill.exe" /F /PID $p.Id 2>&1 | Out-Null } }
@@ -205,7 +286,9 @@ function Invoke-Client($Compte, [hashtable]$Consigne, [switch]$Fond) {
     $Consigne.Sortie = Join-Path $Sorties "client-$id.json"
     $Consigne.RunAsFichier = Join-Path $Sorties "runas-$id.json"
     Write-Utf8 (Join-Path $Clients "$($Compte.Sid).json") ($Consigne | ConvertTo-Json -Depth 5)
-    $p = Start-Process -FilePath (Join-Path $NevermindC 'Mindset.exe') -Credential $Compte.Cred -LoadUserProfile -WorkingDirectory $env:SystemRoot -PassThru
+    # (sans Cred : sous le compte de l'essai lui-même, l'administrateur qui accepte les demandes de Windows)
+    $p = if ($Compte.Cred) { Start-Process -FilePath (Join-Path $NevermindC 'Mindset.exe') -Credential $Compte.Cred -LoadUserProfile -WorkingDirectory $env:SystemRoot -PassThru }
+         else { Start-Process -FilePath (Join-Path $NevermindC 'Mindset.exe') -WorkingDirectory $env:SystemRoot -PassThru }
     if ($Fond) { Start-Sleep -Seconds 3; return $p }
     $limite = (Get-Date).AddSeconds(300)
     $script:RunAsLancees = @()
@@ -337,6 +420,18 @@ function Initialize-Essai {
     & (Join-Path $Depot 'outils\construire.ps1') | Out-Host
     $og = Join-Path $Depot 'Nevermind'
     Test-Cas 'Nevermind construit (Mindset.exe, NevermindAide.exe, désinstalleur)' { (Test-Path -LiteralPath "$og\Mindset.exe") -and (Test-Path -LiteralPath "$og\NevermindAide.exe") -and (Test-Path -LiteralPath "$og\Désinstaller Nevermind.exe") }
+    # L'Aide à juger : celle que construit construire.ps1 (le lanceur C#), ou l'exe donné par -Aide, mis à sa place dans
+    # les paquets (même nom, même dossier : rien d'autre ne change)
+    $jugee = "lanceur C# (outils\construire.ps1)"
+    if ($Aide) {
+        $source = [IO.Path]::GetFullPath($Aide)
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Aide à juger introuvable : $source" }
+        Copy-Item -LiteralPath $source -Destination "$og\NevermindAide.exe" -Force
+        $jugee = $source
+    }
+    $h = (Get-FileHash -LiteralPath "$og\NevermindAide.exe" -Algorithm SHA256).Hash
+    Write-Utf8 (Join-Path $Racine 'aide-jugee.txt') "$jugee ; SHA-256 $h"
+    Test-Cas "NevermindAide.exe jugé : $jugee (SHA-256 $h)" { -not $Aide -or (Get-FileHash -LiteralPath $Aide -Algorithm SHA256).Hash -eq $h }
     foreach ($genre in 'vrai', 'essai') {
         $d = Join-Path $Paquets $genre
         if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force }
@@ -371,6 +466,20 @@ function Initialize-Essai {
     Test-Cas 'paquets d''essai signés avec la clé de TEST, acceptés par la copie d''essai de Mindset' {
         $cles = Join-Path $MindsetDepot 'Mindset\fichiers\cles-publiques'
         @($PaquetEssai, $PaquetVrai, $PaquetCompat | Where-Object { -not (Test-Signature ([IO.File]::ReadAllBytes($_)) ([IO.File]::ReadAllBytes("$_.sig")) $cles) }).Count -eq 0
+    }
+    Test-Cas 'les trois paquets contiennent l''Aide jugée (même empreinte)' {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $sha = [Security.Cryptography.SHA256]::Create()
+        $empreintes = @(foreach ($z in $PaquetEssai, $PaquetVrai, $PaquetCompat) {
+            $a = [IO.Compression.ZipFile]::OpenRead($z)
+            try {
+                $e = @($a.Entries | Where-Object { $_.FullName.Replace('\', '/') -match '^[^/]+/NevermindAide\.exe$' })
+                if ($e.Count -ne 1) { 'absent ou en double' }
+                else { $s = $e[0].Open(); try { -join ($sha.ComputeHash($s) | ForEach-Object { $_.ToString('X2') }) } finally { $s.Dispose() } }
+            } finally { $a.Dispose() }
+        })
+        Write-Host "         | NevermindAide.exe des paquets : $($empreintes -join ', ')" -ForegroundColor DarkGray
+        $empreintes.Count -eq 3 -and -not @($empreintes | Where-Object { $_ -ne $h }).Count
     }
     # Un petit programme qui attend (fermé par l'Aide au cas 2)
     $cs = Join-Path $Racine 'appli\dormeur.cs'
@@ -539,15 +648,18 @@ function Test-Cas5 {
     Stop-Aides
 
     # c. La bonne tâche, mais qui ne répond pas (lancée, rien n'écoute) : 20 s, puis la demande de Windows
+    # (l'Aide rendue muette de l'extérieur, quel que soit l'exe jugé : à sa place, un programme qui n'écoute jamais)
     Register-ScheduledTask -TaskPath '\Mindset\' -TaskName $NomTache -Xml $bonne.Xml -Force | Out-Null
-    Rename-Item -LiteralPath "$NevermindC\fichiers\NevermindAide.ps1" -NewName 'NevermindAide.ps1.cache'
+    Rename-Item -LiteralPath $exe -NewName 'NevermindAide.exe.cache'
+    Copy-Item -LiteralPath "$Racine\appli\Dormeur.exe" -Destination $exe
     $avant = (Get-InfoTache).Dernier
     $s = Invoke-Client $e ($client + @{ AttenteWindows = 10 })
-    Rename-Item -LiteralPath "$NevermindC\fichiers\NevermindAide.ps1.cache" -NewName 'NevermindAide.ps1'
-    Test-Cas 'tâche SYSTEM reconnue et lancée, mais muette (script de l''Aide absent) : 20 s, puis la demande de Windows pour NevermindAide.exe -Sid <Élodie>' {
+    Stop-Aides
+    Remove-Item -LiteralPath $exe -Force
+    Rename-Item -LiteralPath "$exe.cache" -NewName 'NevermindAide.exe'
+    Test-Cas 'tâche SYSTEM reconnue et lancée, mais muette (Aide qui n''écoute pas) : 20 s, puis la demande de Windows pour NevermindAide.exe -Sid <Élodie>' {
         $s.Etat -eq 'systeme' -and (Get-InfoTache).Dernier -ne $avant -and $s.Duree -ge 20 -and @($s.RunAs).Count -eq 1 -and $s.RunAs[0] -eq "RunAs|$exe|-Sid $($e.Sid)"
     }
-    Stop-Aides
 
     # d. Désactivée
     Disable-ScheduledTask -TaskPath '\Mindset\' -TaskName $NomTache | Out-Null
@@ -616,31 +728,34 @@ function Test-Cas7 {
     $code = "[Environment]::SetEnvironmentVariable('NEVERMIND_TEMOIN_ENV', '1', 'User'); [Environment]::SetEnvironmentVariable('PSModulePath', '$marque', 'User')"
     $p = Start-Process -FilePath $PowerShellExe -ArgumentList '-NoProfile', '-EncodedCommand', ([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($code))) -Credential $e.Cred -LoadUserProfile -WorkingDirectory $Racine -PassThru -WindowStyle Hidden
     [void]$p.WaitForExit(60000)
-    # Une copie de Nevermind dans Program Files (modifiable par les seuls administrateurs) dont l'Aide écrit, au tout
-    # début de son script, ce qu'elle a reçu : lancée par la tâche SYSTEM (à l'identique), puis sous le compte d'Élodie
+    # Une copie de Nevermind dans Program Files (modifiable par les seuls administrateurs), son Aide lancée par une tâche
+    # SYSTEM identique à la vraie : ses variables d'environnement sont lues dans sa mémoire, de l'extérieur, une fois son
+    # canal ouvert (quel que soit l'exe jugé). Contre-épreuve : un programme lancé sous le compte d'Élodie, lu de même.
     $copie = Join-Path $env:ProgramFiles 'MindsetEssaiEnv\Nevermind'
     New-Item -ItemType Directory -Force -Path (Split-Path $copie -Parent) | Out-Null
     Copy-Item -LiteralPath $NevermindC -Destination $copie -Recurse -Force
-    $f = Join-Path $copie 'fichiers\NevermindAide.ps1'
-    $texte = [IO.File]::ReadAllText($f, [Text.Encoding]::UTF8)
-    $ecrire = "& { `$l = [Collections.Generic.List[string]]::new(); `$l.Add('COMPTE=' + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value); `$v = [Environment]::GetEnvironmentVariables(); foreach (`$k in `$v.Keys) { `$l.Add('VAR ' + `$k + '=' + `$v[`$k]) }; [IO.File]::WriteAllLines('$Sorties\env-' + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value + '.txt', `$l) }"
-    $i = $texte.IndexOf('param([int]$Parent, [string]$Sid)')
-    if ($i -lt 0) { throw 'ligne param introuvable dans NevermindAide.ps1' }
-    $j = $texte.IndexOf("`n", $i) + 1
-    [IO.File]::WriteAllText($f, $texte.Substring(0, $j) + $ecrire + "`r`n" + $texte.Substring($j), (New-Object Text.UTF8Encoding $true))
     $t = Get-InfoTache
     Register-ScheduledTask -TaskPath '\MindsetEssai\' -TaskName 'Environnement' -Xml $t.Xml.Replace($NevermindC, $copie) -Force | Out-Null
     Start-ScheduledTask -TaskPath '\MindsetEssai\' -TaskName 'Environnement'
-    $pe = Start-Process -FilePath "$copie\NevermindAide.exe" -ArgumentList '-Sid', $e.Sid -Credential $e.Cred -LoadUserProfile -WorkingDirectory $env:SystemRoot -PassThru
-    $null = Wait-Jusque { (Test-Path -LiteralPath "$Sorties\env-S-1-5-18.txt") -and (Test-Path -LiteralPath "$Sorties\env-$($e.Sid).txt") } 60
+    $canal = Get-NomCanal $e.Sid $copie
+    $sy = @{ Vars = @{} }
+    if (Wait-Jusque { Test-Canal $canal } 60) {
+        $a = @(Get-AidesEnCours | Where-Object { $_.Chemin -like "$copie\*" -and $_.Sid -eq 'S-1-5-18' }) | Select-Object -First 1
+        if ($a) { $sy.Compte = $a.Sid; try { $sy.Vars = Get-EnvProcessus $a.Id } catch { Write-Host "         | environnement de l'Aide illisible : $($_.Exception.Message)" -ForegroundColor DarkGray } }
+    } else { Write-Host "         | l'Aide de la copie n'a pas ouvert son canal ($canal)" -ForegroundColor DarkGray }
+    $pe = Start-Process -FilePath "$Racine\appli\Dormeur.exe" -Credential $e.Cred -LoadUserProfile -WorkingDirectory $env:SystemRoot -PassThru
+    $el = @{ Vars = @{} }
+    Start-Sleep -Seconds 2
+    try {
+        $el.Compte = [string](Invoke-CimMethod -InputObject (Get-CimInstance Win32_Process -Filter "ProcessId=$($pe.Id)") -MethodName GetOwnerSid).Sid
+        $el.Vars = Get-EnvProcessus $pe.Id
+    } catch { Write-Host "         | environnement du témoin illisible : $($_.Exception.Message)" -ForegroundColor DarkGray }
     try { $pe.Kill() } catch {}
     Stop-Aides
-    $lire = { param($f) $x = @{ Vars = @{} }; foreach ($l in @(Get-Content -LiteralPath $f -Encoding UTF8 -ErrorAction SilentlyContinue)) { if ($l -match '^COMPTE=(.*)') { $x.Compte = $Matches[1] } elseif ($l -match '^VAR ([^=]+)=(.*)') { $x.Vars[$Matches[1]] = $Matches[2] } }; $x }
-    $sy = & $lire "$Sorties\env-S-1-5-18.txt"; $el = & $lire "$Sorties\env-$($e.Sid).txt"
-    foreach ($x in @(@('SYSTEM', $sy), @('Élodie', $el))) { Write-Host "         | $($x[0]) : compte $($x[1].Compte), NEVERMIND_TEMOIN_ENV=$($x[1].Vars['NEVERMIND_TEMOIN_ENV']), TEMP=$($x[1].Vars['TEMP']), PSModulePath=$($x[1].Vars['PSModulePath'])" -ForegroundColor DarkGray }
-    Test-Cas 'contre-épreuve : l''Aide lancée sous le compte d''Élodie voit sa variable témoin' { $el.Compte -eq $e.Sid -and $el.Vars['NEVERMIND_TEMOIN_ENV'] -eq '1' }
+    foreach ($x in @(@('SYSTEM', $sy), @('Élodie', $el))) { Write-Host "         | $($x[0]) : compte $($x[1].Compte), $($x[1].Vars.Count) variables, NEVERMIND_TEMOIN_ENV=$($x[1].Vars['NEVERMIND_TEMOIN_ENV']), TEMP=$($x[1].Vars['TEMP']), PSModulePath=$($x[1].Vars['PSModulePath'])" -ForegroundColor DarkGray }
+    Test-Cas 'contre-épreuve : un programme lancé sous le compte d''Élodie voit sa variable témoin' { $el.Compte -eq $e.Sid -and $el.Vars['NEVERMIND_TEMOIN_ENV'] -eq '1' }
     Test-Cas 'l''Aide lancée par la tâche SYSTEM ne voit ni la variable témoin, ni rien du dossier d''Élodie, ni aucune variable COR_* ou COMPlus_*' {
-        $sy.Compte -eq 'S-1-5-18' -and -not $sy.Vars.ContainsKey('NEVERMIND_TEMOIN_ENV') -and -not @($sy.Vars.Values | Where-Object { $_ -like "*$NomElodie*" -or $_ -like "*$marque*" }).Count -and
+        $sy.Compte -eq 'S-1-5-18' -and $sy.Vars.Count -and -not $sy.Vars.ContainsKey('NEVERMIND_TEMOIN_ENV') -and -not @($sy.Vars.Values | Where-Object { $_ -like "*$NomElodie*" -or $_ -like "*$marque*" }).Count -and
             -not @($sy.Vars.Keys | Where-Object { $_ -match '^(COR_|COMPlus_|CORECLR_)' }).Count
     }
     Remove-Item -LiteralPath (Split-Path $copie -Parent) -Recurse -Force -ErrorAction SilentlyContinue
@@ -763,10 +878,372 @@ function Test-Cas8 {
 }
 
 # =====================================================================================================================
+# 9. L'Aide lancée en secours par la demande de Windows : sous le compte qui accepte, avec les droits administrateur
+# =====================================================================================================================
+# Comme au cas 5, le « Oui » de la demande de Windows est simulé : l'essai (administrateur) lance NevermindAide.exe -Sid
+# lui-même. Ici dans un environnement piégé : variables qui mènent à de faux dossiers de Windows, de faux modules
+# PowerShell (partout où PowerShell en chercherait), un faux profil, un faux dossier temporaire. Un faux module chargé,
+# un profil lu ou un fichier écrit dans le piège laisse une trace.
+$ModulesPieges = @('Microsoft.PowerShell.Management', 'Microsoft.PowerShell.Utility', 'Microsoft.PowerShell.Security', 'CimCmdlets', 'ScheduledTasks',
+    'NetSecurity', 'NetAdapter', 'NetTCPIP', 'DnsClient', 'Storage', 'ConfigDefender', 'Defender', 'SmbShare', 'Dism', 'PSReadLine')
+function New-ModulesPieges([string]$Dossier) {
+    foreach ($m in $ModulesPieges) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $Dossier $m) | Out-Null
+        Write-Utf8 (Join-Path $Dossier "$m\$m.psm1") "[IO.File]::WriteAllText('$Sorties\piege-$m-' + `$PID + '.txt', [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)"
+    }
+}
+function Get-TracesPiege { @(Get-ChildItem -LiteralPath $Sorties -Filter 'piege-*.txt' -File -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Name) ($([IO.File]::ReadAllText($_.FullName)))" }) }
+# NevermindAide.exe -Sid <Sid> lancé par l'administrateur (la demande de Windows acceptée), avec ces variables-là
+function Start-AideSecours([string]$Sid, [hashtable]$Variables, [string]$Dossier) {
+    $psi = New-Object Diagnostics.ProcessStartInfo("$NevermindC\NevermindAide.exe")
+    $psi.Arguments = "-Sid $Sid"
+    $psi.UseShellExecute = $false
+    $psi.WorkingDirectory = $Dossier
+    foreach ($k in $Variables.Keys) { $psi.EnvironmentVariables[$k] = [string]$Variables[$k] }
+    [Diagnostics.Process]::Start($psi)
+}
+function Test-Cas9 {
+    Write-Partie '9. L''Aide lancée en secours par la demande de Windows : sous le compte, avec les droits administrateur'
+    Reset-Machine
+    $e = Get-Compte $NomElodie
+    $null = Install-Appli $InstallateurNeuf $PaquetEssai $e.Sid
+    Stop-Aides
+    $piege = Join-Path $Racine 'piege'
+    if (Test-Path -LiteralPath $piege) { Remove-Item -LiteralPath $piege -Recurse -Force }
+    try {
+        New-ModulesPieges "$piege\modules"
+        New-ModulesPieges "$piege\windows\System32\WindowsPowerShell\v1.0\Modules"
+        New-ModulesPieges "$piege\pf\WindowsPowerShell\Modules"
+        New-ModulesPieges "$piege\profil\Documents\WindowsPowerShell\Modules"
+        foreach ($n in 'profile.ps1', 'Microsoft.PowerShell_profile.ps1') {
+            Write-Utf8 "$piege\profil\Documents\WindowsPowerShell\$n" "[IO.File]::WriteAllText('$Sorties\piege-profil-' + `$PID + '.txt', 'profil lu')"
+        }
+        foreach ($d in 'temp', 'pd', 'cwd', 'profil\AppData\Roaming', 'profil\AppData\Local') { New-Item -ItemType Directory -Force -Path "$piege\$d" | Out-Null }
+        Get-ChildItem -LiteralPath $Sorties -Filter 'piege-*.txt' -File -ErrorAction SilentlyContinue | Remove-Item -Force
+        $fichiersAvant = @(Get-ChildItem -LiteralPath $piege -Recurse -Force | ForEach-Object { $_.FullName })
+        $variables = @{
+            NEVERMIND_TEMOIN_ENV = '1'; PSModulePath = "$piege\modules"; windir = "$piege\windows"; SystemRoot = "$piege\windows"
+            ProgramFiles = "$piege\pf"; ProgramW6432 = "$piege\pf"; 'ProgramFiles(x86)' = "$piege\pf"; ProgramData = "$piege\pd"; ALLUSERSPROFILE = "$piege\pd"
+            TEMP = "$piege\temp"; TMP = "$piege\temp"; USERPROFILE = "$piege\profil"; HOMEDRIVE = $piege.Substring(0, 2); HOMEPATH = "$piege\profil".Substring(2)
+            APPDATA = "$piege\profil\AppData\Roaming"; LOCALAPPDATA = "$piege\profil\AppData\Local"
+        }
+        $moiCompte = @{ Nom = "$env:USERNAME (administrateur)"; Sid = $Moi; Cred = $null }
+
+        # a. -Sid de son propre compte : elle répond à Nevermind de ce compte (ouvert avant : l'Aide reste tant qu'il l'est)
+        $canal = Get-NomCanal $Moi $NevermindC
+        $garde = Invoke-Client $moiCompte @{ Mode = 'garder'; Secondes = 180 } -Fond
+        $p = Start-AideSecours $Moi $variables "$piege\cwd"
+        $ouvert = Wait-Jusque { Test-Canal $canal } 60
+        $vars = @{}
+        if ($ouvert) { try { $vars = Get-EnvProcessus $p.Id } catch { Write-Host "         | environnement illisible : $($_.Exception.Message)" -ForegroundColor DarkGray } }
+        $aide = @(Get-AidesEnCours | Where-Object { $_.Id -eq $p.Id })
+        $s = Invoke-Client $moiCompte @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'bonjour'; Action = 'aide.bonjour'; P = @{} }, @{ Nom = 'taches'; Action = 'lecture.taches'; P = @{} }) }
+        $bj = Get-Bonjour $s
+        Test-Cas 'lancée pour son propre compte : elle tourne sous ce compte (pas en SYSTEM) et ouvre le canal de ce compte' {
+            $ouvert -and $aide.Count -eq 1 -and $aide[0].Sid -eq $Moi
+        }
+        Test-Cas 'elle répond à Nevermind de ce compte : son compte, avec les droits administrateur, compile dans aide-temp (jamais dans le TEMP reçu)' {
+            $t = ([string]$bj.Temp).TrimEnd('\')
+            Write-Host "         | bonjour : compte $($bj.Compte), administrateur $($bj.Admin), dossier de compilation $t" -ForegroundColor DarkGray
+            $bj -and [string]$bj.Compte -eq $Moi -and $bj.Admin -eq $true -and $t -in "$NevermindC\aide-temp", (Join-Path ([Environment]::GetFolderPath('Windows')) 'SystemTemp')
+        }
+        Test-Cas 'une lecture qui charge un module de Windows (lecture.taches) marche' { $s.R.PSObject.Properties['taches'] -and -not $s.E.PSObject.Properties['taches'] }
+        $traces = Get-TracesPiege
+        $nouveaux = @(Get-ChildItem -LiteralPath $piege -Recurse -Force | ForEach-Object { $_.FullName } | Where-Object { $fichiersAvant -notcontains $_ })
+        foreach ($x in @($traces) + @($nouveaux)) { Write-Host "         | piège : $x" -ForegroundColor DarkGray }
+        Test-Cas 'rien pris du compte : aucun faux module chargé, aucun profil lu, rien écrit dans les faux dossiers (temporaire, profil, Windows)' { -not $traces.Count -and -not $nouveaux.Count }
+        $dossiers = 'windir', 'SystemRoot', 'ProgramFiles', 'ProgramW6432', 'ProgramFiles(x86)', 'ProgramData', 'ALLUSERSPROFILE', 'PSModulePath', 'TEMP', 'TMP'
+        foreach ($k in $dossiers) { if ($vars.ContainsKey($k)) { Write-Host "         | $k=$($vars[$k])" -ForegroundColor DarkGray } }
+        Test-Cas 'les dossiers de Windows et le dossier temporaire de l''Aide ne mènent pas au piège (pour ce qu''elle lance : PresentMon, netsh...)' {
+            $vars.Count -and -not @($dossiers | Where-Object { $vars.ContainsKey($_) -and ([string]$vars[$_]).IndexOf($piege, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count
+        }
+        try { $p.Kill() } catch {}
+        try { $garde.Kill() } catch {}
+        Stop-Aides
+
+        # b. -Sid d'un autre compte (Élodie, compte standard : l'administrateur accepte pour elle, comme au cas 5)
+        $canalElodie = Get-NomCanal $e.Sid $NevermindC
+        $p = Start-AideSecours $e.Sid $variables "$piege\cwd"
+        $servie = Wait-Jusque { Test-Canal $canalElodie } 30
+        Test-Cas 'lancée pour un autre compte : jamais de canal au nom du compte administrateur qui l''a lancée' { -not (Test-Canal $canal) }
+        if ($servie) { Add-Note 'secours pour un autre compte (Élodie, standard, aidée par un administrateur) : servi, comme au cas 5. La règle du plan « SID différent du sien refusé » ferait échouer le cas 5 : à trancher par Jordan' }
+        else { Add-Note 'secours pour un autre compte (Élodie, standard, aidée par un administrateur) : refusé, comme le dit le plan ; le cas 5 ne peut alors plus passer : à trancher par Jordan' }
+        try { $p.Kill() } catch {}
+        Stop-Aides
+
+        # c. Un « SID » qui n'est pas un compte d'utilisateur : jamais de canal à ce nom, jamais en SYSTEM
+        foreach ($faux in 'S-1-5-18', 'S-1-5-32-544', 'pas-un-sid') {
+            $p = Start-AideSecours $faux $variables "$piege\cwd"
+            Start-Sleep -Seconds 5
+            $c = Get-NomCanal $faux $NevermindC
+            Test-Cas "-Sid « $faux » : aucun canal à ce nom, aucune Aide en SYSTEM" { -not (Test-Canal $c) -and -not @(Get-AidesEnCours | Where-Object { $_.Sid -eq 'S-1-5-18' }).Count }
+            try { $p.Kill() } catch {}
+            Stop-Aides
+        }
+        Test-Cas 'toujours rien pris du piège après tous ces lancements' { -not (Get-TracesPiege).Count }
+    } finally {
+        Stop-Aides
+        Remove-Item -LiteralPath $piege -Recurse -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -LiteralPath $Sorties -Filter 'piege-*.txt' -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# =====================================================================================================================
+# 10. Tout optimiser puis tout restaurer, comparé d'un NevermindAide.exe à l'autre
+# =====================================================================================================================
+# Les réglages que l'Aide accepte de changer (sa liste, aide-actions.ps1) : Nevermind les envoie pour « optimiser » ;
+# pour « Tout restaurer », il renvoie les valeurs d'origine relevées avant (ici, l'état « avant » de l'essai).
+$RegEssai = @(
+    @('HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers', 'HwSchMode', 'DWord', 2)
+    @('HKU:\S-1-5-20\Software\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Settings', 'DownloadMode', 'DWord', 0)
+    @('HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization', 'DOPercentageMaxBackgroundBandwidth', 'DWord', 10)
+    @('HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization', 'DODownloadMode', 'DWord', 0)
+    @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection', 'AllowTelemetry', 'DWord', 0)
+    @('HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection', 'AllowTelemetry', 'DWord', 0)
+    @('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore', 'SystemRestorePointCreationFrequency', 'DWord', 0)
+    @('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\EssaiNevermind.exe\PerfOptions', 'CpuPriorityClass', 'DWord', 3)
+    @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run', 'EssaiNevermind', 'Binary', @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+)
+function Open-CleLecture([string]$Cle) {
+    if ($Cle -match '^HKLM:\\(.+)$') { return [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($Matches[1]) }
+    if ($Cle -match '^HKU:\\(.+)$') { return [Microsoft.Win32.Registry]::Users.OpenSubKey($Matches[1]) }
+    $null
+}
+# Une valeur du registre : $null si absente, sinon @{ Type; Valeur ; Texte }
+function Get-ValeurReg([string]$Cle, [string]$Nom) {
+    $k = Open-CleLecture $Cle
+    if (-not $k) { return $null }
+    try {
+        if ($k.GetValueNames() -notcontains $Nom) { return $null }
+        $type = $k.GetValueKind($Nom).ToString()
+        $v = $k.GetValue($Nom, $null, 'DoNotExpandEnvironmentNames')
+        $texte = if ($v -is [byte[]]) { ($v | ForEach-Object { $_.ToString('X2') }) -join ' ' } elseif ($v -is [array]) { $v -join '|' } else { [string]$v }
+        @{ Type = $type; Valeur = $(if ($v -is [byte[]]) { [int[]]$v } else { $v }); Texte = "$type=$texte" }
+    } finally { $k.Close() }
+}
+function Get-TexteReg([string]$Cle, [string]$Nom) { $v = Get-ValeurReg $Cle $Nom; if ($v) { $v.Texte } else { 'absente' } }
+# Un objet JSON écrit par l'Aide (valeurs d'origine), remis dans un ordre fixe : seul le contenu compte, pas la mise en forme
+function ConvertTo-JsonCanonique([string]$Texte) {
+    try { $o = $Texte | ConvertFrom-Json } catch { return "illisible : $Texte" }
+    if ($o -isnot [Management.Automation.PSCustomObject]) { return "$o" }
+    (@($o.PSObject.Properties | Sort-Object Name | ForEach-Object { "$($_.Name)=$(@($_.Value) -join ',')" }) -join ' ; ')
+}
+# La carte réseau de l'essai (celle de la route par défaut) et les services que l'essai règle
+function Get-CarteEssai {
+    $r = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric) | Select-Object -First 1
+    $ad = Get-NetAdapter -InterfaceIndex $r.ifIndex -ErrorAction Stop
+    @{ Index = [int]$ad.ifIndex; Guid = '{' + ([string]$ad.InterfaceGuid).Trim('{', '}') + '}'; Nom = [string]$ad.Name }
+}
+function Get-ServicesEssai {
+    $memoire = @(Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(edgeupdate|edgeupdatem|gupdate|gupdatem|MozillaMaintenance|AdobeARMservice|GoogleUpdater(Internal)?Service[\d.]{0,20})$' } |
+        Sort-Object Name | Select-Object -First 4 | ForEach-Object { $_.Name })
+    @{ Telemetrie = 'DiagTrack'; Memoire = $memoire }
+}
+# L'état de la machine : tout ce que l'Aide peut toucher (et des témoins qu'elle ne doit jamais toucher), en textes
+function Get-EtatMachine($Carte, $Services) {
+    $etat = [ordered]@{}
+    foreach ($r in $RegEssai) { $etat["registre|$($r[0])|$($r[1])"] = Get-TexteReg $r[0] $r[1] }
+    foreach ($n in @($Services.Telemetrie) + @($Services.Memoire)) {
+        $c = "HKLM:\SYSTEM\CurrentControlSet\Services\$n"
+        $etat["service|$n"] = "démarrage $(Get-TexteReg $c 'Start') ; différé $(Get-TexteReg $c 'DelayedAutostart')"
+    }
+    $etat["service en marche|$($Services.Telemetrie)"] = [string](Get-Service -Name $Services.Telemetrie -ErrorAction SilentlyContinue).Status
+    foreach ($b in 'Tcpip', 'Tcpip6') { $etat["dns|$b|$($Carte.Nom)"] = Get-TexteReg "HKLM:\SYSTEM\CurrentControlSet\Services\$b\Parameters\Interfaces\$($Carte.Guid)" 'NameServer' }
+    $regles = @(foreach ($n in 'Nevermind : bloque *', 'OptiGame : bloque *') {
+        foreach ($g in @(Get-NetFirewallRule -DisplayName $n -ErrorAction SilentlyContinue)) {
+            $prog = [string](Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $g -ErrorAction SilentlyContinue).Program
+            $svc = [string](Get-NetFirewallServiceFilter -AssociatedNetFirewallRule $g -ErrorAction SilentlyContinue).Service
+            "$($g.DisplayName) / $($g.Direction) / $($g.Action) / actif $($g.Enabled) / profil $($g.Profile) / $prog / service $svc"
+        }
+    })
+    $etat['pare-feu|règles de Nevermind'] = if ($regles.Count) { (@($regles | Sort-Object) -join ' ; ') } else { 'aucune' }
+    $etat['pare-feu|profils'] = (@(Get-NetFirewallProfile -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object { "$($_.Name) $($_.Enabled)" }) -join ' ; ')
+    $pc = Join-Path ([Environment]::GetFolderPath('System')) 'powercfg.exe'
+    $etat['alimentation|plan actif'] = [regex]::Match((& $pc /getactivescheme | Out-String), '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}').Value
+    $etat['alimentation|plans'] = (@([regex]::Matches((& $pc /list | Out-String), '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}') | ForEach-Object { $_.Value } | Sort-Object) -join ' ')
+    foreach ($t in @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Mindset\*' -and $_.TaskPath -notlike '\MindsetEssai\*' })) {
+        $etat["tâche|$($t.TaskPath)$($t.TaskName)"] = if ($t.State -eq 'Disabled') { 'désactivée' } else { 'active' }
+    }
+    # Ce que l'Aide retient elle-même (HKLM\SOFTWARE\Mindset\Nevermind\Aide) : comparé d'une Aide à l'autre, pas à « avant »
+    $racineMemoire = 'SOFTWARE\Mindset\Nevermind\Aide'
+    $pile = New-Object Collections.Generic.Stack[string]
+    $pile.Push($racineMemoire)
+    while ($pile.Count) {
+        $sous = $pile.Pop()
+        $k = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($sous)
+        if (-not $k) { continue }
+        try {
+            foreach ($n in $k.GetSubKeyNames()) { $pile.Push("$sous\$n") }
+            foreach ($n in $k.GetValueNames()) {
+                $v = [string]$k.GetValue($n, $null, 'DoNotExpandEnvironmentNames')
+                $etat["mémoire de l'Aide|$($sous.Substring($racineMemoire.Length))|$n"] = if ($v.StartsWith('{')) { ConvertTo-JsonCanonique $v } else { $v }
+            }
+        } finally { $k.Close() }
+    }
+    $etat
+}
+# Les différences entre deux états (-SansMemoire : seulement la machine)
+function Compare-Etats($A, $B, [switch]$SansMemoire) {
+    $cles = @(@($A.Keys) + @($B.Keys) | Sort-Object -Unique)
+    @(foreach ($c in $cles) {
+        if ($SansMemoire -and $c -like 'mémoire de l''Aide|*') { continue }
+        $x = if ($A.Contains($c)) { [string]$A[$c] } else { '(rien)' }
+        $y = if ($B.Contains($c)) { [string]$B[$c] } else { '(rien)' }
+        if ($x -cne $y) { "$c : « $x » puis « $y »" }
+    })
+}
+function Show-Differences([string]$Titre, $Differences) {
+    if (-not @($Differences).Count) { return }
+    Write-Host "         | $Titre :" -ForegroundColor DarkGray
+    foreach ($d in @($Differences) | Select-Object -First 40) { Write-Host "         |   $d" -ForegroundColor DarkGray }
+}
+# Les réponses de l'Aide, en textes (« ok » ou le message de refus, mot pour mot)
+function Get-Reponses($S, $Actions) {
+    $r = [ordered]@{}
+    foreach ($a in $Actions) {
+        $n = [string]$a.Nom
+        $r[$n] = if ($S.R -and $S.R.PSObject.Properties[$n]) { "fait : $(ConvertTo-Json -InputObject $S.R.$n -Compress -Depth 4)" }
+                 elseif ($S.E -and $S.E.PSObject.Properties[$n]) { "refusé : $($S.E.$n)" } else { 'pas de réponse' }
+    }
+    $r
+}
+function Invoke-Passage([string]$Exe, [string]$Titre) {
+    Write-Host "  -- $Titre" -ForegroundColor Cyan
+    Reset-Machine
+    $e = Get-Compte $NomElodie
+    $null = Install-Appli $InstallateurNeuf $PaquetEssai $e.Sid
+    if ($Exe) { Stop-Aides; Copy-Item -LiteralPath $Exe -Destination "$NevermindC\NevermindAide.exe" -Force }
+    $empreinte = (Get-FileHash -LiteralPath "$NevermindC\NevermindAide.exe" -Algorithm SHA256).Hash
+    Write-Host "         | NevermindAide.exe installé : $(if ($Exe) { $Exe } else { 'celui des paquets' }) (SHA-256 $empreinte)" -ForegroundColor DarkGray
+    $carte = Get-CarteEssai
+    $services = Get-ServicesEssai
+    Write-Host "         | carte $($carte.Nom) ($($carte.Index)) ; services $(@($services.Telemetrie) + @($services.Memoire) -join ', ')" -ForegroundColor DarkGray
+    $avant = Get-EtatMachine $carte $services
+
+    # Tout optimiser (et des demandes que l'Aide doit refuser, pour comparer ses messages)
+    $optim = [Collections.Generic.List[object]]::new()
+    $i = 0
+    foreach ($r in $RegEssai) { $i++; $optim.Add(@{ Nom = "reg$i"; Action = 'reg.ecrire'; P = @{ Cle = $r[0]; Nom = $r[1]; Type = $r[2]; Valeur = $r[3] } }) }
+    $optim.Add(@{ Nom = 'service-telemetrie'; Action = 'service.regler'; P = @{ Nom = $services.Telemetrie; Demarrage = 'Disabled'; Arreter = $true } })
+    foreach ($n in $services.Memoire) { $optim.Add(@{ Nom = "service-$n"; Action = 'service.regler'; P = @{ Nom = $n; Demarrage = 'Manual'; Arreter = $true } }) }
+    $optim.Add(@{ Nom = 'dns'; Action = 'dns.regler'; P = @{ Index = $carte.Index; Serveurs = @('1.1.1.1', '1.0.0.1') } })
+    $optim.Add(@{ Nom = 'pare-feu'; Action = 'pare-feu.bloquer'; P = @{ Nom = 'Nevermind : bloque Dormeur'; Programme = "$Racine\appli\Dormeur.exe" } })
+    $refus = @(
+        @{ Nom = 'refus-uac'; Action = 'reg.ecrire'; P = @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Type = 'DWord'; Valeur = 0 } }
+        @{ Nom = 'refus-cle'; Action = 'reg.ecrire'; P = @{ Cle = 'HKLM:\SOFTWARE\EssaiNevermind'; Nom = 'X'; Type = 'DWord'; Valeur = 1 } }
+        @{ Nom = 'refus-type'; Action = 'reg.ecrire'; P = @{ Cle = $RegEssai[0][0]; Nom = $RegEssai[0][1]; Type = 'String'; Valeur = '2' } }
+        @{ Nom = 'refus-windows'; Action = 'reg.ecrire'; P = @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\lsass.exe\PerfOptions'; Nom = 'CpuPriorityClass'; Type = 'DWord'; Valeur = 3 } }
+        @{ Nom = 'refus-temps-reel'; Action = 'reg.ecrire'; P = @{ Cle = $RegEssai[7][0]; Nom = 'CpuPriorityClass'; Type = 'DWord'; Valeur = 4 } }
+        @{ Nom = 'refus-service-desactive'; Action = 'service.regler'; P = @{ Nom = 'gupdate'; Demarrage = 'Disabled' } }
+        @{ Nom = 'refus-service'; Action = 'service.regler'; P = @{ Nom = 'Spooler'; Demarrage = 'Manual' } }
+        @{ Nom = 'refus-dns'; Action = 'dns.regler'; P = @{ Index = $carte.Index; Serveurs = @('6.6.6.6') } }
+        @{ Nom = 'refus-pare-feu'; Action = 'pare-feu.bloquer'; P = @{ Nom = 'Nevermind : bloque svchost'; Programme = (Join-Path ([Environment]::GetFolderPath('System')) 'svchost.exe') } }
+        @{ Nom = 'refus-inconnue'; Action = 'reg.tout'; P = @{} }
+    )
+    foreach ($x in $refus) { $optim.Add($x) }
+    $s1 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @($optim) }
+    Start-Sleep -Seconds 2
+    $apres = Get-EtatMachine $carte $services
+
+    # Tout restaurer : les valeurs d'avant, dans l'ordre de Nevermind (Restore-AllSettings)
+    $rest = [Collections.Generic.List[object]]::new()
+    $rest.Add(@{ Nom = 'pare-feu'; Action = 'pare-feu.debloquer-tout'; P = @{} })
+    $i = 0
+    foreach ($r in $RegEssai) {
+        $i++
+        $t = $avant["registre|$($r[0])|$($r[1])"]   # (« absente », ou « Type=valeur »)
+        if ($t -eq 'absente') { $rest.Add(@{ Nom = "reg$i"; Action = 'reg.effacer'; P = @{ Cle = $r[0]; Nom = $r[1] } }); continue }
+        $type, $texte = $t -split '=', 2
+        $valeur = if ($type -eq 'Binary') { @($texte -split ' ' | ForEach-Object { [Convert]::ToInt32($_, 16) }) } else { [long]$texte }
+        $rest.Add(@{ Nom = "reg$i"; Action = 'reg.ecrire'; P = @{ Cle = $r[0]; Nom = $r[1]; Type = $type; Valeur = $valeur } })
+    }
+    $nomsDemarrage = @{ '2' = 'Automatic'; '3' = 'Manual'; '4' = 'Disabled' }
+    foreach ($n in @($services.Telemetrie) + @($services.Memoire)) {
+        $d = [regex]::Match($avant["service|$n"], 'démarrage DWord=(\d)').Groups[1].Value
+        $lancer = $n -eq $services.Telemetrie -and $avant["service en marche|$n"] -eq 'Running'
+        $rest.Add(@{ Nom = "service-$n"; Action = 'service.regler'; P = @{ Nom = $n; Demarrage = [string]$nomsDemarrage[$d]; Lancer = $lancer } })
+    }
+    $dnsAvant = $avant["dns|Tcpip|$($carte.Nom)"]
+    $serveurs = if ($dnsAvant -like 'String=?*') { @($dnsAvant.Substring(7) -split '[,\s]+' | Where-Object { $_ }) } else { @() }
+    $rest.Add(@{ Nom = 'dns'; Action = 'dns.regler'; P = @{ Index = $carte.Index; Serveurs = $serveurs } })
+    $rest.Add(@{ Nom = 'oublier'; Action = 'origines.oublier'; P = @{} })
+    $s2 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @($rest) }
+    Start-Sleep -Seconds 2
+    $remis = Get-EtatMachine $carte $services
+    Stop-Aides
+    [pscustomobject]@{
+        Titre = $Titre; Empreinte = $empreinte; Avant = $avant; Apres = $apres; Remis = $remis; Services = $services; Carte = $carte
+        Optim = Get-Reponses $s1 @($optim); Restauration = Get-Reponses $s2 @($rest); Refus = @($refus | ForEach-Object { $_.Nom })
+    }
+}
+function Test-Cas10 {
+    Write-Partie '10. Tout optimiser puis tout restaurer : la machine revient à son état, et deux NevermindAide.exe font pareil'
+    $liste = @($Aides -split ';' | Where-Object { $_ })
+    if (-not $liste.Count) { $liste = @('', '') }       # (celui des paquets, deux fois)
+    elseif ($liste.Count -eq 1) { $liste += $liste[0] }
+    $passages = New-Object Collections.Generic.List[object]
+    $n = 0
+    foreach ($x in $liste) {
+        $n++
+        $p = Invoke-Passage $x "passage $n : $(if ($x) { $x } else { 'NevermindAide.exe des paquets' })"
+        $passages.Add($p)
+        Write-Utf8 (Join-Path $Sorties "optimiser-restaurer-$n.json") ($p | ConvertTo-Json -Depth 6)
+        $t = "passage $n"
+        $refuses = @($p.Refus)
+        Test-Cas "$t, optimiser : chaque demande permise est faite, chaque demande interdite refusée" {
+            foreach ($k in $p.Optim.Keys) { Write-Host "         |   $k : $($p.Optim[$k])" -ForegroundColor DarkGray }
+            -not @($p.Optim.Keys | Where-Object { ($refuses -contains $_) -ne ($p.Optim[$_] -like 'refusé : *') -or ($refuses -notcontains $_ -and $p.Optim[$_] -ne 'fait : "ok"') }).Count
+        }
+        Test-Cas "$t, après l'optimisation : chaque réglage a la valeur demandée (registre, services, DNS, pare-feu)" {
+            $faux = @()
+            foreach ($r in $RegEssai) {
+                $v = $p.Apres["registre|$($r[0])|$($r[1])"]
+                $attendu = if ($r[2] -eq 'Binary') { "Binary=$((@($r[3]) | ForEach-Object { ([int]$_).ToString('X2') }) -join ' ')" } else { "$($r[2])=$($r[3])" }
+                if ($v -ne $attendu) { $faux += "$($r[1]) : $v au lieu de $attendu" }
+            }
+            if ($p.Apres["service|$($p.Services.Telemetrie)"] -notlike 'démarrage DWord=4 ;*') { $faux += "télémétrie : $($p.Apres["service|$($p.Services.Telemetrie)"])" }
+            if ($p.Apres["service en marche|$($p.Services.Telemetrie)"] -ne 'Stopped') { $faux += "télémétrie en marche : $($p.Apres["service en marche|$($p.Services.Telemetrie)"])" }
+            foreach ($s in $p.Services.Memoire) { if ($p.Apres["service|$s"] -notlike 'démarrage DWord=3 ;*') { $faux += "$s : $($p.Apres["service|$s"])" } }
+            if ($p.Apres["dns|Tcpip|$($p.Carte.Nom)"] -notmatch '^String=1\.1\.1\.1[, ]1\.0\.0\.1$') { $faux += "DNS : $($p.Apres["dns|Tcpip|$($p.Carte.Nom)"])" }
+            if (@(([string]$p.Apres['pare-feu|règles de Nevermind']) -split ' ; ' | Where-Object { $_ -like 'Nevermind : bloque Dormeur / *' -and $_ -like '* / Block / *' }).Count -ne 2) { $faux += "pare-feu : $($p.Apres['pare-feu|règles de Nevermind'])" }
+            foreach ($f in $faux) { Write-Host "         |   $f" -ForegroundColor DarkGray }
+            -not $faux.Count
+        }
+        Test-Cas "$t, l'Aide retient les valeurs d'origine (une par réglage du registre) et un DNS d'origine" {
+            @($p.Apres.Keys | Where-Object { $_ -like 'mémoire de l''Aide|\Origines|*' }).Count -eq $RegEssai.Count -and @($p.Apres.Keys | Where-Object { $_ -like 'mémoire de l''Aide|\Dns|*' }).Count -eq 1
+        }
+        Test-Cas "$t, restaurer : chaque demande est faite" {
+            foreach ($k in $p.Restauration.Keys) { Write-Host "         |   $k : $($p.Restauration[$k])" -ForegroundColor DarkGray }
+            -not @($p.Restauration.Keys | Where-Object { $p.Restauration[$_] -ne 'fait : "ok"' }).Count
+        }
+        $d = Compare-Etats $p.Avant $p.Remis -SansMemoire
+        Show-Differences 'pas revenu' $d
+        Test-Cas "$t, après la restauration : la machine est revenue à son état d'avant ($($p.Avant.Count) points relevés : registre, services, DNS, pare-feu, plans d'alimentation, tâches)" { -not $d.Count }
+        Test-Cas "$t, après la restauration : les valeurs d'origine sont oubliées" { -not @($p.Remis.Keys | Where-Object { $_ -like 'mémoire de l''Aide|\Origines|*' }).Count }
+        if ($n -gt 1) {
+            $a = $passages[0]
+            $comparaisons = @(
+                @('la machine de départ', (Compare-Etats $a.Avant $p.Avant -SansMemoire)),
+                @('l''état après l''optimisation (mémoire de l''Aide comprise)', (Compare-Etats $a.Apres $p.Apres)),
+                @('l''état après la restauration (mémoire de l''Aide comprise)', (Compare-Etats $a.Remis $p.Remis)),
+                @('les réponses à l''optimisation (mot pour mot)', (Compare-Etats $a.Optim $p.Optim)),
+                @('les réponses à la restauration (mot pour mot)', (Compare-Etats $a.Restauration $p.Restauration))
+            )
+            foreach ($c in $comparaisons) {
+                Show-Differences "différent du passage 1" $c[1]
+                Test-Cas "passage $n comparé au passage 1 : même $($c[0])" { -not @($c[1]).Count }
+            }
+        }
+    }
+    if (($liste | Select-Object -Unique).Count -lt 2 -or -not $liste[0]) { Add-Note 'un seul NevermindAide.exe comparé à lui-même (deux passages) : la comparaison entre deux Aides viendra avec l''exe Rust' }
+}
+
+# =====================================================================================================================
 $titres = @{ 0 = 'Préparation'; 1 = 'Installation : tâche SYSTEM pour Élodie'; 2 = 'Élodie obtient des actions en lecture seule'; 3 = 'Un autre compte refusé'
     4 = 'Mise à jour depuis Nevermind 1.10.0'; 5 = 'Repli par la demande de Windows'; 6 = 'Désinstallation'; 7 = 'Environnement d''Élodie'
-    8 = 'Changement de nom : mises à jour, anciens Mindset, une seule instance' }
-if (-not $titres.ContainsKey($Cas)) { Write-Host 'Indique -Cas 0 (préparation) ou -Cas 1 à 8.' -ForegroundColor Yellow; exit 2 }
+    8 = 'Changement de nom : mises à jour, anciens Mindset, une seule instance'; 9 = 'Aide lancée en secours par la demande de Windows'
+    10 = 'Tout optimiser puis tout restaurer' }
+if (-not $titres.ContainsKey($Cas)) { Write-Host 'Indique -Cas 0 (préparation) ou -Cas 1 à 10.' -ForegroundColor Yellow; exit 2 }
 try {
     switch ($Cas) {
         0 { if ($env:GITHUB_STEP_SUMMARY) { [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "| Cas | Quoi | Résultat |`n|---|---|---|`n", (New-Object Text.UTF8Encoding $false)) }; Initialize-Essai }
@@ -778,6 +1255,8 @@ try {
         6 { Test-Cas6 }
         7 { Test-Cas7 }
         8 { Test-Cas8 }
+        9 { Test-Cas9 }
+        10 { Test-Cas10 }
     }
 } catch {
     $script:Echoues.Add("erreur : $($_.Exception.Message)")

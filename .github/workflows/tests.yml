@@ -113,3 +113,67 @@ jobs:
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-panneau.ps1
           exit $LASTEXITCODE
+
+  # Le Rust de Nevermind (passage en Rust, étape 1a : NevermindAide.exe). Tant que rust\Cargo.toml n'existe pas, rien à
+  # faire : le job reste vert.
+  rust:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: powershell
+        working-directory: rust
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Y a-t-il du Rust ? (rust\Cargo.toml)"
+        id: rust
+        working-directory: .
+        run: |
+          $present = Test-Path -LiteralPath 'rust\Cargo.toml'
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "present=$($present.ToString().ToLower())`n")
+          Write-Host $(if ($present) { 'rust\Cargo.toml trouvé : construction et vérifications.' } else { 'Pas de rust\Cargo.toml : rien à construire.' })
+
+      - name: "Rust, la version figée par rust/rust-toolchain.toml (avec clippy et rustfmt)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: |
+          rustup toolchain install
+          if ($LASTEXITCODE) { rustup show; if ($LASTEXITCODE) { exit 1 } }
+          rustc --version
+          if ((rustc --version) -notmatch '^rustc 1\.99\.1 ') { Write-Host 'Mauvaise version de Rust.'; exit 1 }
+
+      - name: "Construction (bibliothèques figées par Cargo.lock)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: cargo build --locked --workspace
+
+      - name: "Tests Rust (cargo test)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: cargo test --locked --workspace
+
+      - name: "Clippy strict (aucun avertissement permis)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      - name: "Mise en forme (cargo fmt)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: cargo fmt --all --check
+
+      - name: "cargo deny : licences compatibles MIT, failles connues, liste blanche des bibliothèques"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # cargo-deny 0.20.2 tout prêt, vérifié par son empreinte (relevée le 26/10/2026, comme Mindset), seulement sur la machine GitHub
+          $d = Join-Path $env:RUNNER_TEMP 'cargo-deny'
+          gh release download 0.20.2 --repo EmbarkStudios/cargo-deny --pattern 'cargo-deny-0.20.2-x86_64-pc-windows-msvc.tar.gz' --dir $d
+          if ($LASTEXITCODE) { exit 1 }
+          $archive = Join-Path $d 'cargo-deny-0.20.2-x86_64-pc-windows-msvc.tar.gz'
+          $h = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
+          if ($h -ne '975A22143262FD27476D19EE00C7AF67978426E40E1DEE94EED6BBADE1CF87DC') { Write-Host "Empreinte inattendue : $h"; exit 1 }
+          tar -xzf $archive -C $d
+          $exe = Get-ChildItem -LiteralPath $d -Recurse -Filter 'cargo-deny.exe' | Select-Object -First 1
+          & $exe.FullName --version
+          & $exe.FullName --locked check
+          if ($LASTEXITCODE) { exit 1 }

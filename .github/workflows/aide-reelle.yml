@@ -2,6 +2,10 @@
 # comptes Windows, vraie installation par l'installateur de Mindset), et le changement de nom (cas 8). Lancée à la main seulement :
 #   gh workflow run aide-reelle.yml -f mindset=<branche ou version de Mindset>
 # Tout le code est dans outils\essai-aide-reelle.ps1 (UTF-8 avec BOM : un nom accentué écrit ici arriverait abîmé).
+#
+# Les NevermindAide.exe jugés (passage en Rust, étape 1a) : le lanceur C# que construit outils\construire.ps1, et, si
+# rust\nevermind-aide existe, l'exe Rust construit dans ce même run. Chacun passe les mêmes cas, sur sa propre machine.
+# Le cas 10 (tout optimiser puis tout restaurer) les passe l'un après l'autre sur la même machine et compare les états.
 name: Aide en vrai
 
 on:
@@ -16,17 +20,81 @@ permissions:
   contents: read
 
 jobs:
-  essai:
+  rust:
+    name: "NevermindAide.exe en Rust (seulement si rust\\nevermind-aide existe)"
     runs-on: windows-latest
-    timeout-minutes: 90
+    defaults:
+      run:
+        shell: powershell
+    env:
+      CARGO_TERM_COLOR: never
+    outputs:
+      aides: ${{ steps.liste.outputs.aides }}
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Les Aides à juger"
+        id: liste
+        run: |
+          $rust = Test-Path -LiteralPath 'rust\nevermind-aide\Cargo.toml'
+          $aides = if ($rust) { '["lanceur","rust"]' } else { '["lanceur"]' }
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "aides=$aides`nrust=$($rust.ToString().ToLower())`n")
+          Write-Host "Aides jugées : $aides"
+
+      - name: "Rust, la version figée par rust/rust-toolchain.toml"
+        if: ${{ steps.liste.outputs.rust == 'true' }}
+        working-directory: rust
+        run: |
+          rustup toolchain install
+          if ($LASTEXITCODE) { rustup show; if ($LASTEXITCODE) { exit 1 } }
+          rustc --version
+
+      - name: "Construire NevermindAide.exe (cargo build --release --locked)"
+        if: ${{ steps.liste.outputs.rust == 'true' }}
+        working-directory: rust
+        run: |
+          cargo build --release --locked -p nevermind-aide
+          if ($LASTEXITCODE) { exit 1 }
+          New-Item -ItemType Directory -Force -Path ..\_aide | Out-Null
+          Copy-Item -LiteralPath target\release\nevermind-aide.exe -Destination ..\_aide\NevermindAide.exe
+          Write-Host "NevermindAide.exe (Rust) : SHA-256 $((Get-FileHash -LiteralPath ..\_aide\NevermindAide.exe -Algorithm SHA256).Hash)"
+
+      - name: "Déposer l'exe Rust pour les essais"
+        if: ${{ steps.liste.outputs.rust == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: aide-rust
+          path: _aide/NevermindAide.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  essai:
+    name: "Aide en vrai (${{ matrix.aide }})"
+    needs: rust
+    runs-on: windows-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        aide: ${{ fromJSON(needs.rust.outputs.aides) }}
     defaults:
       run:
         shell: powershell
     env:
       GH_TOKEN: ${{ github.token }}
+      # (l'exe jugé : vide pour le lanceur C# que construit outils\construire.ps1)
+      AIDE: ${{ matrix.aide == 'rust' && 'C:\essai-aide\rust\NevermindAide.exe' || '' }}
     steps:
       - name: Récupérer le dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Récupérer l'exe Rust (construit plus haut dans ce run)"
+        if: ${{ contains(needs.rust.outputs.aides, 'rust') }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aide-rust
+          path: C:\essai-aide\rust
 
       - name: Récupérer Mindset
         run: |
@@ -35,8 +103,8 @@ jobs:
           if ($LASTEXITCODE) { exit 1 }
           git -C C:\essai\mindset log --oneline -1
 
-      - name: "0. Préparation (Nevermind et Mindset construits, clé de TEST, paquets, Releases v1.10.0 et v1.11.0, Mindset 2.12.0)"
-        run: .\outils\essai-aide-reelle.ps1 -Cas 0
+      - name: "0. Préparation (Nevermind et Mindset construits, l'Aide jugée dans les paquets, clé de TEST, Releases v1.10.0 et v1.11.0, Mindset 2.12.0)"
+        run: .\outils\essai-aide-reelle.ps1 -Cas 0 -Aide $env:AIDE
 
       - name: "1. Installation pour un compte standard : tâche de l'Aide en SYSTEM pour lui"
         if: ${{ !cancelled() }}
@@ -69,3 +137,23 @@ jobs:
       - name: "8. Changement de nom : Nevermind 1.11.0 mis à jour, anciens Mindset (zip de compatibilité), une seule instance"
         if: ${{ !cancelled() }}
         run: .\outils\essai-aide-reelle.ps1 -Cas 8
+
+      - name: "9. L'Aide lancée en secours par la demande de Windows : sous le compte, environnement piégé"
+        if: ${{ !cancelled() }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 9
+
+      # (une seule fois, sur la machine du lanceur C# : chaque Aide l'une après l'autre, sur la même machine)
+      - name: "10. Tout optimiser puis tout restaurer : la machine revient à son état, mêmes états et mêmes réponses d'une Aide à l'autre"
+        if: ${{ !cancelled() && matrix.aide == 'lanceur' }}
+        run: |
+          $aides = if (Test-Path -LiteralPath 'C:\essai-aide\rust\NevermindAide.exe') { "$PWD\Nevermind\NevermindAide.exe;C:\essai-aide\rust\NevermindAide.exe" } else { '' }
+          .\outils\essai-aide-reelle.ps1 -Cas 10 -Aides $aides
+
+      - name: "Garder les relevés du cas 10"
+        if: ${{ !cancelled() && matrix.aide == 'lanceur' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: optimiser-restaurer
+          path: C:/essai/sorties/optimiser-restaurer-*.json
+          if-no-files-found: warn
+          retention-days: 14

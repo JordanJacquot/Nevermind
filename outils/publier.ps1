@@ -120,6 +120,18 @@ if (-not $Essai) {
 # signatures (Mindset et Nevermind refusent un zip sans signature valide). signer.ps1 s'arrête sur une erreur s'il ne
 # peut pas signer : la publication est alors annulée avant tout envoi. En essai, une clé jetable signe à sa place.
 & (Join-Path $PSScriptRoot 'construire.ps1')
+# NevermindAide.exe en Rust (passage en Rust, étape 1a) : seulement quand rust\nevermind-aide existe. Il n'est jamais
+# construit sur ce PC : il vient de la construction GitHub (release.yml) de ce commit, et son attestation est vérifiée
+# (bon dépôt, bon fichier de construction, ce commit) avant de prendre la place de celui de construire.ps1 ; sinon,
+# rien n'est publié (outils\aide-rust.ps1). Sans rust\nevermind-aide, rien de tout ça : la publication reste la même.
+if (Test-Path -LiteralPath (Join-Path $racine 'rust\nevermind-aide\Cargo.toml')) {
+    $aideRust = & (Join-Path $PSScriptRoot 'aide-rust.ps1') -Essai:$Essai
+    if ($aideRust) {
+        Copy-Item -LiteralPath $aideRust -Destination (Join-Path $app 'NevermindAide.exe') -Force
+        $null = & (Join-Path $PSScriptRoot 'zips.ps1') -Dossier $app -Sortie $racine
+        Write-Host 'NevermindAide.exe : celui construit par GitHub (Rust), attestation vérifiée.' -ForegroundColor Green
+    }
+}
 $zips = @((Join-Path $racine 'Nevermind.zip'), (Join-Path $racine 'OptiGame.zip'))
 $cleEssai = $null
 if ($Essai) { $cleEssai = New-Object Security.Cryptography.RSACryptoServiceProvider(3072); $cleEssai.PersistKeyInCsp = $false }
