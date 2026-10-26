@@ -42,7 +42,9 @@
 # Code de sortie 1 si un cas échoue.
 #  11. (avec -Banc <outils\tester-aide-rust.ps1> -Aide <exe Rust>) le banc PowerShell / Rust, qui refuse de tourner en
 #      administrateur : lancé ici sous un compte local sans droits créé pour l'essai
-param([int]$Cas = -1, [string]$Aide = '', [string]$Aides = '', [string]$Banc = '')
+#   -Pont <dll>     (avec -Cas 0) NevermindPont.dll construite dans le même run (rust\nevermind-pont), mise dans les
+#                   paquets à côté des programmes : la version de Nevermind qui s'en sert ne marche pas sans elle
+param([int]$Cas = -1, [string]$Aide = '', [string]$Aides = '', [string]$Banc = '', [string]$Pont = '')
 
 if ($env:GITHUB_ACTIONS -ne 'true') {
     Write-Host 'Refusé : cet essai crée des comptes Windows et des tâches planifiées, et installe Nevermind pour de vrai. Il ne tourne que sur la machine jetable de GitHub Actions.' -ForegroundColor Red
@@ -124,6 +126,8 @@ function Get-Compte([string]$Nom) {
     @{ Nom = $Nom; Sid = $sid; Cred = $cred; Profil = $profil }
 }
 $NomElodie = "$([char]0xC9)lodie Test"
+# En secours, l'Aide jugée refuse-t-elle un -Sid qui n'est pas son propre compte ? (noté au cas 0, voir Initialize-Essai)
+function Test-SecoursPropreCompte { $f = Join-Path $Racine 'aide-secours.txt'; (Test-Path -LiteralPath $f) -and [IO.File]::ReadAllText($f).Trim() -eq 'propre-compte' }
 
 # Ce que Windows dit d'une tâche (XML exporté, droits, dernier lancement)
 function Get-InfoTache([string]$Nom = $NomTache, [string]$Dossier = '\Mindset\') {
@@ -434,8 +438,16 @@ function Initialize-Essai {
         Copy-Item -LiteralPath $source -Destination "$og\NevermindAide.exe" -Force
         $jugee = $source
     }
+    if ($Pont) {
+        if (-not (Test-Path -LiteralPath $Pont -PathType Leaf)) { throw "NevermindPont.dll introuvable : $Pont" }
+        Copy-Item -LiteralPath $Pont -Destination "$og\NevermindPont.dll" -Force
+        Test-Cas "NevermindPont.dll construite dans ce run, à côté des programmes (SHA-256 $((Get-FileHash -LiteralPath "$og\NevermindPont.dll" -Algorithm SHA256).Hash))" { Test-Path -LiteralPath "$og\NevermindPont.dll" }
+    }
     $h = (Get-FileHash -LiteralPath "$og\NevermindAide.exe" -Algorithm SHA256).Hash
     Write-Utf8 (Join-Path $Racine 'aide-jugee.txt') "$jugee ; SHA-256 $h"
+    # La règle du secours que suit l'Aide jugée (décision de Jordan du 27/10) : la nouvelle Aide (-Aide, l'exe Rust) refuse un
+    # -Sid qui n'est pas son propre compte ; le lanceur C# actuel sert le compte -Sid (cas 5 et 9)
+    Write-Utf8 (Join-Path $Racine 'aide-secours.txt') $(if ($Aide) { 'propre-compte' } else { 'ancienne' })
     Test-Cas "NevermindAide.exe jugé : $jugee (SHA-256 $h)" { -not $Aide -or (Get-FileHash -LiteralPath $Aide -Algorithm SHA256).Hash -eq $h }
     foreach ($genre in 'vrai', 'essai') {
         $d = Join-Path $Paquets $genre
@@ -625,11 +637,22 @@ function Test-Cas5 {
     $bonne = Get-InfoTache
     $exe = "$NevermindC\NevermindAide.exe"
     $client = @{ Mode = 'appel'; Accepter = $true; Actions = @(@{ Nom = 'bonjour'; Action = 'aide.bonjour'; P = @{} }) }
+    # (décision de Jordan du 27/10 : la nouvelle Aide, lancée par l'administrateur qui accepte, refuse de servir Élodie,
+    # un autre compte que le sien : elle s'arrête sans rien faire ; le lanceur C# actuel la sert)
+    $propreCompte = Test-SecoursPropreCompte
+    $canalElodie = Get-NomCanal $e.Sid $NevermindC
     $verifier = {
         param($S, [string]$Quoi)
         $bj = Get-Bonjour $S
-        Test-Cas "$Quoi : demande de Windows pour NevermindAide.exe -Sid <Élodie>, acceptée, l'Aide répond (administrateur, pas SYSTEM)" {
-            @($S.RunAs).Count -eq 1 -and $S.RunAs[0] -eq "RunAs|$exe|-Sid $($e.Sid)" -and $bj -and $bj.Admin -eq $true -and [string]$bj.Compte -eq $Moi
+        if ($propreCompte) {
+            $arretees = Wait-Jusque { -not @($script:RunAsLancees | Where-Object { -not $_.HasExited }).Count } 20
+            Test-Cas "$Quoi : demande de Windows pour NevermindAide.exe -Sid <Élodie>, acceptée par l'administrateur ; l'Aide refuse ce compte qui n'est pas le sien (arrêtée, aucun canal, aucune réponse)" {
+                @($S.RunAs).Count -eq 1 -and $S.RunAs[0] -eq "RunAs|$exe|-Sid $($e.Sid)" -and -not $bj -and @($script:RunAsLancees).Count -eq 1 -and $arretees -and -not (Test-Canal $canalElodie)
+            }
+        } else {
+            Test-Cas "$Quoi : demande de Windows pour NevermindAide.exe -Sid <Élodie>, acceptée, l'Aide répond (administrateur, pas SYSTEM)" {
+                @($S.RunAs).Count -eq 1 -and $S.RunAs[0] -eq "RunAs|$exe|-Sid $($e.Sid)" -and $bj -and $bj.Admin -eq $true -and [string]$bj.Compte -eq $Moi
+            }
         }
     }
 
@@ -974,8 +997,12 @@ function Test-Cas9 {
         $servie = Wait-Jusque { Test-Canal $canalElodie } 30
         Test-Cas 'lancée pour un autre compte : jamais de canal au nom du compte administrateur qui l''a lancée' { -not (Test-Canal $canal) }
         $tourne = -not $p.HasExited
-        if ($servie) { Add-Note 'secours pour un autre compte (Élodie, standard, aidée par un administrateur) : servi, comme au cas 5. La règle du plan « SID différent du sien refusé » ferait échouer le cas 5 : à trancher par Jordan' }
-        else { Add-Note "secours pour un autre compte (Élodie, standard, aidée par un administrateur) : pas de canal (Aide $(if ($tourne) { 'toujours là' } else { "arrêtée, code $($p.ExitCode)" })), comme le dit le plan ; le cas 5 ne peut alors plus passer : à trancher par Jordan" }
+        Write-Host "         | -Sid d'Élodie : $(if ($servie) { 'canal ouvert pour elle' } else { 'aucun canal' }), Aide $(if ($tourne) { 'toujours là' } else { "arrêtée, code $($p.ExitCode)" })" -ForegroundColor DarkGray
+        if (Test-SecoursPropreCompte) {
+            # (décision de Jordan du 27/10)
+            Test-Cas 'lancée pour un autre compte (Élodie) : refusé, aucun canal pour elle, et l''Aide s''arrête' { -not $servie -and (Wait-Jusque { $p.HasExited } 15) }
+        } elseif ($servie) { Add-Note 'lanceur C# actuel : en secours, il sert encore un autre compte (Élodie) ; la nouvelle Aide le refuse (décision de Jordan du 27/10)' }
+        else { Add-Note 'lanceur C# actuel : en secours, aucun canal pour un autre compte (Élodie), contrairement au cas 5' }
         try { $p.Kill() } catch {}
         Stop-Aides
 

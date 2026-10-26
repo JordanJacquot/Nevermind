@@ -34,6 +34,18 @@ jobs:
           if ($resultats.Count) { Write-Host "$($resultats.Count) erreur(s) trouvée(s) par PSScriptAnalyzer."; exit 1 }
           Write-Host 'Aucune erreur trouvée par PSScriptAnalyzer.'
 
+      # (passage en Rust, étape 1a : la version de Nevermind qui se sert de NevermindPont.dll, et ses tests, en ont besoin ;
+      # sans rust/nevermind-pont, rien à faire)
+      - name: "NevermindPont.dll construite (outils/construire-pont.ps1, si rust/nevermind-pont existe)"
+        run: |
+          if (-not (Test-Path -LiteralPath 'rust\nevermind-pont\Cargo.toml')) { Write-Host 'Pas de rust\nevermind-pont : rien à construire.'; exit 0 }
+          Push-Location rust; rustup toolchain install; $code = $LASTEXITCODE; Pop-Location
+          if ($code) { exit 1 }
+          $dll = @(& .\outils\construire-pont.ps1)[-1]
+          if (-not (Test-Path -LiteralPath $dll)) { exit 1 }
+          .\outils\verifier-imports.ps1 -Fichiers $dll
+          exit $LASTEXITCODE
+
       - name: Vérifications du dépôt (syntaxe, fenêtre, tirets, encodage, licence)
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\verifier.ps1
@@ -114,6 +126,12 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-panneau.ps1
           exit $LASTEXITCODE
 
+      - name: "NevermindPont.dll vue depuis Nevermind (outils/tester-pont.ps1, s'il existe : corpus, DLL absente ou abîmée, erreur Rust rattrapée)"
+        run: |
+          if (-not (Test-Path -LiteralPath 'outils\tester-pont.ps1')) { Write-Host 'Pas de tester-pont.ps1 : rien à faire.'; exit 0 }
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-pont.ps1
+          exit $LASTEXITCODE
+
   # Le Rust de Nevermind (passage en Rust, étape 1a : NevermindAide.exe). Tant que rust\Cargo.toml n'existe pas, rien à
   # faire : le job reste vert.
   rust:
@@ -147,6 +165,17 @@ jobs:
       - name: "Construction (bibliothèques figées par Cargo.lock)"
         if: ${{ steps.rust.outputs.present == 'true' }}
         run: cargo build --locked --workspace
+
+      - name: "Programmes livrés (construction release) : aucun runtime C à part (VCRUNTIME*.dll, MSVCP*.dll)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: |
+          cargo build --release --locked --workspace
+          if ($LASTEXITCODE) { exit 1 }
+          # (les exe et DLL du dossier release : NevermindAide.exe, nevermind_pont.dll... ; pas les essais ni les dépendances)
+          $livres = @(Get-ChildItem -LiteralPath target\release -File | Where-Object { $_.Extension -in '.exe', '.dll' } | ForEach-Object { $_.FullName })
+          if (-not $livres.Count) { Write-Host 'Aucun exe ni DLL construit.'; exit 0 }
+          ..\outils\verifier-imports.ps1 -Liste -Fichiers $livres
+          exit $LASTEXITCODE
 
       - name: "Tests Rust (cargo test)"
         if: ${{ steps.rust.outputs.present == 'true' }}

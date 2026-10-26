@@ -77,12 +77,30 @@ jobs:
           Copy-Item -LiteralPath $exe -Destination "$d\NevermindAide.exe"
           Write-Host "NevermindAide.exe (Rust, $(git log --oneline -1)) : SHA-256 $((Get-FileHash -LiteralPath "$d\NevermindAide.exe" -Algorithm SHA256).Hash)"
 
-      - name: "Déposer l'exe Rust pour les essais"
+      # (NevermindPont.dll, si la branche la construit : la version de Nevermind qui s'en sert ne marche pas sans elle)
+      - name: "Construire NevermindPont.dll (outils/construire-pont.ps1, si rust/nevermind-pont existe)"
+        if: ${{ steps.liste.outputs.rust == 'true' }}
+        working-directory: ${{ inputs.aide_ref != '' && '_source' || '.' }}
+        run: |
+          if (-not (Test-Path -LiteralPath 'rust\nevermind-pont\Cargo.toml')) { Write-Host 'Pas de rust\nevermind-pont.'; exit 0 }
+          $dll = @(& .\outils\construire-pont.ps1)[-1]
+          if ($LASTEXITCODE -or -not (Test-Path -LiteralPath $dll)) { exit 1 }
+          Copy-Item -LiteralPath $dll -Destination (Join-Path $env:GITHUB_WORKSPACE '_aide\NevermindPont.dll')
+
+      # (ici seulement un avertissement, pour que les essais tournent quand même ; Tests et Release, eux, refusent)
+      - name: "Runtime C à part (VCRUNTIME) : avertissement"
+        if: ${{ steps.liste.outputs.rust == 'true' }}
+        run: |
+          .\outils\verifier-imports.ps1 -Liste -Fichiers @(Get-ChildItem -LiteralPath _aide -File | ForEach-Object { $_.FullName })
+          if ($LASTEXITCODE) { Write-Host '::warning::Un programme en Rust a besoin d''un runtime C à part (VCRUNTIME) : Tests et Release le refuseront.' }
+          exit 0
+
+      - name: "Déposer l'exe Rust (et NevermindPont.dll) pour les essais"
         if: ${{ steps.liste.outputs.rust == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: aide-rust
-          path: _aide/NevermindAide.exe
+          path: _aide/
           if-no-files-found: error
           retention-days: 7
 
@@ -129,7 +147,10 @@ jobs:
           git -C C:\essai\mindset log --oneline -1
 
       - name: "0. Préparation (Nevermind et Mindset construits, l'Aide jugée dans les paquets, clé de TEST, Releases v1.10.0 et v1.11.0, Mindset 2.12.0)"
-        run: .\outils\essai-aide-reelle.ps1 -Cas 0 -Aide $env:AIDE
+        run: |
+          # (NevermindPont.dll construite plus haut, si la branche en a une : dans les paquets des deux Aides)
+          $pont = if (Test-Path -LiteralPath 'C:\essai-aide\rust\NevermindPont.dll') { 'C:\essai-aide\rust\NevermindPont.dll' } else { '' }
+          .\outils\essai-aide-reelle.ps1 -Cas 0 -Aide $env:AIDE -Pont $pont
 
       - name: "1. Installation pour un compte standard : tâche de l'Aide en SYSTEM pour lui"
         if: ${{ !cancelled() }}

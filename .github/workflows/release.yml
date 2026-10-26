@@ -31,7 +31,7 @@ permissions:
 
 jobs:
   rust:
-    name: "NevermindAide.exe en Rust (seulement si rust\\nevermind-aide existe)"
+    name: "Programmes en Rust (NevermindAide.exe, NevermindPont.dll ; seulement si rust\\nevermind-aide ou rust\\nevermind-pont existe)"
     runs-on: windows-latest
     # (le jeton OIDC et l'écriture d'attestations : seulement pour ce job)
     permissions:
@@ -49,12 +49,14 @@ jobs:
       - name: "Récupérer le code"
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: "Y a-t-il l'Aide en Rust ? (rust\\nevermind-aide)"
+      - name: "Y a-t-il des programmes en Rust ? (rust/nevermind-aide, rust/nevermind-pont)"
         id: rust
         run: |
-          $present = Test-Path -LiteralPath 'rust\nevermind-aide\Cargo.toml'
-          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "present=$($present.ToString().ToLower())`n")
-          Write-Host $(if ($present) { 'rust\nevermind-aide trouvé : construction de NevermindAide.exe en Rust.' } else { 'Pas de rust\nevermind-aide : NevermindAide.exe reste celui du lanceur C#.' })
+          $aide = Test-Path -LiteralPath 'rust\nevermind-aide\Cargo.toml'
+          $pont = Test-Path -LiteralPath 'rust\nevermind-pont\Cargo.toml'
+          $present = $aide -or $pont
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "present=$($present.ToString().ToLower())`naide=$($aide.ToString().ToLower())`npont=$($pont.ToString().ToLower())`n")
+          Write-Host "NevermindAide.exe en Rust : $aide ; NevermindPont.dll : $pont"
 
       - name: "Rust, la version figée par rust/rust-toolchain.toml"
         if: ${{ steps.rust.outputs.present == 'true' }}
@@ -65,33 +67,48 @@ jobs:
           rustc --version
 
       - name: "Construire NevermindAide.exe (cargo build --release --locked)"
-        if: ${{ steps.rust.outputs.present == 'true' }}
+        if: ${{ steps.rust.outputs.aide == 'true' }}
         working-directory: rust
         run: |
           cargo build --release --locked -p nevermind-aide
           if ($LASTEXITCODE) { exit 1 }
-          New-Item -ItemType Directory -Force -Path ..\_ci\aide | Out-Null
+          New-Item -ItemType Directory -Force -Path ..\_ci\rust | Out-Null
           # (le binaire s'appelle NevermindAide, celui du crate nevermind-aide)
           $exe = @('target\release\NevermindAide.exe', 'target\release\nevermind-aide.exe' | Where-Object { Test-Path -LiteralPath $_ })[0]
           if (-not $exe) { Write-Host 'NevermindAide.exe introuvable dans target\release'; exit 1 }
-          Copy-Item -LiteralPath $exe -Destination ..\_ci\aide\NevermindAide.exe
-          $h = (Get-FileHash -LiteralPath ..\_ci\aide\NevermindAide.exe -Algorithm SHA256).Hash
-          [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "NevermindAide.exe (Rust, non signé) : SHA-256 ``$h``" + "`n")
+          Copy-Item -LiteralPath $exe -Destination ..\_ci\rust\NevermindAide.exe
+
+      - name: "Construire NevermindPont.dll (outils/construire-pont.ps1, runtime C dedans)"
+        if: ${{ steps.rust.outputs.pont == 'true' }}
+        run: |
+          $dll = @(& .\outils\construire-pont.ps1)[-1]
+          if (-not (Test-Path -LiteralPath $dll)) { exit 1 }
+          New-Item -ItemType Directory -Force -Path _ci\rust | Out-Null
+          Copy-Item -LiteralPath $dll -Destination _ci\rust\NevermindPont.dll
+
+      - name: "Aucun runtime C à part (VCRUNTIME*.dll, MSVCP*.dll), sinon refusé"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: |
+          .\outils\verifier-imports.ps1 -Liste -Fichiers @(Get-ChildItem -LiteralPath _ci\rust -File | ForEach-Object { $_.FullName })
+          if ($LASTEXITCODE) { exit 1 }
+          foreach ($f in Get-ChildItem -LiteralPath _ci\rust -File) {
+            [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "$($f.Name) (Rust, non signé) : SHA-256 ``$((Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash)``" + "`n")
+          }
 
       # L'attestation que outils\publier.ps1 vérifie (outils\aide-rust.ps1 : gh attestation verify --repo
       # JordanJacquot/Nevermind --signer-workflow JordanJacquot/Nevermind/.github/workflows/release.yml --source-digest <commit>)
-      - name: "Attester NevermindAide.exe (ce dépôt, ce fichier de construction, ce commit)"
+      - name: "Attester les programmes en Rust (ce dépôt, ce fichier de construction, ce commit)"
         if: ${{ steps.rust.outputs.present == 'true' }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: _ci/aide/NevermindAide.exe
+          subject-path: _ci/rust/*
 
-      - name: "Déposer NevermindAide.exe (Rust)"
+      - name: "Déposer les programmes en Rust"
         if: ${{ steps.rust.outputs.present == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: NevermindAide-rust
-          path: _ci/aide/NevermindAide.exe
+          name: Nevermind-rust
+          path: _ci/rust/
           if-no-files-found: error
           retention-days: 30
 
@@ -131,29 +148,34 @@ jobs:
           $ErrorActionPreference = 'Stop'
           .\outils\construire.ps1
 
-      - name: "Récupérer NevermindAide.exe en Rust (job rust de ce run)"
+      - name: "Récupérer les programmes en Rust (job rust de ce run)"
         if: ${{ needs.rust.outputs.present == 'true' }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: NevermindAide-rust
-          path: _ci/aide
+          name: Nevermind-rust
+          path: _ci/rust
 
-      - name: "NevermindAide.exe en Rust à la place de celui du lanceur C#"
+      - name: "Les programmes en Rust dans le dossier (NevermindAide.exe à la place du lanceur C#, NevermindPont.dll)"
         if: ${{ needs.rust.outputs.present == 'true' }}
         run: |
           $ErrorActionPreference = 'Stop'
-          Copy-Item -LiteralPath '_ci\aide\NevermindAide.exe' -Destination 'Nevermind\NevermindAide.exe' -Force
-          Write-Host "NevermindAide.exe : Rust, SHA-256 $((Get-FileHash -LiteralPath 'Nevermind\NevermindAide.exe' -Algorithm SHA256).Hash)"
+          foreach ($f in Get-ChildItem -LiteralPath '_ci\rust' -File) {
+            Copy-Item -LiteralPath $f.FullName -Destination (Join-Path 'Nevermind' $f.Name) -Force
+            Write-Host "$($f.Name) : Rust, SHA-256 $((Get-FileHash -LiteralPath (Join-Path 'Nevermind' $f.Name) -Algorithm SHA256).Hash)"
+          }
 
-      - name: "Vérifier les quatre exe"
+      - name: "Vérifier les quatre exe (et NevermindPont.dll)"
         run: |
           $ErrorActionPreference = 'Stop'
           # Les exe à la racine du dossier : Mindset.exe (le programme qui fait tourner Nevermind), Nevermind.exe (relais),
-          # Désinstaller Nevermind.exe, NevermindAide.exe
+          # Désinstaller Nevermind.exe, NevermindAide.exe ; et NevermindPont.dll avec rust\nevermind-pont
           # (cherchés par motif : un nom accentué écrit ici pourrait mal passer dans le script de l'étape)
           $exes = @(Get-ChildItem -LiteralPath 'Nevermind' -Filter '*.exe' -File)
           if ($exes.Count -ne 4) { throw "4 exe attendus dans Nevermind, trouvés : $($exes.Name -join ', ')" }
-          foreach ($exe in $exes) {
+          $dlls = @(Get-ChildItem -LiteralPath 'Nevermind' -Filter '*.dll' -File)
+          $pont = Test-Path -LiteralPath 'rust\nevermind-pont\Cargo.toml'
+          if ((@($dlls | ForEach-Object { $_.Name }) -join ',') -ne $(if ($pont) { 'NevermindPont.dll' } else { '' })) { throw "DLL inattendues dans Nevermind : $(@($dlls | ForEach-Object { $_.Name }) -join ', ')" }
+          foreach ($exe in $exes + $dlls) {
             $n = $exe.Name
             $i = $exe.VersionInfo
             Write-Host "$n : produit $($i.ProductName), version du produit $($i.ProductVersion)"
@@ -164,6 +186,9 @@ jobs:
             $h = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash
             [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "$n (non signé) : SHA-256 ``$h``" + "`n")
           }
+          # Aucun programme livré ne doit avoir besoin d'un runtime C à installer à part (VCRUNTIME)
+          .\outils\verifier-imports.ps1 -Fichiers @(($exes + $dlls) | ForEach-Object { $_.FullName })
+          if ($LASTEXITCODE) { exit 1 }
 
       - name: "Préparer le dossier à signer"
         run: |
@@ -173,7 +198,7 @@ jobs:
           Copy-Item -LiteralPath 'Nevermind' -Destination $dest -Recurse
           Get-ChildItem -LiteralPath $dest -Recurse -File | Measure-Object | ForEach-Object { Write-Host "$($_.Count) fichiers" }
 
-      # L'artefact contient un seul dossier « Nevermind » (les quatre exe, LISEZMOI.txt, fichiers\...).
+      # L'artefact contient un seul dossier « Nevermind » (les quatre exe, NevermindPont.dll s'il y a lieu, LISEZMOI.txt, fichiers\...).
       # SignPath vérifie qu'il vient bien de ce workflow (origin verification).
       - name: "Déposer l'artefact non signé"
         id: depot
@@ -231,7 +256,8 @@ jobs:
           $problemes = @()
           $exes = @(Get-ChildItem -LiteralPath $racine -Filter '*.exe' -File)
           if ($exes.Count -ne 4) { throw "4 exe attendus dans $racine, trouvés : $($exes.Name -join ', ')" }
-          $nos = $exes + @(Get-ChildItem -LiteralPath $racine -Recurse -File | Where-Object { $_.Extension -in '.ps1', '.psm1', '.psd1' })
+          # (et NevermindPont.dll, la DLL en Rust de Nevermind, avec rust\nevermind-pont : signée comme les exe)
+          $nos = $exes + @(Get-ChildItem -LiteralPath $racine -Filter 'NevermindPont.dll' -File) + @(Get-ChildItem -LiteralPath $racine -Recurse -File | Where-Object { $_.Extension -in '.ps1', '.psm1', '.psd1' })
           foreach ($f in $nos) {
             $s = Get-AuthenticodeSignature -LiteralPath $f.FullName
             if ($s.Status -ne 'Valid' -or $s.SignerCertificate.Subject -notmatch 'SignPath Foundation') { $problemes += "$($f.FullName) : $($s.Status) $($s.SignerCertificate.Subject)" }

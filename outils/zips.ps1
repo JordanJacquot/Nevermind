@@ -29,6 +29,9 @@ $Sortie = [IO.Path]::GetFullPath($Sortie)
 
 # Les programmes construits par construire.ps1 (ignorés par git)
 $Programmes = @('Mindset.exe', 'Nevermind.exe', 'NevermindAide.exe', 'Désinstaller Nevermind.exe')
+# NevermindPont.dll (passage en Rust, étape 1a : les règles de l'Aide pour Nevermind, rust\nevermind-pont), seulement
+# quand le dépôt la construit ; sans rust\nevermind-pont, les zips restent les mêmes
+if (Test-Path -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) 'rust\nevermind-pont\Cargo.toml')) { $Programmes += 'NevermindPont.dll' }
 
 # Les fichiers du dossier Nevermind suivis par git (chemins relatifs à ce dossier)
 function Get-FichiersGit {
