@@ -295,7 +295,10 @@ function New-SecurityCard($Check) {
         $items = New-Object System.Windows.Controls.StackPanel
         $shown = if ($Check.ShowAll) { @($Check.Items) } else { @($Check.Items | Select-Object -First 5) }
         # Un bouton « C'est moi » par élément quand il y en a plusieurs (sinon celui des actions suffit)
-        $perItem = @($Check.Trust).Count -gt 1 -and @($Check.Trust).Count -eq @($Check.Items).Count
+        # (@($Check.Trust) vaut un élément quand le constat n'a pas de Trust, comme ceux de l'audit du réseau : on compte
+        # seulement les vrais éléments)
+        $trust = @($Check.Trust | Where-Object { $_ })
+        $perItem = $trust.Count -gt 1 -and $trust.Count -eq @($Check.Items).Count
         $n = 0
         foreach ($i in $shown) {
             $t2 = New-Text ([string]$i) 12 '#D3CDE3'
@@ -339,9 +342,10 @@ function New-SecurityCard($Check) {
             [void]$wp.Children.Add($b)
             $first = $false
         }
-        if (@($Check.Trust).Count) {
-            $cnt = @($Check.Trust).Count
-            $tb = New-TrustButton $(if ($cnt -gt 1) { 'C''est moi, tout est OK' } else { 'C''est moi, c''est OK' }) @($Check.Trust) $(if ($cnt -gt 1) { "Marquer ces $cnt éléments comme sûrs ? Ils ne compteront plus dans le niveau de protection. S'ils changent (autre commande, autre fichier), Nevermind les signalera de nouveau." } else { 'Marquer cet élément comme sûr ? Il ne comptera plus dans le niveau de protection. S''il change (autre commande, autre fichier), Nevermind le signalera de nouveau.' })
+        $trust = @($Check.Trust | Where-Object { $_ })
+        if ($trust.Count) {
+            $cnt = $trust.Count
+            $tb = New-TrustButton $(if ($cnt -gt 1) { 'C''est moi, tout est OK' } else { 'C''est moi, c''est OK' }) $trust $(if ($cnt -gt 1) { "Marquer ces $cnt éléments comme sûrs ? Ils ne compteront plus dans le niveau de protection. S'ils changent (autre commande, autre fichier), Nevermind les signalera de nouveau." } else { 'Marquer cet élément comme sûr ? Il ne comptera plus dans le niveau de protection. S''il change (autre commande, autre fichier), Nevermind le signalera de nouveau.' })
             $tb.Padding = New-Thickness 14 6 14 6; $tb.FontSize = 13
             $tb.Margin = New-Thickness 0 0 8 0
             [void]$wp.Children.Add($tb)

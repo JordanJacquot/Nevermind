@@ -76,7 +76,8 @@ function Get-PagesProtection {
             [void]$lignesSec.Add(@{ type = 'liste'; elements = $it })
         }
         for ($j = 0; $j -lt @($c.Actions).Count; $j++) { [void]$lignesSec.Add(@{ type = 'bouton'; id = "sec:$k`:$j"; texte = [string]$c.Actions[$j].Label; style = $(if ($j) { 'second' }) }) }
-        if (@($c.Trust).Count) { [void]$lignesSec.Add(@{ type = 'bouton'; id = "sec-moi:$k"; texte = $(if (@($c.Trust).Count -gt 1) { 'C''est moi, tout est OK' } else { 'C''est moi, c''est OK' }); style = 'second' }) }
+        $trust = @($c.Trust | Where-Object { $_ })   # (@($c.Trust) vaut un élément quand le constat n'a pas de Trust)
+        if ($trust.Count) { [void]$lignesSec.Add(@{ type = 'bouton'; id = "sec-moi:$k"; texte = $(if ($trust.Count -gt 1) { 'C''est moi, tout est OK' } else { 'C''est moi, c''est OK' }); style = 'second' }) }
     }
     $approuves = @(Get-SecTrusted)
     $script:Kit.SecApprouves = $approuves
@@ -163,10 +164,11 @@ function Invoke-ActionProtection([string]$Id, $Valeur) {
         return $true
     }
     if ($Id -match '^sec-moi:(\d+)$') {
-        $c = @($script:Kit.SecChecks)[[int]$Matches[1]]; if (-not $c -or -not @($c.Trust).Count) { return $true }
-        $n = @($c.Trust).Count
+        $c = @($script:Kit.SecChecks)[[int]$Matches[1]]; $trust = @(if ($c) { $c.Trust | Where-Object { $_ } })
+        if (-not $trust.Count) { return $true }
+        $n = $trust.Count
         if (-not (Confirm-Action $(if ($n -gt 1) { "Marquer ces $n éléments comme sûrs ? Ils ne compteront plus dans le niveau de protection. S'ils changent (autre commande, autre fichier), Nevermind les signalera de nouveau." } else { 'Marquer cet élément comme sûr ? Il ne comptera plus dans le niveau de protection. S''il change (autre commande, autre fichier), Nevermind le signalera de nouveau.' }))) { return $true }
-        Invoke-Safe { Add-SecTrusted @($c.Trust); if (-not $script:ScanRunning) { Update-SecurityTab } }
+        Invoke-Safe { Add-SecTrusted $trust; if (-not $script:ScanRunning) { Update-SecurityTab } }
         return $true
     }
     if ($Id -match '^sec-retirer:(\d+)$') {

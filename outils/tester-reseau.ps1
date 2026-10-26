@@ -232,6 +232,21 @@ $texteAudit = [IO.File]::ReadAllText((Join-Path $modules 'audit-reseau.ps1'))
 Test-Ok ($texteAvance -match '\[UpnpAdresse\]::Permise\(\$loc, \$ip\)\) \{ continue \}\s+try \{\s+\$x = \[xml\]\(Invoke-WebRequest -Uri \$loc') 'UPnP : la fiche d''un appareil est ouverte sans contrôle de son adresse (reseau-avance.ps1)'
 Test-Ok ($texteAudit -match '\[UpnpAdresse\]::Permise\(\$p\[2\], \$a\.Gateway\)' -and $texteAudit -match '\[UpnpAdresse\]::Permise\(\$url, \$a\.Gateway\)') 'UPnP : l''adresse de la box ou de ses commandes est ouverte sans contrôle (audit-reseau.ps1)'
 
+# Audit : le WPS d'un routeur qui n'est pas la box ouvre la page de ce routeur, et aucun point de l'audit ne propose
+# « C'est moi » (il n'a pas d'éléments à approuver ; @($c.Trust) compte un élément quand Trust est absent)
+try {
+    Invoke-Expression (Get-Definitions (Join-Path $modules 'audit-reseau.ps1') @('Add-AuditCheck', 'Get-NetAuditChecks'))
+    $R = @{ Ssdp = @('192.168.1.10|urn:schemas-wifialliance-org:device:WFADevice:1|x', '192.168.1.1|urn:schemas-wifialliance-org:service:WFAWLANConfig:1|y'); Profiles = @(); Ports = @(); Dns = @{ Servers = @() }; Pc = @{} }
+    $devs = @([pscustomobject]@{ Ip = '192.168.1.10'; Title = 'rt-ax88u-55c8' }, [pscustomobject]@{ Ip = '192.168.1.1'; Title = 'Box Internet' })
+    $checks = @(Get-NetAuditChecks $R $devs @{ Gateway = '192.168.1.1' })
+    $wps = @($checks | Where-Object { $_.Title -match 'WPS semble' })[0]
+    $cibles = @($wps.Actions | ForEach-Object { [string]$_.Arg })
+    Test-Ok ($cibles -contains 'http://192.168.1.10' -and $cibles -contains 'http://192.168.1.1') "Audit : le WPS du routeur n'ouvre pas sa propre page ($($cibles -join ', '))"
+    Test-Ok (-not @($checks | Where-Object { @($_.Trust | Where-Object { $_ }).Count }).Count) 'Audit : un point propose « C''est moi »'
+    $texteSecu = [IO.File]::ReadAllText((Join-Path $modules 'securite.ps1')) + [IO.File]::ReadAllText((Join-Path $modules 'ecran-protection.ps1'))
+    Test-Ok ($texteSecu -notmatch 'if \(@\(\$(Check|c)\.Trust\)\.Count\)') 'Sécurité : « C''est moi » compté avec @(...Trust).Count (vaut 1 sans Trust)'
+} catch { Test-Ok $false "Audit : $($_.Exception.Message)" }
+
 # ---------------------------------------------------------------------------
 # 2. Trafic : les programmes de la suite ne sont pas suspects
 # ---------------------------------------------------------------------------

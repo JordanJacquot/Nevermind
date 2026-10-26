@@ -195,7 +195,12 @@ function Get-NetAuditChecks($R, $Devs, $Net) {
     $wpsIps = @($ssdp | Where-Object { $_.St -match 'wifialliance-org:(device:WFADevice|service:WFAWLANConfig)' } | ForEach-Object { $_.Ip } | Select-Object -Unique)
     if ($wpsIps.Count) {
         $title = if ($wpsIps.Count -eq 1 -and $wpsIps[0] -eq $gw) { 'Le WPS semble activé sur ta box' } else { "Le WPS semble activé sur $(& $plural $wpsIps.Count 'appareil' 'appareils')" }
-        Add-AuditCheck $list 'warn' 'box' $title 'Le WPS permet de connecter un appareil en appuyant sur un bouton, mais son code PIN est une faille connue qui permet de trouver le mot de passe du Wi-Fi. Si tu ne t''en sers pas, désactive-le dans les réglages Wi-Fi de ta box et de tes répéteurs.' @($wpsIps | ForEach-Object { & $nameOf $_ }) @($boxAct)
+        # La page de chaque appareil concerné (un routeur ou un répéteur n'est pas la box : sa page est à sa propre adresse)
+        $wpsActs = @(foreach ($ip in @($wpsIps | Select-Object -First 3)) {
+            if ($ip -eq $gw) { $boxAct }
+            else { $dv = $byIp[[string]$ip]; @{ Label = "Ouvrir $(if ($dv -and $dv.Title -and $dv.Title -ne 'Appareil inconnu') { $dv.Title } else { $ip })"; Arg = "http://$ip"; Script = { param($u) Open-Url $u }; NoRefresh = $true } }
+        })
+        Add-AuditCheck $list 'warn' 'box' $title 'Le WPS permet de connecter un appareil en appuyant sur un bouton, mais son code PIN est une faille connue qui permet de trouver le mot de passe du Wi-Fi. Si tu ne t''en sers pas, désactive-le dans les réglages Wi-Fi de ta box et de tes répéteurs.' @($wpsIps | ForEach-Object { & $nameOf $_ }) $wpsActs
     } else {
         Add-AuditCheck $list 'ok' 'box' 'WPS non annoncé sur le réseau' 'Aucun appareil ne propose la connexion par code PIN WPS.'
     }
