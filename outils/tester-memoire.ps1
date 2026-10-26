@@ -52,7 +52,17 @@ $astMemoire = [System.Management.Automation.Language.Parser]::ParseFile($fichier
 if ($err) { Write-Host "memoire.ps1 n'est pas lisible : $($err[0].Message)" -ForegroundColor Red; exit 1 }
 $autres = @($astMemoire.EndBlock.Statements | Where-Object { $_ -isnot [System.Management.Automation.Language.FunctionDefinitionAst] -and $_ -isnot [System.Management.Automation.Language.AssignmentStatementAst] })
 Test-Ok (-not $autres.Count) "memoire.ps1 fait autre chose que définir au chargement : $(@($autres | ForEach-Object { $_.Extent.StartLineNumber }) -join ', ')"
-. (Join-Path $modules 'aide-actions.ps1')   # (la règle de fermeture, commune avec l'Aide)
+# La règle de fermeture, commune avec l'Aide : NevermindPont.dll, chargée comme le fait Nevermind (pont.ps1), et ce que
+# Windows dit des processus (processus.ps1)
+. (Join-Path $PSScriptRoot 'pont-essai.ps1')
+. (Join-Path $modules 'pont.ps1')
+. (Join-Path $modules 'processus.ps1')
+$raisonPont = Initialize-Pont (Get-PontEssai)
+if ($raisonPont) { Write-Host "NevermindPont.dll : $raisonPont" -ForegroundColor Red; exit 1 }
+# L'Aide en PowerShell (aide-actions.ps1), à part dans un module : seulement pour vérifier qu'elle accepte les services
+# de la liste (ses autres fonctions, dont sa propre copie de la règle, ne sont pas visibles ici)
+$null = New-Module -Name AideActionsEssai -ArgumentList (Join-Path $modules 'aide-actions.ps1') -ScriptBlock {
+    param($f) . $f; Export-ModuleMember -Function Invoke-AideAction -Variable AideServicesProteges, AideExesProteges, AideExesWindows }
 . $fichier
 foreach ($x in @(@('systeme', 'Format-Size'), @('ecran-perf', 'Get-PageMemoireKit'))) {
     $a = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $modules "$($x[0]).ps1"), [ref]$tok, [ref]$err)
@@ -234,9 +244,11 @@ $fonctionsFermer = @($appelsFermer | ForEach-Object { $x = $_.Parent; while ($x 
 Test-Ok ($appelsFermer.Count -eq 2 -and ($fonctionsFermer -join ',') -eq 'Invoke-FermetureMemoire') "Fermer appelé hors de Invoke-FermetureMemoire : $($fonctionsFermer -join ', ')"
 $defInvoke = $astMemoire.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-FermetureMemoire' }, $true).Extent.Text
 Test-Ok ($defInvoke.IndexOf('Get-RefusFermeture') -gt 0 -and $defInvoke.IndexOf('Get-RefusFermeture') -lt $defInvoke.IndexOf('::Forcer(') -and $defInvoke.IndexOf('::Verifier(') -lt $defInvoke.IndexOf('Get-RefusFermeture')) 'Invoke-FermetureMemoire : la poignée et la règle ne sont pas revérifiées avant de fermer'
-# Une seule règle de fermeture, dans aide-actions.ps1, utilisée par l'Aide et par la page RAM (pas de copie)
+# Une seule règle de fermeture, en Rust (NevermindPont.dll, la même que l'Aide), utilisée par la page RAM (pas de copie
+# dans Nevermind : pont.ps1 la demande à la DLL ; aide-actions.ps1 garde celle de l'Aide en PowerShell, jusqu'à son retrait)
 $defsRegle = @(foreach ($m in Get-ChildItem -LiteralPath $modules -Filter '*.ps1') { if ([IO.File]::ReadAllText($m.FullName) -match 'function Get-RefusFermeture\b') { $m.Name } })
-Test-Ok (($defsRegle -join ',') -eq 'aide-actions.ps1') "La règle de fermeture est définie dans : $($defsRegle -join ', ')"
+Test-Ok (($defsRegle -join ',') -eq 'aide-actions.ps1,pont.ps1') "La règle de fermeture est définie dans : $($defsRegle -join ', ')"
+Test-Ok ([string]${function:Get-RefusFermeture} -match 'Get-RefusFermetureListe' -and [string]${function:Get-RefusFermetureListe} -match "action = 'fermeture\.refus'") 'La règle de fermeture de Nevermind n''est plus celle de NevermindPont.dll'
 Test-Ok ($texteMemoire -notmatch 'GetProcessInformation|ProcessProtection|SecurityCenter2|TokenElevation') 'memoire.ps1 a sa propre copie de la règle (protection, antivirus, administrateur)'
 $texteAideActions = [IO.File]::ReadAllText((Join-Path $modules 'aide-actions.ps1'))
 Test-Ok ($texteAideActions -match '(?s)function Get-AideRefusProcessus\b[^}]*Get-RefusFermeture' -and $texteAideActions -match '(?s)''processus\.fermer''.*?Get-AideRefusProcessus') 'L''Aide (processus.fermer) n''utilise pas la règle commune'

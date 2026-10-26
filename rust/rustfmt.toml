@@ -1,0 +1,3 @@
+# Lignes de 120 caractères, comme le reste du dépôt
+max_width = 120
+use_small_heuristics = "Max"

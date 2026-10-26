@@ -1,0 +1,63 @@
+# cargo deny : licences, avis de sécurité, bibliothèques permises, origine des bibliothèques.
+# Lancé par la CI de GitHub (comme dans le dépôt Mindset).
+
+[graph]
+# Nevermind ne tourne que sous Windows
+targets = ["x86_64-pc-windows-msvc"]
+all-features = false
+
+[advisories]
+# Toute faille connue (base RustSec) ou version retirée fait échouer la vérification
+ignore = []
+
+[licenses]
+# Licences compatibles avec la licence MIT de la suite (Unicode-3.0 : tables de unicode-ident, utilisé à la
+# construction par les macros de windows)
+allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+confidence-threshold = 0.9
+
+[licenses.private]
+# Nos propres crates (publish = false) : licence MIT, déclarée dans Cargo.toml
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+# Liste blanche : seules ces bibliothèques peuvent entrer (directes ou indirectes). En ajouter une se fait ici,
+# après relecture.
+allow = [
+    # les nôtres
+    "aide-regles",
+    "nevermind-aide",
+    # JSON
+    "serde_json",
+    "serde_core",
+    "itoa",
+    "memchr",
+    "zmij",
+    # Windows (Microsoft)
+    "windows",
+    "windows-core",
+    "windows-collections",
+    "windows-future",
+    "windows-numerics",
+    "windows-threading",
+    "windows-link",
+    "windows-result",
+    "windows-strings",
+    "windows-registry",
+    "windows-implement",
+    "windows-interface",
+    # macros de windows (construction seulement)
+    "proc-macro2",
+    "quote",
+    "syn",
+    "unicode-ident",
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

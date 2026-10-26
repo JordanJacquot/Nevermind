@@ -12,9 +12,10 @@
 # avant, notées dans l'historique et remises par « Tout restaurer ». Jamais un service de Windows.
 #
 # Fermer une appli (bouton « Fermer » d'une ligne, seulement quand l'utilisateur clique) : seulement une appli dont TOUS
-# les processus passent la règle de fermeture, la même que celle de l'Aide (Get-RefusFermeture, aide-actions.ps1 : même
-# compte et même session que Nevermind, jamais un service, un antivirus, un processus protégé, Windows, le Microsoft
-# Store, la suite Mindset, un programme lancé en administrateur), et jamais une appli « Windows en a besoin », un jeu, ni
+# les processus passent la règle de fermeture, la même que celle de l'Aide (Get-RefusFermeture, pont.ps1, dans
+# NevermindPont.dll : même compte et même session que Nevermind, jamais un service, un antivirus, un processus protégé,
+# Windows, le Microsoft Store, la suite Mindset, un programme lancé en administrateur), et jamais une appli « Windows en
+# a besoin », un jeu, ni
 # un lanceur de jeux pendant une partie (page RAM seulement, Test-JeuMemoire). Le
 # processus est gardé ouvert (sa « poignée ») depuis la lecture jusqu'à la fermeture : Windows ne redonne pas son numéro
 # à un autre programme tant qu'elle est ouverte, et son heure de démarrage et son chemin sont revérifiés avant chaque
@@ -24,13 +25,14 @@
 #
 # Get-DonneesMemoire lit le PC (lecture seule) ; Get-ConstatMemoire ne fait que calculer à partir de ces données, ce qui
 # permet de le tester sur de fausses données (outils\tester-memoire.ps1).
-# Chargé par Nevermind.ps1 après microsoft.ps1 ; a besoin de aide-actions.ps1 (la règle de fermeture), chargé avant.
+# Chargé par Nevermind.ps1 après microsoft.ps1 ; a besoin de pont.ps1 (la règle de fermeture, dans NevermindPont.dll)
+# et de processus.ps1 (ce que Windows dit des processus), chargés avant.
 
 $EtiquettesMemoire = @{ windows = 'Windows en a besoin'; inutile = 'Inutile au quotidien'; verifier = 'À vérifier' }
 
 # Les services que Nevermind peut passer en « manuel » sans risque : mises à jour et logiciels du fabricant. En manuel,
-# rien n'est désinstallé : le service se lance quand son logiciel en a besoin. (La même liste est dans l'Aide,
-# aide-actions.ps1 : tester-memoire vérifie qu'elle accepte chacun d'eux.)
+# rien n'est désinstallé : le service se lance quand son logiciel en a besoin. (La même liste est dans l'Aide :
+# tester-memoire vérifie qu'elle accepte chacun d'eux.)
 $ServicesInutilesMemoire = @(
     @{ Motif = '^edgeupdatem?$'; Nom = 'Mise à jour de Microsoft Edge' }
     @{ Motif = '^(gupdatem?|GoogleUpdater(Internal)?Service[\d.]{0,20})$'; Nom = 'Mise à jour de Google Chrome' }
@@ -65,7 +67,7 @@ $AppsConnuesMemoire = @(
     @{ Motif = '^firefox$'; Nom = 'Firefox'; Kind = 'verifier'; Note = 'Ton navigateur. Le fermer libère cette mémoire.' }
     @{ Motif = '^(opera|opera_gx)$'; Nom = 'Opera'; Kind = 'verifier'; Note = 'Ton navigateur. Le fermer libère cette mémoire.' }
     @{ Motif = '^brave$'; Nom = 'Brave'; Kind = 'verifier'; Note = 'Ton navigateur. Le fermer libère cette mémoire.' }
-    # (Ensemble : une seule ligne, quel que soit leur dossier ; leur protection vient de leur emplacement, voir aide-actions.ps1)
+    # (Ensemble : une seule ligne, quel que soit leur dossier ; leur protection vient de leur emplacement, voir la règle de fermeture)
     @{ Motif = '^(mindset|nevermind|nevermindaide)$'; Nom = 'Mindset et ses applis'; Kind = 'verifier'; Note = 'Les applis de la suite Mindset, dont Nevermind ouvert en ce moment.'; Ensemble = $true }
     @{ Motif = '^microsoftedgeupdate$'; Nom = 'Mise à jour de Microsoft Edge'; Kind = 'inutile'; Note = 'Cherche les mises à jour de Edge. Pas besoin qu''il tourne tout le temps.' }
     @{ Motif = '^(googleupdate|googlecrashhandler(64)?)$'; Nom = 'Mise à jour de Google Chrome'; Kind = 'inutile'; Note = 'Cherche les mises à jour de Chrome. Pas besoin qu''il tourne tout le temps.' }
@@ -432,11 +434,19 @@ function Get-ConstatMemoire($D) {
     $nomParPid = @{}; $parentParPid = @{}
     foreach ($p in @($D.Processus)) { if ($p) { $nomParPid[[int]$p.Pid] = ([string]$p.Nom).ToLower(); $parentParPid[[int]$p.Pid] = [int]$p.Parent } }
     $demarrage = @(@($D.Demarrage) | Where-Object { $_ } | ForEach-Object { ([string]$_).ToLower() })
-    # La règle de fermeture (aide-actions.ps1) sur ce qui a été lu : services lus, antivirus, Nevermind lui-même (Moi)
+    # La règle de fermeture (NevermindPont.dll) sur ce qui a été lu : services lus, antivirus, Nevermind lui-même (Moi)
     $ctxFermer = @{ Antivirus = @($D.Antivirus | Where-Object { $_ }); Windows = [string]$D.Windir; Reference = $D.Moi; Processus = @{}; ServicesPid = $null }
     if (@($D.Services).Count) { $ctxFermer.ServicesPid = [Collections.Generic.HashSet[int]]::new(); foreach ($s in @($D.Services)) { if ($s -and [int]$s.Pid) { [void]$ctxFermer.ServicesPid.Add([int]$s.Pid) } } }
     foreach ($p in @($D.Processus)) { if ($p) { $ctxFermer.Processus[[int]$p.Pid] = @{ Parent = [int]$p.Parent; Chemin = $(if ($p.Image) { [string]$p.Image } else { [string]$p.Chemin }) } } }
-    $regle = [bool](Get-Command Get-RefusFermeture -ErrorAction SilentlyContinue)
+    $regle = [bool](Get-Command Test-Pont -ErrorAction SilentlyContinue) -and (Test-Pont)
+    # (la règle, d'un seul appel à la DLL, pour tous les processus vérifiables : leur poignée est gardée, Debut)
+    $refusPar = @{}
+    $verifiables = @(@($D.Processus) | Where-Object { $_ -and [long]$_.Debut })
+    if ($regle -and $verifiables.Count) {
+        $fiches = @(foreach ($p in $verifiables) { @{ Id = [int]$p.Pid; Chemin = $(if ($p.Image) { [string]$p.Image } else { [string]$p.Chemin }); Session = $p.Session; Compte = $p.Compte; Protection = $p.Protection; Eleve = $p.Eleve } })
+        $raisons = Get-RefusFermetureListe $ctxFermer $fiches
+        for ($i = 0; $i -lt $verifiables.Count; $i++) { $refusPar[[int]$verifiables[$i].Pid] = $raisons[$i] }
+    }
     $unJeu = $false   # (un jeu tourne : ses lanceurs ne sont pas fermés non plus)
     $groupes = @{}
     $compressee = 0.0
@@ -462,7 +472,7 @@ function Get-ConstatMemoire($D) {
         $g.Octets += [double]$p.Octets; $g.Nb++
         # Fermable ? La règle de l'Aide sur ce processus ; sans poignée gardée (Debut), pas vérifiable : non
         $refus = if (-not $regle) { 'règle de fermeture absente' } elseif (-not [long]$p.Debut) { 'pas pu être vérifié' }
-                 else { Get-RefusFermeture $ctxFermer @{ Id = [int]$p.Pid; Chemin = $image; Session = $p.Session; Compte = $p.Compte; Protection = $p.Protection; Eleve = $p.Eleve } }
+                 else { $refusPar[[int]$p.Pid] }
         if (Test-JeuMemoire $p $image $D.Jeux) { $g.Jeu = $true; $unJeu = $true }
         elseif ($exe -match $LanceursMemoire) { $g.Lanceur = $true }
         if ($refus) { [void]$g.Refus.Add("$exe : $refus") } else { [void]$g.Cibles.Add(@{ Pid = [int]$p.Pid; Debut = [long]$p.Debut; Chemin = $image; Octets = [double]$p.Octets }) }
@@ -644,14 +654,19 @@ $TravailMemoire = {
     $r
 }
 
+# Le code que chargent les fils de fond (que des définitions) : la règle de fermeture (pont.ps1, la DLL est déjà chargée
+# dans le processus), ce que Windows dit des processus (processus.ps1) et ce fichier
+function Get-CodeFondMemoire {
+    (@('pont.ps1', 'processus.ps1', 'memoire.ps1') | ForEach-Object { [IO.File]::ReadAllText((Join-Path $ModulesDir $_), [Text.Encoding]::UTF8) }) -join "`r`n"
+}
+
 # Lance la lecture (ou la recherche du pilote). $Ensuite : ce qu'il faut faire quand tout est fini (« rapport »).
 function Start-ConstatMemoire([string]$Ensuite, [string]$Etape = 'donnees', [string[]]$Tags) {
     if ($Ensuite -and @($script:MemoireApres) -notcontains $Ensuite) { $script:MemoireApres = @(@($script:MemoireApres | Where-Object { $_ }) + $Ensuite) }
     if ($script:MemoireJob) { return }   # (déjà en cours : le résultat servira aussi à ce geste)
     if ($script:MemoireFermeture) { return }   # (une appli se ferme : ses processus restent gardés, la liste est relue après)
     if (-not $script:PilotesEtiquettes) { $script:PilotesEtiquettes = @{} }
-    # (le fil de fond charge aussi la règle de fermeture, aide-actions.ps1 : que des définitions)
-    if (-not $script:MemoireCode) { $script:MemoireCode = [IO.File]::ReadAllText((Join-Path $ModulesDir 'aide-actions.ps1'), [Text.Encoding]::UTF8) + "`r`n" + [IO.File]::ReadAllText((Join-Path $ModulesDir 'memoire.ps1'), [Text.Encoding]::UTF8) }
+    if (-not $script:MemoireCode) { $script:MemoireCode = Get-CodeFondMemoire }
     # (les programmes de la page Démarrage : pour ne conseiller d'y aller que s'ils y sont vraiment)
     $dem = @(try { @(Get-StartupItems) | Where-Object { $_.Enabled -and $_.Exe } | ForEach-Object { ([IO.Path]::GetFileName([string]$_.Exe)).ToLower(); foreach ($m in [regex]::Matches([string]$_.Commande, '[\w.-]+\.exe')) { ([IO.Path]::GetFileName($m.Value.Trim())).ToLower() } } | Select-Object -Unique } catch { Write-Log "Mémoire : page Démarrage illisible ($($_.Exception.Message))" })
     $ps = [PowerShell]::Create(); $ps.RunspacePool = $script:BgPool
@@ -849,7 +864,7 @@ function Start-FermetureMemoire([int]$Index) {
     if ($g.Lanceur -and $script:GameSession) { Show-MessageVue "$($g.Nom) sert à ton jeu en cours : Nevermind ne le ferme pas pendant la partie."; return }   # (jeu lancé depuis la lecture)
     $octets = 0.0; foreach ($x in @($g.Cibles)) { $octets += [double]$x.Octets }
     if (-not (Confirm-Action "Fermer $($g.Nom) ? Environ $(Format-Size $octets) libérés.`n`nIl se ferme comme avec la croix : s'il a quelque chose à enregistrer, il te le demandera.")) { return }
-    if (-not $script:MemoireCode) { $script:MemoireCode = [IO.File]::ReadAllText((Join-Path $ModulesDir 'aide-actions.ps1'), [Text.Encoding]::UTF8) + "`r`n" + [IO.File]::ReadAllText((Join-Path $ModulesDir 'memoire.ps1'), [Text.Encoding]::UTF8) }
+    if (-not $script:MemoireCode) { $script:MemoireCode = Get-CodeFondMemoire }
     $chemins = @(@($g.Cibles) | ForEach-Object { [string]$_.Chemin } | Select-Object -Unique)
     $script:MemoireFermeture = @{ Nom = [string]$g.Nom; Chemins = $chemins; Cibles = @($g.Cibles); Octets = $octets; Mode = 'poli'; Etape = 'travail'; Faits = @(); Refuses = @()
         Job = (Start-TravailFermeture $g.Cibles 'poli'); Debut = Get-Date }

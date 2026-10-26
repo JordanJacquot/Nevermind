@@ -1,14 +1,18 @@
 ﻿# Nevermind : demander à l'Aide ce que Nevermind ne peut pas faire sans les droits administrateur.
-# Chargé par Nevermind.ps1 après systeme.ps1 (Get-AppExe) et aide-actions.ps1.
+# Chargé par Nevermind.ps1 après systeme.ps1 (Get-AppExe), pont.ps1 (le nom du canal, la règle « fermable ») et
+# processus.ps1.
 #
-# L'Aide (NevermindAide.ps1) est lancée par la tâche planifiée « \Mindset\Nevermind (aide) », que Mindset crée quand il
-# installe Nevermind : pas de demande de Windows. Elle ne fait que ce qui est dans aide-actions.ps1.
+# L'Aide (NevermindAide.exe) est lancée par la tâche planifiée « \Mindset\Nevermind (aide) », que Mindset crée quand il
+# installe Nevermind : pas de demande de Windows. Elle ne fait que ce que sa liste stricte permet.
 # Cette tâche tourne en SYSTEM, pour l'utilisateur inscrit dans ses arguments (-Sid) : Nevermind ne s'en sert que si
 # c'est bien elle (Get-AideEtatTache). Sinon, ou si elle ne répond pas, une action demandée par l'utilisateur passe par
 # la demande normale de Windows (il clique « Oui »), JAMAIS par l'ancienne tâche « avec les droits les plus élevés »
 # (jusqu'à Nevermind 1.10.0), qui reprenait l'environnement de l'utilisateur : Mindset la remplace.
-# Tant que Nevermind tourne lui-même en administrateur, il fait la demande lui-même (même liste stricte) quand l'Aide ne
-# répond pas : une installation dont la tâche manque continue de marcher.
+# Nevermind ne fait JAMAIS lui-même les actions de l'Aide (plan Rust, étape 1a, point D : plus de repli en
+# administrateur, Nevermind ne tourne plus ainsi depuis la 1.0.115). Lancé quand même en administrateur, il passe par
+# l'Aide comme les autres, et la demande de Windows ne lui pose alors pas de question. Seule exception : la
+# désinstallation (en administrateur, sans fenêtre), qui remet les réglages elle-même avec la liste stricte de
+# aide-actions.ps1, sans réveiller l'Aide dont elle doit supprimer le programme.
 
 $AideTache = '\Mindset\Nevermind (aide)'
 $AideFichierActions = Join-Path $ModulesDir 'aide-actions.ps1'
@@ -17,7 +21,14 @@ $AideSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $script:EstAdmin = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 # Seule l'Aide de cette copie de Nevermind est écoutée (vérifié par AideClient à chaque échange)
 [AideClient]::ExeAttendu = $AideExe
-[AideClient]::Suffixe = Get-AideSuffixe (Get-AppRoot)
+# Le nom de son canal vient de NevermindPont.dll (le même calcul que l'Aide). Inconnu (DLL absente ou abîmée) : un nom
+# qu'aucune Aide n'écoute, jamais un nom deviné. Nevermind dit alors que l'Aide ne répond pas (Mindset répare le dossier).
+$AideSuffixe = Get-SuffixeCanal (Get-AppRoot)
+if (-not $AideSuffixe) {
+    $AideSuffixe = 'aucune'
+    if (-not $Uninstall) { Write-Log "Aide : nom du canal inconnu (NevermindPont.dll absente ou abîmée), l'Aide ne sera pas jointe" }
+}
+[AideClient]::Suffixe = $AideSuffixe
 # La copie de test ne réveille jamais la vraie Aide (celle de la copie installée), et ne fait aucune demande de Windows
 if ($env:NEVERMIND_TEST) { $script:AideSansTache = $true; $script:AideSansDemande = $true }
 # Demande de Windows refusée : pas de nouvelle demande avant 10 minutes. Attentes (en secondes) de l'Aide lancée par sa
@@ -67,7 +78,7 @@ function Read-AideTache([string]$Tache, [string]$Schtasks) {
 }
 
 # En arrière plan : réveille l'Aide si besoin (sa tâche SYSTEM, sinon la demande de Windows si elle est permise), envoie
-# la demande, rapporte la réponse. Sans réponse et avec les droits administrateur, Nevermind fait la demande lui-même.
+# la demande, rapporte la réponse. Pendant la désinstallation seulement, Nevermind fait la demande lui-même (SurPlace).
 $AideTravail = {
     param($x)
     $rep = $null; $voie = ''; $erreur = ''; $etat = $null; $refus = $false
@@ -100,7 +111,7 @@ $AideTravail = {
     } catch {
         $erreur = if ($_.Exception.InnerException) { $_.Exception.InnerException.Message } else { $_.Exception.Message }
     }
-    if (-not $rep -and $x.Admin) {
+    if (-not $rep -and $x.SurPlace -and $x.Admin) {
         $voie = 'local'
         try {
             . $x.Actions
@@ -116,7 +127,8 @@ $AideTravail = {
 # avec le message de l'Aide, comme le faisait la commande de Windows avant.
 # -SansDemande : jamais de demande de Windows (lectures et mesures en fond : seulement l'Aide déjà lancée ou sa tâche)
 function Invoke-Aide([string]$Action, $Parametres = @{}, [int]$Delai = 120000, [switch]$SansDemande) {
-    $demander = -not $SansDemande -and -not $script:AideSansDemande -and -not $script:EstAdmin -and
+    # (en administrateur aussi : la demande de Windows ne pose alors pas de question)
+    $demander = -not $SansDemande -and -not $script:AideSansDemande -and
                 -not ($script:AideRefus -and ((Get-Date) - $script:AideRefus).TotalSeconds -lt $AideDelaiRefus)
     # (audit du 25/10, constat 15 : une variable lue par .NET au démarrage, et l'Aide lancée par la demande de Windows la
     # recevrait avec les droits administrateur. Seule sa tâche SYSTEM, qui ne reçoit rien du compte, reste possible.)
@@ -373,23 +385,31 @@ function Stop-FluxReseau([string]$Ou) {
     elseif ($Ou -eq 'local') { try { [NetFlow]::Stop() } catch {} }
 }
 
-# Ferme des processus déjà choisis avec LA règle commune (Get-RefusFermeture, aide-actions.ps1 : celle de la page RAM et
-# de l'Aide) : jamais un service, Windows, l'antivirus, une appli de la suite, un autre compte ou une autre session.
-# -Chemin : seulement ce programme-là. Rend @{ Fermes ; Aide (lancés en administrateur : l'Aide les fermera, avec la
-# même règle) ; Refus (les raisons) }.
+# Ferme des processus déjà choisis avec LA règle commune (Get-RefusFermetureListe, pont.ps1 : celle de la page RAM et
+# de l'Aide, dans NevermindPont.dll) : jamais un service, Windows, l'antivirus, une appli de la suite, un autre compte ou
+# une autre session. -Chemin : seulement ce programme-là. Rend @{ Fermes ; Aide (lancés en administrateur : l'Aide les
+# fermera, avec la même règle) ; Refus (les raisons) }. DLL absente : rien n'est fermé (tout est refusé).
 function Stop-ProcessusRegle($Processus, [string]$Chemin, $Contexte) {
     $r = @{ Fermes = 0; Aide = 0; Refus = @() }
+    $cibles = New-Object System.Collections.ArrayList
     foreach ($p in @($Processus | Where-Object { $_ })) {
         if (-not $Contexte) { $Contexte = Get-AideContexte; $Contexte.Reference = Get-AideReference $PID }
         $pc = ''; try { $pc = [string]$p.Path } catch {}
         $fiche = Read-AideFiche $p.Id $pc
         if ($Chemin -and [string]$fiche.Chemin -ne $Chemin) { if (-not $fiche.Chemin) { $r.Aide++ }; continue }
-        $refus = Get-RefusFermeture $Contexte $fiche
-        if ($refus) {
-            if ([int]$fiche.Eleve -ne 0 -and -not (Get-RefusFermeture $Contexte $fiche -ElevePermis)) { $r.Aide++ } else { $r.Refus += $refus }
+        [void]$cibles.Add(@{ P = $p; Fiche = $fiche })
+    }
+    if (-not $cibles.Count) { return $r }
+    # (la règle d'un seul appel pour tous ; puis, pour ceux lancés en administrateur, la règle de l'Aide)
+    $fiches = @($cibles | ForEach-Object { $_.Fiche })
+    $refus = Get-RefusFermetureListe $Contexte $fiches
+    $refusAide = Get-RefusFermetureListe $Contexte $fiches -ElevePermis
+    for ($i = 0; $i -lt $cibles.Count; $i++) {
+        if ($refus[$i]) {
+            if ([int]$cibles[$i].Fiche.Eleve -ne 0 -and -not $refusAide[$i]) { $r.Aide++ } else { $r.Refus += $refus[$i] }
             continue
         }
-        try { $p.Kill(); $r.Fermes++ } catch { $r.Aide++ }
+        try { $cibles[$i].P.Kill(); $r.Fermes++ } catch { $r.Aide++ }
     }
     $r
 }
