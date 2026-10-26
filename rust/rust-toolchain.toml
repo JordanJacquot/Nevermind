@@ -1,0 +1,5 @@
+# Version de Rust figée : la même sur GitHub et sur le PC.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

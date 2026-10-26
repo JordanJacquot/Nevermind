@@ -1,0 +1,26 @@
+# Le Rust de Nevermind (passage en Rust, issue Mindset #9, étape 1a) : l'Aide (NevermindAide.exe) et ses règles.
+# Rien ici n'est livré aux utilisateurs tant que la version PowerShell n'est pas remplacée par une publication.
+[workspace]
+resolver = "3"
+members = ["aide-regles", "nevermind-aide"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.lints.rust]
+# Le code « unsafe » n'est permis que dans le module Windows de l'exe (nevermind-aide/src/windows), qui l'autorise
+# lui-même ; la bibliothèque des règles l'interdit tout à fait.
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+# Une erreur dans une demande est rattrapée (catch_unwind) : l'Aide répond « échoué » au lieu de s'arrêter
+panic = "unwind"
+lto = true
+codegen-units = 1
+strip = "symbols"
