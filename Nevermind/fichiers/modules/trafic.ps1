@@ -143,13 +143,17 @@ function Update-Traffic {
         if (-not $a) { continue }
         $a.Out += $cn.Out; $a.In += $cn.In; $a.Live++
         $dk = "$($cn.Remote)|$($cn.Port)"
-        if (-not $a.Dest.ContainsKey($dk)) { $a.Dest[$dk] = @{ Remote = $cn.Remote; Port = $cn.Port; OutClosed = [double]0; InClosed = [double]0; Out = [double]0; In = [double]0; First = $now; Live = $true; Private = (Test-PrivateIp $cn.Remote) } }
+        if (-not $a.Dest.ContainsKey($dk)) {
+            $a.Dest[$dk] = @{ Remote = $cn.Remote; Port = $cn.Port; OutClosed = [double]0; InClosed = [double]0; Out = [double]0; In = [double]0; First = $now; Live = $true; Private = (Test-PrivateIp $cn.Remote) }
+            if ($a.DestAnciennes) { [void]$a.DestAnciennes.Remove($dk) }
+        }
         $d = $a.Dest[$dk]; $d.Out += $cn.Out; $d.In += $cn.In; $d.Live = $true; $d.Last = $now
     }
     foreach ($a in $st.Apps.Values) {
         $a.Rate = [math]::Max(0.0, ($a.Out - $a.LastOut) / 2)
         $a.LastOut = $a.Out
     }
+    if ($st.Ticks % 30 -eq 0) { Compress-TrafficDests $st $now }
     # UDP : seulement « ce programme en utilise » (Windows ne donne pas les destinations UDP)
     if ($st.Ticks % 5 -eq 1) {
         $udp = @([TrafficMon]::Udp())
@@ -160,6 +164,39 @@ function Update-Traffic {
     try { Update-ServerLookups } catch { Write-Log "Serveurs: $_" }
     Test-TrafficAlerts
     if ($ui.Tabs.SelectedIndex -eq $TrafficIndex -and $Window.IsVisible) { Update-TrafficView }
+}
+
+# Destinations anciennes : au delà de 500 pour un programme, celles fermées depuis plus de 30 minutes sont oubliées
+# (les plus anciennes d'abord), sinon chaque passage de 2 s s'alourdit au fil des heures. Les octets restent comptés
+# dans les totaux du programme ; leurs adresses restent comptées (nombre de destinations, alerte « énormément
+# d'adresses ») ; une destination sur un port signalé n'est jamais oubliée.
+function Compress-TrafficDests($St, [datetime]$Now, [int]$Max = 500, [int]$Minutes = 30) {
+    $limite = $Now.AddMinutes(-$Minutes)
+    foreach ($a in @($St.Apps.Values)) {
+        if ($a.Dest.Count -le $Max) { continue }
+        $vieilles = New-Object System.Collections.Generic.List[object]
+        foreach ($e in $a.Dest.GetEnumerator()) {
+            $d = $e.Value
+            if ($d.Live -or $SusPorts.ContainsKey([int]$d.Port)) { continue }
+            $vu = if ($d.Last) { [datetime]$d.Last } else { [datetime]$d.First }
+            if ($vu -lt $limite) { $vieilles.Add(@{ Cle = $e.Key; Vu = $vu; D = $d }) }
+        }
+        $n = [math]::Min($vieilles.Count, $a.Dest.Count - $Max)
+        if ($n -le 0) { continue }
+        if (-not $a.DestAnciennes) { $a.DestAnciennes = New-Object 'System.Collections.Generic.HashSet[string]'; $a.IpsAnciennes = New-Object 'System.Collections.Generic.HashSet[string]' }
+        foreach ($v in @($vieilles | Sort-Object { $_.Vu } | Select-Object -First $n)) {
+            if (-not $v.D.Private) { [void]$a.DestAnciennes.Add([string]$v.Cle); [void]$a.IpsAnciennes.Add([string]$v.D.Remote) }
+            $a.Dest.Remove($v.Cle)
+        }
+    }
+}
+
+# Nombre de destinations sur Internet d'un programme (réseau local à part), oubliées comprises
+function Get-TrafficDestCount($A) {
+    $n = 0
+    foreach ($d in $A.Dest.Values) { if (-not $d.Private) { $n++ } }
+    if ($A.DestAnciennes) { $n += $A.DestAnciennes.Count }
+    $n
 }
 
 function Start-TrafficWatch {
@@ -312,7 +349,8 @@ function Get-TrafficAlerts {
     $scanned = Get-TrafficMarks 'TrafficScanned'
     foreach ($a in $st.Apps.Values) {
         if ($a.IsSelf -or $trusted.ContainsKey($a.Key)) { continue }
-        $net = @($a.Dest.Values | Where-Object { -not $_.Private })
+        $net = New-Object System.Collections.Generic.List[object]
+        foreach ($d in $a.Dest.Values) { if (-not $d.Private) { $net.Add($d) } }
         if (-not $net.Count) { continue }
         $why = @(); $level = 'info'
         # Analysé sans rien trouver, ou jeu installé : « non signé » n'est plus un indice
@@ -329,10 +367,18 @@ function Get-TrafficAlerts {
         # Un programme signé par son éditeur (un jeu, par exemple) peut utiliser ces ports pour ses serveurs :
         # pour lui, seuls les ports du réseau Tor restent signalés.
         $signedOk = $a.Sig -eq 'Valid'
-        $ports = @($net | Where-Object { $SusPorts.ContainsKey([int]$_.Port) -and (-not $signedOk -or [int]$_.Port -in 9001, 9030, 9050, 9150) } | ForEach-Object { "port $($_.Port) : $($SusPorts[[int]$_.Port])" } | Select-Object -Unique)
+        $ports = New-Object System.Collections.Generic.List[string]
+        foreach ($d in $net) {
+            if ($SusPorts.ContainsKey([int]$d.Port) -and (-not $signedOk -or [int]$d.Port -in 9001, 9030, 9050, 9150)) {
+                $p = "port $($d.Port) : $($SusPorts[[int]$d.Port])"
+                if (-not $ports.Contains($p)) { $ports.Add($p) }
+            }
+        }
         if ($ports.Count) { $why += "il utilise un port inhabituel ($($ports -join ', '))"; if ($level -ne 'bad') { $level = 'warn' } }
         if ($a.Out -gt 200MB -and $a.Out -gt 3 * $a.In -and $a.Name -notmatch $UploadOk) { $why += "il envoie beaucoup plus qu'il ne reçoit ($(Format-Bytes $a.Out) envoyés)"; if ($level -ne 'bad') { $level = 'warn' } }
-        $ips = @($net | ForEach-Object { $_.Remote } | Select-Object -Unique)
+        # (HashSet : Select-Object -Unique comparait chaque adresse à toutes les autres, 6,9 s par passage avec 5 000 destinations)
+        $ips = if ($a.IpsAnciennes) { New-Object 'System.Collections.Generic.HashSet[string]' (, $a.IpsAnciennes) } else { New-Object 'System.Collections.Generic.HashSet[string]' }
+        foreach ($d in $net) { [void]$ips.Add([string]$d.Remote) }
         if ($ips.Count -gt 150 -and $a.Name -notmatch $UploadOk) { $why += "il contacte énormément d'adresses différentes ($($ips.Count))"; if ($level -ne 'bad') { $level = 'warn' } }
         if ($a.Name -match $RemoteTools) { $why += 'c''est un logiciel de prise en main à distance : quelqu''un peut voir et contrôler ton écran'; if ($level -eq 'info') { $level = 'warn' } }
         if ($why.Count) {
@@ -799,7 +845,7 @@ function New-TrafficRow($A) {
     [void]$sp.Children.Add($t)
     $sig = Get-AppSigLabel $A
     if ((Get-TrafficMarks 'TrafficTrusted').ContainsKey($A.Key)) { $sig = @("Approuvé par toi   $($sig[0])", '#A6A1BC') }
-    $dests = @($A.Dest.Values | Where-Object { -not $_.Private }).Count
+    $dests = (Get-TrafficDestCount $A)
     $sub = New-Object System.Windows.Controls.TextBlock
     $sub.FontSize = Get-UiFontSize 11.5; $sub.TextTrimming = 'CharacterEllipsis'
     $r1 = New-Object System.Windows.Documents.Run $sig[0]; $r1.Foreground = Get-Brush $sig[1]
@@ -849,7 +895,7 @@ function Get-TrafficAlertActions($A) {
 function Update-TrafficView {
     $st = $script:Traffic
     if (-not $st -or -not $script:TrafficBuilt) { return }
-    $apps = @($st.Apps.Values | Where-Object { @($_.Dest.Values | Where-Object { -not $_.Private }).Count -or $_.Out -gt 0 })
+    $apps = @($st.Apps.Values | Where-Object { (Get-TrafficDestCount $_) -or $_.Out -gt 0 })
     $sumOut = 0.0; $sumIn = 0.0
     foreach ($a in $apps) { $sumOut += $a.Out; $sumIn += $a.In }
     $script:TrafficStats.Out.Text = Format-Bytes $sumOut

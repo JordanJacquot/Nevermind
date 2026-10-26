@@ -11,7 +11,10 @@
 #      sur la bulle d'une alerte ouvre le bon programme et n'exécute rien de caché dans son nom ;
 #   3. la trace réseau en veille (avant BF6) n'est lancée que si un jeu guetté est installé, et arrêtée sinon ;
 #   4. les petits textes : titre « Nevermind » des rapports, Mindset trouvé sur un autre disque, message d'erreur simple ;
-#   5. UPnP : une adresse annoncée par un appareil n'est ouverte que si c'est http:// vers lui (audit du 25/10, constat 16).
+#   5. UPnP : une adresse annoncée par un appareil n'est ouverte que si c'est http:// vers lui (audit du 25/10, constat 16) ;
+#   6. longues sessions (audit du 25/10, 25c) : la fin d'une partie de 2 h mesurée ne fige plus la fenêtre et donne les
+#      mêmes pics box et téléchargement qu'avant ; la page Trafic avec 5 000 destinations reste rapide, oublie les
+#      destinations anciennes au delà de 500 sans perdre leur nombre, leurs adresses ni leurs octets.
 # Code de sortie : 0 si tout passe, 1 sinon.
 
 param([switch]$VraiLagMon)
@@ -118,7 +121,8 @@ public static class LagMon
     public static void Stop() { }
     public static int Add(string h) { Hosts.Add(h); return Hosts.Count - 1; }
     public static void Remove(int i) { Removed.Add(i); }
-    public static double[] Series(int i) { return new double[0]; }
+    public static Dictionary<int, double[]> Data = new Dictionary<int, double[]>();
+    public static double[] Series(int i) { return Data.ContainsKey(i) ? Data[i] : new double[0]; }
     public static string[] TraceRoute(string h, int a, int b) { return new string[0]; }
 }
 '@
@@ -359,6 +363,129 @@ Test-Ok ((Find-MindsetExe) -eq $pfMindset) 'Mindset : une inscription périmée 
 $script:Inscrit = $null; $script:Existe = @()
 Test-Ok ((Find-MindsetExe) -eq $pfMindset) 'Mindset : sans Mindset installé, le chemin par défaut a changé'
 Remove-Item function:script:Test-Path, function:script:Get-ItemProperty
+
+# ---------------------------------------------------------------------------
+# 6. Longues sessions (audit du 25/10, 25c) : fin d'une longue partie mesurée, page Trafic qui tourne des heures
+# ---------------------------------------------------------------------------
+# (fonctions chargées une à une : sur l'ancien code, celles qui manquent font échouer leur vérification, pas le script)
+foreach ($x in @(@('lag.ps1', 'Stop-LagSession'), @('lag.ps1', 'Get-PingStats'), @('lag.ps1', 'Compress-PingSeries'), @('lag.ps1', 'Get-LagSpikeLinks'),
+                 @('trafic.ps1', 'Update-Traffic'), @('trafic.ps1', 'Compress-TrafficDests'), @('trafic.ps1', 'Get-TrafficDestCount'))) {
+    try { . ([scriptblock]::Create((Get-Definitions (Join-Path $modules $x[0]) @($x[1])))) } catch { Write-Host "Info : $($x[1]) absent de $($x[0])" }
+}
+# Partie simulée : un ping toutes les 0,5 s vers la box, Internet et le serveur ; débit des autres programmes toutes les 2 s
+function New-SerieEssai([int]$N, [int]$Graine, [double]$Base) {
+    $rnd = New-Object Random($Graine); $a = New-Object double[] (2 * $N)
+    for ($i = 0; $i -lt $N; $i++) { $a[2 * $i] = $i * 0.5; $x = $rnd.NextDouble(); $a[2 * $i + 1] = if ($x -lt 0.005) { -1 } elseif ($x -lt 0.03) { $Base + 60 + $rnd.Next(200) } else { $Base + $rnd.Next(4) } }
+    , $a
+}
+function New-PartieEssai([double]$Heures) {
+    $n = [int]($Heures * 7200)
+    [LagMon]::Data[900] = New-SerieEssai $n 1 2; [LagMon]::Data[901] = New-SerieEssai $n 2 12; [LagMon]::Data[902] = New-SerieEssai $n 4 30
+    $bg = New-Object System.Collections.ArrayList
+    $rnd = New-Object Random(9)
+    for ($i = 0; $i -lt [int]($Heures * 1800); $i++) {
+        $gros = $rnd.NextDouble() -lt 0.05
+        [void]$bg.Add(@{ T = [math]::Round($i * 2.0, 1); Rate = $(if ($gros) { 2MB } else { 10KB }); Name = $(if ($gros) { @('Steam', 'OneDrive')[$i % 2] } else { '' }); NameRate = $(if ($gros) { 1MB + $i } else { 0 }) })
+    }
+    $script:LagSession = @{ Game = 'Essai'; Seconds = 0; Start = (Get-Date).AddHours(-$Heures); Etw = $false; T = @{ gw = 900; ref = 901; srv = 902 }; Bg = $bg
+        Server = @{ Ip = '1.2.3.4'; Port = 7000; Proto = 'udp'; Pays = '' }; Isp = ''; Wifi = $false; Adapter = 'Ethernet'; Signal = @(); Band = ''; Channel = ''; Gaps = 0; MaxGap = 0 }
+}
+# Ce que donnait l'ancien calcul (chaque pic comparé à toute la partie), sur une partie courte pour rester rapide
+function Get-LiensReference($Pics, $Box, $Bg) {
+    $local = 0; $hit = 0; $noms = @{}
+    foreach ($t in $Pics) {
+        if (@($Box | Where-Object { [math]::Abs($_ - $t) -le 1 }).Count) { $local++ }
+        $bs = @($Bg | Where-Object { [math]::Abs($_.T - $t) -le 2.5 -and $_.Rate -gt 500KB })
+        if ($bs.Count) { $hit++; foreach ($b in $bs) { if ($b.Name) { $noms[$b.Name] = [math]::Max([double]$noms[$b.Name], [double]$b.NameRate) } } }
+    }
+    @{ Local = $local; Hit = $hit; Noms = (@($noms.GetEnumerator() | Sort-Object Value -Descending | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ',') }
+}
+$script:Sessions = New-Object System.Collections.ArrayList
+function script:Get-LagSessions { , $script:LagSessions }
+function script:Save-LagSessions { }
+function script:Set-LagDiag($R) { $R.Diag = @{ Level = 'warn'; Title = 'Essai' } }
+function script:Request-LagPanel { }
+function script:Show-LagSession($Id) { }
+function script:Get-ServerOwner([string]$Ip) { $null }
+function script:Update-LagLive { }
+$script:LagTimer = $null; $script:LagOwnerJobs = $null
+try {
+    foreach ($h in 0.25, 2) {
+        New-PartieEssai $h
+        $bgEssai = $script:LagSession.Bg
+        $script:LagSessions = New-Object System.Collections.ArrayList
+        $chrono = [Diagnostics.Stopwatch]::StartNew()
+        Stop-LagSession
+        $ms = $chrono.ElapsedMilliseconds
+        $r = @($script:LagSessions)[-1]
+        Test-Ok ($null -ne $r) "Longue partie ($h h) : mesure non enregistrée"
+        if ($h -eq 2) { Test-Ok ($ms -lt 3000) "Longue partie : la fin d'une partie de 2 h fige la fenêtre $([math]::Round($ms / 1000.0, 1)) s (avant la correction : 11 s et plus)" }
+        else {
+            # Mêmes résultats que l'ancien calcul
+            $srv = Get-PingStats ([LagMon]::Data[902]); $box = Get-PingStats ([LagMon]::Data[900])
+            $ref = Get-LiensReference $srv.Spikes $box.Spikes $bgEssai
+            $noms = (@($r.BgApps | ForEach-Object { "$($_.Name)=$($_.Rate)" }) -join ',')
+            Test-Ok ($r -and $r.Spikes -eq $srv.Spikes.Count -and $r.LocalSpikes -eq $ref.Local -and $r.BgSpikes -eq $ref.Hit -and $noms -eq $ref.Noms) "Longue partie : pics box ou téléchargement différents de l'ancien calcul (box $($r.LocalSpikes) au lieu de $($ref.Local), téléchargement $($r.BgSpikes) au lieu de $($ref.Hit), programmes « $noms » au lieu de « $($ref.Noms) »)"
+            Test-Ok ($ref.Local -gt 0 -and $ref.Hit -gt 0) "Longue partie : la partie d'essai n'a aucun pic commun (essai sans valeur)"
+        }
+        Write-Host "Info : fin d'une partie de $h h calculée en $ms ms"
+    }
+} catch { Test-Ok $false "Longue partie : $($_.Exception.Message) $($_.InvocationInfo.PositionMessage)" }
+$script:LagSession = $null; [LagMon]::Data.Clear()
+
+# Trafic : un programme qui a parlé à 5 000 adresses il y a 2 heures, plus 20 connexions ouvertes et un port signalé
+function script:Get-TrafficTcp { $script:LignesTcp }
+function script:Get-TrafficApp([int]$ProcId) { 'essai' }
+function script:Request-TrafficAidePaths($Lignes) { }
+function script:Update-TrafficDns { }
+function script:Update-TrafficSignatures { }
+function script:Update-ServerLookups { }
+$ui = @{ Tabs = @{ SelectedIndex = 0 } }
+$TrafficIndex = 3
+$script:Bulles.Clear()
+try {
+    $vieux = (Get-Date).AddHours(-2)
+    $dest = @{}
+    for ($i = 0; $i -lt 5000; $i++) {
+        $ip = "20.$([math]::Floor($i / 250)).$($i % 250).7"
+        $dest["$ip|443"] = @{ Remote = $ip; Port = 443; OutClosed = [double]1000; InClosed = [double]2000; Out = [double]1000; In = [double]2000; First = $vieux; Last = $vieux; Live = $false; Private = $false }
+    }
+    $dest['45.1.1.1|4444'] = @{ Remote = '45.1.1.1'; Port = 4444; OutClosed = [double]10; InClosed = [double]10; Out = [double]10; In = [double]10; First = $vieux; Last = $vieux; Live = $false; Private = $false }
+    $dest['192.168.1.1|80'] = @{ Remote = '192.168.1.1'; Port = 80; OutClosed = [double]10; InClosed = [double]10; Out = [double]10; In = [double]10; First = $vieux; Last = $vieux; Live = $false; Private = $true }
+    $app = @{ Key = 'essai'; Name = 'outil'; Path = 'C:\Outils\outil.exe'; Title = 'Outil'; Sig = 'NotSigned'; IsSelf = $false; OutClosed = [double]5MB; InClosed = [double]10MB; Out = [double]0; In = [double]0
+        Rate = [double]0; LastOut = [double]0; Dest = $dest; Ports = @{}; Udp = $false; Pids = @{}; Parent = ''; ParentSig = ''; ParentPub = '' }
+    $script:Traffic = @{ Conns = @{}; Pids = @{}; Apps = @{ essai = $app }; Ticks = 28; Notified = @{}; Alerts = @() }
+    $script:LignesTcp = @(for ($i = 0; $i -lt 20; $i++) { "1234|30.0.0.$i|443|5$i|5|100|200" })
+    # (numéros de passage choisis : le relevé UDP, réservé à la vraie appli, ne tombe jamais)
+    $chrono = [Diagnostics.Stopwatch]::StartNew()
+    Update-Traffic
+    $ms1 = $chrono.ElapsedMilliseconds
+    Test-Ok ($ms1 -lt 1000) "Trafic : un passage avec 5 000 destinations prend $ms1 ms (avant la correction : plus de 2 s)"
+    $al = @($script:Traffic.Alerts | Where-Object { $_.App.Key -eq 'essai' })[0]
+    Test-Ok ($al -and ($al.Why -join ' ') -match 'énormément d''adresses différentes \(5021\)' -and ($al.Why -join ' ') -match 'port 4444') "Trafic : alertes fausses avant l'oubli ($(if ($al) { $al.Why -join ' ; ' }))"
+    # Passage suivant (toutes les minutes) : les destinations anciennes sont oubliées
+    $script:Traffic.Ticks = 29; Update-Traffic
+    $script:Traffic.Ticks = 31; $chrono.Restart(); Update-Traffic; $ms2 = $chrono.ElapsedMilliseconds
+    $n = $app.Dest.Count
+    Test-Ok ($n -le 520) "Trafic : $n destinations gardées en mémoire au lieu de 500 environ (les anciennes ne sont jamais oubliées)"
+    Test-Ok ($app.Dest.ContainsKey('45.1.1.1|4444')) 'Trafic : la destination sur un port signalé a été oubliée'
+    Test-Ok ($app.Dest.ContainsKey('30.0.0.3|443') -and $app.Dest['30.0.0.3|443'].Live) 'Trafic : une connexion ouverte a été oubliée'
+    $cpt = try { Get-TrafficDestCount $app } catch { -1 }
+    Test-Ok ($cpt -eq 5021) "Trafic : $cpt destinations sur Internet comptées au lieu de 5021 après l'oubli"
+    Test-Ok ($app.Out -eq 5MB + 20 * 100 -and $app.In -eq 10MB + 20 * 200) "Trafic : octets du programme changés par l'oubli ($($app.Out) envoyés, $($app.In) reçus)"
+    $al = @($script:Traffic.Alerts | Where-Object { $_.App.Key -eq 'essai' })[0]
+    Test-Ok ($al -and ($al.Why -join ' ') -match 'énormément d''adresses différentes \(5021\)' -and ($al.Why -join ' ') -match 'port 4444') "Trafic : alertes changées par l'oubli ($(if ($al) { $al.Why -join ' ; ' }))"
+    Test-Ok ($ms2 -lt 500) "Trafic : un passage après l'oubli prend encore $ms2 ms"
+    # Une adresse oubliée qui revient n'est pas comptée deux fois
+    $revient = if ($app.DestAnciennes) { @($app.DestAnciennes)[0] } else { '20.0.5.7|443' }
+    $script:LignesTcp = @($script:LignesTcp) + "1234|$($revient.Split('|')[0])|443|99|5|10|10"
+    $script:Traffic.Ticks = 32; Update-Traffic
+    Test-Ok ($app.Dest.ContainsKey($revient)) "Trafic : l'adresse revenue ($revient) n'est pas dans la liste"
+    $cpt = try { Get-TrafficDestCount $app } catch { -1 }
+    Test-Ok ($cpt -eq 5021) "Trafic : une adresse oubliée qui revient est comptée deux fois ($cpt au lieu de 5021)"
+    Write-Host "Info : Trafic, passage avec 5 000 destinations en $ms1 ms, après l'oubli en $ms2 ms ($n gardées)"
+} catch { Test-Ok $false "Trafic : $($_.Exception.Message) $($_.InvocationInfo.PositionMessage)" }
+$script:Traffic = $null
 
 # ---------------------------------------------------------------------------
 if ($echecs.Count) {

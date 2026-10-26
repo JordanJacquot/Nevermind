@@ -360,6 +360,32 @@ function Compress-PingSeries([double[]]$A, [double]$Step) {
     @($out | ForEach-Object { if ($_ -eq -2) { -1 } else { [math]::Round($_) } })
 }
 
+# Pics du ping principal qui tombent en même temps qu'un pic de la box (à 1 s près) ou qu'un téléchargement d'un autre
+# programme (plus de 500 Ko/s, à 2,5 s près). Les listes sont parcourues ensemble, dans l'ordre du temps : chaque mesure
+# n'est lue qu'une fois (avant, chaque pic relisait toute la partie : 11 s de fenêtre figée pour 2 h, 94 s pour 4 h).
+function Get-LagSpikeLinks($Spikes, $GwSpikes, $Bg) {
+    $res = @{ Local = 0; BgHit = 0; BgNames = @{} }
+    $sp = [double[]]@($Spikes | Where-Object { $null -ne $_ })
+    if (-not $sp.Count) { return $res }
+    [Array]::Sort($sp)
+    $gw = [double[]]@($GwSpikes | Where-Object { $null -ne $_ }); [Array]::Sort($gw)
+    $fond = [object[]]@($Bg | Where-Object { $_ -and [double]$_.Rate -gt 500KB })
+    $tf = [double[]]@($fond | ForEach-Object { [double]$_.T }); [Array]::Sort($tf, $fond)
+    $j = 0; $k = 0
+    foreach ($t in $sp) {
+        while ($j -lt $gw.Count -and ($t - $gw[$j]) -gt 1) { $j++ }
+        if ($j -lt $gw.Count -and [math]::Abs($gw[$j] - $t) -le 1) { $res.Local++ }
+        while ($k -lt $tf.Count -and ($t - $tf[$k]) -gt 2.5) { $k++ }
+        $vu = $false
+        for ($m = $k; $m -lt $tf.Count -and [math]::Abs($tf[$m] - $t) -le 2.5; $m++) {
+            $vu = $true; $b = $fond[$m]
+            if ($b.Name) { $res.BgNames[$b.Name] = [math]::Max([double]$res.BgNames[$b.Name], [double]$b.NameRate) }
+        }
+        if ($vu) { $res.BgHit++ }
+    }
+    $res
+}
+
 function Stop-LagSession {
     $s = $script:LagSession
     $script:LagSession = $null
@@ -385,14 +411,8 @@ function Stop-LagSession {
     $stats.Remove('proxy'); $series.Remove('proxy')
     # Pics de ping de la partie : en même temps qu'un pic box (Wi-Fi) ? qu'un téléchargement ?
     $main = if ($stats.srv -and -not $stats.srv.Dead) { $stats.srv } elseif ($stats.ref) { $stats.ref } else { $null }
-    $local = 0; $bgHit = 0; $bgNames = @{}
-    if ($main -and $main.Spikes.Count) {
-        foreach ($t in $main.Spikes) {
-            if ($stats.gw -and @($stats.gw.Spikes | Where-Object { [math]::Abs($_ - $t) -le 1 }).Count) { $local++ }
-            $bs = @($s.Bg | Where-Object { [math]::Abs($_.T - $t) -le 2.5 -and $_.Rate -gt 500KB })
-            if ($bs.Count) { $bgHit++; foreach ($b in $bs) { if ($b.Name) { $bgNames[$b.Name] = [math]::Max([double]$bgNames[$b.Name], [double]$b.NameRate) } } }
-        }
-    }
+    $liens = Get-LagSpikeLinks $(if ($main) { $main.Spikes } else { @() }) $(if ($stats.gw) { $stats.gw.Spikes } else { @() }) $s.Bg
+    $local = $liens.Local; $bgHit = $liens.BgHit; $bgNames = $liens.BgNames
     $srvOwner = if ($s.Server) { Get-ServerOwner $s.Server.Ip }
     $ispOwner = if ($s.Isp) { Get-ServerOwner $s.Isp }
     $rec = @{

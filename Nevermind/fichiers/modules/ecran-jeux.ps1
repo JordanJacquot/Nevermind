@@ -193,7 +193,7 @@ function Get-PagesJeux {
     # ---- Trafic
     $st = $script:Traffic
     $actif = [bool]($st -and $script:TrafficTimer -and $script:TrafficTimer.IsEnabled)
-    $apps = @(if ($st) { $st.Apps.Values | Where-Object { @($_.Dest.Values | Where-Object { -not $_.Private }).Count -or $_.Out -gt 0 } | Sort-Object @{ Expression = { $_.Out + $_.In } } -Descending | Select-Object -First 40 })
+    $apps = @(if ($st) { $st.Apps.Values | Where-Object { (Get-TrafficDestCount $_) -or $_.Out -gt 0 } | Sort-Object @{ Expression = { $_.Out + $_.In } } -Descending | Select-Object -First 40 })
     $script:Kit.TraficApps = $apps
     $alertes = @(if ($st) { $st.Alerts | Where-Object { $_.Level -ne 'info' } })
     $script:Kit.TraficAlertes = $alertes
@@ -218,7 +218,7 @@ function Get-PagesJeux {
         $blocsT += @{ type = 'titre'; texte = 'Programmes qui communiquent avec Internet'; droite = "depuis $(if ($mins -lt 1) { 'moins d''une minute' } else { "$mins min" })" }
         for ($k = 0; $k -lt $apps.Count; $k++) {
             $x = $apps[$k]
-            $dests = @($x.Dest.Values | Where-Object { -not $_.Private }).Count
+            $dests = (Get-TrafficDestCount $x)
             $sig = Get-AppSigLabel $x
             $blocsT += @{ type = 'ligne'; id = "trafic-app:$k"; image = $(if ($x.Path) { Get-IconeExeKit $x.Path }); icone = 'app'; couleur = 'doux'; texte = [string]$x.Title
                 note = "$($sig[0]) · $dests destination$(if ($dests -gt 1) { 's' })"; barre = [int](100 * $x.Out / $maxO); valeur = "↑ $(Format-Bytes $x.Out)"; ton = $(if ($x.Rate -gt 50KB) { 'attention' } else { '' }) }
