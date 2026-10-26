@@ -71,7 +71,10 @@ jobs:
           cargo build --release --locked -p nevermind-aide
           if ($LASTEXITCODE) { exit 1 }
           New-Item -ItemType Directory -Force -Path ..\_ci\aide | Out-Null
-          Copy-Item -LiteralPath target\release\nevermind-aide.exe -Destination ..\_ci\aide\NevermindAide.exe
+          # (le binaire s'appelle NevermindAide, celui du crate nevermind-aide)
+          $exe = @('target\release\NevermindAide.exe', 'target\release\nevermind-aide.exe' | Where-Object { Test-Path -LiteralPath $_ })[0]
+          if (-not $exe) { Write-Host 'NevermindAide.exe introuvable dans target\release'; exit 1 }
+          Copy-Item -LiteralPath $exe -Destination ..\_ci\aide\NevermindAide.exe
           $h = (Get-FileHash -LiteralPath ..\_ci\aide\NevermindAide.exe -Algorithm SHA256).Hash
           [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "NevermindAide.exe (Rust, non signé) : SHA-256 ``$h``" + "`n")
 
