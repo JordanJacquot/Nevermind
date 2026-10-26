@@ -3,7 +3,10 @@
 # réponses comparées. Sans droits administrateur et sans rien modifier :
 #   - toutes les demandes REFUSÉES du corpus (cas\aide\demandes.json) : même refus, même message, mot pour mot ;
 #   - des lectures (aide.bonjour, nettoyage.lister, lecture.chemins, lecture.taches, lecture.pc...) : mêmes réponses ;
-#   - les écarts voulus (mesures continues de l'étape 1b) sont listés à part, jamais comptés comme bons.
+#   - les mesures continues (étape 1b), telles qu'elles tournent sans droits : trafic.tcp (mêmes connexions, comptage
+#     refusé par Windows), trace réseau refusée (même message), et le vrai PresentMon (celui du dépôt, signé par Intel)
+#     lancé par chaque Aide sur ce banc puis en veille : il est refusé par Windows, et ses lignes relayées sont les mêmes.
+#     Aucun jeu n'est mesuré. Les enregistrements des mesures, eux, sont rejoués par outils\tester-mesures.ps1 et cargo test.
 # Chaque Aide tourne dans sa propre copie (dossier d'essai), donc sur son propre canal ; elles s'arrêtent seules.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-aide-rust.ps1 -Exe <NevermindAide.exe construit>
@@ -27,6 +30,10 @@ $copieRust = Join-Path $essai 'rust'
 [void][IO.Directory]::CreateDirectory($copieRust)
 Copy-Item -LiteralPath (Join-Path $racine 'Nevermind\fichiers') -Destination $copiePs -Recurse
 Copy-Item -LiteralPath $Exe -Destination (Join-Path $copieRust 'NevermindAide.exe')
+# (PresentMon, à sa place dans le dossier de Nevermind : fichiers\outils-tiers)
+$pmRust = Join-Path $copieRust 'fichiers\outils-tiers'
+[void][IO.Directory]::CreateDirectory($pmRust)
+Copy-Item -LiteralPath (Join-Path $racine 'Nevermind\fichiers\outils-tiers\PresentMon.exe') -Destination $pmRust
 
 function Get-NomCanal([string]$Dossier) {
     $d = ([IO.Path]::GetFullPath($Dossier).TrimEnd('\')).ToLowerInvariant()
@@ -66,7 +73,6 @@ function ConvertTo-Canonique($V) {
 
 $lances = @()
 $echecs = New-Object Collections.Generic.List[string]
-$ecarts = New-Object Collections.Generic.List[string]
 $nb = 0
 try {
     $psExe = Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v1.0\powershell.exe'
@@ -121,11 +127,53 @@ try {
         if ($j.PowerShell -cne $j.Rust) { $echecs.Add("Lecture différente : $ligne`n      PowerShell : $($j.PowerShell)`n      Rust       : $($j.Rust)") }
     }
 
-    # 3. Les écarts voulus : les mesures continues (étape 1b) ne passent pas encore par l'Aide Rust
-    foreach ($l in @(@{ a = 'trafic.tcp'; p = @{} }, @{ a = 'fps.demarrer'; p = @{ Pid = $PID } }, @{ a = 'flux.demarrer'; p = @{} })) {
-        $ligne = ConvertTo-Json -InputObject $l -Depth 10 -Compress
-        $r = Send-Demande $canaux.Rust $ligne
-        $ecarts.Add("$ligne : Rust répond $(if ($r.ok) { 'ok' } else { "« $($r.e) »" })")
+    # 3. Les mesures continues (étape 1b), sans droits : Windows refuse de compter, de tracer et à PresentMon, mais les
+    #    demandes, les réponses et les erreurs font tout le trajet dans les deux Aides
+    # Trace réseau : même refus de Windows, même message
+    foreach ($ligne in '{"a":"flux.demarrer","p":{}}', '{"a":"flux.veiller","p":{}}', '{"a":"flux.lire","p":{}}', '{"a":"flux.arreter","p":{}}') {
+        $r = @{}; foreach ($n in $canaux.Keys) { $r[$n] = Send-Demande $canaux[$n] $ligne }
+        $nb++
+        $j = @{}; foreach ($n in $canaux.Keys) { $j[$n] = ConvertTo-Canonique $r[$n] }
+        if ($j.PowerShell -cne $j.Rust) { $echecs.Add("Trace réseau différente : $ligne`n      PowerShell : $($j.PowerShell)`n      Rust       : $($j.Rust)") }
+    }
+    # Compteurs TCP : même comptage (refusé sans droits) ; les connexions changent d'un instant à l'autre, donc Rust doit
+    # voir celles que PowerShell voit juste avant ET juste après, et rien qu'il ne voie ni avant ni après
+    $nb++
+    $tcpOk = $false; $detail = ''
+    for ($k = 1; $k -le 5 -and -not $tcpOk; $k++) {
+        $a = Send-Demande $canaux.PowerShell '{"a":"trafic.tcp","p":{}}'
+        $b = Send-Demande $canaux.Rust '{"a":"trafic.tcp","p":{}}'
+        $c2 = Send-Demande $canaux.PowerShell '{"a":"trafic.tcp","p":{}}'
+        $la = @($a.r.Lignes | ForEach-Object { [string]$_ }); $lb = @($b.r.Lignes | ForEach-Object { [string]$_ }); $lc = @($c2.r.Lignes | ForEach-Object { [string]$_ })
+        $manquent = @($la | Where-Object { $lc -ccontains $_ -and $lb -cnotcontains $_ })
+        $enTrop = @($lb | Where-Object { $la -cnotcontains $_ -and $lc -cnotcontains $_ })
+        $tcpOk = $a.ok -and $b.ok -and $c2.ok -and ([string]$a.r.CompteursOk -ceq [string]$b.r.CompteursOk) -and -not $manquent.Count -and -not $enTrop.Count
+        $detail = "PowerShell $($la.Count) puis $($lc.Count) connexions, Rust $($lb.Count) ; comptage $($a.r.CompteursOk) / $($b.r.CompteursOk) ; manquent : $($manquent -join ', ') ; en trop : $($enTrop -join ', ')"
+    }
+    if (-not $tcpOk) { $echecs.Add("trafic.tcp différent : $detail") }
+    else { Write-Host "trafic.tcp : $detail" }
+    # PresentMon : le vrai (celui du dépôt, signé par Intel), lancé par chaque Aide sur ce banc, puis en veille sur un
+    # programme absent. Sans droits, Windows le refuse : les lignes relayées jusqu'à « #FIN » doivent être les mêmes.
+    foreach ($etape in @(@{ a = 'fps.demarrer'; p = @{ Pid = $PID } }, @{ a = 'fps.veiller'; p = @{ Noms = @('nevermind-banc-absent.exe') } })) {
+        $ligne = ConvertTo-Json -InputObject $etape -Depth 5 -Compress
+        $lu = @{}
+        foreach ($n in 'PowerShell', 'Rust') {
+            $r = Send-Demande $canaux[$n] $ligne
+            $texte = ''
+            if ($r.ok) {
+                $fin = (Get-Date).AddSeconds(20)
+                while ((Get-Date) -lt $fin -and -not $texte.EndsWith("#FIN`n")) {
+                    Start-Sleep -Milliseconds 250
+                    $texte += [string](Send-Demande $canaux[$n] '{"a":"fps.lire","p":{}}').r
+                }
+            }
+            [void](Send-Demande $canaux[$n] '{"a":"fps.arreter","p":{}}')
+            $lu[$n] = "$(ConvertTo-Canonique $r) puis $(ConvertTo-Json -InputObject $texte -Compress)"
+        }
+        $nb++
+        if ($lu.PowerShell -cne $lu.Rust) { $echecs.Add("PresentMon relayé différemment : $ligne`n      PowerShell : $($lu.PowerShell)`n      Rust       : $($lu.Rust)") }
+        elseif (-not $lu.Rust.Contains('#FIN')) { $echecs.Add("PresentMon toujours en cours sans droits : $ligne : $($lu.Rust)") }
+        else { Write-Host "$($etape.a) : $($lu.Rust)" }
     }
     $j = Send-Demande $canaux.Rust '{"a":"aide.journal","p":{}}'
     Write-Host "Journal de l'Aide Rust : $(@($j.r).Count) lignes, la première : $(@($j.r)[0])"
@@ -138,7 +186,6 @@ try {
 }
 
 Write-Host "$nb demandes envoyées aux deux Aides."
-foreach ($e in $ecarts) { Write-Host "  Écart voulu (étape 1b) : $e" -ForegroundColor DarkYellow }
 if ($echecs.Count) {
     Write-Host "$($echecs.Count) différence(s) :" -ForegroundColor Red
     foreach ($e in $echecs) { Write-Host "  - $e" -ForegroundColor Red }

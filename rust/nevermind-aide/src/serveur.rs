@@ -209,7 +209,13 @@ pub fn lancer<H: Hote>(h: Arc<H>, sid_recu: Option<&str>) {
         journal.ecrire(s, &format!("Règles du pare-feu non renommées : {e}"));
     }
 
-    let etat = Arc::new(EtatAide { admin: moi.admin, compte: moi.compte.clone(), pid: moi.pid, temp });
+    let etat = Arc::new(EtatAide {
+        admin: moi.admin,
+        compte: moi.compte.clone(),
+        pid: moi.pid,
+        temp,
+        mesures: Default::default(),
+    });
     let en_cours = Arc::new(AtomicUsize::new(0));
     let mut ecoute = Some(premier);
     let mut pris = false;
@@ -305,6 +311,8 @@ pub fn lancer<H: Hote>(h: Arc<H>, sid_recu: Option<&str>) {
         });
     }
     drop(ecoute);
+    // Mesures en cours : PresentMon et la trace réseau s'arrêtent avec l'Aide
+    etat.mesures.arreter_tout(s);
     journal.ecrire(s, "Aide arrêtée (Nevermind fermé)");
 }
 

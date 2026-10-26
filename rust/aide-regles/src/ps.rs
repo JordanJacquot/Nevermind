@@ -33,6 +33,9 @@ pub fn chaine(v: Option<&Value>) -> String {
         Some(Value::Bool(b)) => if *b { "True" } else { "False" }.to_string(),
         Some(Value::Number(n)) => nombre(n),
         Some(Value::Array(a)) => a.iter().map(|x| chaine(Some(x))).collect::<Vec<_>>().join(" "),
+        // (un objet vide s'écrit « » : c'est ce que PowerShell 5.1 envoie pour une liste vide sortie d'un « if »,
+        // par exemple « Serveurs = if (...) { ... } else { @() } », qui devient « "Serveurs":{} »)
+        Some(Value::Object(o)) if o.is_empty() => String::new(),
         Some(Value::Object(o)) => {
             let champs: Vec<String> = o.iter().map(|(k, x)| format!("{k}={}", chaine(Some(x)))).collect();
             format!("@{{{}}}", champs.join("; "))

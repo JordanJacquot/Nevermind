@@ -9,6 +9,7 @@
 mod canal;
 mod com;
 mod lectures;
+mod mesures;
 mod outils;
 mod pare_feu;
 mod processus;
@@ -18,7 +19,8 @@ mod taches;
 mod temps;
 
 use crate::systeme::{
-    Entree, ErreurCanal, ErreurEffacement, Hote, Identite, ProcessusVu, Systeme, TacheVue, ValeurLue,
+    Entree, ErreurCanal, ErreurEffacement, Hote, Identite, Lance, LigneTcp, ProcessusVu, RappelPm, RappelTrace,
+    RefusTrace, Systeme, TacheVue, Trace, ValeurLue,
 };
 use aide_regles::demandes::{Carte, ContexteProgrammes, Demarrage, Pc, ip_normale};
 use aide_regles::demarrage::LecturesDemarrage;
@@ -83,8 +85,42 @@ pub fn preparer_processus() -> impl Drop {
     let mut b = vec![0u16; 1024];
     // SAFETY : tampon et taille cohérents
     let n = unsafe { GetSystemDirectoryW(Some(&mut b)) } as usize;
-    let _ = std::env::set_current_dir(String::from_utf16_lossy(&b[..n.min(b.len())]));
+    let system32 = String::from_utf16_lossy(&b[..n.min(b.len())]);
+    let _ = std::env::set_current_dir(&system32);
+    environnement_sur(&system32);
     com::securite_du_processus()
+}
+
+/// Lancée par la demande de Windows, l'Aide reçoit les variables d'environnement de l'utilisateur, qu'un programme
+/// sans droits peut changer (HKCU\Environment). L'Aide ne les lit jamais, mais les programmes qu'elle lance en
+/// hériteraient : les dossiers de Windows sont remis tels que Windows les donne, comme le faisait le lanceur C#
+/// (outils\lanceur.cs, EnvironnementAide). TEMP et TMP sont remis plus tard, sur aide-temp (preparer_aide_temp).
+fn environnement_sur(system32: &str) {
+    let mut b = vec![0u16; 1024];
+    // SAFETY : tampon et taille cohérents
+    let n = unsafe { GetSystemWindowsDirectoryW(Some(&mut b)) } as usize;
+    let windows = String::from_utf16_lossy(&b[..n.min(b.len())]).trim_end_matches('\\').to_string();
+    let programmes = dossier_connu(&FOLDERID_ProgramFiles);
+    let x86 = dossier_connu(&FOLDERID_ProgramFilesX86);
+    let communes = dossier_connu(&FOLDERID_ProgramData);
+    if windows.is_empty() || programmes.is_empty() || communes.is_empty() {
+        return;
+    }
+    let x86 = if x86.is_empty() { programmes.clone() } else { x86 };
+    let modules = format!("{system32}\\WindowsPowerShell\\v1.0\\Modules");
+    for (nom, valeur) in [
+        ("windir", &windows),
+        ("SystemRoot", &windows),
+        ("ProgramFiles", &programmes),
+        ("ProgramW6432", &programmes),
+        ("ProgramFiles(x86)", &x86),
+        ("ProgramData", &communes),
+        ("ALLUSERSPROFILE", &communes),
+        ("PSModulePath", &modules),
+    ] {
+        // SAFETY : au tout début de main, avant le moindre autre fil
+        unsafe { std::env::set_var(nom, valeur) };
+    }
 }
 
 impl Windows {
@@ -127,26 +163,35 @@ impl Windows {
     /// Lance un programme de System32, sans fenêtre, avec un environnement neuf (rien de l'utilisateur), et attend
     /// qu'il finisse (son résultat est ignoré, comme dans la version PowerShell)
     fn lancer(&self, exe: &str, arguments: &str) {
-        let w = &self.dossiers.windows;
         let mut c = std::process::Command::new(format!("{}\\{exe}", self.system32));
         c.raw_arg(arguments)
             .env_clear()
-            .env("SystemRoot", w)
-            .env("windir", w)
-            .env("SystemDrive", w.get(..2).unwrap_or("C:"))
-            .env("ComSpec", format!("{}\\cmd.exe", self.system32))
-            .env("PATH", format!("{0};{w};{0}\\Wbem", self.system32))
-            .env("ProgramData", &self.dossiers.donnees_communes)
-            .env("ProgramFiles", &self.dossiers.programmes)
+            .envs(self.environnement())
             .current_dir(&self.system32)
             .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null());
-        if let Some(t) = self.temp.get() {
-            c.env("TEMP", t).env("TMP", t);
-        }
         let _ = c.status();
+    }
+
+    /// L'environnement des programmes lancés par l'Aide : neuf, fait ici (rien de l'utilisateur)
+    fn environnement(&self) -> Vec<(String, String)> {
+        let w = &self.dossiers.windows;
+        let mut e = vec![
+            ("SystemRoot".to_string(), w.clone()),
+            ("windir".to_string(), w.clone()),
+            ("SystemDrive".to_string(), w.get(..2).unwrap_or("C:").to_string()),
+            ("ComSpec".to_string(), format!("{}\\cmd.exe", self.system32)),
+            ("PATH".to_string(), format!("{0};{w};{0}\\Wbem", self.system32)),
+            ("ProgramData".to_string(), self.dossiers.donnees_communes.clone()),
+            ("ProgramFiles".to_string(), self.dossiers.programmes.clone()),
+        ];
+        if let Some(t) = self.temp.get() {
+            e.push(("TEMP".to_string(), t.clone()));
+            e.push(("TMP".to_string(), t.clone()));
+        }
+        e
     }
 }
 
@@ -468,6 +513,42 @@ impl Systeme for Windows {
     fn fermer_processus(&self, pid: i64) -> bool {
         processus::fermer(pid)
     }
+
+    fn presentmon(&self) -> Result<String, String> {
+        mesures::presentmon(&self.racine)
+    }
+
+    fn lancer_presentmon(&self, chemin: &str, arguments: &str, rappel: RappelPm) -> Result<Box<dyn Lance>, String> {
+        mesures::lancer_presentmon(chemin, arguments, &self.environnement(), rappel)
+    }
+
+    fn fermer_session_presentmon(&self, chemin: &str) {
+        mesures::fermer_session_presentmon(chemin, &self.environnement());
+    }
+
+    fn demarrer_trace(&self, rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace> {
+        mesures::demarrer_trace(rappel)
+    }
+
+    fn adresses_locales(&self) -> Vec<std::net::IpAddr> {
+        mesures::adresses_locales()
+    }
+
+    fn filetime(&self) -> i64 {
+        mesures::filetime()
+    }
+
+    fn table_tcp(&self, v6: bool) -> Option<Vec<LigneTcp>> {
+        mesures::table_tcp(v6)
+    }
+
+    fn tcp_compter(&self, l: &LigneTcp) -> bool {
+        mesures::tcp_compter(l)
+    }
+
+    fn tcp_octets(&self, l: &LigneTcp) -> Option<(u64, u64)> {
+        mesures::tcp_octets(l)
+    }
 }
 
 impl Hote for Windows {
@@ -518,7 +599,15 @@ impl Hote for Windows {
                 }
             }
         }
-        let _ = self.temp.set(dossier.trim_end_matches('\\').to_string());
+        let t = dossier.trim_end_matches('\\').to_string();
+        // (TEMP et TMP de l'utilisateur, piégeables, remplacés comme dans NevermindAide.ps1 ; au démarrage, avant que
+        // l'Aide ne serve la moindre demande)
+        // SAFETY : appelé une fois au démarrage (serveur::lancer), avant les fils des demandes
+        unsafe {
+            std::env::set_var("TEMP", &t);
+            std::env::set_var("TMP", &t);
+        }
+        let _ = self.temp.set(t);
         Ok(())
     }
 

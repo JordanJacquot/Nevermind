@@ -1,0 +1,203 @@
+{
+  "format": 1,
+  "sujet": "La trace réseau de l'Aide : chaque échange par programme, ses paquets, ses trous de réception et l'âge de son dernier paquet (flux.demarrer, flux.veiller, flux.lire, flux.arreter)",
+  "regle": "modules\\natif.cs : classe NetFlow (Start, OnRecord, Purge, Snapshot) ; modules\\aide-actions.ps1 : Invoke-AideAction, demandes flux.*",
+  "enregistrement": "Événements du fournisseur Microsoft-Windows-Kernel-Network reconstitués (numéros 10, 11, 26, 27, 42, 43, 58, 59 ; données dans l'ordre de Windows : pid, taille, adresse de destination, adresse source, port de destination, port source). Une vraie partie enregistrée reste à faire avec Jordan.",
+  "entree": {
+    "base": "l'heure de référence, en FILETIME (heure système, 100 ns depuis 1601) : celle des événements de la trace",
+    "locales": "les adresses de ce PC",
+    "t": "un moment, en microsecondes depuis base (négatif : avant) ; pour une demande, l'heure qu'il est",
+    "etapes": "dans l'ordre : demande (windows : ce que Windows répond au démarrage de la session, codes de StartTrace dans l'ordre et code d'EnableTraceEx2) ; evenements : reçus par la trace (id, t, pid, taille, dst, src, dport, sport ; ou octets : les données exactes en hexadécimal ; vide : aucune donnée) ; fin : la trace s'arrête toute seule"
+  },
+  "attendu": {
+    "reponses": "la réponse de l'Aide à chaque demande, dans l'ordre : { ok, r } ou { ok = false, e }"
+  },
+  "cas": [
+    {
+      "nom": "Partie en ligne : le serveur UDP du jeu, ses trous de réception, TCP, IPv6, événements ignorés",
+      "entree": {
+        "base": 134064000000000000,
+        "locales": [
+          "192.168.1.20",
+          "127.0.0.1",
+          "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b",
+          "FE80:0000::1C2B:3A4D:5E6F:7A8B",
+          "::1"
+        ],
+        "etapes": [
+          {"demande": "flux.demarrer", "t": -11000000},
+          {
+            "evenements": [
+              {"id": 42, "t": -10003000, "pid": 7340, "taille": 88, "dst": "185.50.104.12", "src": "192.168.1.20", "dport": 3074, "sport": 51000},
+              {"id": 43, "t": -10000000, "pid": 7340, "taille": 120, "dst": "192.168.1.20", "src": "185.50.104.12", "dport": 51000, "sport": 3074},
+              {"id": 42, "t": -9953000, "pid": 7340, "taille": 88, "dst": "185.50.104.12", "src": "192.168.1.20", "dport": 3074, "sport": 51000},
+              {"id": 43, "t": -9950000, "pid": 7340, "taille": 120, "dst": "192.168.1.20", "src": "185.50.104.12", "dport": 51000, "sport": 3074},
+              {"id": 42, "t": -9803000, "pid": 7340, "taille": 88, "dst": "185.50.104.12", "src": "192.168.1.20", "dport": 3074, "sport": 51000},
+              {"id": 43, "t": -9800000, "pid": 7340, "taille": 120, "dst": "192.168.1.20", "src": "185.50.104.12", "dport": 51000, "sport": 3074},
+              {"id": 42, "t": -9403000, "pid": 7340, "taille": 88, "dst": "185.50.104.12", "src": "192.168.1.20", "dport": 3074, "sport": 51000},
+              {"id": 43, "t": -9400000, "pid": 7340, "taille": 120, "dst": "192.168.1.20", "src": "185.50.104.12", "dport": 51000, "sport": 3074},
+              {"id": 42, "t": -5003000, "pid": 7340, "taille": 88, "dst": "185.50.104.12", "src": "192.168.1.20", "dport": 3074, "sport": 51000},
+              {"id": 43, "t": -5000000, "pid": 7340, "taille": 120, "dst": "192.168.1.20", "src": "185.50.104.12", "dport": 51000, "sport": 3074},
+              {"id": 42, "t": -4903000, "pid": 7340, "taille": 88, "dst": "185.50.104.12", "src": "192.168.1.20", "dport": 3074, "sport": 51000},
+              {"id": 43, "t": -4900000, "pid": 7340, "taille": 120, "dst": "192.168.1.20", "src": "185.50.104.12", "dport": 51000, "sport": 3074},
+              {"id": 42, "t": -4853000, "pid": 7340, "taille": 88, "dst": "185.50.104.12", "src": "192.168.1.20", "dport": 3074, "sport": 51000},
+              {"id": 43, "t": -4850000, "pid": 7340, "taille": 120, "dst": "192.168.1.20", "src": "185.50.104.12", "dport": 51000, "sport": 3074},
+              {"id": 42, "t": -2623500, "pid": 7340, "taille": 88, "dst": "185.50.104.12", "src": "192.168.1.20", "dport": 3074, "sport": 51000},
+              {"id": 43, "t": -2620500, "pid": 7340, "taille": 120, "dst": "192.168.1.20", "src": "185.50.104.12", "dport": 51000, "sport": 3074},
+              {"id": 10, "t": -8000000, "pid": 7340, "taille": 517, "dst": "52.94.233.10", "src": "192.168.1.20", "dport": 443, "sport": 50312},
+              {"id": 11, "t": -7990000, "pid": 7340, "taille": 1460, "dst": "192.168.1.20", "src": "52.94.233.10", "dport": 50312, "sport": 443},
+              {"id": 11, "t": -7989000, "pid": 7340, "taille": 1460, "dst": "192.168.1.20", "src": "52.94.233.10", "dport": 50312, "sport": 443},
+              {"id": 58, "t": -6000000, "pid": 7340, "taille": 64, "dst": "2a01:e0a:0:0:1:0:0:5", "src": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "dport": 3478, "sport": 62000},
+              {"id": 59, "t": -5990000, "pid": 7340, "taille": 72, "dst": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "src": "2a01:e0a:0:0:1:0:0:5", "dport": 62000, "sport": 3478},
+              {"id": 59, "t": -5700000, "pid": 7340, "taille": 72, "dst": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "src": "2a01:e0a:0:0:1:0:0:5", "dport": 62000, "sport": 3478},
+              {"id": 26, "t": -3000000, "pid": 2210, "taille": 1200, "dst": "2606:4700::6810:85e5", "src": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "dport": 443, "sport": 61000},
+              {"id": 27, "t": -2000000, "pid": 2210, "taille": 30000, "dst": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "src": "::ffff:104.16.133.229", "dport": 61000, "sport": 443},
+              {"id": 43, "t": -1400000, "pid": 3000, "taille": 40, "dst": "127.0.0.1", "src": "127.0.0.1", "dport": 49701, "sport": 49700},
+              {"id": 12, "t": -1000000, "pid": 7340, "taille": 99, "dst": "185.50.104.12", "src": "192.168.1.20", "dport": 3074, "sport": 51000},
+              {"id": 43, "t": -900000, "octets": "AC1C0000780000000A000014B932680CC7380C"},
+              {"id": 59, "t": -800000, "octets": "AC1C0000780000000000000000000000000000000000000000000000000000000000000000000000000000"},
+              {"id": 42, "t": -700000, "vide": true},
+              {"id": 58, "t": -600000, "pid": 4000, "taille": 10, "dst": "::52.1.2.3", "src": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "dport": 1000, "sport": 2000},
+              {"id": 58, "t": -590000, "pid": 4000, "taille": 10, "dst": "::ffff:0:52.1.2.3", "src": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "dport": 1000, "sport": 2000},
+              {"id": 58, "t": -580000, "pid": 4000, "taille": 10, "dst": "fe80::5efe:10.0.0.1", "src": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "dport": 1000, "sport": 2000},
+              {"id": 58, "t": -570000, "pid": 4000, "taille": 10, "dst": "2001:0:9d38:6abd:0:0:0:1", "src": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "dport": 1000, "sport": 2000},
+              {"id": 58, "t": -560000, "pid": 4000, "taille": 10, "dst": "2001:db8:0:1:0:0:1:0", "src": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "dport": 1000, "sport": 2000},
+              {"id": 58, "t": -550000, "pid": 4000, "taille": 10, "dst": "::0.0.1.2", "src": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "dport": 1000, "sport": 2000}
+            ]
+          },
+          {"demande": "flux.lire", "t": 0},
+          {"demande": "flux.lire", "t": 1000000},
+          {"demande": "flux.arreter", "t": 1000000},
+          {"demande": "flux.lire", "t": 1000000}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": ["7340|udp|185.50.104.12|3074|8|8|704|960|3|2|2229|2620", "7340|tcp|52.94.233.10|443|1|2|517|2920|0|0|1|7989", "7340|udp|2a01:e0a::1:0:0:5|3478|1|2|64|144|1|1|290|5700", "2210|tcp|2606:4700::6810:85e5|443|1|0|1200|0|0|0|0|3000", "2210|tcp|::ffff:104.16.133.229|443|0|1|0|30000|0|0|0|2000", "3000|udp|127.0.0.1|49700|0|1|0|40|0|0|0|1400", "4000|udp|::52.1.2.3|1000|1|0|10|0|0|0|0|600", "4000|udp|::ffff:0:52.1.2.3|1000|1|0|10|0|0|0|0|590", "4000|udp|fe80::5efe:10.0.0.1|1000|1|0|10|0|0|0|0|580", "4000|udp|2001:0:9d38:6abd::1|1000|1|0|10|0|0|0|0|570", "4000|udp|2001:db8:0:1::1:0|1000|1|0|10|0|0|0|0|560", "4000|udp|::102|1000|1|0|10|0|0|0|0|550"]},
+          {"ok": true, "r": ["7340|udp|185.50.104.12|3074|8|8|704|960|3|2|2229|3620", "7340|tcp|52.94.233.10|443|1|2|517|2920|0|0|1|8989", "7340|udp|2a01:e0a::1:0:0:5|3478|1|2|64|144|1|1|290|6700", "2210|tcp|2606:4700::6810:85e5|443|1|0|1200|0|0|0|0|4000", "2210|tcp|::ffff:104.16.133.229|443|0|1|0|30000|0|0|0|3000", "3000|udp|127.0.0.1|49700|0|1|0|40|0|0|0|2400", "4000|udp|::52.1.2.3|1000|1|0|10|0|0|0|0|1600", "4000|udp|::ffff:0:52.1.2.3|1000|1|0|10|0|0|0|0|1590", "4000|udp|fe80::5efe:10.0.0.1|1000|1|0|10|0|0|0|0|1580", "4000|udp|2001:0:9d38:6abd::1|1000|1|0|10|0|0|0|0|1570", "4000|udp|2001:db8:0:1::1:0|1000|1|0|10|0|0|0|0|1560", "4000|udp|::102|1000|1|0|10|0|0|0|0|1550"]},
+          {"ok": true, "r": "ok"},
+          {"ok": false, "e": "La trace réseau ne tourne pas."}
+        ]
+      }
+    },
+    {
+      "nom": "Veille : les échanges sans paquet depuis 120 s oubliés, leurs places reprises dans l'ordre de .NET",
+      "entree": {
+        "base": 134064000000000000,
+        "locales": ["192.168.1.20"],
+        "etapes": [
+          {"demande": "flux.veiller", "t": -400000000},
+          {
+            "evenements": [
+              {"id": 42, "t": -300000000, "pid": 100, "taille": 88, "dst": "1.1.1.1", "src": "192.168.1.20", "dport": 53, "sport": 51000},
+              {"id": 42, "t": -10000000, "pid": 101, "taille": 88, "dst": "2.2.2.2", "src": "192.168.1.20", "dport": 53, "sport": 51000},
+              {"id": 42, "t": -200000000, "pid": 102, "taille": 88, "dst": "3.3.3.3", "src": "192.168.1.20", "dport": 53, "sport": 51000},
+              {"id": 42, "t": -119000000, "pid": 103, "taille": 88, "dst": "4.4.4.4", "src": "192.168.1.20", "dport": 53, "sport": 51000},
+              {"id": 42, "t": -121000000, "pid": 104, "taille": 88, "dst": "5.5.5.5", "src": "192.168.1.20", "dport": 53, "sport": 51000}
+            ]
+          },
+          {"demande": "flux.veiller", "t": 0},
+          {"demande": "flux.lire", "t": 0},
+          {
+            "evenements": [
+              {"id": 42, "t": 500000, "pid": 105, "taille": 88, "dst": "6.6.6.6", "src": "192.168.1.20", "dport": 53, "sport": 51000},
+              {"id": 42, "t": 600000, "pid": 106, "taille": 88, "dst": "7.7.7.7", "src": "192.168.1.20", "dport": 53, "sport": 51000},
+              {"id": 42, "t": 700000, "pid": 107, "taille": 88, "dst": "8.8.8.8", "src": "192.168.1.20", "dport": 53, "sport": 51000},
+              {"id": 42, "t": 800000, "pid": 108, "taille": 88, "dst": "9.9.9.9", "src": "192.168.1.20", "dport": 53, "sport": 51000},
+              {"id": 42, "t": 900000, "pid": 101, "taille": 88, "dst": "2.2.2.2", "src": "192.168.1.20", "dport": 53, "sport": 51000}
+            ]
+          },
+          {"demande": "flux.lire", "t": 1000000},
+          {"demande": "flux.demarrer", "t": 2000000},
+          {"demande": "flux.lire", "t": 2000000},
+          {"demande": "flux.arreter", "t": 2000000}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": ["101|udp|2.2.2.2|53|1|0|88|0|0|0|0|10000", "103|udp|4.4.4.4|53|1|0|88|0|0|0|0|119000"]},
+          {"ok": true, "r": ["107|udp|8.8.8.8|53|1|0|88|0|0|0|0|300", "101|udp|2.2.2.2|53|2|0|176|0|0|0|0|100", "106|udp|7.7.7.7|53|1|0|88|0|0|0|0|400", "103|udp|4.4.4.4|53|1|0|88|0|0|0|0|120000", "105|udp|6.6.6.6|53|1|0|88|0|0|0|0|500", "108|udp|9.9.9.9|53|1|0|88|0|0|0|0|200"]},
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": ["107|udp|8.8.8.8|53|1|0|88|0|0|0|0|1300", "101|udp|2.2.2.2|53|2|0|176|0|0|0|0|1100", "106|udp|7.7.7.7|53|1|0|88|0|0|0|0|1400", "103|udp|4.4.4.4|53|1|0|88|0|0|0|0|121000", "105|udp|6.6.6.6|53|1|0|88|0|0|0|0|1500", "108|udp|9.9.9.9|53|1|0|88|0|0|0|0|1200"]},
+          {"ok": true, "r": "ok"}
+        ]
+      }
+    },
+    {
+      "nom": "Trace refusée par Windows : anti-triche ou droits, session restée ouverte, fournisseur refusé",
+      "entree": {
+        "base": 134064000000000000,
+        "locales": ["192.168.1.20"],
+        "etapes": [
+          {"demande": "flux.lire", "t": 0},
+          {"demande": "flux.demarrer", "t": 0, "windows": {"demarrage": [5]}},
+          {"demande": "flux.lire", "t": 0},
+          {"demande": "flux.veiller", "t": 0, "windows": {"demarrage": [183, 183]}},
+          {"demande": "flux.demarrer", "t": 0, "windows": {"demarrage": [0], "activation": 87}},
+          {"demande": "flux.demarrer", "t": 0, "windows": {"demarrage": [1450]}},
+          {"demande": "flux.arreter", "t": 0},
+          {"demande": "flux.demarrer", "t": 0, "windows": {"demarrage": [183, 0]}},
+          {"demande": "flux.lire", "t": 0},
+          {"demande": "flux.arreter", "t": 0}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": false, "e": "La trace réseau ne tourne pas."},
+          {"ok": false, "e": "Trace réseau refusée par Windows : accès refusé (droits administrateur, ou anti-triche d'un jeu en cours)"},
+          {"ok": false, "e": "La trace réseau ne tourne pas."},
+          {"ok": false, "e": "Trace réseau refusée par Windows : StartTrace 183"},
+          {"ok": false, "e": "Trace réseau refusée par Windows : EnableTrace 87"},
+          {"ok": false, "e": "Trace réseau refusée par Windows : StartTrace 1450"},
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": []},
+          {"ok": true, "r": "ok"}
+        ]
+      }
+    },
+    {
+      "nom": "Trace arrêtée toute seule : plus rien à lire, la veille la redémarre à neuf",
+      "entree": {
+        "base": 134064000000000000,
+        "locales": ["192.168.1.20"],
+        "etapes": [
+          {"demande": "flux.demarrer", "t": -5000000},
+          {
+            "evenements": [
+              {"id": 42, "t": -4000000, "pid": 7340, "taille": 88, "dst": "185.50.104.12", "src": "192.168.1.20", "dport": 3074, "sport": 51000},
+              {"id": 43, "t": -3900000, "pid": 7340, "taille": 120, "dst": "192.168.1.20", "src": "185.50.104.12", "dport": 51000, "sport": 3074}
+            ]
+          },
+          {"demande": "flux.lire", "t": 0},
+          {"fin": true},
+          {"demande": "flux.lire", "t": 0},
+          {"demande": "flux.veiller", "t": 0},
+          {"demande": "flux.lire", "t": 0},
+          {
+            "evenements": [
+              {"id": 43, "t": 100000, "pid": 7340, "taille": 120, "dst": "192.168.1.20", "src": "185.50.104.12", "dport": 51000, "sport": 3074},
+              {"id": 43, "t": 450000, "pid": 7340, "taille": 120, "dst": "192.168.1.20", "src": "185.50.104.12", "dport": 51000, "sport": 3074}
+            ]
+          },
+          {"demande": "flux.lire", "t": 3000000},
+          {"demande": "flux.arreter", "t": 3000000}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": ["7340|udp|185.50.104.12|3074|1|1|88|120|0|0|0|3900"]},
+          {"ok": false, "e": "La trace réseau ne tourne pas."},
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": []},
+          {"ok": true, "r": ["7340|udp|185.50.104.12|3074|0|2|0|240|1|1|350|2550"]},
+          {"ok": true, "r": "ok"}
+        ]
+      }
+    }
+  ]
+}

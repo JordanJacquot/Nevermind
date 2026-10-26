@@ -5,6 +5,8 @@ use aide_regles::demandes::{Carte, Demarrage, Pc};
 use aide_regles::fermeture::Fiche;
 use aide_regles::registre::Ruche;
 use serde_json::Value;
+use std::net::IpAddr;
+use std::sync::Arc;
 
 /// Une valeur lue dans le registre
 #[derive(Clone, Debug, PartialEq)]
@@ -71,6 +73,77 @@ pub struct TacheVue {
     pub groupe: String,
     /// Programme et arguments de chaque action (vides pour une action qui ne lance pas de programme)
     pub actions: Vec<(String, String)>,
+}
+
+/// Ce que dit PresentMon, ligne par ligne (comme `OutputDataReceived` et `ErrorDataReceived` de .NET)
+#[derive(Clone, Debug, PartialEq)]
+pub enum SortiePm {
+    /// Une ligne de sa sortie normale (les colonnes, puis une ligne par image)
+    Ligne(String),
+    /// Une ligne de sa sortie d'erreur
+    Erreur(String),
+    /// PresentMon s'est arrêté
+    Fin,
+}
+
+/// Où arrive ce que dit PresentMon (appelé depuis n'importe quel fil)
+pub type RappelPm = Arc<dyn Fn(SortiePm) + Send + Sync>;
+
+/// Un PresentMon lancé
+pub trait Lance: Send {
+    /// L'arrête (s'il tourne encore)
+    fn arreter(&mut self);
+}
+
+/// Un événement de la trace réseau de Windows (fournisseur « Kernel-Network »)
+pub struct EvenementReseau<'a> {
+    /// Son numéro (10 : TCP envoyé, 11 : TCP reçu, 42 : UDP envoyé... ; voir mesures::flux)
+    pub id: u16,
+    /// Sa date, en heure système (FILETIME, 100 ns depuis 1601) : Windows la convertit pour le lecteur en temps réel.
+    /// JAMAIS un compteur QPC (bug du 15/10 : des âges de -13 milliards de ms).
+    pub date: i64,
+    /// Ses données (`None` : aucune)
+    pub donnees: Option<&'a [u8]>,
+}
+
+/// Où arrivent les événements de la trace (depuis le fil de la trace)
+pub type RappelTrace = Arc<dyn Fn(&EvenementReseau) + Send + Sync>;
+
+/// Pourquoi Windows refuse de démarrer la trace : l'appel qui a échoué et son code d'erreur
+#[derive(Clone, Debug, PartialEq)]
+pub enum RefusTrace {
+    /// StartTrace (après un second essai si une session restée ouverte a été fermée)
+    Session(u32),
+    /// EnableTraceEx2
+    Fournisseur(u32),
+    /// OpenTrace
+    Lecture(u32),
+}
+
+/// Une trace réseau en cours
+pub trait Trace: Send {
+    /// Elle reçoit encore les événements
+    fn tourne(&self) -> bool;
+    /// Ferme la session de Windows et attend la fin de la lecture (2 s au plus)
+    fn arreter(&mut self);
+}
+
+/// Une connexion TCP de la table de Windows (`MIB_TCPROW_OWNER_PID`, `MIB_TCP6ROW_OWNER_PID`), telle quelle
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LigneTcp {
+    pub v6: bool,
+    /// État (2 : en écoute, 5 : établie)
+    pub etat: u32,
+    /// Adresses (les 4 premiers octets en IPv4), dans l'ordre du réseau
+    pub adresse_locale: [u8; 16],
+    pub adresse_distante: [u8; 16],
+    /// Ports tels que Windows les range (octets du réseau dans un entier : voir mesures::tcp::port)
+    pub port_local: u32,
+    pub port_distant: u32,
+    /// Zones IPv6 (0 en IPv4)
+    pub zone_locale: u32,
+    pub zone_distante: u32,
+    pub pid: u32,
 }
 
 /// Les appels à Windows dont l'Aide se sert pour faire les demandes (après leur vérification)
@@ -143,6 +216,27 @@ pub trait Systeme: Pc + Send + Sync + 'static {
     fn fiche(&self, pid: i64, chemin: &str) -> Fiche;
     /// Ferme le processus ; vrai si Windows l'a fait
     fn fermer_processus(&self, pid: i64) -> bool;
+
+    // --- Mesures continues (étape 1b)
+    /// PresentMon du dossier de Nevermind, seulement s'il est bien signé par Intel (`Get-AidePresentMon`) : son
+    /// chemin, ou le message d'erreur
+    fn presentmon(&self) -> Result<String, String>;
+    /// Lance PresentMon avec ces arguments, sans fenêtre ; ses lignes arrivent dans `rappel`, puis `SortiePm::Fin`
+    fn lancer_presentmon(&self, chemin: &str, arguments: &str, rappel: RappelPm) -> Result<Box<dyn Lance>, String>;
+    /// Ferme la session de mesure que PresentMon arrêté de force laisse ouverte dans Windows (attend 3 s au plus)
+    fn fermer_session_presentmon(&self, chemin: &str);
+    /// Démarre la trace réseau (session « Nevermind-Reseau ») : la trace, ou la raison du refus de Windows
+    fn demarrer_trace(&self, rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace>;
+    /// Les adresses de ce PC (toutes les cartes, bouclage compris)
+    fn adresses_locales(&self) -> Vec<IpAddr>;
+    /// Maintenant, en heure système (FILETIME, 100 ns depuis 1601) : l'horloge des événements de la trace
+    fn filetime(&self) -> i64;
+    /// La table des connexions TCP de Windows (`None` si Windows ne la donne pas)
+    fn table_tcp(&self, v6: bool) -> Option<Vec<LigneTcp>>;
+    /// Demande à Windows de compter les octets de cette connexion : vrai s'il accepte (administrateur seulement)
+    fn tcp_compter(&self, l: &LigneTcp) -> bool;
+    /// Octets envoyés et reçus de cette connexion depuis que Windows les compte (`None` si illisibles)
+    fn tcp_octets(&self, l: &LigneTcp) -> Option<(u64, u64)>;
 }
 
 /// Une connexion au canal de l'Aide

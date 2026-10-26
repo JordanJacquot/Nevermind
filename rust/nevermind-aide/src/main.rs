@@ -15,6 +15,9 @@
 mod actions;
 #[cfg(test)]
 mod essais;
+#[cfg(test)]
+mod essais_mesures;
+mod mesures;
 mod serveur;
 mod systeme;
 mod windows;

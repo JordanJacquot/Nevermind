@@ -1,0 +1,272 @@
+{
+  "format": 1,
+  "sujet": "La mesure des FPS par l'Aide : PresentMon lancé, ses lignes gardées et relayées à Nevermind (fps.demarrer, fps.veiller, fps.lire, fps.arreter)",
+  "regle": "NevermindAide.ps1 : classe AideFps ; modules\\aide-actions.ps1 : Invoke-AideAction, demandes fps.* et Get-AidePresentMon",
+  "enregistrement": "Sorties de PresentMon 2.6.0 reconstituées (colonnes de la sortie CSV des versions 2.x, chiffres inventés) et ses vrais messages de refus. Une vraie partie mesurée reste à enregistrer avec Jordan.",
+  "entree": {
+    "jeux": "les processus en cours : numéro -> nom du programme",
+    "etapes": "dans l'ordre : demande (action et paramètres, comme sur le canal) ; sortie / erreurs : ce que le dernier PresentMon lancé écrit sur sa sortie / sa sortie d'erreur, octets exacts ; fin : il s'arrête ; presentmon_refus : Get-AidePresentMon refuse désormais avec ce message (null : de nouveau accepté)"
+  },
+  "attendu": {
+    "reponses": "la réponse de l'Aide à chaque demande, dans l'ordre : { ok, r } ou { ok = false, e }",
+    "lancements": "les arguments de chaque PresentMon lancé, dans l'ordre (la fermeture de session à l'arrêt comprise)"
+  },
+  "cas": [
+    {
+      "nom": "Mesure d'un jeu : les lignes relayées telles quelles, puis « #FIN »",
+      "entree": {
+        "jeux": {"7340": "FC27.exe"},
+        "etapes": [
+          {"demande": "fps.demarrer", "p": {"Pid": 7340}},
+          {"sortie": "Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,CPUStartTime,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,AnimationError,ClickToPhotonLatency\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1523.4512,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1530.3912,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1537.3312,7.7631,4.1203,3.6428,1.0021,5.8312,5.7312,0.1301,12.4410,7.7631,0.0012,NA\r\n"},
+          {"demande": "fps.lire"},
+          {"demande": "fps.lire"},
+          {"sortie": "FC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1544.2712,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1551.2112,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1558.1512,7.7631,4.1203,3.6428,1.0021,5.8312,5.7312,0.1301,12.4410,7.7631,0.0012,NA\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1565.0912,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1572.0312,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\r\n"},
+          {"demande": "fps.lire"},
+          {"sortie": "FC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1578.9712,7.7631,4.1203,3.6428,1.0021,5.8312,5.7312,0.1301,12.4410,7.7631,0.0012,NA\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1585.9112,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1592.8512,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1599.7912,7.7631,4.1203,3.6428,1.0021,5.8312,5.7312,0.1301,12.4410,7.7631,0.0012,NA\r\n"},
+          {"fin": true},
+          {"demande": "fps.lire"},
+          {"demande": "fps.lire"},
+          {"demande": "fps.arreter"},
+          {"demande": "fps.lire"}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,CPUStartTime,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,AnimationError,ClickToPhotonLatency\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1523.4512,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1530.3912,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1537.3312,7.7631,4.1203,3.6428,1.0021,5.8312,5.7312,0.1301,12.4410,7.7631,0.0012,NA\n"},
+          {"ok": true, "r": ""},
+          {"ok": true, "r": "FC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1544.2712,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1551.2112,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1558.1512,7.7631,4.1203,3.6428,1.0021,5.8312,5.7312,0.1301,12.4410,7.7631,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1565.0912,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1572.0312,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\n"},
+          {"ok": true, "r": "FC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1578.9712,7.7631,4.1203,3.6428,1.0021,5.8312,5.7312,0.1301,12.4410,7.7631,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1585.9112,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1592.8512,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1599.7912,7.7631,4.1203,3.6428,1.0021,5.8312,5.7312,0.1301,12.4410,7.7631,0.0012,NA\n#FIN\n"},
+          {"ok": true, "r": "#FIN\n"},
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "#FIN\n"}
+        ],
+        "lancements": [
+          "--process_id 7340 --terminate_on_proc_exit --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
+          "--terminate_existing_session --session_name Nevermind"
+        ]
+      }
+    },
+    {
+      "nom": "Sans droits : les erreurs de PresentMon passent en « #ERR »",
+      "entree": {
+        "jeux": {"7340": "FC27.exe"},
+        "etapes": [
+          {"demande": "fps.demarrer", "p": {"Pid": "7340"}},
+          {"erreurs": "error: failed to start trace session: access denied.\r\n\r\nPresentMon requires either administrative privileges or to be run by a user in the \"Performance Log Users\" user group.\r\n"},
+          {"fin": true},
+          {"demande": "fps.lire"},
+          {"demande": "fps.arreter"}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "#ERR error: failed to start trace session: access denied.\n#ERR PresentMon requires either administrative privileges or to be run by a user in the \"Performance Log Users\" user group.\n#FIN\n"},
+          {"ok": true, "r": "ok"}
+        ],
+        "lancements": [
+          "--process_id 7340 --terminate_on_proc_exit --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
+          "--terminate_existing_session --session_name Nevermind"
+        ]
+      }
+    },
+    {
+      "nom": "Veille avant le jeu (anti-triche), puis la mesure du jeu s'y rattache avec les noms des colonnes d'abord",
+      "entree": {
+        "jeux": {"9100": "BF6.exe"},
+        "etapes": [
+          {"demande": "fps.veiller", "p": {"Noms": ["BF6.exe"]}},
+          {"sortie": "Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,CPUStartTime,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,AnimationError,ClickToPhotonLatency\r\n"},
+          {"demande": "fps.lire"},
+          {"demande": "fps.demarrer", "p": {"Pid": 9100}},
+          {"sortie": "bf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,88.1000,8.3127,5.5000,2.8127,1.0021,7.9000,7.8000,0.1301,12.4410,8.3127,0.0012,NA\r\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,96.4000,8.3627,5.5000,2.8627,1.0021,7.9000,7.8000,0.1301,12.4410,8.3627,0.0012,NA\r\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,104.7000,8.4127,5.5000,2.9127,1.0021,7.9000,7.8000,0.1301,12.4410,8.4127,0.0012,NA\r\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,113.0000,8.4627,5.5000,2.9627,1.0021,7.9000,7.8000,0.1301,12.4410,8.4627,0.0012,NA\r\n"},
+          {"demande": "fps.lire"},
+          {"demande": "fps.lire"},
+          {"sortie": "bf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,121.3000,8.5127,5.5000,3.0127,1.0021,7.9000,7.8000,0.1301,12.4410,8.5127,0.0012,NA\r\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,129.6000,8.5627,5.5000,3.0627,1.0021,7.9000,7.8000,0.1301,12.4410,8.5627,0.0012,NA\r\n"},
+          {"demande": "fps.lire"},
+          {"demande": "fps.arreter"}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": ""},
+          {"ok": true, "r": "rattachee"},
+          {"ok": true, "r": "Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,CPUStartTime,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,AnimationError,ClickToPhotonLatency\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,88.1000,8.3127,5.5000,2.8127,1.0021,7.9000,7.8000,0.1301,12.4410,8.3127,0.0012,NA\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,96.4000,8.3627,5.5000,2.8627,1.0021,7.9000,7.8000,0.1301,12.4410,8.3627,0.0012,NA\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,104.7000,8.4127,5.5000,2.9127,1.0021,7.9000,7.8000,0.1301,12.4410,8.4127,0.0012,NA\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,113.0000,8.4627,5.5000,2.9627,1.0021,7.9000,7.8000,0.1301,12.4410,8.4627,0.0012,NA\n"},
+          {"ok": true, "r": ""},
+          {"ok": true, "r": "bf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,121.3000,8.5127,5.5000,3.0127,1.0021,7.9000,7.8000,0.1301,12.4410,8.5127,0.0012,NA\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,129.6000,8.5627,5.5000,3.0627,1.0021,7.9000,7.8000,0.1301,12.4410,8.5627,0.0012,NA\n"},
+          {"ok": true, "r": "ok"}
+        ],
+        "lancements": [
+          "--process_name \"bf6.exe\" --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
+          "--terminate_existing_session --session_name Nevermind"
+        ]
+      }
+    },
+    {
+      "nom": "Rattachement avant les noms des colonnes : rien de redonné, tout arrive dans l'ordre",
+      "entree": {
+        "jeux": {"9100": "bf6.exe"},
+        "etapes": [
+          {"demande": "fps.veiller", "p": {"Noms": ["bf6.exe"]}},
+          {"demande": "fps.demarrer", "p": {"Pid": 9100}},
+          {"sortie": "Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,CPUStartTime,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,AnimationError,ClickToPhotonLatency\r\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,88.1000,8.3127,5.5000,2.8127,1.0021,7.9000,7.8000,0.1301,12.4410,8.3127,0.0012,NA\r\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,96.4000,8.3627,5.5000,2.8627,1.0021,7.9000,7.8000,0.1301,12.4410,8.3627,0.0012,NA\r\n"},
+          {"demande": "fps.lire"},
+          {"demande": "fps.arreter"}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "rattachee"},
+          {"ok": true, "r": "Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,CPUStartTime,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,AnimationError,ClickToPhotonLatency\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,88.1000,8.3127,5.5000,2.8127,1.0021,7.9000,7.8000,0.1301,12.4410,8.3127,0.0012,NA\nbf6.exe,9100,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware Composed: Independent Flip,96.4000,8.3627,5.5000,2.8627,1.0021,7.9000,7.8000,0.1301,12.4410,8.3627,0.0012,NA\n"},
+          {"ok": true, "r": "ok"}
+        ],
+        "lancements": [
+          "--process_name \"bf6.exe\" --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
+          "--terminate_existing_session --session_name Nevermind"
+        ]
+      }
+    },
+    {
+      "nom": "Veille redemandée sur les mêmes jeux : rien relancé ; sur d'autres jeux : relancée, noms triés comme .NET",
+      "entree": {
+        "jeux": {},
+        "etapes": [
+          {"demande": "fps.veiller", "p": {"Noms": ["bf6.exe", "aab.exe", "a_b.exe"]}},
+          {"demande": "fps.veiller", "p": {"Noms": ["A_B.exe", "bf6.exe", "aab.exe", "bf6.exe"]}},
+          {"demande": "fps.veiller", "p": {"Noms": ["bf6.exe", "battlefield 6.exe"]}},
+          {"demande": "fps.lire"},
+          {"demande": "fps.arreter"}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": ""},
+          {"ok": true, "r": "ok"}
+        ],
+        "lancements": [
+          "--process_name \"aab.exe\" --process_name \"a_b.exe\" --process_name \"bf6.exe\" --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
+          "--terminate_existing_session --session_name Nevermind",
+          "--process_name \"battlefield 6.exe\" --process_name \"bf6.exe\" --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
+          "--terminate_existing_session --session_name Nevermind"
+        ]
+      }
+    },
+    {
+      "nom": "Veille arrêtée par Windows (PresentMon sorti) : la mesure du jeu repart de zéro",
+      "entree": {
+        "jeux": {"4321": "notepad.exe"},
+        "etapes": [
+          {"demande": "fps.veiller", "p": {"Noms": ["notepad.exe"]}},
+          {"erreurs": "error: failed to start trace session: access denied.\r\n"},
+          {"fin": true},
+          {"demande": "fps.demarrer", "p": {"Pid": 4321}},
+          {"demande": "fps.lire"},
+          {"demande": "fps.arreter"}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": ""},
+          {"ok": true, "r": "ok"}
+        ],
+        "lancements": [
+          "--process_name \"notepad.exe\" --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
+          "--terminate_existing_session --session_name Nevermind",
+          "--process_id 4321 --terminate_on_proc_exit --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
+          "--terminate_existing_session --session_name Nevermind"
+        ]
+      }
+    },
+    {
+      "nom": "Mesure arrêtée : les lignes déjà reçues restent à lire, sans « #FIN »",
+      "entree": {
+        "jeux": {"7340": "FC27.exe"},
+        "etapes": [
+          {"demande": "fps.demarrer", "p": {"Pid": 7340}},
+          {"sortie": "Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,CPUStartTime,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,AnimationError,ClickToPhotonLatency\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1523.4512,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1530.3912,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\r\n"},
+          {"demande": "fps.arreter"},
+          {"demande": "fps.lire"},
+          {"demande": "fps.lire"}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,CPUStartTime,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,AnimationError,ClickToPhotonLatency\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1523.4512,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1530.3912,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\n"},
+          {"ok": true, "r": ""}
+        ],
+        "lancements": [
+          "--process_id 7340 --terminate_on_proc_exit --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
+          "--terminate_existing_session --session_name Nevermind"
+        ]
+      }
+    },
+    {
+      "nom": "Fins de ligne de toutes sortes : « \\r\\n », « \\n », « \\r », ligne vide, coupure au milieu d'une ligne",
+      "entree": {
+        "jeux": {"7340": "FC27.exe"},
+        "etapes": [
+          {"demande": "fps.demarrer", "p": {"Pid": 7340}},
+          {"sortie": "Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,CPUStartTime,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,AnimationError,ClickToPhotonLatency\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1523.4512,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\rFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1530.3912,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\r\n\r\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,"},
+          {"sortie": "0,1,Hardware: Independent Flip,1537.3312,7.7631,4.1203,3.6428,1.0021,5.8312,5.7312,0.1301,12.4410,7.7631,0.0012,NA\r"},
+          {"sortie": "\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1544.2712,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\n"},
+          {"demande": "fps.lire"},
+          {"demande": "fps.arreter"}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": "ok"},
+          {"ok": true, "r": "Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,CPUStartTime,FrameTime,CPUBusy,CPUWait,GPULatency,GPUTime,GPUBusy,GPUWait,DisplayLatency,DisplayedTime,AnimationError,ClickToPhotonLatency\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1523.4512,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1530.3912,7.3531,4.1203,3.2328,1.0021,5.8312,5.7312,0.1301,12.4410,7.3531,0.0012,NA\n\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1537.3312,7.7631,4.1203,3.6428,1.0021,5.8312,5.7312,0.1301,12.4410,7.7631,0.0012,NA\nFC27.exe,7340,0x000001F2A3B4C5D0,DXGI,0,0,1,Hardware: Independent Flip,1544.2712,6.9431,4.1203,2.8228,1.0021,5.8312,5.7312,0.1301,12.4410,6.9431,0.0012,NA\n"},
+          {"ok": true, "r": "ok"}
+        ],
+        "lancements": [
+          "--process_id 7340 --terminate_on_proc_exit --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
+          "--terminate_existing_session --session_name Nevermind"
+        ]
+      }
+    },
+    {
+      "nom": "Refus : PresentMon absent ou mal signé, jeu fermé, demandes non valables",
+      "entree": {
+        "jeux": {"7340": "FC27.exe"},
+        "etapes": [
+          {"presentmon_refus": "PresentMon est absent du dossier de Nevermind."},
+          {"demande": "fps.demarrer", "p": {"Pid": 7340}},
+          {"demande": "fps.veiller", "p": {"Noms": ["bf6.exe"]}},
+          {"presentmon_refus": "PresentMon n'est pas signé par Intel (NotSigned) : l'Aide ne le lance pas."},
+          {"demande": "fps.demarrer", "p": {"Pid": 7340}},
+          {"presentmon_refus": null},
+          {"demande": "fps.demarrer", "p": {"Pid": 7341}},
+          {"demande": "fps.demarrer", "p": {"Pid": 4}},
+          {"demande": "fps.veiller", "p": {"Noms": ["bf6"]}},
+          {"demande": "fps.lire"},
+          {"demande": "fps.arreter"}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": false, "e": "PresentMon est absent du dossier de Nevermind."},
+          {"ok": false, "e": "PresentMon est absent du dossier de Nevermind."},
+          {"ok": false, "e": "PresentMon n'est pas signé par Intel (NotSigned) : l'Aide ne le lance pas."},
+          {"ok": false, "e": "Le jeu n'est plus lancé."},
+          {"ok": false, "e": "Demande refusée : processus non valable."},
+          {"ok": false, "e": "Demande refusée : noms de programmes non valables."},
+          {"ok": true, "r": ""},
+          {"ok": true, "r": "ok"}
+        ],
+        "lancements": []
+      }
+    }
+  ]
+}

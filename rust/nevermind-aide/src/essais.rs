@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
-const ELODIE: &str = "S-1-5-21-1111111111-2222222222-3333333333-1001";
+pub(crate) const ELODIE: &str = "S-1-5-21-1111111111-2222222222-3333333333-1001";
 const BRUNO: &str = "S-1-5-21-1111111111-2222222222-3333333333-1002";
 const RACINE: &str = "C:\\Program Files\\Mindset\\Programmes\\Nevermind";
 /// Nevermind (Mindset.exe de la copie), celui qui fait les demandes
@@ -24,9 +24,9 @@ const JOUR: i64 = 864_000_000_000;
 
 /// Un faux processus
 #[derive(Clone)]
-struct FauxProcessus {
-    pid: i64,
-    chemin: String,
+pub(crate) struct FauxProcessus {
+    pub(crate) pid: i64,
+    pub(crate) chemin: String,
     compte: String,
     session: i64,
     protection: i64,
@@ -44,24 +44,69 @@ struct Etat {
 }
 
 /// Le faux PC
-struct FauxSysteme {
+pub(crate) struct FauxSysteme {
     dossiers: Dossiers,
     compte: String,
     admin: bool,
-    processus: Vec<FauxProcessus>,
+    pub(crate) processus: Vec<FauxProcessus>,
     fichiers: HashMap<String, Vec<Entree>>,
     etat: Mutex<Etat>,
     // Pour le faux canal : les connexions qui arrivent, une par une
     connexions: Arc<Mutex<VecDeque<FausseConnexion>>>,
     reponses: Arc<Mutex<Vec<String>>>,
+    /// Les fausses mesures (PresentMon, trace réseau, tables TCP) : rejouées par essais_mesures
+    pub(crate) mesures: Arc<Mutex<FaussesMesures>>,
 }
 
-fn p(pid: i64, chemin: &str, compte: &str) -> FauxProcessus {
+/// Ce que le faux PC répond pour les mesures continues
+#[derive(Default)]
+pub(crate) struct FaussesMesures {
+    /// Refus de PresentMon (absent, mal signé) ; aucun : il est là et bien signé
+    pub(crate) presentmon_refus: Option<String>,
+    /// Ce qui est lancé, dans l'ordre : les arguments de chaque PresentMon, et ceux de la fermeture de sa session
+    pub(crate) lancements: Vec<String>,
+    /// Où parle le dernier PresentMon lancé
+    pub(crate) rappel_pm: Option<RappelPm>,
+    /// Ce que Windows répond au prochain démarrage de la trace (aucun : accepté)
+    pub(crate) trace_refus: Option<RefusTrace>,
+    /// Où arrivent les événements de la trace en cours, et si elle tourne
+    pub(crate) rappel_trace: Option<RappelTrace>,
+    pub(crate) trace_tourne: Arc<std::sync::atomic::AtomicBool>,
+    pub(crate) locales: Vec<std::net::IpAddr>,
+    pub(crate) filetime: i64,
+    /// Tables TCP (IPv4, IPv6 ; aucune : illisible), et pour chaque connexion (son index dans sa table) : comptage
+    /// accepté, et octets lus
+    pub(crate) tables: [Option<Vec<ConnexionFausse>>; 2],
+}
+
+/// Une connexion de la fausse table TCP : la ligne, comptage accepté, octets lus
+pub(crate) type ConnexionFausse = (LigneTcp, bool, Option<(u64, u64)>);
+
+/// Un faux PresentMon lancé (rien à arrêter : il ne parle que quand l'essai le fait parler)
+struct FauxLance;
+
+impl Lance for FauxLance {
+    fn arreter(&mut self) {}
+}
+
+/// Une fausse trace
+struct FausseTrace(Arc<std::sync::atomic::AtomicBool>);
+
+impl Trace for FausseTrace {
+    fn tourne(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    fn arreter(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+pub(crate) fn p(pid: i64, chemin: &str, compte: &str) -> FauxProcessus {
     FauxProcessus { pid, chemin: chemin.into(), compte: compte.into(), session: 1, protection: 0, eleve: 0 }
 }
 
 impl FauxSysteme {
-    fn new() -> FauxSysteme {
+    pub(crate) fn new() -> FauxSysteme {
         let w = "C:\\Windows";
         let entree = |chemin: &str, dossier: bool, lien: bool, age_jours: i64| Entree {
             chemin: chemin.into(),
@@ -111,6 +156,7 @@ impl FauxSysteme {
             etat: Mutex::default(),
             connexions: Arc::default(),
             reponses: Arc::default(),
+            mesures: Arc::default(),
         }
     }
 
@@ -293,11 +339,54 @@ impl Systeme for FauxSysteme {
         self.etat().fermes.push(pid);
         true
     }
+
+    fn presentmon(&self) -> Result<String, String> {
+        match &self.mesures.lock().unwrap().presentmon_refus {
+            Some(e) => Err(e.clone()),
+            None => Ok(format!("{RACINE}\\fichiers\\outils-tiers\\PresentMon.exe")),
+        }
+    }
+    fn lancer_presentmon(&self, _chemin: &str, arguments: &str, rappel: RappelPm) -> Result<Box<dyn Lance>, String> {
+        let mut m = self.mesures.lock().unwrap();
+        m.lancements.push(arguments.into());
+        m.rappel_pm = Some(rappel);
+        Ok(Box::new(FauxLance))
+    }
+    fn fermer_session_presentmon(&self, _chemin: &str) {
+        self.mesures.lock().unwrap().lancements.push("--terminate_existing_session --session_name Nevermind".into());
+    }
+    fn demarrer_trace(&self, rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace> {
+        let mut m = self.mesures.lock().unwrap();
+        if let Some(r) = m.trace_refus.take() {
+            return Err(r);
+        }
+        m.rappel_trace = Some(rappel);
+        m.trace_tourne = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        Ok(Box::new(FausseTrace(Arc::clone(&m.trace_tourne))))
+    }
+    fn adresses_locales(&self) -> Vec<std::net::IpAddr> {
+        self.mesures.lock().unwrap().locales.clone()
+    }
+    fn filetime(&self) -> i64 {
+        self.mesures.lock().unwrap().filetime
+    }
+    fn table_tcp(&self, v6: bool) -> Option<Vec<LigneTcp>> {
+        let m = self.mesures.lock().unwrap();
+        m.tables[usize::from(v6)].as_ref().map(|t| t.iter().map(|x| x.0.clone()).collect())
+    }
+    fn tcp_compter(&self, l: &LigneTcp) -> bool {
+        let m = self.mesures.lock().unwrap();
+        m.tables[usize::from(l.v6)].as_ref().and_then(|t| t.iter().find(|x| &x.0 == l)).is_some_and(|x| x.1)
+    }
+    fn tcp_octets(&self, l: &LigneTcp) -> Option<(u64, u64)> {
+        let m = self.mesures.lock().unwrap();
+        m.tables[usize::from(l.v6)].as_ref().and_then(|t| t.iter().find(|x| &x.0 == l)).and_then(|x| x.2)
+    }
 }
 
 // --- Un faux canal
 
-struct FausseConnexion {
+pub(crate) struct FausseConnexion {
     client: u32,
     morceaux: VecDeque<Option<Vec<u8>>>,
     reponses: Arc<Mutex<Vec<String>>>,
@@ -335,7 +424,7 @@ fn connexion(client: u32, morceaux: &[Option<&[u8]>], reponses: &Arc<Mutex<Vec<S
     }
 }
 
-struct FausseEcoute(Option<FausseConnexion>, Arc<Mutex<VecDeque<FausseConnexion>>>);
+pub(crate) struct FausseEcoute(Option<FausseConnexion>, Arc<Mutex<VecDeque<FausseConnexion>>>);
 
 impl Ecoute for FausseEcoute {
     type C = FausseConnexion;
@@ -377,8 +466,14 @@ impl Hote for FauxSysteme {
     }
 }
 
-fn etat_aide() -> EtatAide {
-    EtatAide { admin: true, compte: "S-1-5-18".into(), pid: 4242, temp: format!("{RACINE}\\aide-temp\\") }
+pub(crate) fn etat_aide() -> EtatAide {
+    EtatAide {
+        admin: true,
+        compte: "S-1-5-18".into(),
+        pid: 4242,
+        temp: format!("{RACINE}\\aide-temp\\"),
+        mesures: Default::default(),
+    }
 }
 
 /// Une demande, comme sur le canal ; rend la réponse en JSON
@@ -654,4 +749,22 @@ fn verification_avant_action() {
         s.reg_lire(Ruche::Machine, "SOFTWARE\\Mindset\\Nevermind\\Aide\\Dns", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0")
             .is_some()
     );
+}
+
+/// « Tout restaurer » remet le DNS automatique avec une liste vide, que PowerShell 5.1 envoie parfois comme un objet
+/// vide (« "Serveurs":{} », une liste vide sortie d'un « if ») : acceptée comme dans la version PowerShell (essai réel
+/// du 27/10 sur GitHub : refusée, le DNS restait sur 1.1.1.1)
+#[test]
+fn dns_automatique_avec_une_liste_vide() {
+    for serveurs in ["[]", "{}", "null", "\"\"", "[\"\"]"] {
+        let s = FauxSysteme::new();
+        let ligne = format!("{{\"a\":\"dns.regler\",\"p\":{{\"Index\":12,\"Serveurs\":{serveurs}}}}}");
+        let r = demander(&s, NEVERMIND as u32, &ligne);
+        assert_eq!(r["ok"], true, "Serveurs = {serveurs} : {r}");
+        assert!(s.etat().appels.iter().any(|a| a == "dns "), "Serveurs = {serveurs} : {:?}", s.etat().appels);
+    }
+    // (un objet non vide n'est pas une liste de serveurs : refusé, comme en PowerShell)
+    let s = FauxSysteme::new();
+    let r = demander(&s, NEVERMIND as u32, r#"{"a":"dns.regler","p":{"Index":12,"Serveurs":{"a":"1.1.1.1"}}}"#);
+    assert_eq!(r["ok"], false);
 }

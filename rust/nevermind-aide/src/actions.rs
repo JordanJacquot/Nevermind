@@ -2,6 +2,7 @@
 //! (`Invoke-AideAction` sans `-Verifier`, aide-actions.ps1). Rend le résultat que l'Aide renvoie à Nevermind en JSON,
 //! ou le message d'erreur montré tel quel.
 
+use crate::mesures::Mesures;
 use crate::systeme::{ErreurEffacement, Systeme, ValeurLue};
 use aide_regles::demandes::{self, ContexteProgrammes, Demande, REGLE, REGLE_ANCIENNE, VERSION};
 use aide_regles::fermeture::{self, Contexte};
@@ -24,13 +25,9 @@ pub struct EtatAide {
     pub pid: u32,
     /// Le dossier aide-temp, « \ » final compris (vide s'il n'a pas pu être préparé)
     pub temp: String,
+    /// Les mesures continues en cours (PresentMon, trace réseau, compteurs TCP)
+    pub mesures: Mesures,
 }
-
-/// Les mesures continues (FPS, compteurs du trafic, trace réseau) arrivent à l'étape 1b. D'ici là, l'Aide répond comme
-/// une Aide sans mesure : Nevermind mesure alors lui-même, comme quand l'Aide ne répond pas.
-const SANS_FPS: &str = "La mesure des FPS ne passe pas encore par cette version de l'Aide.";
-const SANS_TRAFIC: &str = "Les compteurs du trafic ne passent pas encore par cette version de l'Aide.";
-const SANS_TRACE: &str = "La trace réseau ne passe pas encore par cette version de l'Aide.";
 
 /// Fait la demande. `client` : le processus qui la fait (Nevermind), lu par Windows sur le canal (0 : inconnu).
 pub fn faire(d: Demande, s: &dyn Systeme, client: u32, etat: &EtatAide) -> Result<Value, String> {
@@ -197,15 +194,82 @@ pub fn faire(d: Demande, s: &dyn Systeme, client: u32, etat: &EtatAide) -> Resul
 
         Demande::ProcessusFermer { nom, chemin, contexte } => fermer(s, client, &nom, chemin.as_deref(), contexte),
 
-        // --- Mesures continues : étape 1b (voir SANS_FPS)
-        Demande::FpsDemarrer { .. } | Demande::FpsVeiller { .. } => Err(SANS_FPS.into()),
-        // (comme l'Aide PowerShell quand aucune mesure n'a été lancée : rien à lire)
-        Demande::FpsLire => Ok(json!("")),
-        Demande::FpsArreter | Demande::FluxArreter => ok(),
-        Demande::TraficTcp => Err(SANS_TRAFIC.into()),
-        Demande::FluxDemarrer | Demande::FluxVeiller => Err(SANS_TRACE.into()),
-        Demande::FluxLire => Err("La trace réseau ne tourne pas.".into()),
+        // --- Mesures en continu : l'Aide les fait tourner, Nevermind lit les résultats
+        // FPS d'un jeu : PresentMon (celui du dossier de Nevermind) sur ce processus seulement ; ses lignes sont
+        // relayées telles quelles
+        Demande::FpsDemarrer { pid } => {
+            let m = &etat.mesures;
+            // Jeu guetté par la veille (lancée avant lui) : la mesure continue sur celle-là
+            let nom = s.processus().into_iter().find(|p| p.pid == pid).map(|p| nom_processus(&p.nom));
+            if let Some(nom) = nom
+                && m.fps.rattacher(&nom)
+            {
+                return Ok(json!("rattachee"));
+            }
+            let pm = s.presentmon()?;
+            m.fps.demarrer(s, &pm, pid)?;
+            ok()
+        }
+        // Veille avant le lancement de jeux dont l'anti-triche refuse une mesure démarrée après eux
+        Demande::FpsVeiller { noms } => {
+            let pm = s.presentmon()?;
+            etat.mesures.fps.veiller(s, &pm, &noms)?;
+            ok()
+        }
+        Demande::FpsLire => Ok(json!(etat.mesures.fps.lire())),
+        Demande::FpsArreter => {
+            etat.mesures.fps.arreter(s);
+            ok()
+        }
+
+        // Connexions TCP avec les octets envoyés et reçus de chacune (Windows ne compte qu'à la demande d'un
+        // administrateur)
+        Demande::TraficTcp => {
+            let mut c = etat.mesures.tcp.lock().unwrap_or_else(|e| e.into_inner());
+            let lignes = c.lignes(s);
+            Ok(json!({ "Lignes": lignes, "CompteursOk": c.ok }))
+        }
+
+        // Trace réseau de Windows (chaque échange, UDP compris) : le vrai serveur du jeu pendant « Lag en ligne »
+        Demande::FluxDemarrer => {
+            etat.mesures.flux.demarrer(s).map_err(trace_refusee)?;
+            ok()
+        }
+        // Veille avant un jeu dont l'anti-triche refuse une trace démarrée après lui : la trace tourne déjà quand la
+        // partie commence (flux.demarrer la reprend). Redemandée toutes les 30 s : les vieilles connexions sont oubliées.
+        Demande::FluxVeiller => {
+            let f = &etat.mesures.flux;
+            if f.tourne() {
+                f.oublier(s, 120);
+            } else {
+                f.demarrer(s).map_err(trace_refusee)?;
+            }
+            ok()
+        }
+        Demande::FluxLire => {
+            let f = &etat.mesures.flux;
+            if !f.tourne() {
+                return Err("La trace réseau ne tourne pas.".into());
+            }
+            Ok(json!(f.lignes(s)))
+        }
+        Demande::FluxArreter => {
+            etat.mesures.flux.arreter();
+            ok()
+        }
     }
+}
+
+/// Le refus de Windows de démarrer la trace, tel que Nevermind l'affiche
+fn trace_refusee(e: String) -> String {
+    format!("Trace réseau refusée par Windows : {e}")
+}
+
+/// Le nom d'un programme tel que .NET le donne pour un processus, plus « .exe » (« bf6.exe ») : `ProcessName` retire
+/// « .exe » (quelle que soit la casse), puis la version PowerShell le remet en minuscules
+fn nom_processus(nom: &str) -> String {
+    let court = if texte::finit(nom, ".exe") { &nom[..nom.len() - 4] } else { nom };
+    format!("{court}.exe")
 }
 
 /// La clé des réglages TCP/IP d'une carte

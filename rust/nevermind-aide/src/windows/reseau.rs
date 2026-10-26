@@ -36,7 +36,7 @@ pub fn carte(index: i32) -> Option<Carte> {
 }
 
 /// Une adresse de Windows (IPv4 ou IPv6)
-fn adresse(a: &SOCKADDR_INET) -> Option<IpAddr> {
+pub(super) fn adresse(a: &SOCKADDR_INET) -> Option<IpAddr> {
     // SAFETY : on lit le champ qui correspond à la famille annoncée
     unsafe {
         match a.si_family {
