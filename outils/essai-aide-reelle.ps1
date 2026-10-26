@@ -924,12 +924,14 @@ function Test-Cas9 {
         foreach ($d in 'temp', 'pd', 'cwd', 'profil\AppData\Roaming', 'profil\AppData\Local') { New-Item -ItemType Directory -Force -Path "$piege\$d" | Out-Null }
         Get-ChildItem -LiteralPath $Sorties -Filter 'piege-*.txt' -File -ErrorAction SilentlyContinue | Remove-Item -Force
         $fichiersAvant = @(Get-ChildItem -LiteralPath $piege -Recurse -Force | ForEach-Object { $_.FullName })
+        # (windir et SystemRoot piégés à part, en d. : le moteur .NET du lanceur C# les lit avant la première ligne de l'Aide)
         $variables = @{
-            NEVERMIND_TEMOIN_ENV = '1'; PSModulePath = "$piege\modules"; windir = "$piege\windows"; SystemRoot = "$piege\windows"
+            NEVERMIND_TEMOIN_ENV = '1'; PSModulePath = "$piege\modules"
             ProgramFiles = "$piege\pf"; ProgramW6432 = "$piege\pf"; 'ProgramFiles(x86)' = "$piege\pf"; ProgramData = "$piege\pd"; ALLUSERSPROFILE = "$piege\pd"
             TEMP = "$piege\temp"; TMP = "$piege\temp"; USERPROFILE = "$piege\profil"; HOMEDRIVE = $piege.Substring(0, 2); HOMEPATH = "$piege\profil".Substring(2)
             APPDATA = "$piege\profil\AppData\Roaming"; LOCALAPPDATA = "$piege\profil\AppData\Local"
         }
+        $variablesWindows = $variables.Clone(); $variablesWindows.windir = "$piege\windows"; $variablesWindows.SystemRoot = "$piege\windows"
         $moiCompte = @{ Nom = "$env:USERNAME (administrateur)"; Sid = $Moi; Cred = $null }
 
         # a. -Sid de son propre compte : elle répond à Nevermind de ce compte (ouvert avant : l'Aide reste tant qu'il l'est)
@@ -945,10 +947,10 @@ function Test-Cas9 {
         Test-Cas 'lancée pour son propre compte : elle tourne sous ce compte (pas en SYSTEM) et ouvre le canal de ce compte' {
             $ouvert -and $aide.Count -eq 1 -and $aide[0].Sid -eq $Moi
         }
-        Test-Cas 'elle répond à Nevermind de ce compte : son compte, avec les droits administrateur, compile dans aide-temp (jamais dans le TEMP reçu)' {
+        Test-Cas 'elle répond à Nevermind de ce compte (c''est bien elle : son processus) : son compte, avec les droits administrateur, compile dans aide-temp (jamais dans le TEMP reçu)' {
             $t = ([string]$bj.Temp).TrimEnd('\')
-            Write-Host "         | bonjour : compte $($bj.Compte), administrateur $($bj.Admin), dossier de compilation $t" -ForegroundColor DarkGray
-            $bj -and [string]$bj.Compte -eq $Moi -and $bj.Admin -eq $true -and $t -in "$NevermindC\aide-temp", (Join-Path ([Environment]::GetFolderPath('Windows')) 'SystemTemp')
+            Write-Host "         | bonjour : processus $($bj.Pid) (Aide $($p.Id)), compte $($bj.Compte), administrateur $($bj.Admin), dossier de compilation $t" -ForegroundColor DarkGray
+            $bj -and [int]$bj.Pid -eq $p.Id -and [string]$bj.Compte -eq $Moi -and $bj.Admin -eq $true -and $t -in "$NevermindC\aide-temp", (Join-Path ([Environment]::GetFolderPath('Windows')) 'SystemTemp')
         }
         Test-Cas 'une lecture qui charge un module de Windows (lecture.taches) marche' { $s.R.PSObject.Properties['taches'] -and -not $s.E.PSObject.Properties['taches'] }
         $traces = Get-TracesPiege
@@ -969,8 +971,9 @@ function Test-Cas9 {
         $p = Start-AideSecours $e.Sid $variables "$piege\cwd"
         $servie = Wait-Jusque { Test-Canal $canalElodie } 30
         Test-Cas 'lancée pour un autre compte : jamais de canal au nom du compte administrateur qui l''a lancée' { -not (Test-Canal $canal) }
+        $tourne = -not $p.HasExited
         if ($servie) { Add-Note 'secours pour un autre compte (Élodie, standard, aidée par un administrateur) : servi, comme au cas 5. La règle du plan « SID différent du sien refusé » ferait échouer le cas 5 : à trancher par Jordan' }
-        else { Add-Note 'secours pour un autre compte (Élodie, standard, aidée par un administrateur) : refusé, comme le dit le plan ; le cas 5 ne peut alors plus passer : à trancher par Jordan' }
+        else { Add-Note "secours pour un autre compte (Élodie, standard, aidée par un administrateur) : pas de canal (Aide $(if ($tourne) { 'toujours là' } else { "arrêtée, code $($p.ExitCode)" })), comme le dit le plan ; le cas 5 ne peut alors plus passer : à trancher par Jordan" }
         try { $p.Kill() } catch {}
         Stop-Aides
 
@@ -983,7 +986,22 @@ function Test-Cas9 {
             try { $p.Kill() } catch {}
             Stop-Aides
         }
-        Test-Cas 'toujours rien pris du piège après tous ces lancements' { -not (Get-TracesPiege).Count }
+
+        # d. windir et SystemRoot piégés eux aussi : elle ne s'en sert jamais (elle répond sans eux, ou ne démarre pas)
+        $p = Start-AideSecours $Moi $variablesWindows "$piege\cwd"
+        $ouvert = Wait-Jusque { Test-Canal $canal } 20
+        $vars = @{}
+        if ($ouvert) { try { $vars = Get-EnvProcessus $p.Id } catch {} }
+        Write-Host "         | windir et SystemRoot piégés : $(if ($ouvert) { "canal ouvert, windir=$($vars['windir']), SystemRoot=$($vars['SystemRoot'])" } elseif ($p.HasExited) { "pas démarrée (code $($p.ExitCode))" } else { 'pas de canal' })" -ForegroundColor DarkGray
+        Test-Cas 'windir et SystemRoot piégés eux aussi : rien pris du piège, et si elle répond, ses dossiers de Windows sont les vrais' {
+            -not @(Get-TracesPiege).Count -and (-not $ouvert -or ($vars.Count -and -not @('windir', 'SystemRoot', 'PSModulePath' | Where-Object { ([string]$vars[$_]).IndexOf($piege, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count))
+        }
+        if (-not $ouvert) { Add-Note 'windir et SystemRoot piégés : cette Aide ne démarre pas (le moteur .NET du lanceur C# les lit avant elle) ; rien de pris, mais pas de secours dans ce cas' }
+        try { $p.Kill() } catch {}
+        Stop-Aides
+        $nouveaux = @(Get-ChildItem -LiteralPath $piege -Recurse -Force | ForEach-Object { $_.FullName } | Where-Object { $fichiersAvant -notcontains $_ })
+        foreach ($x in $nouveaux) { Write-Host "         | piège : $x" -ForegroundColor DarkGray }
+        Test-Cas 'toujours rien pris du piège après tous ces lancements (aucun faux module, aucun profil, aucun fichier écrit)' { -not (Get-TracesPiege).Count -and -not $nouveaux.Count }
     } finally {
         Stop-Aides
         Remove-Item -LiteralPath $piege -Recurse -Force -ErrorAction SilentlyContinue
@@ -997,15 +1015,15 @@ function Test-Cas9 {
 # Les réglages que l'Aide accepte de changer (sa liste, aide-actions.ps1) : Nevermind les envoie pour « optimiser » ;
 # pour « Tout restaurer », il renvoie les valeurs d'origine relevées avant (ici, l'état « avant » de l'essai).
 $RegEssai = @(
-    @('HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers', 'HwSchMode', 'DWord', 2)
-    @('HKU:\S-1-5-20\Software\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Settings', 'DownloadMode', 'DWord', 0)
-    @('HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization', 'DOPercentageMaxBackgroundBandwidth', 'DWord', 10)
-    @('HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization', 'DODownloadMode', 'DWord', 0)
-    @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection', 'AllowTelemetry', 'DWord', 0)
-    @('HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection', 'AllowTelemetry', 'DWord', 0)
-    @('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore', 'SystemRestorePointCreationFrequency', 'DWord', 0)
-    @('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\EssaiNevermind.exe\PerfOptions', 'CpuPriorityClass', 'DWord', 3)
-    @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run', 'EssaiNevermind', 'Binary', @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+    ,@('HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers', 'HwSchMode', 'DWord', 2)
+    ,@('HKU:\S-1-5-20\Software\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Settings', 'DownloadMode', 'DWord', 0)
+    ,@('HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization', 'DOPercentageMaxBackgroundBandwidth', 'DWord', 10)
+    ,@('HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization', 'DODownloadMode', 'DWord', 0)
+    ,@('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection', 'AllowTelemetry', 'DWord', 0)
+    ,@('HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection', 'AllowTelemetry', 'DWord', 0)
+    ,@('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore', 'SystemRestorePointCreationFrequency', 'DWord', 0)
+    ,@('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\EssaiNevermind.exe\PerfOptions', 'CpuPriorityClass', 'DWord', 3)
+    ,@('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run', 'EssaiNevermind', 'Binary', @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 )
 function Open-CleLecture([string]$Cle) {
     if ($Cle -match '^HKLM:\\(.+)$') { return [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($Matches[1]) }
