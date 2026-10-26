@@ -11,6 +11,8 @@
 #      autre programme) : rien n'est changé (audit du 25/10, 25b) ;
 #   3. « Tout restaurer » avec une Aide administrateur qui ne répond pas : la sauvegarde garde ce qui n'a pas pu être
 #      remis, seules les entrées vraiment remises de l'historique sont marquées annulées, et « Réessayer » finit le travail ;
+#      chaque réglage « batterie » remis dans son plan d'alimentation après le plan d'origine, les DNS sur la bonne carte
+#      réseau, retrouvée par son identifiant (revue du 25/10, constat 14) ;
 #      Puis les couleurs d'un pack de thème : seulement « #RRGGBB », sinon le thème de base (audit du 25/10, constat 7) ;
 #   4. les minuteries importantes (ordres de Mindset, thème de la suite, attente, écran) sont protégées de l'intérieur ;
 #   5. le mode jeu : les applis fermées pendant la partie sont écrites dans les données et relancées au lancement suivant
@@ -36,8 +38,10 @@ $script:Journal = New-Object System.Collections.Generic.List[string]
 function script:Write-Log([string]$Message) { $script:Journal.Add($Message) }
 $script:AideRepond = $false
 $script:AideAppels = New-Object System.Collections.Generic.List[string]
+$script:AideCartes = New-Object System.Collections.Generic.List[string]
 function script:Invoke-Aide([string]$Action, $Params) {
     $script:AideAppels.Add($Action)
+    if ($Action -eq 'dns.regler') { $script:AideCartes.Add("$($Params.Index)") }
     if (-not $script:AideRepond) { throw 'L''Aide administrateur ne répond pas.' }
     if ($Action -eq 'origines.oublier') { $script:FaussesOrigines = @() }   # (comme l'Aide : ses copies d'origine sont effacées)
     'ok'
@@ -243,6 +247,73 @@ try {
     $annules = @($script:History | Where-Object { $_.Annule } | ForEach-Object { $_.Id })
     Test-Ok (($annules -join ',') -eq 'moi,pc,svc,dns') "Réessayer : tout l'historique est annulé, sauf la protection définitive (marqués : $($annules -join ', '))"
     Test-Ok ($script:AideAppels -contains 'origines.oublier') 'Réessayer : les copies d''origine gardées par l''Aide sont oubliées'
+
+    # -----------------------------------------------------------------------
+    # 3 ter. Revue du 25/10 (constat 14) : « Tout restaurer » remet chaque réglage « batterie » dans son plan
+    #        d'alimentation, après le plan d'origine, et les DNS sur la bonne carte réseau (par son identifiant).
+    #        Faux powercfg et fausses cartes réseau : rien n'est lu ni changé sur le PC.
+    # -----------------------------------------------------------------------
+    $bal = '381b4222-f694-41f0-9685-ff5bb260df2e'; $cree = '11111111-2222-3333-4444-555555555555'
+    $crit = '637ea02f-bbcb-4015-8e2c-a1c7b9c0b546'; $sous = 'e73a048d-bf27-4f12-9731-8b2076e8891f'
+    $script:Pcfg = New-Object System.Collections.Generic.List[string]
+    $script:PlanActif = $bal
+    function script:powercfg { $script:Pcfg.Add(($args -join ' ')); $global:LASTEXITCODE = 0; if ($args[0] -eq '/list') { "GUID du plan d'alimentation : $bal  (Utilisation normale) *" } }
+    function script:Get-ActiveScheme { @{ Guid = $script:PlanActif; Name = 'Plan' } }
+    function script:Get-BatteryPowerSettings { @{ CritAction = @(0, 0) } }
+    $astAnalyse = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $modules 'analyse.ps1'), [ref]$null, [ref]$null)
+    foreach ($v in '$BatSettings', '$SubBattery') { Invoke-Expression $astAnalyse.Find({ param($x) $x -is [System.Management.Automation.Language.AssignmentStatementAst] -and $x.Left.Extent.Text -eq $v -and $x.Parent -eq $astAnalyse.EndBlock }, $true).Extent.Text }
+    Invoke-Expression ($astAnalyse.Find({ param($x) $x -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq 'Set-BatterySetting' }, $false).Extent.Text -replace '^function\s+Set-BatterySetting', 'function script:Set-BatterySetting')
+    $SettingsFile = Join-Path $script:Bac 'parametres-batterie.json'
+    $BackupFile = Join-Path $script:Bac 'sauvegarde-batterie.json'
+    $script:Settings = $null; $script:FaussesOrigines = @(); $script:AideRepond = $true
+    $script:Backup = @{ Registry = @{}; PowerScheme = $null; CreatedScheme = $null; Overlay = $null; Dns = @{}; Displays = @{}; Oublies = @() }
+    # Réglage de l'onduleur changé dans « Utilisation normale », puis l'optimisation passe sur un plan créé par Nevermind
+    Set-BatterySetting 'CritAction' 3
+    $note = @(Get-Setting 'PcfgOriginal' @())
+    Test-Ok ($note.Count -eq 1 -and $note[0] -eq "$crit|0|0|$bal") "Batterie : le plan d'alimentation n'est pas noté avec la valeur d'origine ($($note -join ' / '))"
+    $script:Backup.PowerScheme = $bal; $script:Backup.CreatedScheme = $cree; $script:PlanActif = $cree
+    Set-BatterySetting 'CritAction' 2
+    Test-Ok (@(Get-Setting 'PcfgOriginal' @()).Count -eq 2) 'Batterie : la valeur d''origine du plan de Nevermind n''est pas notée à part'
+    # Une ancienne note (sans plan) : remise dans le plan d'origine, une fois celui-ci remis
+    Set-Setting 'PcfgOriginal' @(@(Get-Setting 'PcfgOriginal' @()) + "bcded951-187b-4d05-bccc-f7e51960c258|1|1")
+    $script:Pcfg.Clear()
+    $errors = Restore-AllSettings; $errors = @($errors)
+    $ordre = @($script:Pcfg)
+    $iActif = [array]::IndexOf($ordre, "/setactive $bal")
+    $iVal = [array]::IndexOf($ordre, "/setacvalueindex $bal $sous $crit 0")
+    $iAncien = [array]::IndexOf($ordre, "/setdcvalueindex SCHEME_CURRENT $sous bcded951-187b-4d05-bccc-f7e51960c258 1")
+    Test-Ok ($iActif -ge 0 -and $iVal -gt $iActif -and $ordre -contains "/setdcvalueindex $bal $sous $crit 0") "Batterie : valeur d'origine pas remise dans « Utilisation normale » après son retour ($($ordre -join ' ; '))"
+    Test-Ok ($iAncien -gt $iActif) "Batterie : une ancienne note n'est pas remise après le retour du plan d'origine ($($ordre -join ' ; '))"
+    Test-Ok (-not @($ordre | Where-Object { $_ -like "*$cree $sous*" -or $_ -like "/set?cvalueindex SCHEME_CURRENT $sous $crit*" }).Count) "Batterie : une valeur est écrite dans le mauvais plan ($($ordre -join ' ; '))"
+    Test-Ok (-not $errors.Count -and -not @(Get-Setting 'PcfgOriginal' @()).Count) "Batterie : tout n'est pas remis ($($errors -join ' / '))"
+    Test-Ok ($ordre -contains "/delete $cree") 'Batterie : le plan créé par Nevermind n''est plus supprimé'
+
+    # DNS : noté par l'identifiant de la carte ; la carte a changé de numéro (7 au lieu de 12), une autre a pris le 12
+    $astOnglets = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $modules 'onglets.ps1'), [ref]$null, [ref]$null)
+    Invoke-Expression ($astOnglets.Find({ param($x) $x -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq 'Set-Dns' }, $false).Extent.Text -replace '^function\s+Set-Dns', 'function script:Set-Dns')
+    Invoke-Expression $asts['systeme'].Find({ param($x) $x -is [System.Management.Automation.Language.AssignmentStatementAst] -and $x.Left.Extent.Text -eq '$DnsChoices' }, $true).Extent.Text
+    function script:Get-RegValue([string]$Path, [string]$Name) { '' }
+    foreach ($n in 'Update-NetInfo', 'Update-BackupSummary', 'Set-Status', 'Show-Message') { Set-Item "function:script:$n" {} }
+    function script:Add-History { $null }
+    $carteA = '{AAAAAAAA-1111-2222-3333-444444444444}'; $carteB = '{BBBBBBBB-1111-2222-3333-444444444444}'
+    $script:Net = @{ IfIndex = 12; Guid = $carteB }
+    function script:Get-ActiveNet { $script:Net }
+    $script:Backup = @{ Registry = @{}; PowerScheme = $null; CreatedScheme = $null; Overlay = $null; Dns = @{}; Displays = @{}; Oublies = @() }
+    Set-Dns 1
+    Test-Ok ($script:Backup.Dns.ContainsKey($carteB) -and $script:Backup.Dns.Count -eq 1) "DNS : la carte n'est pas notée par son identifiant ($(@($script:Backup.Dns.Keys) -join ', '))"
+    Set-Dns 2
+    Test-Ok ($script:Backup.Dns.Count -eq 1) 'DNS : un 2e changement note de nouveau les serveurs (ceux d''avant Nevermind seraient perdus)'
+    function script:Get-NetAdapter { @([pscustomobject]@{ InterfaceGuid = $carteA; ifIndex = 12 }, [pscustomobject]@{ InterfaceGuid = $carteB; ifIndex = 7 }) }
+    $script:AideCartes.Clear()
+    $errors = Restore-AllSettings; $errors = @($errors)
+    Test-Ok (($script:AideCartes -join ',') -eq '7' -and -not $errors.Count -and -not $script:Backup.Dns.Count) "DNS : remis sur la carte $($script:AideCartes -join ',') au lieu de 7 (son nouveau numéro) ($($errors -join ' / '))"
+    # Ancienne sauvegarde (numéro) : comme avant ; carte disparue : gardée et dite
+    $script:Backup.Dns['12'] = ''; $script:Backup.Dns['{CCCCCCCC-1111-2222-3333-444444444444}'] = ''
+    $script:AideCartes.Clear()
+    $errors = Restore-AllSettings; $errors = @($errors)
+    Test-Ok (($script:AideCartes -join ',') -eq '12' -and $errors.Count -eq 1 -and $script:Backup.Dns.Count -eq 1) "DNS : ancienne sauvegarde ou carte disparue mal traitées (cartes $($script:AideCartes -join ','), erreurs : $($errors -join ' / '))"
+    Remove-Item function:script:Get-NetAdapter, function:script:Get-ActiveScheme, function:script:Get-BatteryPowerSettings, function:script:Get-RegValue
+    function script:powercfg { }
 
     # -----------------------------------------------------------------------
     # 3 bis. Audit du 25/10 (constat 7) : les couleurs d'un pack de thème, collées dans la fenêtre, sont vérifiées

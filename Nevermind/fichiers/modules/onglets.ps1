@@ -616,8 +616,10 @@ function Invoke-NetTest {
 function Set-Dns([int]$Choice) {
     if (-not $script:Net) { Show-Message 'Aucune connexion détectée.'; return }
     $idx = $script:Net.IfIndex
-    $key = [string]$idx
-    if (-not $script:Backup.Dns.ContainsKey($key)) {
+    # (la carte est notée par son identifiant, qui ne change pas ; son numéro peut changer après un redémarrage.
+    # Une ancienne sauvegarde notée par le numéro reste la bonne : elle a les serveurs d'avant Nevermind)
+    $key = if ($script:Net.Guid) { [string]$script:Net.Guid } else { [string]$idx }
+    if (-not ($script:Backup.Dns.ContainsKey($key) -or $script:Backup.Dns.ContainsKey([string]$idx))) {
         $static = Get-RegValue "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\$($script:Net.Guid)" 'NameServer'
         $script:Backup.Dns[$key] = [string]$static
         Save-BackupOuOublier { $script:Backup.Dns.Remove($key) }

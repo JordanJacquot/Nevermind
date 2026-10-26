@@ -483,8 +483,10 @@ function Undo-RunLog($Log) {
                 'fw' { [void](Invoke-Aide 'pare-feu.debloquer' @{ Nom = [string]$e.Name }) }
                 'definitif' { }   # (protège le PC : jamais annulé, voir Add-ChangementDefinitif)
                 'pcfg' {
-                    if ($null -ne $e.Ac) { powercfg /setacvalueindex SCHEME_CURRENT $SubBattery $e.Guid ([int]$e.Ac) | Out-Null }
-                    if ($null -ne $e.Dc) { powercfg /setdcvalueindex SCHEME_CURRENT $SubBattery $e.Guid ([int]$e.Dc) | Out-Null }
+                    # (dans le plan où la valeur a été changée, noté depuis l'audit du 25/10 ; sinon le plan actif)
+                    $plan = if ([string]$e.Plan -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') { [string]$e.Plan } else { 'SCHEME_CURRENT' }
+                    if ($null -ne $e.Ac) { powercfg /setacvalueindex $plan $SubBattery $e.Guid ([int]$e.Ac) | Out-Null }
+                    if ($null -ne $e.Dc) { powercfg /setdcvalueindex $plan $SubBattery $e.Guid ([int]$e.Dc) | Out-Null }
                     powercfg /setactive SCHEME_CURRENT | Out-Null
                 }
                 'svc' {

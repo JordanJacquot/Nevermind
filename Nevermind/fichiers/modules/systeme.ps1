@@ -133,17 +133,8 @@ function Restore-AllSettings {
         catch { $errors += "Service $($x[0]): $($_.Exception.Message)"; $svcReste += [string]$l }
     }
     if (@(Get-Setting 'SvcOriginal' @()).Count) { Set-Setting 'SvcOriginal' @($svcReste) }
-    # Réglages « batterie » changés pour l'onduleur
-    $pcfg = @(Get-Setting 'PcfgOriginal' @())
-    $pcfgReste = @()
-    foreach ($l in $pcfg) {
-        $x = ([string]$l) -split '\|'
-        try {
-            if ($x[1] -ne '') { $global:LASTEXITCODE = 0; powercfg /setacvalueindex SCHEME_CURRENT e73a048d-bf27-4f12-9731-8b2076e8891f $x[0] ([int]$x[1]) | Out-Null; if ($global:LASTEXITCODE) { throw "powercfg a répondu $global:LASTEXITCODE" } }
-            if ($x[2] -ne '') { $global:LASTEXITCODE = 0; powercfg /setdcvalueindex SCHEME_CURRENT e73a048d-bf27-4f12-9731-8b2076e8891f $x[0] ([int]$x[2]) | Out-Null; if ($global:LASTEXITCODE) { throw "powercfg a répondu $global:LASTEXITCODE" } }
-        } catch { $errors += "Onduleur: $($_.Exception.Message)"; $pcfgReste += [string]$l }
-    }
-    if ($pcfg.Count) { powercfg /setactive SCHEME_CURRENT | Out-Null; Set-Setting 'PcfgOriginal' @($pcfgReste) }
+    # (le plan d'alimentation d'origine d'abord : les réglages « batterie » ci-dessous vont dans leur plan, pas dans
+    # celui de Nevermind qui va disparaître)
     if ($script:Backup.PowerScheme) {
         $global:LASTEXITCODE = 0; powercfg /setactive $script:Backup.PowerScheme | Out-Null
         if ($global:LASTEXITCODE) { $errors += "Plan d'alimentation: pas remis (powercfg a répondu $global:LASTEXITCODE)" }
@@ -155,6 +146,22 @@ function Restore-AllSettings {
         powercfg /delete $script:Backup.CreatedScheme 2>$null | Out-Null
         $script:Backup.CreatedScheme = $null
     }
+    # Réglages « batterie » changés pour l'onduleur : chaque valeur dans le plan où elle a été changée (noté depuis
+    # l'audit du 25/10 ; les anciennes notes sans plan vont dans le plan actif, celui d'origine remis juste au dessus)
+    $pcfg = @(Get-Setting 'PcfgOriginal' @())
+    $pcfgReste = @()
+    $plans = if ($pcfg.Count) { [string](powercfg /list 2>$null | Out-String) } else { '' }
+    foreach ($l in $pcfg) {
+        $x = ([string]$l) -split '\|'
+        $plan = if ($x.Count -ge 4 -and $x[3] -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') { $x[3] } else { 'SCHEME_CURRENT' }
+        # (plan supprimé depuis, comme celui créé par Nevermind : il n'y a plus rien à remettre)
+        if ($plan -ne 'SCHEME_CURRENT' -and $plans -match '[0-9a-fA-F]{8}-' -and $plans -notmatch [regex]::Escape($plan)) { continue }
+        try {
+            if ($x[1] -ne '') { $global:LASTEXITCODE = 0; powercfg /setacvalueindex $plan e73a048d-bf27-4f12-9731-8b2076e8891f $x[0] ([int]$x[1]) | Out-Null; if ($global:LASTEXITCODE) { throw "powercfg a répondu $global:LASTEXITCODE" } }
+            if ($x[2] -ne '') { $global:LASTEXITCODE = 0; powercfg /setdcvalueindex $plan e73a048d-bf27-4f12-9731-8b2076e8891f $x[0] ([int]$x[2]) | Out-Null; if ($global:LASTEXITCODE) { throw "powercfg a répondu $global:LASTEXITCODE" } }
+        } catch { $errors += "Onduleur: $($_.Exception.Message)"; $pcfgReste += [string]$l }
+    }
+    if ($pcfg.Count) { powercfg /setactive SCHEME_CURRENT | Out-Null; Set-Setting 'PcfgOriginal' @($pcfgReste) }
     if ($script:Backup.Overlay) {
         try {
             $r = [OGNative]::SetOverlay($script:Backup.Overlay)
@@ -165,7 +172,14 @@ function Restore-AllSettings {
     foreach ($k in @($script:Backup.Dns.Keys)) {
         try {
             $v = $script:Backup.Dns[$k]
-            [void](Invoke-Aide 'dns.regler' @{ Index = [int]$k; Serveurs = @(([string]$v) -split '[,\s]+' | Where-Object { $_ }) })
+            # Carte réseau notée par son identifiant (son numéro peut changer après un redémarrage ou un nouveau pilote :
+            # une autre carte aurait été modifiée) ; les anciennes sauvegardes ont le numéro
+            $idx = if ([string]$k -match '^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$') {
+                $ad = @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue | Where-Object { ([string]$_.InterfaceGuid).Trim('{', '}') -eq ([string]$k).Trim('{', '}') })[0]
+                if (-not $ad) { throw 'La carte réseau de ce réglage n''existe plus sur ce PC.' }
+                [int]$ad.ifIndex
+            } else { [int]$k }
+            [void](Invoke-Aide 'dns.regler' @{ Index = $idx; Serveurs = @(([string]$v) -split '[,\s]+' | Where-Object { $_ }) })
             $script:Backup.Dns.Remove($k)
         } catch { $errors += "DNS: $($_.Exception.Message)" }
     }
