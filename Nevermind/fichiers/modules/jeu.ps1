@@ -127,7 +127,71 @@ function Update-FpsVeilleAntiTriche {
     Write-Log "Mesure des FPS : anti-triche EA repéré ($($nouveaux -join ', ')), la mesure sera lancée avant le jeu"
 }
 
+# Applis fermées pendant la partie, aussi écrites dans les données (mode-jeu.json) : si Nevermind plante ou est tué
+# pendant le jeu, elles sont relancées à son lancement suivant (OneDrive ne reste pas arrêté sans qu'on le sache).
+$GameModeFile = Join-Path $DataDir 'mode-jeu.json'
+
+function Save-GameModePending($S, [string]$Proc) {
+    if (-not $S -or -not @($S.Closed).Count) { Clear-GameModePending; return }
+    try {
+        $liste = @(@($S.Closed) | ForEach-Object { @{ Id = [string]$_.Id; Name = [string]$_.Name; Path = [string]$_.Path } })
+        Save-JsonSur $GameModeFile @{ Game = [string]$S.Game; Pid = [int]$S.Pid; Proc = $Proc; Start = $S.Start.ToString('o'); Closed = $liste } 4
+    } catch { Write-Log "Mode jeu : liste des applis fermées non enregistrée ($($_.Exception.Message))" }
+}
+
+function Clear-GameModePending {
+    # (la copie de secours aussi : Read-JsonSur la reprendrait)
+    foreach ($p in $GameModeFile, "$GameModeFile.bak", "$GameModeFile.tmp") {
+        try { if ([IO.File]::Exists($p)) { [IO.File]::Delete($p) } } catch { Write-Log "Mode jeu : $([IO.Path]::GetFileName($p)) non effacé ($($_.Exception.Message))" }
+    }
+}
+
+# Relance les applis fermées (celles déjà rouvertes sont laissées) ; rend les noms de celles à relancer à la main
+function Restart-GameModeApps($Closed) {
+    $failed = @()
+    foreach ($c in @($Closed)) {
+        if (-not $c.Path) { $failed += $c.Name; continue }
+        $name = [IO.Path]::GetFileNameWithoutExtension($c.Path)
+        if (Get-Process -Name $name -ErrorAction SilentlyContinue) { continue }
+        try {
+            Start-Unelevated $c.Path $c.Args
+        } catch { $failed += $c.Name }
+    }
+    $failed
+}
+
+function Resume-GameModePending {
+    if ($script:GameModeRepris) { return }
+    $script:GameModeRepris = $true
+    $j = Read-JsonSur $GameModeFile
+    if (-not $j) { return }
+    # Seulement des applis de la liste du mode jeu, au nom attendu (le fichier n'ajoute rien à lancer) ; leurs
+    # arguments viennent de la liste
+    $closed = @(foreach ($e in @($j.Closed)) {
+        $a = @($GameModeApps | Where-Object { $_.Id -eq [string]$e.Id })[0]
+        if (-not $a) { continue }
+        $path = [string]$e.Path
+        if ($path -and -not ([IO.Path]::IsPathRooted($path) -and [IO.Path]::GetExtension($path) -eq '.exe' -and [IO.Path]::GetFileNameWithoutExtension($path) -match $a.Proc)) { $path = '' }
+        @{ Id = $a.Id; Name = $a.Name; Path = $path; Args = $a.Args }
+    })
+    if (-not $closed.Count) { Clear-GameModePending; return }
+    $start = try { [datetime]::Parse([string]$j.Start, $null, [Globalization.DateTimeStyles]::RoundtripKind) } catch { Get-Date }
+    # Le jeu tourne encore (Nevermind relancé pendant la partie) : la partie continue, les applis seront relancées à sa fin
+    $p = try { Get-Process -Id ([int]$j.Pid) -ErrorAction Stop } catch { $null }
+    if ($p -and $j.Proc -and $p.ProcessName -eq [string]$j.Proc) {
+        $script:GameSession = @{ Game = [string]$j.Game; Pid = $p.Id; Closed = $closed; Start = $start }
+        Write-Log "Mode jeu: $($j.Game) toujours en cours au lancement de Nevermind, applis fermées: $(($closed | ForEach-Object { $_.Name }) -join ', ')"
+        return
+    }
+    $failed = @(Restart-GameModeApps $closed)
+    Clear-GameModePending
+    Write-Log "Mode jeu: applis de la partie de $($j.Game) relancées au lancement de Nevermind$(if ($failed) { ", à relancer à la main: $($failed -join ', ')" })"
+    Show-Notify 'Fin du mode jeu' $(if ($failed) { "Relance toi-même : $($failed -join ', ')." } else { 'Les applis fermées ont été relancées.' })
+}
+
 function Start-GameWatch {
+    # (une fois, au lancement : applis d'une partie que Nevermind n'a pas pu relancer, s'il a planté pendant le jeu)
+    try { Resume-GameModePending } catch { Write-Log "Mode jeu : reprise impossible ($($_.Exception.Message))" }
     if (-not $script:GameTimer) {
         $script:GameTimer = New-Object System.Windows.Threading.DispatcherTimer
         $script:GameTimer.Interval = [TimeSpan]::FromSeconds(5)
@@ -180,9 +244,10 @@ function Start-GameSession([string]$Game, $Proc) {
             $r = Stop-ProcessusRegle $procs '' $ctx
         } catch { Write-Log "Mode jeu : $($a.Name) pas fermé ($($_.Exception.Message))"; continue }
         if (@($r.Refus).Count) { Write-Log "Mode jeu : $($a.Name), $(@($r.Refus).Count) processus laissé(s) ($($r.Refus[0]))" }
-        if ($r.Fermes) { $closed += @{ Name = $a.Name; Path = $path; Args = $a.Args } }
+        if ($r.Fermes) { $closed += @{ Id = $a.Id; Name = $a.Name; Path = $path; Args = $a.Args } }
     }
     $script:GameSession = @{ Game = $Game; Pid = $Proc.Id; Closed = $closed; Start = Get-Date }
+    Save-GameModePending $script:GameSession $Proc.ProcessName
     Write-Log "Mode jeu: $Game lancé, applis fermées: $(($closed | ForEach-Object { $_.Name }) -join ', ')"
     if ((Test-FpsMeasure) -and -not $script:FpsTarget) { Start-FpsTarget $Proc.Id $Game $Proc.ProcessName }
     if ((Test-LagMeasure) -and -not $script:LagSession) { try { Start-LagSession $Game $Proc.Id } catch { Write-Log "Lag: $_" } }
@@ -200,15 +265,8 @@ function Stop-GameSession {
     # Veille avant les jeux à anti-triche redemandée dès le prochain passage (5 s) : un jeu relancé aussitôt (mise à jour,
     # plantage) la trouve prête, sans attendre les 30 s entre deux demandes
     $script:FpsVeilleDemande = $null
-    $failed = @()
-    foreach ($c in $s.Closed) {
-        if (-not $c.Path) { $failed += $c.Name; continue }
-        $name = [IO.Path]::GetFileNameWithoutExtension($c.Path)
-        if (Get-Process -Name $name -ErrorAction SilentlyContinue) { continue }
-        try {
-            Start-Unelevated $c.Path $c.Args
-        } catch { $failed += $c.Name }
-    }
+    $failed = @(Restart-GameModeApps $s.Closed)
+    Clear-GameModePending
     $mins = [int]((Get-Date) - $s.Start).TotalMinutes
     try { Add-PlayTime $s.Game $s.Start } catch { Write-Log "Temps de jeu: $_" }
     Write-Log "Mode jeu: fin de $($s.Game) après $mins min$(if ($failed) { ", à relancer à la main: $($failed -join ', ')" })"

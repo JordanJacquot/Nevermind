@@ -12,7 +12,9 @@
 #   3. « Tout restaurer » avec une Aide administrateur qui ne répond pas : la sauvegarde garde ce qui n'a pas pu être
 #      remis, seules les entrées vraiment remises de l'historique sont marquées annulées, et « Réessayer » finit le travail ;
 #      Puis les couleurs d'un pack de thème : seulement « #RRGGBB », sinon le thème de base (audit du 25/10, constat 7) ;
-#   4. les minuteries importantes (ordres de Mindset, thème de la suite, attente, écran) sont protégées de l'intérieur.
+#   4. les minuteries importantes (ordres de Mindset, thème de la suite, attente, écran) sont protégées de l'intérieur ;
+#   5. le mode jeu : les applis fermées pendant la partie sont écrites dans les données et relancées au lancement suivant
+#      si Nevermind a planté pendant le jeu (audit du 25/10, constat 13).
 # Le code de Nevermind n'est pas chargé en entier : seules les fonctions utiles sont lues dans les modules, et tout ce qui
 # pourrait toucher au PC (registre, Aide, services, alimentation) est remplacé par une fausse version.
 # Code de sortie : 0 si tout passe, 1 sinon.
@@ -287,6 +289,97 @@ try {
         $protegee = $st.Count -eq 1 -and $st[0] -is [System.Management.Automation.Language.TryStatementAst]
         Test-Ok ([bool]$protegee) "Minuterie « $($m[2]) » ($($m[0]).ps1) : protégée de l'intérieur (try/catch)"
     }
+
+    # -----------------------------------------------------------------------
+    # 5. Mode jeu (audit du 25/10, constat 13) : les applis fermées pendant la partie sont écrites dans les données ;
+    #    si Nevermind plante pendant le jeu, son lancement suivant relance ce qui ne l'a pas été. Faux programmes : rien
+    #    n'est fermé ni lancé sur le PC.
+    # -----------------------------------------------------------------------
+    $astJeu = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $modules 'jeu.ps1'), [ref]$null, [ref]$null)
+    $defApps = $astJeu.Find({ param($x) $x -is [System.Management.Automation.Language.AssignmentStatementAst] -and $x.Left.Extent.Text -eq '$GameModeApps' -and $x.Parent -eq $astJeu.EndBlock }, $true)
+    Invoke-Expression $defApps.Extent.Text
+    $GameModeFile = Join-Path $script:Bac 'mode-jeu.json'
+    foreach ($n in 'Start-GameSession', 'Stop-GameSession', 'Save-GameModePending', 'Clear-GameModePending', 'Restart-GameModeApps', 'Resume-GameModePending') {
+        $def = $astJeu.Find({ param($x) $x -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $n }, $false)
+        if ($def) { Invoke-Expression ($def.Extent.Text -replace "^function\s+$([regex]::Escape($n))", "function script:$n") } else { Write-Host "Info : $n absent de jeu.ps1" }
+    }
+    # Faux PC : la liste des programmes ouverts, les lancements notés, les fermetures par la règle commune simulées
+    $script:FauxProcs = New-Object System.Collections.ArrayList
+    function New-FauxProc([string]$Nom, [int]$Id, [string]$Chemin) { [void]$script:FauxProcs.Add([pscustomobject]@{ ProcessName = $Nom; Id = $Id; Path = $Chemin }) }
+    function script:Get-Process { param([string]$Name, [int]$Id, $ErrorAction)
+        $r = @($script:FauxProcs | Where-Object { (-not $Name -or $_.ProcessName -eq $Name) -and (-not $Id -or $_.Id -eq $Id) })
+        if ($Id -and -not $r.Count -and $ErrorAction -eq 'Stop') { throw "Aucun processus $Id" }
+        $r }
+    function script:Stop-ProcessusRegle($Processus, [string]$Chemin, $Contexte) { foreach ($p in @($Processus)) { $script:FauxProcs.Remove($p) }; @{ Fermes = @($Processus).Count; Aide = 0; Refus = @() } }
+    function script:Get-AideContexte { @{} }
+    function script:Get-AideReference($P) { $null }
+    $script:Lances = New-Object System.Collections.Generic.List[string]
+    function script:Start-Unelevated([string]$Path, [string]$Arguments) { $script:Lances.Add("$Path|$Arguments") }
+    $script:Bulles = New-Object System.Collections.Generic.List[string]
+    function script:Show-Notify([string]$Titre, [string]$Texte) { $script:Bulles.Add("$Titre|$Texte") }
+    foreach ($n in 'Update-GameModeStatus', 'Update-LibraryIfShown', 'Stop-FpsTarget', 'Add-PlayTime') { Set-Item "function:script:$n" {} }
+    function script:Test-FpsMeasure { $false }
+    function script:Test-LagMeasure { $false }
+    function script:Get-GameModeSelection { @('onedrive', 'teams') }
+    function script:Get-Setting([string]$Name, $Default = $null) { if ($Name -eq 'GameMode') { $true } else { $Default } }
+    $od = 'C:\Users\Joueur\AppData\Local\Microsoft\OneDrive\OneDrive.exe'; $tm = 'C:\Users\Joueur\AppData\Local\Microsoft\Teams\ms-teams.exe'
+    function Start-PartieEssai([bool]$JeuReste) {
+        $script:FauxProcs.Clear(); $script:Lances.Clear(); $script:Bulles.Clear()
+        New-FauxProc 'OneDrive' 101 $od; New-FauxProc 'ms-teams' 102 $tm; New-FauxProc 'jeu' 4242 'D:\Jeux\jeu.exe'
+        $script:GameSession = $null
+        Start-GameSession 'Jeu d''essai' @($script:FauxProcs | Where-Object { $_.Id -eq 4242 })[0]
+        # Nevermind plante : sa mémoire est perdue ; la partie est finie ou non quand il est relancé
+        $script:GameSession = $null; $script:GameModeRepris = $false
+        if (-not $JeuReste) { $script:FauxProcs.Remove(@($script:FauxProcs | Where-Object { $_.Id -eq 4242 })[0]) }
+    }
+    $attendus = "$od|/background,$tm|"
+    try {
+        # Partie normale : la liste est écrite pendant le jeu, effacée à la fin (applis relancées comme avant)
+        $script:FauxProcs.Clear(); $script:Lances.Clear()
+        New-FauxProc 'OneDrive' 101 $od; New-FauxProc 'jeu' 4242 'D:\Jeux\jeu.exe'
+        $script:GameSession = $null
+        Start-GameSession 'Jeu d''essai' @($script:FauxProcs | Where-Object { $_.Id -eq 4242 })[0]
+        $j = Read-JsonSur $GameModeFile
+        Test-Ok ($j -and @($j.Closed).Count -eq 1 -and $j.Closed[0].Id -eq 'onedrive' -and $j.Closed[0].Path -eq $od) 'Mode jeu : les applis fermées ne sont pas écrites dans les données pendant la partie'
+        Stop-GameSession
+        Test-Ok (($script:Lances -join ',') -eq "$od|/background") "Mode jeu : fin de partie, OneDrive pas relancé comme avant ($($script:Lances -join ','))"
+        Test-Ok (-not [IO.File]::Exists($GameModeFile) -and -not [IO.File]::Exists("$GameModeFile.bak")) 'Mode jeu : la liste reste dans les données après une fin de partie normale'
+
+        # Nevermind plante pendant la partie, relancé après le jeu : les applis sont relancées à son lancement
+        Start-PartieEssai $false
+        Test-Ok (-not $script:Lances.Count) 'Mode jeu : une appli est relancée pendant la partie'
+        try { Resume-GameModePending } catch { Test-Ok $false "Mode jeu : reprise en erreur ($($_.Exception.Message))" }
+        Test-Ok (($script:Lances -join ',') -eq $attendus) "Mode jeu : après un plantage, applis relancées au lancement suivant : « $($script:Lances -join ',') » au lieu de « $attendus »"
+        Test-Ok (-not [IO.File]::Exists($GameModeFile) -and -not [IO.File]::Exists("$GameModeFile.bak")) 'Mode jeu : la liste reste dans les données après la reprise (relancées à chaque lancement)'
+        Test-Ok (@($script:Bulles | Where-Object { $_ -eq 'Fin du mode jeu|Les applis fermées ont été relancées.' }).Count -eq 1) "Mode jeu : la bulle de fin n'est pas montrée à la reprise ($($script:Bulles -join ' / '))"
+        $script:Lances.Clear(); $script:GameModeRepris = $false
+        Resume-GameModePending
+        Test-Ok (-not $script:Lances.Count) 'Mode jeu : applis relancées une 2e fois au lancement d''après'
+
+        # Une appli déjà rouverte par l'utilisateur n'est pas lancée deux fois
+        Start-PartieEssai $false
+        New-FauxProc 'OneDrive' 103 $od
+        Resume-GameModePending
+        Test-Ok (($script:Lances -join ',') -eq "$tm|") "Mode jeu : une appli déjà rouverte est relancée ($($script:Lances -join ','))"
+
+        # Nevermind relancé pendant la partie : rien n'est lancé tout de suite, la partie reprend et les applis reviennent à sa fin
+        Start-PartieEssai $true
+        Resume-GameModePending
+        Test-Ok (-not $script:Lances.Count -and $script:GameSession -and $script:GameSession.Pid -eq 4242 -and @($script:GameSession.Closed).Count -eq 2) 'Mode jeu : relancé pendant la partie, la partie n''est pas reprise (ou les applis sont relancées en plein jeu)'
+        Stop-GameSession
+        Test-Ok (($script:Lances -join ',') -eq $attendus -and -not [IO.File]::Exists($GameModeFile)) "Mode jeu : partie reprise, applis pas relancées à sa fin ($($script:Lances -join ','))"
+
+        # Fichier modifié par un autre programme : rien d'autre que les applis de la liste, au nom attendu, avec leurs arguments
+        $script:Lances.Clear(); $script:Bulles.Clear(); $script:FauxProcs.Clear(); $script:GameModeRepris = $false; $script:GameSession = $null
+        Save-JsonSur $GameModeFile @{ Game = 'x'; Pid = 1; Proc = 'x'; Start = (Get-Date).ToString('o'); Closed = @(
+            @{ Id = 'onedrive'; Name = 'OneDrive'; Path = 'C:\Users\Joueur\Downloads\virus.exe'; Args = '/piege' },
+            @{ Id = 'inconnu'; Name = 'Autre'; Path = 'C:\Users\Joueur\Downloads\autre.exe' },
+            @{ Id = 'teams'; Name = 'Microsoft Teams'; Path = $tm; Args = '/piege' }) } 4
+        Resume-GameModePending
+        Test-Ok (($script:Lances -join ',') -eq "$tm|") "Mode jeu : un fichier modifié fait lancer autre chose ($($script:Lances -join ','))"
+        Test-Ok (@($script:Bulles | Where-Object { $_ -eq 'Fin du mode jeu|Relance toi-même : OneDrive.' }).Count -eq 1) "Mode jeu : l'appli refusée n'est pas signalée à relancer à la main ($($script:Bulles -join ' / '))"
+    } catch { Test-Ok $false "Mode jeu : $($_.Exception.Message) (ligne $($_.InvocationInfo.ScriptLineNumber))" }
+    Remove-Item function:script:Get-Process
 }
 catch {
     $echecs.Add("Arrêt inattendu : $($_.Exception.Message) (ligne $($_.InvocationInfo.ScriptLineNumber))")
