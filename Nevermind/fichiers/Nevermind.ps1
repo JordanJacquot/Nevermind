@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    Nevermind 1.14.2
+    Nevermind 1.14.3
     Analyse et optimisation gaming pour Windows 10 et 11.
 
     Chaque réglage modifié est sauvegardé dans %LOCALAPPDATA%\OptiGame\sauvegarde.json
@@ -13,7 +13,7 @@
 param([switch]$Uninstall, [switch]$Demarrage, [switch]$GarderDonnees, [switch]$SupprimerDonnees)   # -Demarrage : lancé avec Windows, réduit près de l'horloge ;
 # -GarderDonnees / -SupprimerDonnees : le choix des données à la désinstallation, sans question (voir systeme.ps1)
 
-$AppVersion = '1.14.2'
+$AppVersion = '1.14.3'
 $UpdateRepo = 'JordanJacquot/Nevermind'   # dépôt GitHub où sont publiées les mises à jour
 
 # ---------------------------------------------------------------------------
