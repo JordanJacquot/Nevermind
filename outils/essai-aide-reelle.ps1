@@ -1049,12 +1049,10 @@ function Get-EtatMachine($Carte, $Services) {
     }
     $etat["service en marche|$($Services.Telemetrie)"] = [string](Get-Service -Name $Services.Telemetrie -ErrorAction SilentlyContinue).Status
     foreach ($b in 'Tcpip', 'Tcpip6') { $etat["dns|$b|$($Carte.Nom)"] = Get-TexteReg "HKLM:\SYSTEM\CurrentControlSet\Services\$b\Parameters\Interfaces\$($Carte.Guid)" 'NameServer' }
-    $regles = @(foreach ($n in 'Nevermind : bloque *', 'OptiGame : bloque *') {
-        foreach ($g in @(Get-NetFirewallRule -DisplayName $n -ErrorAction SilentlyContinue)) {
-            $prog = [string](Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $g -ErrorAction SilentlyContinue).Program
-            $svc = [string](Get-NetFirewallServiceFilter -AssociatedNetFirewallRule $g -ErrorAction SilentlyContinue).Service
-            "$($g.DisplayName) / $($g.Direction) / $($g.Action) / actif $($g.Enabled) / profil $($g.Profile) / $prog / service $svc"
-        }
+    $regles = @(foreach ($g in @(Get-NetFirewallRule -DisplayName 'Nevermind : bloque *' -ErrorAction SilentlyContinue)) {
+        $prog = [string](Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $g -ErrorAction SilentlyContinue).Program
+        $svc = [string](Get-NetFirewallServiceFilter -AssociatedNetFirewallRule $g -ErrorAction SilentlyContinue).Service
+        "$($g.DisplayName) / $($g.Direction) / $($g.Action) / actif $($g.Enabled) / profil $($g.Profile) / $prog / service $svc"
     })
     $etat['pare-feu|règles de Nevermind'] = if ($regles.Count) { (@($regles | Sort-Object) -join ' ; ') } else { 'aucune' }
     $etat['pare-feu|profils'] = (@(Get-NetFirewallProfile -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object { "$($_.Name) $($_.Enabled)" }) -join ' ; ')
@@ -1185,7 +1183,7 @@ function Test-Cas10 {
     $n = 0
     foreach ($x in $liste) {
         $n++
-        $p = Invoke-Passage $x "passage $n : $(if ($x) { $x } else { 'NevermindAide.exe des paquets' })"
+        $p = @(Invoke-Passage $x "passage $n : $(if ($x) { $x } else { 'NevermindAide.exe des paquets' })")[-1]
         $passages.Add($p)
         Write-Utf8 (Join-Path $Sorties "optimiser-restaurer-$n.json") ($p | ConvertTo-Json -Depth 6)
         $t = "passage $n"
