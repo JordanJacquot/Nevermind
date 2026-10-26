@@ -264,7 +264,10 @@ function Reset-Machine {
 # L'installateur de Mindset (installer-admin.ps1 -Action appli, en administrateur, comme une demande de Windows acceptée)
 function Install-Appli([string]$Installateur, [string]$Zip, [string]$Sid, [string]$DossierZip = 'Nevermind') {
     $f = Join-Path $Sorties "install-$([guid]::NewGuid().ToString('N').Substring(0, 8)).json"
-    & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -File $Installateur -Action appli -Zip $Zip -Signature "$Zip.sig" -Destination $NevermindC -DossierZip $DossierZip -Exe Nevermind.exe -TacheAide $NomTache -ExeAide NevermindAide.exe -Sid $Sid -Resultat $f | Out-Host
+    # (depuis le lot 1 de l'audit du 25/10, l'installateur de Mindset prend l'appli dans son apps.json : -Appli ; les
+    # anciens, 2.10.0 et 2.12.0, ne connaissent pas ce paramètre)
+    $appli = @(if ([IO.File]::ReadAllText($Installateur, [Text.Encoding]::UTF8) -match '\[string\]\$Appli\b') { '-Appli', 'nevermind' })
+    & $PowerShellExe -NoProfile -ExecutionPolicy Bypass -File $Installateur -Action appli @appli -Zip $Zip -Signature "$Zip.sig" -Destination $NevermindC -DossierZip $DossierZip -Exe Nevermind.exe -TacheAide $NomTache -ExeAide NevermindAide.exe -Sid $Sid -Resultat $f | Out-Host
     $r = Read-Json $f
     Write-Host "         | installation de $(Split-Path $Zip -Leaf) (installateur $Installateur) : $($r.ok) $($r.message)" -ForegroundColor DarkGray
     $r
