@@ -93,6 +93,14 @@ if (-not $Essai) {
     $avant = [Console]::OutputEncoding
     try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false); $sale = @(& git -C $racine -c core.quotepath=false status --porcelain 2>$null | Where-Object { $_ }) }
     finally { [Console]::OutputEncoding = $avant }
+    # (une publication arrêtée en route, par exemple un mot de passe mal tapé, laisse seulement le numéro de version écrit
+    # dans ces deux fichiers : on les remet comme dans git, ils sont réécrits juste après)
+    $siens = @('Nevermind/fichiers/Nevermind.ps1', 'Nevermind/LISEZMOI.txt')
+    if ($sale.Count -and -not @($sale | Where-Object { $_ -notmatch '^ M ' -or $siens -notcontains $_.Substring(3).Trim('"') }).Count) {
+        Invoke-Native 'git' @('-C', $racine, 'checkout', '--', $siens[0], $siens[1]) | Out-Null
+        Write-Host 'Le numéro de version laissé par une publication arrêtée en route est remis comme dans git.'
+        $sale = @()
+    }
     if ($sale.Count) { throw "Publication annulée : des fichiers ne sont pas commités ($(($sale | Select-Object -First 5) -join ' ; ')). Commite-les d'abord : la version publiée est celle de git." }
 }
 
