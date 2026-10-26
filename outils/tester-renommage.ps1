@@ -58,6 +58,7 @@ New-Item -ItemType Directory -Force -Path $bac | Out-Null
 # ---------------------------------------------------------------------------
 # Fichier => nombre de lignes où l'ancien nom reste, et pourquoi
 $Gardees = [ordered]@{
+    'cas/aide/demandes.json'                       = @(1, 'corpus de cas de l''Aide : règle du pare-feu à l''ancien nom')
     '.gitignore'                                   = @(3, 'le zip de compatibilité OptiGame.zip (et sa signature), produit par la construction')
     'Nevermind/fichiers/Désinstaller Nevermind (secours).bat' = @(2, 'script à l''ancien nom dans le zip de compatibilité')
     'Nevermind/fichiers/Lancer Nevermind (secours).bat' = @(2, 'script à l''ancien nom dans le zip de compatibilité')
@@ -75,7 +76,6 @@ $Gardees = [ordered]@{
     'outils/publier.ps1'                           = @(7, 'publie aussi le zip de compatibilité, et vérifie son contenu')
     'outils/test-app.ps1'                          = @(5, 'test : aucun « OptiGame » affiché ; règle à l''ancien nom ; ancien dossier de données')
     'outils/tester-aide-systeme.ps1'               = @(4, 'contre-épreuves : fichiers de versions d''avant, relus dans git sous leur ancien chemin')
-    'outils/tester-aide.ps1'                       = @(1, 'règle du pare-feu à l''ancien nom')
     'outils/tester-desinstallation.ps1'            = @(1, 'ancienne tâche de démarrage')
     'outils/tester-reseau.ps1'                     = @(1, 'test : aucun « OptiGame » affiché')
     'outils/tester.ps1'                            = @(2, 'ancien dossier de données (lecture seule)')
