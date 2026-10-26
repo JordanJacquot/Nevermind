@@ -108,3 +108,8 @@ jobs:
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-fps.ps1
           exit $LASTEXITCODE
+
+      - name: "Panneau et fiche de l'écran (détail du trafic et « Ce que Windows envoie à Microsoft » rouverts après un départ par un onglet)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-panneau.ps1
+          exit $LASTEXITCODE

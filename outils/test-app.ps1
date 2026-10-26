@@ -1430,6 +1430,83 @@ $script:T.Run.Add_Tick({
                 Stop-TrafficWatch
                 "$($real.Count) programmes connectés vus en vrai, alertes simulées correctes, $lookup, comptage des octets : $(if ([TrafficMon]::CountersOk) { 'actif' } else { 'indisponible sans droits admin' })"
             }
+            Test-Step 'Console : détails du trafic et fiches, rouverts après un départ par un onglet' {
+                # Bug signalé : dans la page Trafic, le détail d'un programme (trafic-app:N) et « Ce que Windows envoie à
+                # Microsoft » (Voir) ne montraient plus rien. Le geste était traité, le panneau rempli, mais l'écran
+                # n'y menait qu'à la première ouverture : un panneau quitté par un onglet du haut (ou le logo) restait
+                # ouvert derrière, et les suivants ne s'affichaient plus. Même chose pour les fiches (Ton PC).
+                $attendre = { param($e, $s) $fin = (Get-Date).AddSeconds($s); while ($script:Vue.Ecran -ne $e -and (Get-Date) -lt $fin) { Wait-TestMs 100 }; $script:Vue.Ecran -eq $e }
+                $etat = { "écran « $($script:Vue.Ecran) », panneau d'avant $($ui.TestOverlay.Visibility), fiche d'avant $($ui.Overlay.Visibility)" }
+                if (-not $script:Traffic) { $script:Traffic = New-TrafficState }
+                $st = $script:Traffic
+                $st.Apps['test:detail'] = @{ Key = 'test:detail'; Name = 'essai'; Path = 'C:\Program Files\Essai\essai.exe'; Title = 'Programme d''essai'; OutClosed = 0; InClosed = 0; Out = [double]50GB; In = [double]1MB; Rate = 0; LastOut = 0
+                    Dest = @{ '203.0.113.5|443' = @{ Remote = '203.0.113.5'; Port = 443; Out = [double]50GB; In = [double]1MB; OutClosed = 0; InClosed = 0; Live = $true; Private = $false } }
+                    Ports = @{}; Udp = $false; Pids = @{}; Sig = 'Valid'; Publisher = 'Essai'; Icon = $null; IsSelf = $false; Live = 1 }
+                try {
+                    $fin = (Get-Date).AddSeconds(8); while ((-not $script:Vue.Pret -or $ui.EcranKit.Visibility -ne 'Visible') -and (Get-Date) -lt $fin) { Wait-TestMs 100 }
+                    Assert-Test ($script:Vue.Pret) 'écran de la console pas prêt'
+                    if ($ui.TestOverlay.Visibility -eq 'Visible') { Hide-TestPanel }
+                    if ($ui.Overlay.Visibility -eq 'Visible') { Close-Sheet }
+                    Wait-TestMs 400
+                    Show-Page $TrafficIndex
+                    Assert-Test (& $attendre 'trafic' 5) "page Trafic pas ouverte ($(& $etat))"
+                    $script:Kit.Envoye = ''; Update-EcranNevermind
+                    $k = [array]::IndexOf(@($script:Kit.TraficApps | ForEach-Object { $_.Key }), 'test:detail')
+                    Assert-Test ($k -ge 0) 'programme d''essai absent de la page Trafic'
+                    # Le détail d'un programme, deux fois : chaque fois on part par l'onglet du haut, sans Retour ni Fermer
+                    foreach ($n in 1, 2) {
+                        Receive-MessageVue ('{"type":"action","id":"trafic-app:' + $k + '","ecran":"trafic"}')
+                        Assert-Test (& $attendre 'panneau' 5) "détail du programme, fois $n : rien ne s'affiche ($(& $etat))"
+                        Assert-Test ($script:Kit.Panneau.titre -eq 'Programme d''essai') "détail du programme, fois $n : titre « $($script:Kit.Panneau.titre) »"
+                        if ($n -eq 2 -and $script:T.Captures) {
+                            $script:T.Vu = $false
+                            Save-CaptureVue (Join-Path $script:T.Dir 'captures\console-trafic-detail.png') { param($ok) $script:T.Vu = $true }
+                            $fin = (Get-Date).AddSeconds(5); while (-not $script:T.Vu -and (Get-Date) -lt $fin) { Wait-TestMs 50 }
+                        }
+                        Open-EcranVue 'perf'
+                        Assert-Test (& $attendre 'perf' 4) "onglet Performances pas ouvert ($(& $etat))"
+                        Wait-TestMs 400
+                        Assert-Test ($ui.TestOverlay.Visibility -ne 'Visible') 'le panneau reste ouvert derrière après un départ par un onglet'
+                        Open-EcranVue 'trafic'
+                        Assert-Test (& $attendre 'trafic' 4) "retour sur Trafic impossible ($(& $etat))"
+                    }
+                    # Un panneau qui ne peut pas se fermer en partant (Fermer grisé, comme pendant un test) : le bouton Voir
+                    # de « Ce que Windows envoie à Microsoft » y mène quand même
+                    Receive-MessageVue ('{"type":"action","id":"trafic-app:' + $k + '","ecran":"trafic"}')
+                    Assert-Test (& $attendre 'panneau' 5) "détail du programme, fois 3 : rien ne s'affiche ($(& $etat))"
+                    $ui.BtnTestClose.IsEnabled = $false
+                    try { Open-EcranVue 'trafic'; Assert-Test (& $attendre 'trafic' 4) "retour sur Trafic impossible ($(& $etat))"; Wait-TestMs 400 } finally { $ui.BtnTestClose.IsEnabled = $true }
+                    Assert-Test ($ui.TestOverlay.Visibility -eq 'Visible') 'le panneau d''essai s''est fermé alors que Fermer était grisé'
+                    Receive-MessageVue '{"type":"action","id":"trafic-microsoft","ecran":"trafic"}'
+                    Assert-Test (& $attendre 'panneau' 5) "Ce que Windows envoie à Microsoft : rien ne s'affiche ($(& $etat))"
+                    Assert-Test ($script:Kit.Panneau.titre -eq 'Ce que Windows envoie à Microsoft') "Ce que Windows envoie à Microsoft : titre « $($script:Kit.Panneau.titre) »"
+                    Assert-Test ($script:Kit.Panneau.parent -eq 'trafic') "Ce que Windows envoie à Microsoft : page d'origine « $($script:Kit.Panneau.parent) »"
+                    # Fermer ramène sur Trafic
+                    Receive-MessageVue '{"type":"action","id":"panneau:close","ecran":"panneau"}'
+                    Assert-Test (& $attendre 'trafic' 4) "Fermer : $(& $etat)"
+                    Assert-Test ($ui.TestOverlay.Visibility -ne 'Visible') 'Fermer : le panneau reste ouvert'
+                    $detail = 'détail d''un programme ouvert 3 fois (départ par un onglet entre chaque), puis « Ce que Windows envoie à Microsoft » derrière un panneau resté ouvert, Fermer ramène sur Trafic'
+                    # Les fiches (Ton PC) : même chose
+                    $f = @($script:LastAnalysis.Findings | Where-Object { $_ -and $_.Titre })
+                    if ($f.Count) {
+                        foreach ($n in 1, 2) {
+                            Open-Sheet @($f[0])
+                            Assert-Test (& $attendre 'fiche' 5) "fiche, fois $n : rien ne s'affiche ($(& $etat))"
+                            Open-EcranVue 'perf'
+                            Assert-Test (& $attendre 'perf' 4) "onglet Performances pas ouvert ($(& $etat))"
+                            Wait-TestMs 400
+                            Assert-Test ($ui.Overlay.Visibility -ne 'Visible') 'la fiche reste ouverte derrière après un départ par un onglet'
+                        }
+                        $detail += " ; fiche « $($f[0].Titre) » ouverte 2 fois de la même façon"
+                    } else { $detail += ' ; pas de constat pour essayer les fiches' }
+                    $detail
+                } finally {
+                    $st.Apps.Remove('test:detail')
+                    if ($ui.TestOverlay.Visibility -eq 'Visible') { Hide-TestPanel }
+                    if ($ui.Overlay.Visibility -eq 'Visible') { Close-Sheet }
+                    Show-Page $HubIndex; Open-EcranVue 'accueil'; Wait-TestMs 300
+                }
+            }
             Test-Step 'Page Tests' {
                 # (la page de la console prépare les tuiles en y arrivant : Build-TestsTab, ecran-divers.ps1)
                 Show-Page 5; Wait-TestMs 1500

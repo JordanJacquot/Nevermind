@@ -193,6 +193,7 @@ function Register-ActionsNevermind {
     # Les pages lourdes (profils par jeu...) ne sont préparées qu'à l'écran : en y arrivant, l'écran est refait
     # (la page RAM lance son constat en y arrivant la première fois : en tâche de fond, avec la pastille « en cours »)
     Register-ActionVue 'ecran' { param($Id, $Rien)
+        try { Close-QuitteKit $Id } catch { Write-Log "Écran : $_" }   # (le panneau ou la fiche quittés par une autre page : ecran-panneau.ps1)
         if ($Id -eq 'memoire' -and -not $script:Kit.Memoire -and -not $script:Kit.MemoireEnCours) { Invoke-Safe { Start-ConstatMemoire }; try { Update-EcranNevermind } catch { Write-Log "Écran : $_" }; return }
         if ($script:Kit.PagesLourdes -contains $Id) { try { Update-EcranNevermind } catch { Write-Log "Écran : $_" } }
     }

@@ -199,27 +199,60 @@ function Get-PanneauKit {
         module = $module; blocs = @($blocs) }
 }
 
+# Chaque ouverture du panneau (Show-TestPanel : détail d'un programme du trafic, « Ce que Windows envoie à Microsoft »,
+# test d'un composant, partie mesurée...) est comptée : l'écran y mène à chaque fois, même si le panneau d'avant est
+# encore ouvert derrière (voir Update-PanneauKit et Close-QuitteKit).
+$script:KitShowTestPanel = ${function:Show-TestPanel}
+function Show-TestPanel($Tile) {
+    $script:Kit.PanneauNumero = [int]$script:Kit.PanneauNumero + 1
+    & $script:KitShowTestPanel $Tile
+}
+
 # Appelé toutes les 200 ms (Update-EcranKitVisible) : le panneau ouvert est montré et suivi (test en cours, ping...)
+# Un panneau rouvert alors que l'écran montre une autre page (le précédent pas fermé par Retour ou Fermer) y mène aussi :
+# avant, seule la première ouverture menait au panneau, et les boutons qui l'ouvrent ensuite ne montraient plus rien.
 function Update-PanneauKit {
     $ouvert = $ui.TestOverlay.Visibility -eq 'Visible'
     if ($ouvert) {
         # (les images sont refaites au plus une fois par seconde : le reste est relu à chaque fois)
         $maintenant = Get-Date
-        if ($script:Kit.PanneauOuvert -and $script:Kit.PanneauVu -and ($maintenant - $script:Kit.PanneauVu).TotalMilliseconds -lt 900) { return }
+        $nouveau = $script:Kit.PanneauNumero -ne $script:Kit.PanneauNumeroVu
+        if (-not $nouveau -and $script:Kit.PanneauOuvert -and $script:Kit.PanneauVu -and ($maintenant - $script:Kit.PanneauVu).TotalMilliseconds -lt 900) { return }
         $script:Kit.PanneauVu = $maintenant
         $p = Get-PanneauKit
         $cle = $p | ConvertTo-Json -Depth 8 -Compress
-        if ($cle -eq $script:Kit.PanneauCle) { return }
-        $script:Kit.PanneauCle = $cle; $script:Kit.Panneau = $p
-        $premiere = -not $script:Kit.PanneauOuvert
-        if ($premiere) { $script:Kit.PanneauOuvert = $true; $script:Kit.PanneauDe = $(if ($script:Vue.Ecran) { $script:Vue.Ecran } else { 'accueil' }); $p.parent = $(if ($script:Kit.PanneauDe -notin 'accueil', 'panneau', 'fiche') { $script:Kit.PanneauDe }) }
+        if ($cle -eq $script:Kit.PanneauCle -and -not $nouveau) { return }
+        $script:Kit.PanneauCle = $cle; $script:Kit.Panneau = $p; $script:Kit.PanneauNumeroVu = $script:Kit.PanneauNumero
+        $aller = -not $script:Kit.PanneauOuvert -or ($nouveau -and $script:Vue.Ecran -ne 'panneau')
+        if ($aller) { $script:Kit.PanneauOuvert = $true; $script:Kit.PanneauDe = $(if ($script:Vue.Ecran) { $script:Vue.Ecran } else { 'accueil' }); $p.parent = $(if ($script:Kit.PanneauDe -notin 'accueil', 'panneau', 'fiche') { $script:Kit.PanneauDe }) }
         Update-EcranNevermind
-        if ($premiere) { Open-EcranVue 'panneau' }
+        if ($aller) { Open-EcranVue 'panneau' }
     } elseif ($script:Kit.PanneauOuvert) {
-        $script:Kit.PanneauOuvert = $false; $script:Kit.Panneau = $null; $script:Kit.PanneauCle = ''; $script:Kit.PanneauVu = $null
+        $script:Kit.PanneauOuvert = $false; $script:Kit.Panneau = $null; $script:Kit.PanneauCle = ''; $script:Kit.PanneauVu = $null; $script:Kit.PanneauMontre = $false
         $de = $script:Kit.PanneauDe
         if ($script:Vue.Ecran -eq 'panneau') { Open-EcranVue $(if ($de -and $de -notin 'panneau', 'fiche') { $de } else { 'accueil' }) }
         Update-EcranNevermind
+    }
+}
+
+# L'écran a changé de page (message « ecran ») : le panneau ou la fiche quittés autrement que par Retour ou Fermer
+# (onglet du haut, logo, recherche...) sont fermés comme par Retour, pour ne pas rester ouverts derrière (ping en direct,
+# mesures rapides). Pas pendant un test (Fermer est alors grisé), ni la vérification de l'écran après un changement de
+# fréquence (elle revient d'elle-même en arrière). Aller du panneau à une fiche (ou l'inverse) les garde.
+function Close-QuitteKit([string]$Id) {
+    if ($Id -eq 'panneau') { $script:Kit.PanneauMontre = $true; return }
+    if ($Id -eq 'fiche') { $script:Kit.FicheMontree = $true; return }
+    if ($script:Kit.PanneauMontre) {
+        $script:Kit.PanneauMontre = $false
+        if ($ui.TestOverlay.Visibility -eq 'Visible' -and $ui.BtnTestClose.IsEnabled) { Write-Log "Écran : panneau quitté par la page $Id, fermé"; Invoke-BoutonKit 'BtnTestClose' }
+    }
+    if ($script:Kit.FicheMontree) {
+        $script:Kit.FicheMontree = $false
+        if ($ui.Overlay.Visibility -eq 'Visible' -and $script:SheetMode -ne 'display') {
+            Write-Log "Écran : fiche quittée par la page $Id"
+            if ($ui.SheetClose.Visibility -eq 'Visible') { if ($ui.SheetClose.IsEnabled) { Invoke-BoutonKit 'SheetClose' } }
+            elseif ($script:SheetMode -eq 'tour') { Close-Sheet }
+        }
     }
 }
 

@@ -232,24 +232,33 @@ function Get-FicheKit {
         blocs = @($blocs) + $bas }
 }
 
+# Chaque ouverture d'une fiche (Open-Sheet : un point à régler, un constat) est comptée : l'écran y mène à chaque fois,
+# même si la fiche d'avant est encore ouverte derrière (comme le panneau, voir Update-PanneauKit)
+$script:KitOpenSheet = ${function:Open-Sheet}
+function Open-Sheet($Items) {
+    $script:Kit.FicheNumero = [int]$script:Kit.FicheNumero + 1
+    & $script:KitOpenSheet $Items
+}
+
 # Appelé toutes les 200 ms (Update-EcranKitVisible) : la fiche ouverte est montrée, et suivie (compte à rebours...)
 function Update-FicheKit {
     $ouverte = $ui.Overlay.Visibility -eq 'Visible'
     if ($ouverte) {
         # (relue au plus une fois toutes les 900 ms, sauf dans les 2 s après un geste : la fiche répond tout de suite)
         $maintenant = Get-Date
-        if ($script:Kit.FicheOuverte -and $script:Kit.FicheVu -and ($maintenant - $script:Kit.FicheVu).TotalMilliseconds -lt 900 -and ($maintenant - $script:Kit.Geste).TotalSeconds -gt 2) { return }
+        $nouvelle = $script:Kit.FicheNumero -ne $script:Kit.FicheNumeroVu
+        if (-not $nouvelle -and $script:Kit.FicheOuverte -and $script:Kit.FicheVu -and ($maintenant - $script:Kit.FicheVu).TotalMilliseconds -lt 900 -and ($maintenant - $script:Kit.Geste).TotalSeconds -gt 2) { return }
         $script:Kit.FicheVu = $maintenant
         $f = Get-FicheKit
         $cle = $f | ConvertTo-Json -Depth 8 -Compress
-        if ($cle -eq $script:Kit.FicheCle) { return }
-        $script:Kit.FicheCle = $cle; $script:Kit.Fiche = $f
-        $premiere = -not $script:Kit.FicheOuverte
-        if ($premiere) { $script:Kit.FicheOuverte = $true; $script:Kit.FicheDe = $(if ($script:Vue.Ecran) { $script:Vue.Ecran } else { 'accueil' }); $f.parent = $(if ($script:Kit.FicheDe -notin 'accueil', 'fiche') { $script:Kit.FicheDe }) }
+        if ($cle -eq $script:Kit.FicheCle -and -not $nouvelle) { return }
+        $script:Kit.FicheCle = $cle; $script:Kit.Fiche = $f; $script:Kit.FicheNumeroVu = $script:Kit.FicheNumero
+        $aller = -not $script:Kit.FicheOuverte -or ($nouvelle -and $script:Vue.Ecran -ne 'fiche')
+        if ($aller) { $script:Kit.FicheOuverte = $true; $script:Kit.FicheDe = $(if ($script:Vue.Ecran) { $script:Vue.Ecran } else { 'accueil' }); $f.parent = $(if ($script:Kit.FicheDe -notin 'accueil', 'fiche') { $script:Kit.FicheDe }) }
         Update-EcranNevermind
-        if ($premiere) { Open-EcranVue 'fiche' }
+        if ($aller) { Open-EcranVue 'fiche' }
     } elseif ($script:Kit.FicheOuverte) {
-        $script:Kit.FicheOuverte = $false; $script:Kit.Fiche = $null; $script:Kit.FicheCle = ''; $script:Kit.FicheVu = $null
+        $script:Kit.FicheOuverte = $false; $script:Kit.Fiche = $null; $script:Kit.FicheCle = ''; $script:Kit.FicheVu = $null; $script:Kit.FicheMontree = $false
         $de = $script:Kit.FicheDe
         if ($script:Vue.Ecran -eq 'fiche') { Open-EcranVue $(if ($de -and $de -ne 'fiche') { $de } else { 'accueil' }) }
         Update-EcranNevermind
