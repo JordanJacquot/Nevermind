@@ -1,11 +1,12 @@
 # L'Aide de Nevermind en SYSTEM essayée en vrai sur la machine jetable de GitHub (vraies tâches planifiées, vrais
 # comptes Windows, vraie installation par l'installateur de Mindset), et le changement de nom (cas 8). Lancée à la main seulement :
-#   gh workflow run aide-reelle.yml -f mindset=<branche ou version de Mindset>
+#   gh workflow run aide-reelle.yml -f mindset=<branche ou version de Mindset> [-f aide_ref=<branche de l'Aide en Rust>]
 # Tout le code est dans outils\essai-aide-reelle.ps1 (UTF-8 avec BOM : un nom accentué écrit ici arriverait abîmé).
 #
 # Les NevermindAide.exe jugés (passage en Rust, étape 1a) : le lanceur C# que construit outils\construire.ps1, et, si
-# rust\nevermind-aide existe, l'exe Rust construit dans ce même run. Chacun passe les mêmes cas, sur sa propre machine.
-# Le cas 10 (tout optimiser puis tout restaurer) les passe l'un après l'autre sur la même machine et compare les états.
+# rust\nevermind-aide existe (dans cette branche, ou dans la branche aide_ref), l'exe Rust construit dans ce même run.
+# Chacun passe les mêmes cas, sur sa propre machine. Le cas 10 (tout optimiser puis tout restaurer) les passe l'un après
+# l'autre sur la même machine et compare les états ; le cas 11 lance le banc PowerShell / Rust sous un compte sans droits.
 name: Aide en vrai
 
 on:
@@ -15,6 +16,10 @@ on:
         description: "Branche (ou version) de Mindset dont l'installateur crée la tâche de l'Aide"
         required: false
         default: main
+      aide_ref:
+        description: "Branche de Nevermind d'où vient l'Aide en Rust (et son banc) ; vide : cette branche"
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -34,17 +39,25 @@ jobs:
       - name: Récupérer le dépôt
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: "La branche de l'Aide en Rust (aide_ref)"
+        if: ${{ inputs.aide_ref != '' }}
+        run: |
+          git clone --quiet --depth 1 --branch "${{ inputs.aide_ref }}" https://github.com/JordanJacquot/Nevermind.git _source
+          if ($LASTEXITCODE) { exit 1 }
+          git -C _source log --oneline -1
+
       - name: "Les Aides à juger"
         id: liste
         run: |
-          $rust = Test-Path -LiteralPath 'rust\nevermind-aide\Cargo.toml'
+          $source = if ("${{ inputs.aide_ref }}") { '_source' } else { '.' }
+          $rust = Test-Path -LiteralPath (Join-Path $source 'rust\nevermind-aide\Cargo.toml')
           $aides = if ($rust) { '["lanceur","rust"]' } else { '["lanceur"]' }
           [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "aides=$aides`nrust=$($rust.ToString().ToLower())`n")
           Write-Host "Aides jugées : $aides"
 
       - name: "Rust, la version figée par rust/rust-toolchain.toml"
         if: ${{ steps.liste.outputs.rust == 'true' }}
-        working-directory: rust
+        working-directory: ${{ inputs.aide_ref != '' && '_source/rust' || 'rust' }}
         run: |
           rustup toolchain install
           if ($LASTEXITCODE) { rustup show; if ($LASTEXITCODE) { exit 1 } }
@@ -52,13 +65,14 @@ jobs:
 
       - name: "Construire NevermindAide.exe (cargo build --release --locked)"
         if: ${{ steps.liste.outputs.rust == 'true' }}
-        working-directory: rust
+        working-directory: ${{ inputs.aide_ref != '' && '_source/rust' || 'rust' }}
         run: |
           cargo build --release --locked -p nevermind-aide
           if ($LASTEXITCODE) { exit 1 }
-          New-Item -ItemType Directory -Force -Path ..\_aide | Out-Null
-          Copy-Item -LiteralPath target\release\nevermind-aide.exe -Destination ..\_aide\NevermindAide.exe
-          Write-Host "NevermindAide.exe (Rust) : SHA-256 $((Get-FileHash -LiteralPath ..\_aide\NevermindAide.exe -Algorithm SHA256).Hash)"
+          $d = Join-Path $env:GITHUB_WORKSPACE '_aide'
+          New-Item -ItemType Directory -Force -Path $d | Out-Null
+          Copy-Item -LiteralPath target\release\nevermind-aide.exe -Destination "$d\NevermindAide.exe"
+          Write-Host "NevermindAide.exe (Rust, $(git log --oneline -1)) : SHA-256 $((Get-FileHash -LiteralPath "$d\NevermindAide.exe" -Algorithm SHA256).Hash)"
 
       - name: "Déposer l'exe Rust pour les essais"
         if: ${{ steps.liste.outputs.rust == 'true' }}
@@ -73,7 +87,7 @@ jobs:
     name: "Aide en vrai (${{ matrix.aide }})"
     needs: rust
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -95,6 +109,14 @@ jobs:
         with:
           name: aide-rust
           path: C:\essai-aide\rust
+
+      - name: "Récupérer le banc PowerShell / Rust (outils/tester-aide-rust.ps1 de la branche de l'Aide en Rust)"
+        if: ${{ matrix.aide == 'rust' }}
+        run: |
+          if ("${{ inputs.aide_ref }}") {
+            git clone --quiet --depth 1 --branch "${{ inputs.aide_ref }}" https://github.com/JordanJacquot/Nevermind.git C:\essai-aide\source
+            if ($LASTEXITCODE) { exit 1 }
+          } else { New-Item -ItemType Junction -Path C:\essai-aide\source -Target $PWD | Out-Null }
 
       - name: Récupérer Mindset
         run: |
@@ -157,3 +179,7 @@ jobs:
           path: C:/essai/sorties/optimiser-restaurer-*.json
           if-no-files-found: warn
           retention-days: 14
+
+      - name: "11. Banc PowerShell / Rust sous un compte sans droits (le banc refuse l'administrateur)"
+        if: ${{ !cancelled() && matrix.aide == 'rust' }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 11 -Aide $env:AIDE -Banc C:\essai-aide\source\outils\tester-aide-rust.ps1

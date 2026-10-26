@@ -40,7 +40,9 @@
 #      d'alimentation, tâches) relevé avant, après l'optimisation et après la restauration ; la restauration remet
 #      tout, et deux NevermindAide.exe (-Aides) donnent les mêmes états et les mêmes réponses
 # Code de sortie 1 si un cas échoue.
-param([int]$Cas = -1, [string]$Aide = '', [string]$Aides = '')
+#  11. (avec -Banc <outils\tester-aide-rust.ps1> -Aide <exe Rust>) le banc PowerShell / Rust, qui refuse de tourner en
+#      administrateur : lancé ici sous un compte local sans droits créé pour l'essai
+param([int]$Cas = -1, [string]$Aide = '', [string]$Aides = '', [string]$Banc = '')
 
 if ($env:GITHUB_ACTIONS -ne 'true') {
     Write-Host 'Refusé : cet essai crée des comptes Windows et des tâches planifiées, et installe Nevermind pour de vrai. Il ne tourne que sur la machine jetable de GitHub Actions.' -ForegroundColor Red
@@ -1057,7 +1059,8 @@ function Get-CarteEssai {
 }
 function Get-ServicesEssai {
     $memoire = @(Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(edgeupdate|edgeupdatem|gupdate|gupdatem|MozillaMaintenance|AdobeARMservice|GoogleUpdater(Internal)?Service[\d.]{0,20})$' } |
-        Sort-Object Name | Select-Object -First 4 | ForEach-Object { $_.Name })
+        Where-Object { (Get-TexteReg "HKLM:\SYSTEM\CurrentControlSet\Services\$($_.Name)" 'Start') -ne 'DWord=4' } |
+        Sort-Object Name | Select-Object -First 4 | ForEach-Object { $_.Name })   # (pas un service désactivé : l'Aide ne remet jamais « Désactivé »)
     @{ Telemetrie = 'DiagTrack'; Memoire = $memoire }
 }
 # L'état de la machine : tout ce que l'Aide peut toucher (et des témoins qu'elle ne doit jamais toucher), en textes
@@ -1069,7 +1072,12 @@ function Get-EtatMachine($Carte, $Services) {
         $etat["service|$n"] = "démarrage $(Get-TexteReg $c 'Start') ; différé $(Get-TexteReg $c 'DelayedAutostart')"
     }
     $etat["service en marche|$($Services.Telemetrie)"] = [string](Get-Service -Name $Services.Telemetrie -ErrorAction SilentlyContinue).Status
-    foreach ($b in 'Tcpip', 'Tcpip6') { $etat["dns|$b|$($Carte.Nom)"] = Get-TexteReg "HKLM:\SYSTEM\CurrentControlSet\Services\$b\Parameters\Interfaces\$($Carte.Guid)" 'NameServer' }
+    # (DNS : une valeur vide et une valeur absente disent la même chose, « automatique » ; Windows laisse une valeur vide
+    # après une remise à l'automatique, Set-DnsClientServerAddress -ResetServerAddresses)
+    foreach ($b in 'Tcpip', 'Tcpip6') {
+        $v = Get-TexteReg "HKLM:\SYSTEM\CurrentControlSet\Services\$b\Parameters\Interfaces\$($Carte.Guid)" 'NameServer'
+        $etat["dns|$b|$($Carte.Nom)"] = if ($v -in 'absente', 'String=') { 'automatique' } else { $v }
+    }
     $regles = @(foreach ($g in @(Get-NetFirewallRule -DisplayName 'Nevermind : bloque *' -ErrorAction SilentlyContinue)) {
         $prog = [string](Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $g -ErrorAction SilentlyContinue).Program
         $svc = [string](Get-NetFirewallServiceFilter -AssociatedNetFirewallRule $g -ErrorAction SilentlyContinue).Service
@@ -1123,6 +1131,21 @@ function Get-Reponses($S, $Actions) {
         $n = [string]$a.Nom
         $r[$n] = if ($S.R -and $S.R.PSObject.Properties[$n]) { "fait : $(ConvertTo-Json -InputObject $S.R.$n -Compress -Depth 4)" }
                  elseif ($S.E -and $S.E.PSObject.Properties[$n]) { "refusé : $($S.E.$n)" } else { 'pas de réponse' }
+    }
+    $r
+}
+# Les lectures du PC et de l'antivirus, résumées : ce qui ne bouge pas d'une minute à l'autre (pas les températures)
+function Get-ResumeDivers($S) {
+    $r = [ordered]@{}
+    $pc = if ($S.R -and $S.R.PSObject.Properties['pc']) { $S.R.pc }
+    $r['lecture.pc'] = if ($pc) {
+        $disques = @(if ($pc.Fiabilite) { $pc.Fiabilite.PSObject.Properties | Sort-Object Name | ForEach-Object { "$($_.Name) [$(@($_.Value.PSObject.Properties | ForEach-Object { $_.Name } | Sort-Object) -join ',')]" } })
+        "Secure Boot $($pc.SecureBoot) ; TPM lu $($pc.TpmOk) ; TPM $($pc.Tpm.SpecVersion) ; disques $($disques -join ' ; ')"
+    } else { "pas de réponse : $($S.E.pc)" }
+    $se = if ($S.R -and $S.R.PSObject.Properties['securite']) { $S.R.securite }
+    $r['lecture.securite'] = if ($se) { "exclusions $($se.ExclusionsNombre) ; détections lues $($se.DetectionsLues) ; menaces $(@($se.Menaces).Count)" } else { "pas de réponse : $($S.E.securite)" }
+    foreach ($n in 'exclusions', 'smb1') {
+        $r[$n] = if ($S.R -and $S.R.PSObject.Properties[$n]) { "fait : $(ConvertTo-Json -InputObject $S.R.$n -Compress)" } elseif ($S.E -and $S.E.PSObject.Properties[$n]) { "refusé : $($S.E.$n)" } else { 'pas de réponse' }
     }
     $r
 }
@@ -1189,10 +1212,26 @@ function Invoke-Passage([string]$Exe, [string]$Titre) {
     $s2 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @($rest) }
     Start-Sleep -Seconds 2
     $remis = Get-EtatMachine $carte $services
+
+    # Lectures du PC et actions définitives (« Tout restaurer » ne les annule pas) : santé des disques, TPM, Secure Boot,
+    # antivirus (une exclusion d'essai ajoutée ici, retirée par l'Aide), SMB1 coupé côté serveur
+    $exclusion = Join-Path $Racine 'exclusion-essai'
+    $defender = $false
+    try { Add-MpPreference -ExclusionPath $exclusion -ErrorAction Stop; $defender = @((Get-MpPreference -ErrorAction Stop).ExclusionPath) -contains $exclusion } catch { Write-Host "         | antivirus de Windows pas réglable ici : $($_.Exception.Message)" -ForegroundColor DarkGray }
+    $divers = @(
+        @{ Nom = 'pc'; Action = 'lecture.pc'; P = @{} }
+        @{ Nom = 'securite'; Action = 'lecture.securite'; P = @{} }
+        @{ Nom = 'exclusions'; Action = 'antivirus.retirer-exclusions'; P = @{ Elements = @($exclusion) } }
+        @{ Nom = 'smb1'; Action = 'smb1.couper'; P = @{ Client = $false } }
+    )
+    $s3 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @($divers) }
+    $resteExclusion = $null; try { $resteExclusion = @((Get-MpPreference -ErrorAction Stop).ExclusionPath) -contains $exclusion } catch {}
+    $smb1 = ''; try { $smb1 = [string](Get-SmbServerConfiguration -ErrorAction Stop).EnableSMB1Protocol } catch {}
     Stop-Aides
     [pscustomobject]@{
         Titre = $Titre; Empreinte = $empreinte; Avant = $avant; Apres = $apres; Remis = $remis; Services = $services; Carte = $carte
         Optim = Get-Reponses $s1 @($optim); Restauration = Get-Reponses $s2 @($rest); Refus = @($refus | ForEach-Object { $_.Nom })
+        Divers = Get-ResumeDivers $s3; Defender = $defender; ResteExclusion = $resteExclusion; Smb1 = $smb1
     }
 }
 function Test-Cas10 {
@@ -1239,6 +1278,13 @@ function Test-Cas10 {
         Show-Differences 'pas revenu' $d
         Test-Cas "$t, après la restauration : la machine est revenue à son état d'avant ($($p.Avant.Count) points relevés : registre, services, DNS, pare-feu, plans d'alimentation, tâches)" { -not $d.Count }
         Test-Cas "$t, après la restauration : les valeurs d'origine sont oubliées" { -not @($p.Remis.Keys | Where-Object { $_ -like 'mémoire de l''Aide|\Origines|*' }).Count }
+        Test-Cas "$t, lectures du PC (disques, TPM, Secure Boot) et de l'antivirus rendues, exclusion d'essai retirée, SMB1 coupé côté serveur" {
+            foreach ($k in $p.Divers.Keys) { Write-Host "         |   $k : $($p.Divers[$k])" -ForegroundColor DarkGray }
+            Write-Host "         |   exclusion d'essai ajoutée $($p.Defender), encore là après $($p.ResteExclusion) ; SMB1 serveur $($p.Smb1)" -ForegroundColor DarkGray
+            $p.Divers['lecture.pc'] -notlike 'pas de réponse*' -and $p.Divers['lecture.securite'] -notlike 'pas de réponse*' -and $p.Divers['exclusions'] -eq 'fait : "ok"' -and
+                $p.Divers['smb1'] -eq 'fait : "ok"' -and ($p.Smb1 -in '', 'False') -and (-not $p.Defender -or $p.ResteExclusion -eq $false)
+        }
+        if (-not $p.Defender) { Add-Note "$t : l'antivirus de Windows n'a pas pris l'exclusion d'essai, son retrait n'est pas vérifié ici" }
         if ($n -gt 1) {
             $a = $passages[0]
             $comparaisons = @(
@@ -1246,7 +1292,8 @@ function Test-Cas10 {
                 @('l''état après l''optimisation (mémoire de l''Aide comprise)', (Compare-Etats $a.Apres $p.Apres)),
                 @('l''état après la restauration (mémoire de l''Aide comprise)', (Compare-Etats $a.Remis $p.Remis)),
                 @('les réponses à l''optimisation (mot pour mot)', (Compare-Etats $a.Optim $p.Optim)),
-                @('les réponses à la restauration (mot pour mot)', (Compare-Etats $a.Restauration $p.Restauration))
+                @('les réponses à la restauration (mot pour mot)', (Compare-Etats $a.Restauration $p.Restauration)),
+                @('les lectures du PC et de l''antivirus, et les réponses aux actions définitives', (Compare-Etats $a.Divers $p.Divers))
             )
             foreach ($c in $comparaisons) {
                 Show-Differences "différent du passage 1" $c[1]
@@ -1258,11 +1305,40 @@ function Test-Cas10 {
 }
 
 # =====================================================================================================================
+# 11. Le banc PowerShell / Rust (outils\tester-aide-rust.ps1, du dépôt de l'Aide en Rust) sous un compte sans droits
+# =====================================================================================================================
+function Test-Cas11 {
+    Write-Partie '11. Banc PowerShell / Rust sous un compte sans droits (mêmes demandes sur le vrai canal, mêmes réponses)'
+    if (-not $Banc -or -not (Test-Path -LiteralPath $Banc -PathType Leaf) -or -not $Aide -or -not (Test-Path -LiteralPath $Aide -PathType Leaf)) {
+        Add-Note "pas de banc à lancer (banc « $Banc », exe « $Aide »)"; return
+    }
+    Stop-Aides
+    $b = Get-Compte 'Banc Essai'
+    # Le banc et ce qu'il lit (outils, cas, Nevermind\fichiers), copiés dans C:\essai que tout le monde lit
+    $source = Split-Path (Split-Path ([IO.Path]::GetFullPath($Banc)) -Parent) -Parent
+    $dest = Join-Path $Racine 'banc'
+    if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path "$dest\Nevermind" | Out-Null
+    Copy-Item -LiteralPath (Join-Path $source 'outils') -Destination $dest -Recurse
+    Copy-Item -LiteralPath (Join-Path $source 'cas') -Destination $dest -Recurse
+    Copy-Item -LiteralPath (Join-Path $source 'Nevermind\fichiers') -Destination "$dest\Nevermind" -Recurse
+    Copy-Item -LiteralPath $Aide -Destination "$dest\NevermindAide.exe"
+    $sortie = Join-Path $Sorties 'banc.txt'; $erreurs = Join-Path $Sorties 'banc-erreurs.txt'
+    $p = Start-Process -FilePath $PowerShellExe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$dest\outils\$(Split-Path $Banc -Leaf)", '-Exe', "$dest\NevermindAide.exe" `
+        -Credential $b.Cred -LoadUserProfile -WorkingDirectory $dest -RedirectStandardOutput $sortie -RedirectStandardError $erreurs -PassThru
+    $fini = $p.WaitForExit(1800000)
+    if (-not $fini) { try { $p.Kill() } catch {} }
+    foreach ($f in $sortie, $erreurs) { foreach ($l in @(Get-Content -LiteralPath $f -Encoding UTF8 -ErrorAction SilentlyContinue)) { Write-Host "         | $l" -ForegroundColor DarkGray } }
+    Test-Cas "banc lancé sous « Banc Essai » (sans droits) : PowerShell et Rust répondent pareil (code $(if ($fini) { $p.ExitCode } else { 'trop long' }))" { $fini -and $p.ExitCode -eq 0 }
+    Stop-Aides
+}
+
+# =====================================================================================================================
 $titres = @{ 0 = 'Préparation'; 1 = 'Installation : tâche SYSTEM pour Élodie'; 2 = 'Élodie obtient des actions en lecture seule'; 3 = 'Un autre compte refusé'
     4 = 'Mise à jour depuis Nevermind 1.10.0'; 5 = 'Repli par la demande de Windows'; 6 = 'Désinstallation'; 7 = 'Environnement d''Élodie'
     8 = 'Changement de nom : mises à jour, anciens Mindset, une seule instance'; 9 = 'Aide lancée en secours par la demande de Windows'
-    10 = 'Tout optimiser puis tout restaurer' }
-if (-not $titres.ContainsKey($Cas)) { Write-Host 'Indique -Cas 0 (préparation) ou -Cas 1 à 10.' -ForegroundColor Yellow; exit 2 }
+    10 = 'Tout optimiser puis tout restaurer'; 11 = 'Banc PowerShell / Rust sous un compte sans droits' }
+if (-not $titres.ContainsKey($Cas)) { Write-Host 'Indique -Cas 0 (préparation) ou -Cas 1 à 11.' -ForegroundColor Yellow; exit 2 }
 try {
     switch ($Cas) {
         0 { if ($env:GITHUB_STEP_SUMMARY) { [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "| Cas | Quoi | Résultat |`n|---|---|---|`n", (New-Object Text.UTF8Encoding $false)) }; Initialize-Essai }
@@ -1276,6 +1352,7 @@ try {
         8 { Test-Cas8 }
         9 { Test-Cas9 }
         10 { Test-Cas10 }
+        11 { Test-Cas11 }
     }
 } catch {
     $script:Echoues.Add("erreur : $($_.Exception.Message)")
