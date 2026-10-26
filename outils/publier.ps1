@@ -96,7 +96,8 @@ if (-not $Essai) {
     # (une publication arrêtée en route, par exemple un mot de passe mal tapé, laisse seulement le numéro de version écrit
     # dans ces deux fichiers : on les remet comme dans git, ils sont réécrits juste après)
     $siens = @('Nevermind/fichiers/Nevermind.ps1', 'Nevermind/LISEZMOI.txt')
-    if ($sale.Count -and -not @($sale | Where-Object { $_ -notmatch '^ M ' -or $siens -notcontains $_.Substring(3).Trim('"') }).Count) {
+    if ($sale.Count -and -not @($sale | Where-Object { $_ -notmatch '^(M |MM| M) ' -or $siens -notcontains $_.Substring(3).Trim('"') }).Count) {
+        Invoke-Native 'git' @('-C', $racine, 'reset', '-q', '--', $siens[0], $siens[1]) | Out-Null   # (préparés pour le commit par une tentative arrêtée)
         Invoke-Native 'git' @('-C', $racine, 'checkout', '--', $siens[0], $siens[1]) | Out-Null
         Write-Host 'Le numéro de version laissé par une publication arrêtée en route est remis comme dans git.'
         $sale = @()
