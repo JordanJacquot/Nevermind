@@ -1,0 +1,24 @@
+[package]
+name = "nevermind-pont"
+version = "0.1.0"
+description = "NevermindPont.dll : les règles de l'Aide (aide-regles) appelées par Nevermind (PowerShell), JSON en entrée et en sortie"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# Une DLL Windows ordinaire (interface C), chargée par Nevermind avec son chemin complet (pont.ps1)
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Seulement pour outils\tester-pont.ps1 : une demande « essai.panique » qui provoque une erreur Rust, pour vérifier
+# qu'elle est rattrapée et que PowerShell continue. Jamais dans la DLL livrée (construite sans cette option).
+essai-panique = []
+
+[dependencies]
+aide-regles = { path = "../aide-regles" }
+# Version figée (« = ») : une nouvelle version n'entre que par un changement relu.
+serde_json = "=1.0.154"
+
+[lints]
+workspace = true

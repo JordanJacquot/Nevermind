@@ -19,6 +19,9 @@ $DnsChoices = @(
 # ---------------------------------------------------------------------------
 # Nettoyage
 # ---------------------------------------------------------------------------
+# Les dossiers de Windows que seule l'Aide vide, avec sa propre liste (jamais un chemin envoyé par Nevermind) : ici,
+# seulement pour les montrer. Donnés par NevermindPont.dll (le même code que l'Aide ; DLL absente : rien à montrer).
+$DossiersNettoyageAide = Get-DossiersNettoyage
 # Catégories du nettoyage. Desc : ce que c'est, en une phrase. Default $false : décochée au départ (à garder le plus souvent).
 # Exclude : sous dossiers jamais touchés (le dossier de travail de Claude Code est dans les temporaires de l'utilisateur).
 $CleanTargets = @(
@@ -26,18 +29,85 @@ $CleanTargets = @(
        Desc = 'Restes laissés par tes programmes et les installations. Ce qui a moins de 24 h ou sert encore est gardé.' },
     @{ Id = 'claude'; Titre = 'Fichiers de travail de Claude'; Paths = @("$env:TEMP\claude"); Default = $false; Warn = $true; Optional = $true
        Desc = 'Captures, scripts et téléchargements des discussions Claude Code. Tes discussions ne sont pas effacées, mais une discussion en cours peut encore en avoir besoin : garde-les si tu travailles avec Claude.' },
-    # Dossiers de Windows : lus et vidés par l'Aide, qui a sa propre liste de dossiers (aide-actions.ps1, $AideNettoyage).
-    # (plus les fichiers temporaires de Windows ni les rapports d'erreurs : Windows les vide lui-même, voir $AideNettoyage)
-    @{ Id = 'wu'; Titre = 'Mises à jour Windows déjà installées'; Paths = $AideNettoyage['wu']; Aide = $true
+    # Dossiers de Windows : lus et vidés par l'Aide, qui a sa propre liste de dossiers ($DossiersNettoyageAide).
+    # (plus les fichiers temporaires de Windows ni les rapports d'erreurs : Windows les vide lui-même)
+    @{ Id = 'wu'; Titre = 'Mises à jour Windows déjà installées'; Paths = $DossiersNettoyageAide['wu']; Aide = $true
        Desc = 'Fichiers téléchargés par Windows Update, inutiles une fois les mises à jour installées.' },
-    @{ Id = 'do'; Titre = 'Partage des mises à jour'; Paths = $AideNettoyage['do']; Aide = $true
+    @{ Id = 'do'; Titre = 'Partage des mises à jour'; Paths = $DossiersNettoyageAide['do']; Aide = $true
        Desc = 'Morceaux de mises à jour que Windows garde pour les partager avec d''autres PC. Windows les retélécharge au besoin.' },
-    @{ Id = 'dump'; Titre = 'Rapports d''écran bleu'; Paths = $AideNettoyage['dump']; Aide = $true
+    @{ Id = 'dump'; Titre = 'Rapports d''écran bleu'; Paths = $DossiersNettoyageAide['dump']; Aide = $true
        Desc = 'Créés lors d''un écran bleu. Utiles seulement pour comprendre un écran bleu récent.' }
 )
 
-# $CleanWalk, $CleanListScript et $CleanScript (parcours sans suivre les liens, analyse, nettoyage) sont dans
-# aide-actions.ps1 : l'Aide s'en sert aussi pour les dossiers de Windows.
+# Le nettoyage des dossiers de l'utilisateur, fait par Nevermind lui-même (l'Aide a le sien pour ceux de Windows).
+# Parcours d'un dossier sans suivre les liens (jonctions, liens symboliques) : on ne sort jamais du dossier prévu.
+$CleanWalk = @'
+function Get-CleanFiles([string]$Root, $Dirs) {
+    foreach ($e in @(Get-ChildItem -LiteralPath $Root -Force -ErrorAction SilentlyContinue)) {
+        if ($e.PSIsContainer) {
+            if ($e.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+            if ($script:CleanSkip -and $script:CleanSkip.ContainsKey($e.FullName.ToLower())) { continue }   # dossier protégé (Claude...)
+            if ($null -ne $Dirs) { [void]$Dirs.Add($e.FullName) }
+            Get-CleanFiles $e.FullName $Dirs
+        } elseif ($e.LastWriteTime -lt $script:CleanBefore) { $e }
+    }
+}
+function Set-CleanSkip($Paths, $Exclude) {
+    $script:CleanSkip = @{}
+    foreach ($p in @($Paths)) { foreach ($x in @($Exclude | Where-Object { $_ })) { $script:CleanSkip[(Join-Path $p $x).ToLower()] = $true } }
+}
+# Fichiers de moins de 24 h laissés : une installation ou un programme en cours peut encore s'en servir
+$script:CleanBefore = (Get-Date).AddDays(-1)
+'@
+
+# Analyse d'une catégorie : nombre de fichiers, taille totale et les plus gros (pour « Voir les fichiers »)
+$CleanListScript = [scriptblock]::Create($CleanWalk + @'
+
+$a = $args[0]
+Set-CleanSkip $a.Paths $a.Exclude
+$sum = 0.0; $n = 0
+$list = New-Object System.Collections.Generic.List[object]
+foreach ($p in $a.Paths) {
+    if (-not (Test-Path -LiteralPath $p)) { continue }
+    foreach ($f in (Get-CleanFiles $p $null)) { $sum += $f.Length; $n++; $list.Add(@($f.FullName, [double]$f.Length, $f.LastWriteTime)) }
+}
+$top = @($list | Sort-Object { $_[1] } -Descending | Select-Object -First $a.Top)
+@{ Size = $sum; Count = $n; Top = $top }
+'@)
+
+# Nettoyage d'une catégorie, fichier par fichier, avec une ligne de journal pour chacun
+$CleanScript = [scriptblock]::Create($CleanWalk + @'
+
+$paths = $args[0].Paths
+Set-CleanSkip $paths $args[0].Exclude
+$log = New-Object System.Collections.Generic.List[string]
+$freed = 0.0; $del = 0; $skip = 0; $err = 0
+$fmt = { param($b) if ($b -ge 1GB) { '{0:N1} Go' -f ($b / 1GB) } elseif ($b -ge 1MB) { '{0:N1} Mo' -f ($b / 1MB) } else { '{0:N0} Ko' -f [math]::Max(1, [math]::Ceiling($b / 1KB)) } }
+foreach ($p in $paths) {
+    if (-not (Test-Path -LiteralPath $p)) { continue }
+    $dirs = New-Object System.Collections.Generic.List[string]
+    foreach ($f in @(Get-CleanFiles $p $dirs)) {
+        $len = [double]$f.Length
+        try {
+            if ($f.Attributes -band [IO.FileAttributes]::ReadOnly) { $f.Attributes = [IO.FileAttributes]::Normal }
+            [IO.File]::Delete($f.FullName)
+            $freed += $len; $del++
+            $log.Add("[SUPPRIMÉ] $($f.FullName) - $(& $fmt $len)")
+        } catch [System.UnauthorizedAccessException] {
+            $err++; $log.Add("[REFUSÉ]   $($f.FullName) - $(& $fmt $len) - Accès refusé")
+        } catch [System.IO.IOException] {
+            $skip++; $log.Add("[LAISSÉ]   $($f.FullName) - $(& $fmt $len) - Fichier utilisé par un programme")
+        } catch {
+            $err++; $log.Add("[REFUSÉ]   $($f.FullName) - $(& $fmt $len) - $($_.Exception.Message)")
+        }
+    }
+    # Dossiers restés vides : du plus profond au moins profond (le dossier de départ reste)
+    foreach ($d in @($dirs | Sort-Object { $_.Length } -Descending)) {
+        try { if (-not [IO.Directory]::EnumerateFileSystemEntries($d).GetEnumerator().MoveNext()) { [IO.Directory]::Delete($d) } } catch {}
+    }
+}
+@{ Freed = $freed; Deleted = $del; Skipped = $skip; Errors = $err; Log = $log.ToArray() }
+'@)
 
 # Analyse d'une catégorie (taille, nombre, les plus gros fichiers), sur place ou par l'Aide. $null si impossible.
 function Get-CleanInfo($Target, [int]$Top = 300) {
@@ -543,7 +613,7 @@ function Invoke-Uninstall {
     foreach ($task in $OldAutoStartTasks) { try { if (Get-ScheduledTask -TaskName $task -ErrorAction SilentlyContinue) { Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction Stop } } catch {} }
     # L'Aide : sa tâche planifiée (créée par Mindset) et ce qu'elle retenait (DNS d'origine)
     try { Unregister-ScheduledTask -TaskPath '\Mindset\' -TaskName 'Nevermind (aide)' -Confirm:$false -ErrorAction SilentlyContinue } catch {}
-    try { Remove-Item -LiteralPath $AideMemoire -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+    try { Remove-Item -LiteralPath 'HKLM:\SOFTWARE\Mindset\Nevermind\Aide' -Recurse -Force -ErrorAction SilentlyContinue } catch {}
     if (Test-DesktopShortcut) { try { [IO.File]::Delete((Get-DesktopShortcutPath)) } catch {} }
     try { Remove-MenuShortcut } catch {}
 
@@ -555,6 +625,7 @@ function Invoke-Uninstall {
         (Join-Path $root 'Nevermind.exe'),
         (Join-Path $root 'Désinstaller Nevermind.exe'),
         (Join-Path $root 'NevermindAide.exe'),
+        (Join-Path $root 'NevermindPont.dll'),
         (Join-Path $root 'OptiGame.exe'),
         (Join-Path $root 'Désinstaller OptiGame.exe'),
         (Join-Path $root 'Nexo.exe'),

@@ -323,7 +323,7 @@ if (-not $Uninstall -and -not $env:NEVERMIND_TEST) {
 # Nevermind.exe n'est plus qu'un relais vers lui (anciens raccourcis, anciennes versions de Mindset).
 $AppExe = Join-Path (Split-Path $PSScriptRoot -Parent) 'Mindset.exe'
 # Nevermind tourne sans les droits administrateur : ce qui en a besoin passe par son Aide (NevermindAide.exe, lancée par la
-# tâche que Mindset crée, sans demande de Windows ; liste stricte dans modules\aide-actions.ps1).
+# tâche que Mindset crée, sans demande de Windows ; sa liste stricte est dans l'Aide elle-même).
 # Seule la désinstallation les demande (une fois) : elle remet les réglages de Windows comme avant (sauf les changements
 # définitifs qui protègent le PC) et retire l'Aide.
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -365,8 +365,9 @@ if (-not $Uninstall -and -not $env:NEVERMIND_TEST) {
     try { if (Test-Path -LiteralPath $QuitRequest) { [IO.File]::Delete($QuitRequest) } } catch {}
 }
 
-# Anciens programmes mis de côté par la dernière mise à jour (ils tournaient pendant qu'on les remplaçait)
-try { foreach ($o in @(Get-ChildItem -LiteralPath (Split-Path $PSScriptRoot -Parent) -Filter '*.exe.old' -File -ErrorAction SilentlyContinue)) { try { [IO.File]::Delete($o.FullName) } catch {} } } catch {}
+# Anciens programmes mis de côté par la dernière mise à jour (ils tournaient pendant qu'on les remplaçait), et l'ancienne
+# NevermindPont.dll (chargée par Nevermind)
+try { foreach ($o in @(@('*.exe.old', '*.dll.old') | ForEach-Object { Get-ChildItem -LiteralPath (Split-Path $PSScriptRoot -Parent) -Filter $_ -File -ErrorAction SilentlyContinue })) { try { [IO.File]::Delete($o.FullName) } catch {} } } catch {}
 
 # Retire la marque « téléchargé depuis Internet » des fichiers de Nevermind, pour que
 # Windows n'affiche plus d'avertissement aux lancements suivants.
@@ -416,7 +417,7 @@ if (-not $env:NEVERMIND_TEST -and -not $Uninstall -and -not $Demarrage) {
 # ---------------------------------------------------------------------------
 $AppDir = $PSScriptRoot
 $ModulesDir = Join-Path $AppDir 'modules'
-$missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'aide-actions.ps1', 'aide-client.ps1', 'optimisations.ps1', 'systeme.ps1', 'themes.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'reseau-avance.ps1', 'carte-reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'assistance.ps1', 'jeu.ps1', 'diagnostic-fps.ps1', 'trafic.ps1', 'microsoft.ps1', 'memoire.ps1', 'lag.ps1', 'bibliotheque.ps1', 'organizer.ps1', 'parametres.ps1', 'recherche.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
+$missing = @('natif.cs', 'interface.xaml', 'donnees.ps1', 'pont.ps1', 'processus.ps1', 'aide-actions.ps1', 'aide-client.ps1', 'optimisations.ps1', 'systeme.ps1', 'themes.ps1', 'interface.ps1', 'tableau-de-bord.ps1', 'analyse.ps1', 'onglets.ps1', 'visuels.ps1', 'tests.ps1', 'securite.ps1', 'navigation.ps1', 'reseau.ps1', 'reseau-avance.ps1', 'carte-reseau.ps1', 'audit-reseau.ps1', 'mises-a-jour.ps1', 'assistance.ps1', 'jeu.ps1', 'diagnostic-fps.ps1', 'trafic.ps1', 'microsoft.ps1', 'memoire.ps1', 'lag.ps1', 'bibliotheque.ps1', 'organizer.ps1', 'parametres.ps1', 'recherche.ps1', 'evenements.ps1' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $ModulesDir $_)) })
 if ($missing) {
     [System.Windows.MessageBox]::Show("Des fichiers de Nevermind sont manquants :`n`n$($missing -join ', ')`n`nRetélécharge Nevermind et remplace tout le dossier.", 'Nevermind', 'OK', 'Error') | Out-Null
     exit
@@ -428,7 +429,15 @@ Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $ModulesDir 'natif.c
 $AppUserModelId = 'JordanJacquot.Nevermind'
 try { [void][AppIdentity]::SetProcessAppId($AppUserModelId) } catch {}
 
-foreach ($ogModule in 'donnees', 'aide-actions', 'optimisations', 'systeme', 'aide-client', 'themes') { . (Join-Path $ModulesDir "$ogModule.ps1") }
+foreach ($ogModule in 'donnees', 'pont', 'processus') { . (Join-Path $ModulesDir "$ogModule.ps1") }
+# NevermindPont.dll (les règles de l'Aide en Rust : « fermable », nom du canal) : chargée par son chemin complet, à côté
+# des programmes de Nevermind, dans le dossier protégé de l'appli. Absente ou abîmée : Nevermind continue sans elle, au
+# plus sûr (rien de fermable, pas d'Aide jointe). Pas pendant la désinstallation, qui la supprime.
+if (-not $Uninstall) {
+    $ogPont = Initialize-Pont (Join-Path $(if ((Split-Path $AppDir -Leaf) -eq 'fichiers') { Split-Path $AppDir -Parent } else { $AppDir }) 'NevermindPont.dll')
+    if ($ogPont) { Write-Log "NevermindPont.dll : $ogPont (rien ne sera fermé par Nevermind, et l'Aide ne sera pas jointe)" }
+}
+foreach ($ogModule in 'optimisations', 'systeme', 'aide-client', 'themes') { . (Join-Path $ModulesDir "$ogModule.ps1") }
 if ($DataDirNote) { Write-Log $DataDirNote }
 
 if ($Uninstall) {
