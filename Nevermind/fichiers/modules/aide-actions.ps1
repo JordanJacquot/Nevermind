@@ -714,8 +714,10 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier, [int]$Client)
             $nom = [string](Get-AideParam $P 'Nom')
             $r = Get-AideRegle $cle $nom
             $v = ConvertTo-AideValeur $r (Get-AideParam $P 'Valeur') ([string](Get-AideParam $P 'Type'))
-            # (programmes lancés avec Windows : jamais Sécurité Windows ni un antivirus)
-            if ($r.NomMotif -and $cle -match '\\StartupApproved\\' -and (Test-AideDemarrageSecurite $cle $nom $null $null)) {
+            # (programmes lancés avec Windows : jamais couper Sécurité Windows ni un antivirus ; les remettre actifs reste
+            # permis. StartupApproved : premier octet impair = coupé, 2 ou 6 = actif)
+            $coupe = -not (@($v).Count -and ([int](@($v)[0]) -band 1) -eq 0)
+            if ($r.NomMotif -and $cle -match '\\StartupApproved\\' -and $coupe -and (Test-AideDemarrageSecurite $cle $nom $null $null)) {
                 throw "Demande refusée : $nom protège ton PC (Sécurité Windows ou antivirus), l'Aide ne le coupe jamais au démarrage."
             }
             if ($Verifier) { return 'ok' }

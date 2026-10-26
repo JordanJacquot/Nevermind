@@ -1874,7 +1874,8 @@ public static class ProprietesFenetre
                 @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Valeur = 1; Type = 'DWord' }),
                 @('reg.ecrire', @{ Cle = "$IfeoPath\RocketLeague.exe\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 3; Type = 'DWord' }),
                 @('reg.effacer', @{ Cle = "$IfeoPath\RocketLeague.exe\PerfOptions"; Nom = 'CpuPriorityClass' }),
-                @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
+                # (Sécurité Windows : la remettre active au démarrage reste permis ; la couper est refusé depuis l'audit du 25/10)
+                @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
                 @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\StartupFolder"; Nom = 'Truc.lnk'; Valeur = @(2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
                 @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Disabled'; Arreter = $true }),
                 @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Automatic'; Lancer = $true }),
@@ -1924,6 +1925,7 @@ public static class ProprietesFenetre
                 @('reg.ecrire', @{ Cle = "$IfeoPath\..\Run\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 3; Type = 'DWord' }),
                 @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Nom = 'HwSchMode'; Valeur = 9; Type = 'DWord' }),
                 @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(3, 0); Type = 'Binary' }),
+                @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
                 @('service.regler', @{ Nom = 'WinDefend'; Demarrage = 'Disabled' }),
                 @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\svchost.exe"; Services = @('wuauserv') }),
                 @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:ProgramFiles\Windows Defender\MpCmdRun.exe" }),

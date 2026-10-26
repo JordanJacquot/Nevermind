@@ -53,12 +53,11 @@ function Get-PagesProtection {
     $hist = @($script:History | Where-Object { $_ } | Select-Object -First 20)
 
     $pages = [ordered]@{}
-    $pages.protection = @{ titre = 'Protection'; sous = 'Antivirus, programmes cachés, réseau, sauvegarde.'; icone = 'bouclier'; couleur = 'T'
+    $pages.protection = @{ titre = 'Protection'; sous = 'Antivirus, programmes cachés, sauvegarde.'; icone = 'bouclier'; couleur = 'T'
         actions = @(@{ id = 'clic:BtnSecRefresh'; texte = 'Revérifier'; icone = 'actu' }); module = $module
         blocs = @(
             @{ type = 'outils'; elements = @(
                 @{ id = 'securite'; nom = 'Sécurité'; note = 'Virus et programmes dangereux'; icone = 'bouclier'; couleur = 'T'; etiquette = $(if ($checks.Count) { "$($checks.Count) point$(if ($checks.Count -gt 1) { 's' })" } elseif ($d) { 'Tout est propre' }); ton = $(if (@($checks | Where-Object { $_.Status -eq 'bad' }).Count) { 'urgent' } elseif ($checks.Count) { 'attention' } else { 'ok' }) }
-                @{ id = 'connexion'; nom = 'Connexion'; note = 'Temps de réponse (ping), stabilité, DNS'; icone = 'ondes'; couleur = 'P'; etiquette = $(if ($inter.Count) { "$($inter[0].Avg) ms" } else { 'À tester' }); ton = $(if ($inter.Count) { $TonsStatut[[string]$inter[0].Status] } else { '' }) }
                 @{ id = 'sauvegarde'; nom = 'Sauvegarde'; note = 'Revenir en arrière à tout moment'; icone = 'sauve'; couleur = 'S'; etiquette = $(if ($nb) { "$nb réglage$(if ($nb -gt 1) { 's' })" } else { 'Rien de modifié' }); ton = 'ok' }
             ) }
             if ($checks.Count) { @{ type = 'titre'; texte = 'Points à vérifier' } }
@@ -105,7 +104,7 @@ function Get-PagesProtection {
         @{ texte = 'Box'; valeur = [string]$net.Gateway }
         if ($net.Dns) { @{ texte = 'DNS actuel'; valeur = [string]$net.Dns } }
     })
-    $pages.connexion = @{ titre = 'Connexion'; parent = 'protection'; sous = 'Mesure ton temps de réponse (ping), sa stabilité (gigue) et les messages perdus en route.'; icone = 'ondes'; couleur = 'P'
+    $pages.connexion = @{ titre = 'Connexion'; parent = 'perf'; sous = 'Mesure ton temps de réponse (ping), sa stabilité (gigue) et les messages perdus en route.'; icone = 'ondes'; couleur = 'P'
         module = $(if ($inter.Count) { $p = $inter[0]
                 @{ icone = 'ondes'; couleur = $(switch ([string]$p.Status) { 'ok' { 'vert' } 'warn' { 'orange' } 'bad' { 'rouge' } default { 'P' } }); titre = "Ping $($p.Avg) ms"; texte = [string]$p.Verdict; boutons = @(@{ id = 'clic:BtnPing'; texte = 'Tester ma connexion' }); resume = @(@{ nom = 'Gigue'; valeur = "$($p.Jitter) ms" }, @{ nom = 'Pertes'; valeur = "$($p.Loss) %"; ton = $(if ($p.Loss -gt 0) { 'attention' } else { 'ok' }) }) } }
             elseif (-not $net) { @{ icone = 'ondes'; couleur = 'rouge'; titre = 'Pas de connexion'; texte = 'Aucune connexion Internet détectée.'; boutons = @(@{ id = 'clic:BtnPing'; texte = 'Réessayer' }) } }

@@ -64,6 +64,7 @@ function Get-IconeExeKit([string]$Exe) {
 
 function Get-PagesPerf {
     $rg = Get-ReglagesKit
+    $inter = @(@($script:PingResults | Where-Object { $_ }) | Where-Object { $_.Label -like 'Internet*' } | Select-Object -First 1)   # (bulle Connexion)
     $rows = $rg.Lignes
     $total = $rg.Total; $okN = $rg.Faits; $reste = $rg.Reste
     $last = Get-DernierJeuKit
@@ -103,6 +104,7 @@ function Get-PagesPerf {
                 @{ id = 'demarrage'; nom = 'Démarrage'; note = 'Ce qui se lance avec le PC'; icone = 'marche'; couleur = 'S'; etiquette = $(if ($entrees.Count) { "$on programme$(if ($on -gt 1) { 's' })" }); ton = $(if ($conseil) { 'attention' } else { '' }) }
                 @{ id = 'nettoyage'; nom = 'Nettoyage'; note = 'Les fichiers inutiles'; icone = 'balai'; couleur = 'T'; etiquette = $(if ($cRows.Count) { Format-Size $tout }); ton = $(if ($tout -gt 1GB) { 'attention' } elseif ($cRows.Count) { 'ok' } else { '' }) }
                 @{ id = 'memoire'; nom = 'RAM'; note = 'Ce qui prend la mémoire'; icone = 'memoire'; couleur = 'P'; etiquette = $(if ($null -ne $ramP) { "$ramP %" }); ton = $(if ($ramAlerte -or $ramP -ge 80) { 'attention' } else { '' }) }
+                @{ id = 'connexion'; nom = 'Connexion'; note = 'Temps de réponse (ping), stabilité, DNS'; icone = 'ondes'; couleur = 'P'; etiquette = $(if ($inter.Count) { "$($inter[0].Avg) ms" } else { 'À tester' }); ton = $(if ($inter.Count) { $TonsStatut[[string]$inter[0].Status] } else { '' }) }
             ) }
             if ($conseils.Count) { @{ type = 'titre'; texte = 'Conseillé pour toi' } }
         ) + $conseils
