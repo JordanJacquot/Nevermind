@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "sujet": "Points de restauration : un par 24 h au plus (audit du 25/10, constat 8)",
+  "regle": "aide-actions.ps1 : Test-AideRestaurationRecente <dernier point, UTC> <maintenant, UTC>",
+  "attendu": "recente : vrai si un point a été créé il y a moins de 24 h (et pas plus de 5 minutes dans le futur) : la demande est alors refusée",
+  "cas": [
+    {"nom":"aucun point noté","entree":{"derniere":null,"maintenant":"2026-10-26T12:00:00Z"},"attendu":{"recente":false}},
+    {"nom":"un point il y a 1 h","entree":{"derniere":"2026-10-26T11:00:00Z","maintenant":"2026-10-26T12:00:00Z"},"attendu":{"recente":true}},
+    {"nom":"un point il y a 23 h 59","entree":{"derniere":"2026-10-25T12:01:00Z","maintenant":"2026-10-26T12:00:00Z"},"attendu":{"recente":true}},
+    {"nom":"un point il y a 24 h tout juste","entree":{"derniere":"2026-10-25T12:00:00Z","maintenant":"2026-10-26T12:00:00Z"},"attendu":{"recente":false}},
+    {"nom":"un point il y a 25 h","entree":{"derniere":"2026-10-25T11:00:00Z","maintenant":"2026-10-26T12:00:00Z"},"attendu":{"recente":false}},
+    {"nom":"un point noté 4 minutes dans le futur (petit écart d'horloge)","entree":{"derniere":"2026-10-26T12:04:00Z","maintenant":"2026-10-26T12:00:00Z"},"attendu":{"recente":true}},
+    {"nom":"un point noté 5 minutes dans le futur","entree":{"derniere":"2026-10-26T12:05:00Z","maintenant":"2026-10-26T12:00:00Z"},"attendu":{"recente":false}},
+    {"nom":"un point noté 3 h dans le futur (horloge changée) ne bloque pas tout","entree":{"derniere":"2026-10-26T15:00:00Z","maintenant":"2026-10-26T12:00:00Z"},"attendu":{"recente":false}}
+  ]
+}

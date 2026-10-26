@@ -1,0 +1,27 @@
+{
+  "format": 1,
+  "sujet": "Les variables d'environnement lues par .NET au démarrage : si l'une est posée chez l'utilisateur, pas de demande de Windows (l'Aide élevée la recevrait)",
+  "regle": "aide-client.ps1 : $AideVariablesDangereuses (le même motif dans Nevermind.ps1, pour la désinstallation), sans tenir compte des majuscules comme Windows",
+  "attendu": "dangereuse : vrai si ce nom de variable bloque la demande de Windows",
+  "cas": [
+    {"nom":"COR_ENABLE_PROFILING","entree":{"nom":"COR_ENABLE_PROFILING"},"attendu":{"dangereuse":true}},
+    {"nom":"COR_PROFILER","entree":{"nom":"COR_PROFILER"},"attendu":{"dangereuse":true}},
+    {"nom":"COR_PROFILER_PATH","entree":{"nom":"COR_PROFILER_PATH"},"attendu":{"dangereuse":true}},
+    {"nom":"COMPlus_NevermindTest","entree":{"nom":"COMPlus_NevermindTest"},"attendu":{"dangereuse":true}},
+    {"nom":"complus_nevermindtest","entree":{"nom":"complus_nevermindtest"},"attendu":{"dangereuse":true}},
+    {"nom":"COMPlus_EnableDiagnostics","entree":{"nom":"COMPlus_EnableDiagnostics"},"attendu":{"dangereuse":true}},
+    {"nom":"CORECLR_ENABLE_PROFILING","entree":{"nom":"CORECLR_ENABLE_PROFILING"},"attendu":{"dangereuse":true}},
+    {"nom":"DOTNET_STARTUP_HOOKS","entree":{"nom":"DOTNET_STARTUP_HOOKS"},"attendu":{"dangereuse":true}},
+    {"nom":"DOTNET_ADDITIONAL_DEPS","entree":{"nom":"DOTNET_ADDITIONAL_DEPS"},"attendu":{"dangereuse":true}},
+    {"nom":"DOTNET_SHARED_STORE","entree":{"nom":"DOTNET_SHARED_STORE"},"attendu":{"dangereuse":true}},
+    {"nom":"dotnet_startup_hooks","entree":{"nom":"dotnet_startup_hooks"},"attendu":{"dangereuse":true}},
+    {"nom":"DOTNET_TieredCompilation","entree":{"nom":"DOTNET_TieredCompilation"},"attendu":{"dangereuse":false}},
+    {"nom":"DOTNET_STARTUP_HOOKS_X","entree":{"nom":"DOTNET_STARTUP_HOOKS_X"},"attendu":{"dangereuse":false}},
+    {"nom":"DOTNET_ROOT","entree":{"nom":"DOTNET_ROOT"},"attendu":{"dangereuse":false}},
+    {"nom":"MON_COR_X","entree":{"nom":"MON_COR_X"},"attendu":{"dangereuse":false}},
+    {"nom":"COR","entree":{"nom":"COR"},"attendu":{"dangereuse":false}},
+    {"nom":"PATH","entree":{"nom":"PATH"},"attendu":{"dangereuse":false}},
+    {"nom":"PSModulePath","entree":{"nom":"PSModulePath"},"attendu":{"dangereuse":false}},
+    {"nom":"TEMP","entree":{"nom":"TEMP"},"attendu":{"dangereuse":false}}
+  ]
+}

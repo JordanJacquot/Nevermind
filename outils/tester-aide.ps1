@@ -80,13 +80,7 @@ if (-not $AideVersion -or -not $AideDossierModules -or -not (Test-Path -LiteralP
     Write-Host 'aide-actions.ps1 chargé, mais $AideVersion ou $AideDossierModules ne sont pas bons.' -ForegroundColor Red; exit 1
 }
 
-# Les valeurs que Nevermind envoie vraiment (reprises de ses modules, voir outils\test-app.ps1)
-$IfeoPath      = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options'
-$ApprovedRoot  = 'Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved'
-$DoPath        = 'Registry::HKEY_USERS\S-1-5-20\Software\Microsoft\Windows\CurrentVersion\DeliveryOptimization\Settings'
-$DiagKey       = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection'
-$DiagPolicyKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection'
-$DnsChoices    = @(@(), @('1.1.1.1', '1.0.0.1'), @('8.8.8.8', '8.8.4.4'), @('9.9.9.9', '149.112.112.112'))
+# Ce que le corpus de cas attend de ce PC : un programme ordinaire de Windows, une vraie carte réseau
 $notepad = @("$env:windir\notepad.exe", "$env:windir\System32\notepad.exe", "$env:windir\System32\cmd.exe") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 # (la carte qui mène à Internet de préférence : celle qui a une passerelle)
 $avecPasserelle = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | ForEach-Object { [int]$_.ifIndex })
@@ -95,194 +89,29 @@ if (-not $carte) { $carte = @(Get-NetAdapter -ErrorAction SilentlyContinue)[0] }
 function Test-Fichier([string]$Chemin) { try { Test-Path -LiteralPath $Chemin -PathType Leaf -ErrorAction Stop } catch { $false } }
 
 # ---------------------------------------------------------------------------
-# 3. Demandes acceptées : toutes celles que Nevermind fait vraiment
+# 3 et 4. Les demandes à accepter (toutes celles que Nevermind fait vraiment) et à refuser : lues dans le corpus de cas
+#    (cas\aide\demandes.json, commun avec la version Rust). Un refus doit être un vrai refus de l'Aide (pas une erreur
+#    quelconque). Ici, seulement celles qui dépendent de ce PC (lu seulement).
 # ---------------------------------------------------------------------------
-$acceptees = @(
-    @('aide.bonjour', @{}),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Nom = 'HwSchMode'; Valeur = 2; Type = 'DWord' }),
-    @('reg.effacer', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Nom = 'HwSchMode' }),
-    @('reg.ecrire', @{ Cle = $DoPath; Nom = 'DownloadMode'; Valeur = 0; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization'; Nom = 'DOPercentageMaxBackgroundBandwidth'; Valeur = 10; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization'; Nom = 'DODownloadMode'; Valeur = 0; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = $DiagKey; Nom = 'AllowTelemetry'; Valeur = 1; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = $DiagPolicyKey; Nom = 'AllowTelemetry'; Valeur = 1; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore'; Nom = 'SystemRestorePointCreationFrequency'; Valeur = 0; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'; Nom = 'fDenyTSConnections'; Valeur = 1; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Valeur = 1; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = "$IfeoPath\RocketLeague.exe\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 3; Type = 'DWord' }),
-    @('reg.effacer', @{ Cle = "$IfeoPath\RocketLeague.exe\PerfOptions"; Nom = 'CpuPriorityClass' }),
-    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'NevermindTestLogiciel'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
-    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\StartupFolder"; Nom = 'Truc.lnk'; Valeur = @(2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
-    @('reg.effacer', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth' }),   # (le remettre actif reste permis)
-    @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Disabled'; Arreter = $true }),
-    @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Automatic'; Lancer = $true }),
-    @('service.regler', @{ Nom = 'edgeupdate'; Demarrage = 'Manual'; Arreter = $true }),   # (page RAM : passé en manuel, puis remis)
-    @('service.regler', @{ Nom = 'edgeupdate'; Demarrage = 'Automatic'; Lancer = $false }),
-    @('service.regler', @{ Nom = 'GoogleUpdaterService140.0.1.0'; Demarrage = 'Manual'; Arreter = $true }),
-    @('service.regler', @{ Nom = 'AdobeARMservice'; Demarrage = 'Manual'; Arreter = $true }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque Bloc-notes'; Programme = $notepad; Services = @() }),
-    @('pare-feu.debloquer', @{ Nom = 'Nevermind : bloque Bloc-notes' }),
-    @('pare-feu.debloquer', @{ Nom = 'OptiGame : bloque Bloc-notes (ancien nom)' }),
-    @('pare-feu.debloquer-tout', @{}),
-    @('pare-feu.activer', @{}),
-    @('origines.oublier', @{}),
-    @('restauration.creer', @{ Description = 'Nevermind' }),
-    @('restauration.creer', @{ Description = 'Nevermind (manuel)' }),
-    @('antivirus.retirer-exclusions', @{ Elements = @('C:\Jeux\truc.exe') }),
-    @('wifi.manuel', @{ Profils = @('Freebox-Invite', 'Gare SNCF') }),
-    @('smb1.couper', @{ Client = $true }),
-    @('smb1.couper', @{ Client = $false }),
-    @('nettoyage.lister', @{ Id = 'wu'; Top = 300 }),
-    @('nettoyage.lancer', @{ Id = 'dump' }),
-    @('processus.fermer', @{ Nom = 'chrome' }),
-    @('lecture.pc', @{}),
-    @('lecture.securite', @{}),
-    @('lecture.taches', @{}),
-    @('lecture.chemins', @{ Pids = @('4', '1234', '56789') }),
-    @('fps.demarrer', @{ Pid = "$PID" }),
-    @('fps.lire', @{}),
-    @('fps.arreter', @{}),
-    @('fps.veiller', @{ Noms = @('bf6.exe') }),
-    @('fps.veiller', @{ Noms = @('bf6.exe', 'Cyberpunk2077.exe', 'cod (2).exe') }),
-    @('flux.veiller', @{}),
-    @('trafic.tcp', @{}),
-    @('flux.demarrer', @{}),
-    @('flux.lire', @{}),
-    @('flux.arreter', @{})
-)
-# Chaque catégorie du nettoyage
-foreach ($id in 'wu', 'do', 'dump') { $acceptees += , @('nettoyage.lancer', @{ Id = $id }); $acceptees += , @('nettoyage.lister', @{ Id = $id }) }
-# DNS : sur une vraie carte réseau du PC (lue seulement)
-# (ceux de la box : seulement la passerelle de cette carte ou les DNS que la box donne, lus sur ce PC)
+. (Join-Path $PSScriptRoot 'lire-cas.ps1')
+$valeursPc = @{ '{windows}' = [Environment]::GetFolderPath('Windows'); '{bloc-notes}' = $notepad; '{pid}' = "$PID"; '{carte}' = $(if ($carte) { [int]$carte.ifIndex } else { -1 }) }
+$corpus = Read-Cas 'aide\demandes.json' $valeursPc -Minimum 161
+$acceptees = @(); $refusees = @(); $nbCorpus = 0; $nbSautes = 0
+foreach ($c in @($corpus.cas)) {
+    if (@($c.besoin) -contains 'carte' -and -not $carte) { $nbSautes++; continue }
+    $nbCorpus++
+    if ([bool]$c.attendu.accepte) { $acceptees += , @($c.entree.action, $c.entree.parametres) } else { $refusees += , @($c.entree.action, $c.entree.parametres) }
+}
+# DNS de la box : seulement la passerelle de cette carte ou les DNS que la box donne, lus sur ce PC
 $dnsLocaux = @()
 if ($carte) {
-    foreach ($choix in $DnsChoices) { $acceptees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @($choix) }) }
     $locaux = Get-AideDnsLocaux $carte
     $dnsLocaux = @($locaux | Where-Object { Test-AideAdresseLocale $_ })
     foreach ($ip in $dnsLocaux) { $acceptees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @($ip) }) }
     if (-not $dnsLocaux.Count) { Write-Host 'Info : aucune box (passerelle ou DNS donné par DHCP en adresse privée) sur la carte de ce PC : DNS de la box non essayé.' }
 }
 
-# ---------------------------------------------------------------------------
-# 4. Demandes refusées. Le message doit être un vrai refus de l'Aide (pas une erreur quelconque).
-# ---------------------------------------------------------------------------
-$refusees = @(
-    # Registre : hors liste, valeur interdite, chemin détourné
-    @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'; Nom = 'Pirate'; Valeur = 'C:\x.exe'; Type = 'String' }),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA'; Valeur = 0; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'; Nom = 'fDenyTSConnections'; Valeur = 0; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = "$IfeoPath\RocketLeague.exe"; Nom = 'Debugger'; Valeur = 'cmd.exe'; Type = 'String' }),
-    @('reg.ecrire', @{ Cle = "$IfeoPath\RocketLeague.exe\PerfOptions"; Nom = 'Debugger'; Valeur = 'cmd.exe'; Type = 'String' }),
-    @('reg.ecrire', @{ Cle = "$IfeoPath\lsass.exe\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 3; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = "$IfeoPath\MsMpEng.exe\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 1; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = "$IfeoPath\RocketLeague.exe\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 4; Type = 'DWord' }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\MpSigStub.exe" }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\smartscreen.exe" }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\MRT.exe" }),
-    @('reg.ecrire', @{ Cle = "$IfeoPath\..\Run\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 3; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = "$IfeoPath\..\..\Run\x.exe\PerfOptions"; Nom = 'CpuPriorityClass'; Valeur = 3; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\..\Lsa'; Nom = 'HwSchMode'; Valeur = 2; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Nom = 'HwSchMode'; Valeur = 9; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Nom = 'HwSchMode'; Valeur = 2; Type = 'String' }),
-    @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Nom = 'HwSchMode'; Valeur = '2; calc'; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'; Nom = 'Pirate'; Valeur = 1; Type = 'DWord' }),
-    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(3, 0); Type = 'Binary' }),
-    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
-    @('reg.effacer', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'; Nom = 'EnableLUA' }),
-    @('reg.effacer', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'; Nom = 'fDenyTSConnections' }),
-    @('reg.effacer', @{ Cle = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'; Nom = 'SecurityHealth' }),
-    @('reg.effacer', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\..\..\Services\WinDefend'; Nom = 'Start' }),
-    # Services : hors liste (dont l'antivirus), démarrage inconnu
-    @('service.regler', @{ Nom = 'WinDefend'; Demarrage = 'Disabled' }),
-    @('service.regler', @{ Nom = 'mpssvc'; Demarrage = 'Disabled'; Arreter = $true }),
-    @('service.regler', @{ Nom = 'Spooler'; Demarrage = 'Disabled' }),
-    @('service.regler', @{ Nom = 'DiagTrack'; Demarrage = 'Boot' }),
-    @('service.regler', @{ Nom = 'WSearch'; Demarrage = 'Manual'; Arreter = $true }),
-    @('service.regler', @{ Nom = 'SysMain'; Demarrage = 'Manual' }),
-    @('service.regler', @{ Nom = 'edgeupdate2'; Demarrage = 'Manual' }),
-    @('service.regler', @{ Nom = 'GoogleUpdaterService1; calc'; Demarrage = 'Manual' }),
-    @('service.regler', @{ Nom = 'edgeupdate'; Demarrage = 'Boot' }),
-    # Audit du 25/10 (constat 8) : un service de mise à jour jamais « Désactivé » (seulement « Manuel ») ; Sécurité
-    # Windows et l'antivirus jamais coupés au démarrage
-    @('service.regler', @{ Nom = 'edgeupdate'; Demarrage = 'Disabled'; Arreter = $true }),
-    @('service.regler', @{ Nom = 'gupdate'; Demarrage = 'Disabled' }),
-    @('service.regler', @{ Nom = 'GoogleUpdaterService140.0.1.0'; Demarrage = 'Disabled' }),
-    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'SecurityHealth'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
-    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run32"; Nom = 'SecurityHealth'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
-    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\Run"; Nom = 'Windows Defender'; Valeur = @(7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
-    @('reg.ecrire', @{ Cle = "HKLM:\$ApprovedRoot\StartupFolder"; Nom = 'SecurityHealthSystray.lnk'; Valeur = @(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); Type = 'Binary' }),
-    # DNS : carte inexistante, trop de serveurs, serveur inconnu
-    @('dns.regler', @{ Index = 0; Serveurs = @('1.1.1.1', '1.0.0.1') }),
-    @('dns.regler', @{ Index = 1; Serveurs = @('1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4', '9.9.9.9') }),
-    # Pare-feu : nom de règle étranger, service ou programme indispensable
-    @('pare-feu.bloquer', @{ Nom = 'Règle quelconque'; Programme = $notepad }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque *'; Programme = $notepad }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = 'notepad.exe' }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\..\notepad.exe" }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\drivers\etc\hosts" }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\svchost.exe" }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\svchost.exe"; Services = @('wuauserv') }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\svchost.exe"; Services = @('DiagTrack', 'WinDefend') }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\svchost.exe"; Services = @('Dnscache; calc') }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\explorer.exe" }),
-    @('pare-feu.bloquer', @{ Nom = 'Nevermind : bloque X'; Programme = "$env:windir\System32\lsass.exe" }),
-    @('pare-feu.debloquer', @{ Nom = 'Core Networking - DNS (UDP-Out)' }),
-    @('pare-feu.debloquer', @{ Nom = 'Windows Defender Firewall' }),
-    # Point de restauration : description libre
-    @('restauration.creer', @{ Description = 'autre chose' }),
-    # Antivirus : liste vide ou mal formée
-    @('antivirus.retirer-exclusions', @{ Elements = @() }),
-    @('antivirus.retirer-exclusions', @{ Elements = @("C:\x`nC:\y") }),
-    @('antivirus.retirer-exclusions', @{ Elements = @(1..201 | ForEach-Object { "C:\x$_" }) }),
-    # Wi-Fi : nom de profil invalide
-    @('wifi.manuel', @{ Profils = @('a" b') }),
-    @('wifi.manuel', @{ Profils = @() }),
-    @('wifi.manuel', @{ Profils = @('x' * 65) }),
-    @('wifi.manuel', @{ Profils = @("Box`nname=*") }),
-    @('wifi.manuel', @{ Profils = @('Box\') }),
-    # Nettoyage : jamais un chemin envoyé par Nevermind
-    @('nettoyage.lancer', @{ Id = 'C:\Users' }),
-    @('nettoyage.lancer', @{ Id = "$env:USERPROFILE\Documents" }),
-    @('nettoyage.lancer', @{ Id = '..\..' }),
-    @('nettoyage.lister', @{ Id = 'C:\' }),
-    @('nettoyage.lister', @{ Id = 'system32' }),
-    # (constat 3 de l'audit du 25/10 : les dossiers où les utilisateurs écrivent ne sont plus vidés par l'Aide)
-    @('nettoyage.lancer', @{ Id = 'wintemp' }),
-    @('nettoyage.lister', @{ Id = 'wintemp' }),
-    @('nettoyage.lancer', @{ Id = 'wer' }),
-    # Processus : Windows et l'antivirus jamais fermés
-    @('processus.fermer', @{ Nom = 'MsMpEng' }),
-    @('processus.fermer', @{ Nom = 'MsMpEng  ' }),
-    @('processus.fermer', @{ Nom = 'MsSense' }),
-    @('processus.fermer', @{ Nom = 'smartscreen' }),
-    @('processus.fermer', @{ Nom = 'SecurityHealthHost' }),
-    @('processus.fermer', @{ Nom = 'MsMpEng.exe' }),
-    @('processus.fermer', @{ Nom = 'lsass' }),
-    @('processus.fermer', @{ Nom = 'Nevermind' }),
-    @('processus.fermer', @{ Nom = 'chrome*' }),
-    @('processus.fermer', @{ Nom = 'a;b' }),
-    @('processus.fermer', @{ Chemin = "$env:windir\explorer.exe" }),
-    @('processus.fermer', @{ Chemin = "$env:windir\System32\cmd.exe" }),
-    @('processus.fermer', @{ Chemin = 'C:\Jeux\..\Windows\explorer.exe' }),
-    # Lectures et mesures : paramètres mal formés
-    @('lecture.chemins', @{ Pids = @('12; Remove-Item C:\') }),
-    @('lecture.chemins', @{ Pids = @() }),
-    @('lecture.chemins', @{ Pids = @(1..501 | ForEach-Object { "$_" }) }),
-    @('fps.demarrer', @{ Pid = '4' }),
-    @('fps.demarrer', @{ Pid = '0' }),
-    @('fps.demarrer', @{ Pid = '1234; calc' }),
-    @('fps.veiller', @{ Noms = @() }),
-    @('fps.veiller', @{ Noms = @('C:\Jeux\bf6.exe') }),
-    @('fps.veiller', @{ Noms = @('bf6.exe" --output_file C:\x.csv "a.exe') }),
-    @('fps.veiller', @{ Noms = @('notepad') }),
-    @('fps.veiller', @{ Noms = @(1..11 | ForEach-Object { "jeu$_.exe" }) }),
-    # Demande inconnue
-    @('inconnue', @{}),
-    @('reg.lire', @{ Cle = 'HKLM:\SAM'; Nom = 'x' })
-)
 # Selon ce qui existe sur ce PC (lu seulement)
-if ($carte) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('6.6.6.6') }) }
-if ($carte) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('1.1.1.1', '6.6.6.6') }) }
 # Une adresse privée qui n'est ni la box ni un DNS donné par elle : un faux DNS posé sur le réseau local (constat 12)
 if ($carte) {
     foreach ($ip in '10.254.254.253', '192.168.1.254', '172.31.254.254', 'fd12:3456::53', 'fe80::dead:beef') {
@@ -373,34 +202,13 @@ foreach ($a in $refusees) {
 # ---------------------------------------------------------------------------
 # 7. Qui peut parler à l'Aide : seulement Mindset.exe du dossier de cette copie de Nevermind (le programme qui la fait
 #    tourner), reconnu par son chemin complet. Toutes les applis de la suite tournent dans un « Mindset.exe » : un
-#    Mindset.exe ailleurs, le relais Nevermind.exe ou tout autre programme ne la pilote jamais.
+#    Mindset.exe ailleurs, le relais Nevermind.exe ou tout autre programme ne la pilote jamais (cas\aide\client.json).
 # ---------------------------------------------------------------------------
-$dossierAppli = 'C:\Program Files\Mindset\Programmes\Nevermind'
-$clients = @(
-    @("$dossierAppli\Mindset.exe", $true),
-    @('C:\PROGRAM FILES\mindset\programmes\nevermind\MINDSET.EXE', $true),   # (Windows ne tient pas compte des majuscules)
-    @("$dossierAppli\Nevermind.exe", $false),                    # le relais : il ne parle jamais à l'Aide
-    @("$dossierAppli\NevermindAide.exe", $false),
-    @("$dossierAppli\Désinstaller Nevermind.exe", $false),
-    @('C:\Program Files\Mindset\Mindset\Mindset.exe', $false),   # Mindset lui-même
-    @('C:\Program Files\Mindset\Programmes\Evermind\Mindset.exe', $false),   # une autre appli de la suite
-    @("$env:USERPROFILE\Downloads\Mindset.exe", $false),         # n'importe quel Mindset.exe posé ailleurs
-    @("$dossierAppli\fichiers\Mindset.exe", $false),
-    @("$dossierAppli\..\Nevermind\Mindset.exe", $false),         # chemin détourné (Windows donne toujours le chemin réel)
-    @("$dossierAppli\Mindset.exe.old", $false),
-    @("$dossierAppli\Mindset.exe ", $false),
-    @("$dossierAppli\Mindset", $false),
-    @("${dossierAppli}2\Mindset.exe", $false),
-    @("$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe", $false),
-    @('', $false)
-)
-foreach ($c in $clients) {
-    $nbTests++
-    $r = Test-AideClient $c[0] $dossierAppli
-    if ($r -ne $c[1]) { $echecs.Add("Client de l'Aide $(if ($c[1]) { 'refusé à tort' } else { 'accepté à tort' }) : « $($c[0]) »") }
+foreach ($c in @((Read-Cas 'aide\client.json' -Minimum 17).cas)) {
+    $nbTests++; $nbCorpus++
+    $r = Test-AideClient $c.entree.chemin $c.entree.dossier
+    if ($r -ne [bool]$c.attendu.accepte) { $echecs.Add("Client de l'Aide $(if ($c.attendu.accepte) { 'refusé à tort' } else { 'accepté à tort' }) : $(Format-Cas $c)") }
 }
-$nbTests++
-if (Test-AideClient "$dossierAppli\Mindset.exe" '') { $echecs.Add('Client de l''Aide accepté sans dossier de référence') }
 # NevermindAide.ps1 se sert bien de ce contrôle (connexions et « Nevermind ouvert ? »), et ne cherche aucun programme par
 # son nom seul
 $codeAide = [IO.File]::ReadAllText((Join-Path $racine 'Nevermind\fichiers\NevermindAide.ps1'), [Text.Encoding]::UTF8)
@@ -408,6 +216,49 @@ $nbTests++
 if (([regex]::Matches($codeAide, 'Test-AideClient\b')).Count -lt 2) { $echecs.Add('NevermindAide.ps1 : Test-AideClient n''est plus utilisé pour les connexions et pour savoir si Nevermind est ouvert') }
 $nbTests++
 if ($codeAide -match 'Get-Process\s+-Name|GetProcessesByName|-ne \$Exe\b') { $echecs.Add('NevermindAide.ps1 : un programme y est cherché par son nom') }
+
+# ---------------------------------------------------------------------------
+# 7 bis. Le nom du canal et du verrou de l'Aide (cas\aide\canal.json) : le suffixe calculé par Get-AideSuffixe, et le
+#    nom composé comme le fait NevermindAide.ps1 (les deux noms y sont lus) ; natif.cs (Nevermind) compose le même.
+# ---------------------------------------------------------------------------
+$modeleCanal = if ($codeAide -match '(?m)^\$NomTuyau = "(Nevermind-Aide-\$Sid-\$Suffixe)"') { $Matches[1] } else { '' }
+$modeleVerrou = if ($codeAide -match 'Threading\.Mutex\(\$true, "(Local\\Nevermind-Aide-\$Sid-\$Suffixe)"') { $Matches[1] } else { '' }
+$nbTests++
+if (-not $modeleCanal -or -not $modeleVerrou) { $echecs.Add('NevermindAide.ps1 : le nom du canal ou du verrou n''est plus « Nevermind-Aide-$Sid-$Suffixe » (mettre cas\aide\canal.json à jour)') }
+$codeNatif = [IO.File]::ReadAllText((Join-Path $AideDossierModules 'natif.cs'), [Text.Encoding]::UTF8)
+$nbTests++
+if ($codeNatif -notmatch [regex]::Escape('return "Nevermind-Aide-" + System.Security.Principal.WindowsIdentity.GetCurrent().User.Value + (Suffixe == "" ? "" : "-" + Suffixe);')) { $echecs.Add('natif.cs : AideClient.Nom() ne compose plus le nom du canal comme l''Aide') }
+foreach ($c in @((Read-Cas 'aide\canal.json' -Minimum 12).cas)) {
+    $nbTests++; $nbCorpus++
+    $s = Get-AideSuffixe $c.entree.dossier
+    $canal = $modeleCanal.Replace('$Sid', $c.entree.sid).Replace('$Suffixe', $s)
+    $verrou = $modeleVerrou.Replace('$Sid', $c.entree.sid).Replace('$Suffixe', $s)
+    if ($s -cne $c.attendu.suffixe -or $canal -cne $c.attendu.canal -or $verrou -cne $c.attendu.verrou) { $echecs.Add("Canal de l'Aide : $(Format-Cas $c) donne $s, $canal, $verrou") }
+}
+
+# ---------------------------------------------------------------------------
+# 7 ter. La règle « fermable » (Get-RefusFermeture), commune à la page RAM et à l'Aide, sur de faux PC
+#    (cas\aide\fermeture.json) : chaque cas part du contexte et de la fiche du fichier, et en remplace quelques champs.
+# ---------------------------------------------------------------------------
+$casFermer = Read-Cas 'aide\fermeture.json' -Minimum 47
+$programmesAvant = $AideProgrammes
+foreach ($c in @($casFermer.cas)) {
+    $nbTests++; $nbCorpus++
+    $x = ConvertTo-CasTable $casFermer.contexte
+    if ($c.entree.contexte) { foreach ($p in $c.entree.contexte.PSObject.Properties) { $x[$p.Name] = $p.Value } }
+    $fi = ConvertTo-CasTable $casFermer.fiche
+    if ($c.entree.fiche) { foreach ($p in $c.entree.fiche.PSObject.Properties) { $fi[$p.Name] = $p.Value } }
+    $ctxF = @{ Antivirus = @($x.antivirus); Windows = [string]$x.windows; ServicesPid = $null; Reference = $null }
+    if ($null -ne $x.servicesPid) { $ctxF.ServicesPid = [Collections.Generic.HashSet[int]]::new(); foreach ($n in $x.servicesPid) { [void]$ctxF.ServicesPid.Add([int]$n) } }
+    if ($null -ne $x.reference) { $ctxF.Reference = @{ Id = $x.reference.id; Session = $x.reference.session; Compte = $x.reference.compte; Eleve = $x.reference.eleve } }
+    if (@($x.processus).Count) { $ctxF.Processus = @{}; foreach ($p in $x.processus) { $ctxF.Processus[[int]$p.pid] = @{ Parent = $p.parent; Chemin = $p.chemin } } }
+    $ficheF = @{ Id = $fi.id; Chemin = $fi.chemin; Session = $fi.session; Compte = $fi.compte; Protection = $fi.protection; Eleve = $fi.eleve }
+    $AideProgrammes = [string]$x.programmes
+    try { $r = Get-RefusFermeture $ctxF $ficheF -ElevePermis:([bool]$c.entree.elevePermis) } catch { $r = "erreur : $($_.Exception.Message)" }
+    finally { $AideProgrammes = $programmesAvant }
+    $attendu = if ($c.attendu.fermable) { $null } else { [string]$c.attendu.raison }
+    if ([bool]$c.attendu.fermable -ne (-not $r) -or ($r -and $r -cne $attendu)) { $echecs.Add("Règle « fermable » : $(Format-Cas $c) donne « $r » (attendu « $attendu »)") }
+}
 
 # ---------------------------------------------------------------------------
 # 8. Fermer un programme (constat 12) : seulement un programme du compte et de la session de celui qui demande (Nevermind),
@@ -514,38 +365,37 @@ if ($ecrits.Count) { $echecs.Add("aide-actions.ps1 : l'Aide vide encore un dossi
 
 # Constat 8 (audit du 25/10) : ce que l'Aide refuse même à Nevermind
 function Test-Constat8([bool]$Ok, [string]$Message) { $script:nbTests++; if (-not $Ok) { $script:echecs.Add("Constat 8 : $Message") } }
-# Points de restauration : un par 24 h au plus
-$maintenant = [DateTime]::UtcNow
-Test-Constat8 (-not (Test-AideRestaurationRecente 0 $maintenant)) 'aucun point noté : un point est refusé'
-Test-Constat8 (Test-AideRestaurationRecente $maintenant.AddHours(-1).Ticks $maintenant) 'un point il y a 1 h : un 2e est créé'
-Test-Constat8 (-not (Test-AideRestaurationRecente $maintenant.AddHours(-25).Ticks $maintenant)) 'un point il y a 25 h : le suivant est refusé'
-Test-Constat8 (-not (Test-AideRestaurationRecente $maintenant.AddHours(3).Ticks $maintenant)) 'un point noté dans le futur (horloge changée) bloque tout'
+# Points de restauration : un par 24 h au plus (cas\aide\restauration.json)
+function ConvertTo-CasTicks($V) { if ($null -eq $V) { return [long]0 }; if ($V -is [datetime]) { return $V.ToUniversalTime().Ticks }; [DateTime]::Parse([string]$V, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime().Ticks }
+foreach ($c in @((Read-Cas 'aide\restauration.json' -Minimum 8).cas)) {
+    $nbCorpus++
+    $maintenant = [DateTime]::new((ConvertTo-CasTicks $c.entree.maintenant), [DateTimeKind]::Utc)
+    Test-Constat8 ((Test-AideRestaurationRecente (ConvertTo-CasTicks $c.entree.derniere) $maintenant) -eq [bool]$c.attendu.recente) "restauration : $(Format-Cas $c), attendu $($c.attendu.recente)"
+}
 $texteActions = [IO.File]::ReadAllText((Join-Path $AideDossierModules 'aide-actions.ps1'))
 Test-Constat8 ($texteActions -match "(?s)'restauration\.creer' \{.*?Test-AideRestaurationRecente.*?Checkpoint-Computer.*?DerniereRestauration") 'restauration.creer ne vérifie pas le dernier point avant d''en créer un, ou ne le note pas'
 # Tâches planifiées : seulement celles du compte qui demande et du système
-$sidTest = 'S-1-5-21-1111111111-2222222222-3333333333-1001'
-Test-Constat8 (Test-AideTacheDuCompte $sidTest '' $sidTest) 'une tâche du compte qui demande est cachée'
-Test-Constat8 (-not (Test-AideTacheDuCompte 'S-1-5-21-1111111111-2222222222-3333333333-1002' '' $sidTest)) 'une tâche d''un autre compte est montrée'
-Test-Constat8 (Test-AideTacheDuCompte 'SYSTEM' '' $sidTest) 'une tâche du système est cachée'
-Test-Constat8 (Test-AideTacheDuCompte '' 'S-1-5-32-545' $sidTest) 'une tâche pour tous les utilisateurs est cachée'
-Test-Constat8 (-not (Test-AideTacheDuCompte '' 'S-1-5-32-544' $sidTest)) 'une tâche des administrateurs (autres comptes) est montrée'
-Test-Constat8 (-not (Test-AideTacheDuCompte '' '' $sidTest) -and -not (Test-AideTacheDuCompte $sidTest '' '')) 'compte inconnu : une tâche est montrée'
+foreach ($c in @((Read-Cas 'aide\taches-compte.json' -Minimum 13).cas)) {
+    $nbCorpus++
+    Test-Constat8 ((Test-AideTacheDuCompte $c.entree.userId $c.entree.groupId $c.entree.sid) -eq [bool]$c.attendu.montree) "tâches du compte : $(Format-Cas $c), attendu $($c.attendu.montree)"
+}
 Test-Constat8 ($texteActions -match "(?s)'lecture\.taches' \{.*?Test-AideTacheDuCompte") 'lecture.taches ne filtre pas les tâches par compte'
 # Exclusions de l'antivirus : leur nombre seulement
 $blocSecu = [regex]::Match($texteActions, "(?s)'lecture\.securite' \{.*?return \`$r").Value
 Test-Constat8 ($blocSecu -match 'ExclusionsNombre = ' -and $blocSecu -notmatch '[.{ ]Exclusions = ') 'lecture.securite rend encore les chemins des exclusions'
 # Programmes au démarrage : Sécurité Windows et les antivirus inscrits
-$avTest = @('C:\Program Files\AntivirusTest\avtest-service.exe')
-Test-Constat8 (Test-AideDemarrageSecurite "HKLM:\$ApprovedRoot\Run" 'AvTestUI' '"C:\Program Files\AntivirusTest\avtest-ui.exe" /nogui' $avTest) 'l''interface d''un antivirus inscrit peut être coupée au démarrage'
-Test-Constat8 (Test-AideDemarrageSecurite "HKLM:\$ApprovedRoot\Run" 'Defender' '"%ProgramFiles%\Windows Defender\MSASCuiL.exe"' $avTest) 'Microsoft Defender peut être coupé au démarrage'
-Test-Constat8 (-not (Test-AideDemarrageSecurite "HKLM:\$ApprovedRoot\Run" 'Spotify' '"C:\Program Files\Spotify\Spotify.exe" /background' $avTest)) 'un programme ordinaire est pris pour un antivirus'
+# (la commande est toujours donnée par le cas : jamais lue dans le registre de ce PC)
+foreach ($c in @((Read-Cas 'aide\demarrage-securite.json' -Minimum 11).cas)) {
+    $nbCorpus++
+    Test-Constat8 ((Test-AideDemarrageSecurite $c.entree.cle $c.entree.nom ([string]$c.entree.commande) @($c.entree.antivirus)) -eq [bool]$c.attendu.securite) "démarrage : $(Format-Cas $c), attendu $($c.attendu.securite)"
+}
 
 # ---------------------------------------------------------------------------
 # Résultat
 # ---------------------------------------------------------------------------
 $couvertes = @($demandes.Keys | Where-Object { $avecRefus.ContainsKey($_) }).Count
 Write-Host "$($demandes.Count) demandes dans l'Aide, $couvertes avec au moins un refus testé, $($SansParametre.Count) sans paramètre, $($DispenseesDeRefus.Count) dispensée(s)."
-Write-Host "$nbTests essais : $($acceptees.Count) demandes à accepter, $($refusees.Count) à refuser$(if (-not $carte) { ' (aucune carte réseau : essais DNS sur carte réelle sautés)' })."
+Write-Host "$nbTests essais : $($acceptees.Count) demandes à accepter, $($refusees.Count) à refuser$(if (-not $carte) { " (aucune carte réseau : $nbSautes essais DNS sur carte réelle sautés)" }) ; $nbCorpus cas lus dans cas\aide."
 if ($echecs.Count) {
     Write-Host "$($echecs.Count) échec(s) :" -ForegroundColor Red
     foreach ($e in $echecs) { Write-Host "  - $e" -ForegroundColor Red }

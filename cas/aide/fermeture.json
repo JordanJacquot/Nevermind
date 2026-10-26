@@ -1,0 +1,93 @@
+{
+  "format": 1,
+  "sujet": "La règle « fermable » : qui peut être fermé, pour la page RAM de Nevermind et pour l'Aide (processus.fermer)",
+  "regle": "aide-actions.ps1 : Get-RefusFermeture <contexte> <fiche> [-ElevePermis]",
+  "attendu": "fermable : vrai si la règle laisse fermer ; raison : le texte exact du refus (montré à l'utilisateur), null si fermable",
+  "champs": {
+    "contexte.windows": "dossier de Windows",
+    "contexte.programmes": "dossier Program Files (pour reconnaître Program Files\\Mindset)",
+    "contexte.antivirus": "programmes des antivirus inscrits au Centre de sécurité",
+    "contexte.servicesPid": "numéros des processus de service (null : liste illisible)",
+    "contexte.reference": "celui pour qui on ferme (Nevermind) : id, session, compte, eleve (null : inconnu)",
+    "contexte.processus": "processus connus, pour remonter les parents : pid, parent, chemin (vide : pas lus)",
+    "fiche": "ce que Windows dit du processus : id, chemin, session, compte, protection et eleve (0 non, 1 oui, -1 illisible ; null : absent)",
+    "elevePermis": "vrai pour l'Aide, qui ferme aussi un programme de l'utilisateur lancé en administrateur"
+  },
+  "contexte": {
+    "windows": "C:\\Windows",
+    "programmes": "C:\\Program Files",
+    "antivirus": [
+      "C:\\Program Files\\AVX\\Moteur\\avx.exe",
+      "C:\\Windows\\System32\\avxreport.exe"
+    ],
+    "servicesPid": [
+      600,
+      4242
+    ],
+    "reference": {
+      "id": 9000,
+      "session": 1,
+      "compte": "S-1-5-21-1111111111-2222222222-3333333333-1001",
+      "eleve": 0
+    },
+    "processus": []
+  },
+  "fiche": {
+    "id": 800,
+    "chemin": "C:\\Users\\x\\AppData\\Local\\Discord\\app-1.0\\Discord.exe",
+    "session": 1,
+    "compte": "S-1-5-21-1111111111-2222222222-3333333333-1001",
+    "protection": 0,
+    "eleve": 0
+  },
+  "fusion": "chaque cas part du contexte et de la fiche ci dessus ; ses propres « contexte » et « fiche » remplacent les champs qu'ils citent (un champ cité remplace la valeur entière, reference compris)",
+  "cas": [
+    {"nom":"programme ordinaire du compte, dans sa session","entree":{},"attendu":{"fermable":true,"raison":null}},
+    {"nom":"numéro 4 (System)","entree":{"fiche":{"id":4}},"attendu":{"fermable":false,"raison":"fait partie de Windows"}},
+    {"nom":"numéro 0 (Idle)","entree":{"fiche":{"id":0}},"attendu":{"fermable":false,"raison":"fait partie de Windows"}},
+    {"nom":"un service (son numéro de processus)","entree":{"fiche":{"id":600}},"attendu":{"fermable":false,"raison":"est un service"}},
+    {"nom":"liste des services illisible","entree":{"contexte":{"servicesPid":null}},"attendu":{"fermable":false,"raison":"est un service"}},
+    {"nom":"celui qui demande inconnu","entree":{"contexte":{"reference":null}},"attendu":{"fermable":false,"raison":"programme qui fait la demande inconnu"}},
+    {"nom":"session de celui qui demande illisible (-1)","entree":{"contexte":{"reference":{"id":9000,"session":-1,"compte":"S-1-5-21-1111111111-2222222222-3333333333-1001","eleve":0}}},"attendu":{"fermable":false,"raison":"programme qui fait la demande inconnu"}},
+    {"nom":"session de celui qui demande absente","entree":{"contexte":{"reference":{"id":9000,"session":null,"compte":"S-1-5-21-1111111111-2222222222-3333333333-1001","eleve":0}}},"attendu":{"fermable":false,"raison":"programme qui fait la demande inconnu"}},
+    {"nom":"compte de celui qui demande illisible","entree":{"contexte":{"reference":{"id":9000,"session":1,"compte":"","eleve":0}}},"attendu":{"fermable":false,"raison":"programme qui fait la demande inconnu"}},
+    {"nom":"autre session","entree":{"fiche":{"session":2}},"attendu":{"fermable":false,"raison":"ne tourne pas dans ta session"}},
+    {"nom":"session illisible","entree":{"fiche":{"session":null}},"attendu":{"fermable":false,"raison":"ne tourne pas dans ta session"}},
+    {"nom":"autre compte","entree":{"fiche":{"compte":"S-1-5-21-1111111111-2222222222-3333333333-1002"}},"attendu":{"fermable":false,"raison":"n'appartient pas à ton compte"}},
+    {"nom":"compte illisible","entree":{"fiche":{"compte":""}},"attendu":{"fermable":false,"raison":"n'appartient pas à ton compte"}},
+    {"nom":"processus protégé","entree":{"fiche":{"protection":1}},"attendu":{"fermable":false,"raison":"est protégé par Windows (antivirus)"}},
+    {"nom":"protection illisible (-1)","entree":{"fiche":{"protection":-1}},"attendu":{"fermable":false,"raison":"est protégé par Windows (antivirus)"}},
+    {"nom":"protection absente","entree":{"fiche":{"protection":null}},"attendu":{"fermable":false,"raison":"est protégé par Windows (antivirus)"}},
+    {"nom":"emplacement illisible","entree":{"fiche":{"chemin":""}},"attendu":{"fermable":false,"raison":"emplacement illisible"}},
+    {"nom":"dans le dossier de Windows","entree":{"fiche":{"chemin":"C:\\Windows\\Discord\\Discord.exe"}},"attendu":{"fermable":false,"raison":"fait partie de Windows"}},
+    {"nom":"dans le dossier de Windows, écrit en minuscules","entree":{"fiche":{"chemin":"c:\\windows\\system32\\notepad.exe"}},"attendu":{"fermable":false,"raison":"fait partie de Windows"}},
+    {"nom":"nom d'un programme de Windows hors de son dossier (dwm.exe)","entree":{"fiche":{"chemin":"C:\\Program Files\\Discord\\dwm.exe"}},"attendu":{"fermable":false,"raison":"fait partie de Windows"}},
+    {"nom":"nom d'un programme de Windows en majuscules (EXPLORER.EXE)","entree":{"fiche":{"chemin":"D:\\Outils\\EXPLORER.EXE"}},"attendu":{"fermable":false,"raison":"fait partie de Windows"}},
+    {"nom":"nom d'un programme de Windows sans .exe (svchost)","entree":{"fiche":{"chemin":"D:\\Outils\\svchost"}},"attendu":{"fermable":false,"raison":"fait partie de Windows"}},
+    {"nom":"dossier d'un antivirus inscrit (autre programme du même dossier)","entree":{"fiche":{"chemin":"C:\\Program Files\\AVX\\Moteur\\avxui.exe"}},"attendu":{"fermable":false,"raison":"est un programme de ton antivirus"}},
+    {"nom":"le programme déclaré par l'antivirus inscrit","entree":{"fiche":{"chemin":"C:\\Program Files\\AVX\\Moteur\\avx.exe"}},"attendu":{"fermable":false,"raison":"est un programme de ton antivirus"}},
+    {"nom":"un antivirus déclaré dans System32 ne protège pas tout le reste","entree":{"fiche":{"chemin":"C:\\Program Files\\Outil\\outil.exe"}},"attendu":{"fermable":true,"raison":null}},
+    {"nom":"Microsoft Defender (ProgramData)","entree":{"fiche":{"chemin":"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\4.18.2\\MpCopyAccelerator.exe"}},"attendu":{"fermable":false,"raison":"est un programme de ton antivirus"}},
+    {"nom":"Microsoft Defender for Endpoint","entree":{"fiche":{"chemin":"C:\\Program Files\\Microsoft Defender Advanced Threat Protection\\x.exe"}},"attendu":{"fermable":false,"raison":"est un programme de ton antivirus"}},
+    {"nom":"appli du Microsoft Store","entree":{"fiche":{"chemin":"C:\\Program Files\\WindowsApps\\SpotifyAB.Spotify_1.2.3\\Spotify.exe"}},"attendu":{"fermable":false,"raison":"est une appli du Microsoft Store"}},
+    {"nom":"suite : Program Files\\Mindset","entree":{"fiche":{"chemin":"C:\\Program Files\\Mindset\\Evermind\\Discord.exe"}},"attendu":{"fermable":false,"raison":"fait partie de la suite Mindset"}},
+    {"nom":"suite : Program Files\\Mindset, quand Program Files est ailleurs","entree":{"contexte":{"programmes":"D:\\Logiciels"},"fiche":{"chemin":"D:\\Logiciels\\Mindset\\Evermind\\Mindset.exe"}},"attendu":{"fermable":false,"raison":"fait partie de la suite Mindset"}},
+    {"nom":"suite : X:\\Mindset\\Programmes","entree":{"fiche":{"chemin":"E:\\Mindset\\Programmes\\Nevermind\\Discord.exe"}},"attendu":{"fermable":false,"raison":"fait partie de la suite Mindset"}},
+    {"nom":"suite : assistant de Mindcare","entree":{"fiche":{"chemin":"E:\\Mindset\\Donnees\\Mindcare\\ia\\Discord.exe"}},"attendu":{"fermable":false,"raison":"fait partie de la suite Mindset"}},
+    {"nom":"suite : assistant de Mindcare (profil)","entree":{"fiche":{"chemin":"C:\\Users\\x\\AppData\\Local\\Mindset\\Mindcare\\ia\\Discord.exe"}},"attendu":{"fermable":false,"raison":"fait partie de la suite Mindset"}},
+    {"nom":"suite : assistant de Mindcare (profil, travail)","entree":{"fiche":{"chemin":"C:\\Users\\x\\AppData\\Local\\Mindset\\Mindcare (travail)\\ia\\llama.exe"}},"attendu":{"fermable":false,"raison":"fait partie de la suite Mindset"}},
+    {"nom":"un Mindset.exe hors des dossiers de la suite n'est pas protégé par son nom","entree":{"fiche":{"chemin":"C:\\Copies\\Mindset.exe"}},"attendu":{"fermable":true,"raison":null}},
+    {"nom":"Nevermind lui-même (celui qui demande)","entree":{"fiche":{"id":9000}},"attendu":{"fermable":false,"raison":"fait partie de la suite Mindset"}},
+    {"nom":"lancé par Nevermind (sa WebView2)","entree":{"contexte":{"processus":[{"pid":800,"parent":9000,"chemin":"C:\\Users\\x\\AppData\\Local\\Discord\\app-1.0\\Discord.exe"},{"pid":9000,"parent":0,"chemin":"C:\\Dev\\Mindset.exe"}]}},"attendu":{"fermable":false,"raison":"fait partie de la suite Mindset"}},
+    {"nom":"lancé par une appli de la suite","entree":{"contexte":{"processus":[{"pid":800,"parent":650,"chemin":"C:\\Users\\x\\AppData\\Local\\Discord\\app-1.0\\Discord.exe"},{"pid":650,"parent":0,"chemin":"C:\\Program Files\\Mindset\\Mindcare\\Mindset.exe"}]}},"attendu":{"fermable":false,"raison":"fait partie de la suite Mindset"}},
+    {"nom":"a lancé Nevermind","entree":{"contexte":{"processus":[{"pid":9000,"parent":800,"chemin":"C:\\Dev\\Mindset.exe"},{"pid":800,"parent":0,"chemin":"C:\\Users\\x\\AppData\\Local\\Discord\\app-1.0\\Discord.exe"}]}},"attendu":{"fermable":false,"raison":"fait partie de la suite Mindset"}},
+    {"nom":"parent ordinaire (pas de la suite)","entree":{"contexte":{"processus":[{"pid":800,"parent":700,"chemin":"C:\\Users\\x\\AppData\\Local\\Discord\\app-1.0\\Discord.exe"},{"pid":700,"parent":4,"chemin":"C:\\Program Files\\Lanceur\\lanceur.exe"}]}},"attendu":{"fermable":true,"raison":null}},
+    {"nom":"lancé en administrateur, Nevermind sans droits","entree":{"fiche":{"eleve":1}},"attendu":{"fermable":false,"raison":"tourne en administrateur"}},
+    {"nom":"administrateur illisible (-1)","entree":{"fiche":{"eleve":-1}},"attendu":{"fermable":false,"raison":"tourne en administrateur"}},
+    {"nom":"administrateur absent","entree":{"fiche":{"eleve":null}},"attendu":{"fermable":false,"raison":"tourne en administrateur"}},
+    {"nom":"lancé en administrateur, pour l'Aide (-ElevePermis)","entree":{"fiche":{"eleve":1},"elevePermis":true},"attendu":{"fermable":true,"raison":null}},
+    {"nom":"lancé en administrateur, Nevermind aussi","entree":{"contexte":{"reference":{"id":9000,"session":1,"compte":"S-1-5-21-1111111111-2222222222-3333333333-1001","eleve":1}},"fiche":{"eleve":1}},"attendu":{"fermable":true,"raison":null}},
+    {"nom":"appli du Microsoft Store, pour l'Aide","entree":{"fiche":{"chemin":"C:\\Program Files\\WindowsApps\\X_1.0\\x.exe","eleve":1},"elevePermis":true},"attendu":{"fermable":false,"raison":"est une appli du Microsoft Store"}},
+    {"nom":"appli de la suite, pour l'Aide","entree":{"fiche":{"chemin":"C:\\Program Files\\Mindset\\Mindcare\\Mindset.exe"},"elevePermis":true},"attendu":{"fermable":false,"raison":"fait partie de la suite Mindset"}}
+  ]
+}

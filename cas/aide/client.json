@@ -1,0 +1,25 @@
+{
+  "format": 1,
+  "sujet": "Qui peut parler à l'Aide : seulement Mindset.exe du dossier de cette copie de Nevermind, reconnu par son chemin complet",
+  "regle": "aide-actions.ps1 : Test-AideClient <chemin du programme, lu par Windows> <dossier de la copie>",
+  "attendu": "accepte : vrai si l'Aide écoute ce programme",
+  "cas": [
+    {"nom":"Mindset.exe de ce dossier","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Nevermind\\Mindset.exe","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":true}},
+    {"nom":"le même, en majuscules (Windows n'en tient pas compte)","entree":{"chemin":"C:\\PROGRAM FILES\\mindset\\programmes\\nevermind\\MINDSET.EXE","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":true}},
+    {"nom":"le relais : il ne parle jamais à l'Aide","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Nevermind\\Nevermind.exe","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"l'Aide elle-même","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Nevermind\\NevermindAide.exe","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"le désinstalleur","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Nevermind\\Désinstaller Nevermind.exe","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"Mindset lui-même","entree":{"chemin":"C:\\Program Files\\Mindset\\Mindset\\Mindset.exe","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"une autre appli de la suite","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Evermind\\Mindset.exe","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"un Mindset.exe posé ailleurs","entree":{"chemin":"C:\\Users\\x\\Downloads\\Mindset.exe","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"un Mindset.exe dans un sous dossier","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Nevermind\\fichiers\\Mindset.exe","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"chemin détourné (Windows donne toujours le chemin réel)","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Nevermind\\..\\Nevermind\\Mindset.exe","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"ancienne copie","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Nevermind\\Mindset.exe.old","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"espace en plus","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Nevermind\\Mindset.exe ","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"sans .exe","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Nevermind\\Mindset","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"dossier voisin au nom proche","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Nevermind2\\Mindset.exe","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"PowerShell","entree":{"chemin":"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"chemin illisible","entree":{"chemin":"","dossier":"C:\\Program Files\\Mindset\\Programmes\\Nevermind"},"attendu":{"accepte":false}},
+    {"nom":"sans dossier de référence","entree":{"chemin":"C:\\Program Files\\Mindset\\Programmes\\Nevermind\\Mindset.exe","dossier":""},"attendu":{"accepte":false}}
+  ]
+}

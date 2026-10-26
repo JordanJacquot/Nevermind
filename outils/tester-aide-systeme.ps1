@@ -60,27 +60,17 @@ try {
 # ---------------------------------------------------------------------------------------------------------------------
 $texteClient = Read-Fichier (Join-Path $modules 'aide-client.ps1')
 . ([scriptblock]::Create((Get-Fonction $texteClient 'Get-AideEtatTache')))
-$exe = 'C:\Program Files\Mindset\Nevermind\NevermindAide.exe'
-$autreSid = 'S-1-5-21-1111111111-2222222222-3333333333-1001'
 function New-XmlTache([string]$Compte, [string]$Commande, [string]$Arguments, [string]$Niveau = 'HighestAvailable', [string]$Active = 'true') {
     $arg = if ($Arguments) { "<Arguments>$([Security.SecurityElement]::Escape($Arguments))</Arguments>" } else { '' }
     "<?xml version=`"1.0`" encoding=`"UTF-16`"?><Task version=`"1.2`" xmlns=`"http://schemas.microsoft.com/windows/2004/02/mit/task`"><Principals><Principal id=`"Author`"><UserId>$Compte</UserId><RunLevel>$Niveau</RunLevel></Principal></Principals><Settings><Enabled>$Active</Enabled></Settings><Actions Context=`"Author`"><Exec><Command>$([Security.SecurityElement]::Escape($Commande))</Command>$arg</Exec></Actions></Task>"
 }
-$bonne = New-XmlTache 'S-1-5-18' "`"$exe`"" "-Sid $moiSid"
-$cas = @(
-    @{ Nom = 'la tâche SYSTEM pour cet utilisateur'; Xml = $bonne; Attendu = 'systeme' }
-    @{ Nom = 'la même, sans guillemets autour du programme'; Xml = (New-XmlTache 'S-1-5-18' $exe "-Sid $moiSid"); Attendu = 'systeme' }
-    @{ Nom = 'l''ancienne tâche « droits les plus élevés » sous le compte de l''utilisateur'; Xml = (New-XmlTache $moiSid "`"$exe`"" ''); Attendu = 'autre' }
-    @{ Nom = 'l''ancienne tâche, même avec -Sid'; Xml = (New-XmlTache $moiSid "`"$exe`"" "-Sid $moiSid"); Attendu = 'autre' }
-    @{ Nom = 'une tâche SYSTEM pour un autre compte'; Xml = (New-XmlTache 'S-1-5-18' "`"$exe`"" "-Sid $autreSid"); Attendu = 'autre' }
-    @{ Nom = 'une tâche SYSTEM vers un autre programme'; Xml = (New-XmlTache 'S-1-5-18' '"C:\Autre\NevermindAide.exe"' "-Sid $moiSid"); Attendu = 'autre' }
-    @{ Nom = 'une tâche SYSTEM avec des arguments en plus'; Xml = (New-XmlTache 'S-1-5-18' "`"$exe`"" "-Sid $moiSid -Parent 4"); Attendu = 'autre' }
-    @{ Nom = 'une tâche SYSTEM désactivée'; Xml = (New-XmlTache 'S-1-5-18' "`"$exe`"" "-Sid $moiSid" -Active 'false'); Attendu = 'autre' }
-    @{ Nom = 'un texte qui n''est pas du XML'; Xml = 'pas une tâche'; Attendu = 'autre' }
-    @{ Nom = 'pas de tâche'; Xml = ''; Attendu = '' })
-foreach ($c in $cas) {
-    $e = Get-AideEtatTache $c.Xml $exe $moiSid
-    Test-Ok ($e -eq $c.Attendu) "Tâche de l'Aide : $($c.Nom) donne « $e » (attendu « $($c.Attendu) »)"
+# Les cas : cas\aide\tache.json (commun avec la version Rust)
+. (Join-Path $PSScriptRoot 'lire-cas.ps1')
+$nbCorpus = 0
+foreach ($c in @((Read-Cas 'aide\tache.json' -Minimum 14).cas)) {
+    $nbCorpus++
+    $e = Get-AideEtatTache $c.entree.xml $c.entree.exe $c.entree.sid
+    Test-Ok ($e -ceq [string]$c.attendu.etat) "Tâche de l'Aide : $($c.nom) donne « $e » (attendu « $($c.attendu.etat) »)"
 }
 # (contre-épreuve : Nevermind 1.10.0 lançait la tâche sans la regarder ; avec un contrôle qui accepte tout, l'ancienne
 # tâche passerait pour la bonne)
@@ -156,6 +146,12 @@ $avantTc = $env:DOTNET_TieredCompilation
 $env:DOTNET_TieredCompilation = '0'   # (posée par des outils de développement, pas lue par .NET Framework : ne bloque rien)
 try { $vd = @(Get-VariablesDangereuses) } finally { $env:DOTNET_TieredCompilation = $avantTc }
 Test-Ok ($vd -notcontains 'DOTNET_TieredCompilation') 'Variable sans danger (DOTNET_TieredCompilation) prise pour dangereuse'
+# Le motif, nom par nom (cas\aide\variables.json) : celui dont Get-VariablesDangereuses se sert
+Test-Ok ([string]${function:Get-VariablesDangereuses} -match '-match \$AideVariablesDangereuses') 'Get-VariablesDangereuses ne se sert plus de $AideVariablesDangereuses'
+foreach ($c in @((Read-Cas 'aide\variables.json' -Minimum 19).cas)) {
+    $nbCorpus++
+    Test-Ok (([string]$c.entree.nom -match $AideVariablesDangereuses) -eq [bool]$c.attendu.dangereuse) "Variable $($c.entree.nom) : $(if ($c.attendu.dangereuse) { 'pas vue comme dangereuse' } else { 'prise pour dangereuse' })"
+}
 $texteNevermind = Read-Fichier (Join-Path $app 'Nevermind.ps1')
 Test-Ok ($texteNevermind.Contains("-match '$AideVariablesDangereuses'")) 'Désinstallation (Nevermind.ps1) : pas la même liste de variables dangereuses que aide-client.ps1'
 Test-Ok ($texteNevermind -match "(?s)if \(\`$Uninstall -and -not \`$principal.*?COMPlus_.*?Start-Process -FilePath \(\[IO\.Path\]::Combine\(\[Environment\]::GetFolderPath\('System'\), 'WindowsPowerShell\\v1\.0\\powershell\.exe'\)\) -Verb RunAs") 'Désinstallation : demande de Windows sans le contrôle des variables dangereuses, ou powershell.exe sans son chemin complet'
@@ -176,14 +172,13 @@ $script:Accepter = $true
 # ---------------------------------------------------------------------------------------------------------------------
 # 3. Reconnaître l'Aide : canal créé par le système ou les administrateurs, sinon NevermindAide.exe de ce dossier
 # ---------------------------------------------------------------------------------------------------------------------
-[AideClient]::ExeAttendu = 'C:\Nevermind\NevermindAide.exe'
-Test-Ok ([AideClient]::ServeurAccepte('', 'S-1-5-18')) 'Aide en SYSTEM (chemin illisible, canal du système) refusée'
-Test-Ok ([AideClient]::ServeurAccepte('', 'S-1-5-32-544')) 'Aide lancée par la demande de Windows (canal des administrateurs) refusée'
-Test-Ok ([AideClient]::ServeurAccepte('C:\Nevermind\NevermindAide.exe', $moiSid)) 'Aide sans droits de ce dossier refusée'
-Test-Ok (-not [AideClient]::ServeurAccepte('', $moiSid)) 'Canal d''un programme sans droits au chemin illisible accepté'
-Test-Ok (-not [AideClient]::ServeurAccepte('C:\Autre\NevermindAide.exe', $moiSid)) 'Canal d''un autre programme sans droits accepté'
+# (cas\aide\serveur.json)
+foreach ($c in @((Read-Cas 'aide\serveur.json' -Minimum 8).cas)) {
+    $nbCorpus++
+    [AideClient]::ExeAttendu = [string]$c.entree.exeAttendu
+    Test-Ok ([AideClient]::ServeurAccepte([string]$c.entree.chemin, [string]$c.entree.proprietaire) -eq [bool]$c.attendu.accepte) "Reconnaître l'Aide : $(Format-Cas $c), attendu $($c.attendu.accepte)"
+}
 [AideClient]::ExeAttendu = ''
-Test-Ok (-not [AideClient]::ServeurAccepte('', $moiSid)) 'Sans programme attendu, un chemin vide est accepté'
 
 # ---------------------------------------------------------------------------------------------------------------------
 # 4. L'Aide elle-même : utilisateur servi, aide-temp, droits du canal, NevermindAide.exe sans fenêtre
@@ -336,5 +331,5 @@ if ($echecs.Count) {
     $echecs | ForEach-Object { Write-Host " - $_" }
     exit 1
 }
-Write-Host "Aide en SYSTEM : $nbTests vérifications, tout passe."
+Write-Host "Aide en SYSTEM : $nbTests vérifications, tout passe ($nbCorpus cas lus dans cas\aide)."
 exit 0

@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "sujet": "Tâches planifiées montrées : seulement celles du compte qui demande et du système (audit du 25/10, constat 8)",
+  "regle": "aide-actions.ps1 : Test-AideTacheDuCompte <UserId de la tâche> <GroupId de la tâche> <SID du compte qui demande>",
+  "attendu": "montree : vrai si l'Aide rend cette tâche ; un nom de compte (SYSTEM) est traduit en SID par Windows",
+  "cas": [
+    {"nom":"une tâche du compte qui demande","entree":{"userId":"S-1-5-21-1111111111-2222222222-3333333333-1001","groupId":"","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":true}},
+    {"nom":"une tâche d'un autre compte","entree":{"userId":"S-1-5-21-1111111111-2222222222-3333333333-1002","groupId":"","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":false}},
+    {"nom":"une tâche du système (SYSTEM, par son nom)","entree":{"userId":"SYSTEM","groupId":"","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":true}},
+    {"nom":"une tâche du système (S-1-5-18)","entree":{"userId":"S-1-5-18","groupId":"","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":true}},
+    {"nom":"une tâche du service local (S-1-5-19)","entree":{"userId":"S-1-5-19","groupId":"","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":true}},
+    {"nom":"une tâche du service réseau (S-1-5-20)","entree":{"userId":"S-1-5-20","groupId":"","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":true}},
+    {"nom":"une tâche pour tous les utilisateurs (S-1-5-32-545)","entree":{"userId":"","groupId":"S-1-5-32-545","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":true}},
+    {"nom":"une tâche pour tout le monde (S-1-1-0)","entree":{"userId":"","groupId":"S-1-1-0","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":true}},
+    {"nom":"une tâche pour les utilisateurs authentifiés (S-1-5-11)","entree":{"userId":"","groupId":"S-1-5-11","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":true}},
+    {"nom":"une tâche des administrateurs (autres comptes)","entree":{"userId":"","groupId":"S-1-5-32-544","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":false}},
+    {"nom":"un autre compte, même avec le groupe des utilisateurs","entree":{"userId":"S-1-5-21-1111111111-2222222222-3333333333-1002","groupId":"S-1-5-32-545","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":false}},
+    {"nom":"ni compte ni groupe","entree":{"userId":"","groupId":"","sid":"S-1-5-21-1111111111-2222222222-3333333333-1001"},"attendu":{"montree":false}},
+    {"nom":"compte qui demande inconnu","entree":{"userId":"S-1-5-21-1111111111-2222222222-3333333333-1001","groupId":"","sid":""},"attendu":{"montree":false}}
+  ]
+}

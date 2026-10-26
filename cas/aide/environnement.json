@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "sujet": "L'Aide face à un environnement piégé (revue du 25/10, constats 1 et 30) : de vraies demandes, toutes en lecture seule, à une vraie Aide de test lancée avec de faux modules PowerShell et de faux dossiers de Windows (windir, ProgramFiles, ProgramData)",
+  "regle": "NevermindAide.ps1 (lancée par NevermindAide.exe, puis par powershell.exe) : une ligne JSON {\"a\": action, \"p\": parametres} envoyée sur son canal, une ligne JSON {\"ok\": ..., \"r\": ... ou \"e\": ...} en retour",
+  "valeurs": {
+    "{pid}": "le numéro du processus client (celui qui envoie la demande)"
+  },
+  "attendu": "ok : la valeur de « ok » dans la réponse ; contient : un texte présent dans la réponse ; absent : un texte qui ne doit pas y être (un fichier du faux dossier de Windows)",
+  "cas": [
+    {"nom":"l'Aide répond","entree":{"action":"aide.bonjour","parametres":{}},"attendu":{"ok":true}},
+    {"nom":"tâches planifiées (module ScheduledTasks piégé)","entree":{"action":"lecture.taches","parametres":{}},"attendu":{"ok":true}},
+    {"nom":"chemins des processus","entree":{"action":"lecture.chemins","parametres":{"Pids":["{pid}"]}},"attendu":{"ok":true}},
+    {"nom":"sécurité (module Defender piégé)","entree":{"action":"lecture.securite","parametres":{}},"attendu":{"ok":true}},
+    {"nom":"lecture du PC (modules Storage, SecureBoot piégés)","entree":{"action":"lecture.pc","parametres":{}},"attendu":{"ok":true}},
+    {"nom":"DNS sur une carte inexistante (modules NetAdapter, DnsClient piégés)","entree":{"action":"dns.regler","parametres":{"Index":999999,"Serveurs":["6.6.6.6"]}},"attendu":{"ok":false,"contient":"carte"}},
+    {"nom":"fermer un programme absent","entree":{"action":"processus.fermer","parametres":{"Nom":"nm-programme-inexistant"}},"attendu":{"ok":true}},
+    {"nom":"nettoyage : le vrai dossier de Windows, jamais celui de la variable windir","entree":{"action":"nettoyage.lister","parametres":{"Id":"dump","Top":1000}},"attendu":{"ok":true,"absent":"nevermind-piege"}}
+  ]
+}

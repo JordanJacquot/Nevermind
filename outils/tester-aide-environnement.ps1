@@ -19,6 +19,7 @@
 
 $ErrorActionPreference = 'Stop'
 $racine  = Split-Path $PSScriptRoot -Parent
+. (Join-Path $PSScriptRoot 'lire-cas.ps1')
 $app     = Join-Path $racine 'Nevermind\fichiers'
 $echecs  = New-Object System.Collections.Generic.List[string]
 $nbTests = 0
@@ -30,7 +31,7 @@ $psExe = Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell\v
 
 # Le client : quelques demandes en lecture seule, puis le canal (trop long, muet), puis le journal de l'Aide
 $client = @'
-param($Nom, [string]$Sortie)
+param($Nom, [string]$Sortie, [string]$Cas)
 $ErrorActionPreference = 'Stop'
 $enc = New-Object Text.UTF8Encoding($false)
 function Send-Demande([string]$Json, [int]$Delai = 60000) {
@@ -58,13 +59,10 @@ function Wait-Coupure($c, [int]$Delai) {
 $r = [ordered]@{}
 $fin = (Get-Date).AddSeconds(60)
 do { $r.bonjour = Send-Demande '{"a":"aide.bonjour","p":{}}' 5000 } while ($r.bonjour -notmatch '"ok"' -and (Get-Date) -lt $fin -and -not (Start-Sleep -Milliseconds 300))
-$r.taches   = Send-Demande '{"a":"lecture.taches","p":{}}'
-$r.chemins  = Send-Demande ('{"a":"lecture.chemins","p":{"Pids":["' + $PID + '"]}}')
-$r.securite = Send-Demande '{"a":"lecture.securite","p":{}}'
-$r.pc       = Send-Demande '{"a":"lecture.pc","p":{}}'
-$r.dns      = Send-Demande '{"a":"dns.regler","p":{"Index":999999,"Serveurs":["6.6.6.6"]}}'
-$r.fermer   = Send-Demande '{"a":"processus.fermer","p":{"Nom":"nm-programme-inexistant"}}'
-$r.nettoyage = Send-Demande '{"a":"nettoyage.lister","p":{"Id":"dump","Top":1000}}'
+# Les demandes du corpus de cas (cas\aide\environnement.json), dans l'ordre ; {pid} : ce client
+$r.cas = @(foreach ($c in @(([IO.File]::ReadAllText($Cas, [Text.Encoding]::UTF8) | ConvertFrom-Json).cas)) {
+    Send-Demande ((ConvertTo-Json -InputObject @{ a = $c.entree.action; p = $c.entree.parametres } -Depth 10 -Compress).Replace('{pid}', "$PID"))
+})
 # Une demande de 70 Ko sans fin de ligne : coupée sans attendre la suite
 $c = New-Object System.IO.Pipes.NamedPipeClientStream('.', $Nom, [System.IO.Pipes.PipeDirection]::InOut)
 try {
@@ -144,6 +142,9 @@ try {
     [void][IO.Directory]::CreateDirectory($fauxDonnees)
 
     $fichierClient = Join-Path $tmp 'client.ps1'
+    # Les demandes faites par le client : le corpus de cas commun avec la version Rust
+    $fichierCas = Join-Path (Split-Path $PSScriptRoot -Parent) 'cas\aide\environnement.json'
+    $corpus = Read-Cas 'aide\environnement.json' @{ '{pid}' = '{pid}' } -Minimum 8   # ({pid} : remplacé par le client)
     [IO.File]::WriteAllText($fichierClient, $client, (New-Object Text.UTF8Encoding $true))
     . ([scriptblock]::Create([System.Management.Automation.Language.Parser]::ParseFile((Join-Path $copie 'modules\aide-actions.ps1'), [ref]$null, [ref]$null).Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-AideSuffixe' }, $true).Extent.Text))
     $nomCanal = "Nevermind-Aide-$([Security.Principal.WindowsIdentity]::GetCurrent().User.Value)-$(Get-AideSuffixe $appli)"
@@ -160,20 +161,27 @@ try {
         $psi.EnvironmentVariables['ProgramData'] = $fauxDonnees
         $aide = [Diagnostics.Process]::Start($psi); $lances.Add($aide)
         $sortie = Join-Path $tmp "resultat-$variante.json"
-        $cl = Start-Process (Join-Path $appli 'Mindset.exe') -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$fichierClient`"", $nomCanal, "`"$sortie`"" -WindowStyle Hidden -PassThru
+        $cl = Start-Process (Join-Path $appli 'Mindset.exe') -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$fichierClient`"", $nomCanal, "`"$sortie`"", "`"$fichierCas`"" -WindowStyle Hidden -PassThru
         $lances.Add($cl)
         if (-not $cl.WaitForExit(240000)) { Test-Ok $false "$variante : le client n'a pas fini en 4 minutes" }
         $r = $null
         try { $r = [IO.File]::ReadAllText($sortie, [Text.Encoding]::UTF8) | ConvertFrom-Json } catch {}
         if (-not $r) { Test-Ok $false "$variante : le client n'a rien rapporté$(if ($aide.HasExited) { " (Aide arrêtée, code $($aide.ExitCode))" })"; continue }
         Test-Ok ($r.bonjour -match '"ok":true') "$variante : l'Aide ne répond pas ($($r.bonjour))"
-        foreach ($d in 'taches', 'chemins', 'securite', 'pc', 'fermer', 'nettoyage') { Test-Ok ($r.$d -match '"ok":true') "$variante : la demande $d échoue ($(([string]$r.$d).Substring(0, [math]::Min(200, ([string]$r.$d).Length))))" }
-        Test-Ok ($r.dns -match '"ok":false' -and $r.dns -match 'carte') "$variante : la demande DNS sur une carte inexistante ne répond pas comme prévu ($($r.dns))"
+        # Les demandes du corpus : la réponse attendue (ok, un texte présent, un texte absent)
+        $reponses = @($r.cas)
+        Test-Ok ($reponses.Count -eq @($corpus.cas).Count) "$variante : $($reponses.Count) réponses pour $(@($corpus.cas).Count) demandes"
+        for ($i = 0; $i -lt [math]::Min($reponses.Count, @($corpus.cas).Count); $i++) {
+            $c = @($corpus.cas)[$i]; $t = [string]$reponses[$i]
+            $rep = try { $t | ConvertFrom-Json } catch { $null }
+            $court = $t.Substring(0, [math]::Min(200, $t.Length))
+            Test-Ok ($rep -and [bool]$rep.ok -eq [bool]$c.attendu.ok -and (-not $c.attendu.contient -or $t.Contains([string]$c.attendu.contient))) "$variante : $(Format-Cas $c) ne répond pas comme prévu ($court)"
+            # (le nettoyage vise le vrai dossier de Windows, jamais celui de la variable windir)
+            if ($c.attendu.absent) { Test-Ok (-not $t.Contains([string]$c.attendu.absent)) "$variante : $(Format-Cas $c) : « $($c.attendu.absent) » dans la réponse" }
+        }
         # Aucun faux module chargé
         $vus = @(Get-ChildItem -LiteralPath $temoins -File | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.Name) })
         Test-Ok (-not $vus.Count) "$variante : faux module(s) chargé(s) par l'Aide : $($vus -join ', ')"
-        # Le nettoyage vise le vrai dossier de Windows, jamais celui de la variable windir
-        Test-Ok ($r.nettoyage -notmatch 'nevermind-piege') "$variante : le nettoyage lit le faux dossier de Windows (variable windir)"
         # Canal : demande trop longue, connexion muette
         Test-Ok (($r.longue -as [double]) -ge 0) "$variante : une demande de 70 Ko sans fin de ligne n'est pas coupée ($($r.longue))"
         Test-Ok (($r.muette -as [double]) -ge 3 -and ($r.muette -as [double]) -le 8) "$variante : une connexion muette n'est pas coupée après 5 s ($($r.muette))"

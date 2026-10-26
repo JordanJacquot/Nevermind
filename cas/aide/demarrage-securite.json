@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "sujet": "Programmes lancés avec Windows qui protègent le PC : l'Aide ne les coupe jamais au démarrage (audit du 25/10, constat 8)",
+  "regle": "aide-actions.ps1 : Test-AideDemarrageSecurite <clé StartupApproved> <nom de l'entrée> <commande de l'entrée> <programmes des antivirus>",
+  "attendu": "securite : vrai si l'entrée appartient à Sécurité Windows ou à un antivirus (la couper au démarrage est alors refusé)",
+  "note": "une commande vide reste vide (dans le test, elle n'est jamais lue dans le registre)",
+  "cas": [
+    {"nom":"l'interface d'un antivirus inscrit","entree":{"cle":"HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run","nom":"AvTestUI","commande":"\"C:\\Program Files\\AntivirusTest\\avtest-ui.exe\" /nogui","antivirus":["C:\\Program Files\\AntivirusTest\\avtest-service.exe"]},"attendu":{"securite":true}},
+    {"nom":"Microsoft Defender (variable %ProgramFiles%)","entree":{"cle":"HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run","nom":"Defender","commande":"\"%ProgramFiles%\\Windows Defender\\MSASCuiL.exe\"","antivirus":["C:\\Program Files\\AntivirusTest\\avtest-service.exe"]},"attendu":{"securite":true}},
+    {"nom":"un programme ordinaire","entree":{"cle":"HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run","nom":"Spotify","commande":"\"C:\\Program Files\\Spotify\\Spotify.exe\" /background","antivirus":["C:\\Program Files\\AntivirusTest\\avtest-service.exe"]},"attendu":{"securite":false}},
+    {"nom":"Sécurité Windows, par son nom","entree":{"cle":"HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run","nom":"SecurityHealth","commande":"","antivirus":["C:\\Program Files\\AntivirusTest\\avtest-service.exe"]},"attendu":{"securite":true}},
+    {"nom":"Sécurité Windows, nom en français","entree":{"cle":"HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run","nom":"Sécurité Windows","commande":"","antivirus":["C:\\Program Files\\AntivirusTest\\avtest-service.exe"]},"attendu":{"securite":true}},
+    {"nom":"Windows Defender, par son nom","entree":{"cle":"HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run","nom":"Windows Defender","commande":"","antivirus":["C:\\Program Files\\AntivirusTest\\avtest-service.exe"]},"attendu":{"securite":true}},
+    {"nom":"raccourci d'un programme de Windows (SecurityHealthSystray.lnk)","entree":{"cle":"HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\StartupFolder","nom":"SecurityHealthSystray.lnk","commande":"","antivirus":["C:\\Program Files\\AntivirusTest\\avtest-service.exe"]},"attendu":{"securite":true}},
+    {"nom":"un programme de Windows lancé par sa commande","entree":{"cle":"HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run32","nom":"Truc","commande":"C:\\Outils\\smartscreen.exe","antivirus":["C:\\Program Files\\AntivirusTest\\avtest-service.exe"]},"attendu":{"securite":true}},
+    {"nom":"un programme ordinaire, sans commande","entree":{"cle":"HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\StartupFolder","nom":"Truc.lnk","commande":"","antivirus":["C:\\Program Files\\AntivirusTest\\avtest-service.exe"]},"attendu":{"securite":false}},
+    {"nom":"une commande qui n'est pas un programme","entree":{"cle":"HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run","nom":"Lien","commande":"windowsdefender://threat","antivirus":["C:\\Program Files\\AntivirusTest\\avtest-service.exe"]},"attendu":{"securite":false}},
+    {"nom":"variable inconnue dans la commande","entree":{"cle":"HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run","nom":"Truc","commande":"%MONDOSSIER%\\truc.exe","antivirus":["C:\\Program Files\\AntivirusTest\\avtest-service.exe"]},"attendu":{"securite":false}}
+  ]
+}

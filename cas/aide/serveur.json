@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "sujet": "Nevermind reconnaît l'Aide : canal créé par le système ou les administrateurs, sinon NevermindAide.exe de son dossier",
+  "regle": "natif.cs : AideClient.ServeurAccepte(<chemin du programme qui a créé le canal>, <SID du propriétaire du canal>), avec AideClient.ExeAttendu = exeAttendu",
+  "attendu": "accepte : vrai si Nevermind parle à ce programme",
+  "cas": [
+    {"nom":"Aide en SYSTEM (chemin illisible, canal du système)","entree":{"chemin":"","proprietaire":"S-1-5-18","exeAttendu":"C:\\Nevermind\\NevermindAide.exe"},"attendu":{"accepte":true}},
+    {"nom":"Aide lancée par la demande de Windows (canal des administrateurs)","entree":{"chemin":"","proprietaire":"S-1-5-32-544","exeAttendu":"C:\\Nevermind\\NevermindAide.exe"},"attendu":{"accepte":true}},
+    {"nom":"Aide sans droits de ce dossier","entree":{"chemin":"C:\\Nevermind\\NevermindAide.exe","proprietaire":"S-1-5-21-1111111111-2222222222-3333333333-1001","exeAttendu":"C:\\Nevermind\\NevermindAide.exe"},"attendu":{"accepte":true}},
+    {"nom":"la même, en majuscules","entree":{"chemin":"C:\\NEVERMIND\\NEVERMINDAIDE.EXE","proprietaire":"S-1-5-21-1111111111-2222222222-3333333333-1001","exeAttendu":"C:\\Nevermind\\NevermindAide.exe"},"attendu":{"accepte":true}},
+    {"nom":"canal d'un programme sans droits au chemin illisible","entree":{"chemin":"","proprietaire":"S-1-5-21-1111111111-2222222222-3333333333-1001","exeAttendu":"C:\\Nevermind\\NevermindAide.exe"},"attendu":{"accepte":false}},
+    {"nom":"canal d'un autre programme sans droits","entree":{"chemin":"C:\\Autre\\NevermindAide.exe","proprietaire":"S-1-5-21-1111111111-2222222222-3333333333-1001","exeAttendu":"C:\\Nevermind\\NevermindAide.exe"},"attendu":{"accepte":false}},
+    {"nom":"sans programme attendu, un chemin vide","entree":{"chemin":"","proprietaire":"S-1-5-21-1111111111-2222222222-3333333333-1001","exeAttendu":""},"attendu":{"accepte":false}},
+    {"nom":"sans programme attendu, un chemin quelconque","entree":{"chemin":"C:\\Nevermind\\NevermindAide.exe","proprietaire":"S-1-5-21-1111111111-2222222222-3333333333-1001","exeAttendu":""},"attendu":{"accepte":false}}
+  ]
+}
