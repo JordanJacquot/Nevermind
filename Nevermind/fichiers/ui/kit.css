@@ -156,9 +156,11 @@ body.sur-accueil #mascotte.mascotte-coin:not(:empty) { display: block; }
 /* Le module déplié : le module à gauche (il reste en place quand on fait défiler), le contenu à droite */
 .deplie { display: grid; grid-template-columns: minmax(280px, 0.85fr) 1.65fr; gap: 22px; align-items: start; }
 .deplie.sans-module { grid-template-columns: minmax(0, 1fr); }
-.module { padding: 26px 22px 24px; text-align: center; position: sticky; top: 0; border-radius: var(--r); }
+.module { padding: 26px 22px 24px; text-align: center; position: sticky; top: 0; border-radius: var(--r); min-width: 0; }
 .reflet { position: absolute; left: 18px; right: 18px; top: 7px; height: 2px; border-radius: 2px; background: rgba(255,255,255,0.1); pointer-events: none; }
 .module h3 { margin: 16px 0 4px; font-size: 22px; } .module p { margin: 0 0 18px; color: var(--doux); line-height: 1.45; }
+/* Un long texte sans espace (chemin d'un fichier) passe à la ligne au lieu de sortir du cadre */
+.module h3, .module p { overflow-wrap: anywhere; }
 .boutons-v { display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .resume { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; text-align: left; }
 .resume div { padding: 9px 12px; border-radius: 12px; background: rgba(255,255,255,0.04); font-size: 13px; color: var(--doux); min-width: 0; }
@@ -199,8 +201,10 @@ body.avec-3d .anneau { background: none; }
 .ligne .txt { min-width: 0; flex: 1; } .ligne .txt b { display: block; font-size: 16px; } .ligne .n { display: block; color: var(--doux); font-size: 13.5px; margin-top: 2px; }
 .ligne.avec-btns { flex-wrap: wrap; row-gap: 10px; }
 .ligne .btns { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding-left: 56px; }
-.ligne .fin { display: flex; align-items: center; gap: 12px; margin-left: auto; flex: none; }
+.ligne .fin { display: flex; align-items: center; gap: 12px; margin-left: auto; flex: none; max-width: 72%; min-width: 0; }
 .ligne .v { font-weight: 800; white-space: nowrap; color: var(--P); font-variant-numeric: tabular-nums; }
+/* Une valeur plus longue que la ligne (chemin d'un fichier) passe à la ligne, alignée à droite, sans cacher son nom */
+.ligne .fin .v { min-width: 0; white-space: normal; overflow-wrap: anywhere; text-align: right; }
 .ligne .v.ok { color: var(--vert); } .ligne .v.attention { color: var(--orange); } .ligne .v.urgent { color: var(--rouge); }
 .ligne.fait { opacity: 0.55; }
 .ic { --a: var(--P); width: 42px; height: 42px; flex: none; border-radius: 12px; display: grid; place-items: center; background: rgba(255,255,255,0.05); color: var(--a); }
