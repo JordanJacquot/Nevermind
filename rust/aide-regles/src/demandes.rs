@@ -17,6 +17,11 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::net::IpAddr;
 
+/// Le début du nom des règles du pare-feu créées par Nevermind, et celui d'avant la 1.3.6 (l'ancien nom de
+/// Nevermind), reconnu et renommé
+pub const REGLE: &str = "Nevermind : bloque ";
+pub const REGLE_ANCIENNE: &str = "OptiGame : bloque ";
+
 /// Version du protocole de l'Aide (`$AideVersion` : 4, l'Aide en SYSTEM ; 5, demandes resserrées, audit du 25/10)
 pub const VERSION: i32 = 5;
 
@@ -239,9 +244,9 @@ pub fn refus_programme(
 }
 
 /// Un nom de règle du pare-feu créée par Nevermind : ce qui suit « Nevermind : bloque » (ou l'ancien
-/// « OptiGame : bloque »)
-fn suite_regle(nom: &str) -> Option<&str> {
-    texte::reste_apres(nom, "Nevermind : bloque ").or_else(|| texte::reste_apres(nom, "OptiGame : bloque "))
+/// début de nom d'avant la 1.3.6)
+pub fn suite_regle(nom: &str) -> Option<&str> {
+    texte::reste_apres(nom, REGLE).or_else(|| texte::reste_apres(nom, REGLE_ANCIENNE))
 }
 
 /// Un nom de programme pour `processus.fermer` (`^[\w .()+\-]{1,100}$`)

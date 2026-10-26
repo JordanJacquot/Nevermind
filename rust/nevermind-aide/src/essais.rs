@@ -4,7 +4,7 @@
 use crate::actions::{self, EtatAide};
 use crate::serveur::{self, Journal};
 use crate::systeme::*;
-use aide_regles::demandes::{self, Carte, ContexteProgrammes, Demarrage, Pc};
+use aide_regles::demandes::{self, Carte, ContexteProgrammes, Demarrage, Pc, REGLE_ANCIENNE};
 use aide_regles::demarrage::LecturesDemarrage;
 use aide_regles::dossiers::Dossiers;
 use aide_regles::fermeture::Fiche;
@@ -524,7 +524,7 @@ fn pare_feu_regles_de_nevermind_seulement() {
     let s = FauxSysteme::new();
     s.etat().regles = vec![
         "Nevermind : bloque Truc".into(),
-        "OptiGame : bloque Truc".into(),
+        format!("{REGLE_ANCIENNE}Truc"),
         "Nevermind : bloque Machin".into(),
         "Core Networking - DNS (UDP-Out)".into(),
     ];
@@ -536,7 +536,7 @@ fn pare_feu_regles_de_nevermind_seulement() {
     demander(&s, 1, r#"{"a":"pare-feu.debloquer-tout"}"#);
     assert_eq!(s.etat().regles, vec!["Core Networking - DNS (UDP-Out)".to_string()]);
     // Anciennes règles renommées au démarrage
-    s.etat().regles.push("OptiGame : bloque Vieux".into());
+    s.etat().regles.push(format!("{REGLE_ANCIENNE}Vieux"));
     actions::renommer_anciennes_regles(&s).unwrap();
     assert!(s.etat().regles.contains(&"Nevermind : bloque Vieux".to_string()));
 }

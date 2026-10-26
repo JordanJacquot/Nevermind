@@ -3,7 +3,7 @@
 //! ou le message d'erreur montré tel quel.
 
 use crate::systeme::{ErreurEffacement, Systeme, ValeurLue};
-use aide_regles::demandes::{ContexteProgrammes, Demande, VERSION};
+use aide_regles::demandes::{self, ContexteProgrammes, Demande, REGLE, REGLE_ANCIENNE, VERSION};
 use aide_regles::fermeture::{self, Contexte};
 use aide_regles::nettoyage::{self, Categorie};
 use aide_regles::registre::{self, Ruche, Valeur};
@@ -90,8 +90,8 @@ pub fn faire(d: Demande, s: &dyn Systeme, client: u32, etat: &EtatAide) -> Resul
         }
 
         Demande::PareFeuDebloquer { suite } => {
-            // (un blocage noté sous l'ancien nom « OptiGame : bloque ... » a pu être renommé depuis : les deux sont cherchés)
-            let noms = [format!("Nevermind : bloque {suite}"), format!("OptiGame : bloque {suite}")];
+            // (un blocage noté sous l'ancien nom a pu être renommé depuis : les deux noms sont cherchés)
+            let noms = [format!("{REGLE}{suite}"), format!("{REGLE_ANCIENNE}{suite}")];
             for r in regles_nevermind(s)? {
                 if noms.iter().any(|n| texte::egal(n, &r)) {
                     s.pare_feu_retirer(&r)?;
@@ -213,13 +213,9 @@ fn tcpip(guid: &str) -> String {
     format!("SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\{{{guid}}}")
 }
 
-/// Les règles du pare-feu créées par Nevermind (« Nevermind : bloque ... », ou « OptiGame : bloque ... » avant la 1.3.6)
+/// Les règles du pare-feu créées par Nevermind (« Nevermind : bloque ... », ou l'ancien nom avant la 1.3.6)
 fn regles_nevermind(s: &dyn Systeme) -> Result<Vec<String>, String> {
-    let mut r: Vec<String> = s
-        .pare_feu_regles()?
-        .into_iter()
-        .filter(|n| texte::commence(n, "Nevermind : bloque ") || texte::commence(n, "OptiGame : bloque "))
-        .collect();
+    let mut r: Vec<String> = s.pare_feu_regles()?.into_iter().filter(|n| demandes::suite_regle(n).is_some()).collect();
     r.sort();
     r.dedup();
     Ok(r)
@@ -228,8 +224,8 @@ fn regles_nevermind(s: &dyn Systeme) -> Result<Vec<String>, String> {
 /// Une fois, au démarrage de l'Aide : les anciennes règles prennent le nom de Nevermind
 pub fn renommer_anciennes_regles(s: &dyn Systeme) -> Result<(), String> {
     for r in s.pare_feu_regles()? {
-        if let Some(suite) = texte::reste_apres(&r, "OptiGame : bloque ") {
-            let _ = s.pare_feu_renommer(&r, &format!("Nevermind : bloque {suite}"));
+        if let Some(suite) = texte::reste_apres(&r, REGLE_ANCIENNE) {
+            let _ = s.pare_feu_renommer(&r, &format!("{REGLE}{suite}"));
         }
     }
     Ok(())
