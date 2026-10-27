@@ -1,0 +1,4 @@
+# NevermindAide.exe sans dépendre de VCRUNTIME140.dll (absente des PC sans le « Visual C++ Redistributable ») :
+# la bibliothèque C de Microsoft est incluse dans l'exe
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

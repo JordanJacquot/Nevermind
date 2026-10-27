@@ -1,0 +1,110 @@
+{
+  "format": 1,
+  "sujet": "Les connexions TCP et leurs octets, comptés par Windows à la demande de l'Aide (trafic.tcp)",
+  "regle": "modules\\natif.cs : classe TrafficMon (Tcp, ReadBytes, ReadBytes6, CountersOk) ; modules\\aide-actions.ps1 : Invoke-AideAction, demande trafic.tcp",
+  "enregistrement": "Tables de connexions reconstituées (GetExtendedTcpTable, IPv4 et IPv6) avec la réponse de Windows à chaque demande de comptage et de lecture des octets.",
+  "entree": {
+    "passages": "une demande trafic.tcp par passage : la table IPv4 et la table IPv6 de Windows à ce moment (null : illisible)",
+    "connexion": "etat (2 : en écoute, 5 : établie...), adresses et ports, pid ; compter : Windows accepte de compter ses octets ; octets : ce qu'il lit, [envoyés, reçus] (null : lecture refusée) ; zone_locale, zone_distante : zones IPv6"
+  },
+  "attendu": {
+    "reponses": "la réponse de l'Aide à chaque passage : { ok, r = { Lignes, CompteursOk } }"
+  },
+  "cas": [
+    {
+      "nom": "Aide en administrateur : comptage demandé une fois par connexion, oublié à sa fermeture",
+      "entree": {
+        "passages": [
+          {
+            "v4": [
+              {"etat": 5, "local": "192.168.1.20", "port_local": 50312, "distante": "140.82.112.4", "port_distant": 443, "pid": 4120, "compter": true, "octets": [1834, 52311]},
+              {"etat": 2, "local": "0.0.0.0", "port_local": 135, "distante": "0.0.0.0", "port_distant": 0, "pid": 1204, "compter": false, "octets": null},
+              {"etat": 5, "local": "127.0.0.1", "port_local": 49700, "distante": "127.0.0.1", "port_distant": 49701, "pid": 3000, "compter": true, "octets": [10, 20]},
+              {"etat": 8, "local": "192.168.1.20", "port_local": 50400, "distante": "52.1.2.3", "port_distant": 443, "pid": 4120, "compter": true, "octets": [99, 99]},
+              {"etat": 5, "local": "192.168.1.20", "port_local": 50500, "distante": "0.0.0.0", "port_distant": 0, "pid": 4120, "compter": false, "octets": null},
+              {"etat": 5, "local": "192.168.1.20", "port_local": 50600, "distante": "13.107.42.14", "port_distant": 443, "pid": 5100, "compter": true, "octets": null},
+              {"etat": 11, "local": "192.168.1.20", "port_local": 50700, "distante": "20.42.65.92", "port_distant": 443, "pid": 0, "compter": false, "octets": null}
+            ],
+            "v6": [
+              {"etat": 5, "local": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "port_local": 61000, "distante": "2606:4700::6810:85e5", "port_distant": 443, "pid": 5000, "compter": true, "octets": [500, 900], "zone_locale": 0, "zone_distante": 0},
+              {"etat": 5, "local": "::ffff:192.168.1.20", "port_local": 61001, "distante": "::ffff:52.4.5.6", "port_distant": 8080, "pid": 6000, "compter": false, "octets": [1, 1], "zone_locale": 0, "zone_distante": 0},
+              {"etat": 2, "local": "::", "port_local": 445, "distante": "::", "port_distant": 0, "pid": 4, "compter": false, "octets": null, "zone_locale": 0, "zone_distante": 0},
+              {"etat": 5, "local": "fe80::1c2b:3a4d:5e6f:7a8b", "port_local": 61002, "distante": "fe80::1", "port_distant": 7680, "pid": 7000, "compter": true, "octets": [3, 4], "zone_locale": 12, "zone_distante": 12}
+            ]
+          },
+          {
+            "v4": [
+              {"etat": 5, "local": "192.168.1.20", "port_local": 50312, "distante": "140.82.112.4", "port_distant": 443, "pid": 4120, "compter": false, "octets": [9000, 160000]},
+              {"etat": 5, "local": "127.0.0.1", "port_local": 49700, "distante": "127.0.0.1", "port_distant": 49701, "pid": 3000, "compter": true, "octets": [15, 25]},
+              {"etat": 5, "local": "192.168.1.20", "port_local": 50600, "distante": "13.107.42.14", "port_distant": 443, "pid": 5100, "compter": true, "octets": [70, 80]}
+            ],
+            "v6": [
+              {"etat": 5, "local": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "port_local": 61000, "distante": "2606:4700::6810:85e5", "port_distant": 443, "pid": 5000, "compter": true, "octets": [800, 1500], "zone_locale": 0, "zone_distante": 0},
+              {"etat": 5, "local": "::ffff:192.168.1.20", "port_local": 61001, "distante": "::ffff:52.4.5.6", "port_distant": 8080, "pid": 6000, "compter": true, "octets": [2, 2], "zone_locale": 0, "zone_distante": 0}
+            ]
+          },
+          {
+            "v4": [
+              {"etat": 5, "local": "192.168.1.20", "port_local": 50312, "distante": "140.82.112.4", "port_distant": 443, "pid": 4120, "compter": false, "octets": [9500, 170000]},
+              {"etat": 5, "local": "192.168.1.20", "port_local": 50400, "distante": "52.1.2.3", "port_distant": 443, "pid": 4120, "compter": false, "octets": [99, 99]}
+            ],
+            "v6": null
+          },
+          {"v4": [], "v6": []}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": {"CompteursOk": true, "Lignes": ["4120|140.82.112.4|443|50312|5|1834|52311", "3000|127.0.0.1|49701|49700|5|10|20", "4120|52.1.2.3|443|50400|8|0|0", "5100|13.107.42.14|443|50600|5|0|0", "0|20.42.65.92|443|50700|11|0|0", "5000|2606:4700::6810:85e5|443|61000|5|500|900", "6000|52.4.5.6|8080|61001|5|0|0", "7000|fe80::1|7680|61002|5|3|4"]}},
+          {"ok": true, "r": {"CompteursOk": true, "Lignes": ["4120|140.82.112.4|443|50312|5|9000|160000", "3000|127.0.0.1|49701|49700|5|15|25", "5100|13.107.42.14|443|50600|5|70|80", "5000|2606:4700::6810:85e5|443|61000|5|800|1500", "6000|52.4.5.6|8080|61001|5|2|2"]}},
+          {"ok": true, "r": {"CompteursOk": true, "Lignes": ["4120|140.82.112.4|443|50312|5|9500|170000", "4120|52.1.2.3|443|50400|5|0|0"]}},
+          {"ok": true, "r": {"CompteursOk": true, "Lignes": []}}
+        ]
+      }
+    },
+    {
+      "nom": "Sans droits : Windows refuse de compter, les connexions sont listées sans octets",
+      "entree": {
+        "passages": [
+          {
+            "v4": [
+              {"etat": 5, "local": "192.168.1.20", "port_local": 50312, "distante": "140.82.112.4", "port_distant": 443, "pid": 4120, "compter": false, "octets": [1834, 52311]},
+              {"etat": 2, "local": "0.0.0.0", "port_local": 135, "distante": "0.0.0.0", "port_distant": 0, "pid": 1204, "compter": false, "octets": null}
+            ],
+            "v6": [
+              {"etat": 5, "local": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "port_local": 61000, "distante": "2606:4700::6810:85e5", "port_distant": 443, "pid": 5000, "compter": false, "octets": null, "zone_locale": 0, "zone_distante": 0}
+            ]
+          },
+          {
+            "v4": [
+              {"etat": 5, "local": "192.168.1.20", "port_local": 50312, "distante": "140.82.112.4", "port_distant": 443, "pid": 4120, "compter": false, "octets": [1834, 52311]},
+              {"etat": 2, "local": "0.0.0.0", "port_local": 135, "distante": "0.0.0.0", "port_distant": 0, "pid": 1204, "compter": false, "octets": null}
+            ],
+            "v6": [
+              {"etat": 5, "local": "2a01:e0a:12:3450:1c2b:3a4d:5e6f:7a8b", "port_local": 61000, "distante": "2606:4700::6810:85e5", "port_distant": 443, "pid": 5000, "compter": false, "octets": null, "zone_locale": 0, "zone_distante": 0}
+            ]
+          }
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": {"CompteursOk": false, "Lignes": ["4120|140.82.112.4|443|50312|5|0|0", "5000|2606:4700::6810:85e5|443|61000|5|0|0"]}},
+          {"ok": true, "r": {"CompteursOk": false, "Lignes": ["4120|140.82.112.4|443|50312|5|0|0", "5000|2606:4700::6810:85e5|443|61000|5|0|0"]}}
+        ]
+      }
+    },
+    {
+      "nom": "Tables illisibles : rien, sans erreur",
+      "entree": {
+        "passages": [
+          {"v4": null, "v6": null}
+        ]
+      },
+      "attendu": {
+        "reponses": [
+          {"ok": true, "r": {"CompteursOk": false, "Lignes": []}}
+        ]
+      }
+    }
+  ]
+}
