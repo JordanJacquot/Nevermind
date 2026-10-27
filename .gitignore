@@ -19,6 +19,7 @@
 /Mindset.exe
 /Désinstaller Nevermind.exe
 /NevermindAide.exe
+/NevermindPont.dll
 
 # Anciens lanceurs mis de côté pendant une mise à jour (effacés au lancement suivant)
 *.exe.old
