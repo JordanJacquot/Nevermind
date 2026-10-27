@@ -1555,7 +1555,7 @@ $script:T.Run.Add_Tick({
                         Assert-Test ($v.Ligne -and $v.Ligne.ton -eq 'attention' -and $v.Ligne.valeur -eq '100 Mb/s' -and $v.Ligne.note -like '*peut aller à 1 Gb/s mais elle est branchée à 100 Mb/s*10 fois plus lente*') "carte bridée ($(@($n.Vitesses)[-1])) : ligne $(if ($v.Ligne) { "« $($v.Ligne.valeur) », ton $($v.Ligne.ton), « $($v.Ligne.note) »" } else { 'absente' })"
                         Assert-Test ($v.Bouton -eq 1 -and $v.Rang -eq 0) "carte bridée : bouton $($v.Bouton), vitesse aussi dans les réglages $($v.Rang)"
                     }
-                    Assert-Test ($v.Ligne.note -notmatch '[–—]') 'tiret long dans l''explication'
+                    Assert-Test ($v.Ligne.note -notmatch '[\u2013\u2014]') 'tiret long dans l''explication'
                     # Rien : à 1 Gb/s, carte 2,5 Gb/s à 1 Gb/s, Wi-Fi, vitesses de la carte illisibles, ancienne lecture sans Bps
                     $rien = @(@{ N = '1 Gb/s'; Net = (& $faux 1e9 $giga) }, @{ N = '2,5 Gb/s à 1 Gb/s'; Net = (& $faux 1e9 $intel) }, @{ N = 'Wi-Fi'; Net = (& $faux 1e8 $intel $true) },
                               @{ N = 'illisible'; Net = (& $faux 1e8 @()) }, @{ N = 'carte 100 Mb/s'; Net = (& $faux 1e8 @('Auto', '10 Mbps Full', '100 Mbps Full')) }, @{ N = 'sans Bps'; Net = @{ IfIndex = 4242; Wifi = $false; Speed = '100 Mbps'; Desc = 'x' } })
