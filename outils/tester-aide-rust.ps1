@@ -88,8 +88,14 @@ try {
     $notepad = @("$env:windir\notepad.exe", "$env:windir\System32\notepad.exe", "$env:windir\System32\cmd.exe") | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     $avecPasserelle = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | ForEach-Object { [int]$_.ifIndex })
     $carte = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | Sort-Object { $i = [array]::IndexOf($avecPasserelle, [int]$_.ifIndex); if ($i -lt 0) { 999 } else { $i } })[0]
-    $valeurs = @{ '{windows}' = [Environment]::GetFolderPath('Windows'); '{bloc-notes}' = $notepad; '{pid}' = "$PID"; '{carte}' = $(if ($carte) { [int]$carte.ifIndex } else { -1 }) }
-    $corpus = Read-Cas 'aide\demandes.json' $valeurs -Minimum 161
+    # (la carte de la connexion : une vraie prise Ethernet qui porte la route par défaut, cherchée sans la règle de l'Aide)
+    $routesActives = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -PolicyStore ActiveStore -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.ifIndex })
+    $connexion = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object {
+        $_.HardwareInterface -and $_.ConnectorPresent -and [int]$_.InterfaceType -eq 6 -and [int]$_.NdisPhysicalMedium -in 14, 0 -and $routesActives -contains [int]$_.ifIndex -and
+        [string]$_.InterfaceDescription -notmatch 'virtu|vmware|vbox|tap-windows|wintun|wireguard|tunnel|vpn|miniport|debug|loopback|npcap|zerotier' })[0]
+    $valeurs = @{ '{windows}' = [Environment]::GetFolderPath('Windows'); '{bloc-notes}' = $notepad; '{pid}' = "$PID"; '{carte}' = $(if ($carte) { [int]$carte.ifIndex } else { -1 })
+                  '{carte-connexion}' = $(if ($connexion) { [int]$connexion.ifIndex } else { -1 }) }
+    $corpus = Read-Cas 'aide\demandes.json' $valeurs -Minimum 185
 
     # 1. Les demandes refusées : même refus, même message
     foreach ($c in @($corpus.cas | Where-Object { -not $_.attendu.accepte })) {
@@ -99,6 +105,21 @@ try {
         if (-not $r.PowerShell -or -not $r.Rust) { $echecs.Add("Sans réponse : $(Format-Cas $c)"); continue }
         if ($r.Rust.ok -or $r.PowerShell.ok) { $echecs.Add("Acceptée par $(if ($r.Rust.ok) { 'Rust' } else { 'PowerShell' }) : $(Format-Cas $c)"); continue }
         if ([string]$r.Rust.e -cne [string]$r.PowerShell.e) { $echecs.Add("Message différent : $(Format-Cas $c)`n      PowerShell : $($r.PowerShell.e)`n      Rust       : $($r.Rust.e)") }
+    }
+
+    # 1 bis. Relancer une carte réseau : chaque autre carte de ce PC (Wi-Fi, virtuelles, cachées de Windows, une prise
+    #    qui ne porte pas la connexion) est refusée par les deux Aides, avec le même message : chacune lit la carte à sa
+    #    façon (Get-NetAdapter et Get-NetRoute ; GetIfEntry2 et GetIpForwardTable2). Jamais la carte de la connexion.
+    $autres = @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue | Where-Object { -not $connexion -or [int]$_.ifIndex -ne [int]$connexion.ifIndex })
+    foreach ($ad in $autres) {
+        $ligne = ConvertTo-Json -InputObject @{ a = 'carte.relancer'; p = @{ Index = [int]$ad.ifIndex } } -Compress
+        $r = @{}; foreach ($n in $canaux.Keys) { $r[$n] = Send-Demande $canaux[$n] $ligne }
+        $nb++
+        $quoi = "carte $($ad.ifIndex) ($($ad.InterfaceDescription))"
+        if (-not $r.PowerShell -or -not $r.Rust) { $echecs.Add("Sans réponse : relancer la $quoi"); continue }
+        if ($r.Rust.ok -or $r.PowerShell.ok) { $echecs.Add("Relance acceptée par $(if ($r.Rust.ok) { 'Rust' } else { 'PowerShell' }) : $quoi"); continue }
+        if ([string]$r.Rust.e -cne [string]$r.PowerShell.e) { $echecs.Add("Message différent : relancer la $quoi`n      PowerShell : $($r.PowerShell.e)`n      Rust       : $($r.Rust.e)") }
+        else { Write-Host "Relancer la $quoi : $($r.Rust.e)" }
     }
 
     # 2. Des lectures : mêmes réponses (sans les champs propres à chaque Aide)

@@ -24,7 +24,8 @@ $nbTests = 0
 # ---------------------------------------------------------------------------
 foreach ($c in 'Set-Service', 'Start-Service', 'Stop-Service', 'New-NetFirewallRule', 'Set-NetFirewallRule', 'Remove-NetFirewallRule',
                'Set-NetFirewallProfile', 'Set-DnsClientServerAddress', 'Clear-DnsClientCache', 'Checkpoint-Computer', 'Remove-MpPreference',
-               'Set-SmbServerConfiguration', 'Disable-WindowsOptionalFeature', 'Stop-Process', 'Remove-Item', 'Set-ItemProperty', 'New-Item') {
+               'Set-SmbServerConfiguration', 'Disable-WindowsOptionalFeature', 'Stop-Process', 'Remove-Item', 'Set-ItemProperty', 'New-Item',
+               'Restart-NetAdapter', 'Disable-NetAdapter', 'Enable-NetAdapter') {
     Set-Item -Path "function:global:$c" -Value ([scriptblock]::Create("throw 'Test : la commande $c est interdite pendant le test de l''Aide.'"))
 }
 
@@ -86,6 +87,13 @@ $notepad = @("$env:windir\notepad.exe", "$env:windir\System32\notepad.exe", "$en
 $avecPasserelle = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Sort-Object RouteMetric | ForEach-Object { [int]$_.ifIndex })
 $carte = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | Sort-Object { $i = [array]::IndexOf($avecPasserelle, [int]$_.ifIndex); if ($i -lt 0) { 999 } else { $i } })[0]
 if (-not $carte) { $carte = @(Get-NetAdapter -ErrorAction SilentlyContinue)[0] }
+# La carte de la connexion (relancer une carte réseau), cherchée ici sans la règle de l'Aide : une vraie prise Ethernet
+# (matérielle, avec une prise, câble 802.3 ou support non dit, pas une carte virtuelle) qui porte la route par défaut en ce moment
+$routesActives = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -PolicyStore ActiveStore -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.ifIndex })
+$connexion = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object {
+    $_.HardwareInterface -and $_.ConnectorPresent -and [int]$_.InterfaceType -eq 6 -and [int]$_.NdisPhysicalMedium -in 14, 0 -and $routesActives -contains [int]$_.ifIndex -and
+    [string]$_.InterfaceDescription -notmatch 'virtu|vmware|vbox|tap-windows|wintun|wireguard|tunnel|vpn|miniport|debug|loopback|npcap|zerotier' })[0]
+Write-Host "Info : carte de la connexion pour « relancer la carte » : $(if ($connexion) { "$($connexion.Name) ($($connexion.InterfaceDescription), numéro $($connexion.ifIndex))" } else { 'aucune (pas de prise Ethernet qui porte la connexion) : son cas accepté est sauté' })"
 function Test-Fichier([string]$Chemin) { try { Test-Path -LiteralPath $Chemin -PathType Leaf -ErrorAction Stop } catch { $false } }
 
 # ---------------------------------------------------------------------------
@@ -94,11 +102,13 @@ function Test-Fichier([string]$Chemin) { try { Test-Path -LiteralPath $Chemin -P
 #    quelconque). Ici, seulement celles qui dépendent de ce PC (lu seulement).
 # ---------------------------------------------------------------------------
 . (Join-Path $PSScriptRoot 'lire-cas.ps1')
-$valeursPc = @{ '{windows}' = [Environment]::GetFolderPath('Windows'); '{bloc-notes}' = $notepad; '{pid}' = "$PID"; '{carte}' = $(if ($carte) { [int]$carte.ifIndex } else { -1 }) }
-$corpus = Read-Cas 'aide\demandes.json' $valeursPc -Minimum 161
+$valeursPc = @{ '{windows}' = [Environment]::GetFolderPath('Windows'); '{bloc-notes}' = $notepad; '{pid}' = "$PID"; '{carte}' = $(if ($carte) { [int]$carte.ifIndex } else { -1 })
+               '{carte-connexion}' = $(if ($connexion) { [int]$connexion.ifIndex } else { -1 }) }
+$corpus = Read-Cas 'aide\demandes.json' $valeursPc -Minimum 185
 $acceptees = @(); $refusees = @(); $nbCorpus = 0; $nbSautes = 0
 foreach ($c in @($corpus.cas)) {
     if (@($c.besoin) -contains 'carte' -and -not $carte) { $nbSautes++; continue }
+    if (@($c.besoin) -contains 'carte-connexion' -and -not $connexion) { $nbSautes++; continue }
     $nbCorpus++
     if ([bool]$c.attendu.accepte) { $acceptees += , @($c.entree.action, $c.entree.parametres) } else { $refusees += , @($c.entree.action, $c.entree.parametres) }
 }
@@ -112,6 +122,15 @@ if ($carte) {
 }
 
 # Selon ce qui existe sur ce PC (lu seulement)
+# Relancer une carte réseau : toutes les autres cartes de ce PC sont refusées (Wi-Fi, cartes virtuelles, une prise
+# Ethernet qui ne porte pas la connexion, cartes cachées de Windows)
+$nbAutresCartes = 0
+foreach ($ad in @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue)) {
+    if ($connexion -and [int]$ad.ifIndex -eq [int]$connexion.ifIndex) { continue }
+    $nbAutresCartes++
+    $refusees += , @('carte.relancer', @{ Index = [int]$ad.ifIndex })
+}
+Write-Host "Info : $nbAutresCartes autre(s) carte(s) réseau de ce PC essayée(s) pour « relancer la carte » (toutes à refuser)."
 # Une adresse privée qui n'est ni la box ni un DNS donné par elle : un faux DNS posé sur le réseau local (constat 12)
 if ($carte) {
     foreach ($ip in '10.254.254.253', '192.168.1.254', '172.31.254.254', 'fd12:3456::53', 'fe80::dead:beef') {
@@ -171,7 +190,7 @@ foreach ($n in $demandes.Keys) {
     if (-not $avecRefus.ContainsKey($n)) { $echecs.Add("Couverture : la demande « $n » prend des paramètres mais n'a aucun cas refusé dans ce test.") }
 }
 foreach ($n in $demandes.Keys) {
-    if (-not $avecAccord.ContainsKey($n) -and -not ($n -eq 'dns.regler' -and -not $carte)) { $echecs.Add("Couverture : la demande « $n » n'a aucun cas accepté dans ce test.") }
+    if (-not $avecAccord.ContainsKey($n) -and -not ($n -eq 'dns.regler' -and -not $carte) -and -not ($n -eq 'carte.relancer' -and -not $connexion)) { $echecs.Add("Couverture : la demande « $n » n'a aucun cas accepté dans ce test.") }
 }
 foreach ($n in @($SansParametre) + @($DispenseesDeRefus.Keys) + @($SansModeVerification.Keys)) {
     if (-not $demandes.Contains($n)) { $echecs.Add("Couverture : « $n » est citée dans ce test mais n'existe plus dans l'Aide.") }
@@ -258,6 +277,21 @@ foreach ($c in @($casFermer.cas)) {
     finally { $AideProgrammes = $programmesAvant }
     $attendu = if ($c.attendu.fermable) { $null } else { [string]$c.attendu.raison }
     if ([bool]$c.attendu.fermable -ne (-not $r) -or ($r -and $r -cne $attendu)) { $echecs.Add("Règle « fermable » : $(Format-Cas $c) donne « $r » (attendu « $attendu »)") }
+}
+
+# ---------------------------------------------------------------------------
+# 7 quater. Relancer une carte réseau (Get-AideRefusCarte), sur de fausses cartes (cas\aide\carte.json) : seulement la
+#    carte de la connexion, une vraie prise Ethernet qui porte la route par défaut
+# ---------------------------------------------------------------------------
+$casCarte = Read-Cas 'aide\carte.json' -Minimum 33
+foreach ($c in @($casCarte.cas)) {
+    $nbTests++; $nbCorpus++
+    $x = ConvertTo-CasTable $casCarte.fiche
+    if ($c.entree.fiche) { foreach ($p in $c.entree.fiche.PSObject.Properties) { $x[$p.Name] = $p.Value } }
+    $ficheC = if ($c.entree.absente) { $null } else { @{ Description = [string]$x.description; Materielle = [bool]$x.materielle; Connecteur = [bool]$x.connecteur; Type = [long]$x.type; Support = [long]$x.support; RouteDefaut = [bool]$x.routeDefaut } }
+    try { $r = Get-AideRefusCarte $ficheC } catch { $r = "erreur : $($_.Exception.Message)" }
+    $attendu = if ($c.attendu.relancable) { $null } else { [string]$c.attendu.raison }
+    if ([bool]$c.attendu.relancable -ne (-not $r) -or ($r -and $r -cne $attendu)) { $echecs.Add("Relancer une carte : $(Format-Cas $c) donne « $r » (attendu « $attendu »)") }
 }
 
 # ---------------------------------------------------------------------------
@@ -395,7 +429,7 @@ foreach ($c in @((Read-Cas 'aide\demarrage-securite.json' -Minimum 11).cas)) {
 # ---------------------------------------------------------------------------
 $couvertes = @($demandes.Keys | Where-Object { $avecRefus.ContainsKey($_) }).Count
 Write-Host "$($demandes.Count) demandes dans l'Aide, $couvertes avec au moins un refus testé, $($SansParametre.Count) sans paramètre, $($DispenseesDeRefus.Count) dispensée(s)."
-Write-Host "$nbTests essais : $($acceptees.Count) demandes à accepter, $($refusees.Count) à refuser$(if (-not $carte) { " (aucune carte réseau : $nbSautes essais DNS sur carte réelle sautés)" }) ; $nbCorpus cas lus dans cas\aide."
+Write-Host "$nbTests essais : $($acceptees.Count) demandes à accepter, $($refusees.Count) à refuser$(if ($nbSautes) { " ($nbSautes essais sur carte réelle sautés : $(if (-not $carte) { 'aucune carte réseau' } else { 'aucune prise Ethernet qui porte la connexion' }))" }) ; $nbCorpus cas lus dans cas\aide."
 if ($echecs.Count) {
     Write-Host "$($echecs.Count) échec(s) :" -ForegroundColor Red
     foreach ($e in $echecs) { Write-Host "  - $e" -ForegroundColor Red }

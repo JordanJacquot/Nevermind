@@ -2048,6 +2048,17 @@ public static class ProprietesFenetre
             )
             if ($carte) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('6.6.6.6') }) }
             if ($carte -and '10.254.254.253' -notin $locaux) { $refusees += , @('dns.regler', @{ Index = [int]$carte.ifIndex; Serveurs = @('10.254.254.253') }) }
+            # Relancer une carte réseau : seulement la carte de la connexion (une vraie prise Ethernet qui porte la route
+            # par défaut), jamais une autre carte de ce PC, jamais un numéro qui n'est pas un nombre entier
+            $routes = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -PolicyStore ActiveStore -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.ifIndex })
+            $connexion = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object {
+                $_.HardwareInterface -and $_.ConnectorPresent -and [int]$_.InterfaceType -eq 6 -and [int]$_.NdisPhysicalMedium -in 14, 0 -and $routes -contains [int]$_.ifIndex -and
+                [string]$_.InterfaceDescription -notmatch 'virtu|vmware|vbox|tap-windows|wintun|wireguard|tunnel|vpn|miniport|debug|loopback|npcap|zerotier' })[0]
+            if ($connexion) { $acceptees += , @('carte.relancer', @{ Index = [int]$connexion.ifIndex }) }
+            foreach ($ad in @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue)) {
+                if (-not $connexion -or [int]$ad.ifIndex -ne [int]$connexion.ifIndex) { $refusees += , @('carte.relancer', @{ Index = [int]$ad.ifIndex }) }
+            }
+            foreach ($i in @(0, -1, '6', 6.5, $true, 999999)) { $refusees += , @('carte.relancer', @{ Index = $i }) }
             foreach ($a in $acceptees) {
                 try { [void](Invoke-AideAction $a[0] $a[1] -Verifier) } catch { throw "refusé à tort : $($a[0]) $(ConvertTo-Json $a[1] -Compress) ($($_.Exception.Message))" }
             }

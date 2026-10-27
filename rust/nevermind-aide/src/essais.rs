@@ -4,6 +4,7 @@
 use crate::actions::{self, EtatAide};
 use crate::serveur::{self, Journal};
 use crate::systeme::*;
+use aide_regles::carte::{self, FicheCarte};
 use aide_regles::demandes::{self, Carte, ContexteProgrammes, Demarrage, Pc, REGLE_ANCIENNE};
 use aide_regles::demarrage::LecturesDemarrage;
 use aide_regles::dossiers::Dossiers;
@@ -187,6 +188,35 @@ impl Pc for FauxSysteme {
     fn carte(&self, index: i32) -> Option<Carte> {
         (index == 12).then(|| Carte { index, guid: "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0".into() })
     }
+    fn fiche_carte(&self, index: i32) -> Option<FicheCarte> {
+        // 12 : la carte de la connexion ; 13 : le Wi-Fi (route par défaut lui aussi) ; 14 : VirtualBox ; 15 : une
+        // seconde prise Ethernet, sans route
+        let ethernet = FicheCarte {
+            description: "Intel(R) Ethernet Controller I226-V".into(),
+            materielle: true,
+            connecteur: true,
+            type_carte: 6,
+            support: 14,
+            route_defaut: true,
+        };
+        match index {
+            12 => Some(ethernet),
+            13 => Some(FicheCarte {
+                description: "Intel(R) Wi-Fi 6E AX211".into(),
+                type_carte: 71,
+                support: 9,
+                ..ethernet
+            }),
+            14 => Some(FicheCarte {
+                description: "VirtualBox Host-Only Ethernet Adapter".into(),
+                materielle: false,
+                connecteur: false,
+                ..ethernet
+            }),
+            15 => Some(FicheCarte { route_defaut: false, ..ethernet }),
+            _ => None,
+        }
+    }
     fn dns_locaux(&self, _carte: &Carte) -> Vec<String> {
         vec!["192.168.1.1".into()]
     }
@@ -241,6 +271,10 @@ impl Systeme for FauxSysteme {
         Ok(())
     }
     fn dns_vider_cache(&self) {}
+    fn carte_relancer(&self, index: i32) -> Result<(), String> {
+        self.etat().appels.push(format!("relance carte {index}"));
+        Ok(())
+    }
     fn pare_feu_regles(&self) -> Result<Vec<String>, String> {
         Ok(self.etat().regles.clone())
     }
@@ -521,7 +555,7 @@ fn corpus_environnement() {
 fn bonjour_et_demandes_inconnues() {
     let s = FauxSysteme::new();
     let r = demander(&s, 1, r#"{"a":"aide.bonjour","p":{}}"#);
-    assert_eq!(r["r"]["Version"], 5);
+    assert_eq!(r["r"]["Version"], 6);
     assert_eq!(r["r"]["Compte"], "S-1-5-18");
     assert_eq!(r["r"]["Temp"], format!("{RACINE}\\aide-temp\\"));
     assert_eq!(demander(&s, 1, r#"{"a":"reg.lire","p":{}}"#)["e"], "L'Aide ne connaît pas la demande « reg.lire ».");
@@ -749,6 +783,37 @@ fn verification_avant_action() {
         s.reg_lire(Ruche::Machine, "SOFTWARE\\Mindset\\Nevermind\\Aide\\Dns", "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0")
             .is_some()
     );
+}
+
+/// Relancer une carte réseau : seulement la carte de la connexion (une vraie prise Ethernet qui porte la route par
+/// défaut), et seulement après vérification ; une demande refusée ne touche à aucune carte
+#[test]
+fn carte_relancer_seulement_la_connexion() {
+    let s = FauxSysteme::new();
+    let r = demander(&s, NEVERMIND as u32, r#"{"a":"carte.relancer","p":{"Index":12}}"#);
+    assert_eq!(r["r"], "ok", "{r}");
+    assert_eq!(s.etat().appels, vec!["relance carte 12".to_string()]);
+    let refus = [
+        (r#"{"Index":13}"#, carte::PAS_FILAIRE),
+        (r#"{"Index":14}"#, carte::VIRTUELLE),
+        (r#"{"Index":15}"#, carte::SANS_ROUTE),
+        (r#"{"Index":99}"#, carte::ABSENTE),
+        (r#"{"Index":0}"#, carte::NON_VALABLE),
+        (r#"{"Index":-12}"#, carte::NON_VALABLE),
+        (r#"{"Index":"12"}"#, carte::NON_VALABLE),
+        (r#"{"Index":12.0}"#, carte::NON_VALABLE),
+        (r#"{"Index":true}"#, carte::NON_VALABLE),
+        (r#"{"Index":[12]}"#, carte::NON_VALABLE),
+        (r#"{"Index":4294967308}"#, carte::NON_VALABLE),
+        (r#"{}"#, carte::NON_VALABLE),
+    ];
+    for (p, message) in refus {
+        let s = FauxSysteme::new();
+        let r = demander(&s, NEVERMIND as u32, &format!(r#"{{"a":"carte.relancer","p":{p}}}"#));
+        assert_eq!(r["e"], message, "{p} : {r}");
+        assert!(demandes::est_un_refus(message));
+        assert!(s.etat().appels.is_empty(), "{p} : {:?}", s.etat().appels);
+    }
 }
 
 /// « Tout restaurer » remet le DNS automatique avec une liste vide, que PowerShell 5.1 envoie parfois comme un objet

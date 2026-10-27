@@ -6,7 +6,8 @@
 # Les NevermindAide.exe jugés (passage en Rust, étape 1a) : le lanceur C# que construit outils\construire.ps1, et, si
 # rust\nevermind-aide existe (dans cette branche, ou dans la branche aide_ref), l'exe Rust construit dans ce même run.
 # Chacun passe les mêmes cas, sur sa propre machine. Le cas 10 (tout optimiser puis tout restaurer) les passe l'un après
-# l'autre sur la même machine et compare les états ; le cas 11 lance le banc PowerShell / Rust sous un compte sans droits.
+# l'autre sur la même machine et compare les états ; le cas 11 lance le banc PowerShell / Rust sous un compte sans droits ;
+# le cas 13 fait relancer pour de vrai la carte réseau de la machine par chaque Aide (carte.relancer).
 name: Aide en vrai
 
 on:
@@ -211,3 +212,8 @@ jobs:
       - name: "12. Mesures continues en vrai (trafic, trace réseau, PresentMon) : Aide PowerShell puis Aide Rust"
         if: ${{ !cancelled() && matrix.aide == 'rust' }}
         run: .\outils\essai-mesures-reelles.ps1 -Exe $env:AIDE
+
+      # (en dernier : la machine perd sa connexion quelques secondes, le temps que la carte se rallume)
+      - name: "13. Relancer la carte réseau de la connexion : l'Aide la relance pour de vrai, la connexion revient ; le reste est refusé"
+        if: ${{ !cancelled() }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 13

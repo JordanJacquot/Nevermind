@@ -212,6 +212,49 @@ pub fn requete(espace: &str, wql: &str, noms: &[&str], delai_s: i32) -> Result<V
     Ok(r)
 }
 
+/// Appelle la méthode `methode` (sans paramètre) de l'objet WMI que trouve la requête `wql` (le premier), et attend
+/// qu'elle soit finie. `Ok(false)` : aucun objet trouvé.
+pub fn methode_objet(espace: &str, wql: &str, methode: &str) -> Result<bool, String> {
+    let s = wmi(espace)?;
+    // SAFETY : appels COM ordinaires
+    unsafe {
+        let e: IEnumWbemClassObject = s
+            .ExecQuery(
+                &BSTR::from("WQL"),
+                &BSTR::from(wql),
+                WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+                None,
+            )
+            .map_err(|e| message(&e))?;
+        let mut objets = [None];
+        let mut n = 0u32;
+        let _ = e.Next(30_000, &mut objets, &mut n);
+        let Some(o) = objets[0].take() else { return Ok(false) };
+        let chemin = proprietes(&o, &["__PATH"]);
+        let chemin = chemin.get("__PATH").and_then(Value::as_str).ok_or("objet WMI sans chemin")?.to_string();
+        let mut sortie = None;
+        s.ExecMethod(
+            &BSTR::from(chemin),
+            &BSTR::from(methode),
+            WBEM_FLAG_RETURN_WBEM_COMPLETE,
+            None,
+            None::<&IWbemClassObject>,
+            Some(&mut sortie),
+            None,
+        )
+        .map_err(|e| message(&e))?;
+        if let Some(o) = sortie {
+            let m = proprietes(&o, &["ReturnValue"]);
+            if let Some(n) = m.get("ReturnValue").and_then(Value::as_i64)
+                && n != 0
+            {
+                return Err(format!("WMI : {methode} a répondu {n}"));
+            }
+        }
+        Ok(true)
+    }
+}
+
 /// Un VARIANT contenant une liste de textes
 fn variant_textes(l: &[&str]) -> VARIANT {
     let mut v = VARIANT::default();

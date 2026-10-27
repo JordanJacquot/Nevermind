@@ -42,6 +42,9 @@
 # Code de sortie 1 si un cas échoue.
 #  11. (avec -Banc <outils\tester-aide-rust.ps1> -Aide <exe Rust>) le banc PowerShell / Rust, qui refuse de tourner en
 #      administrateur : lancé ici sous un compte local sans droits créé pour l'essai
+#  13. relancer la carte réseau de la connexion (carte.relancer) : l'Aide relance pour de vrai la carte de la machine de
+#      GitHub, la carte s'éteint puis se rallume, la connexion revient (60 s au plus) ; les autres cartes de la machine
+#      et les numéros mal formés sont refusés sans qu'aucune carte ne bouge
 #   -Pont <dll>     (avec -Cas 0) NevermindPont.dll construite dans le même run (rust\nevermind-pont), mise dans les
 #                   paquets à côté des programmes : la version de Nevermind qui s'en sert ne marche pas sans elle
 param([int]$Cas = -1, [string]$Aide = '', [string]$Aides = '', [string]$Banc = '', [string]$Pont = '')
@@ -1369,11 +1372,159 @@ function Test-Cas11 {
 }
 
 # =====================================================================================================================
+# 13. Relancer la carte réseau de la connexion (carte.relancer) : pour de vrai, sur la machine de GitHub
+# =====================================================================================================================
+# Les états de la carte, relevés de l'extérieur pendant une demande, dès avant elle : un fil natif (C#) qui lit l'état
+# de la carte toutes les 20 ms (NetworkInterface, sans passer par CIM : Get-NetAdapter prend plus de 100 ms par lecture
+# et a manqué une relance de moins d'une seconde, run 40527121588). Chaque changement est noté avec son heure (ms
+# depuis le début du guet). La preuve que l'Aide l'a bien éteinte puis rallumée, ou qu'elle n'y a pas touché.
+function Start-GuetCarte([string]$Guid) {
+    if (-not ('GuetCarte' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Net.NetworkInformation;
+using System.Threading;
+public sealed class GuetCarte
+{
+    readonly string guid;
+    readonly List<string> etats = new List<string>();
+    volatile bool fin;
+    readonly Thread fil;
+    public int Lectures;
+    public GuetCarte(string guid)
+    {
+        this.guid = guid;
+        fil = new Thread(Boucle) { IsBackground = true };
+        fil.Start();
+    }
+    void Boucle()
+    {
+        var montre = Stopwatch.StartNew();
+        string dernier = null;
+        while (!fin)
+        {
+            string e;
+            try
+            {
+                var c = NetworkInterface.GetAllNetworkInterfaces().FirstOrDefault(n => string.Equals(n.Id, guid, StringComparison.OrdinalIgnoreCase));
+                e = c == null ? "absente" : c.OperationalStatus.ToString();
+            }
+            catch (Exception x) { e = "illisible (" + x.GetType().Name + ")"; }
+            Lectures++;
+            if (e != dernier) { lock (etats) etats.Add(e + "@" + montre.ElapsedMilliseconds + "ms"); dernier = e; }
+            Thread.Sleep(20);
+        }
+    }
+    public string[] Arreter() { fin = true; fil.Join(2000); lock (etats) return etats.ToArray(); }
+}
+'@
+    }
+    New-Object GuetCarte $Guid
+}
+function Stop-GuetCarte($G) { , @($G.Arreter()) }
+
+# Les signes qui restent après coup, relevés avant et après une demande : les nouvelles lignes des journaux de Windows
+# (système, profil réseau, NCSI, Plug and Play) et les compteurs de la carte (une carte relancée repart de zéro ?)
+$JournauxCarte = @('System', 'Microsoft-Windows-NetworkProfile/Operational', 'Microsoft-Windows-NCSI/Operational', 'Microsoft-Windows-Kernel-PnP/Configuration', 'Microsoft-Windows-Kernel-PnP/Device Configuration')
+function Get-ReperesCarte([string]$Nom) {
+    $r = @{ Journaux = @{}; Octets = $null }
+    foreach ($j in $JournauxCarte) {
+        $r.Journaux[$j] = try { [long](Get-WinEvent -LogName $j -MaxEvents 1 -ErrorAction Stop).RecordId } catch { [long]0 }
+    }
+    try { $r.Octets = [long](Get-NetAdapterStatistics -Name $Nom -ErrorAction Stop).ReceivedBytes } catch {}
+    $r
+}
+# Ce qui a changé depuis les repères : les nouvelles lignes des journaux (« journal / fournisseur / numéro : début du
+# texte ») et les octets reçus avant et après
+function Get-TracesCarte($Reperes, [string]$Nom) {
+    $lignes = @(foreach ($j in $JournauxCarte) {
+        $depuis = $Reperes.Journaux[$j]
+        try {
+            foreach ($ev in @(Get-WinEvent -LogName $j -MaxEvents 200 -ErrorAction Stop | Where-Object { $_.RecordId -gt $depuis } | Sort-Object RecordId)) {
+                $texte = ([string]$ev.Message -replace '\s+', ' ')
+                "$j / $($ev.ProviderName) / $($ev.Id) : $($texte.Substring(0, [math]::Min(160, $texte.Length)))"
+            }
+        } catch {}
+    })
+    $octets = $null; try { $octets = [long](Get-NetAdapterStatistics -Name $Nom -ErrorAction Stop).ReceivedBytes } catch {}
+    @{ Lignes = $lignes; OctetsAvant = $Reperes.Octets; OctetsApres = $octets }
+}
+function Show-TracesCarte([string]$Titre, $T) {
+    Write-Host "         | $Titre : octets reçus $($T.OctetsAvant) avant, $($T.OctetsApres) après ; $(@($T.Lignes).Count) nouvelle(s) ligne(s) de journal" -ForegroundColor DarkGray
+    foreach ($l in @($T.Lignes) | Select-Object -First 40) { Write-Host "         |   $l" -ForegroundColor DarkGray }
+}
+# La connexion est là : la carte allumée, sa route par défaut, et un vrai échange avec GitHub (TCP 443)
+function Test-ConnexionCarte([int]$Index) {
+    $a = Get-NetAdapter -InterfaceIndex $Index -ErrorAction SilentlyContinue
+    if (-not $a -or [string]$a.Status -ne 'Up') { return $false }
+    if (-not @(Get-NetRoute -InterfaceIndex $Index -DestinationPrefix '0.0.0.0/0' -PolicyStore ActiveStore -ErrorAction SilentlyContinue).Count) { return $false }
+    $t = New-Object Net.Sockets.TcpClient
+    try { $t.ConnectAsync('github.com', 443).Wait(3000) -and $t.Connected } catch { $false } finally { $t.Dispose() }
+}
+function Test-Cas13 {
+    Write-Partie '13. Relancer la carte réseau de la connexion : l''Aide la relance pour de vrai, la connexion revient ; tout le reste est refusé'
+    Reset-Machine
+    $e = Get-Compte $NomElodie
+    $null = Install-Appli $InstallateurNeuf $PaquetEssai $e.Sid
+    $carte = Get-CarteEssai
+    foreach ($a in @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue | Sort-Object ifIndex)) {
+        Write-Host "         | carte $($a.ifIndex) « $($a.Name) » : $($a.InterfaceDescription) ; $($a.Status) ; matérielle $($a.HardwareInterface) ; prise $($a.ConnectorPresent) ; type $($a.InterfaceType) ; support $($a.NdisPhysicalMedium) ; vitesse $($a.LinkSpeed)$(if ($a.ifIndex -eq $carte.Index) { ' ; CELLE DE LA CONNEXION' })" -ForegroundColor DarkGray
+    }
+    Test-Cas "la connexion marche avant l'essai (carte $($carte.Nom), numéro $($carte.Index))" { Test-ConnexionCarte $carte.Index }
+
+    # a. Les refus : numéros mal formés, carte absente, chaque autre carte de la machine. Aucune carte ne bouge.
+    $refus = [Collections.Generic.List[object]]::new()
+    $refus.Add(@{ Nom = 'zero'; Action = 'carte.relancer'; P = @{ Index = 0 } })
+    $refus.Add(@{ Nom = 'negatif'; Action = 'carte.relancer'; P = @{ Index = -1 } })
+    $refus.Add(@{ Nom = 'texte'; Action = 'carte.relancer'; P = @{ Index = "$($carte.Index)" } })
+    $refus.Add(@{ Nom = 'mot'; Action = 'carte.relancer'; P = @{ Index = 'Ethernet' } })
+    $refus.Add(@{ Nom = 'absente'; Action = 'carte.relancer'; P = @{ Index = 999999 } })
+    foreach ($a in @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue | Where-Object { [int]$_.ifIndex -ne $carte.Index } | Select-Object -First 12)) {
+        $refus.Add(@{ Nom = "autre-$($a.ifIndex)"; Action = 'carte.relancer'; P = @{ Index = [int]$a.ifIndex } })
+    }
+    $reperes1 = Get-ReperesCarte $carte.Nom
+    $g = Start-GuetCarte $carte.Guid
+    Start-Sleep -Milliseconds 300   # (le guet a déjà lu la carte avant la première demande)
+    $s1 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @($refus) }
+    Start-Sleep -Milliseconds 500
+    $lectures1 = $g.Lectures
+    $etats1 = Stop-GuetCarte $g
+    Show-TracesCarte 'pendant les refus (contre-épreuve)' (Get-TracesCarte $reperes1 $carte.Nom)
+    Write-Host "         | guet pendant les refus : $lectures1 lectures ; états vus : $($etats1 -join ', ')" -ForegroundColor DarkGray
+    Test-Cas "chaque demande interdite est refusée par la liste de l'Aide ($($refus.Count) demandes : numéros mal formés, carte absente, les autres cartes)" {
+        -not @($refus | Where-Object { -not ($s1.E -and $s1.E.PSObject.Properties[$_.Nom] -and [string]$s1.E.($_.Nom) -like 'Demande refusée*') -or ($s1.R -and $s1.R.PSObject.Properties[$_.Nom]) }).Count
+    }
+    Test-Cas "pendant ces refus, la carte de la connexion n'a pas bougé (guet toutes les 20 ms : $($etats1 -join ', '))" { $etats1.Count -eq 1 -and $etats1[0] -like 'Up@*' -and $lectures1 -gt 20 }
+
+    # b. La carte de la connexion : relancée pour de vrai, puis la connexion revient
+    $avant = (Get-NetAdapter -InterfaceIndex $carte.Index).LinkSpeed
+    $reperes2 = Get-ReperesCarte $carte.Nom
+    $g = Start-GuetCarte $carte.Guid
+    Start-Sleep -Milliseconds 300
+    $debut = Get-Date
+    $s2 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'relancer'; Action = 'carte.relancer'; P = @{ Index = $carte.Index } }) }
+    $revenue = Wait-Jusque { Test-ConnexionCarte $carte.Index } 60
+    $duree = [math]::Round(((Get-Date) - $debut).TotalSeconds, 1)
+    $lectures2 = $g.Lectures
+    $etats2 = Stop-GuetCarte $g
+    $apres = (Get-NetAdapter -InterfaceIndex $carte.Index -ErrorAction SilentlyContinue).LinkSpeed
+    Show-TracesCarte 'pendant la relance' (Get-TracesCarte $reperes2 $carte.Nom)
+    Write-Host "         | vitesse avant $avant, après $apres ; guet pendant la relance : $lectures2 lectures ; états vus : $($etats2 -join ', ')" -ForegroundColor DarkGray
+    Test-Cas 'l''Aide accepte de relancer la carte de la connexion (réponse « ok »)' { $s2.R -and $s2.R.PSObject.Properties['relancer'] -and [string]$s2.R.relancer -eq 'ok' }
+    Test-Cas "la carte a bien été éteinte puis rallumée (guet toutes les 20 ms : $($etats2 -join ', '))" { $etats2[0] -like 'Up@*' -and @($etats2 | Where-Object { $_ -notlike 'Up@*' }).Count -gt 0 -and $etats2[-1] -like 'Up@*' }
+    Test-Cas "la connexion revient en 60 s au plus (revenue en $duree s depuis la demande)" { $revenue }
+    Stop-Aides
+}
+
+# =====================================================================================================================
 $titres = @{ 0 = 'Préparation'; 1 = 'Installation : tâche SYSTEM pour Élodie'; 2 = 'Élodie obtient des actions en lecture seule'; 3 = 'Un autre compte refusé'
     4 = 'Mise à jour depuis Nevermind 1.10.0'; 5 = 'Repli par la demande de Windows'; 6 = 'Désinstallation'; 7 = 'Environnement d''Élodie'
     8 = 'Changement de nom : mises à jour, anciens Mindset, une seule instance'; 9 = 'Aide lancée en secours par la demande de Windows'
-    10 = 'Tout optimiser puis tout restaurer'; 11 = 'Banc PowerShell / Rust sous un compte sans droits' }
-if (-not $titres.ContainsKey($Cas)) { Write-Host 'Indique -Cas 0 (préparation) ou -Cas 1 à 11.' -ForegroundColor Yellow; exit 2 }
+    10 = 'Tout optimiser puis tout restaurer'; 11 = 'Banc PowerShell / Rust sous un compte sans droits'; 13 = 'Relancer la carte réseau de la connexion' }
+if (-not $titres.ContainsKey($Cas)) { Write-Host 'Indique -Cas 0 (préparation), -Cas 1 à 11 ou -Cas 13.' -ForegroundColor Yellow; exit 2 }
 try {
     switch ($Cas) {
         0 { if ($env:GITHUB_STEP_SUMMARY) { [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "| Cas | Quoi | Résultat |`n|---|---|---|`n", (New-Object Text.UTF8Encoding $false)) }; Initialize-Essai }
@@ -1388,6 +1539,7 @@ try {
         9 { Test-Cas9 }
         10 { Test-Cas10 }
         11 { Test-Cas11 }
+        13 { Test-Cas13 }
     }
 } catch {
     $script:Echoues.Add("erreur : $($_.Exception.Message)")

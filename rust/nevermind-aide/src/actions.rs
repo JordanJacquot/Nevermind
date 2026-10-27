@@ -75,6 +75,12 @@ pub fn faire(d: Demande, s: &dyn Systeme, client: u32, etat: &EtatAide) -> Resul
             ok()
         }
 
+        // La carte de la connexion, éteinte puis rallumée par Windows (Restart-NetAdapter) : elle renégocie sa vitesse
+        Demande::CarteRelancer { index } => {
+            s.carte_relancer(index).map_err(|e| format!("Windows n'a pas pu relancer la carte réseau : {e}"))?;
+            ok()
+        }
+
         Demande::PareFeuBloquer { nom, programme, services } => {
             let cibles: Vec<Option<&str>> =
                 if services.is_empty() { vec![None] } else { services.iter().map(|x| Some(x.as_str())).collect() };
