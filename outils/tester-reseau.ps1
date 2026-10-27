@@ -193,6 +193,13 @@ Test-Ok ($s.Server -and $s.Server.Ip -eq '63.178.238.177') "Lag : le vrai serveu
 $script:FluxVus = @((New-Flux '88.165.8.13' 900), (New-Flux '35.207.109.101' 300))
 Invoke-Passage -Jusqua
 Test-Ok ($s.Server -and $s.Server.Ip -eq '35.207.109.101') "Lag : la box écartée est reprise pour le serveur du jeu ($($s.Server.Ip))"
+# Les annonces au réseau local (FC 27 : 255.255.255.255 port 9999, et les groupes 224 à 239) ne sont jamais le serveur
+$script:FluxVus = @((New-Flux '255.255.255.255' 5000), (New-Flux '239.255.255.250' 3000), (New-Flux '224.0.0.251' 2000), (New-Flux '35.207.109.101' 300))
+Invoke-Passage -Jusqua
+Test-Ok ($s.Server -and $s.Server.Ip -eq '35.207.109.101') "Lag : une annonce au réseau local est prise pour le serveur du jeu ($($s.Server.Ip))"
+Test-Ok (-not ([LagMon]::Hosts -match '^(2[2-5]\d)\.')) 'Lag : une adresse d''annonce au réseau local est pingée'
+foreach ($ip in '255.255.255.255', '239.255.255.250', '224.0.0.1', '240.1.2.3') { Test-Ok (Test-PrivateIp $ip) "Trafic : $ip devrait compter comme une adresse du réseau local" }
+foreach ($ip in '223.5.5.5', '35.207.109.101', '3.40.138.1') { Test-Ok (-not (Test-PrivateIp $ip)) "Trafic : $ip est une adresse d'Internet, pas du réseau local" }
 # Nom de l'adresse (ipinfo) : « ...abo.wanadoo.fr » est une box, « ...compute.amazonaws.com » un serveur
 $script:LagGeo = @{ '86.200.1.2' = @{ Pays = 'FR'; Ville = 'Metz'; Hote = 'lfbn-nan-1-234-56.w86-200.abo.wanadoo.fr' }
                     '3.40.137.124' = @{ Pays = 'IE'; Ville = 'Dublin'; Hote = 'ec2-3-40-137-124.eu-west-1.compute.amazonaws.com' }

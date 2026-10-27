@@ -16,8 +16,10 @@ function Format-Bytes([double]$B) {
     "$([int]$B) o"
 }
 
+# Adresse qui ne mène pas à Internet : réseau local, et annonces au réseau (224 à 255 : groupes et 255.255.255.255,
+# que FC 27 envoie sur le port 9999 et qui était pris pour le serveur du jeu)
 function Test-PrivateIp([string]$Ip) {
-    $Ip -match '^(10\.|127\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.|::1$|fe80:|f[cd][0-9a-f]{2}:|ff)' -or $Ip -eq '::'
+    $Ip -match '^(10\.|127\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.|2(2[4-9]|[34]\d|5[0-5])\.|::1$|fe80:|f[cd][0-9a-f]{2}:|ff)' -or $Ip -eq '::'
 }
 
 # ---------------------------------------------------------------------------
