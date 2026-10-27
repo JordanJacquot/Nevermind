@@ -114,6 +114,14 @@ if (-not $Essai) {
     $l = [IO.File]::ReadAllText($lisez, [Text.Encoding]::UTF8)
     $l = [regex]::Replace($l, '^Nevermind [\d\.]+', "Nevermind $Version")
     [IO.File]::WriteAllText($lisez, $l, $utf8)
+    # Le numéro est commité tout de suite : les programmes en Rust sont construits par GitHub à partir de ce commit, et
+    # leur fiche de version (Propriétés > Détails) le prend dans Nevermind.ps1. Une tentative arrêtée plus loin laisse ce
+    # commit ; la suivante avec le même numéro n'a rien de nouveau à commiter et reprend la même construction.
+    & git -C $racine diff --quiet -- $ps1 $lisez
+    if ($LASTEXITCODE) {
+        Invoke-Native git @('-C', $racine, 'add', '--', $ps1, $lisez)
+        Invoke-Native git @('-C', $racine, 'commit', '-m', "Nevermind $Version", '-m', 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
+    }
 }
 
 # 2. Construction des .exe et des deux zips (Nevermind.zip, et OptiGame.zip pour les anciens Mindset), puis leurs
@@ -177,9 +185,7 @@ if ($Essai) { "Essai fini : $($zips -join ', ') et leurs signatures (clé jetabl
 # 3. Envoi sur GitHub et création de la version
 Push-Location $racine
 try {
-    Invoke-Native git @('add', '--', $ps1, $lisez)   # (seulement les deux fichiers de version : tout le reste est déjà commité)
-    Invoke-Native git @('commit', '-m', "Nevermind $Version", '-m', 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
-    Invoke-Native git @('tag', "v$Version")
+    Invoke-Native git @('tag', "v$Version")   # (le numéro de version est déjà commité, à l'étape 1)
     Invoke-Native git @('push', 'origin', 'HEAD', '--tags')
     if (-not $Notes) { $Notes = "Nevermind $Version" }
     $ghArgs = @('release', 'create', "v$Version") + @($zips | ForEach-Object { $_, "$_.sig" }) + @('--title', "Nevermind $Version$(if ($Beta) { ' (bêta)' })", '--notes', $Notes)
