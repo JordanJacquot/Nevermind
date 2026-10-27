@@ -87,6 +87,12 @@ Copy-Item -LiteralPath $modules -Destination (Join-Path $copie 'fichiers') -Recu
 $ModulesDir = Join-Path $copie 'fichiers\modules'
 function Get-AppRoot { $copie }
 . ([scriptblock]::Create((Get-Fonction (Read-Fichier (Join-Path $modules 'aide-actions.ps1')) 'Get-AideSuffixe')))
+# Le nom du canal côté Nevermind vient de NevermindPont.dll (pont.ps1), comme dans Nevermind : l'Aide de test (le script,
+# qui calcule le sien avec aide-actions.ps1) ne répond que si les deux calculs donnent le même nom
+. (Join-Path $PSScriptRoot 'pont-essai.ps1')
+. (Join-Path $modules 'pont.ps1')
+$raisonPont = Initialize-Pont (Get-PontEssai)
+if ($raisonPont) { throw "NevermindPont.dll : $raisonPont" }
 $script:Journal = New-Object System.Collections.Generic.List[string]
 function Write-Log([string]$m) { $script:Journal.Add($m) }
 function Wait-Handle { }

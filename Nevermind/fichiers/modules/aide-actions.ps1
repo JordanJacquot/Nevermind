@@ -1,6 +1,7 @@
 ﻿# Nevermind : la liste stricte de ce que l'Aide accepte de faire avec les droits administrateur.
-# Chargé par NevermindAide.ps1 (l'Aide, lancée en administrateur par la tâche « \Mindset\Nevermind (aide) ») et par
-# Nevermind.ps1 (Nevermind s'en sert lui-même tant qu'il tourne en administrateur et que l'Aide ne répond pas).
+# Chargé par NevermindAide.ps1 (l'Aide, lancée en administrateur par la tâche « \Mindset\Nevermind (aide) »), et par
+# Nevermind seulement pendant sa désinstallation (aide-client.ps1, SurPlace). Nevermind lui-même ne s'en sert plus :
+# la règle « fermable » et le nom du canal lui viennent de NevermindPont.dll (le même code que l'Aide en Rust).
 #
 # Autonome : pas de fenêtre, pas d'autre module, et aucun fichier de Nevermind n'est lu (ils sont modifiables sans
 # droits). Chaque demande est vérifiée seule : ce qui n'est pas prévu ici est refusé.

@@ -1,8 +1,9 @@
-# Le Rust de Nevermind (passage en Rust, issue Mindset #9, étape 1a) : l'Aide (NevermindAide.exe) et ses règles.
+# Le Rust de Nevermind (passage en Rust, issue Mindset #9, étape 1a) : l'Aide (NevermindAide.exe), ses règles, et la DLL
+# NevermindPont.dll qui donne ces mêmes règles à Nevermind (PowerShell).
 # Rien ici n'est livré aux utilisateurs tant que la version PowerShell n'est pas remplacée par une publication.
 [workspace]
 resolver = "3"
-members = ["aide-regles", "nevermind-aide"]
+members = ["aide-regles", "nevermind-aide", "nevermind-pont"]
 
 [workspace.package]
 edition = "2024"
@@ -10,8 +11,8 @@ license = "MIT"
 publish = false
 
 [workspace.lints.rust]
-# Le code « unsafe » n'est permis que dans le module Windows de l'exe (nevermind-aide/src/windows), qui l'autorise
-# lui-même ; la bibliothèque des règles l'interdit tout à fait.
+# Le code « unsafe » n'est permis que dans le module Windows de l'exe (nevermind-aide/src/windows) et dans la frontière C
+# de la DLL (nevermind-pont/src/ffi.rs), qui l'autorisent eux-mêmes ; la bibliothèque des règles l'interdit tout à fait.
 unsafe_code = "deny"
 unsafe_op_in_unsafe_fn = "deny"
 
@@ -19,7 +20,8 @@ unsafe_op_in_unsafe_fn = "deny"
 all = { level = "warn", priority = -1 }
 
 [profile.release]
-# Une erreur dans une demande est rattrapée (catch_unwind) : l'Aide répond « échoué » au lieu de s'arrêter
+# Une erreur dans une demande est rattrapée (catch_unwind) : l'Aide répond « échoué » au lieu de s'arrêter, et la DLL
+# répond { "ok": false } au lieu de fermer Nevermind (obligatoire pour la DLL : essai 4 de l'étape 0)
 panic = "unwind"
 lto = true
 codegen-units = 1
