@@ -75,6 +75,8 @@ $script:T.Beat.Interval = [TimeSpan]::FromMilliseconds(50)
 $script:T.Beat.Add_Tick({
     $now = $script:T.Clock.Elapsed.TotalMilliseconds
     if ($script:T.Watch -and $script:T.Last -and ($now - $script:T.Last) -gt $script:T.MaxGap) { $script:T.MaxGap = $now - $script:T.Last; $script:T.GapStep = $script:T.Step }
+    # (chaque blocage de plus d'une seconde, avec son étape : pour savoir où regarder quand la fluidité baisse)
+    if ($script:T.Watch -and $script:T.Last -and ($now - $script:T.Last) -gt 1000) { if (-not $script:T.Gaps) { $script:T.Gaps = New-Object Collections.Generic.List[string] }; $script:T.Gaps.Add("$([int]($now - $script:T.Last)) ms ($($script:T.Step))") }
     $script:T.Last = $now
 })
 $script:T.Beat.Start()
@@ -1791,7 +1793,7 @@ $script:T.Run.Add_Tick({
             }
             $script:T.Watch = $false
             $gap = [int]$script:T.MaxGap
-            Add-TestResult 'Fluidité' ($gap -lt 3000) "plus long blocage de la fenêtre : $gap ms (étape « $($script:T.GapStep) ») ; tâches répétées les plus lentes : $(($script:T.Slow.GetEnumerator() | Sort-Object Value -Descending | ForEach-Object { "$($_.Key) $($_.Value) ms" }) -join ', ')"
+            Add-TestResult 'Fluidité' ($gap -lt 3000) "plus long blocage de la fenêtre : $gap ms (étape « $($script:T.GapStep) ») ; tâches répétées les plus lentes : $(($script:T.Slow.GetEnumerator() | Sort-Object Value -Descending | ForEach-Object { "$($_.Key) $($_.Value) ms" }) -join ', ') ; blocages de plus d'une seconde : $(if ($script:T.Gaps) { $script:T.Gaps -join ' ; ' } else { 'aucun' })"
         }
         Test-Step 'Nom dans la barre des tâches' {
             # Les propriétés de la fenêtre (SHGetPropertyStoreForWindow) : identité de Nevermind et, pour l'épingle, relance par
@@ -1937,6 +1939,8 @@ public static class ProprietesFenetre
         }
         Test-Step 'Aide : liste stricte' {
             # Vérifié sans rien faire (-Verifier). Acceptées : toutes les demandes que Nevermind fait vraiment.
+            # (la liste stricte de l'Aide, que Nevermind ne charge plus depuis l'étape 1a du passage en Rust : chargée ici, pour cette étape)
+            . $AideFichierActions
             $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options'
             $acceptees = @(
                 @('reg.ecrire', @{ Cle = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'; Nom = 'HwSchMode'; Valeur = 2; Type = 'DWord' }),
@@ -2039,6 +2043,7 @@ public static class ProprietesFenetre
 
         Test-Step 'Aide : échange par le canal (sans droits)' {
             # Une vraie Aide, lancée sans droits (elle ne peut rien modifier), à qui Nevermind parle par Invoke-Aide
+            . $AideFichierActions   # (pour $AideVersion, le numéro de l'Aide : voir « Aide : liste stricte »)
             $psExe = "$env:windir\System32\WindowsPowerShell\v1.0\powershell.exe"
             $aide = Start-Process $psExe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$(Join-Path $AppDir 'NevermindAide.ps1')`"", '-Parent', $PID -WindowStyle Hidden -PassThru
             $avant = [AideClient]::ExeAttendu
