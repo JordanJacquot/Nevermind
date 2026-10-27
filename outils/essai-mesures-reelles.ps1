@@ -41,7 +41,11 @@ if ($Client) {
         $l = @($b.r.Lignes | Where-Object { ($_ -split '\|')[0] -eq "$PID" -and ($_ -split '\|')[3] -eq "$port" })
         Test-Ok ($a.ok -and $b.ok -and $b.r.CompteursOk -eq $true) "trafic.tcp : comptage accepté ($($b.r.CompteursOk))"
         $x = if ($l.Count) { $l[0] -split '\|' } else { @() }
-        Test-Ok ($l.Count -eq 1 -and [long]$x[5] -gt 0) "trafic.tcp : connexion vue, octets envoyés comptés ($($l -join ' ; '))"
+        Test-Ok ($l.Count -eq 1) "trafic.tcp : connexion vue ($($l -join ' ; '))"
+        # (les octets restent à 0 sur la machine de GitHub, pour les deux Aides pareil (run 40425937132) : la connexion de
+        # l'essai est déjà fermée par github.com, état 8, quand on la lit ; le comptage des octets se juge sur une vraie
+        # partie, avec Jordan, et par les enregistrements de cas\mesures\tcp.json)
+        if ($l.Count -eq 1 -and [long]$x[5] -le 0) { $r.Controles.Add("NOTE trafic.tcp : octets envoyés à 0 sur cette machine ($($l[0]))") }
         # 2. Trace réseau : une question DNS en UDP, vue avec un âge plausible
         $d = Send-Demande 'flux.demarrer' @{}
         Test-Ok $d.ok "flux.demarrer : $($d.e)"
@@ -105,7 +109,7 @@ foreach ($sorte in 'PowerShell', 'Rust') {
         $r = Get-Content -LiteralPath $resultat -Raw | ConvertFrom-Json
         Write-Host "Aide $sorte (client $($r.Pid)) :"
         foreach ($l in @($r.Controles)) {
-            if ($l -like 'OK *') { Write-Host "  $l" -ForegroundColor Green } else { Write-Host "  $l" -ForegroundColor Red; $echecs++ }
+            if ($l -like 'OK *') { Write-Host "  $l" -ForegroundColor Green } elseif ($l -like 'NOTE *') { Write-Host "  $l" -ForegroundColor Yellow } else { Write-Host "  $l" -ForegroundColor Red; $echecs++ }
         }
         if (@($r.Controles).Count -lt 10) { Write-Host "  $(@($r.Controles).Count) contrôles seulement (10 attendus)" -ForegroundColor Red; $echecs++ }
     } catch {
