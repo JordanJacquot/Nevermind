@@ -120,6 +120,21 @@ if (-not $Essai) {
 # signatures (Mindset et Nevermind refusent un zip sans signature valide). signer.ps1 s'arrête sur une erreur s'il ne
 # peut pas signer : la publication est alors annulée avant tout envoi. En essai, une clé jetable signe à sa place.
 & (Join-Path $PSScriptRoot 'construire.ps1')
+# Les programmes en Rust (passage en Rust, étape 1a) : NevermindAide.exe quand rust\nevermind-aide existe,
+# NevermindPont.dll quand rust\nevermind-pont existe. Ils ne sont jamais construits sur ce PC : ils viennent de la
+# construction GitHub (release.yml) de ce commit, et leur attestation est vérifiée (bon dépôt, bon fichier de
+# construction, ce commit) avant de prendre leur place dans le dossier ; sinon, rien n'est publié (outils\aide-rust.ps1).
+# Sans rust\nevermind-aide ni rust\nevermind-pont, rien de tout ça : la publication reste la même.
+$pont = Test-Path -LiteralPath (Join-Path $racine 'rust\nevermind-pont\Cargo.toml')
+$programmes = @('Mindset.exe', 'Nevermind.exe', 'NevermindAide.exe', 'Désinstaller Nevermind.exe') + @(if ($pont) { 'NevermindPont.dll' })
+if ($pont -or (Test-Path -LiteralPath (Join-Path $racine 'rust\nevermind-aide\Cargo.toml'))) {
+    $rust = & (Join-Path $PSScriptRoot 'aide-rust.ps1') -Essai:$Essai
+    if ($rust) {
+        foreach ($n in @($rust.Keys)) { Copy-Item -LiteralPath $rust[$n] -Destination (Join-Path $app $n) -Force }
+        $null = & (Join-Path $PSScriptRoot 'zips.ps1') -Dossier $app -Sortie $racine
+        Write-Host "$(@($rust.Keys) -join ' et ') : construits par GitHub (Rust), attestation vérifiée." -ForegroundColor Green
+    }
+}
 $zips = @((Join-Path $racine 'Nevermind.zip'), (Join-Path $racine 'OptiGame.zip'))
 $cleEssai = $null
 if ($Essai) { $cleEssai = New-Object Security.Cryptography.RSACryptoServiceProvider(3072); $cleEssai.PersistKeyInCsp = $false }
@@ -141,12 +156,13 @@ foreach ($z in @(@($zips[0], 'Nevermind', 'Nevermind.ps1'), @($zips[1], 'OptiGam
     try { $noms = @($a.Entries | ForEach-Object { $_.FullName.Replace('\', '/') }) } finally { $a.Dispose() }
     $dossiers = @($noms | ForEach-Object { $_.Split('/')[0] } | Sort-Object -Unique)
     $scripts = @($noms | Where-Object { $_ -match '^[^/]+/fichiers/[^/]+\.ps1$' -and $_ -notmatch '/NevermindAide\.ps1$' })
-    $manque = @("$($z[1])/fichiers/$($z[2])", "$($z[1])/Mindset.exe", "$($z[1])/Nevermind.exe", "$($z[1])/NevermindAide.exe" | Where-Object { $noms -notcontains $_ })
+    $manque = @(@("$($z[1])/fichiers/$($z[2])", "$($z[1])/Mindset.exe", "$($z[1])/Nevermind.exe", "$($z[1])/NevermindAide.exe") + @(if ($pont) { "$($z[1])/NevermindPont.dll" }) | Where-Object { $noms -notcontains $_ })
     if ($dossiers.Count -ne 1 -or $dossiers[0] -ne $z[1] -or $scripts.Count -ne 1 -or $manque.Count) {
         throw "Publication annulée : $(Split-Path $z[0] -Leaf) mal construit (dossiers : $($dossiers -join ', ') ; scripts : $($scripts -join ', ') ; manque : $($manque -join ', '))"
     }
-    # Exactement les fichiers de git et les 4 programmes : rien en plus (aide-temp, thème perso...), rien en moins
-    $attendus = @(@(Get-FichiersGitNevermind) + @('Mindset.exe', 'Nevermind.exe', 'NevermindAide.exe', 'Désinstaller Nevermind.exe' | ForEach-Object { "Nevermind/$_" }) |
+    # Exactement les fichiers de git et les programmes (4, et NevermindPont.dll avec rust\nevermind-pont) : rien en plus
+    # (aide-temp, thème perso...), rien en moins
+    $attendus = @(@(Get-FichiersGitNevermind) + @($programmes | ForEach-Object { "Nevermind/$_" }) |
         ForEach-Object { $n = $_ -replace '^Nevermind/', "$($z[1])/"; if ($z[1] -eq 'OptiGame') { $n -replace '^OptiGame/fichiers/Nevermind\.ps1$', 'OptiGame/fichiers/OptiGame.ps1' } else { $n } })
     $fichiersZip = @($noms | Where-Object { -not $_.EndsWith('/') })
     $enTrop = @($fichiersZip | Where-Object { $attendus -notcontains $_ })
@@ -178,8 +194,9 @@ foreach ($f in Get-ChildItem -LiteralPath $app -Recurse -File) {
     if ((Test-Path -LiteralPath $dest) -and (Get-FileHash -LiteralPath $dest).Hash -eq (Get-FileHash -LiteralPath $f.FullName).Hash) { continue }
     New-Item -ItemType Directory -Force -Path (Split-Path $dest -Parent) | Out-Null
     # Nevermind.exe ouvert (l'app tourne dedans) : Windows interdit de l'écraser mais autorise de le renommer.
-    # L'ancien est mis de côté (.old) et effacé au prochain lancement de Nevermind.
-    if ($dest -like '*.exe' -and (Test-Path -LiteralPath $dest)) {
+    # L'ancien est mis de côté (.old) et effacé au prochain lancement de Nevermind. De même pour NevermindPont.dll, chargée
+    # par Nevermind (avec rust\nevermind-pont seulement).
+    if (($dest -like '*.exe' -or ($pont -and $dest -like '*\NevermindPont.dll')) -and (Test-Path -LiteralPath $dest)) {
         $old = "$dest.old"
         try { if (Test-Path -LiteralPath $old) { [IO.File]::Delete($old) } } catch {}
         try { [IO.File]::Move($dest, $old) } catch {}
