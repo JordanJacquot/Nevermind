@@ -1518,6 +1518,24 @@ $script:T.Run.Add_Tick({
                 Assert-Test ($ui.TestsPanel.Children.Count -ge 4) "seulement $($ui.TestsPanel.Children.Count) tuiles"
                 "$($ui.TestsPanel.Children.Count) tuiles$(if ($parLaConsole) { ', préparées par l''écran' })"
             }
+            Test-Step 'Connexion : débit (téléchargement et envoi)' {
+                # (la page Connexion montre le dernier débit du test « Connexion Internet » et le relance par son bouton)
+                $b = Get-BoutonDebit
+                Assert-Test ([bool]$b) 'bouton « Tester ma connexion » de la tuile Connexion Internet introuvable'
+                $avant = $b.Tag.T.Last
+                try {
+                    $b.Tag.T.Last = $null
+                    $blocs = @((Get-PagesProtection).connexion.blocs)
+                    Assert-Test (@($blocs | Where-Object { $_.type -eq 'titre' -and $_.texte -eq 'Débit' }).Count -eq 1 -and @($blocs | Where-Object { $_.type -eq 'bouton' -and $_.id -eq 'debit' }).Count -eq 1) 'partie Débit ou son bouton absents'
+                    $b.Tag.T.Last = @{ Res = @{ R = @(12.0, 345.6, 78.9, 0) } }
+                    $ch = @(@((Get-PagesProtection).connexion.blocs) | Where-Object { $_.type -eq 'chiffres' })[0]
+                    $vals = @($ch.elements | ForEach-Object { "$($_.titre) $($_.valeur) $($_.unite)" }) -join ', '
+                    Assert-Test ($vals -eq 'Téléchargement 346 Mb/s, Envoi 79 Mb/s') "chiffres : $vals"
+                    $b.Tag.T.Last = @{ Res = @{ R = @(12.0, -1.0, -1.0, 0) } }
+                    Assert-Test (-not @(@((Get-PagesProtection).connexion.blocs) | Where-Object { $_.type -eq 'chiffres' }).Count) 'débit montré alors que les serveurs n''ont pas répondu'
+                } finally { $b.Tag.T.Last = $avant }
+                "dernier débit montré ($vals), bouton « debit » relié au vrai test"
+            }
             Test-Step 'FPS : jeux dont l''anti-triche bloque la mesure' {
                 Assert-Test ((Get-FpsVeilleJeux) -contains 'bf6.exe') 'BF6 absent des jeux guettés'
                 Assert-Test (Test-FpsRefus 'error: failed to start trace session: access denied.') 'refus de PresentMon non reconnu'

@@ -105,7 +105,7 @@ function Get-PagesProtection {
         @{ texte = 'Box'; valeur = [string]$net.Gateway }
         if ($net.Dns) { @{ texte = 'DNS actuel'; valeur = [string]$net.Dns } }
     })
-    $pages.connexion = @{ titre = 'Connexion'; parent = 'perf'; sous = 'Mesure ton temps de réponse (ping), sa stabilité (gigue) et les messages perdus en route.'; icone = 'ondes'; couleur = 'P'
+    $pages.connexion = @{ titre = 'Connexion'; parent = 'perf'; sous = 'Mesure ton temps de réponse (ping), sa stabilité (gigue), les messages perdus en route et ton débit.'; icone = 'ondes'; couleur = 'P'
         module = $(if ($inter.Count) { $p = $inter[0]
                 @{ icone = 'ondes'; couleur = $(switch ([string]$p.Status) { 'ok' { 'vert' } 'warn' { 'orange' } 'bad' { 'rouge' } default { 'P' } }); titre = "Ping $($p.Avg) ms"; texte = [string]$p.Verdict; boutons = @(@{ id = 'clic:BtnPing'; texte = 'Tester ma connexion' }); resume = @(@{ nom = 'Gigue'; valeur = "$($p.Jitter) ms" }, @{ nom = 'Pertes'; valeur = "$($p.Loss) %"; ton = $(if ($p.Loss -gt 0) { 'attention' } else { 'ok' }) }) } }
             elseif (-not $net) { @{ icone = 'ondes'; couleur = 'rouge'; titre = 'Pas de connexion'; texte = 'Aucune connexion Internet détectée.'; boutons = @(@{ id = 'clic:BtnPing'; texte = 'Réessayer' }) } }
@@ -113,6 +113,12 @@ function Get-PagesProtection {
         blocs = @(
             if ($pings.Count) { @{ type = 'titre'; texte = 'Dernier test' } }
         ) + @(foreach ($p in $pings) { @{ type = 'ligne'; icone = $(if ($p.Label -like 'Ta box*') { 'box' } else { 'internet' }); couleur = $(switch ([string]$p.Status) { 'ok' { 'vert' } 'warn' { 'orange' } 'bad' { 'rouge' } default { 'P' } }); texte = [string]$p.Label; note = [string]$p.Verdict; valeur = "$($p.Avg) ms"; etiquette = "gigue $($p.Jitter) ms · pertes $($p.Loss) %"; ton = $TonsStatut[[string]$p.Status] } }) + @(
+            # Le débit : le test « Connexion Internet » de Tests des composants (Test-NetSpeed), son dernier résultat ici
+            @{ type = 'titre'; texte = 'Débit' }
+            $debit = Get-DernierDebit
+            if ($debit) { @{ type = 'chiffres'; elements = @(@{ titre = 'Téléchargement'; valeur = $debit.Down; unite = 'Mb/s'; ton = 'ok' }, @{ titre = 'Envoi'; valeur = $debit.Up; unite = 'Mb/s'; ton = 'ok' }) } }
+            else { @{ type = 'texte'; texte = 'La vitesse de ta connexion en téléchargement et en envoi, mesurée en une vingtaine de secondes.' } }
+            @{ type = 'bouton'; id = 'debit'; texte = $(if ($debit) { 'Mesurer à nouveau' } else { 'Mesurer mon débit' }); style = 'second' }
             if ($infos.Count) { @{ type = 'titre'; texte = 'Ta connexion' }; @{ type = 'reglages'; rangs = $infos } }
             @{ type = 'titre'; texte = 'Serveur DNS' }
             @{ type = 'choix'; id = 'dns'; valeur = "$choixDns"; options = @(@{ id = '0'; texte = 'Automatique (celui de ta box)' }, @{ id = '1'; texte = 'Cloudflare' }, @{ id = '2'; texte = 'Google' }, @{ id = '3'; texte = 'Quad9' }) }
@@ -144,8 +150,24 @@ function Get-PagesProtection {
     $pages
 }
 
+# Le bouton « Tester ma connexion » de la tuile Connexion Internet (Tests des composants), et son dernier débit mesuré
+# (@{ Down; Up } en Mb/s, $null s'il n'y en a pas encore)
+function Get-BoutonDebit { @($script:TestButtons | Where-Object { $_.Tag.T.Tag -eq 'NET' -and (Get-ContenuWpf $_) -eq 'Tester ma connexion' })[0] }
+function Get-DernierDebit {
+    $b = Get-BoutonDebit
+    $r = if ($b -and $b.Tag.T.Last -and $b.Tag.T.Last.Res) { @($b.Tag.T.Last.Res.R) }
+    if ($r.Count -lt 3 -or [double]$r[1] -lt 0 -or [double]$r[2] -lt 0) { return $null }
+    @{ Down = '{0:N0}' -f [double]$r[1]; Up = '{0:N0}' -f [double]$r[2] }
+}
+
 function Register-ActionsProtection {
     Register-ActionVue 'dns' { param($Valeur, $Ecran) $k = [int]$Valeur; if ($k -ge 0 -and $k -lt $DnsChoices.Count) { Invoke-Safe { Set-Dns $k } } }
+    # (le vrai test du débit, dans son panneau ; les tuiles des tests sont préparées s'il le faut)
+    Register-ActionVue 'debit' { param($Valeur, $Ecran) Invoke-Safe {
+        if (-not (Get-BoutonDebit)) { Build-TestsTab }
+        $b = Get-BoutonDebit
+        if ($b -and $b.IsEnabled) { $b.RaiseEvent((New-Object System.Windows.RoutedEventArgs ([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent))) }
+    } }
 }
 
 # Les gestes à numéro (sécurité, historique) : appelés par l'action « * » de accueil-console.ps1

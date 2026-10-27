@@ -12,11 +12,42 @@ $LiveScript = {
         $v = ([string]$v).Trim()
         if ($v -match '^[\d\.]+$') { [double]::Parse($v, [Globalization.CultureInfo]::InvariantCulture) } else { $null }
     }
+    # Processeur et carte graphique comptés comme le Gestionnaire des tâches, sur les valeurs brutes de Windows entre deux
+    # mesures (les valeurs déjà calculées de WMI sautaient d'une lecture à l'autre : 29 à 62 % en cinq secondes) : le
+    # processeur en temps occupé (« % temps processeur », celui du Gestionnaire de Windows 11 25H2), la carte graphique
+    # par son moteur le plus occupé (3D, copie, vidéo...), tous programmes ensemble. nvidia-smi compte la carte occupée
+    # dès qu'un moteur travaille (55 % pour 18 % dans le Gestionnaire, mesuré le 27/10) : seulement en secours.
+    $cpuAvant = $null; $gpuAvant = @{}
     while ($sync.Run) {
         try {
+            $raw = Get-CimInstance Win32_PerfRawData_Counters_ProcessorInformation -Filter "Name='_Total'" -ErrorAction Stop
+            if ($cpuAvant) {
+                $dt = [double]$raw.Timestamp_Sys100NS - [double]$cpuAvant.Timestamp_Sys100NS
+                if ($dt -gt 0) { $sync.Cpu = [math]::Max(0.0, [math]::Min(100.0, 100 - 100 * ([double]$raw.PercentIdleTime - [double]$cpuAvant.PercentIdleTime) / $dt)) }
+            }
+            $cpuAvant = $raw
             $pi = Get-CimInstance Win32_PerfFormattedData_Counters_ProcessorInformation -Filter "Name='_Total'" -ErrorAction Stop
-            $sync.Cpu = [math]::Min(100.0, [double]$pi.PercentProcessorUtility)
             $sync.CpuPerf = [double]$pi.PercentProcessorPerformance
+        } catch {}
+        # (chaque moteur : la somme de ses programmes ; un programme pas vu à la mesure d'avant attend la suivante)
+        $gpuMoteurs = $false
+        try {
+            $vus = @{}; $parMoteur = @{}
+            foreach ($e in @(Get-CimInstance Win32_PerfRawData_GPUPerformanceCounters_GPUEngine -Property Name, UtilizationPercentage, Timestamp_Sys100NS -ErrorAction Stop)) {
+                $n = [string]$e.Name
+                $vus[$n] = @([double]$e.UtilizationPercentage, [double]$e.Timestamp_Sys100NS)
+                $a = $gpuAvant[$n]
+                if ($a -and $n -match '_(luid_\w+?_phys_\d+_eng_\d+)_') {
+                    $dt = $vus[$n][1] - $a[1]
+                    if ($dt -gt 0) { $parMoteur[$Matches[1]] = [double]$parMoteur[$Matches[1]] + 100 * ($vus[$n][0] - $a[0]) / $dt }
+                }
+            }
+            if ($gpuAvant.Count -and $vus.Count) {
+                $haut = 0.0; foreach ($x in $parMoteur.Values) { if ($x -gt $haut) { $haut = $x } }
+                $sync.Gpu = [math]::Min(100.0, $haut)
+                $gpuMoteurs = $true
+            }
+            $gpuAvant = $vus
         } catch {}
         try {
             $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
@@ -29,16 +60,11 @@ $LiveScript = {
                 $o = & $sync.Smi '--query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total,power.draw,power.limit' '--format=csv,noheader,nounits' 2>$null | Select-Object -First 1
                 if ($o) {
                     $v = $o -split ','
-                    $sync.Gpu = Num $v[0]; $sync.GpuTemp = Num $v[1]
+                    if (-not $gpuMoteurs) { $sync.Gpu = Num $v[0] }
+                    $sync.GpuTemp = Num $v[1]
                     $sync.VramUsed = Num $v[2]; $sync.VramTotal = Num $v[3]; $sync.GpuPower = Num $v[4]; $sync.GpuPowerLimit = Num $v[5]
                     $gpuDone = $true
                 }
-            } catch {}
-        }
-        if (-not $gpuDone) {
-            try {
-                $eng = Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction Stop | Where-Object { $_.Name -like '*engtype_3D' }
-                $sync.Gpu = [math]::Min(100.0, [double](($eng | Measure-Object UtilizationPercentage -Sum).Sum))
             } catch {}
         }
         try {
