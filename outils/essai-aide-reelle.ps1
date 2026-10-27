@@ -345,6 +345,13 @@ try {
     function Invoke-Async($Sb, $X) { & $Sb $X }
     Add-Type -AssemblyName WindowsBase
     Add-Type -TypeDefinition ([IO.File]::ReadAllText((Join-Path $ModulesDir 'natif.cs'), [Text.Encoding]::UTF8))
+    # (la version de Nevermind avec NevermindPont.dll : le nom du canal et la règle « fermable » viennent de la DLL,
+    # chargée comme le fait Nevermind.ps1)
+    foreach ($m in 'pont', 'processus') { $f = Join-Path $ModulesDir "$m.ps1"; if (Test-Path -LiteralPath $f) { . $f } }
+    if (Get-Command Initialize-Pont -ErrorAction SilentlyContinue) {
+        $raison = Initialize-Pont (Join-Path $racineNevermind 'NevermindPont.dll')
+        if ($raison) { $script:Journal.Add("NevermindPont.dll : $raison") }
+    }
     . (Join-Path $ModulesDir 'aide-actions.ps1')
     . (Join-Path $ModulesDir 'aide-client.ps1')
     $AideAttenteWindows = if ($cfg.AttenteWindows) { [int]$cfg.AttenteWindows } else { 90 }
