@@ -25,6 +25,13 @@ foreach ($d in $app, $donnees, (Join-Path $test 'captures')) {
 }
 New-Item -ItemType Directory -Force -Path $donnees, (Join-Path $test 'captures') | Out-Null
 Copy-Item -LiteralPath $source -Destination (Join-Path $app 'fichiers') -Recurse
+# NevermindPont.dll à côté, comme chez les utilisateurs (construite au besoin : sans elle, Nevermind ne proposerait pas
+# « Fermer » et ne trouverait pas son Aide)
+if (Test-Path -LiteralPath (Join-Path $racine 'rust\nevermind-pont\Cargo.toml')) {
+    $pont = Join-Path $racine 'Nevermind\NevermindPont.dll'
+    if (-not (Test-Path -LiteralPath $pont)) { & (Join-Path $PSScriptRoot 'construire-pont.ps1') | Out-Null }
+    Copy-Item -LiteralPath $pont -Destination $app
+}
 $vrai = @((Join-Path $env:LOCALAPPDATA 'Mindset\Nevermind'), (Join-Path $env:LOCALAPPDATA 'OptiGame') | Where-Object { Test-Path -LiteralPath $_ })[0]
 if (-not $vrai) { $vrai = Join-Path $env:LOCALAPPDATA 'OptiGame' }
 foreach ($f in 'fabricants.txt', 'appareils.json') {

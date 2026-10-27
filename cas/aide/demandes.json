@@ -68,6 +68,7 @@
     {"nom":"Acceptée : chaque catégorie du nettoyage","entree":{"action":"nettoyage.lancer","parametres":{"Id":"dump"}},"attendu":{"accepte":true}},
     {"nom":"Acceptée : chaque catégorie du nettoyage","entree":{"action":"nettoyage.lister","parametres":{"Id":"dump"}},"attendu":{"accepte":true}},
     {"nom":"Acceptée : DNS publics proposés par Nevermind, sur une vraie carte réseau","entree":{"action":"dns.regler","parametres":{"Index":"{carte}","Serveurs":[]}},"attendu":{"accepte":true},"besoin":["carte"]},
+    {"nom":"Acceptée : retour au DNS automatique, liste vide reçue comme un objet vide (@() de PowerShell 5.1 sorti d'un if)","entree":{"action":"dns.regler","parametres":{"Index":"{carte}","Serveurs":{}}},"attendu":{"accepte":true},"besoin":["carte"]},
     {"nom":"Acceptée : DNS publics proposés par Nevermind, sur une vraie carte réseau","entree":{"action":"dns.regler","parametres":{"Index":"{carte}","Serveurs":["1.1.1.1","1.0.0.1"]}},"attendu":{"accepte":true},"besoin":["carte"]},
     {"nom":"Acceptée : DNS publics proposés par Nevermind, sur une vraie carte réseau","entree":{"action":"dns.regler","parametres":{"Index":"{carte}","Serveurs":["8.8.8.8","8.8.4.4"]}},"attendu":{"accepte":true},"besoin":["carte"]},
     {"nom":"Acceptée : DNS publics proposés par Nevermind, sur une vraie carte réseau","entree":{"action":"dns.regler","parametres":{"Index":"{carte}","Serveurs":["9.9.9.9","149.112.112.112"]}},"attendu":{"accepte":true},"besoin":["carte"]},

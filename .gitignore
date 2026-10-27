@@ -8,6 +8,7 @@
 /OptiGame.zip
 /OptiGame.zip.sig
 /Nevermind/*.exe
+/Nevermind/*.dll
 /outils/icones/
 
 # Tests
@@ -21,6 +22,7 @@
 
 # Anciens lanceurs mis de côté pendant une mise à jour (effacés au lancement suivant)
 *.exe.old
+*.dll.old
 
 # Thèmes personnalisés (images protégées) : jamais sur GitHub
 Thème-*/

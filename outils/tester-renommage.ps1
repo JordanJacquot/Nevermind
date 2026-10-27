@@ -79,6 +79,7 @@ $Gardees = [ordered]@{
     'outils/tester-desinstallation.ps1'            = @(1, 'ancienne tâche de démarrage')
     'outils/tester-reseau.ps1'                     = @(1, 'test : aucun « OptiGame » affiché')
     'rust/aide-regles/src/demandes.rs'             = @(1, 'l''Aide en Rust : règles du pare-feu « OptiGame : bloque ... » d''avant la 1.3.6, reconnues et renommées')
+    'rust/nevermind-aide/src/windows/mesures.rs'   = @(1, 'l''Aide en Rust : ancienne session réseau « OptiGame-Reseau » fermée au démarrage')
     'outils/tester.ps1'                            = @(2, 'ancien dossier de données (lecture seule)')
     'outils/zips.ps1'                              = @(6, 'fait le zip de compatibilité')
 }

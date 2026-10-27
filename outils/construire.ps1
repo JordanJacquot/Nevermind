@@ -62,5 +62,7 @@ Build-Exe (Join-Path $app 'Nevermind.exe') (Join-Path $icones 'Nevermind.ico') '
 Build-Exe (Join-Path $app 'Désinstaller Nevermind.exe') (Join-Path $icones 'Nevermind-desinstaller.ico') 'UNINSTALL'
 Build-Exe (Join-Path $app 'NevermindAide.exe') (Join-Path $icones 'Nevermind.ico') 'AIDE'
 [IO.File]::Delete($versionCs)
+# NevermindPont.dll (les règles de l'Aide en Rust pour Nevermind), posée dans Nevermind\ ; zips.ps1 la prend
+if (Test-Path -LiteralPath (Join-Path $racine 'rust\nevermind-pont\Cargo.toml')) { & (Join-Path $PSScriptRoot 'construire-pont.ps1') | Out-Null }
 
 foreach ($z in @(& (Join-Path $PSScriptRoot 'zips.ps1') -Dossier $app -Sortie $racine)) { "OK: $z" }

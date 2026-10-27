@@ -207,3 +207,7 @@ jobs:
       - name: "11. Banc PowerShell / Rust sous un compte sans droits (le banc refuse l'administrateur)"
         if: ${{ !cancelled() && matrix.aide == 'rust' }}
         run: .\outils\essai-aide-reelle.ps1 -Cas 11 -Aide $env:AIDE -Banc C:\essai-aide\source\outils\tester-aide-rust.ps1
+
+      - name: "12. Mesures continues en vrai (trafic, trace réseau, PresentMon) : Aide PowerShell puis Aide Rust"
+        if: ${{ !cancelled() && matrix.aide == 'rust' }}
+        run: .\outils\essai-mesures-reelles.ps1 -Exe $env:AIDE

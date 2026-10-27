@@ -30,6 +30,7 @@ allow = [
     # les nôtres
     "aide-regles",
     "nevermind-aide",
+    "nevermind-pont",
     # JSON
     "serde_json",
     "serde_core",
