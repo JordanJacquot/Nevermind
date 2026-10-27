@@ -88,10 +88,10 @@ $avecPasserelle = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Sil
 $carte = @(Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | Sort-Object { $i = [array]::IndexOf($avecPasserelle, [int]$_.ifIndex); if ($i -lt 0) { 999 } else { $i } })[0]
 if (-not $carte) { $carte = @(Get-NetAdapter -ErrorAction SilentlyContinue)[0] }
 # La carte de la connexion (relancer une carte réseau), cherchée ici sans la règle de l'Aide : une vraie prise Ethernet
-# (matérielle, avec une prise, câble 802.3, pas une carte virtuelle) qui porte la route par défaut en ce moment
+# (matérielle, avec une prise, câble 802.3 ou support non dit, pas une carte virtuelle) qui porte la route par défaut en ce moment
 $routesActives = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -PolicyStore ActiveStore -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.ifIndex })
 $connexion = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object {
-    $_.HardwareInterface -and $_.ConnectorPresent -and [int]$_.InterfaceType -eq 6 -and [int]$_.NdisPhysicalMedium -eq 14 -and $routesActives -contains [int]$_.ifIndex -and
+    $_.HardwareInterface -and $_.ConnectorPresent -and [int]$_.InterfaceType -eq 6 -and [int]$_.NdisPhysicalMedium -in 14, 0 -and $routesActives -contains [int]$_.ifIndex -and
     [string]$_.InterfaceDescription -notmatch 'virtu|vmware|vbox|tap-windows|wintun|wireguard|tunnel|vpn|miniport|debug|loopback|npcap|zerotier' })[0]
 Write-Host "Info : carte de la connexion pour « relancer la carte » : $(if ($connexion) { "$($connexion.Name) ($($connexion.InterfaceDescription), numéro $($connexion.ifIndex))" } else { 'aucune (pas de prise Ethernet qui porte la connexion) : son cas accepté est sauté' })"
 function Test-Fichier([string]$Chemin) { try { Test-Path -LiteralPath $Chemin -PathType Leaf -ErrorAction Stop } catch { $false } }
@@ -283,7 +283,7 @@ foreach ($c in @($casFermer.cas)) {
 # 7 quater. Relancer une carte réseau (Get-AideRefusCarte), sur de fausses cartes (cas\aide\carte.json) : seulement la
 #    carte de la connexion, une vraie prise Ethernet qui porte la route par défaut
 # ---------------------------------------------------------------------------
-$casCarte = Read-Cas 'aide\carte.json' -Minimum 30
+$casCarte = Read-Cas 'aide\carte.json' -Minimum 33
 foreach ($c in @($casCarte.cas)) {
     $nbTests++; $nbCorpus++
     $x = ConvertTo-CasTable $casCarte.fiche

@@ -259,7 +259,9 @@ function Get-AideRefusCarte($Fiche) {
     if (-not $Fiche.Materielle -or -not $Fiche.Connecteur -or @($AideMotsVirtuels | Where-Object { $desc.IndexOf($_, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count) {
         return 'Demande refusée : cette carte réseau est virtuelle (VPN, machine virtuelle...), pas une vraie prise du PC.'
     }
-    if ([long]$Fiche.Type -ne 6 -or [long]$Fiche.Support -ne 14) { return 'Demande refusée : seule une carte réseau filaire (câble Ethernet) peut être relancée.' }
+    # (support 14 : câble 802.3 ; 0, non dit : la prise Ethernet d'une machine virtuelle vue de l'intérieur, la machine
+    # de GitHub, essai réel du 27/10 ; les cartes virtuelles du PC lui-même sont déjà refusées plus haut)
+    if ([long]$Fiche.Type -ne 6 -or [long]$Fiche.Support -notin 14, 0) { return 'Demande refusée : seule une carte réseau filaire (câble Ethernet) peut être relancée.' }
     if (-not $Fiche.RouteDefaut) { return 'Demande refusée : cette carte ne porte pas la connexion à Internet.' }
     $null
 }

@@ -422,7 +422,7 @@ fn fermeture() {
 /// cas\aide\carte.json : relancer une carte réseau, seulement la carte de la connexion
 #[test]
 fn carte() {
-    let (f, cas) = lire_cas("carte.json", &[], 30);
+    let (f, cas) = lire_cas("carte.json", &[], 33);
     let mut b = Bilan::new();
     for c in &cas {
         // La fiche du fichier ; celle du cas remplace les champs qu'elle cite

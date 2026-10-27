@@ -2052,7 +2052,7 @@ public static class ProprietesFenetre
             # par défaut), jamais une autre carte de ce PC, jamais un numéro qui n'est pas un nombre entier
             $routes = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -PolicyStore ActiveStore -ErrorAction SilentlyContinue | ForEach-Object { [int]$_.ifIndex })
             $connexion = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object {
-                $_.HardwareInterface -and $_.ConnectorPresent -and [int]$_.InterfaceType -eq 6 -and [int]$_.NdisPhysicalMedium -eq 14 -and $routes -contains [int]$_.ifIndex -and
+                $_.HardwareInterface -and $_.ConnectorPresent -and [int]$_.InterfaceType -eq 6 -and [int]$_.NdisPhysicalMedium -in 14, 0 -and $routes -contains [int]$_.ifIndex -and
                 [string]$_.InterfaceDescription -notmatch 'virtu|vmware|vbox|tap-windows|wintun|wireguard|tunnel|vpn|miniport|debug|loopback|npcap|zerotier' })[0]
             if ($connexion) { $acceptees += , @('carte.relancer', @{ Index = [int]$connexion.ifIndex }) }
             foreach ($ad in @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue)) {

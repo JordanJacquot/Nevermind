@@ -28,6 +28,10 @@ pub struct FicheCarte {
 pub const TYPE_ETHERNET: u32 = 6;
 /// Support câble Ethernet (NdisPhysicalMedium802_3)
 pub const SUPPORT_802_3: u32 = 14;
+/// Support non dit (NdisPhysicalMediumUnspecified) : la prise Ethernet d'une machine virtuelle vue de l'intérieur
+/// (« Microsoft Hyper-V Network Adapter », la machine de GitHub : essai réel du 27/10). Les cartes virtuelles du PC
+/// lui-même ne passent pas pour autant : ni matérielles, ni avec une prise, ou un mot virtuel dans leur description.
+pub const SUPPORT_NON_DIT: u32 = 0;
 
 /// Les mots d'une carte virtuelle dans sa description (sans tenir compte des majuscules) : machines virtuelles, VPN,
 /// tunnels, cartes de Windows (miniports WAN, débogueur du noyau)
@@ -60,7 +64,7 @@ pub fn refus(fiche: Option<&FicheCarte>) -> Option<&'static str> {
     if !f.materielle || !f.connecteur || MOTS_VIRTUELS.iter().any(|m| texte::contient(&f.description, m)) {
         return Some(VIRTUELLE);
     }
-    if f.type_carte != TYPE_ETHERNET || f.support != SUPPORT_802_3 {
+    if f.type_carte != TYPE_ETHERNET || (f.support != SUPPORT_802_3 && f.support != SUPPORT_NON_DIT) {
         return Some(PAS_FILAIRE);
     }
     if !f.route_defaut {
