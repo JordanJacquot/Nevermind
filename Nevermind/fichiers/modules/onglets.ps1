@@ -72,7 +72,7 @@ $LiveScript = {
             $sync.DiskBusy = [math]::Max(0.0, [math]::Min(100.0, 100 - [double]$dk.PercentIdleTime))
         } catch {}
         $sync.Updated = Get-Date
-        Start-Sleep -Milliseconds $(if ($sync.Fast) { 400 } else { 1500 })
+        Start-Sleep -Milliseconds $(if ($sync.Fast) { 400 } else { 1000 })   # (toutes les secondes, comme le Gestionnaire des tâches)
     }
 }
 
