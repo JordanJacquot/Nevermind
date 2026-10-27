@@ -1536,6 +1536,76 @@ $script:T.Run.Add_Tick({
                 } finally { $b.Tag.T.Last = $avant }
                 "dernier débit montré ($vals), bouton « debit » relié au vrai test"
             }
+            Test-Step 'Connexion : carte réseau bridée (vitesse de la carte)' {
+                # De fausses connexions : jamais la vraie carte. L'Aide n'est pas appelée (fausse Invoke-Aide), rien n'est redémarré.
+                $intel = @('Négociation automatique', '10 Mbit/s Semi-duplex', '100 Mbit/s Duplex intégral', '1,0 Gbit/s Duplex intégral', '2,5 Gbit/s Duplex intégral')
+                $giga = @('Auto Negotiation', '10 Mbps Full Duplex', '100 Mbps Full Duplex', '1.0 Gbps Full Duplex')
+                $faux = { param($Bps, $Vit, $Wifi = $false) @{ IfIndex = 4242; Guid = '{essai}'; Name = 'Essai'; Desc = 'Carte d''essai'; Gateway = '192.168.1.1'; Dns = ''; Wifi = $Wifi
+                    Speed = $(if ($Bps -ge 1e9) { "$($Bps / 1e9) Gbps" } else { "$($Bps / 1e6) Mbps" }); Bps = [int64]$Bps; Vitesses = @($Vit); VitessesReg = @() } }
+                $voir = { $bl = @((Get-PagesProtection).connexion.blocs)
+                    @{ Ligne = @($bl | Where-Object { $_.type -eq 'ligne' -and $_.texte -eq 'Vitesse' })[0]; Bouton = @($bl | Where-Object { $_.type -eq 'bouton' -and $_.id -eq 'carte-relancer' }).Count
+                       Rang = @(@($bl | Where-Object { $_.type -eq 'reglages' })[0].rangs | Where-Object { $_.texte -eq 'Vitesse' }).Count } }
+                $avant = @{ Net = $script:Net; Alertee = $script:CarteAlertee; Jeu = $script:GameSession; Lag = $script:LagSession
+                    Confirm = ${function:Confirm-Action}; Aide = ${function:Invoke-Aide}; Actif = ${function:Get-ActiveNet}; Attente = ${function:Wait-CarteRevenue}; Message = ${function:Show-MessageVue} }
+                $script:CarteVue = Get-Date   # (la vérification de chaque minute ne passe pas pendant l'étape)
+                try {
+                    # Bridée : carte 2,5 Gb/s à 100 Mb/s, carte 1 Gb/s à 100 Mb/s (textes en anglais)
+                    foreach ($n in @((& $faux 1e8 $intel), (& $faux 1e8 $giga))) {
+                        $script:Net = $n; $v = & $voir
+                        Assert-Test ($v.Ligne -and $v.Ligne.ton -eq 'attention' -and $v.Ligne.valeur -eq '100 Mb/s' -and $v.Ligne.note -like '*peut aller à 1 Gb/s mais elle est branchée à 100 Mb/s*10 fois plus lente*') "carte bridée ($(@($n.Vitesses)[-1])) : ligne $(if ($v.Ligne) { "« $($v.Ligne.valeur) », ton $($v.Ligne.ton), « $($v.Ligne.note) »" } else { 'absente' })"
+                        Assert-Test ($v.Bouton -eq 1 -and $v.Rang -eq 0) "carte bridée : bouton $($v.Bouton), vitesse aussi dans les réglages $($v.Rang)"
+                    }
+                    Assert-Test ($v.Ligne.note -notmatch '[–—]') 'tiret long dans l''explication'
+                    # Rien : à 1 Gb/s, carte 2,5 Gb/s à 1 Gb/s, Wi-Fi, vitesses de la carte illisibles, ancienne lecture sans Bps
+                    $rien = @(@{ N = '1 Gb/s'; Net = (& $faux 1e9 $giga) }, @{ N = '2,5 Gb/s à 1 Gb/s'; Net = (& $faux 1e9 $intel) }, @{ N = 'Wi-Fi'; Net = (& $faux 1e8 $intel $true) },
+                              @{ N = 'illisible'; Net = (& $faux 1e8 @()) }, @{ N = 'carte 100 Mb/s'; Net = (& $faux 1e8 @('Auto', '10 Mbps Full', '100 Mbps Full')) }, @{ N = 'sans Bps'; Net = @{ IfIndex = 4242; Wifi = $false; Speed = '100 Mbps'; Desc = 'x' } })
+                    foreach ($c in $rien) {
+                        $script:Net = $c.Net; $v = & $voir
+                        Assert-Test (-not $v.Ligne -and -not $v.Bouton -and $v.Rang -eq 1) "$($c.N) : alerte montrée (ligne $([bool]$v.Ligne), bouton $($v.Bouton))"
+                        Assert-Test (-not (Get-BridageCarte $c.Net)) "$($c.N) : vue comme bridée"
+                    }
+                    # La bulle : pas pendant une partie, une seule fois par épisode, de nouveau après un retour à la normale
+                    $nb = { @($script:T.Msgs | Where-Object { $_ -like '`[Notify`] Ta connexion par câble est ralentie*' }).Count }
+                    $n0 = & $nb; $script:CarteAlertee = $null
+                    $lente = & $faux 1e8 $intel
+                    $script:GameSession = @{ Game = 'Essai'; Pid = $PID; Closed = @(); Start = Get-Date }
+                    Assert-Test (-not (Test-AlerteCarte $lente) -and (& $nb) -eq $n0) 'bulle envoyée pendant une partie'
+                    $script:GameSession = $null; $script:LagSession = $null
+                    Assert-Test ((Test-AlerteCarte $lente) -and (& $nb) -eq $n0 + 1) 'pas de bulle après la partie'
+                    Assert-Test (-not (Test-AlerteCarte $lente) -and -not (Test-AlerteCarte $lente) -and (& $nb) -eq $n0 + 1) 'bulle répétée pour le même épisode'
+                    Assert-Test (-not (Test-AlerteCarte (& $faux 1e9 $intel)) -and -not (Test-AlerteCarte (& $faux 1e8 $intel $true))) 'bulle sans carte bridée'
+                    Assert-Test ((Test-AlerteCarte $lente) -and (& $nb) -eq $n0 + 2) 'pas de bulle pour un nouvel épisode'
+                    # Le bouton : confirmation, l'Aide (simulée) avec le numéro de la carte, l'attente (simulée), la nouvelle vitesse dite
+                    $script:T.Carte = @{ Questions = @(); Aide = @(); Dit = @() }
+                    Set-Item function:script:Confirm-Action { param([string]$Text, [string[]]$Details) $script:T.Carte.Questions += $Text; $true }
+                    Set-Item function:script:Invoke-Aide { param([string]$Action, $Parametres) $script:T.Carte.Aide += "$Action $($Parametres.Index)" }
+                    Set-Item function:script:Wait-CarteRevenue { param([int]$Index) $true }
+                    Set-Item function:script:Get-ActiveNet { $n = & $script:T.CarteApres; $n }
+                    Set-Item function:script:Show-MessageVue { param([string]$Texte, [switch]$Bravo) $script:T.Carte.Dit += $Texte }
+                    $script:T.CarteApres = { @{ IfIndex = 4242; Guid = '{essai}'; Name = 'Essai'; Desc = 'Carte d''essai'; Wifi = $false; Speed = '1 Gbps'; Bps = [int64]1e9; Vitesses = @('1,0 Gbit/s Duplex intégral', '2,5 Gbit/s Duplex intégral') } }
+                    $script:Net = $lente
+                    if ($script:Vue -and $script:Vue.Actions -and $script:Vue.Actions['carte-relancer']) { Receive-MessageVue '{"type":"action","id":"carte-relancer","ecran":"connexion"}' } else { Invoke-Safe { Restart-CarteReseau } }
+                    Assert-Test (@($script:T.Carte.Questions).Count -eq 1 -and $script:T.Carte.Questions[0] -like '*coupé 5 à 10 secondes*') "confirmation : $($script:T.Carte.Questions -join ' | ')"
+                    Assert-Test ((@($script:T.Carte.Aide) -join ',') -eq 'carte.relancer 4242') "Aide : $($script:T.Carte.Aide -join ', ')"
+                    Assert-Test ($script:Net.Bps -eq 1e9 -and $ui.StatusText.Text -like '*elle est à 1 Gb/s*' -and -not $script:CarteAlertee) "après : $($ui.StatusText.Text)"
+                    # Toujours bridée après le redémarrage : le conseil du câble, sans bulle en plus
+                    $script:T.CarteApres = { @{ IfIndex = 4242; Guid = '{essai}'; Name = 'Essai'; Desc = 'Carte d''essai'; Wifi = $false; Speed = '100 Mbps'; Bps = [int64]1e8; Vitesses = @('1,0 Gbit/s Duplex intégral') } }
+                    $script:Net = $lente; $n1 = & $nb
+                    Invoke-Safe { Restart-CarteReseau }
+                    Assert-Test ($ui.StatusText.Text -like '*toujours à 100 Mb/s*rebranche*' -and -not (Test-AlerteCarte $script:Net) -and (& $nb) -eq $n1) "toujours bridée : $($ui.StatusText.Text)"
+                    # Refus de la confirmation : l'Aide n'est pas appelée
+                    Set-Item function:script:Confirm-Action { param([string]$Text, [string[]]$Details) $false }
+                    $script:T.Carte.Aide = @(); $script:Net = $lente
+                    Invoke-Safe { Restart-CarteReseau }
+                    Assert-Test (-not @($script:T.Carte.Aide).Count) 'carte redémarrée sans accord'
+                } finally {
+                    Set-Item function:script:Confirm-Action $avant.Confirm; Set-Item function:script:Invoke-Aide $avant.Aide; Set-Item function:script:Get-ActiveNet $avant.Actif
+                    Set-Item function:script:Wait-CarteRevenue $avant.Attente; Set-Item function:script:Show-MessageVue $avant.Message
+                    $script:Net = $avant.Net; $script:CarteAlertee = $avant.Alertee; $script:GameSession = $avant.Jeu; $script:LagSession = $avant.Lag
+                    $script:CarteVue = Get-Date
+                }
+                'bridée à 100 Mb/s (2,5 et 1 Gb/s) : vitesse en orange, expliquée, bouton ; rien à 1 Gb/s, en Wi-Fi ou sans les vitesses de la carte ; une bulle par épisode, jamais en partie ; bouton : confirmation, Aide simulée, nouvelle vitesse'
+            }
             Test-Step 'FPS : jeux dont l''anti-triche bloque la mesure' {
                 Assert-Test ((Get-FpsVeilleJeux) -contains 'bf6.exe') 'BF6 absent des jeux guettés'
                 Assert-Test (Test-FpsRefus 'error: failed to start trace session: access denied.') 'refus de PresentMon non reconnu'

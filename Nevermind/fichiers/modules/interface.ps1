@@ -255,8 +255,10 @@ $AnalysisDataWork = {
             $wifi = ([string]$ad.PhysicalMediaType -match '802\.11') -or ($ad.InterfaceDescription -match 'Wi-?Fi|Wireless|WLAN')
             $ip = Get-NetIPAddress -InterfaceIndex $route.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
             $dns = try { (Get-DnsClientServerAddress -InterfaceIndex $route.ifIndex -AddressFamily IPv4 -ErrorAction Stop).ServerAddresses -join ', ' } catch { '' }
+            $vit = try { if (-not $wifi) { Get-NetAdapterAdvancedProperty -Name $ad.Name -RegistryKeyword '*SpeedDuplex' -ErrorAction Stop | Select-Object -First 1 } } catch { $null }
             @{ IfIndex = $route.ifIndex; Gateway = $route.NextHop; Name = $ad.Name; Desc = $ad.InterfaceDescription; Speed = $ad.LinkSpeed; Wifi = $wifi; Guid = $ad.InterfaceGuid
-               Mac = $ad.MacAddress; Ip = $(if ($ip) { $ip.IPAddress } else { $null }); Prefix = $(if ($ip) { [int]$ip.PrefixLength } else { 24 }); Dns = $dns }
+               Mac = $ad.MacAddress; Ip = $(if ($ip) { $ip.IPAddress } else { $null }); Prefix = $(if ($ip) { [int]$ip.PrefixLength } else { 24 }); Dns = $dns
+               Bps = [int64]$ad.ReceiveLinkSpeed; Vitesses = @($vit.ValidDisplayValues | ForEach-Object { [string]$_ }); VitessesReg = @($vit.ValidRegistryValues | ForEach-Object { [string]$_ }) }
         } catch { $null }
     }
     $r
@@ -270,8 +272,12 @@ $ActiveNetWork = {
         $wifi = ([string]$ad.PhysicalMediaType -match '802\.11') -or ($ad.InterfaceDescription -match 'Wi-?Fi|Wireless|WLAN')
         $ip = Get-NetIPAddress -InterfaceIndex $route.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' } | Select-Object -First 1
         $dns = try { (Get-DnsClientServerAddress -InterfaceIndex $route.ifIndex -AddressFamily IPv4 -ErrorAction Stop).ServerAddresses -join ', ' } catch { '' }
+        # Bps : la vitesse de la liaison en bits/s ; Vitesses : celles que la carte sait faire (réglage « Vitesse et duplex »,
+        # lu sans droits administrateur ; vide en Wi-Fi ou si la carte ne le donne pas). Pour voir une carte bridée : Get-BridageCarte
+        $vit = try { if (-not $wifi) { Get-NetAdapterAdvancedProperty -Name $ad.Name -RegistryKeyword '*SpeedDuplex' -ErrorAction Stop | Select-Object -First 1 } } catch { $null }
         @{ IfIndex = $route.ifIndex; Gateway = $route.NextHop; Name = $ad.Name; Desc = $ad.InterfaceDescription; Speed = $ad.LinkSpeed; Wifi = $wifi; Guid = $ad.InterfaceGuid
-           Mac = $ad.MacAddress; Ip = $(if ($ip) { $ip.IPAddress } else { $null }); Prefix = $(if ($ip) { [int]$ip.PrefixLength } else { 24 }); Dns = $dns }
+           Mac = $ad.MacAddress; Ip = $(if ($ip) { $ip.IPAddress } else { $null }); Prefix = $(if ($ip) { [int]$ip.PrefixLength } else { 24 }); Dns = $dns
+           Bps = [int64]$ad.ReceiveLinkSpeed; Vitesses = @($vit.ValidDisplayValues | ForEach-Object { [string]$_ }); VitessesReg = @($vit.ValidRegistryValues | ForEach-Object { [string]$_ }) }
     } catch { $null }
 }
 

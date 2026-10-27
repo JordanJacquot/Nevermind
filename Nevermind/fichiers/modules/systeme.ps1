@@ -9,6 +9,120 @@ function Get-ActiveNet {
     if ($n) { $n } else { $null }
 }
 
+# ---- Carte réseau bridée : une carte par câble capable de 1 Gb/s ou plus, branchée en dessous (retombée à 100 Mb/s au
+# réveil d'une veille, câble abîmé...). Une carte 2,5 Gb/s à 1 Gb/s n'est pas bridée : la plupart des box et des routeurs
+# s'arrêtent à 1 Gb/s. Le Wi-Fi n'est pas concerné (sa vitesse varie tout le temps). Vitesses de la carte illisibles :
+# rien n'est conclu.
+# La plus grande vitesse que la carte sait faire, en bits/s (0 si on ne sait pas). Lue dans les textes de son réglage
+# « Vitesse et duplex » (« 1,0 Gbit/s Duplex intégral », « 2.5 Gbps Full Duplex »...), sinon dans ses valeurs (norme de
+# Windows : 1 à 4 pour 10 et 100 Mb/s, 5 et 6 pour 1 Gb/s, 7 pour 10 Gb/s ; 2500, 5000... en Mb/s chez certains fabricants).
+$VitessesNorme = @{ 1 = 1e7; 2 = 1e7; 3 = 1e8; 4 = 1e8; 5 = 1e9; 6 = 1e9; 7 = 1e10 }
+function Get-CapaciteCarte($Net) {
+    $max = 0.0
+    foreach ($t in @($Net.Vitesses)) {
+        if ([string]$t -match '(\d+(?:[.,]\d+)?)\s*([MG])(?:bit|bps|b/s|b\b)') {
+            $v = [double]$Matches[1].Replace(',', '.') * $(if ($Matches[2] -eq 'G') { 1e9 } else { 1e6 })
+            if ($v -gt $max) { $max = $v }
+        }
+    }
+    if ($max) { return $max }
+    foreach ($r in @($Net.VitessesReg)) {
+        $k = 0
+        if (-not [int]::TryParse([string]$r, [ref]$k)) { continue }
+        $v = if ($VitessesNorme.ContainsKey($k)) { $VitessesNorme[$k] } elseif ($k -ge 1000) { $k * 1e6 } else { 0 }
+        if ($v -gt $max) { $max = $v }
+    }
+    $max
+}
+# @{ Bps; Capacite; Fois } quand la carte de la connexion est bridée, $null sinon
+function Get-BridageCarte($Net) {
+    if (-not $Net -or $Net.Wifi) { return $null }
+    $bps = [double]$Net.Bps
+    if ($bps -le 0 -or $bps -ge 1e9) { return $null }
+    $cap = Get-CapaciteCarte $Net
+    if ($cap -lt 1e9) { return $null }
+    @{ Bps = $bps; Capacite = $cap; Fois = [int][math]::Round(1e9 / $bps) }
+}
+function Format-VitesseCarte([double]$Bps) {
+    $fr = [Globalization.CultureInfo]'fr-FR'
+    if ($Bps -ge 1e9) { "$(($Bps / 1e9).ToString('0.#', $fr)) Gb/s" } else { "$(($Bps / 1e6).ToString('0.#', $fr)) Mb/s" }
+}
+function Get-TexteBridage($B) {
+    "Ta carte réseau peut aller à 1 Gb/s mais elle est branchée à $(Format-VitesseCarte $B.Bps) : ta connexion est $(if ($B.Fois -ge 2) { "$($B.Fois) fois" } else { 'un peu' }) plus lente qu'elle ne pourrait. Ça arrive souvent après une veille."
+}
+
+# Bulle quand la carte devient bridée (au réveil d'une veille...) : une seule par épisode (jusqu'à ce qu'elle revienne à
+# sa vitesse ou que la connexion change), jamais pendant une partie : elle part à la vérification qui suit la partie.
+# Un clic mène à la page Connexion (l'explication et le bouton). Rien n'est relancé tout seul.
+function Test-AlerteCarte($Net) {
+    $b = Get-BridageCarte $Net
+    if (-not $b) { $script:CarteAlertee = $null; return $false }
+    $cle = "$($Net.Guid)|$($Net.IfIndex)"
+    if ($script:CarteAlertee -eq $cle) { return $false }
+    if ($script:GameSession -or $script:LagSession) { return $false }
+    $script:CarteAlertee = $cle
+    Write-Log "Carte réseau bridée : $($Net.Desc) à $(Format-VitesseCarte $b.Bps), capable de $(Format-VitesseCarte $b.Capacite)"
+    Show-Notify 'Ta connexion par câble est ralentie' "Ta carte réseau est branchée à $(Format-VitesseCarte $b.Bps) au lieu de 1 Gb/s. Clique ici pour la remettre à pleine vitesse." (New-ActionNotif 'Show-Page 3' '')
+    $true
+}
+
+# Toutes les minutes au plus (minuterie des mesures, Update-LiveUI) : la connexion relue en arrière plan, pour la bulle.
+# Rien pendant une partie. (la première, une minute après le lancement : le démarrage a assez à faire)
+$script:CarteVue = Get-Date
+function Watch-CarteReseau {
+    if ($script:GameSession -or $script:LagSession) { return }
+    if (((Get-Date) - $script:CarteVue).TotalSeconds -lt 60) { return }
+    $script:CarteVue = Get-Date
+    Invoke-SansEmpiler 'CarteReseau' {
+        $n = Get-ActiveNet
+        if ($n) { $script:Net = $n }
+        [void](Test-AlerteCarte $n)
+    }
+}
+
+# Le bouton « Redémarrer la carte réseau » de la page Connexion : l'Aide la redémarre (Internet coupé 5 à 10 secondes),
+# puis Nevermind attend qu'elle revienne, en arrière plan (jusqu'à une vingtaine de secondes), et dit sa nouvelle vitesse.
+$AttenteCarteWork = {
+    param($idx)
+    Start-Sleep -Seconds 2
+    for ($i = 0; $i -lt 20; $i++) {
+        try {
+            $ad = Get-NetAdapter -InterfaceIndex $idx -ErrorAction Stop
+            if ($ad.Status -eq 'Up' -and [int64]$ad.ReceiveLinkSpeed -gt 0 -and (Get-NetRoute -DestinationPrefix '0.0.0.0/0' -InterfaceIndex $idx -ErrorAction SilentlyContinue)) { return $true }
+        } catch {}
+        Start-Sleep -Seconds 1
+    }
+    $false
+}
+function Wait-CarteRevenue([int]$Index) { [bool](Invoke-Async $AttenteCarteWork $Index | Select-Object -First 1) }
+
+function Restart-CarteReseau {
+    $net = $script:Net
+    if (-not $net -or $net.Wifi) { Show-Message 'Aucune carte réseau par câble détectée.'; return }
+    if (-not (Confirm-Action 'Redémarrer la carte réseau ? Internet sera coupé 5 à 10 secondes : une partie en ligne, un appel ou un téléchargement en cours seront coupés.')) { return }
+    $idx = [int]$net.IfIndex
+    Set-Busy $true
+    Set-Status 'Redémarrage de la carte réseau...'
+    Write-Log "Carte réseau : redémarrage de $($net.Desc) (à $(Format-VitesseCarte $net.Bps))"
+    [void](Invoke-Aide 'carte.relancer' @{ Index = $idx } 60000)
+    Set-Status 'Carte réseau redémarrée, elle se reconnecte...'
+    [void](Wait-CarteRevenue $idx)
+    $n = Get-ActiveNet
+    if ($n) { $script:Net = $n }
+    $script:CarteVue = Get-Date
+    $b = Get-BridageCarte $n
+    # (toujours bridée : pas de bulle en plus, la personne le lit ici)
+    $script:CarteAlertee = if ($b) { "$($n.Guid)|$($n.IfIndex)" } else { $null }
+    $texte = if (-not $n) { 'La carte réseau redémarre encore : Internet revient dans quelques secondes.' }
+             elseif ($b) { "La carte est toujours à $(Format-VitesseCarte $b.Bps). Débranche le câble réseau 10 secondes puis rebranche-le. Si ça ne change rien, essaie un autre câble ou une autre prise de ta box." }
+             else { "Carte réseau redémarrée : elle est à $(Format-VitesseCarte $n.Bps)." }
+    Write-Log "Carte réseau : $texte"
+    try { Update-NetInfo } catch {}
+    Set-Busy $false
+    Set-Status $texte
+    if ($script:Kit.Actif -and (Test-EcranKitMontre)) { Show-MessageVue $texte -Bravo:(-not $b -and [bool]$n) }
+}
+
 $DnsChoices = @(
     @(),
     @('1.1.1.1', '1.0.0.1'),
