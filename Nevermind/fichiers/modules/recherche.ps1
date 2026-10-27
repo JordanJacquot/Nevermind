@@ -42,6 +42,7 @@ $SearchEntries = @(
     @{ T = 'Tester ma connexion (ping)'; P = 3; A = 'Tester ma connexion'; K = 'ping gigue jitter connexion internet stable' },
     @{ T = 'Serveur DNS'; P = 3; A = 'Serveur DNS'; K = 'dns cloudflare google quad9' },
     @{ T = 'Vider le cache DNS'; P = 3; A = 'Vider le cache DNS'; K = 'dns cache flush' },
+    @{ T = 'Redémarrer la carte réseau (vitesse de la carte)'; P = 3; A = 'Ta connexion'; K = 'carte reseau ethernet cable vitesse lente bridee 100 mbps 1 gbps gigabit relancer redemarrer veille' },
     @{ T = 'Nettoyage du disque'; P = 4; A = 'Analyser'; K = 'nettoyer nettoyage fichiers temporaires place disque espace plein' },
     # Tests
     @{ T = 'Tester la vitesse du disque'; P = 5; A = 'Tester la vitesse'; K = 'ssd hdd nvme disque vitesse lecture ecriture' },

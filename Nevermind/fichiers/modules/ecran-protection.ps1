@@ -98,10 +98,11 @@ function Get-PagesProtection {
     # ---- Connexion
     $choixDns = 0
     if ($net -and $net.Dns) { $dns = [string]$net.Dns; for ($k = 1; $k -lt $DnsChoices.Count; $k++) { if ($dns -match [regex]::Escape($DnsChoices[$k][0])) { $choixDns = $k } } }
+    $bridage = Get-BridageCarte $net
     $infos = @(if ($net) {
         @{ texte = 'Type'; valeur = $(if ($net.Wifi) { 'Wi-Fi' } else { 'Câble (Ethernet)' }) }
         @{ texte = 'Carte'; valeur = [string]$net.Desc }
-        @{ texte = 'Vitesse'; valeur = [string]$net.Speed }
+        if (-not $bridage) { @{ texte = 'Vitesse'; valeur = [string]$net.Speed } }
         @{ texte = 'Box'; valeur = [string]$net.Gateway }
         if ($net.Dns) { @{ texte = 'DNS actuel'; valeur = [string]$net.Dns } }
     })
@@ -119,7 +120,14 @@ function Get-PagesProtection {
             if ($debit) { @{ type = 'chiffres'; elements = @(@{ titre = 'Téléchargement'; valeur = $debit.Down; unite = 'Mb/s'; ton = 'ok' }, @{ titre = 'Envoi'; valeur = $debit.Up; unite = 'Mb/s'; ton = 'ok' }) } }
             else { @{ type = 'texte'; texte = 'La vitesse de ta connexion en téléchargement et en envoi, mesurée en une vingtaine de secondes.' } }
             @{ type = 'bouton'; id = 'debit'; texte = $(if ($debit) { 'Mesurer à nouveau' } else { 'Mesurer mon débit' }); style = 'second' }
-            if ($infos.Count) { @{ type = 'titre'; texte = 'Ta connexion' }; @{ type = 'reglages'; rangs = $infos } }
+            if ($infos.Count) { @{ type = 'titre'; texte = 'Ta connexion' } }
+            # Carte par câble bridée (100 Mb/s au lieu de 1 Gb/s, souvent après une veille) : la vitesse en orange, expliquée, et
+            # le bouton qui la redémarre (par l'Aide)
+            if ($bridage) {
+                @{ type = 'ligne'; icone = 'alerte'; couleur = 'orange'; texte = 'Vitesse'; note = "$(Get-TexteBridage $bridage) Redémarrer la carte la remet en général à pleine vitesse (Internet coupé 5 à 10 secondes)."; valeur = (Format-VitesseCarte $bridage.Bps); etiquette = 'Trop lente'; ton = 'attention' }
+                @{ type = 'bouton'; id = 'carte-relancer'; texte = 'Redémarrer la carte réseau' }
+            }
+            if ($infos.Count) { @{ type = 'reglages'; rangs = $infos } }
             @{ type = 'titre'; texte = 'Serveur DNS' }
             @{ type = 'choix'; id = 'dns'; valeur = "$choixDns"; options = @(@{ id = '0'; texte = 'Automatique (celui de ta box)' }, @{ id = '1'; texte = 'Cloudflare' }, @{ id = '2'; texte = 'Google' }, @{ id = '3'; texte = 'Quad9' }) }
             @{ type = 'bouton'; id = 'clic:BtnDnsFlush'; texte = 'Vider le cache DNS'; style = 'second' }
@@ -162,6 +170,7 @@ function Get-DernierDebit {
 
 function Register-ActionsProtection {
     Register-ActionVue 'dns' { param($Valeur, $Ecran) $k = [int]$Valeur; if ($k -ge 0 -and $k -lt $DnsChoices.Count) { Invoke-Safe { Set-Dns $k } } }
+    Register-ActionVue 'carte-relancer' { param($Valeur, $Ecran) Invoke-Safe { Restart-CarteReseau } }
     # (le vrai test du débit, dans son panneau ; les tuiles des tests sont préparées s'il le faut)
     Register-ActionVue 'debit' { param($Valeur, $Ecran) Invoke-Safe {
         if (-not (Get-BoutonDebit)) { Build-TestsTab }

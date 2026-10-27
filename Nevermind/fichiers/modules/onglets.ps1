@@ -76,8 +76,10 @@ $LiveScript = {
     }
 }
 
-# Toutes les secondes : l'alerte de température (les mesures, $Live, sont lues par l'écran de la console lui-même)
+# Toutes les secondes : l'alerte de température (les mesures, $Live, sont lues par l'écran de la console lui-même) ;
+# toutes les minutes au plus, la vitesse de la carte réseau (Watch-CarteReseau, systeme.ps1)
 function Update-LiveUI {
+    try { Watch-CarteReseau } catch { Write-Log "Carte réseau : $_" }
     if (-not $Live.Updated) { return }
     Test-TempAlert
 }
