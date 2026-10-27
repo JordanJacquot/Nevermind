@@ -4,6 +4,7 @@
 //! Le dossier du corpus : `..\..\cas\aide` depuis ce crate, ou la variable NEVERMIND_CAS (tests seulement : pour la
 //! contre-épreuve, un corpus copié où un cas faux a été glissé doit faire échouer le test).
 
+use aide_regles::carte::{self, FicheCarte};
 use aide_regles::demandes::{self, Carte, ContexteProgrammes, Pc};
 use aide_regles::demarrage::LecturesDemarrage;
 use aide_regles::dossiers::Dossiers;
@@ -170,6 +171,7 @@ impl FauxPc {
             ("{bloc-notes}", Value::String(format!("{}\\System32\\notepad.exe", self.dossiers.windows))),
             ("{pid}", Value::String(PID_ESSAI.to_string())),
             ("{carte}", Value::from(CARTE_ESSAI)),
+            ("{carte-connexion}", Value::from(CARTE_ESSAI)),
         ]
     }
 }
@@ -195,6 +197,17 @@ impl Pc for FauxPc {
     }
     fn carte(&self, index: i32) -> Option<Carte> {
         (index == CARTE_ESSAI).then(|| Carte { index, guid: "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0".into() })
+    }
+    fn fiche_carte(&self, index: i32) -> Option<FicheCarte> {
+        // (la carte d'essai est celle de la connexion : une vraie prise Ethernet qui porte la route par défaut)
+        (index == CARTE_ESSAI).then(|| FicheCarte {
+            description: "Intel(R) Ethernet Controller I226-V".into(),
+            materielle: true,
+            connecteur: true,
+            type_carte: carte::TYPE_ETHERNET,
+            support: carte::SUPPORT_802_3,
+            route_defaut: true,
+        })
     }
     fn dns_locaux(&self, _carte: &Carte) -> Vec<String> {
         vec!["192.168.1.1".into()]
@@ -222,12 +235,13 @@ impl Pc for FauxPc {
 // ---------------------------------------------------------------------------------------------------------------
 
 /// Toutes les demandes de l'Aide (aide.journal à part : elle est traitée par le canal, pas par la liste)
-const TOUTES_LES_DEMANDES: [&str; 30] = [
+const TOUTES_LES_DEMANDES: [&str; 31] = [
     "aide.bonjour",
     "reg.ecrire",
     "reg.effacer",
     "service.regler",
     "dns.regler",
+    "carte.relancer",
     "pare-feu.bloquer",
     "pare-feu.debloquer",
     "origines.oublier",
@@ -258,7 +272,7 @@ const TOUTES_LES_DEMANDES: [&str; 30] = [
 #[test]
 fn demandes() {
     let pc = FauxPc::new();
-    let (_, cas) = lire_cas("demandes.json", &pc.valeurs(), 161);
+    let (_, cas) = lire_cas("demandes.json", &pc.valeurs(), 185);
     let mut b = Bilan::new();
     let mut actions_acceptees = HashSet::new();
     let mut actions_refusees = HashSet::new();
@@ -405,6 +419,34 @@ fn fermeture() {
     b.fin("cas\\aide\\fermeture.json");
 }
 
+/// cas\aide\carte.json : relancer une carte réseau, seulement la carte de la connexion
+#[test]
+fn carte() {
+    let (f, cas) = lire_cas("carte.json", &[], 30);
+    let mut b = Bilan::new();
+    for c in &cas {
+        // La fiche du fichier ; celle du cas remplace les champs qu'elle cite
+        let mut x = f["fiche"].as_object().cloned().unwrap_or_default();
+        if let Some(o) = c["entree"]["fiche"].as_object() {
+            x.extend(o.clone());
+        }
+        let fiche = FicheCarte {
+            description: s(&x["description"]).into(),
+            materielle: x["materielle"].as_bool().unwrap_or(false),
+            connecteur: x["connecteur"].as_bool().unwrap_or(false),
+            type_carte: x["type"].as_u64().unwrap_or(0) as u32,
+            support: x["support"].as_u64().unwrap_or(0) as u32,
+            route_defaut: x["routeDefaut"].as_bool().unwrap_or(false),
+        };
+        let absente = c["entree"]["absente"].as_bool() == Some(true);
+        let r = carte::refus(if absente { None } else { Some(&fiche) });
+        let a = &c["attendu"];
+        let attendu = if a["relancable"].as_bool() == Some(true) { None } else { a["raison"].as_str() };
+        b.verifier(r == attendu, || format!("Relancer une carte : {} donne {r:?} (attendu {attendu:?})", decrire(c)));
+    }
+    b.fin("cas\\aide\\carte.json");
+}
+
 /// Une date du corpus (« 2026-10-26T12:00:00Z ») en ticks UTC de .NET ; rien : 0
 fn ticks(v: &Value) -> i64 {
     let Some(t) = v.as_str() else { return 0 };
@@ -516,6 +558,7 @@ fn serveur() {
 fn tous_les_fichiers_sont_lus() {
     let lus = [
         "canal.json",
+        "carte.json",
         "client.json",
         "demandes.json",
         "demarrage-securite.json",

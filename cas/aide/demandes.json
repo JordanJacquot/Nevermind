@@ -7,7 +7,8 @@
     "{windows}": "le dossier de Windows du PC d'essai (par exemple C:\\Windows)",
     "{bloc-notes}": "un programme ordinaire de Windows qui existe sur le PC d'essai (notepad.exe, sinon cmd.exe)",
     "{pid}": "le numéro d'un processus en cours, à soi (le test lui-même)",
-    "{carte}": "le numéro (ifIndex) d'une vraie carte réseau du PC d'essai, de préférence celle qui mène à Internet ; un nombre, pas un texte"
+    "{carte}": "le numéro (ifIndex) d'une vraie carte réseau du PC d'essai, de préférence celle qui mène à Internet ; un nombre, pas un texte",
+    "{carte-connexion}": "le numéro (ifIndex) de la carte de la connexion du PC d'essai : une vraie prise Ethernet (matérielle, filaire 802.3) qui porte la route par défaut 0.0.0.0/0 ; un nombre. Sans elle (PC en Wi-Fi seulement), les cas qui en ont besoin sont sautés"
   },
   "cas": [
     {"nom":"Acceptée : ce que Nevermind demande vraiment","entree":{"action":"aide.bonjour","parametres":{}},"attendu":{"accepte":true}},
@@ -72,6 +73,7 @@
     {"nom":"Acceptée : DNS publics proposés par Nevermind, sur une vraie carte réseau","entree":{"action":"dns.regler","parametres":{"Index":"{carte}","Serveurs":["1.1.1.1","1.0.0.1"]}},"attendu":{"accepte":true},"besoin":["carte"]},
     {"nom":"Acceptée : DNS publics proposés par Nevermind, sur une vraie carte réseau","entree":{"action":"dns.regler","parametres":{"Index":"{carte}","Serveurs":["8.8.8.8","8.8.4.4"]}},"attendu":{"accepte":true},"besoin":["carte"]},
     {"nom":"Acceptée : DNS publics proposés par Nevermind, sur une vraie carte réseau","entree":{"action":"dns.regler","parametres":{"Index":"{carte}","Serveurs":["9.9.9.9","149.112.112.112"]}},"attendu":{"accepte":true},"besoin":["carte"]},
+    {"nom":"Acceptée : relancer la carte de la connexion (elle renégocie sa vitesse)","entree":{"action":"carte.relancer","parametres":{"Index":"{carte-connexion}"}},"attendu":{"accepte":true},"besoin":["carte-connexion"]},
     {"nom":"Registre : hors liste, valeur interdite, chemin détourné","entree":{"action":"reg.ecrire","parametres":{"Cle":"HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run","Nom":"Pirate","Valeur":"C:\\x.exe","Type":"String"}},"attendu":{"accepte":false}},
     {"nom":"Registre : hors liste, valeur interdite, chemin détourné","entree":{"action":"reg.ecrire","parametres":{"Cle":"HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System","Nom":"EnableLUA","Valeur":0,"Type":"DWord"}},"attendu":{"accepte":false}},
     {"nom":"Registre : hors liste, valeur interdite, chemin détourné","entree":{"action":"reg.ecrire","parametres":{"Cle":"HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server","Nom":"fDenyTSConnections","Valeur":0,"Type":"DWord"}},"attendu":{"accepte":false}},
@@ -171,6 +173,28 @@
     {"nom":"Demande inconnue","entree":{"action":"inconnue","parametres":{}},"attendu":{"accepte":false}},
     {"nom":"Demande inconnue","entree":{"action":"reg.lire","parametres":{"Cle":"HKLM:\\SAM","Nom":"x"}},"attendu":{"accepte":false}},
     {"nom":"DNS : serveur inconnu, sur une vraie carte réseau","entree":{"action":"dns.regler","parametres":{"Index":"{carte}","Serveurs":["6.6.6.6"]}},"attendu":{"accepte":false},"besoin":["carte"]},
-    {"nom":"DNS : serveur inconnu, sur une vraie carte réseau","entree":{"action":"dns.regler","parametres":{"Index":"{carte}","Serveurs":["1.1.1.1","6.6.6.6"]}},"attendu":{"accepte":false},"besoin":["carte"]}
+    {"nom":"DNS : serveur inconnu, sur une vraie carte réseau","entree":{"action":"dns.regler","parametres":{"Index":"{carte}","Serveurs":["1.1.1.1","6.6.6.6"]}},"attendu":{"accepte":false},"besoin":["carte"]},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":0}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":-1}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":-2147483648}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":2147483648}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":"abc"}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":"12"}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":""}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":"6; Restart-Computer"}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":12.5}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":12.0}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":1e2}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":true}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":null}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":[]}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":{}}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Carte":"{carte-connexion}"}},"attendu":{"accepte":false},"besoin":["carte-connexion"]},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":" {carte-connexion}"}},"attendu":{"accepte":false},"besoin":["carte-connexion"]},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":["{carte-connexion}"]}},"attendu":{"accepte":false},"besoin":["carte-connexion"]},
+    {"nom":"Relancer une carte réseau : seulement un vrai numéro de carte (un nombre entier, pas un texte)","entree":{"action":"carte.relancer","parametres":{"Index":{"Index":"{carte-connexion}"}}},"attendu":{"accepte":false},"besoin":["carte-connexion"]},
+    {"nom":"Relancer une carte réseau : une carte qui n'existe pas","entree":{"action":"carte.relancer","parametres":{"Index":2147483647}},"attendu":{"accepte":false}},
+    {"nom":"Relancer une carte réseau : une carte qui n'existe pas","entree":{"action":"carte.relancer","parametres":{"Index":999999}},"attendu":{"accepte":false}}
   ]
 }

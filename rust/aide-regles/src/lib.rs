@@ -14,6 +14,7 @@
 #![forbid(unsafe_code)]
 
 pub mod canal;
+pub mod carte;
 pub mod chemin;
 pub mod client;
 pub mod demandes;

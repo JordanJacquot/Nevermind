@@ -42,6 +42,9 @@
 # Code de sortie 1 si un cas échoue.
 #  11. (avec -Banc <outils\tester-aide-rust.ps1> -Aide <exe Rust>) le banc PowerShell / Rust, qui refuse de tourner en
 #      administrateur : lancé ici sous un compte local sans droits créé pour l'essai
+#  13. relancer la carte réseau de la connexion (carte.relancer) : l'Aide relance pour de vrai la carte de la machine de
+#      GitHub, la carte s'éteint puis se rallume, la connexion revient (60 s au plus) ; les autres cartes de la machine
+#      et les numéros mal formés sont refusés sans qu'aucune carte ne bouge
 #   -Pont <dll>     (avec -Cas 0) NevermindPont.dll construite dans le même run (rust\nevermind-pont), mise dans les
 #                   paquets à côté des programmes : la version de Nevermind qui s'en sert ne marche pas sans elle
 param([int]$Cas = -1, [string]$Aide = '', [string]$Aides = '', [string]$Banc = '', [string]$Pont = '')
@@ -1369,11 +1372,89 @@ function Test-Cas11 {
 }
 
 # =====================================================================================================================
+# 13. Relancer la carte réseau de la connexion (carte.relancer) : pour de vrai, sur la machine de GitHub
+# =====================================================================================================================
+# Les états de la carte, relevés de l'extérieur pendant une demande (toutes les 100 ms, sur un fil à part) : la preuve
+# que l'Aide l'a bien éteinte puis rallumée, ou qu'elle n'y a pas touché
+function Start-GuetCarte([int]$Index) {
+    $etats = [Collections.ArrayList]::Synchronized((New-Object Collections.ArrayList))
+    $fin = New-Object Threading.ManualResetEvent $false
+    $ps = [PowerShell]::Create()
+    [void]$ps.AddScript({
+        param($Index, $Etats, $Fin)
+        do {
+            $a = Get-NetAdapter -InterfaceIndex $Index -IncludeHidden -ErrorAction SilentlyContinue | Select-Object -First 1
+            $e = if ($a) { [string]$a.Status } else { 'absente' }
+            if (-not $Etats.Count -or $Etats[$Etats.Count - 1] -ne $e) { [void]$Etats.Add($e) }
+        } while (-not $Fin.WaitOne(100))
+    }).AddArgument($Index).AddArgument($etats).AddArgument($fin)
+    @{ Ps = $ps; H = $ps.BeginInvoke(); Fin = $fin; Etats = $etats }
+}
+function Stop-GuetCarte($G) {
+    [void]$G.Fin.Set()
+    try { [void]$G.Ps.EndInvoke($G.H) } catch {}
+    $G.Ps.Dispose()
+    , @($G.Etats)
+}
+# La connexion est là : la carte allumée, sa route par défaut, et un vrai échange avec GitHub (TCP 443)
+function Test-ConnexionCarte([int]$Index) {
+    $a = Get-NetAdapter -InterfaceIndex $Index -ErrorAction SilentlyContinue
+    if (-not $a -or [string]$a.Status -ne 'Up') { return $false }
+    if (-not @(Get-NetRoute -InterfaceIndex $Index -DestinationPrefix '0.0.0.0/0' -PolicyStore ActiveStore -ErrorAction SilentlyContinue).Count) { return $false }
+    $t = New-Object Net.Sockets.TcpClient
+    try { $t.ConnectAsync('github.com', 443).Wait(3000) -and $t.Connected } catch { $false } finally { $t.Dispose() }
+}
+function Test-Cas13 {
+    Write-Partie '13. Relancer la carte réseau de la connexion : l''Aide la relance pour de vrai, la connexion revient ; tout le reste est refusé'
+    Reset-Machine
+    $e = Get-Compte $NomElodie
+    $null = Install-Appli $InstallateurNeuf $PaquetEssai $e.Sid
+    $carte = Get-CarteEssai
+    foreach ($a in @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue | Sort-Object ifIndex)) {
+        Write-Host "         | carte $($a.ifIndex) « $($a.Name) » : $($a.InterfaceDescription) ; $($a.Status) ; matérielle $($a.HardwareInterface) ; prise $($a.ConnectorPresent) ; type $($a.InterfaceType) ; support $($a.NdisPhysicalMedium) ; vitesse $($a.LinkSpeed)$(if ($a.ifIndex -eq $carte.Index) { ' ; CELLE DE LA CONNEXION' })" -ForegroundColor DarkGray
+    }
+    Test-Cas "la connexion marche avant l'essai (carte $($carte.Nom), numéro $($carte.Index))" { Test-ConnexionCarte $carte.Index }
+
+    # a. Les refus : numéros mal formés, carte absente, chaque autre carte de la machine. Aucune carte ne bouge.
+    $refus = [Collections.Generic.List[object]]::new()
+    $refus.Add(@{ Nom = 'zero'; Action = 'carte.relancer'; P = @{ Index = 0 } })
+    $refus.Add(@{ Nom = 'negatif'; Action = 'carte.relancer'; P = @{ Index = -1 } })
+    $refus.Add(@{ Nom = 'texte'; Action = 'carte.relancer'; P = @{ Index = "$($carte.Index)" } })
+    $refus.Add(@{ Nom = 'mot'; Action = 'carte.relancer'; P = @{ Index = 'Ethernet' } })
+    $refus.Add(@{ Nom = 'absente'; Action = 'carte.relancer'; P = @{ Index = 999999 } })
+    foreach ($a in @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue | Where-Object { [int]$_.ifIndex -ne $carte.Index } | Select-Object -First 12)) {
+        $refus.Add(@{ Nom = "autre-$($a.ifIndex)"; Action = 'carte.relancer'; P = @{ Index = [int]$a.ifIndex } })
+    }
+    $g = Start-GuetCarte $carte.Index
+    $s1 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @($refus) }
+    $etats1 = Stop-GuetCarte $g
+    Test-Cas "chaque demande interdite est refusée par la liste de l'Aide ($($refus.Count) demandes : numéros mal formés, carte absente, les autres cartes)" {
+        -not @($refus | Where-Object { -not ($s1.E -and $s1.E.PSObject.Properties[$_.Nom] -and [string]$s1.E.($_.Nom) -like 'Demande refusée*') -or ($s1.R -and $s1.R.PSObject.Properties[$_.Nom]) }).Count
+    }
+    Test-Cas "pendant ces refus, la carte de la connexion n'a pas bougé (états vus : $($etats1 -join ', '))" { $etats1.Count -eq 1 -and $etats1[0] -eq 'Up' }
+
+    # b. La carte de la connexion : relancée pour de vrai, puis la connexion revient
+    $avant = (Get-NetAdapter -InterfaceIndex $carte.Index).LinkSpeed
+    $g = Start-GuetCarte $carte.Index
+    $debut = Get-Date
+    $s2 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'relancer'; Action = 'carte.relancer'; P = @{ Index = $carte.Index } }) }
+    $revenue = Wait-Jusque { Test-ConnexionCarte $carte.Index } 60
+    $duree = [math]::Round(((Get-Date) - $debut).TotalSeconds, 1)
+    $etats2 = Stop-GuetCarte $g
+    $apres = (Get-NetAdapter -InterfaceIndex $carte.Index -ErrorAction SilentlyContinue).LinkSpeed
+    Write-Host "         | vitesse avant $avant, après $apres ; états vus : $($etats2 -join ', ')" -ForegroundColor DarkGray
+    Test-Cas 'l''Aide accepte de relancer la carte de la connexion (réponse « ok »)' { $s2.R -and $s2.R.PSObject.Properties['relancer'] -and [string]$s2.R.relancer -eq 'ok' }
+    Test-Cas "la carte a bien été éteinte puis rallumée (états vus : $($etats2 -join ', '))" { @($etats2 | Where-Object { $_ -ne 'Up' }).Count -gt 0 -and $etats2[-1] -eq 'Up' }
+    Test-Cas "la connexion revient en 60 s au plus (revenue en $duree s depuis la demande)" { $revenue }
+    Stop-Aides
+}
+
+# =====================================================================================================================
 $titres = @{ 0 = 'Préparation'; 1 = 'Installation : tâche SYSTEM pour Élodie'; 2 = 'Élodie obtient des actions en lecture seule'; 3 = 'Un autre compte refusé'
     4 = 'Mise à jour depuis Nevermind 1.10.0'; 5 = 'Repli par la demande de Windows'; 6 = 'Désinstallation'; 7 = 'Environnement d''Élodie'
     8 = 'Changement de nom : mises à jour, anciens Mindset, une seule instance'; 9 = 'Aide lancée en secours par la demande de Windows'
-    10 = 'Tout optimiser puis tout restaurer'; 11 = 'Banc PowerShell / Rust sous un compte sans droits' }
-if (-not $titres.ContainsKey($Cas)) { Write-Host 'Indique -Cas 0 (préparation) ou -Cas 1 à 11.' -ForegroundColor Yellow; exit 2 }
+    10 = 'Tout optimiser puis tout restaurer'; 11 = 'Banc PowerShell / Rust sous un compte sans droits'; 13 = 'Relancer la carte réseau de la connexion' }
+if (-not $titres.ContainsKey($Cas)) { Write-Host 'Indique -Cas 0 (préparation), -Cas 1 à 11 ou -Cas 13.' -ForegroundColor Yellow; exit 2 }
 try {
     switch ($Cas) {
         0 { if ($env:GITHUB_STEP_SUMMARY) { [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "| Cas | Quoi | Résultat |`n|---|---|---|`n", (New-Object Text.UTF8Encoding $false)) }; Initialize-Essai }
@@ -1388,6 +1469,7 @@ try {
         9 { Test-Cas9 }
         10 { Test-Cas10 }
         11 { Test-Cas11 }
+        13 { Test-Cas13 }
     }
 } catch {
     $script:Echoues.Add("erreur : $($_.Exception.Message)")

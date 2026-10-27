@@ -8,6 +8,7 @@
 //! message d'erreur (montré tel quel par Nevermind). Un vrai refus commence par « Demande refusée », « L'Aide garde ce
 //! réglage » ou « L'Aide ne connaît pas » ; les autres messages sont des erreurs (carte réseau disparue...).
 
+use crate::carte::{self, FicheCarte};
 use crate::demarrage::{self, LecturesDemarrage};
 use crate::dossiers::{self, Dossiers};
 use crate::nettoyage::{self, Categorie};
@@ -22,8 +23,9 @@ use std::net::IpAddr;
 pub const REGLE: &str = "Nevermind : bloque ";
 pub const REGLE_ANCIENNE: &str = "OptiGame : bloque ";
 
-/// Version du protocole de l'Aide (`$AideVersion` : 4, l'Aide en SYSTEM ; 5, demandes resserrées, audit du 25/10)
-pub const VERSION: i32 = 5;
+/// Version du protocole de l'Aide (`$AideVersion` : 4, l'Aide en SYSTEM ; 5, demandes resserrées, audit du 25/10 ;
+/// 6, « carte.relancer »)
+pub const VERSION: i32 = 6;
 
 /// Une carte réseau : son numéro et son identifiant (GUID en minuscules, sans accolades)
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,6 +53,9 @@ pub trait Pc: LecturesDemarrage {
     fn processus_existe(&self, pid: i64) -> bool;
     /// La carte réseau de ce numéro (`Get-NetAdapter -IncludeHidden`), `None` si elle n'existe pas
     fn carte(&self, index: i32) -> Option<Carte>;
+    /// Ce que Windows dit de la carte de ce numéro, route par défaut comprise (`Read-AideFicheCarte`), `None` si elle
+    /// n'existe pas
+    fn fiche_carte(&self, index: i32) -> Option<FicheCarte>;
     /// Les adresses du réseau local qu'un DNS peut avoir sur cette carte : sa passerelle (la box) et les serveurs DNS
     /// donnés par la box (`Get-AideDnsLocaux`)
     fn dns_locaux(&self, carte: &Carte) -> Vec<String>;
@@ -93,6 +98,10 @@ pub enum Demande {
         carte: Carte,
         serveurs: Vec<String>,
         origine_connue: bool,
+    },
+    /// La carte de la connexion, relancée pour qu'elle renégocie sa vitesse
+    CarteRelancer {
+        index: i32,
     },
     PareFeuBloquer {
         nom: String,
@@ -266,6 +275,15 @@ fn nom_jeu_valable(n: &str) -> bool {
         && c.all(|x| x.is_ascii_lowercase() || x.is_ascii_digit() || " ._()-".contains(x))
 }
 
+/// Le numéro de carte de « carte.relancer » : un vrai nombre entier (ni texte, ni décimal, ni oui/non, ni liste), de 1
+/// à 2147483647 (`[int]` ou `[long]` donné par ConvertFrom-Json)
+fn index_strict(v: Option<&Value>) -> Option<i32> {
+    match v {
+        Some(Value::Number(n)) => n.as_i64().and_then(|i| i32::try_from(i).ok()).filter(|&i| i > 0),
+        _ => None,
+    }
+}
+
 /// Vérifie la demande `action` (paramètres `p`) sans rien faire
 pub fn verifier(action: &str, p: &Value, pc: &dyn Pc) -> Result<Demande, String> {
     let a = |n: &str| texte::egal(action, n);
@@ -378,6 +396,17 @@ pub fn verifier(action: &str, p: &Value, pc: &dyn Pc) -> Result<Demande, String>
             return Err("L'Aide garde ce réglage : elle ne met que des DNS connus (Cloudflare, Google, Quad9), ceux de ta box, ou ceux que tu avais avant Nevermind.".into());
         }
         return Ok(Demande::DnsRegler { carte, serveurs, origine_connue: origine.is_some() });
+    }
+
+    if a("carte.relancer") {
+        // Seulement la carte de la connexion : une vraie prise du PC, filaire, qui porte la route par défaut
+        let Some(index) = index_strict(ps::param(p, "Index")) else {
+            return Err(carte::NON_VALABLE.into());
+        };
+        if let Some(r) = carte::refus(pc.fiche_carte(index).as_ref()) {
+            return Err(r.into());
+        }
+        return Ok(Demande::CarteRelancer { index });
     }
 
     if a("pare-feu.bloquer") {

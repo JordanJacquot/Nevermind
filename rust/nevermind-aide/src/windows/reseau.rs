@@ -1,6 +1,9 @@
-//! Cartes réseau et DNS (Get-NetAdapter, Get-NetRoute, Set-DnsClientServerAddress, Clear-DnsClientCache).
+//! Cartes réseau et DNS (Get-NetAdapter, Get-NetRoute, Restart-NetAdapter, Set-DnsClientServerAddress,
+//! Clear-DnsClientCache).
 
-use super::outils::{fonction, guid_texte};
+use super::com::methode_objet;
+use super::outils::{fonction, guid_texte, texte};
+use aide_regles::carte::FicheCarte;
 use aide_regles::demandes::{Carte, ip_normale};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use windows::Win32::NetworkManagement::IpHelper::{
@@ -33,6 +36,50 @@ fn ligne(index: i32) -> Option<MIB_IF_ROW2> {
 /// La carte de ce numéro
 pub fn carte(index: i32) -> Option<Carte> {
     ligne(index).map(|l| Carte { index, guid: guid_texte(&l.InterfaceGuid) })
+}
+
+/// Ce que Windows dit de la carte de ce numéro (`Read-AideFicheCarte`) : sa description, matérielle et avec une prise
+/// (InterfaceAndOperStatusFlags : HardwareInterface, ConnectorPresent), son type, son support physique, et si elle porte
+/// une route par défaut IPv4 en ce moment
+pub fn fiche(index: i32) -> Option<FicheCarte> {
+    let l = ligne(index)?;
+    let drapeaux = l.InterfaceAndOperStatusFlags._bitfield;
+    Some(FicheCarte {
+        description: texte(&l.Description),
+        materielle: drapeaux & 0b001 != 0,
+        connecteur: drapeaux & 0b100 != 0,
+        type_carte: l.Type,
+        support: u32::try_from(l.PhysicalMediumType.0).unwrap_or(0),
+        route_defaut: route_defaut(index),
+    })
+}
+
+/// La carte porte-t-elle une route par défaut IPv4 (0.0.0.0/0, `Get-NetRoute -PolicyStore ActiveStore`) ?
+fn route_defaut(index: i32) -> bool {
+    let mut t: *mut MIB_IPFORWARD_TABLE2 = std::ptr::null_mut();
+    // SAFETY : table donnée par Windows, lue dans ses limites puis rendue
+    unsafe {
+        if GetIpForwardTable2(AF_INET, &mut t).is_err() || t.is_null() {
+            return false;
+        }
+        let n = (*t).NumEntries as usize;
+        let lignes = std::slice::from_raw_parts((*t).Table.as_ptr(), n);
+        let r = lignes
+            .iter()
+            .any(|l| i64::from(l.InterfaceIndex) == i64::from(index) && l.DestinationPrefix.PrefixLength == 0);
+        FreeMibTable(t.cast());
+        r
+    }
+}
+
+/// Relance la carte (MSFT_NetAdapter.Restart, ce que fait Restart-NetAdapter : éteinte puis rallumée), et attend que
+/// Windows l'ait fait
+pub fn relancer(index: i32) -> Result<(), String> {
+    let wql = format!("SELECT * FROM MSFT_NetAdapter WHERE InterfaceIndex = {index}");
+    if !methode_objet("root\\StandardCimv2", &wql, "Restart")? {
+        return Err("elle n'existe plus sur ce PC".into());
+    }
+    Ok(())
 }
 
 /// Une adresse de Windows (IPv4 ou IPv6)

@@ -13,6 +13,7 @@
     {"nom":"sécurité (module Defender piégé)","entree":{"action":"lecture.securite","parametres":{}},"attendu":{"ok":true}},
     {"nom":"lecture du PC (modules Storage, SecureBoot piégés)","entree":{"action":"lecture.pc","parametres":{}},"attendu":{"ok":true}},
     {"nom":"DNS sur une carte inexistante (modules NetAdapter, DnsClient piégés)","entree":{"action":"dns.regler","parametres":{"Index":999999,"Serveurs":["6.6.6.6"]}},"attendu":{"ok":false,"contient":"carte"}},
+    {"nom":"relancer une carte inexistante (modules NetAdapter, NetTCPIP piégés)","entree":{"action":"carte.relancer","parametres":{"Index":999999}},"attendu":{"ok":false,"contient":"carte"}},
     {"nom":"fermer un programme absent","entree":{"action":"processus.fermer","parametres":{"Nom":"nm-programme-inexistant"}},"attendu":{"ok":true}},
     {"nom":"nettoyage : le vrai dossier de Windows, jamais celui de la variable windir","entree":{"action":"nettoyage.lister","parametres":{"Id":"dump","Top":1000}},"attendu":{"ok":true,"absent":"nevermind-piege"}}
   ]

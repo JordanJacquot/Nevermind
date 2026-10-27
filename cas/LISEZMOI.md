@@ -48,6 +48,7 @@ Règles :
 |---|---|---|
 | `demandes.json` | Les demandes à l'Aide : acceptées ou refusées (`Invoke-AideAction ... -Verifier`) | `tester-aide.ps1` |
 | `fermeture.json` | La règle « fermable » (`Get-RefusFermeture`) : services, antivirus, protégés, Windows, Store, suite par emplacement, élevés, autre compte ou session, doute | `tester-aide.ps1` |
+| `carte.json` | Relancer une carte réseau : seulement la carte de la connexion, une vraie prise Ethernet qui porte la route par défaut (`Get-AideRefusCarte`) | `tester-aide.ps1` |
 | `canal.json` | Le nom du canal et du verrou de l'Aide (`Get-AideSuffixe`), dont un dossier avec un accent et une espace | `tester-aide.ps1` |
 | `client.json` | Qui peut parler à l'Aide (`Test-AideClient`) | `tester-aide.ps1` |
 | `restauration.json` | Un point de restauration par 24 h au plus | `tester-aide.ps1` |

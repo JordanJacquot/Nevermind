@@ -9,7 +9,7 @@
 # distance, couper le contrôle des comptes ou le pare-feu, ajouter une exclusion à l'antivirus, mettre un DNS inconnu,
 # bloquer Internet à l'antivirus ou à Windows Update.
 
-$AideVersion = 5   # (4 : l'Aide en SYSTEM, pour l'utilisateur inscrit dans sa tâche ; 5 : demandes resserrées, audit du 25/10)
+$AideVersion = 6   # (4 : l'Aide en SYSTEM, pour l'utilisateur inscrit dans sa tâche ; 5 : demandes resserrées, audit du 25/10 ; 6 : « carte.relancer »)
 # Santé d'un disque (Get-StorageReliabilityCounter) : les champs dont Nevermind se sert
 $AideChampsDisque = @('Temperature', 'TemperatureMax', 'Wear', 'PowerOnHours', 'StartStopCycleCount', 'ReadErrorsCorrected', 'ReadErrorsUncorrected',
                       'WriteErrorsUncorrected', 'ReadLatencyMax', 'WriteLatencyMax')
@@ -230,6 +230,38 @@ function Get-AideCarte([int]$Index) {
     $ad = Get-NetAdapter -InterfaceIndex $Index -IncludeHidden -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $ad) { throw 'La carte réseau de ce réglage n''existe plus sur ce PC.' }
     $ad
+}
+
+# ---------------------------------------------------------------------------
+# Relancer la carte réseau de la connexion (« carte.relancer ») : elle renégocie sa vitesse avec la box (une carte
+# retombée à 100 Mb/s après une veille revient à 1 Gb/s). Seulement une vraie prise réseau du PC (pas une carte
+# virtuelle : VirtualBox, Hyper-V, VPN, Wi-Fi Direct...), filaire (Ethernet, 802.3 ; jamais le Wi-Fi) et qui porte la
+# route par défaut (0.0.0.0/0) : la carte de la connexion, jamais une autre. (même règle en Rust : aide-regles\src\carte.rs)
+# ---------------------------------------------------------------------------
+# Les mots d'une carte virtuelle dans sa description (sans tenir compte des majuscules) : machines virtuelles, VPN,
+# tunnels, cartes de Windows (miniports WAN, débogueur du noyau)
+$AideMotsVirtuels = @('virtu', 'vmware', 'vbox', 'tap-windows', 'wintun', 'wireguard', 'tunnel', 'vpn', 'miniport', 'debug', 'loopback', 'npcap', 'zerotier')
+# Ce que Windows dit de la carte de ce numéro ($null si elle n'existe pas) : sa description, matérielle et avec une
+# prise (HardwareInterface, ConnectorPresent), son type (6 : Ethernet), son support (14 : câble 802.3), et si elle porte
+# une route par défaut IPv4 en ce moment
+function Read-AideFicheCarte([int]$Index) {
+    Import-AideModule NetAdapter, NetTCPIP
+    $ad = Get-NetAdapter -InterfaceIndex $Index -IncludeHidden -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $ad) { return $null }
+    $route = @(Get-NetRoute -InterfaceIndex $Index -DestinationPrefix '0.0.0.0/0' -PolicyStore ActiveStore -ErrorAction SilentlyContinue).Count -gt 0
+    @{ Description = [string]$ad.InterfaceDescription; Materielle = [bool]$ad.HardwareInterface; Connecteur = [bool]$ad.ConnectorPresent
+       Type = [long]$ad.InterfaceType; Support = [long]$ad.NdisPhysicalMedium; RouteDefaut = $route }
+}
+# Pourquoi cette carte ne peut pas être relancée ($null : elle peut l'être). Les tests donnent de fausses fiches.
+function Get-AideRefusCarte($Fiche) {
+    if ($null -eq $Fiche) { return 'Demande refusée : cette carte réseau n''existe pas sur ce PC.' }
+    $desc = [string]$Fiche.Description
+    if (-not $Fiche.Materielle -or -not $Fiche.Connecteur -or @($AideMotsVirtuels | Where-Object { $desc.IndexOf($_, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count) {
+        return 'Demande refusée : cette carte réseau est virtuelle (VPN, machine virtuelle...), pas une vraie prise du PC.'
+    }
+    if ([long]$Fiche.Type -ne 6 -or [long]$Fiche.Support -ne 14) { return 'Demande refusée : seule une carte réseau filaire (câble Ethernet) peut être relancée.' }
+    if (-not $Fiche.RouteDefaut) { return 'Demande refusée : cette carte ne porte pas la connexion à Internet.' }
+    $null
 }
 
 # Valeurs d'origine des réglages du PC, gardées par l'Aide avant leur première modification (HKLM, modifiable
@@ -784,6 +816,22 @@ function Invoke-AideAction([string]$Action, $P, [switch]$Verifier, [int]$Client)
             if ($serveurs.Count) { Set-DnsClientServerAddress -InterfaceIndex $ad.ifIndex -ServerAddresses $serveurs -ErrorAction Stop }
             else { Set-DnsClientServerAddress -InterfaceIndex $ad.ifIndex -ResetServerAddresses -ErrorAction Stop }
             Clear-DnsClientCache -ErrorAction SilentlyContinue
+            return 'ok'
+        }
+
+        # La carte de la connexion, éteinte puis rallumée par Windows : elle renégocie sa vitesse
+        'carte.relancer' {
+            # (un vrai nombre entier seulement : ni texte, ni décimal, ni oui/non, ni liste)
+            $index = Get-AideParam $P 'Index'
+            if (($index -isnot [int] -and $index -isnot [long]) -or $index -le 0 -or $index -gt [int]::MaxValue) { throw 'Demande refusée : carte réseau non valable.' }
+            $refus = Get-AideRefusCarte (Read-AideFicheCarte ([int]$index))
+            if ($refus) { throw $refus }
+            if ($Verifier) { return 'ok' }
+            Import-AideModule NetAdapter
+            $ad = Get-NetAdapter -InterfaceIndex ([int]$index) -IncludeHidden -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $ad) { throw 'Windows n''a pas pu relancer la carte réseau : elle n''existe plus sur ce PC' }
+            try { $ad | Restart-NetAdapter -Confirm:$false -ErrorAction Stop }
+            catch { throw "Windows n'a pas pu relancer la carte réseau : $($_.Exception.Message)" }
             return 'ok'
         }
 

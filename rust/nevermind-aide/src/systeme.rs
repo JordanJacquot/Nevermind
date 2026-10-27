@@ -172,6 +172,9 @@ pub trait Systeme: Pc + Send + Sync + 'static {
     /// Met ces serveurs DNS sur la carte (aucun : ceux de la box, par DHCP)
     fn dns_appliquer(&self, carte: &Carte, serveurs: &[String]) -> Result<(), String>;
     fn dns_vider_cache(&self);
+    /// Relance la carte réseau de ce numéro (éteinte puis rallumée, comme Restart-NetAdapter), et attend que Windows
+    /// l'ait fait
+    fn carte_relancer(&self, index: i32) -> Result<(), String>;
     /// Les noms de toutes les règles du pare-feu
     fn pare_feu_regles(&self) -> Result<Vec<String>, String>;
     fn pare_feu_ajouter(&self, nom: &str, programme: &str, service: Option<&str>, entrant: bool) -> Result<(), String>;

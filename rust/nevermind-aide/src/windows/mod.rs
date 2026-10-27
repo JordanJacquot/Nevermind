@@ -22,6 +22,7 @@ use crate::systeme::{
     Entree, ErreurCanal, ErreurEffacement, Hote, Identite, Lance, LigneTcp, ProcessusVu, RappelPm, RappelTrace,
     RefusTrace, Systeme, TacheVue, Trace, ValeurLue,
 };
+use aide_regles::carte::FicheCarte;
 use aide_regles::demandes::{Carte, ContexteProgrammes, Demarrage, Pc, ip_normale};
 use aide_regles::demarrage::LecturesDemarrage;
 use aide_regles::dossiers::Dossiers;
@@ -243,6 +244,10 @@ impl Pc for Windows {
         reseau::carte(index)
     }
 
+    fn fiche_carte(&self, index: i32) -> Option<FicheCarte> {
+        reseau::fiche(index)
+    }
+
     fn dns_locaux(&self, carte: &Carte) -> Vec<String> {
         let mut r = reseau::passerelles(carte.index);
         for base in ["Tcpip", "Tcpip6"] {
@@ -373,6 +378,11 @@ impl Systeme for Windows {
 
     fn dns_vider_cache(&self) {
         reseau::vider_cache();
+    }
+
+    fn carte_relancer(&self, index: i32) -> Result<(), String> {
+        let _com = com::Com::pret();
+        reseau::relancer(index)
     }
 
     fn pare_feu_regles(&self) -> Result<Vec<String>, String> {
