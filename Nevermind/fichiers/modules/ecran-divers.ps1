@@ -69,15 +69,16 @@ function Get-PagesDivers {
         ) }
 
     # ---- Paramètres
-    # (géré par Mindset : le thème choisi ici devient celui de toute la suite ; un nouveau thème perso s'importe dans Mindset)
-    $cartesTheme = @{ type = 'cartes'; id = 'theme'; valeur = (Get-CurrentThemeKey); options = @(Get-ThemeChoices | ForEach-Object { @{ id = [string]$_.Key; titre = [string]$_.Name; texte = [string]$_.Desc } }) }
+    # (géré par Mindset : le thème se choisit seulement dans Mindset, pour toute la suite ; ici, le thème actuel et le
+    #  chemin vers Mindset, sans aucun choix ni import)
     $theme = if ($Managed) {
-        @(@{ type = 'texte'; texte = 'Change les couleurs et l''ambiance de toute la suite : Nevermind, Mindset et ses autres applis. Elles redémarrent pour appliquer le thème.' }
-          $cartesTheme
-          @{ type = 'reglages'; rangs = @(@{ texte = 'Thèmes personnalisés'; note = 'Un nouveau thème personnalisé s''importe dans Mindset, pour toute la suite.'; bouton = @{ id = 'theme-mindset'; texte = 'Ouvrir Mindset'; style = 'second' } }) })
+        @(@{ type = 'reglages'; rangs = @(
+            @{ texte = 'Thème actuel'; note = $ManagedThemeText; valeur = (Get-CurrentThemeName) }
+            @{ texte = 'Changer de thème'; note = 'Mindset s''ouvre sur Paramètres, Apparence. Le thème choisi là-bas va sur Nevermind et sur les autres applis.'; bouton = @{ id = 'theme-mindset'; texte = 'Ouvrir les réglages de Mindset'; style = 'second' } }
+          ) })
     } else {
         @(@{ type = 'texte'; texte = 'Change les couleurs et l''ambiance de Nevermind. Nevermind redémarre pour appliquer le thème.' }
-          $cartesTheme)
+          @{ type = 'cartes'; id = 'theme'; valeur = (Get-CurrentThemeKey); options = @(Get-ThemeChoices | ForEach-Object { @{ id = [string]$_.Key; titre = [string]$_.Name; texte = [string]$_.Desc } }) })
     }
     $raccourci = $ui.BtnShortcut.Visibility -eq 'Visible'
     $demarrage = $ui.AutoStartRow.Visibility -eq 'Visible'
@@ -141,15 +142,17 @@ function Get-PagesDivers {
 
 function Register-ActionsDivers {
     Register-ActionVue 'visite' { param($Valeur, $Ecran) Invoke-Safe { Show-Tour } }
-    Register-ActionVue 'theme-mindset' { param($Valeur, $Ecran) Invoke-Safe { Open-MindsetSettings } }
+    Register-ActionVue 'theme-mindset' { param($Valeur, $Ecran) Invoke-Safe { Open-MindsetSettings 'apparence' } }
     Register-ActionVue 'pilote-nvidia' { param($Valeur, $Ecran) Set-Setting 'PiloteNvidia' ([bool]$Valeur) }
     Register-ActionVue 'maj-auto' { param($Valeur, $Ecran) Set-Setting 'MajAuto' ([bool]$Valeur) }
     Register-ActionVue 'nouveautes-en-ligne' { param($Valeur, $Ecran) Set-Setting 'NouveautesEnLigne' ([bool]$Valeur) }
+    # Choix d'un thème : copie autonome seulement. Géré par Mindset, refusé sans effet (le thème se choisit dans Mindset),
+    # même si l'écran l'envoie quand même.
     Register-ActionVue 'theme' { param($Valeur, $Ecran)
         $id = [string]$Valeur
+        if ($Managed) { Write-Log "Thème « $id » demandé depuis l'écran : refusé (copie gérée, le thème se choisit dans Mindset)"; return }
         if ($id -eq (Get-CurrentThemeKey)) { return }
-        $question = if ($Managed) { 'Changer le thème de toute la suite ? Nevermind et Mindset vont redémarrer pour l''appliquer.' } else { 'Changer de thème ? Nevermind va redémarrer pour l''appliquer.' }
-        if (Confirm-Action $question) { Invoke-Safe { Select-AppTheme $id } }
+        if (Confirm-Action 'Changer de thème ? Nevermind va redémarrer pour l''appliquer.') { Invoke-Safe { Select-AppTheme $id } }
     }
 }
 function Invoke-ActionDivers([string]$Id, $Valeur) {

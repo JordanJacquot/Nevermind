@@ -126,6 +126,11 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-panneau.ps1
           exit $LASTEXITCODE
 
+      - name: "Thème (copie gérée par Mindset : aucun choix, renvoi vers Mindset, suite.json jamais écrit ; copie autonome : choix et import)"
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-theme.ps1
+          exit $LASTEXITCODE
+
       - name: "NevermindPont.dll vue depuis Nevermind (outils/tester-pont.ps1, s'il existe : corpus, DLL absente ou abîmée, erreur Rust rattrapée)"
         run: |
           if (-not (Test-Path -LiteralPath 'outils\tester-pont.ps1')) { Write-Host 'Pas de tester-pont.ps1 : rien à faire.'; exit 0 }

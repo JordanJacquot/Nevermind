@@ -1057,7 +1057,23 @@ $script:T.Run.Add_Tick({
                 Set-AppTheme $other
                 Assert-Test ((Get-Setting 'Theme' '') -eq $other -and $ui.SettingsOverlay.Visibility -eq 'Visible') 'thème non enregistré (ou la copie de test s''est fermée)'
                 Set-Setting 'Theme' $old; $script:ThemePick = $null; Hide-Settings
-                "$(($base | ForEach-Object { $AppThemes[$_].Name }) -join ', ') : fenêtre chargée dans chacun, couleurs d'état intactes"
+                # Copie gérée par Mindset : le thème se choisit dans Mindset. Ni cartes ni import (fenêtre d'avant et écran),
+                # le thème actuel et le bouton vers Mindset ; l'action « theme » envoyée quand même par l'écran est sans effet
+                # (le vrai bouton n'est pas cliqué : il ouvrirait le vrai Mindset)
+                $vraiGere = $Managed
+                try {
+                    $Managed = $true
+                    Build-ThemePanel
+                    foreach ($n in 'Appliquer et relancer', 'Importer un pack', 'Ouvrir le dossier') { Assert-Test (-not (Find-PageElement $ui.SetTheme $n)) "géré : « $n » proposé" }
+                    Assert-Test (-not @($ui.SetTheme.Children | Where-Object { $_ -is [System.Windows.Controls.Primitives.UniformGrid] }).Count) 'géré : cartes de thème proposées'
+                    Assert-Test ([bool](Find-PageElement $ui.SetTheme 'Ouvrir les réglages de Mindset') -and [bool](Find-PageElement $ui.SetTheme $ManagedThemeText) -and [bool](Find-PageElement $ui.SetTheme "Thème actuel : $(Get-CurrentThemeName)")) 'géré : thème actuel ou renvoi vers Mindset absent'
+                    $og = @((Get-PagesDivers).parametres.onglets | Where-Object { $_.id -eq 'theme' })[0]
+                    Assert-Test (-not @($og.blocs | Where-Object { $_.type -eq 'cartes' }).Count -and @($og.blocs.rangs | Where-Object { $_.bouton.id -eq 'theme-mindset' }).Count -eq 1) 'géré, écran : cartes de thème proposées ou bouton vers Mindset absent'
+                    Receive-MessageVue ('{"type":"action","id":"theme","valeur":"' + $other + '","ecran":"parametres"}')
+                    Select-AppTheme $other
+                    Assert-Test ((Get-Setting 'Theme' 'neon') -eq $old) 'géré : le thème a changé depuis Nevermind'
+                } finally { $Managed = $vraiGere; Set-Setting 'Theme' $old; $script:ThemePick = $null; Build-ThemePanel }
+                "$(($base | ForEach-Object { $AppThemes[$_].Name }) -join ', ') : fenêtre chargée dans chacun, couleurs d'état intactes ; géré par Mindset : aucun choix, renvoi vers Mindset"
             }
             Test-StepWpf 'Packs de thème (image perso, chargement)' {
                 Add-Type -AssemblyName System.Drawing

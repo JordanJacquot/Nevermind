@@ -11,7 +11,11 @@ $SettingsTabs = @(
     @{ Id = 'maj'; Label = 'Mises à jour'; Glyph = 0xE895; Panel = 'SetUpdates'; Sub = 'Version de Nevermind et nouveautés.' },
     @{ Id = 'aide'; Label = 'Aide'; Glyph = 0xE897; Panel = 'SetHelp'; Sub = 'Un souci, une question ? C''est par ici.' }
 )
-if ($Managed) { @($SettingsTabs | Where-Object { $_.Id -eq 'theme' })[0].Sub = 'Le thème choisi ici change aussi celui de Mindset et de toute la suite.' }
+# Copie gérée par Mindset : le thème de toute la suite se choisit seulement dans Mindset (Paramètres, Apparence).
+# Nevermind le lit dans suite.json et suit ses changements, mais ne l'écrit jamais : l'onglet Thème montre le thème
+# actuel et mène à Mindset, sans aucun choix ni import.
+$ManagedThemeText = 'Le thème se choisit dans Mindset, pour toutes les applis.'
+if ($Managed) { @($SettingsTabs | Where-Object { $_.Id -eq 'theme' })[0].Sub = $ManagedThemeText }
 
 # Ligne de réglage en verre : titre, explication, interrupteur
 function New-SettingSwitch([string]$Title, [string]$Text, [bool]$On, [scriptblock]$OnClick) {
@@ -294,7 +298,6 @@ function New-ThemePreview([string]$Id) {
 # Mindset lit %LOCALAPPDATA%\Mindset\afficher-page.txt à son lancement (ou quand on le relance, il se ramène devant).
 # Son dossier vient du registre (clé de désinstallation, écrite par un administrateur), jamais d'un fichier modifiable,
 # et il est lancé par l'Explorateur : sans les droits administrateur de Nevermind.
-$ManagedThemeText = 'Le thème choisi ici devient celui de toute la suite : Mindset et ses applis le prennent aussi.'
 function Open-MindsetSettings([string]$Page = 'apparence') {
     $dir = ''
     try { $dir = ([string](Get-ItemProperty -LiteralPath 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Mindset' -Name InstallLocation -ErrorAction Stop).InstallLocation).Trim().Trim('"') } catch {}
@@ -312,19 +315,26 @@ function Open-MindsetSettings([string]$Page = 'apparence') {
 }
 
 function Get-CurrentThemeKey { if ($ThemePack) { "pack:$($ThemePack.Id)" } else { $ThemeId } }
+# Nom du thème actuel (celui du pack pour un pack, installé par Mindset ou importé ici)
+function Get-CurrentThemeName { if ($ThemePack) { [string]$ThemePack.Name } else { [string]$AppThemes[$ThemeId].Name } }
 
-# Les choix de l'onglet : les 5 thèmes de base puis les packs installés sur ce PC
-# (géré par Mindset : seulement les packs de la suite, que Mindset et les autres applis ont aussi)
+# Les choix de l'onglet (copie autonome seulement) : les 5 thèmes de base puis les packs installés sur ce PC
 function Get-ThemeChoices {
     $list = @(foreach ($id in @($AppThemes.Keys | Where-Object { -not $AppThemes[$_].Pack })) { $t = $AppThemes[$id]; @{ Key = $id; Base = $id; Name = $t.Name; Desc = $t.Desc; Font = $t.Font; Pack = $null } })
-    foreach ($pk in @(Get-ThemePacks | Where-Object { -not $Managed -or (Test-PackSuite $_.Id) })) { $list += @{ Key = "pack:$($pk.Id)"; Base = $pk.Base; Name = $pk.Name; Desc = $pk.Desc; Font = $AppThemes[$pk.Base].Font; Pack = $pk } }
+    foreach ($pk in @(Get-ThemePacks)) { $list += @{ Key = "pack:$($pk.Id)"; Base = $pk.Base; Name = $pk.Name; Desc = $pk.Desc; Font = $AppThemes[$pk.Base].Font; Pack = $pk } }
     $list
 }
 
 function Build-ThemePanel {
     $p = $ui.SetTheme
     $p.Children.Clear()
-    # Copie gérée : le thème choisi ici devient celui de toute la suite (Mindset et ses applis le prennent aussi)
+    # Copie gérée : aucun choix ni import, seulement le thème actuel et le chemin vers Mindset (Paramètres, Apparence)
+    if ($Managed) {
+        $mc = New-SettingAction "Thème actuel : $(Get-CurrentThemeName)" $ManagedThemeText 'Ouvrir les réglages de Mindset' { Invoke-Safe { Open-MindsetSettings 'apparence' } }
+        $mc.Margin = New-Thickness 0 0 12 8
+        [void]$p.Children.Add($mc)
+        return
+    }
     $current = Get-CurrentThemeKey
     if (-not $script:ThemePick) { $script:ThemePick = $current }
     $choices = @(Get-ThemeChoices)
@@ -390,9 +400,7 @@ function Build-ThemePanel {
     $foot.Margin = New-Thickness 0 4 12 8
     $changed = $script:ThemePick -ne $current
     $pickName = @($choices | Where-Object { $_.Key -eq $script:ThemePick })[0].Name
-    $msg = if ($changed -and $Managed) { "« $pickName » s'applique à toute la suite : Nevermind et Mindset se relancent (quelques secondes). Tes réglages ne changent pas." }
-        elseif ($changed) { "« $pickName » s'applique en relançant Nevermind (quelques secondes). Tes réglages ne changent pas." }
-        elseif ($Managed) { $ManagedThemeText }
+    $msg = if ($changed) { "« $pickName » s'applique en relançant Nevermind (quelques secondes). Tes réglages ne changent pas." }
         else { 'Choisis un thème pour le voir en grand : Nevermind se relance pour l''appliquer.' }
     $mt = New-Text $msg 12 '#A6A1BC'
     $mt.VerticalAlignment = 'Center'
@@ -405,13 +413,6 @@ function Build-ThemePanel {
     }
     [void]$p.Children.Add($foot)
 
-    # Géré par Mindset : les thèmes personnalisés de la suite s'importent dans Mindset (pour toutes les applis à la fois)
-    if ($Managed) {
-        $mc = New-SettingAction 'Thèmes personnalisés' 'Un nouveau thème personnalisé s''importe dans Mindset, pour toute la suite.' 'Ouvrir les réglages de Mindset' { Invoke-Safe { Open-MindsetSettings } }
-        $mc.Margin = New-Thickness 0 6 12 8
-        [void]$p.Children.Add($mc)
-        return
-    }
     # Packs : juste les deux boutons
     $pk = New-Object System.Windows.Controls.StackPanel
     $pk.Orientation = 'Horizontal'; $pk.Margin = New-Thickness 0 6 12 8
@@ -435,19 +436,10 @@ function Build-ThemePanel {
     [void]$p.Children.Add($pk)
 }
 
-# Thème choisi ici (Paramètres, Thème, dans la fenêtre ou dans l'écran). Géré par Mindset : il devient d'abord le thème
-# de la suite (suite.json), sinon il serait remplacé par celui de la suite au prochain lancement.
+# Thème choisi ici (Paramètres, Thème, dans la fenêtre ou dans l'écran) : copie autonome seulement. Géré par Mindset,
+# le thème se choisit dans Mindset : un choix arrivé quand même ici est refusé, sans effet (rien n'est écrit).
 function Select-AppTheme([string]$Id) {
-    if ($Managed) {
-        if ($Id -like 'pack:*' -and -not (Test-PackSuite $Id.Substring(5))) {
-            Show-Message 'Ce thème personnalisé n''est pas importé dans Mindset. Importe-le dans Mindset (Paramètres, Apparence) pour toute la suite.' 'Warning'
-            return
-        }
-        if (-not (Write-SuiteTheme $Id)) {
-            Show-Message 'Le thème de la suite n''a pas pu être enregistré. Choisis-le dans Mindset (Paramètres, Apparence).' 'Warning'
-            return
-        }
-    }
+    if ($Managed) { Write-Log "Thème « $Id » demandé dans Nevermind : refusé (copie gérée, le thème se choisit dans Mindset)"; return }
     Set-AppTheme $Id
 }
 
