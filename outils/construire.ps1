@@ -1,5 +1,4 @@
-﻿# Construit le dossier de Nevermind prêt à partager, puis ses deux zips (outils\zips.ps1) : Nevermind.zip, et le zip de
-# compatibilité pour les anciennes versions de Mindset, publié aussi pendant le changement de nom.
+﻿# Construit le dossier de Nevermind prêt à partager, puis son zip, Nevermind.zip (outils\zips.ps1).
 #
 #   Nevermind\
 #     Mindset.exe                               <- le programme qui fait tourner Nevermind (icône Nevermind) ; toutes les

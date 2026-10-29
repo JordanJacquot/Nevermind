@@ -1,11 +1,11 @@
 ﻿# Publie une nouvelle version de Nevermind sur GitHub.
 # Mindset la propose ensuite et l'installe (Nevermind.zip et sa signature Nevermind.zip.sig, vérifiée avant installation).
-# Pendant le changement de nom, la version contient aussi le zip de compatibilité (OptiGame.zip et sa signature, voir
-# outils\zips.ps1) : les Mindset 2.12.0 et plus anciens ne connaissent que lui.
+# Le zip de compatibilité (OptiGame.zip et sa signature), publié de 1.12.0 à 1.15.4 pendant le changement de nom, ne
+# l'est plus (voir outils\zips.ps1).
 #
 #   .\outils\publier.ps1 -Version 1.1 -Notes "Ce qui change dans cette version"
 #   .\outils\publier.ps1 -Version 1.2 -Notes "..." -Beta    version bêta (marquée « préversion » sur GitHub)
-#   .\outils\publier.ps1 -Essai                            essai : vérifications, construction et les deux zips, signés
+#   .\outils\publier.ps1 -Essai                            essai : vérifications, construction et le zip, signé
 #                                                          avec une clé jetable ; rien n'est modifié ni publié
 #
 # Avant de publier, le script vérifie la syntaxe de tous les fichiers, l'absence de tirets
@@ -77,7 +77,7 @@ function Invoke-Native([string]$Exe, [string[]]$Arguments) {
     if ($LASTEXITCODE) { throw "Échec : $Exe $($Arguments -join ' ')" }
 }
 
-# Les fichiers de Nevermind suivis par git (« Nevermind/... ») : ce sont eux, et seulement eux, qui partent dans les zips
+# Les fichiers de Nevermind suivis par git (« Nevermind/... ») : ce sont eux, et seulement eux, qui partent dans le zip
 # (outils\zips.ps1). Tout est donc commité avant : sinon un changement pas commité partirait dans la version publiée
 # sans être dans git (et l'ancien « git add -A » commitait aussi un fichier oublié).
 function Get-FichiersGitNevermind {
@@ -124,9 +124,9 @@ if (-not $Essai) {
     }
 }
 
-# 2. Construction des .exe et des deux zips (Nevermind.zip, et OptiGame.zip pour les anciens Mindset), puis leurs
-# signatures (Mindset et Nevermind refusent un zip sans signature valide). signer.ps1 s'arrête sur une erreur s'il ne
-# peut pas signer : la publication est alors annulée avant tout envoi. En essai, une clé jetable signe à sa place.
+# 2. Construction des .exe et du zip (Nevermind.zip), puis sa signature (Mindset et Nevermind refusent un zip sans
+# signature valide). signer.ps1 s'arrête sur une erreur s'il ne peut pas signer : la publication est alors annulée
+# avant tout envoi. En essai, une clé jetable signe à sa place.
 & (Join-Path $PSScriptRoot 'construire.ps1')
 # Les programmes en Rust (passage en Rust, étape 1a) : NevermindAide.exe quand rust\nevermind-aide existe,
 # NevermindPont.dll quand rust\nevermind-pont existe. Ils ne sont jamais construits sur ce PC : ils viennent de la
@@ -143,7 +143,7 @@ if ($pont -or (Test-Path -LiteralPath (Join-Path $racine 'rust\nevermind-aide\Ca
         Write-Host "$(@($rust.Keys) -join ' et ') : construits par GitHub (Rust), attestation vérifiée." -ForegroundColor Green
     }
 }
-$zips = @((Join-Path $racine 'Nevermind.zip'), (Join-Path $racine 'OptiGame.zip'))
+$zips = @(Join-Path $racine 'Nevermind.zip')
 $cleEssai = $null
 if ($Essai) { $cleEssai = New-Object Security.Cryptography.RSACryptoServiceProvider(3072); $cleEssai.PersistKeyInCsp = $false }
 try {
@@ -156,10 +156,9 @@ try {
     }
 } finally { if ($cleEssai) { $cleEssai.Dispose() } }
 
-# Ce que contient chaque zip : un seul dossier, un seul script principal (Nevermind\fichiers\Nevermind.ps1, ou
-# OptiGame\fichiers\OptiGame.ps1 dans le zip de compatibilité), et les programmes
+# Ce que contient le zip : un seul dossier, un seul script principal (Nevermind\fichiers\Nevermind.ps1), et les programmes
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-foreach ($z in @(@($zips[0], 'Nevermind', 'Nevermind.ps1'), @($zips[1], 'OptiGame', 'OptiGame.ps1'))) {
+foreach ($z in @(,@($zips[0], 'Nevermind', 'Nevermind.ps1'))) {
     $a = [IO.Compression.ZipFile]::OpenRead($z[0])
     try { $noms = @($a.Entries | ForEach-Object { $_.FullName.Replace('\', '/') }) } finally { $a.Dispose() }
     $dossiers = @($noms | ForEach-Object { $_.Split('/')[0] } | Sort-Object -Unique)
@@ -171,7 +170,7 @@ foreach ($z in @(@($zips[0], 'Nevermind', 'Nevermind.ps1'), @($zips[1], 'OptiGam
     # Exactement les fichiers de git et les programmes (4, et NevermindPont.dll avec rust\nevermind-pont) : rien en plus
     # (aide-temp, thème perso...), rien en moins
     $attendus = @(@(Get-FichiersGitNevermind) + @($programmes | ForEach-Object { "Nevermind/$_" }) |
-        ForEach-Object { $n = $_ -replace '^Nevermind/', "$($z[1])/"; if ($z[1] -eq 'OptiGame') { $n -replace '^OptiGame/fichiers/Nevermind\.ps1$', 'OptiGame/fichiers/OptiGame.ps1' } else { $n } })
+        ForEach-Object { $_ -replace '^Nevermind/', "$($z[1])/" })
     $fichiersZip = @($noms | Where-Object { -not $_.EndsWith('/') })
     $enTrop = @($fichiersZip | Where-Object { $attendus -notcontains $_ })
     $absents = @($attendus | Where-Object { $fichiersZip -notcontains $_ })
@@ -180,7 +179,7 @@ foreach ($z in @(@($zips[0], 'Nevermind', 'Nevermind.ps1'), @($zips[1], 'OptiGam
     }
     Write-Host "$(Split-Path $z[0] -Leaf) : dossier $($z[1]), script fichiers\$($z[2]), $($noms.Count) fichiers, signé" -ForegroundColor Green
 }
-if ($Essai) { "Essai fini : $($zips -join ', ') et leurs signatures (clé jetable). Rien n'est publié."; return }
+if ($Essai) { "Essai fini : $($zips -join ', ') et sa signature (clé jetable). Rien n'est publié."; return }
 
 # 3. Envoi sur GitHub et création de la version
 Push-Location $racine

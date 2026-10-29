@@ -51,7 +51,7 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\verifier.ps1
           exit $LASTEXITCODE
 
-      - name: "Changement de nom (ancien nom seulement là où il sert, lanceur et verrou compatibles, zip de compatibilité, mises à jour)"
+      - name: "Changement de nom (ancien nom seulement là où il sert, lanceur et verrou compatibles, plus de zip de compatibilité, mises à jour)"
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File outils\tester-renommage.ps1
           exit $LASTEXITCODE

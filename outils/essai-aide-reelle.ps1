@@ -32,7 +32,8 @@
 #      son compte), sans aucune variable COR_*
 #   8. changement de nom (OptiGame devient Nevermind) : Nevermind 1.11.0 installé par Mindset 2.12.0 puis mis à jour par le
 #      nouveau Mindset (Nevermind.zip) ; la version renommée refuse de démarrer tant que 1.11.0 est ouverte, puis démarre
-#      seule avec ses deux verrous, une seule instance ; Mindset 2.12.0 met à jour et installe avec le zip de compatibilité
+#      seule avec ses deux verrous, une seule instance (le zip de compatibilité pour Mindset 2.12.0 n'est plus publié :
+#      Mindset 2.12.0 sert seulement à installer 1.11.0)
 #   9. l'Aide lancée en secours par la demande de Windows (sous le compte qui accepte, avec les droits administrateur),
 #      dans un environnement piégé (variables, dossiers du profil, modules) : pour son propre compte elle répond, sans
 #      jamais rien prendre du piège ; jamais de canal pour un « SID » qui n'est pas un compte d'utilisateur
@@ -287,7 +288,6 @@ $PaquetEssai = Join-Path $Paquets 'essai\Nevermind.zip'     # Nevermind du dép�
 $PaquetVrai = Join-Path $Paquets 'vrai\Nevermind.zip'       # Nevermind du dépôt, tel quel
 $Paquet110 = Join-Path $Paquets '1.10.0\OptiGame.zip'      # la Release v1.10.0 (signée par la vraie clé ; ancien nom du zip)
 $Paquet111 = Join-Path $Paquets '1.11.0\OptiGame.zip'      # la Release v1.11.0, la dernière d'avant le changement de nom
-$PaquetCompat = Join-Path $Paquets 'vrai\OptiGame.zip'     # le zip de compatibilité (outils\zips.ps1) pour les anciens Mindset
 $Mindset212 = Join-Path $Racine 'mindset-212'             # Mindset 2.12.0, le dernier d'avant le changement de nom
 $Installateur212 = Join-Path $Mindset212 'Mindset\fichiers\installer-admin.ps1'
 
@@ -422,12 +422,11 @@ function Initialize-Essai {
     $ErrorActionPreference = 'Continue'   # (git écrit ses messages sur la sortie d'erreur)
     if (Test-Path -LiteralPath $Mindset210) { & git -C $MindsetGit worktree remove --force $Mindset210 2>&1 | Out-Null }
     & git -C $MindsetGit worktree add --detach $Mindset210 v2.10.0 2>&1 | ForEach-Object { "$_" } | Out-Host
-    # Mindset 2.12.0, le dernier d'avant le changement de nom (son installateur, tel que publié ; la clé de TEST ajoutée à
-    # ses clés publiques pour qu'il accepte les paquets construits ici)
+    # Mindset 2.12.0, le dernier d'avant le changement de nom (son installateur, tel que publié) : il installe la vraie
+    # Release 1.11.0 (cas 8), signée par la vraie clé
     if (Test-Path -LiteralPath $Mindset212) { & git -C $MindsetGit worktree remove --force $Mindset212 2>&1 | Out-Null }
     & git -C $MindsetGit worktree add --detach $Mindset212 v2.12.0 2>&1 | ForEach-Object { "$_" } | Out-Host
     $ErrorActionPreference = 'Stop'
-    Copy-Item -LiteralPath (Join-Path $Racine 'cle\publique-test.xml') -Destination (Join-Path $Mindset212 'Mindset\fichiers\cles-publiques\essai-test.xml')
     Test-Cas 'Mindset 2.10.0 : son installateur crée l''ancienne tâche d''aide (droits les plus élevés, sous le compte)' { [IO.File]::ReadAllText($Installateur210, [Text.Encoding]::UTF8) -match 'New-ScheduledTaskPrincipal -UserId \$Sid -LogonType Interactive -RunLevel Highest' }
     Test-Cas 'Mindset 2.12.0 : il ne connaît que les anciens noms (OptiGame.zip, dossier OptiGame, fichiers\OptiGame.ps1, verrou Local\OptiGame-Instance)' {
         $a = @([IO.File]::ReadAllText((Join-Path $Mindset212 'Mindset\fichiers\apps.json'), [Text.Encoding]::UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json) | Where-Object { $_.id -eq 'nevermind' }
@@ -464,9 +463,9 @@ function Initialize-Essai {
         if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force }
         New-Item -ItemType Directory -Force -Path $d | Out-Null
         if ($genre -eq 'vrai') {
-            # Les deux zips d'une version : Nevermind.zip, et le zip de compatibilité OptiGame.zip (outils\zips.ps1)
+            # Le zip d'une version : Nevermind.zip (outils\zips.ps1)
             $null = & (Join-Path $Depot 'outils\zips.ps1') -Dossier $og -Sortie $d
-            New-Signature (Join-Path $d 'Nevermind.zip'); New-Signature (Join-Path $d 'OptiGame.zip')
+            New-Signature (Join-Path $d 'Nevermind.zip')
             continue
         }
         Copy-Item -LiteralPath $og -Destination $d -Recurse
@@ -492,12 +491,12 @@ function Initialize-Essai {
     }
     Test-Cas 'paquets d''essai signés avec la clé de TEST, acceptés par la copie d''essai de Mindset' {
         $cles = Join-Path $MindsetDepot 'Mindset\fichiers\cles-publiques'
-        @($PaquetEssai, $PaquetVrai, $PaquetCompat | Where-Object { -not (Test-Signature ([IO.File]::ReadAllBytes($_)) ([IO.File]::ReadAllBytes("$_.sig")) $cles) }).Count -eq 0
+        @($PaquetEssai, $PaquetVrai | Where-Object { -not (Test-Signature ([IO.File]::ReadAllBytes($_)) ([IO.File]::ReadAllBytes("$_.sig")) $cles) }).Count -eq 0
     }
-    Test-Cas 'les trois paquets contiennent l''Aide jugée (même empreinte)' {
+    Test-Cas 'les deux paquets contiennent l''Aide jugée (même empreinte)' {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $sha = [Security.Cryptography.SHA256]::Create()
-        $empreintes = @(foreach ($z in $PaquetEssai, $PaquetVrai, $PaquetCompat) {
+        $empreintes = @(foreach ($z in $PaquetEssai, $PaquetVrai) {
             $a = [IO.Compression.ZipFile]::OpenRead($z)
             try {
                 $e = @($a.Entries | Where-Object { $_.FullName.Replace('\', '/') -match '^[^/]+/NevermindAide\.exe$' })
@@ -506,7 +505,7 @@ function Initialize-Essai {
             } finally { $a.Dispose() }
         })
         Write-Host "         | NevermindAide.exe des paquets : $($empreintes -join ', ')" -ForegroundColor DarkGray
-        $empreintes.Count -eq 3 -and -not @($empreintes | Where-Object { $_ -ne $h }).Count
+        $empreintes.Count -eq 2 -and -not @($empreintes | Where-Object { $_ -ne $h }).Count
     }
     # Un petit programme qui attend (fermé par l'Aide au cas 2)
     $cs = Join-Path $Racine 'appli\dormeur.cs'
@@ -800,7 +799,7 @@ function Test-Cas7 {
 }
 
 # =====================================================================================================================
-# 8. Changement de nom (OptiGame devient Nevermind) : mises à jour, anciens Mindset, une seule instance
+# 8. Changement de nom (OptiGame devient Nevermind) : mise à jour par le nouveau Mindset, une seule instance
 # =====================================================================================================================
 # Le vrai Nevermind tourne ici, sous le compte de l'essai (géré par Mindset : suite.json le note, lancé caché avec
 # -Demarrage, comme Mindset le fait). Les verrous sont ceux de la session de l'essai.
@@ -830,7 +829,7 @@ function Get-JournalNevermind {
     })
 }
 function Test-Cas8 {
-    Write-Partie '8. Changement de nom : Nevermind 1.11.0 (OptiGame) mis à jour, anciens Mindset, une seule instance'
+    Write-Partie '8. Changement de nom : Nevermind 1.11.0 (OptiGame) mis à jour par le nouveau Mindset, une seule instance'
     Reset-Machine
     Stop-Nevermind
     $e = Get-Compte $NomElodie
@@ -882,32 +881,8 @@ function Test-Cas8 {
         Test-Cas 'un deuxième lancement s''arrête seul : une seule instance' { $arrete -and -not $neuf.HasExited -and @(Get-Nevermind $ProgrammesC).Count -eq 1 }
         Stop-Nevermind
         }
-
-        # d. Mindset 2.12.0 (ancien) : il met à jour Nevermind 1.11.0 avec le zip de compatibilité, et le lance comme avant
-        Reset-Machine
-        $null = Install-Appli $Installateur212 $Paquet111 $e.Sid 'OptiGame'
-        $r = Install-Appli $Installateur212 $PaquetCompat $e.Sid 'OptiGame'
-        Show-Nevermind 'Mindset 2.12.0, après la mise à jour'
-        Test-Cas "Mindset 2.12.0 met à jour 1.11.0 avec OptiGame.zip : fichiers\OptiGame.ps1 (le script qu'il cherche) à la version $version, sans deuxième script" {
-            $r.ok -and (Get-VersionScript "$NevermindC\fichiers\OptiGame.ps1") -eq $version -and -not (Test-Path -LiteralPath "$NevermindC\fichiers\Nevermind.ps1") -and (Test-Path -LiteralPath "$NevermindC\Nevermind.exe")
-        }
-        if ($lancer) {
-        $p = Start-Nevermind "$NevermindC\Nevermind.exe"   # (Mindset 2.12.0 lance Nevermind.exe, le relais)
-        Test-Cas 'lancé comme Mindset 2.12.0 le fait (Nevermind.exe -Demarrage), le script à l''ancien nom démarre : verrou Local\OptiGame-Instance tenu (Mindset 2.12.0 le voit ouvert)' {
-            (Wait-Jusque { (Test-Verrou 'Local\OptiGame-Instance') -and (Test-Verrou 'Local\Nevermind-Instance') } 120) -and @(Get-Nevermind $ProgrammesC).Count -eq 1
-        }
-        Start-Sleep -Seconds 10
-        Test-Cas "il reste ouvert, son journal dit « Démarrage Nevermind $version »" { @(Get-Nevermind $ProgrammesC).Count -eq 1 -and @(Get-JournalNevermind | Where-Object { $_ -match "Démarrage Nevermind $([regex]::Escape($version))" }).Count -ge 1 }
-        Stop-Nevermind
-        }
-
-        # e. Mindset 2.12.0 : première installation avec le zip de compatibilité
-        Reset-Machine
-        $r = Install-Appli $Installateur212 $PaquetCompat $e.Sid 'OptiGame'
-        Test-Cas "Mindset 2.12.0 installe Nevermind (première fois) avec OptiGame.zip : version $version, tâche de l'Aide en SYSTEM" { $r.ok -and (Get-VersionScript "$NevermindC\fichiers\OptiGame.ps1") -eq $version -and (Test-TacheSysteme $e.Sid) }
-        # (contre-épreuve : Mindset 2.12.0 refuse Nevermind.zip, il y cherche le dossier « OptiGame »)
-        $r = Install-Appli $Installateur212 $PaquetVrai $e.Sid 'OptiGame'
-        Test-Cas 'contre-épreuve : Mindset 2.12.0 ne sait pas installer Nevermind.zip (dossier « Nevermind »), d''où le zip de compatibilité' { -not $r.ok }
+        # (Mindset 2.12.0 n'installe plus une nouvelle version : le zip de compatibilité n'est plus publié depuis la
+        # décision de Jordan du 29/10, un ancien Mindset se met d'abord à jour lui-même)
     } finally {
         Stop-Nevermind
         Remove-Item -LiteralPath $suite -Force -ErrorAction SilentlyContinue
@@ -1522,7 +1497,7 @@ function Test-Cas13 {
 # =====================================================================================================================
 $titres = @{ 0 = 'Préparation'; 1 = 'Installation : tâche SYSTEM pour Élodie'; 2 = 'Élodie obtient des actions en lecture seule'; 3 = 'Un autre compte refusé'
     4 = 'Mise à jour depuis Nevermind 1.10.0'; 5 = 'Repli par la demande de Windows'; 6 = 'Désinstallation'; 7 = 'Environnement d''Élodie'
-    8 = 'Changement de nom : mises à jour, anciens Mindset, une seule instance'; 9 = 'Aide lancée en secours par la demande de Windows'
+    8 = 'Changement de nom : mise à jour par le nouveau Mindset, une seule instance'; 9 = 'Aide lancée en secours par la demande de Windows'
     10 = 'Tout optimiser puis tout restaurer'; 11 = 'Banc PowerShell / Rust sous un compte sans droits'; 13 = 'Relancer la carte réseau de la connexion' }
 if (-not $titres.ContainsKey($Cas)) { Write-Host 'Indique -Cas 0 (préparation), -Cas 1 à 11 ou -Cas 13.' -ForegroundColor Yellow; exit 2 }
 try {

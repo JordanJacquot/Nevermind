@@ -2,7 +2,8 @@
 /fichiers/
 /LISEZMOI.txt
 
-# Fichiers générés par outils/construire.ps1 (Nevermind.zip, et OptiGame.zip : le zip de compatibilité, voir outils/zips.ps1)
+# Fichiers générés par outils/construire.ps1 (Nevermind.zip ; OptiGame.zip, l'ancien zip de compatibilité qui n'est plus
+# construit, peut encore traîner, voir outils/zips.ps1)
 /Nevermind.zip
 /Nevermind.zip.sig
 /OptiGame.zip

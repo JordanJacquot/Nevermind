@@ -6,9 +6,8 @@
 #      (outils\construire.ps1) et dépose le dossier Nevermind comme artefact.
 #   2. « signer » : seulement quand la variable SIGNPATH_ACTIVE vaut true (Settings > Secrets and variables >
 #      Actions > Variables). Envoie l'artefact à SignPath, attend l'approbation manuelle de Jordan dans SignPath,
-#      vérifie les signatures, puis dépose les deux zips (signés) comme artefact : Nevermind.zip, et le zip de
-#      compatibilité pour les anciennes versions de Mindset (outils\zips.ps1, publié aussi pendant le changement de nom).
-#   3. Sur le PC de Jordan : outils\publier.ps1 récupère ces zips, fait leur signature RSA (<zip>.sig, clé privée qui ne
+#      vérifie les signatures, puis dépose le zip (signé) comme artefact : Nevermind.zip (outils\zips.ps1).
+#   3. Sur le PC de Jordan : outils\publier.ps1 récupère ce zip, fait sa signature RSA (<zip>.sig, clé privée qui ne
 #      quitte jamais le PC) et crée la Release. Ce workflow ne publie rien.
 #   0. « rust » (passage en Rust, étape 1a), seulement si rust\nevermind-aide existe : construit NevermindAide.exe en Rust
 #      (cargo build --release --locked), l'atteste (attestation GitHub : ce dépôt, ce fichier de construction, ce
@@ -218,7 +217,7 @@ jobs:
       run:
         shell: powershell
     steps:
-      # (seulement pour outils\zips.ps1, qui fait les deux zips depuis le dossier signé)
+      # (seulement pour outils\zips.ps1, qui fait le zip depuis le dossier signé)
       - name: "Récupérer le code"
         uses: actions/checkout@v4
 
@@ -276,10 +275,9 @@ jobs:
           if ($problemes) { $problemes | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
           Write-Host "$($nos.Count) fichiers signés par SignPath Foundation, fichiers de Microsoft et d'Intel intacts."
 
-      - name: "Construire les deux zips (signés)"
+      - name: "Construire le zip (signé)"
         run: |
           $ErrorActionPreference = 'Stop'
-          # Nevermind.zip, et le zip de compatibilité pour les anciennes versions de Mindset (mêmes fichiers signés)
           foreach ($zip in @(.\outils\zips.ps1 -Dossier '_ci\signe\Nevermind' -Sortie '_ci\sortie')) {
             $n = Split-Path $zip -Leaf
             $h = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash

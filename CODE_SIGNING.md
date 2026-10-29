@@ -24,8 +24,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
    this repository. **Every signing request is approved manually** by an approver (see below).
 4. The maintainer downloads the signed `Nevermind.zip` produced by the workflow, adds the detached RSA signature
    `Nevermind.zip.sig` (Mindset and Nevermind use it to verify updates; it does not change any file inside the zip)
-   and publishes the Release. During the transition from the former name of the app, the Release also carries a
-   compatibility zip with the same signed files under the former folder and script names, for older versions of Mindset.
+   and publishes the Release.
 
 ## Team and roles
 
@@ -116,9 +115,7 @@ Signature gratuite du code fournie par [SignPath.io](https://about.signpath.io),
    ce dépôt. **Chaque demande est approuvée à la main** par un approbateur (voir plus bas).
 4. Le responsable récupère le `Nevermind.zip` signé construit par le workflow, ajoute la signature RSA séparée
    `Nevermind.zip.sig` (Mindset et Nevermind s'en servent pour vérifier les mises à jour ; elle ne change aucun
-   fichier du zip) et publie la version. Pendant le passage de l'ancien nom de l'appli au nouveau, la version contient
-   aussi un zip de compatibilité : les mêmes fichiers signés, sous les anciens noms de dossier et de script, pour les
-   anciennes versions de Mindset.
+   fichier du zip) et publie la version.
 
 ## Équipe et rôles
 

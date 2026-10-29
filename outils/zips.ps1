@@ -1,13 +1,11 @@
-﻿# Les deux zips d'une version de Nevermind, faits depuis son dossier prêt à partager (« Nevermind », construit par
-# construire.ps1, ou signé par SignPath dans .github\workflows\release.yml) :
-#   Nevermind.zip  le dossier « Nevermind », script fichiers\Nevermind.ps1 ;
-#   OptiGame.zip   le zip de compatibilité, publié aussi pendant le changement de nom : le même contenu sous les anciens
-#                  noms (dossier « OptiGame », script fichiers\OptiGame.ps1), ceux que cherchent les Mindset 2.12.0 et plus
-#                  anciens (et Nevermind 1.11.0 pour ses propres mises à jour). Seul le nom du script change : il reste
-#                  signé (la signature ne dépend pas du nom du fichier), et le lanceur et le script lui-même le trouvent
-#                  sous ses deux noms. Un seul script principal par zip : jamais deux à côté.
+﻿# Le zip d'une version de Nevermind, Nevermind.zip (dossier « Nevermind », script fichiers\Nevermind.ps1), fait depuis son
+# dossier prêt à partager (« Nevermind », construit par construire.ps1, ou signé par SignPath dans
+# .github\workflows\release.yml). Un seul script principal dans le zip : jamais deux à côté.
+# Le zip de compatibilité OptiGame.zip (le même contenu sous les anciens noms, pour les Mindset 2.12.0 et plus anciens) a
+# été publié de Nevermind 1.12.0 à 1.15.4, pendant le changement de nom ; il n'est plus fait (décision de Jordan du
+# 29/10) : un ancien Mindset se met d'abord à jour lui-même, et Mindset 2.16 connaît Nevermind.zip.
 #
-# Ce qui part dans les zips (audit du 25/10, constat 24) : seulement les fichiers de Nevermind suivis par git, pris dans
+# Ce qui part dans le zip (audit du 25/10, constat 24) : seulement les fichiers de Nevermind suivis par git, pris dans
 # ce dossier (le dossier signé garde ainsi ses fichiers signés), et les 4 programmes construits. Jamais un fichier
 # ignoré ou oublié qui traîne dans le dossier : aide-temp\ (laissé par une Aide lancée depuis le dépôt), un thème
 # personnel (ignoré par git, il ne se voyait pas dans « git status »)... Ceux-là sont seulement nommés à l'écran.
@@ -30,7 +28,7 @@ $Sortie = [IO.Path]::GetFullPath($Sortie)
 # Les programmes construits par construire.ps1 (ignorés par git)
 $Programmes = @('Mindset.exe', 'Nevermind.exe', 'NevermindAide.exe', 'Désinstaller Nevermind.exe')
 # NevermindPont.dll (passage en Rust, étape 1a : les règles de l'Aide pour Nevermind, rust\nevermind-pont), seulement
-# quand le dépôt la construit ; sans rust\nevermind-pont, les zips restent les mêmes
+# quand le dépôt la construit ; sans rust\nevermind-pont, le zip reste le même
 if (Test-Path -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) 'rust\nevermind-pont\Cargo.toml')) { $Programmes += 'NevermindPont.dll' }
 
 # Les fichiers du dossier Nevermind suivis par git (chemins relatifs à ce dossier)
@@ -45,7 +43,7 @@ function Get-FichiersGit {
     @(($sortieGit -join '') -split "`0" | Where-Object { $_ -like 'Nevermind/*' } | ForEach-Object { $_.Substring(10) -replace '/', '\' })
 }
 if (-not $Liste) { $Liste = Get-FichiersGit }
-if (-not @($Liste).Count) { throw 'Aucun fichier de Nevermind dans git : zips pas construits' }
+if (-not @($Liste).Count) { throw 'Aucun fichier de Nevermind dans git : zip pas construit' }
 $voulus = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
 foreach ($f in @($Liste) + $Programmes) { [void]$voulus.Add(($f -replace '/', '\').TrimStart('\')) }
 
@@ -61,17 +59,9 @@ try {
         [void][IO.Directory]::CreateDirectory((Split-Path $dest -Parent))
         [IO.File]::Copy($f, $dest)
     }
-    if ($laisses.Count) { Write-Host "Laissé hors des zips (pas dans git) : $($laisses -join ', ')" -ForegroundColor Yellow }
+    if ($laisses.Count) { Write-Host "Laissé hors du zip (pas dans git) : $($laisses -join ', ')" -ForegroundColor Yellow }
 
     $zip = Join-Path $Sortie 'Nevermind.zip'
     Compress-Archive -Path $copie -DestinationPath $zip -Force
-
-    # Le zip de compatibilité : le même contenu, sous les anciens noms
-    $ancien = Join-Path $tmp 'OptiGame'
-    [IO.Directory]::Move($copie, $ancien)
-    Rename-Item -LiteralPath (Join-Path $ancien 'fichiers\Nevermind.ps1') -NewName 'OptiGame.ps1'
-    $compat = Join-Path $Sortie 'OptiGame.zip'
-    Compress-Archive -Path $ancien -DestinationPath $compat -Force
 } finally { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
 $zip
-$compat

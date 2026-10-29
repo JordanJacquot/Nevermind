@@ -181,7 +181,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: .\outils\essai-aide-reelle.ps1 -Cas 7
 
-      - name: "8. Changement de nom : Nevermind 1.11.0 mis à jour, anciens Mindset (zip de compatibilité), une seule instance"
+      - name: "8. Changement de nom : Nevermind 1.11.0 mis à jour par le nouveau Mindset, une seule instance"
         if: ${{ !cancelled() }}
         run: .\outils\essai-aide-reelle.ps1 -Cas 8
 

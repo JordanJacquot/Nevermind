@@ -73,8 +73,8 @@ static class Lanceur
     {
         Application.EnableVisualStyles();
         string dossier = AppDomain.CurrentDomain.BaseDirectory;
-        // Le script de Nevermind : fichiers\Nevermind.ps1, ou à défaut fichiers\OptiGame.ps1 (son ancien nom, gardé dans le zip
-        // de compatibilité que reçoivent les Mindset 2.12.0 et plus anciens)
+        // Le script de Nevermind : fichiers\Nevermind.ps1, ou à défaut fichiers\OptiGame.ps1 (son ancien nom, dans une copie
+        // installée avec le zip de compatibilité, publié de 1.12.0 à 1.15.4 pour les Mindset 2.12.0 et plus anciens)
         string script = Path.Combine(Path.Combine(dossier, "fichiers"), "Nevermind.ps1");
         string ancienScript = Path.Combine(Path.Combine(dossier, "fichiers"), "OptiGame.ps1");
         if (!File.Exists(script) && File.Exists(ancienScript)) script = ancienScript;

@@ -4,17 +4,18 @@
 #
 # Ce script contrôle :
 #   1. plus aucun « OptiGame » dans le dépôt (noms de fichiers et contenu), sauf les mentions gardées exprès, fichier par
-#      fichier avec leur raison (ce qui reconnaît ou migre une ancienne installation, le zip de compatibilité, les tests) ;
+#      fichier avec leur raison (ce qui reconnaît ou migre une ancienne installation, ou lit une ancienne Release, les tests) ;
 #      contre-épreuve : le dépôt de Nevermind 1.11.0 en a bien plus ;
 #   2. le lanceur (outils\lanceur.cs, compilé ici) démarre fichiers\Nevermind.ps1, ou à défaut fichiers\OptiGame.ps1 ;
 #   3. le verrou (une seule instance, Nevermind.ps1) : les deux noms sont pris ; tant que l'ancien est tenu par un autre
 #      programme (une version d'avant encore ouverte), Nevermind ne démarre pas et ne garde aucun verrou ; un deuxième
 #      Nevermind ne démarre pas non plus (verrous de test à des noms uniques : jamais ceux du vrai Nevermind) ;
-#   4. les deux zips (outils\zips.ps1) : Nevermind.zip (dossier Nevermind, script Nevermind.ps1) et le zip de compatibilité
-#      OptiGame.zip (dossier OptiGame, script OptiGame.ps1, ce que cherchent les Mindset 2.12.0 et plus anciens), un seul
-#      script principal dans chacun ;
-#   5. les mises à jour faites par Nevermind lui-même : Nevermind.zip d'abord, OptiGame.zip pour une version d'avant ;
-#      le script principal trouvé sous ses deux noms (Get-AppScript).
+#   4. le zip (outils\zips.ps1) : Nevermind.zip seul (dossier Nevermind, script Nevermind.ps1, un seul script principal) ;
+#      le zip de compatibilité OptiGame.zip, publié de 1.12.0 à 1.15.4, n'est plus construit ni publié (décision de
+#      Jordan du 29/10) ;
+#   5. les mises à jour faites par Nevermind lui-même : Nevermind.zip d'abord, OptiGame.zip d'une version d'avant encore
+#      lisible ; une copie à l'ancien nom prend Nevermind.zip quand la version n'a plus que lui ; le script principal
+#      trouvé sous ses deux noms (Get-AppScript).
 # Code de sortie : 0 si tout passe, 1 sinon.
 
 $ErrorActionPreference = 'Stop'
@@ -59,9 +60,9 @@ New-Item -ItemType Directory -Force -Path $bac | Out-Null
 # Fichier => nombre de lignes où l'ancien nom reste, et pourquoi
 $Gardees = [ordered]@{
     'cas/aide/demandes.json'                       = @(1, 'corpus de cas de l''Aide : règle du pare-feu à l''ancien nom')
-    '.gitignore'                                   = @(3, 'le zip de compatibilité OptiGame.zip (et sa signature), produit par la construction')
-    'Nevermind/fichiers/Désinstaller Nevermind (secours).bat' = @(2, 'script à l''ancien nom dans le zip de compatibilité')
-    'Nevermind/fichiers/Lancer Nevermind (secours).bat' = @(2, 'script à l''ancien nom dans le zip de compatibilité')
+    '.gitignore'                                   = @(3, 'l''ancien zip de compatibilité OptiGame.zip (et sa signature), plus construit mais qui peut traîner')
+    'Nevermind/fichiers/Désinstaller Nevermind (secours).bat' = @(2, 'script à l''ancien nom dans une copie installée avec l''ancien zip de compatibilité')
+    'Nevermind/fichiers/Lancer Nevermind (secours).bat' = @(2, 'script à l''ancien nom dans une copie installée avec l''ancien zip de compatibilité')
     'Nevermind/fichiers/Nevermind.ps1'             = @(4, 'ancien dossier de données %LOCALAPPDATA%\OptiGame (migration), ancien verrou')
     'Nevermind/fichiers/modules/aide-actions.ps1'  = @(9, 'règles du pare-feu « OptiGame : bloque ... » d''avant la 1.3.6, reconnues et renommées')
     'Nevermind/fichiers/modules/assistance.ps1'    = @(1, 'lignes « Démarrage OptiGame » des anciens journaux')
@@ -71,9 +72,9 @@ $Gardees = [ordered]@{
     'Nevermind/fichiers/modules/natif.cs'          = @(1, 'ancienne session réseau « OptiGame-Reseau » fermée au démarrage')
     'Nevermind/fichiers/modules/systeme.ps1'       = @(12, 'anciennes tâches, anciens lanceurs et anciens fichiers retirés ; script à l''ancien nom')
     'Nevermind/fichiers/modules/tests.ps1'         = @(1, 'ancien fichier temporaire du test du disque, effacé')
-    'outils/essai-aide-reelle.ps1'                 = @(36, 'essai en vrai : anciennes Releases, Mindset 2.12.0, zip de compatibilité')
+    'outils/essai-aide-reelle.ps1'                 = @(23, 'essai en vrai : anciennes Releases 1.10.0 et 1.11.0, installées par Mindset 2.10.0 et 2.12.0')
     'outils/lanceur.cs'                            = @(4, 'ancien dossier de données ; script à l''ancien nom')
-    'outils/publier.ps1'                           = @(7, 'publie aussi le zip de compatibilité, et vérifie son contenu')
+    'outils/publier.ps1'                           = @(2, 'le zip de compatibilité n''est plus publié ; anciens script et icône retirés de la copie du PC')
     'outils/test-app.ps1'                          = @(5, 'test : aucun « OptiGame » affiché ; règle à l''ancien nom ; ancien dossier de données')
     'outils/tester-aide-systeme.ps1'               = @(4, 'contre-épreuves : fichiers de versions d''avant, relus dans git sous leur ancien chemin')
     'outils/tester-desinstallation.ps1'            = @(1, 'ancienne tâche de démarrage')
@@ -81,7 +82,7 @@ $Gardees = [ordered]@{
     'rust/aide-regles/src/demandes.rs'             = @(1, 'l''Aide en Rust : règles du pare-feu « OptiGame : bloque ... » d''avant la 1.3.6, reconnues et renommées')
     'rust/nevermind-aide/src/windows/mesures.rs'   = @(1, 'l''Aide en Rust : ancienne session réseau « OptiGame-Reseau » fermée au démarrage')
     'outils/tester.ps1'                            = @(2, 'ancien dossier de données (lecture seule)')
-    'outils/zips.ps1'                              = @(6, 'fait le zip de compatibilité')
+    'outils/zips.ps1'                              = @(2, 'le zip de compatibilité n''est plus fait ; jamais l''ancien script à côté du nouveau')
 }
 function Get-Mentions([string]$Rev) {
     # Lignes qui contiennent l'ancien nom, par fichier (ce test lui-même mis à part : il liste les exceptions)
@@ -178,7 +179,7 @@ try {
     if ($sourceAvant) { Test-Ok ($sourceAvant -notmatch 'Nevermind-Instance') 'Contre-épreuve : 1.11.0 ne prenait que l''ancien verrou' }
 
     # -----------------------------------------------------------------------
-    # 4. Les deux zips
+    # 4. Le zip : Nevermind.zip seul, plus de zip de compatibilité
     # -----------------------------------------------------------------------
     $app = Join-Path $bac 'construit\Nevermind'
     New-Item -ItemType Directory -Force -Path (Join-Path $app 'fichiers\modules') | Out-Null
@@ -200,15 +201,24 @@ try {
         $a = [IO.Compression.ZipFile]::OpenRead($Zip)
         try { $e = @($a.Entries | Where-Object { $_.FullName.Replace('\', '/') -eq $Nom })[0]; if (-not $e) { return $null }; $s = New-Object IO.StreamReader($e.Open()); try { $s.ReadToEnd() } finally { $s.Dispose() } } finally { $a.Dispose() }
     }
-    $zn = Join-Path $sortieZips 'Nevermind.zip'; $zo = Join-Path $sortieZips 'OptiGame.zip'
-    Test-Ok ($zips.Count -eq 2 -and (Test-Path -LiteralPath $zn) -and (Test-Path -LiteralPath $zo)) 'Zips : Nevermind.zip et OptiGame.zip construits'
-    $en = Get-Entrees $zn; $eo = Get-Entrees $zo
+    $zn = Join-Path $sortieZips 'Nevermind.zip'
+    $faits = @(Get-ChildItem -LiteralPath $sortieZips -File | ForEach-Object { $_.Name })
+    Test-Ok ($zips.Count -eq 1 -and $zips[0] -eq $zn -and (Test-Path -LiteralPath $zn)) "Zip : Nevermind.zip construit, et lui seul rendu (rendus : $($zips -join ', '))"
+    Test-Ok ($faits.Count -eq 1 -and -not @($faits | Where-Object { $_ -match '(?i)optigame' }).Count) "Zip : plus de zip de compatibilité OptiGame.zip construit (dans la sortie : $($faits -join ', '))"
+    $en = Get-Entrees $zn
     Test-Ok (-not @($en | Where-Object { $_ -notlike 'Nevermind/*' }).Count -and $en -contains 'Nevermind/fichiers/Nevermind.ps1' -and $en -notcontains 'Nevermind/fichiers/OptiGame.ps1') 'Nevermind.zip : dossier Nevermind, script fichiers\Nevermind.ps1 seul'
-    Test-Ok (-not @($eo | Where-Object { $_ -notlike 'OptiGame/*' }).Count -and $eo -contains 'OptiGame/fichiers/OptiGame.ps1' -and $eo -notcontains 'OptiGame/fichiers/Nevermind.ps1') 'OptiGame.zip (compatibilité) : dossier OptiGame, script fichiers\OptiGame.ps1 seul (ce que cherchent les Mindset 2.12.0 et plus anciens)'
-    Test-Ok ($eo -contains 'OptiGame/Nevermind.exe' -and $eo -contains 'OptiGame/NevermindAide.exe' -and $eo.Count -eq $en.Count) 'OptiGame.zip : le même contenu (programmes compris)'
-    $enTrop = @($en + $eo | Where-Object { $_ -match '/(aide-temp|fichiers/Thème-Essai)/|brouillon-pas-commite' })
-    Test-Ok (-not $enTrop.Count -and $en.Count -eq 9) "Zips : des fichiers ignorés par git sont dans les zips ($($enTrop -join ', ') ; $($en.Count) fichiers au lieu de 9)"
-    Test-Ok ((Get-TexteEntree $zo 'OptiGame/fichiers/OptiGame.ps1') -eq (Get-TexteEntree $zn 'Nevermind/fichiers/Nevermind.ps1') -and (Get-TexteEntree $zo 'OptiGame/fichiers/OptiGame.ps1') -match "AppVersion = '9\.8\.7'") 'OptiGame.zip : le script est le même (version lisible par les anciens Mindset), seul son nom change'
+    Test-Ok ($en -contains 'Nevermind/Nevermind.exe' -and $en -contains 'Nevermind/NevermindAide.exe' -and $en -contains 'Nevermind/Mindset.exe') 'Nevermind.zip : les programmes sont dedans'
+    $enTrop = @($en | Where-Object { $_ -match '/(aide-temp|fichiers/Thème-Essai)/|brouillon-pas-commite' })
+    Test-Ok (-not $enTrop.Count -and $en.Count -eq 9) "Zip : des fichiers ignorés par git sont dans le zip ($($enTrop -join ', ') ; $($en.Count) fichiers au lieu de 9)"
+    Test-Ok ((Get-TexteEntree $zn 'Nevermind/fichiers/Nevermind.ps1') -match "AppVersion = '9\.8\.7'") 'Nevermind.zip : le script est celui du dossier (version lisible par Mindset)'
+    # Ni la publication ni la construction sur GitHub ne cherchent ou n'envoient plus OptiGame.zip
+    $publier = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'publier.ps1'), [Text.Encoding]::UTF8)
+    Test-Ok ($publier -match "(?m)^\`$zips = @\(Join-Path \`$racine 'Nevermind\.zip'\)\r?$" -and $publier -notmatch "'OptiGame\.zip'") 'Publication : seulement Nevermind.zip et sa signature (plus OptiGame.zip)'
+    $release = [IO.File]::ReadAllText((Join-Path $racine '.github\workflows\release.yml'), [Text.Encoding]::UTF8)
+    Test-Ok ($release -notmatch '(?i)optigame|deux zips') 'Construction sur GitHub (release.yml) : plus de zip de compatibilité'
+    # Contre-épreuve : la version d'avant (1.15.4) faisait bien OptiGame.zip
+    $zipsAvant = (Invoke-Git @('show', 'v1.15.4:outils/zips.ps1')) -join "`n"
+    if ($zipsAvant) { Test-Ok ($zipsAvant -match "Join-Path \`$Sortie 'OptiGame\.zip'") 'Contre-épreuve : zips.ps1 de 1.15.4 faisait OptiGame.zip' }
     # Contre-épreuve : un dossier avec les deux scripts est refusé (deux scripts principaux)
     [IO.File]::WriteAllText((Join-Path $app 'fichiers\OptiGame.ps1'), '# ancien')
     $refuse = $false; try { $null = & (Join-Path $PSScriptRoot 'zips.ps1') -Dossier $app -Sortie (Join-Path $bac 'zips2') } catch { $refuse = $true }
@@ -231,6 +241,10 @@ try {
     $script:Assets = @((New-Asset 'OptiGame.zip'), (New-Asset 'OptiGame.zip.sig'))
     $r = & $GetReleaseScript @{ Repo = 'essai/essai'; Beta = $false }
     Test-Ok ($r.Url -like '*/OptiGame.zip' -and $r.SigUrl -like '*/OptiGame.zip.sig') "Mise à jour : une version d'avant (OptiGame.zip seul) reste lisible (reçu : $($r.Url) $($r.SigUrl) $($r.Error))"
+    # Une version publiée sans zip de compatibilité (Nevermind.zip seul) : la copie à l'ancien nom prend Nevermind.zip
+    $script:Assets = @((New-Asset 'Nevermind.zip'), (New-Asset 'Nevermind.zip.sig'))
+    $r = & $GetReleaseScript @{ Repo = 'essai/essai'; Beta = $false; Ancien = $true }
+    Test-Ok ($r.Url -like '*/Nevermind.zip' -and $r.SigUrl -like '*/Nevermind.zip.sig' -and -not $r.Error) "Mise à jour d'une copie à l'ancien nom, version sans OptiGame.zip : Nevermind.zip et sa signature (reçu : $($r.Url) $($r.SigUrl) $($r.Error))"
     $majAvant = (Invoke-Git @('show', "${Avant}:OptiGame/fichiers/modules/mises-a-jour.ps1")) -join "`n"
     if ($majAvant) {
         Remove-Variable GetReleaseScript

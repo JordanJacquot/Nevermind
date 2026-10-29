@@ -19,8 +19,10 @@ $GetReleaseScript = {
         }
         if (-not $r) { return @{ Error = 'Aucune version publiée.' } }
         # Nevermind.zip ; OptiGame.zip (son ancien nom) dans les versions publiées avant le changement de nom. Une copie
-        # dont le script porte l'ancien nom (installée avec le zip de compatibilité) prend le zip de compatibilité : elle
-        # garde ses noms, ceux que cherchent les Mindset 2.12.0 et plus anciens (Nevermind.zip, ils ne le reconnaîtraient plus)
+        # dont le script porte l'ancien nom (installée avec le zip de compatibilité) prend le zip de compatibilité tant
+        # qu'une version en a un (de 1.12.0 à 1.15.4) : elle garde ses noms, ceux que cherchent les Mindset 2.12.0 et plus
+        # anciens. Dans une version plus récente, seulement Nevermind.zip : elle le prend (dossier et script cherchés sous
+        # les deux noms à l'installation, plus bas)
         $noms = if ($a.Ancien) { 'OptiGame.zip', 'Nevermind.zip' } else { 'Nevermind.zip', 'OptiGame.zip' }
         $asset = @(foreach ($n in $noms) { $r.assets | Where-Object { $_.name -eq $n } }) | Select-Object -First 1
         if (-not $asset) { return @{ Error = 'Aucun fichier Nevermind.zip dans la dernière version publiée.' } }

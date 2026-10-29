@@ -427,8 +427,8 @@ $OldAppNames = @('OptiGame', 'Nexo')
 $OldAutoStartTasks = @($OldAppNames | ForEach-Object { "$_ (démarrage)" })
 
 function Get-AppRoot { if ((Split-Path $AppDir -Leaf) -eq 'fichiers') { Split-Path $AppDir -Parent } else { $AppDir } }
-# Le script principal de cette copie : fichiers\Nevermind.ps1, ou fichiers\OptiGame.ps1 (son ancien nom) dans le zip de
-# compatibilité que reçoivent les Mindset 2.12.0 et plus anciens (outils\zips.ps1)
+# Le script principal de cette copie : fichiers\Nevermind.ps1, ou fichiers\OptiGame.ps1 (son ancien nom) dans une copie
+# installée avec le zip de compatibilité (publié de 1.12.0 à 1.15.4 pour les Mindset 2.12.0 et plus anciens)
 function Get-AppScript {
     foreach ($n in 'Nevermind.ps1', 'OptiGame.ps1') { $p = Join-Path $AppDir $n; if (Test-Path -LiteralPath $p) { return $p } }
     Join-Path $AppDir 'Nevermind.ps1'

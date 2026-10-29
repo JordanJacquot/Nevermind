@@ -115,7 +115,7 @@ Nevermind/            l'application telle qu'elle est distribuée
     evenements.ps1        branchement des boutons et du démarrage
   fichiers/outils-tiers/  PresentMon.exe (Intel, licence MIT) pour mesurer les FPS
 outils/
-  construire.ps1     génère l'icône, compile Mindset.exe (le programme qui fait tourner Nevermind), le relais Nevermind.exe, le désinstalleur et l'Aide, crée Nevermind.zip et le zip de compatibilité pour les anciennes versions de Mindset (zips.ps1)
+  construire.ps1     génère l'icône, compile Mindset.exe (le programme qui fait tourner Nevermind), le relais Nevermind.exe, le désinstalleur et l'Aide, crée Nevermind.zip (zips.ps1)
   publier.ps1        publie une nouvelle version sur GitHub
   tester.ps1         lance le test automatique sur une copie isolée de l'app
   test-app.ps1       les étapes du test automatique
