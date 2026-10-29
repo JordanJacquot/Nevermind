@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # Mesures en direct (dans un fil séparé pour ne pas ralentir la fenêtre)
 # ---------------------------------------------------------------------------
-$Live = [hashtable]::Synchronized(@{ Run = $true; Smi = $SmiPath; BaseMHz = 0 })
+$Live = [hashtable]::Synchronized(@{ Run = $true; Smi = $SmiPath; BaseMHz = 0; Leger = $false })
 
 $LiveScript = {
     param($sync)
@@ -17,8 +17,14 @@ $LiveScript = {
     # processeur en temps occupé (« % temps processeur », celui du Gestionnaire de Windows 11 25H2), la carte graphique
     # par son moteur le plus occupé (3D, copie, vidéo...), tous programmes ensemble. nvidia-smi compte la carte occupée
     # dès qu'un moteur travaille (55 % pour 18 % dans le Gestionnaire, mesuré le 27/10) : seulement en secours.
-    $cpuAvant = $null; $gpuAvant = @{}
+    # L'écran pas regardé (réduit, caché, ou un jeu devant : $sync.Leger, Update-LiveUI) : seulement toutes les 10 s, sans
+    # la carte graphique par moteur (près de 600 compteurs, 0,1 s par lecture, plus encore jeu lancé) ; nvidia-smi garde
+    # la température (alerte) et l'occupation de la carte (bilan des FPS). Le 29/10, mesuré chaque seconde en pleine partie
+    $cpuAvant = $null; $gpuAvant = @{}; $tour = 0
     while ($sync.Run) {
+        $leger = $sync.Leger -and -not $sync.Fast
+        if ($leger -and ($tour++ % 10)) { Start-Sleep -Milliseconds 1000; continue }
+        if (-not $leger) { $tour = 0 }
         try {
             $raw = Get-CimInstance Win32_PerfRawData_Counters_ProcessorInformation -Filter "Name='_Total'" -ErrorAction Stop
             if ($cpuAvant) {
@@ -31,7 +37,8 @@ $LiveScript = {
         } catch {}
         # (chaque moteur : la somme de ses programmes ; un programme pas vu à la mesure d'avant attend la suivante)
         $gpuMoteurs = $false
-        try {
+        if ($leger) { $gpuAvant = @{} }
+        else { try {
             $vus = @{}; $parMoteur = @{}
             foreach ($e in @(Get-CimInstance Win32_PerfRawData_GPUPerformanceCounters_GPUEngine -Property Name, UtilizationPercentage, Timestamp_Sys100NS -ErrorAction Stop)) {
                 $n = [string]$e.Name
@@ -48,7 +55,7 @@ $LiveScript = {
                 $gpuMoteurs = $true
             }
             $gpuAvant = $vus
-        } catch {}
+        } catch {} }
         try {
             $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
             $sync.RamTotal = [double]$os.TotalVisibleMemorySize * 1024
@@ -79,6 +86,7 @@ $LiveScript = {
 # Toutes les secondes : l'alerte de température (les mesures, $Live, sont lues par l'écran de la console lui-même) ;
 # toutes les minutes au plus, la vitesse de la carte réseau (Watch-CarteReseau, systeme.ps1)
 function Update-LiveUI {
+    $Live.Leger = try { -not (Test-Regardee) } catch { $false }
     try { Watch-CarteReseau } catch { Write-Log "Carte réseau : $_" }
     if (-not $Live.Updated) { return }
     Test-TempAlert

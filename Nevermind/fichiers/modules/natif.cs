@@ -2460,6 +2460,15 @@ public static class VueNatif
         IntPtr racine = GetAncestor(hwnd, 2);
         return !IsIconic(racine != IntPtr.Zero ? racine : hwnd);
     }
+    // Au premier plan : sa fenêtre principale (la sienne, ou Mindset) est celle devant (pas un jeu par-dessus)
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    public static bool EstDevant(IntPtr hwnd)
+    {
+        IntPtr devant = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero || devant == IntPtr.Zero) return false;
+        IntPtr racine = GetAncestor(hwnd, 2);
+        return GetAncestor(devant, 2) == (racine != IntPtr.Zero ? racine : hwnd);
+    }
 }
 
 // Filet contre les plantages (evenements.ps1) : une erreur sur un autre fil que celui de la fenêtre ferme l'appli quoi qu'on

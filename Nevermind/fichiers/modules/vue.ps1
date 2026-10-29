@@ -229,10 +229,16 @@ function Save-InstantaneVue {
     } catch {} finally { $cap.Flux.Dispose() }
 }
 
+# Regardé : à l'écran (pas réduit ni caché), et pendant une partie seulement s'il est devant. Mindset resté ouvert derrière
+# le jeu laisse l'appli visible : le 29/10, l'écran refait 418 fois pendant une partie de 54 min de Battlefield 6
+function Test-Regardee {
+    $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
+    [VueNatif]::EstRegardee($h) -and -not ($script:GameSession -and -not [VueNatif]::EstDevant($h))
+}
+
 function Update-VeilleVue {
     $v = $script:Vue.Controle
-    $h = (New-Object System.Windows.Interop.WindowInteropHelper $Window).Handle
-    $regardee = [VueNatif]::EstRegardee($h)
+    $regardee = Test-Regardee
     if ($regardee) {
         if (-not $script:Vue.CacheeDepuis) { return }
         $script:Vue.CacheeDepuis = $null
