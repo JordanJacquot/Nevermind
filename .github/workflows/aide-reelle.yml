@@ -147,6 +147,25 @@ jobs:
           if ($LASTEXITCODE) { exit 1 }
           git -C C:\essai\mindset log --oneline -1
 
+      # (depuis Mindset 2.15, son installer-admin.ps1 n'est plus qu'un relais vers MindsetInstallateur.exe, construit
+      # seulement par GitHub : construit ici, depuis la branche de Mindset choisie, puis posé par l'essai à côté de
+      # Mindset.exe ; un Mindset d'avant n'a pas de rust\mindset-installateur, rien n'est construit)
+      - name: "Construire MindsetInstallateur.exe (Rust 1.99.1, bibliothèques figées par Cargo.lock)"
+        working-directory: C:\essai\mindset
+        env:
+          CARGO_TERM_COLOR: never
+        run: |
+          if (-not (Test-Path -LiteralPath 'rust\mindset-installateur\Cargo.toml')) { Write-Host 'Pas de rust\mindset-installateur dans cette version de Mindset.'; exit 0 }
+          Set-Location rust
+          rustup toolchain install
+          if ($LASTEXITCODE) { rustup show; if ($LASTEXITCODE) { exit 1 } }
+          if ((rustc --version) -notmatch '^rustc 1\.99\.1 ') { Write-Host 'Mauvaise version de Rust.'; exit 1 }
+          cargo build --release --locked -p mindset-installateur
+          if ($LASTEXITCODE) { exit 1 }
+          $exe = (Resolve-Path 'target\release\MindsetInstallateur.exe').Path
+          Write-Host "MindsetInstallateur.exe : SHA-256 $((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash)"
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "MINDSET_INSTALLATEUR=$exe`n")
+
       - name: "0. Préparation (Nevermind et Mindset construits, l'Aide jugée dans les paquets, clé de TEST, Releases v1.10.0 et v1.11.0, Mindset 2.12.0)"
         run: |
           # (NevermindPont.dll construite plus haut, si la branche en a une : dans les paquets des deux Aides)

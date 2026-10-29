@@ -417,7 +417,26 @@ function Initialize-Essai {
     Copy-Item -LiteralPath (Join-Path $Racine 'cle\publique-test.xml') -Destination (Join-Path $MindsetDepot 'Mindset\fichiers\cles-publiques\essai-test.xml')
     & (Join-Path $MindsetDepot 'outils\construire.ps1') | Out-Host
     Test-Cas "Mindset construit ($(& git -C $MindsetGit log --oneline -1))" { Test-Path -LiteralPath (Join-Path $MindsetDepot 'Mindset\Mindset.exe') }
-    Test-Cas 'son installateur crée la tâche d''aide en SYSTEM (Mindset avec le lot A2)' { [IO.File]::ReadAllText($InstallateurNeuf, [Text.Encoding]::UTF8) -match 'function Update-TachesAide' }
+    # Depuis Mindset 2.15 (étape 2 du passage en Rust), installer-admin.ps1 n'est plus qu'un relais vers
+    # MindsetInstallateur.exe : construit par le workflow (variable MINDSET_INSTALLATEUR), posé à côté de Mindset.exe
+    # comme dans le vrai zip (il part avec lui quand l'essai installe Mindset dans Program Files, cas 4 et 6)
+    $relais = [IO.File]::ReadAllText($InstallateurNeuf, [Text.Encoding]::UTF8).Contains('MindsetInstallateur.exe')
+    if ($relais) {
+        if (-not $env:MINDSET_INSTALLATEUR -or -not (Test-Path -LiteralPath $env:MINDSET_INSTALLATEUR -PathType Leaf)) { throw 'MindsetInstallateur.exe absent : la variable MINDSET_INSTALLATEUR doit donner l''exe construit par le workflow.' }
+        Copy-Item -LiteralPath $env:MINDSET_INSTALLATEUR -Destination (Join-Path $MindsetDepot 'Mindset\MindsetInstallateur.exe') -Force
+        $hi = (Get-FileHash -LiteralPath $env:MINDSET_INSTALLATEUR -Algorithm SHA256).Hash
+        Test-Cas "MindsetInstallateur.exe construit dans ce run, à côté de Mindset.exe (SHA-256 $hi)" { (Get-FileHash -LiteralPath (Join-Path $MindsetDepot 'Mindset\MindsetInstallateur.exe') -Algorithm SHA256).Hash -eq $hi }
+    }
+    # Le lot A2 (tâche d'aide en SYSTEM, -Sid de l'utilisateur ; anciennes tâches sous le compte refaites en SYSTEM) : dans
+    # installer-admin.ps1 avant 2.15, dans le code Rust de MindsetInstallateur.exe ensuite (le comportement lui-même est
+    # jugé en vrai aux cas 1 et 4)
+    Test-Cas 'son installateur crée la tâche d''aide en SYSTEM (Mindset avec le lot A2)' {
+        if (-not $relais) { return [IO.File]::ReadAllText($InstallateurNeuf, [Text.Encoding]::UTF8) -match 'function Update-TachesAide' }
+        $rs = [IO.File]::ReadAllText((Join-Path $MindsetGit 'rust\mindset-installateur\src\installateur.rs'), [Text.Encoding]::UTF8)
+        $m = [regex]::Match($rs, '(?s)\bfn enregistrer_tache_aide\(.*?\r?\n    \}')
+        $m.Success -and $m.Value.Contains('compte: CompteTache::Systeme') -and $m.Value.Contains('arguments: format!("-Sid {sid}")') -and
+            $rs -match '\bfn refaire_taches_aide\(' -and $rs -match 'self\.refaire_taches_aide\('
+    }
     # Mindset 2.10.0 (son installateur, tel que publié)
     $ErrorActionPreference = 'Continue'   # (git écrit ses messages sur la sortie d'erreur)
     if (Test-Path -LiteralPath $Mindset210) { & git -C $MindsetGit worktree remove --force $Mindset210 2>&1 | Out-Null }
