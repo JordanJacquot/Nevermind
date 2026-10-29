@@ -201,9 +201,10 @@ try {
         $a = [IO.Compression.ZipFile]::OpenRead($Zip)
         try { $e = @($a.Entries | Where-Object { $_.FullName.Replace('\', '/') -eq $Nom })[0]; if (-not $e) { return $null }; $s = New-Object IO.StreamReader($e.Open()); try { $s.ReadToEnd() } finally { $s.Dispose() } } finally { $a.Dispose() }
     }
+    # (le nom seul : sur GitHub, le dossier temporaire est écrit en nom court, RUNNER~1, et le zip rendu en nom long)
     $zn = Join-Path $sortieZips 'Nevermind.zip'
     $faits = @(Get-ChildItem -LiteralPath $sortieZips -File | ForEach-Object { $_.Name })
-    Test-Ok ($zips.Count -eq 1 -and $zips[0] -eq $zn -and (Test-Path -LiteralPath $zn)) "Zip : Nevermind.zip construit, et lui seul rendu (rendus : $($zips -join ', '))"
+    Test-Ok ($zips.Count -eq 1 -and (Split-Path $zips[0] -Leaf) -eq 'Nevermind.zip' -and (Test-Path -LiteralPath $zips[0]) -and (Test-Path -LiteralPath $zn)) "Zip : Nevermind.zip construit, et lui seul rendu (rendus : $($zips -join ', '))"
     Test-Ok ($faits.Count -eq 1 -and -not @($faits | Where-Object { $_ -match '(?i)optigame' }).Count) "Zip : plus de zip de compatibilité OptiGame.zip construit (dans la sortie : $($faits -join ', '))"
     $en = Get-Entrees $zn
     Test-Ok (-not @($en | Where-Object { $_ -notlike 'Nevermind/*' }).Count -and $en -contains 'Nevermind/fichiers/Nevermind.ps1' -and $en -notcontains 'Nevermind/fichiers/OptiGame.ps1') 'Nevermind.zip : dossier Nevermind, script fichiers\Nevermind.ps1 seul'
