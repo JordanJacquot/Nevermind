@@ -98,6 +98,7 @@ function Get-PagesDivers {
                     @{ texte = 'Compteur de FPS à l''écran'; note = 'Affichage, style et position du compteur par-dessus le jeu.'; lien = @{ id = 'overlay'; texte = 'Ouvrir Overlay' } }
                     @{ texte = 'Mesurer ma connexion quand je joue'; note = 'Box, Internet et serveur du jeu pendant la partie, pour savoir d''où vient le lag.'; bascule = @{ id = 'lag-mesure'; oui = [bool](Test-LagMeasure) } }
                     @{ texte = 'Mode jeu : fermer des applis pendant que je joue'; note = 'Les applis choisies (Optimisation gaming, Mode jeu) sont fermées puis relancées après la partie.'; bascule = @{ id = 'modejeu'; oui = [bool](Get-Setting 'GameMode' $false) } }
+                    @{ texte = 'Organizer Dofus'; note = 'Pour passer d''un perso à l''autre quand tu joues à plusieurs comptes. Coupé : le bouton disparaît de la page Jeux.'; bascule = @{ id = 'org-affiche'; oui = [bool](Test-OrgVisible) } }
                     @{ texte = 'Jaquettes depuis Internet'; note = 'Cherche les images des jeux qui n''en ont pas sur la boutique Steam puis Wikipédia (seul le nom du jeu est envoyé).'; bascule = @{ id = 'coche:ChkLibCovers'; oui = [bool](Test-CoversOnline) } }
                 ) }
             ) }

@@ -124,7 +124,7 @@ function Get-PagesJeux {
             resume = @(@{ nom = 'État'; valeur = $(switch ($niv) { 'ok' { 'Stable' } 'warn' { 'À voir' } 'bad' { 'Problème' } default { '-' } }); ton = $(if ($TonsStatut[$niv]) { [string]$TonsStatut[$niv] } else { '' }) }, @{ nom = 'Durée'; valeur = (Format-PlayTime $s0.Seconds) }) }
     } else { @{ icone = 'internet'; couleur = 'doux'; titre = 'Aucune mesure'; texte = 'Joue une partie en ligne (au moins une minute) ou lance le test rapide : Nevermind te dira d''où vient le lag.' } }
     $pages.jeux = @{ titre = 'Jeux'; sous = 'Tous tes jeux, quel que soit le lanceur (Steam, Epic...).'; icone = 'manette'; couleur = 'S'
-        actions = @(@{ id = 'jeux-organizer'; texte = 'Organizer Dofus'; style = 'second' }, @{ id = 'clic:BtnLibRefresh'; texte = 'Actualiser'; icone = 'actu' }, @{ id = 'clic:BtnLibAdd'; texte = 'Ajouter un jeu'; icone = 'plus' })
+        actions = @(if (Test-OrgVisible) { @{ id = 'jeux-organizer'; texte = 'Organizer Dofus'; style = 'second' } }) + @(@{ id = 'clic:BtnLibRefresh'; texte = 'Actualiser'; icone = 'actu' }, @{ id = 'clic:BtnLibAdd'; texte = 'Ajouter un jeu'; icone = 'plus' })
         module = $module
         onglets = @(
             @{ id = 'lib'; nom = 'Bibliothèque'; module = $module; blocs = $blocsLib }
@@ -251,6 +251,7 @@ function Register-ActionsJeux {
         if (-not $Valeur -and $script:LagSession -and -not $script:LagSession.Seconds) { Stop-LagSession }
         Update-GameWatch
     }
+    Register-ActionVue 'org-affiche' { param($Valeur, $Ecran) Invoke-Safe { Set-OrgVisible ([bool]$Valeur) } }
     Register-ActionVue 'lag-test' { param($Valeur, $Ecran) if (-not $script:LagSession) { Invoke-Safe { Start-LagSession 'Test rapide' 0 30 } } }
     Register-ActionVue 'overlay-on' { param($Valeur, $Ecran) Invoke-Safe { Set-FpsOverlayOn ([bool]$Valeur) } }
     Register-ActionVue 'overlay-style' { param($Valeur, $Ecran) Invoke-Safe { Set-FpsOverlayStyle ([string]$Valeur) } }

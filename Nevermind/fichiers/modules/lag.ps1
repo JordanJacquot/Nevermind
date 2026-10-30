@@ -569,6 +569,10 @@ function Update-LagLive {
         $a = [LagMon]::Series($s.T[$k])
         if ($a.Count -lt 2) { continue }
         $v = $a[-1]
+        # (les routeurs des fournisseurs et beaucoup de serveurs de jeu ignorent les pings quand ils ont autre chose à
+        # faire : sans réponse, ils ne sont pas montrés ; « perdu » reste pour la box et Internet, une vraie perte. Le
+        # 30/10, « fournisseur perdu » affiché pendant toute une mesure chez un ami dont la connexion allait bien)
+        if ($v -lt 0 -and $k -in 'isp', 'srv') { continue }
         $parts += "$(@{ gw = 'box'; isp = 'fournisseur'; ref = 'Internet'; srv = 'serveur' }[$k]) $(if ($v -lt 0) { 'perdu' } else { '{0:N0} ms' -f $v })"
     }
     $el = [int]((Get-Date) - $s.Start).TotalSeconds

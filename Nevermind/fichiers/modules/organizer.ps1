@@ -278,6 +278,29 @@ function Update-OrgWatch([switch]$Full) {
     } else { Hide-OrgBar }
 }
 
+# L'Organizer est-il proposé (bouton de la page Jeux, recherche) ? Le réglage « OrganizerAffiche » de Paramètres, Jeux ;
+# sans réglage : seulement s'il est déjà allumé ou si Dofus est dans la bibliothèque (le 30/10, un ami qui ne joue pas
+# à Dofus le voyait partout)
+function Test-OrgVisible {
+    $r = Get-Setting 'OrganizerAffiche' $null
+    if ($null -ne $r) { return [bool]$r }
+    if ((Get-OrgConfig).On) { return $true }
+    [bool]@($script:Games | Where-Object { [string]$_.Name -match '(?i)\bdofus\b' }).Count
+}
+
+# Caché depuis Paramètres : l'Organizer est aussi coupé (plus de veille des fenêtres ni de raccourcis)
+function Set-OrgVisible([bool]$Visible) {
+    Set-Setting 'OrganizerAffiche' $Visible
+    if (-not $Visible) {
+        if ($script:OrgViewOn) { Show-OrgView $false }
+        if ((Get-OrgConfig).On) { Set-OrgOn $false }
+    }
+    Update-OrgBouton
+}
+
+# L'ancien bouton de la Bibliothèque (fenêtre d'avant le kit) suit le même réglage
+function Update-OrgBouton { $ui.BtnLibOrganizer.Visibility = if (Test-OrgVisible) { 'Visible' } else { 'Collapsed' } }
+
 function Set-OrgOn([bool]$On) {
     $c = Get-OrgConfig
     $c.On = $On
@@ -800,5 +823,6 @@ function Build-OrgPanel {
 # Au démarrage : l'organizer reprend s'il était actif
 if ((Get-OrgConfig).On) { $null = $Window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::ApplicationIdle, [Action]{ try { Start-OrgWatch } catch { Write-Log "Organizer : $_" } }) }
 $ui.BtnLibOrganizer.Add_Click({ Invoke-Safe { Show-OrgView (-not $script:OrgViewOn) } })   # (bouton visible dans la Bibliothèque seulement)
+try { Update-OrgBouton } catch { Write-Log "Organizer : $_" }
 $Window.Add_PreviewKeyDown({ param($s, $e) if ($script:OrgCapture) { try { Receive-OrgKey $e } catch { Write-Log "Organizer : $_" } } })
 $Window.Add_PreviewMouseDown({ param($s, $e) if ($script:OrgCapture) { try { Receive-OrgMouse $e } catch { Write-Log "Organizer : $_" } } })

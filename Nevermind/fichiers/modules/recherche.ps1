@@ -122,7 +122,8 @@ function Test-OneTypo([string]$A, [string]$B) {
 # Liste complète : réglages fixes, plus les réglages Windows et les jeux de cette machine
 function Get-SearchIndex {
     $all = New-Object System.Collections.ArrayList
-    foreach ($e in $SearchEntries) { [void]$all.Add($e) }
+    $org = Test-OrgVisible
+    foreach ($e in $SearchEntries) { if ($org -or -not $e.Org) { [void]$all.Add($e) } }
     foreach ($r in @($script:TweakRows)) {
         $tw = $r.Tweak
         if ($tw -and $tw.Titre) { [void]$all.Add(@{ T = [string]$tw.Titre; P = 1; S = 'tweaks'; A = [string]$tw.Titre; K = 'reglage windows optimisation' }) }
