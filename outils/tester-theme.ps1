@@ -82,7 +82,7 @@ function Set-Setting([string]$Name, $Value) { $script:Reglages[$Name] = $Value }
 function Register-ActionVue([string]$Id, [scriptblock]$Action) { $script:Actions[$Id] = $Action }
 function Get-TuilesTestsKit { @{ Blocs = @(); Faits = 0; Total = 0 } }
 function Get-OuKit($E) { '' }
-foreach ($f in 'Test-FpsMeasure', 'Test-LagMeasure', 'Test-CoversOnline', 'Test-AnnuaireServeurs', 'Test-PaysServeur', 'Test-PiloteNvidia', 'Test-MajAuto', 'Test-NouveautesEnLigne', 'Build-TestsTab') {
+foreach ($f in 'Test-FpsMeasure', 'Test-LagMeasure', 'Test-CoversOnline', 'Test-AnnuaireServeurs', 'Test-PaysServeur', 'Test-PiloteNvidia', 'Test-MajAuto', 'Test-NouveautesEnLigne', 'Build-TestsTab', 'Test-OrgVisible') {
     Set-Item -Path "function:$f" -Value { $false }
 }
 # Petits éléments de la fenêtre d'avant, sans ses styles
