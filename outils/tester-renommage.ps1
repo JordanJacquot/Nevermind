@@ -82,6 +82,9 @@ $Gardees = [ordered]@{
     'rust/aide-regles/src/demandes.rs'             = @(1, 'l''Aide en Rust : règles du pare-feu « OptiGame : bloque ... » d''avant la 1.3.6, reconnues et renommées')
     'rust/nevermind-aide/src/windows/mesures.rs'   = @(1, 'l''Aide en Rust : ancienne session réseau « OptiGame-Reseau » fermée au démarrage')
     'outils/tester.ps1'                            = @(2, 'ancien dossier de données (lecture seule)')
+    'outils/entree-apps-rust.json'                 = @(2, 'entrée apps.json de Nevermind en Rust pour le contrat : ancien verrou et ancien dossier de données, comme dans Mindset')
+    'outils/entree-apps-bascule.json'              = @(5, 'entrée apps.json d''aujourd''hui, recopiée de Mindset : ancien zip, dossier, script, verrou et dossier de données')
+    'outils/tester-maj-rust.ps1'                   = @(3, 'test : rien de créé dans l''ancien dossier de données %LOCALAPPDATA%\OptiGame')
     'outils/zips.ps1'                              = @(2, 'le zip de compatibilité n''est plus fait ; jamais l''ancien script à côté du nouveau')
 }
 function Get-Mentions([string]$Rev) {

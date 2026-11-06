@@ -186,6 +186,103 @@ jobs:
         if: ${{ steps.rust.outputs.present == 'true' }}
         run: cargo test --locked --workspace
 
+      # ------------------------------------------------------------------------------------------------------------
+      # Nevermind en Rust livré (outils\contenu-rust.ps1) : construit comme pour une publication, vérifié, puis passé
+      # au job « Contrat » (contrat de la suite avec le vrai Mindset, mise à jour depuis 1.15.6)
+      # ------------------------------------------------------------------------------------------------------------
+      - name: "Aucun plugin de Tauri interdit (shell, fs, updater, single-instance, global-shortcut)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: |
+          # (le shell powershell de GitHub arrête tout à la première erreur : cargo écrit ses messages sur stderr)
+          $ErrorActionPreference = 'Continue'
+          $interdits = 'tauri-plugin-shell', 'tauri-plugin-fs', 'tauri-plugin-updater', 'tauri-plugin-single-instance', 'tauri-plugin-global-shortcut'
+          $lock = [IO.File]::ReadAllText((Join-Path (Get-Location) 'Cargo.lock'))
+          $trouves = @()
+          foreach ($p in $interdits) {
+            # 1. le Cargo.lock (toutes les plateformes)
+            if ($lock -match ('(?m)^name = "' + [regex]::Escape($p) + '"\r?$')) { $trouves += "$p (Cargo.lock)" }
+            # 2. cargo tree -i : la bibliothèque ne doit être tirée par rien, sur aucune plateforme
+            $sortie = (cmd /c "cargo tree --locked -i $p --target all -e all 2>&1") | Out-String
+            if ($LASTEXITCODE -eq 0) { $trouves += "$p (cargo tree)" }
+            elseif ($sortie -notmatch 'did not match any packages') { Write-Host $sortie; Write-Host "cargo tree n'a pas pu répondre pour $p."; exit 1 }
+          }
+          if ($trouves.Count) { Write-Host "Plugins interdits trouvés : $($trouves -join ', ')"; exit 1 }
+          Write-Host 'Aucun plugin interdit.'
+          # (sinon GitHub reprend le code de sortie du dernier cargo tree, qui échoue justement quand rien n'est trouvé)
+          exit 0
+
+      - name: "Récupérer les règles Tauri de la suite (dépôt Mindset, commit épinglé : outils\\verifier-tauri.ps1)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: JordanJacquot/Mindset
+          # (Mindset 2.18.0 : canal d'essai par appli, dossier WebView2-Tauri effacé ; le même commit que release.yml
+          # et que le job « Contrat »)
+          ref: cf032708ef430c6f988f0f72b1fcc9bf68c3c598
+          path: _mindset
+          persist-credentials: false
+
+      - name: "Règles Tauri de la suite (verifier-tauri.ps1 sur rust\\nevermind-appli : configuration, capabilities, CSP, plugins, outils de développement, WebView2)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: |
+          & ..\_mindset\outils\verifier-tauri.ps1 -Projet nevermind-appli
+          exit $LASTEXITCODE
+
+      - name: "Construction de publication et dossier de Nevermind en Rust (outils\\construire-rust.ps1)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: |
+          & ..\outils\construire-rust.ps1 -Sortie (Join-Path $env:RUNNER_TEMP 'nevermind-rust')
+          if (-not $?) { exit 1 }
+
+      # (-Ci : entre deux publications, NevermindAide.exe peut encore avoir la version de Nevermind.ps1 ; release.yml et
+      # outils\publier.ps1 -Rust, eux, exigent la même version partout)
+      - name: "Nevermind.zip en Rust et ses contrôles (outils\\zip-rust.ps1 : fichiers exacts, version.json, fiches de version, aucune construction d'essai, aucun runtime C à part)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: |
+          & ..\outils\zip-rust.ps1 -Dossier (Join-Path $env:RUNNER_TEMP 'nevermind-rust\Nevermind') -Zip (Join-Path $env:RUNNER_TEMP 'nevermind-rust-zip\Nevermind.zip') -Ci
+          exit $LASTEXITCODE
+
+      - name: "Contre-épreuve : un zip avec un fichier en trop, ou un version.json faux, est refusé"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $d = Join-Path $env:RUNNER_TEMP 'contre-epreuve'
+          $ok = $true
+          foreach ($cas in 'en-trop', 'version') {
+            if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force }
+            Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'nevermind-rust\Nevermind') -Destination (Join-Path $d 'Nevermind') -Recurse
+            if ($cas -eq 'en-trop') { [IO.File]::WriteAllText((Join-Path $d 'Nevermind\fichiers\Nevermind.ps1'), '# un script en trop') }
+            else { [IO.File]::WriteAllText((Join-Path $d 'Nevermind\version.json'), '{"appli":"nevermind","version":"0.0.1","mindset_min":"2.18.0"}') }
+            Compress-Archive -LiteralPath (Join-Path $d 'Nevermind') -DestinationPath (Join-Path $d 'Nevermind.zip') -Force
+            & ..\outils\verifier-zip-rust.ps1 -Zip (Join-Path $d 'Nevermind.zip') -Ci | Out-Host
+            if ($LASTEXITCODE -ne 1) { Write-Host "Contre-épreuve « $cas » : le zip abîmé n'a pas été refusé."; $ok = $false }
+          }
+          if (-not $ok) { exit 1 }
+          Write-Host 'Les deux zips abîmés sont refusés.'
+          exit 0
+
+      - name: "Déposer le dossier construit pour le job « Contrat »"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Nevermind-rust-construit
+          path: ${{ runner.temp }}/nevermind-rust/
+          if-no-files-found: error
+          retention-days: 3
+
+      # La construction d'essai (option cargo « essai » de nevermind-appli), si elle existe : ses tests et clippy
+      - name: "Tests et clippy de la construction d'essai (cargo test et clippy --features essai, si nevermind-appli a cette option)"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $c = [IO.File]::ReadAllText((Join-Path (Get-Location) 'nevermind-appli\Cargo.toml'))
+          if ($c -notmatch '(?ms)^\[features\][^\[]*^essai\s*=') { Write-Host 'nevermind-appli n''a pas d''option « essai » : rien à faire.'; exit 0 }
+          cargo test --locked -p nevermind-appli --features essai
+          if ($LASTEXITCODE) { exit 1 }
+          cargo clippy --locked -p nevermind-appli --all-targets --features essai -- -D warnings
+          if ($LASTEXITCODE) { exit 1 }
+          exit 0
+
       - name: "Clippy strict (aucun avertissement permis)"
         if: ${{ steps.rust.outputs.present == 'true' }}
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -211,3 +308,59 @@ jobs:
           & $exe.FullName --version
           & $exe.FullName --locked check
           if ($LASTEXITCODE) { exit 1 }
+
+  # Le contrat de la suite (docs\contrat-appli.md du dépôt Mindset) avec le VRAI code de Mindset, épinglé, sur Nevermind en
+  # Rust construit par le job « rust » ; puis la mise à jour depuis la version PowerShell publiée (1.15.6), sans rien
+  # perdre. Sur GitHub seulement : ces tests lancent Nevermind (caché) et son désinstalleur.
+  contrat:
+    name: "Contrat"
+    needs: rust
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - name: "Récupérer le dépôt"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Récupérer le contrat de la suite (dépôt Mindset, commit épinglé : outils\\tester-contrat.ps1)"
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: JordanJacquot/Mindset
+          # (Mindset 2.18.0, le même commit que le job « rust » et que release.yml)
+          ref: cf032708ef430c6f988f0f72b1fcc9bf68c3c598
+          path: _mindset
+          persist-credentials: false
+
+      - name: "Récupérer Nevermind en Rust construit (job rust)"
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Nevermind-rust-construit
+          path: ${{ runner.temp }}/nevermind-rust
+
+      - name: "Contrat avec son entrée de demain (outils\\entree-apps-rust.json, type rust : apps.json, version.json, installation signée par une clé de test, verrou, Mindset.exe, -Demarrage, accrochage, taille minimale, afficher.demande, suite.json, WM_CLOSE, quitter.demande, désinstalleur)"
+        run: |
+          & .\_mindset\outils\tester-contrat.ps1 -AppliConstruite (Join-Path $env:RUNNER_TEMP 'nevermind-rust\Nevermind') -EntreeApps .\outils\entree-apps-rust.json
+          # (le code du test, jamais un code hérité d'une commande d'avant)
+          if ($LASTEXITCODE -eq 0) { exit 0 }
+          exit 1
+
+      # L'entrée qu'ont les utilisateurs pendant la version d'essai : celle d'aujourd'hui (avec « script »), son type écrit
+      # (le test le demande). Mindset reconnaît le dossier en Rust quand même (contrat-appli, partie 2).
+      - name: "Contrat avec l'entrée d'aujourd'hui (outils\\entree-apps-bascule.json : celle d'apps.json, avec son script PowerShell)"
+        run: |
+          & .\_mindset\outils\tester-contrat.ps1 -AppliConstruite (Join-Path $env:RUNNER_TEMP 'nevermind-rust\Nevermind') -EntreeApps .\outils\entree-apps-bascule.json
+          if ($LASTEXITCODE -eq 0) { exit 0 }
+          exit 1
+
+      - name: "Mise à jour depuis 1.15.6 sans rien perdre (outils\\tester-maj-rust.ps1 : parametres.json, ignores.json, fichiers de l'utilisateur, même dossier de données)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $d = Join-Path $env:RUNNER_TEMP 'nevermind-1.15.6'
+          gh release download v1.15.6 --repo JordanJacquot/Nevermind --pattern 'Nevermind.zip' --dir $d
+          if ($LASTEXITCODE) { exit 1 }
+          Write-Host "Nevermind.zip de 1.15.6 : SHA-256 $((Get-FileHash -LiteralPath (Join-Path $d 'Nevermind.zip') -Algorithm SHA256).Hash)"
+          & .\outils\tester-maj-rust.ps1 -Ancienne (Join-Path $d 'Nevermind.zip') -Nouvelle (Join-Path $env:RUNNER_TEMP 'nevermind-rust\Nevermind')
+          if ($LASTEXITCODE -eq 0) { exit 0 }
+          exit 1

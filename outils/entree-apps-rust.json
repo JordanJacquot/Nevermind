@@ -1,0 +1,23 @@
+{
+    "id": "nevermind",
+    "type": "rust",
+    "nom": "Nevermind",
+    "couleur": "#00E5FF",
+    "description": "Analyse et optimisation gaming",
+    "presentation": "Rend ton PC plus rapide pour jouer : il l'analyse, règle Windows pour le jeu en un clic, garde un œil sur ta protection et ta connexion, et affiche tes FPS par-dessus tes jeux.",
+    "depot": "JordanJacquot/Nevermind",
+    "confidentialite": "https://github.com/JordanJacquot/Nevermind/blob/main/CODE_SIGNING.md",
+    "zip": "Nevermind.zip",
+    "dossier_zip": "Nevermind",
+    "exe": "Nevermind.exe",
+    "mutex": "Local\\Nevermind-Instance",
+    "ancien_mutex": "Local\\OptiGame-Instance",
+    "afficher_fichier": "afficher.demande",
+    "desinstalleur": "Désinstaller Nevermind.exe",
+    "donnees": "%LOCALAPPDATA%\\OptiGame",
+    "admin": true,
+    "sans_droits_depuis": "1.0.115",
+    "aide": "Nevermind (aide)",
+    "aide_exe": "NevermindAide.exe",
+    "cache_depuis": "1.0.105"
+}

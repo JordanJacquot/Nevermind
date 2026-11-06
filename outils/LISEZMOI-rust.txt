@@ -1,0 +1,288 @@
+﻿Nevermind 1.15.6
+Analyse et optimisation gaming pour Windows 10 et 11
+=====================================================
+
+INSTALLATION
+------------
+Nevermind s'installe et se met à jour avec Mindset, le portail de la suite :
+  https://github.com/JordanJacquot/Mindset/releases/latest
+1. Installe Mindset, puis installe Nevermind depuis Mindset.
+2. Ouvre Nevermind dans Mindset (son onglet à gauche). Windows ne demande
+   aucune autorisation : Nevermind tourne sans les droits administrateur.
+Tu avais déjà Nevermind ? Mindset reprend ta copie avec tes réglages, ta
+sauvegarde et tes données : rien n'est perdu. Une copie qui n'est pas gérée
+par Mindset ne s'ouvre plus et propose d'installer Mindset (la désinstallation
+marche toujours).
+
+MES JEUX
+La section « Jeux » (menu de gauche) liste tous tes jeux installés, quel que
+soit le launcher. Double clique sur un jeu (ou « Lancer ») pour jouer : il
+démarre par son launcher, comme d'habitude. Sa fiche montre ton temps de jeu,
+tes FPS et ce qui peut être optimisé pour ce jeu (« Tout optimiser »), et un bouton
+« Désinstaller » qui ouvre le désinstalleur du jeu ou de son launcher.
+Si Steam a laissé le dossier d'un jeu désinstallé (parfois plusieurs Go), la
+section le signale : « Voir », puis « Supprimer » ou « Tout supprimer ».
+La suppression est définitive (pas de corbeille) : la place est libérée tout de suite.
+
+TROUVER UN RÉGLAGE
+Tape ce que tu cherches dans la barre de recherche en haut de chaque page
+(ou Ctrl + K) : fps, ping, démarrage, overlay... Nevermind propose les réglages
+au fil de la frappe, même avec une faute de frappe. Un clic t'emmène sur la
+bonne page et le réglage s'allume en vert.
+
+Rien d'autre à installer : tout est dans le dossier de Nevermind.
+Dans le Gestionnaire des tâches, Nevermind apparaît sous « Mindset », avec les
+autres applis de la suite (son programme s'appelle Mindset.exe).
+Le dossier « fichiers » contient l'outil de mesure des FPS : ne le supprime pas.
+
+POURQUOI WINDOWS OU L'ANTIVIRUS PEUVENT RÂLER
+Les programmes de Nevermind (Mindset.exe, qui le fait tourner, et Nevermind.exe)
+ne sont pas « signés » (un certificat payant chez Microsoft), et sa
+petite partie NevermindAide.exe modifie les réglages de Windows avec les droits
+administrateur. C'est exactement ce que surveillent les antivirus, donc certains
+peuvent le signaler par prudence, même si le programme est sain. Tout le code
+est lisible sur GitHub (voir SÉCURITÉ plus bas).
+Si ton antivirus bloque Mindset.exe ou Nevermind.exe :
+  - ajoute le dossier Nevermind dans les exclusions de ton antivirus.
+
+
+DÉSINSTALLATION
+---------------
+Double clique sur « Désinstaller Nevermind.exe » (l'icône avec le rond rouge).
+L'application :
+  - remet comme avant les réglages de Windows qu'elle a modifiés, sauf quatre
+    protections du PC qui restent en place (elle les liste : SMBv1 désactivé,
+    Wi-Fi ouverts en connexion manuelle, exclusions retirées de l'antivirus,
+    pare-feu réactivé),
+  - te demande si tu gardes tes données : gardées si tu ne coches rien
+    (préférences, jeux, mesures, journal), pour les retrouver si tu
+    réinstalles Nevermind ; coche « Supprimer aussi mes données » pour tout
+    effacer. La sauvegarde des réglages de Windows part dans tous les cas,
+    puisqu'ils viennent d'être remis comme avant,
+  - supprime ses fichiers. Les autres fichiers du dossier ne sont pas touchés.
+Les points de restauration Windows sont conservés.
+Lancée par la désinstallation de Mindset, elle ne pose pas la question :
+elle suit la case « Supprimer aussi mes données » de Mindset.
+
+CE QUE FAIT L'APPLICATION
+-------------------------
+L'application a deux grandes sections, dans le menu à gauche :
+  - Ordinateur : l'accueil, avec une carte pour chaque fonction ci dessous.
+  - Lag en ligne (page Gaming) : pendant tes parties, ou en
+    test rapide de 30 secondes, Nevermind mesure chaque étape du chemin (ton
+    PC vers ta box, ta box vers ton fournisseur, Internet, le serveur du jeu)
+    et t'explique d'où vient le lag : Wi-Fi, téléchargement en arrière plan,
+    box ou fournisseur, serveur trop loin ou qui a des soucis, VPN. Avec des
+    conseils concrets et des corrections annulables. Il repère le vrai
+    serveur du jeu (même en UDP), sauf si l'anti-triche du jeu l'en empêche.
+  - Trafic : ce qui sort de ton PC. Quels programmes communiquent avec
+    Internet, avec quels sites, combien ils envoient et reçoivent, en direct.
+    Nevermind signale ce qui est anormal (programme non signé caché dans un
+    dossier à risque, outil de Windows détourné, port utilisé par les virus
+    ou Tor, gros envois inhabituels, prise en main à distance) et permet
+    d'analyser le programme avec l'antivirus ou de lui bloquer Internet
+    (annulable). La fiche de chaque programme dit quel type de données il
+    envoie probablement (messages et appels, jeu en ligne, statistiques
+    d'utilisation, publicité et suivi, fichiers synchronisés, assistant IA,
+    mises à jour...) et ce qu'il n'envoie pas (pas de gros envoi, pas de
+    pistage repéré...), d'après le nom des serveurs contactés et les volumes.
+    Si tu actives l'option (sur la page ou dans Paramètres, coupée au
+    départ), les serveurs sans nom sont identifiés : nom officiel de
+    l'adresse et entreprise propriétaire (Valve, Riot, Amazon...) avec son
+    pays, trouvés dans l'annuaire public des adresses Internet (rdap.org).
+    Seule l'adresse du serveur est envoyée.
+    « Ce que Windows envoie à Microsoft » montre les identifiants du PC
+    (appareil, publicité, compte Microsoft), les réglages qui envoient plus
+    que le minimum (télémétrie, pubs, recherche Bing, saisie, voix...) avec
+    un bouton « Couper » annulable, et quels services Windows parlent à
+    Microsoft en direct. Les services cachés derrière « svchost » sont
+    maintenant affichés par leur vrai nom.
+    Le contenu des échanges, chiffré, n'est jamais lu.
+  - Carte du réseau : après un scan, clique sur le radar (ou « Voir la carte »).
+    Ta box brille au centre comme un astre, tes appareils l'entourent en orbes
+    lumineux, rangés par familles de couleur (PC et consoles, téléphones, TV,
+    réseau, objets connectés). Des impulsions de lumière parcourent les liaisons,
+    d'autant plus vite que l'appareil répond vite. Un clic ouvre sa fiche.
+  - Réseau : scan de tous les appareils connectés à ton réseau (téléphones,
+    consoles, TV, box...), avec leur fabricant. Les nouveaux appareils sont
+    signalés d'un scan à l'autre : pratique pour repérer un intrus sur ton Wi-Fi.
+    Clique sur un appareil pour voir sa fiche (ping en direct, services ouverts).
+    Après le scan, une recherche approfondie trouve les appareils discrets (qui
+    ne répondent pas au ping, ou visibles seulement en IPv6) et lit ce que
+    chaque appareil annonce : son vrai nom, sa marque, son modèle, ce qu'il
+    propose (AirPlay, Chromecast, impression...), son système probable et sa
+    page de réglages. Les caméras possibles sont signalées (utile en location).
+    Les numéros de série annoncés par les appareils ne sont jamais gardés.
+    L'audit de sécurité vérifie ton Wi-Fi, ta box (WPS, UPnP), le DNS, tes
+    appareils et ce PC, donne une note sur 100, corrige ce qui peut l'être sur
+    ce PC et exporte un rapport.
+    Option : être prévenu quand un nouvel appareil se connecte (vérifié toutes
+    les 10 minutes tant que Nevermind est ouvert).
+
+Tableau de bord
+  Mesures en direct : processeur, mémoire, carte graphique (et sa température
+  sur les cartes NVIDIA).
+  Santé de chaque composant : processeur, carte graphique, écrans, mémoire vive,
+  chaque disque (état SMART, usure, température, remplissage), carte mère et
+  BIOS (Secure Boot, TPM), stabilité du système (écrans bleus, erreurs
+  matérielles), réseau, batterie sur les portables, et onduleur s'il y en a un
+  (fabricant, modèle, série, charge, autonomie, tension, usure de la batterie,
+  alerte en cas de coupure de courant, et ce que fait Windows quand sa batterie
+  baisse : Nevermind règle en un clic un arrêt propre à 25 % et une alerte à
+  50 %, annulable). Un onduleur branché en USB mais invisible pour Windows est
+  repéré par sa marque ou par son logiciel.
+  Puis un score sur 100 et « Pour gagner des points » : clique sur un point pour
+  ouvrir sa fiche (ce qui a été trouvé, ce que l'app va faire). Le bouton
+  Exécuter corrige tout seul quand c'est possible. « Ignorer (c'est voulu) »
+  retire du score un point volontaire (ex : un écran gardé en 60 Hz).
+  Les recommandations détaillées suivent. Elle repère notamment :
+  écran bridé à 60 Hz alors qu'il peut faire plus, mémoire en simple canal,
+  profil XMP / EXPO désactivé, pilote graphique ancien, Windows sur disque dur,
+  disque plein, Wi-Fi, trop de programmes au démarrage...
+  Pour les cartes NVIDIA, l'app compare ton pilote au dernier pilote « Game
+  Ready » publié par NVIDIA. Ça se coupe dans Paramètres, Réseau et vie
+  privée : l'app regarde alors seulement l'âge de ton pilote.
+
+Optimisation gaming
+  Plan d'alimentation Performances élevées, mode jeu, enregistrement en arrière
+  plan de la Game Bar, planification GPU matérielle, optimisations des jeux en
+  fenêtré, accélération de la souris, raccourci Maj x5, partage des mises à jour.
+  Mode jeu automatique : quand un de tes jeux démarre, ferme les applis
+  que tu as cochées (OneDrive, Teams...) et les relance quand tu quittes le jeu
+  (tant que Nevermind est ouvert, même réduit).
+  Jeux reconnus : Steam, Epic, Ubisoft Connect, EA app, GOG Galaxy,
+  Battle.net, Riot, Rockstar, Amazon Games et Xbox / Game Pass. Un jeu manque ?
+  « Ajouter un jeu » dans Profils par jeu (jeu autonome, itch.io, émulateur...).
+  Profils par jeu : « Priorité haute » pour chaque jeu (et « Carte puissante »
+  sur les PC à deux cartes graphiques), appliqués même quand Nevermind est fermé.
+  Mes parties : Nevermind mesure tes FPS pendant que tu joues (tout seul pour
+  les jeux reconnus, Ctrl + Maj + F pour les autres). Pour chaque partie :
+  FPS moyens, chutes (1 % bas), courbe de la partie, et comparaison avant /
+  après tes réglages.
+  Quand une partie rame, Nevermind cherche d'où ça vient : carte graphique ou
+  processeur à fond, surchauffe, mémoire pleine, disque lent, programmes en
+  arrière plan, PC sur batterie, écran bridé, jeu sur la mauvaise carte
+  graphique... Il corrige ce qu'il peut en un clic (mode performances,
+  priorité du jeu, carte puissante, fermer un programme) et te guide pour
+  le reste, en commençant par les réglages du jeu qui coûtent le moins en
+  qualité d'image (DLSS / FSR, ombres...).
+  La mesure utilise PresentMon, l'outil gratuit d'Intel, inclus dans le dossier
+  fichiers\outils-tiers (licence dans PresentMon-LICENCE.txt).
+
+Spécial PC portable
+  L'app reconnaît un portable d'après le type de boîtier déclaré par le PC (un PC
+  fixe branché sur un onduleur n'est pas pris pour un portable). Sur un portable :
+  - le mode « Meilleures performances » de Windows est activé au lieu du plan
+    Performances élevées ;
+  - si le portable a deux cartes graphiques, tes jeux sont réglés
+    pour toujours utiliser la carte dédiée (et pas la puce intégrée) ;
+  - la santé de la batterie est affichée, et l'app prévient si tu joues sans
+    le chargeur.
+
+Démarrage
+  Désactive les programmes qui se lancent avec Windows (rien n'est supprimé).
+
+Connexion
+  Mesure ton ping, la gigue et les pertes de paquets. Permet de changer de DNS.
+
+Nettoyage
+  Supprime les fichiers temporaires et les restes de mises à jour.
+  Ne touche jamais à tes documents, à la corbeille ni aux caches des jeux.
+  Les fichiers de moins de 24 h sont gardés (un programme peut s'en servir).
+  Avant de nettoyer, « Voir les fichiers » montre les plus gros fichiers de
+  chaque catégorie. Après, un journal liste chaque fichier : supprimé, laissé
+  car utilisé par un programme, ou refusé par Windows (bouton « Ouvrir le
+  journal »). Les liens vers d'autres dossiers ne sont jamais suivis.
+
+Tests
+  Teste chaque composant : vitesse et santé détaillée de chaque disque,
+  processeur (puissance, fréquence en charge, stabilité), mémoire vive,
+  capteurs de la carte graphique, débit Internet, pixels morts des écrans,
+  et rapport de batterie sur les portables.
+  « Lag en charge » : mesure si ton ping monte quand quelqu'un télécharge ou
+  regarde une vidéo (note de A+ à F, avec des conseils).
+  Alerte si la carte graphique NVIDIA dépasse 87 °C pendant un moment.
+
+Sécurité
+  Niveau de protection sur 100, analyses antivirus avec Microsoft Defender
+  (rapide, complète ou d'un dossier), et recherche de points suspects : fichiers
+  déguisés (facture.pdf.exe), programmes cachés non signés, tâches planifiées
+  douteuses, exclusions de l'antivirus, fichier hosts, proxy, pare-feu.
+
+Sauvegarde
+  Annule les changements de Nevermind en un clic (« Tout restaurer »), ou un
+  seul changement grâce à l'historique. Tout est annulable, sauf quatre
+  protections du PC qui restent en place (marquées « Définitif » dans
+  l'historique, avec la façon de revenir en arrière à la main). Crée un point
+  de restauration Windows, exporte un rapport HTML pour comparer vos PC.
+
+OVERLAY (onglet en haut)
+  Le compteur de FPS par dessus le jeu (visible en fenêtré ou plein écran
+  fenêtré, pas en plein écran exclusif). Grand aperçu en direct : clique sur un
+  coin de l'écran pour y placer le compteur. Deux styles : « Complet » (FPS,
+  1 % bas et moyenne) ou « Discret » (juste le chiffre, en petit et en semi
+  transparence). Ctrl + Maj + F lance la mesure sur un jeu non reconnu.
+
+PARAMÈTRES (roue crantée en haut à droite)
+  Général : le lancement avec Windows se règle dans Mindset (« S'ouvre avec
+  Mindset » sur la carte de Nevermind). Le raccourci est créé par Mindset.
+  Jeux : mesure des FPS, mesure du lag, mode jeu, jaquettes depuis Internet.
+  Réseau et vie privée : alerte nouvel appareil, identification des serveurs,
+  pays du serveur, vérification du pilote NVIDIA.
+  Thème : 5 ambiances pour toute l'app. Néon (celui de base), Crépuscule
+  (orange, rose et or), Terminal (vert phosphore, police de code), Arcade
+  (jaune, rouge et bleu sur bleu nuit) et Rubis (rouge, jaune et bleu sur gris).
+  Nevermind se relance quelques secondes pour appliquer le thème.
+  Packs de thème : un pack ajoute ses propres images (par exemple un personnage
+  qui court pendant le chargement). « Importer un pack » prend un zip ; le pack
+  reste sur ce PC (dossier des données de Nevermind). Pour le partager, envoie
+  le zip à tes potes.
+  Mises à jour : elles passent par Mindset, qui vérifie la signature de chaque
+  version avant de l'installer. « Lire les nouveautés sur Internet » montre
+  la liste des nouveautés après une mise à jour.
+  Aide : « Signaler un problème » crée un fichier sur ton bureau (journal de
+  l'app et configuration du PC, sans tes fichiers ni ton nom) à envoyer à la
+  personne qui t'a donné Nevermind.
+
+
+SÉCURITÉ
+--------
+- Nevermind tourne sans les droits administrateur. Ce qui en a besoin (réglages
+  de Windows, nettoyage de Windows, mesure des FPS et du réseau) passe par
+  Nevermind Aide (NevermindAide.exe), lancée sans demande de Windows par une
+  tâche que Mindset crée. Elle ne fait que les actions d'une liste stricte
+  (publiée avec le code de Nevermind sur GitHub) et refuse tout ce qui affaiblirait la
+  sécurité du PC (couper le pare-feu ou le contrôle des comptes, rallumer le
+  Bureau à distance, ajouter une exclusion à l'antivirus...). Elle s'arrête
+  quand Nevermind est fermé.
+- Aucune modification n'est faite sans que tu cliques sur un bouton.
+- Après chaque correction, le bouton « Revenir en arrière » annule exactement
+  ce qui vient d'être fait.
+- Après un changement de fréquence d'écran, l'app demande si l'affichage est
+  correct. Sans réponse (écran noir), elle revient seule à l'ancien réglage
+  au bout de 15 secondes.
+- Chaque réglage modifié est sauvegardé avant d'être changé
+  (dans %LOCALAPPDATA%\Mindset\Nevermind\sauvegarde.json).
+- Un point de restauration Windows est créé avant les optimisations
+  (case cochée par défaut).
+- L'application n'envoie aucune donnée te concernant. Ce qui passe par
+  Internet, et comment le couper (dans Paramètres) :
+  . activé au départ, chacun avec son interrupteur : la mesure du lag
+    pendant les parties (pings vers ta box, ton fournisseur, Cloudflare et le
+    serveur du jeu ; Jeux), le dernier pilote NVIDIA (geforce.com ; Réseau
+    et vie privée), les nouveautés après une mise à jour (GitHub ; Mises à jour) ;
+  . coupé tant que tu ne l'as pas activé (sur sa page ou dans Paramètres) :
+    identifier les serveurs sans nom dans Trafic et Lag en ligne (rdap.org)
+    et le pays du serveur du jeu dans Lag en ligne (ipinfo.io), seule
+    l'adresse du serveur est envoyée ; les jaquettes manquantes de la
+    section Jeux (boutique Steam puis Wikipédia, seul le nom du jeu est
+    envoyé) ; l'alerte nouvel appareil (ton réseau seulement) ;
+  . seulement quand tu cliques sur un bouton : les tests de ping et de
+    débit, le scan et l'audit du réseau (la première fois, la liste des
+    fabricants d'appareils réseau est téléchargée depuis l'IEEE).
+  Les mises à jour passent par Mindset. La liste complète est sur la page
+  « Code signing policy » de Nevermind, sur GitHub.
+- Le code est lisible : il est publié sur GitHub,
+  https://github.com/JordanJacquot/Nevermind
+
+En cas de problème, le journal est dans %LOCALAPPDATA%\Mindset\Nevermind\journal.txt

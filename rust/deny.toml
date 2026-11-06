@@ -13,7 +13,11 @@ ignore = []
 [licenses]
 # Licences compatibles avec la licence MIT de la suite (Unicode-3.0 : tables de unicode-ident, utilisé à la
 # construction par les macros de windows)
-allow = ["MIT", "Apache-2.0", "Unicode-3.0"]
+# ISC, Zlib, MPL-2.0 et BSD-3-Clause : décision de Jordan du 02/11/2026 (étape 4 de Mindcare en Rust), pour les
+# bibliothèques de Tauri (la même liste que Mindcare) : MPL-2.0 pour la lecture des pages et de leur CSS (cssparser,
+# selectors, dtoa-short) et option-ext (dirs), BSD-3-Clause pour la compression des pages rangées dans l'exe (brotli).
+# Licences ouvertes, compatibles avec la licence MIT de la suite tant que leur code n'est pas modifié.
+allow = ["MIT", "Apache-2.0", "ISC", "Zlib", "Unicode-3.0", "MPL-2.0", "BSD-3-Clause"]
 confidence-threshold = 0.9
 
 [licenses.private]
@@ -24,6 +28,16 @@ ignore = true
 multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true
+# Refusés en toutes circonstances (regles-tauri.md du dépôt Mindset, règle 4) : ni accès général au disque ni lancement
+# de programmes par la page, pas de mise à jour ni de raccourcis par Tauri (Mindset s'en charge), et notre propre verrou
+# (Local\Nevermind-Instance) plutôt que celui du plugin. La CI vérifie aussi que `cargo tree -i` ne les trouve pas.
+deny = [
+    { crate = "tauri-plugin-shell", reason = "règle 4 : jamais de lancement de programme par la page" },
+    { crate = "tauri-plugin-fs", reason = "règle 4 : jamais d'accès général au disque par la page" },
+    { crate = "tauri-plugin-updater", reason = "les mises à jour passent par Mindset" },
+    { crate = "tauri-plugin-single-instance", reason = "notre propre verrou (contrat-appli, partie 3)" },
+    { crate = "tauri-plugin-global-shortcut", reason = "aucun raccourci global" },
+]
 # Liste blanche : seules ces bibliothèques peuvent entrer (directes ou indirectes). En ajouter une se fait ici,
 # après relecture.
 allow = [
@@ -31,6 +45,16 @@ allow = [
     "aide-regles",
     "nevermind-aide",
     "nevermind-pont",
+    # Nevermind en Rust (passage complet, 06/11/2026) : le contrat des blocs, l'appli et ses blocs, et les crates du relais
+    # et du désinstalleur (si l'hôte les nomme autrement, changer leur nom ici)
+    "nevermind-noyau", "nevermind-appli", "nevermind-pc", "nevermind-perf", "nevermind-memoire", "nevermind-protection",
+    "nevermind-jeux", "nevermind-reseau", "nevermind-trafic", "nevermind-divers", "nevermind-relais",
+    "nevermind-desinstalleur",
+    # la bibliothèque commune de la suite (dépôt Mindset, révision épinglée), sans ses options par défaut ; elle n'apporte
+    # que serde_json
+    "suite-commun",
+    # JSON avec l'ordre des champs du fichier (serde_json « preserve_order »)
+    "indexmap", "equivalent", "hashbrown", "foldhash",
     # JSON
     "serde_json",
     "serde_core",
@@ -55,10 +79,51 @@ allow = [
     "quote",
     "syn",
     "unicode-ident",
+    # Étape 4 (02/11/2026) : Tauri et ce qu'il tire sous Windows (cargo tree --target x86_64-pc-windows-msvc), relu
+    # nom par nom. Les plugins de Tauri n'y sont pas : ils sont refusés plus bas.
+    # les nôtres (étape 4)
+    "tauri", "tauri-build", "tauri-codegen", "tauri-macros", "tauri-runtime", "tauri-runtime-wry", "tauri-utils",
+    "tauri-winres",
+    # la fenêtre et la page : wry, tao, WebView2 de Microsoft, menus (muda), ce que Windows demande
+    "wry", "tao", "webview2-com", "webview2-com-macros", "webview2-com-sys", "muda", "window-vibrancy", "softbuffer",
+    "dpi", "raw-window-handle", "keyboard-types", "windows-sys", "windows-version",
+    # construction de l'exe : ressources Windows (icône, informations de version), runtime C lié dans l'exe, lecture de Cargo.toml
+    "embed-resource", "static_vcruntime", "vswhom", "vswhom-sys", "winreg", "cc", "find-msvc-tools", "shlex",
+    "cargo_metadata", "cargo_toml", "cargo-platform", "camino", "semver", "rustc_version", "autocfg", "version_check",
+    # images de l'icône et compression des pages rangées dans l'exe (option « compression »)
+    "ico", "png", "fdeflate", "simd-adler32", "crc32fast", "miniz_oxide", "adler2", "flate2", "brotli",
+    "brotli-decompressor", "alloc-no-stdlib", "alloc-stdlib",
+    # lecture des pages à la construction (CSP, empreintes des scripts) : HTML et CSS
+    "html5ever", "markup5ever", "dom_query", "tendril", "string_cache", "string_cache_codegen", "web_atoms",
+    "precomputed-hash", "new_debug_unreachable", "utf_types", "cssparser", "cssparser-macros", "selectors",
+    "servo_arc", "dtoa", "dtoa-short", "phf", "phf_codegen", "phf_generator", "phf_macros", "phf_shared", "siphasher",
+    "fastrand", "bit-set", "bit-vec", "smallvec", "rustc-hash", "derive_more", "derive_more-impl",
+    # configuration et échanges avec la page (serde, JSON, TOML)
+    "serde", "serde_derive", "serde_derive_internals", "serde_repr", "serde-untagged", "erased-serde", "typeid",
+    "serde_with", "serde_with_macros", "serde_spanned", "schemars", "schemars_derive", "dyn-clone", "json-patch",
+    "jsonptr", "serialize-to-javascript", "serialize-to-javascript-impl", "toml", "toml_datetime", "toml_parser",
+    "toml_writer", "winnow", "plist", "quick-xml", "time", "time-core", "time-macros", "deranged", "powerfmt",
+    "num-conv", "darling", "darling_core", "darling_macro", "ident_case", "strsim", "fnv",
+    # adresses (url) et noms internationaux (icu, de l'Unicode Consortium)
+    "url", "urlpattern", "idna", "idna_adapter", "form_urlencoded", "percent-encoding", "utf8_iter",
+    "icu_collections", "icu_locale_core", "icu_normalizer", "icu_normalizer_data", "icu_properties",
+    "icu_properties_data", "icu_provider", "litemap", "potential_utf", "tinystr", "writeable", "yoke", "yoke-derive",
+    "zerofrom", "zerofrom-derive", "zerotrie", "zerovec", "zerovec-derive", "displaydoc", "synstructure",
+    "stable_deref_trait", "regex", "regex-automata", "regex-syntax", "aho-corasick",
+    # protocoles de la page (http), types de fichiers, empreintes (sha2), identifiants
+    "http", "bytes", "mime", "cookie", "base64", "infer", "cfb", "uuid", "sha2", "digest", "block-buffer",
+    "crypto-common", "generic-array", "typenum", "cpufeatures", "getrandom",
+    # fils, attentes et utilitaires de base (bitflags : drapeaux de tao et muda)
+    "bitflags",
+    "tokio", "pin-project-lite", "parking_lot", "parking_lot_core", "lock_api", "scopeguard", "once_cell",
+    "crossbeam-channel", "crossbeam-utils", "cfg-if", "libc", "log", "tracing", "tracing-core", "anyhow", "thiserror",
+    "thiserror-impl", "ctor", "dirs", "dirs-sys", "option-ext", "dunce", "glob", "walkdir", "same-file",
+    "winapi-util", "heck", "unicode-segmentation", "byteorder", "web-time",
 ]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+# La bibliothèque commune de la suite (suite-commun), épinglée par sa révision dans les Cargo.toml
+allow-git = ["https://github.com/JordanJacquot/Mindset"]

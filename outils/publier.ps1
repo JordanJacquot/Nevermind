@@ -10,13 +10,40 @@
 #
 # Avant de publier, le script vérifie la syntaxe de tous les fichiers, l'absence de tirets
 # cadratins et lance le test automatique (outils\tester.ps1). -SansTest saute le test (urgence).
+#
+# Nevermind en Rust (rust\nevermind-appli ; contenu du zip : outils\contenu-rust.ps1) :
+#   .\outils\publier.ps1 -Rust -Preversion -Version 2.0.0 -Notes "..."   publie Nevermind en Rust en version d'essai :
+#                                                                        seuls ceux qui ont coché « Recevoir les versions
+#                                                                        d'essai » de Nevermind dans Mindset la reçoivent
+#   .\outils\publier.ps1 -Rust -Essai                                     essai à blanc : rien n'est modifié, envoyé ni
+#                                                                        publié (voir plus bas)
+#
+# -Rust : le zip n'est JAMAIS construit sur ce PC. Le numéro de version est écrit (outils\version-rust.ps1 :
+# rust\nevermind-appli\Cargo.toml et Cargo.lock, $AppVersion de Nevermind.ps1 que prend NevermindAide.exe, le LISEZMOI du
+# zip), commité et envoyé ; GitHub construit alors Nevermind en Rust à partir de ce commit (release.yml, genre rust :
+# cargo build --release --locked, cargo deny, règles Tauri, zip vérifié, attestation), après ses tests (tests.yml : tests
+# PowerShell et Rust, contrat de la suite avec le vrai Mindset, mise à jour depuis 1.15.6 sans rien perdre).
+# outils\zip-rust-github.ps1 récupère ce zip et vérifie son attestation (ce dépôt, release.yml, ce commit) ;
+# outils\verifier-zip-rust.ps1 revérifie son contenu (fichiers exacts, version.json, fiches de version, pas de
+# construction d'essai, aucun runtime C à part). Ensuite seulement : signature, tag, préversion. Le numéro doit être plus
+# grand que la dernière version PowerShell (Mindset ne revient jamais en arrière). La copie installée à la racine de ce
+# dépôt n'est pas touchée (c'est Mindset qui met Nevermind à jour). -Rust demande -Preversion (ou -Beta) : Nevermind en
+# Rust ne va pas encore à tout le monde (après l'essai de Jordan et de ses amis seulement). Pour revenir en arrière : une
+# version PowerShell normale plus haute (par exemple 2.0.1).
+#
+# -Essai avec -Rust : les mêmes vérifications, sans rien écrire dans le dépôt ni rien envoyer sur GitHub. Le zip est
+# celui que GitHub a déjà construit pour le commit en cours (seulement lu), ou -ZipLocal <Nevermind.zip> (un zip fait sur
+# ce PC par outils\zip-rust.ps1, sans attestation : seulement pour un essai). Il est signé avec une clé jetable.
 
 param(
     [string]$Version = '',
     [string]$Notes = '',
     [switch]$Beta,
     [switch]$SansTest,
-    [switch]$Essai
+    [switch]$Essai,
+    [switch]$Rust,
+    [switch]$Preversion,
+    [string]$ZipLocal = ''
 )
 $ErrorActionPreference = 'Stop'
 $racine = Split-Path $PSScriptRoot -Parent
@@ -24,6 +51,26 @@ $app    = Join-Path $racine 'Nevermind'
 $ps1    = Join-Path $app 'fichiers\Nevermind.ps1'
 $lisez  = Join-Path $app 'LISEZMOI.txt'
 $utf8   = New-Object Text.UTF8Encoding($true)
+
+if ($Rust) {
+    . (Join-Path $PSScriptRoot 'contenu-rust.ps1')
+    if ($Beta) { $Preversion = $true }   # (-Beta : le nom de la préversion dans la version PowerShell)
+    if (-not (Get-VersionNevermindRust $racine)) { throw 'Nevermind en Rust introuvable : rust\nevermind-appli\Cargo.toml.' }
+    if (-not $Essai -and -not $Preversion) { throw 'Nevermind en Rust ne se publie pour l''instant qu''en version d''essai : ajoute -Preversion.' }
+    if ($Essai -and -not $Version) { $Version = Get-VersionNevermindRust $racine }
+    if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Numéro de version invalide : $Version (exemple : 2.0.0)" }
+    # Plus grand que la dernière version PowerShell (Nevermind.ps1 et les tags) : Mindset ne revient jamais à une version
+    # plus ancienne que celle installée
+    if (-not $Essai) {
+        $versionPs = Get-VersionNevermindPs $racine
+        $ErrorActionPreference = 'Continue'   # (git : seule sa réponse compte)
+        $tags = @(& git -C $racine tag --list 'v*' 2>$null | ForEach-Object { if ("$_" -match '^v(\d+(\.\d+){1,3})$') { [version]$Matches[1] } } | Sort-Object -Descending)
+        $ErrorActionPreference = 'Stop'
+        $plusHaute = @(@($versionPs | Where-Object { $_ } | ForEach-Object { [version]$_ }) + $tags | Sort-Object -Descending)[0]
+        if ($plusHaute -and [version]$Version -le $plusHaute) { throw "Nevermind en Rust doit avoir un numéro plus grand que la dernière version ($plusHaute)." }
+    }
+} elseif ($ZipLocal -or $Preversion) { throw '-ZipLocal et -Preversion ne vont qu''avec -Rust (version PowerShell : -Beta pour une préversion).' }
+if ($ZipLocal -and -not $Essai) { throw '-ZipLocal ne sert qu''à un essai (-Rust -Essai) : une vraie publication prend toujours le zip construit par GitHub.' }
 
 if (-not $Essai -and $Version -notmatch '^\d+\.\d+(\.\d+)?$') { throw "Numéro de version invalide : $Version (exemple : 1.1)" }
 
@@ -49,7 +96,9 @@ foreach ($f in Get-ChildItem -LiteralPath (Join-Path $app 'fichiers') -Recurse -
 }
 try { [void][xml][IO.File]::ReadAllText((Join-Path $app 'fichiers\modules\interface.xaml'), [Text.Encoding]::UTF8) } catch { $problemes += "interface.xaml : $($_.Exception.Message)" }
 $tirets = Get-ChildItem -LiteralPath $racine -Recurse -File -Include '*.ps1', '*.cs', '*.xaml', '*.txt', '*.md', '*.bat' |
-    Where-Object { $_.FullName -notmatch '\\(\.git|_test)\\' } | Select-String -Pattern '[\u2013\u2014]'
+    Where-Object { $_.FullName -notmatch '\\(\.git|_test|rust\\target[^\\]*)\\' } | Select-String -Pattern '[\u2013\u2014]'
+# (pas les dossiers de construction de Rust : leçon de Mindset 2.18.0, publication annulée par des « tirets » trouvés
+# dans des fichiers construits)
 foreach ($t in $tirets) { $problemes += "Tiret cadratin : $($t.Path) ligne $($t.LineNumber)" }
 # Clés publiques livrées avec Nevermind : exactement la liste de Mindset (mêmes fichiers, même contenu), sinon les copies
 # autonomes refuseraient une version signée avec une nouvelle clé, ou accepteraient encore une clé retirée
@@ -64,7 +113,7 @@ if ($problemes) {
     $problemes | ForEach-Object { Write-Host $_ -ForegroundColor Red }
     throw 'Publication annulée : corrige les points ci dessus.'
 }
-if (-not $SansTest -and -not $Essai) {
+if (-not $SansTest -and -not $Essai -and -not $Rust) {   # (Rust : les tests sont ceux de GitHub, attendus plus bas)
     & (Join-Path $PSScriptRoot 'tester.ps1')
     if ($LASTEXITCODE) { throw 'Publication annulée : le test automatique a échoué.' }
 }
@@ -89,6 +138,91 @@ function Get-FichiersGitNevermind {
     } finally { [Console]::OutputEncoding = $avant }
     @(($s -join '') -split "`0" | Where-Object { $_ -like 'Nevermind/*' })
 }
+
+if ($Rust) {
+    $zipRust = Join-Path $racine 'Nevermind.zip'
+    $titre = "Nevermind $Version (version d'essai)"
+    # Les fichiers où outils\version-rust.ps1 écrit le numéro
+    $siensRust = @('rust/nevermind-appli/Cargo.toml', 'rust/Cargo.lock', 'Nevermind/fichiers/Nevermind.ps1', 'outils/LISEZMOI-rust.txt')
+    # 1. Tout est commité : la version publiée est celle de git (GitHub construit le commit, pas ce dossier). Une
+    # publication arrêtée en route laisse seulement le numéro dans ces fichiers : remis comme dans git.
+    if (-not $Essai) {
+        $avant = [Console]::OutputEncoding
+        try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false); $sale = @(& git -C $racine -c core.quotepath=false status --porcelain 2>$null | Where-Object { $_ }) }
+        finally { [Console]::OutputEncoding = $avant }
+        if ($sale.Count -and -not @($sale | Where-Object { $_ -notmatch '^(M |MM| M) ' -or $siensRust -notcontains $_.Substring(3).Trim('"') }).Count) {
+            Invoke-Native 'git' (@('-C', $racine, 'reset', '-q', '--') + $siensRust) | Out-Null
+            Invoke-Native 'git' (@('-C', $racine, 'checkout', '--') + $siensRust) | Out-Null
+            Write-Host 'Le numéro de version laissé par une publication arrêtée en route est remis comme dans git.'
+            $sale = @()
+        }
+        if ($sale.Count) { throw "Publication annulée : des fichiers ne sont pas commités ($(($sale | Select-Object -First 5) -join ' ; ')). Commite-les d'abord : la version publiée est celle de git." }
+
+        # 2. Le numéro de version, commité tout de suite et envoyé : GitHub construit ce commit. Une tentative arrêtée plus
+        # loin laisse ce commit ; la suivante avec le même numéro n'a rien de nouveau à commiter et reprend la même
+        # construction.
+        & (Join-Path $PSScriptRoot 'version-rust.ps1') -Version $Version
+        if ((Get-VersionNevermindRust $racine) -cne $Version -or (Get-VersionNevermindPs $racine) -cne $Version) { throw 'Publication annulée : le numéro de version n''a pas pu être écrit partout.' }
+        $chemins = @($siensRust | ForEach-Object { Join-Path $racine ($_ -replace '/', '\') })
+        & git -C $racine diff --quiet -- @chemins
+        if ($LASTEXITCODE) {
+            Invoke-Native git (@('-C', $racine, 'add', '--') + $chemins)
+            Invoke-Native git @('-C', $racine, 'commit', '-m', "Nevermind $Version (Rust, version d'essai)", '-m', 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
+        }
+        Invoke-Native git @('-C', $racine, 'push', 'origin', 'HEAD')
+    } elseif ((Get-VersionNevermindRust $racine) -cne $Version) {
+        throw "Essai : -Version $Version, mais le Cargo.toml de nevermind-appli dit $(Get-VersionNevermindRust $racine) (l'essai ne modifie rien : laisse -Version vide)."
+    }
+
+    # 3. Le zip construit et attesté par GitHub pour ce commit (ou, en essai seulement, un zip fait sur ce PC)
+    if ($ZipLocal) {
+        Write-Host "Essai : zip fait sur ce PC ($ZipLocal), sans attestation. Une vraie publication prend celui de GitHub." -ForegroundColor Yellow
+        $source = (Resolve-Path -LiteralPath $ZipLocal).Path
+    } else {
+        $source = & (Join-Path $PSScriptRoot 'zip-rust-github.ps1') -Essai:$Essai -SansTest:$SansTest
+        $source = @($source | Where-Object { $_ }) | Select-Object -Last 1
+        if (-not $source) {
+            if ($Essai) { Write-Host 'Essai arrêté : aucun zip construit par GitHub pour ce commit (ou passe -ZipLocal).' -ForegroundColor Yellow; return }
+            throw 'Publication annulée : pas de zip construit par GitHub.'
+        }
+    }
+    if ([IO.Path]::GetFullPath($source) -ine [IO.Path]::GetFullPath($zipRust)) {
+        Remove-Item -LiteralPath $zipRust, "$zipRust.sig" -ErrorAction SilentlyContinue   # (jamais l'ancien zip ni l'ancienne signature)
+        Copy-Item -LiteralPath $source -Destination $zipRust
+    } else { Remove-Item -LiteralPath "$zipRust.sig" -ErrorAction SilentlyContinue }
+
+    # 4. Son contenu revérifié ici (fichiers exacts, version.json, fiches de version, pas de construction d'essai, aucun
+    # runtime C à part), sans l'option -Ci : tout doit être à ce numéro, NevermindAide.exe compris
+    & (Join-Path $PSScriptRoot 'verifier-zip-rust.ps1') -Zip $zipRust -Version $Version
+    if ($LASTEXITCODE) { throw 'Publication annulée : le zip de Nevermind en Rust n''est pas conforme.' }
+
+    # 5. La signature (en essai : une clé jetable, jamais la vraie)
+    if ($Essai) {
+        $cleEssai = New-Object Security.Cryptography.RSACryptoServiceProvider(3072); $cleEssai.PersistKeyInCsp = $false
+        try { [IO.File]::WriteAllBytes("$zipRust.sig", $cleEssai.SignData([IO.File]::ReadAllBytes($zipRust), [Security.Cryptography.CryptoConfig]::MapNameToOID('SHA256'))) }
+        finally { $cleEssai.Dispose() }
+    } else { & (Join-Path (Split-Path $racine -Parent) 'Mindset\outils\signer.ps1') -Fichier $zipRust }
+    if (-not (Test-Path -LiteralPath "$zipRust.sig")) { throw 'Publication annulée : le zip n''a pas pu être signé.' }
+
+    if (-not $Notes) { $Notes = "Nevermind $Version" }
+    if ($Essai) {
+        Write-Host "Essai fini : $zipRust (Nevermind $Version en Rust, signé avec une clé jetable). Rien n'est publié." -ForegroundColor Green
+        Write-Host "Une vraie publication ferait : tag v$Version, envoi, puis gh release create v$Version Nevermind.zip Nevermind.zip.sig --title `"$titre`" --prerelease."
+        return
+    }
+
+    # 6. Tag et préversion (le numéro est déjà commité et envoyé, à l'étape 2). La copie installée à la racine du dépôt
+    # n'est pas touchée : c'est Mindset qui met Nevermind à jour.
+    Push-Location $racine
+    try {
+        Invoke-Native git @('tag', "v$Version")
+        Invoke-Native git @('push', 'origin', "v$Version")
+        Invoke-Native gh @('release', 'create', "v$Version", $zipRust, "$zipRust.sig", '--title', $titre, '--notes', $Notes, '--prerelease')
+    } finally { Pop-Location }
+    "Nevermind $Version (Rust, version d'essai) publiée."
+    return
+}
+
 if (-not $Essai) {
     $avant = [Console]::OutputEncoding
     try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false); $sale = @(& git -C $racine -c core.quotepath=false status --porcelain 2>$null | Where-Object { $_ }) }
