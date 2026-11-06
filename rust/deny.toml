@@ -119,6 +119,11 @@ allow = [
     "crossbeam-channel", "crossbeam-utils", "cfg-if", "libc", "log", "tracing", "tracing-core", "anyhow", "thiserror",
     "thiserror-impl", "ctor", "dirs", "dirs-sys", "option-ext", "dunce", "glob", "walkdir", "same-file",
     "winapi-util", "heck", "unicode-segmentation", "byteorder", "web-time",
+    # Nevermind en Rust (06/11/2026), relues : signature des mises à jour (ring, untrusted, comme suite-commun de
+    # Mindset), zip des mises à jour (zip, deflate : zlib-rs, zopfli, bumpalo, typed-path), dates (chrono,
+    # num-traits), recherche sans accents (unicode-normalization, unicode-general-category, tinyvec)
+    "ring", "untrusted", "zip", "zlib-rs", "zopfli", "bumpalo", "typed-path", "chrono", "num-traits",
+    "unicode-normalization", "unicode-general-category", "tinyvec",
 ]
 
 [sources]

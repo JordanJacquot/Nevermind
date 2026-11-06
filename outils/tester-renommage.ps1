@@ -96,6 +96,7 @@ $Gardees = [ordered]@{
     'rust/nevermind-noyau/tests/juges.rs'          = @(1, 'Nevermind en Rust : juges des mises à jour sous l''ancien nom')
     'rust/nevermind-noyau/tests/juges/maj.json'    = @(9, 'Nevermind en Rust : juges des mises à jour sous l''ancien nom')
     'rust/nevermind-pc/src/pc.rs'                  = @(1, 'Nevermind en Rust : règles du pare-feu « OptiGame : bloque ... » d''avant la 1.3.6')
+    'rust/nevermind-pc/DIVERGENCES.md'             = @(1, 'Nevermind en Rust : règles du pare-feu « OptiGame : bloque ... » d''avant la 1.3.6')
     'rust/nevermind-protection/src/regles.rs'      = @(3, 'Nevermind en Rust : anciennes règles et tâches à l''ancien nom reconnues')
     'rust/nevermind-desinstalleur/src/travail.rs'  = @(8, 'Nevermind en Rust, désinstalleur : ancienne tâche « OptiGame (démarrage) », anciens programmes, script, icône et fichiers de secours retirés')
     'rust/nevermind-desinstalleur/src/sur_place.rs' = @(2, 'Nevermind en Rust, désinstalleur : règles du pare-feu « OptiGame : bloque ... » d''avant la 1.3.6 comptées et retirées')
