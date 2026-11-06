@@ -1,14 +1,21 @@
 [package]
 name = "nevermind-divers"
 version = "0.1.0"
-description = "Nevermind en Rust : le bloc « divers »"
+description = "Nevermind en Rust : le bloc « divers » (Rechercher, Paramètres, Aide)"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [dependencies]
 nevermind-noyau = { path = "../nevermind-noyau" }
+# Versions figées (« = »), déjà dans le cache (aucun téléchargement).
 serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+unicode-normalization = "=0.1.24"
+unicode-general-category = "=1.1.0"
+
+# Lecture seule du registre (où est installé Mindset, pour « Ouvrir les réglages de Mindset »).
+[target.'cfg(windows)'.dependencies]
+windows-registry = "=0.6.1"
 
 [lints]
 workspace = true
