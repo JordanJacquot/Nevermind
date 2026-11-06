@@ -1,10 +1,31 @@
 [package]
 name = "nevermind-appli"
-version = "0.1.0"
-description = "Nevermind en Rust : l'appli (fenêtre Tauri, kit, assemblage des blocs)"
+# La version de Nevermind (celle de Nevermind.ps1 : $AppVersion), la même que version.json et la fiche de l'exe
+version = "1.15.6"
+description = "Nevermind en Rust : l'appli (fenêtre Tauri dans Mindset, kit, assemblage des blocs, vie avec Mindset)"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+build = "build.rs"
+
+# La bibliothèque : la liste des blocs, l'assemblage des pages, la vie avec Mindset, la fenêtre, sans rien lancer.
+# Le programme et les tests s'en servent.
+[lib]
+name = "nevermind_appli"
+path = "src/lib.rs"
+
+# Le programme s'appelle Mindset.exe comme celui de chaque appli de la suite : le Gestionnaire des tâches range toute
+# la suite sur une seule ligne « Mindset » (contrat-appli, partie 4).
+[[bin]]
+name = "Mindset"
+path = "src/main.rs"
+test = false
+
+# La construction d'essai (`cargo build --features essai`), jamais livrée : seule à lire un dossier de données d'essai
+# (NEVERMIND_ESSAI_DONNEES) et à faire une capture de sa fenêtre. Elle ne lit pas HKLM et ne lance que elle-même
+# (jamais le vrai Mindset du PC), et ne lève jamais le signal de Mindset.
+[features]
+essai = []
 
 [dependencies]
 nevermind-noyau = { path = "../nevermind-noyau" }
@@ -16,7 +37,46 @@ nevermind-jeux = { path = "../nevermind-jeux" }
 nevermind-reseau = { path = "../nevermind-reseau" }
 nevermind-trafic = { path = "../nevermind-trafic" }
 nevermind-divers = { path = "../nevermind-divers" }
+# Versions figées (« = ») : une nouvelle version n'entre que par un changement relu. Les mêmes que Mindcare.
 serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+# Tauri sans ses options par défaut ; jamais « devtools » (règle 5 de regles-tauri.md). « custom-protocol » en dur :
+# sans lui, l'exe chercherait un serveur de développement.
+tauri = { version = "=2.12.5", default-features = false, features = ["wry", "compression", "common-controls-v6", "custom-protocol"] }
+# Les thèmes et packs, le dossier WebView2 des applis Tauri, la lecture des fichiers de pack (règles 6 et 7)
+suite-commun.workspace = true
+
+# Ce qui parle à Windows (verrous, fenêtre, registre en lecture, réseau en lecture). La même version que wry, tao et
+# webview2-com.
+[target.'cfg(windows)'.dependencies.windows]
+version = "=0.62.2"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_NetworkManagement_NetManagement",
+    "Win32_Networking_WinSock",
+    "Win32_Security",
+    "Win32_Storage_Xps",
+    "Win32_System_Com",
+    "Win32_System_StationsAndDesktops",
+    "Win32_System_Registry",
+    "Win32_System_Services",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+]
+# Les réglages de WebView2 que Tauri ne transmet pas, sa veille (SetIsVisible, TrySuspend) : la version de wry
+[target.'cfg(windows)'.dependencies.webview2-com]
+version = "=0.39.1"
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", default-features = false }
+
+[dev-dependencies]
+# Les tests des permissions : l'option « test » de Tauri (son faux Windows : aucune vraie fenêtre)
+tauri = { version = "=2.12.5", default-features = false, features = ["wry", "compression", "common-controls-v6", "custom-protocol", "test"] }
 
 [lints]
 workspace = true

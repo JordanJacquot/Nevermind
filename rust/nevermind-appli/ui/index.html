@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appli</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<div id="cadre">
+  <div id="decor" aria-hidden="true"></div>
+  <header class="haut" id="haut">
+    <button type="button" class="marque" id="marque" title="Revenir à l'accueil"><span id="logoHote"></span><span id="titreTexte"></span></button>
+    <nav class="onglets" id="onglets" aria-label="Pages"></nav>
+    <div id="mascotte" aria-hidden="true"></div>
+    <div class="ronds-haut" id="rondsHaut"></div>
+    <div class="etat" id="etatHaut"></div>
+  </header>
+  <main id="ecran"></main>
+  <footer class="bas"><div class="bas-g"><span id="dessinBas" aria-hidden="true"></span><span id="basG"></span></div>
+    <div class="aides"><button type="button" class="aide" id="aideB"><i>Échap</i>Retour</button><button type="button" class="aide" id="aideA"><i>Entrée</i>OK</button></div></footer>
+</div>
+<canvas id="plasma" aria-hidden="true"></canvas>
+<div id="bulle" role="status" aria-live="polite"></div>
+<div id="occupe" role="status" aria-live="polite"><i></i><span></span></div>
+<div id="questionM"></div>
+<script type="importmap">{ "imports": { "three": "./three/three.module.js" } }</script>
+<script src="ipc.js"></script>
+<script src="kit.js"></script>
+<script type="module" src="plasma.js"></script>
+</body>
+</html>
