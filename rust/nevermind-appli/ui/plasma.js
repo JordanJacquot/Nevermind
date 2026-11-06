@@ -352,10 +352,16 @@ function demarrer() {
   // ---------------------------------------------------------------- la boucle : rien quand l'appli est cachée ou en pause
   let enPause = false, boucle = 0;
   const t0 = performance.now();
-  function image() {
+  // Au plus 60 images par seconde, quel que soit l'écran (sur un écran à 360 Hz, la 3D était dessinée 360 fois par
+  // seconde, pour le même rendu à l'oeil)
+  const PAS_IMAGE = 1000 / 60;
+  let derniere = -Infinity;
+  function image(maintenant) {
     boucle = 0;
     if (document.hidden || enPause) return;
     boucle = requestAnimationFrame(image);
+    if (maintenant - derniere < PAS_IMAGE - 1) return;
+    derniere = Math.max(derniere + PAS_IMAGE, maintenant - PAS_IMAGE);
     const t = (performance.now() - t0) / 1000;
     if (document.getElementById('accueil3d')) { acc ??= creerAccueil(); acc.image(t); }
     if (document.querySelector('#ecran .reseau3d')) { sol ??= creerSolaire(); sol.image(t); }

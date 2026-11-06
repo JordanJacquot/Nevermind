@@ -37,11 +37,11 @@ button:focus, input:focus { outline: none; }
 .plasma-bord::before, .plaque::before { content: ""; position: absolute; inset: -1.5px; border-radius: inherit; padding: 1.5px; pointer-events: none;
   background: conic-gradient(from var(--a-tour), var(--P), var(--S), var(--T), var(--P));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: tourne 7s linear infinite; opacity: 0.4; transition: opacity 250ms ease; }
+  animation: tourne 7s steps(420) infinite; opacity: 0.4; transition: opacity 250ms ease; }
 .plasma-bord::after, .plaque.f::after { content: ""; position: absolute; inset: -4px; border-radius: inherit; padding: 4px; pointer-events: none; z-index: -1; filter: blur(10px);
   background: conic-gradient(from var(--a-tour), var(--P), var(--S), var(--T), var(--P));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: tourne 7s linear infinite; opacity: 0; transition: opacity 250ms ease; }
+  animation: tourne 7s steps(420) infinite; opacity: 0; transition: opacity 250ms ease; }
 .plasma-bord.fort::before, .plaque.f:focus::before, .plaque.f:hover::before, .plaque.oui::before { opacity: 1; }
 .plasma-bord.fort::after { opacity: 0.45; }
 .plaque.f:focus::after, .plaque.oui::after { opacity: 0.55; }
@@ -169,7 +169,7 @@ body.sur-accueil #mascotte.mascotte-coin:not(:empty) { display: block; }
 .case-m .case { width: 22px; height: 22px; }
 .grande-ic { --a: var(--P); width: 200px; height: 200px; margin: 4px auto 0; display: grid; place-items: center; position: relative; color: var(--a); }
 .grande-ic svg { width: 110px; height: 110px; filter: drop-shadow(0 0 18px color-mix(in srgb, var(--a) 55%, transparent)); animation: flotte 4s ease-in-out infinite; }
-.grande-ic::before { content: ""; position: absolute; inset: 16px; border-radius: 50%; border: 1px dashed color-mix(in srgb, var(--S) 50%, transparent); animation: tourne2 30s linear infinite; }
+.grande-ic::before { content: ""; position: absolute; inset: 16px; border-radius: 50%; border: 1px dashed color-mix(in srgb, var(--S) 50%, transparent); animation: tourne2 30s steps(1800) infinite; }
 @keyframes flotte { 50% { transform: translateY(-8px); } } @keyframes tourne2 { to { transform: rotate(360deg); } }
 .jaquette-m { display: grid; place-items: end start; width: 190px; aspect-ratio: 3 / 4; margin: 4px auto 0; border-radius: 18px; padding: 14px; box-sizing: border-box; text-align: left; font-size: 20px; overflow: hidden;
   background: linear-gradient(180deg, transparent 45%, rgba(6,5,15,0.88)), var(--img) center / cover no-repeat, var(--fond2); }
@@ -220,7 +220,7 @@ body.avec-3d .anneau { background: none; }
 /* L'interrupteur et la case de plasma */
 .bascule { width: 52px; height: 30px; flex: none; border-radius: 99px; background: #1A1738; border: 1px solid var(--ligne); position: relative; transition: background 250ms ease; box-sizing: border-box; }
 .bascule::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #CFCDE0; transition: transform 260ms cubic-bezier(.3, 1.4, .5, 1); }
-.bascule.oui { border-color: transparent; background: linear-gradient(90deg, var(--P), var(--S), var(--T), var(--P)) 0 0 / 300% 100%; animation: coule 3s linear infinite; box-shadow: 0 0 12px color-mix(in srgb, var(--S) 55%, transparent); }
+.bascule.oui { border-color: transparent; background: linear-gradient(90deg, var(--P), var(--S), var(--T), var(--P)) 0 0 / 300% 100%; animation: coule 3s steps(180) infinite; box-shadow: 0 0 12px color-mix(in srgb, var(--S) 55%, transparent); }
 .bascule.oui::after { transform: translateX(22px); background: #fff; }
 @keyframes coule { to { background-position: 300% 0; } }
 .case { width: 26px; height: 26px; flex: none; border-radius: 8px; border: 1.5px solid #4A4380; display: grid; place-items: center; transition: all 200ms ease; box-sizing: border-box; }
@@ -290,7 +290,7 @@ body.avec-3d .anneau { background: none; }
 .flux { display: block; width: 120px; height: 8px; flex: none; border-radius: 99px; background: #1A1738; overflow: hidden; }
 .flux i { display: block; height: 100%; border-radius: inherit; transition: width 600ms ease;
   background: linear-gradient(90deg, rgba(255,255,255,0) 0 40%, rgba(255,255,255,0.55) 50%, rgba(255,255,255,0) 60% 100%) 0 0 / 220% 100%, linear-gradient(90deg, var(--P), var(--S) 50%, var(--T));
-  animation: fluxA 2.2s linear infinite; }
+  animation: fluxA 2.2s steps(132) infinite; }
 .flux.attention i, .flux.urgent i { background: linear-gradient(90deg, rgba(255,255,255,0) 0 40%, rgba(255,255,255,0.55) 50%, rgba(255,255,255,0) 60% 100%) 0 0 / 220% 100%, linear-gradient(90deg, var(--orange), #FF7A20); }
 @keyframes fluxA { from { background-position: 120% 0, 0 0; } to { background-position: -120% 0, 0 0; } }
 .jauge { margin-bottom: 16px; }
@@ -394,10 +394,10 @@ body.avec-3d .anneau { background: none; }
 #occupe { position: fixed; z-index: 7; left: 50%; bottom: 14px; transform: translate(-50%, 20px); display: flex; align-items: center; gap: 10px; padding: 9px 18px 9px 12px; border-radius: 99px; background: var(--carte2); border: 1px solid var(--ligne); font-size: 14px; opacity: 0; pointer-events: none; transition: opacity 200ms ease, transform 200ms ease; max-width: 60vw; }
 #occupe.vu { opacity: 1; transform: translate(-50%, 0); }
 #occupe span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#occupe i { width: 18px; height: 18px; flex: none; border-radius: 50%; background: conic-gradient(var(--P), var(--S), var(--T), transparent 80%); -webkit-mask: radial-gradient(circle, transparent 55%, #000 57%); mask: radial-gradient(circle, transparent 55%, #000 57%); animation: tourne2 0.9s linear infinite; }
+#occupe i { width: 18px; height: 18px; flex: none; border-radius: 50%; background: conic-gradient(var(--P), var(--S), var(--T), transparent 80%); -webkit-mask: radial-gradient(circle, transparent 55%, #000 57%); mask: radial-gradient(circle, transparent 55%, #000 57%); animation: tourne2 0.9s steps(54) infinite; }
 /* L'image de chargement d'un thème perso : elle tourne sur elle-même avec une lueur aux couleurs du thème
    (« aucun » : telle quelle) ; rien ne tourne tant que la pastille est cachée */
-#occupe.avec-image i { width: 34px; height: 34px; margin: -7px 0; border-radius: 0; background: var(--img) center / contain no-repeat; -webkit-mask: none; mask: none; filter: drop-shadow(0 0 5px var(--P)) drop-shadow(0 0 2px var(--S)); animation: tourneY 1.8s linear infinite; }
+#occupe.avec-image i { width: 34px; height: 34px; margin: -7px 0; border-radius: 0; background: var(--img) center / contain no-repeat; -webkit-mask: none; mask: none; filter: drop-shadow(0 0 5px var(--P)) drop-shadow(0 0 2px var(--S)); animation: tourneY 1.8s steps(108) infinite; }
 #occupe.avec-image.fixe i { animation: none; filter: none; }
 #occupe:not(.vu) i { animation-play-state: paused; }
 @keyframes tourneY { to { transform: rotateY(360deg); } }
