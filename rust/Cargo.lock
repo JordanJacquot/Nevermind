@@ -136,6 +136,8 @@ version = "0.1.0"
 dependencies = [
  "nevermind-noyau",
  "serde_json",
+ "windows",
+ "windows-registry",
 ]
 
 [[package]]

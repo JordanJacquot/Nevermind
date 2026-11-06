@@ -1,7 +1,7 @@
 [package]
 name = "nevermind-protection"
 version = "0.1.0"
-description = "Nevermind en Rust : le bloc « protection »"
+description = "Nevermind en Rust : le bloc « protection » (pages Protection, Sécurité, Connexion, Sauvegarde ; vérification de la protection, analyses de Defender)"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
@@ -9,6 +9,34 @@ publish.workspace = true
 [dependencies]
 nevermind-noyau = { path = "../nevermind-noyau" }
 serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+
+# Le module qui parle à Windows (src/windows) : seulement sous Windows. Versions figées (« = »), les mêmes que l'Aide.
+[target.'cfg(windows)'.dependencies]
+windows-registry = "=0.6.1"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "=0.62.2"
+features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
+    "Win32_Security_Cryptography_Catalog",
+    "Win32_Security_Cryptography_Sip",
+    "Win32_Security_WinTrust",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_Rpc",
+    "Win32_System_SystemInformation",
+    "Win32_System_TaskScheduler",
+    "Win32_System_Threading",
+    "Win32_System_Time",
+    "Win32_System_Variant",
+    "Win32_System_Wmi",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+]
 
 [lints]
 workspace = true
