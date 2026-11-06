@@ -8,13 +8,14 @@
 //! 5. le lancement au démarrage, les anciennes tâches, la tâche de l'Aide et ce qu'elle retenait (HKLM), les
 //!    raccourcis du bureau et du menu Démarrer ;
 //! 6. le message de fin, puis les fichiers de Nevermind supprimés (seulement ceux livrés avec lui, jamais le reste du
-//!    dossier) juste après la fermeture de ce programme.
+//!    dossier) juste après la fermeture de ce programme ;
+//! 7. piloté par Mindset seulement : les conseils passés à Mindset ([`conseils`]).
 //!
 //! Tout ce qui touche Windows passe par [`Systeme`] (et par le `Pc` du bloc pc pour la restauration) : les juges les
 //! remplacent par un faux PC qui note chaque geste, exactement comme le faux PC de outils\exporter-juges-desinstalleur.ps1.
 
 use crate::choix::Choix;
-use crate::donnees;
+use crate::{conseils, donnees};
 use nevermind_pc::corrections::{self, Moteur, Sauvegarde};
 use nevermind_pc::pc::Pc;
 use serde_json::Value;
@@ -80,6 +81,9 @@ pub struct Lieux {
     pub racine: PathBuf,
     /// Le dossier des données (`$DataDir`)
     pub donnees: PathBuf,
+    /// Le dossier des données de la suite (`<X>:\Mindset\Donnees`, le parent du dossier des données d'une copie gérée :
+    /// [`donnees::dossier_suite`]) ; `None` pour une copie non gérée. Piloté par Mindset, les conseils y sont écrits.
+    pub suite: Option<PathBuf>,
     /// Ce programme (jamais fermé)
     pub pid: u32,
 }
@@ -227,6 +231,14 @@ pub fn desinstaller(
         avertir
             .push_str(&format!("\n\nCes changements protègent ton PC et restent en place :\n{}", restent.join("\n")));
     }
+    // (les mêmes avertissements, une phrase d'une ligne chacun : les conseils passés à Mindset)
+    let mut conseils_avertir: Vec<String> = Vec::new();
+    if !texte_probleme.is_empty() {
+        conseils_avertir.push(format!("Attention : {texte_probleme}"));
+    }
+    conseils_avertir.extend(restent.iter().map(|r| {
+        format!("Ce changement protège ton PC et reste en place : {}", r.trim_start().trim_start_matches("- "))
+    }));
     let choix = match impose {
         Some(c) => {
             // Piloté par Mindset : pas de question (l'utilisateur a déjà choisi), ce qu'il faut savoir est dit à la fin
@@ -317,7 +329,7 @@ pub fn desinstaller(
         ));
     }
     if n > 0 {
-        msg.push_str("\n\nRedémarre le PC pour que tous les réglages d'origine soient pris en compte.");
+        msg.push_str(&format!("\n\n{}", conseils::REDEMARRER));
     }
     if !erreurs.is_empty() {
         msg.push_str(&format!("\n\nCertains éléments n'ont pas pu être restaurés :\n{}", erreurs.join("\n")));
@@ -340,6 +352,24 @@ pub fn desinstaller(
         vides: vec![ici, lieux.racine.clone()],
     };
     sys.lancer_suppression(&commande_suppression(&suppression), &suppression);
+
+    // Piloté par Mindset, juste avant de rendre la main : ce que la fenêtre de fin aurait dit en plus de « Nevermind
+    // est désinstallé. » et de la phrase sur les données (Mindset les dit lui-même) est passé à Mindset, qui l'affiche
+    // dans son bilan (DIVERGENCES.md, point 15). Écrit même si les données sont supprimées : il est dans le dossier de
+    // la suite. Jamais sans option (la fenêtre de fin s'affiche).
+    if impose.is_some() {
+        let mut lignes: Vec<String> = Vec::new();
+        if n > 0 {
+            lignes.push(conseils::REDEMARRER.into());
+        }
+        lignes.extend(erreurs.iter().map(|e| format!("Certains éléments n'ont pas pu être restaurés : {e}")));
+        lignes.extend(conseils_avertir);
+        if let Err(e) = conseils::ecrire(lieux.suite.as_deref(), &conseils::preparer(&lignes))
+            && lieux.donnees.is_dir()
+        {
+            sys.journal(&format!("Désinstallation : conseils pour Mindset non écrits ({e})"));
+        }
+    }
     Fin::Faite { message: msg, erreurs }
 }
 

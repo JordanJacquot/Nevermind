@@ -17,8 +17,10 @@
 #      remis comme avant ; l'Aide est arrêtée, sa tâche et sa clé retirées ; les tâches et les raccourcis retirés ;
 #      Nevermind.exe et les autres programmes disparaissent, puis le dossier ; les données restent, sauf la sauvegarde,
 #      l'historique et les demandes ; aucune fenêtre (piloté par Mindset : ni question, ni message de fin, qui est
-#      écrit au journal ; le désinstalleur de Mindset montre son propre bilan) ;
-#   4. de nouveau, avec « -SupprimerDonnees » : tout le dossier des données part ;
+#      écrit au journal ; le désinstalleur de Mindset montre son propre bilan) ; ses conseils pour ce bilan sont dans
+#      <tmp>\Mindset\Donnees\Nevermind.conseils-desinstallation.txt (UTF-8 sans BOM, au plus 10 lignes de 300
+#      caractères, « Redémarre le PC... » d'abord : des réglages ont été remis) ;
+#   4. de nouveau, avec « -SupprimerDonnees » : tout le dossier des données part, le fichier des conseils reste ;
 #   5. avec les deux options à la fois : la question s'affiche ; fermée (= Annuler), rien n'est touché, il rend 0.
 # Code de sortie 1 si un cas échoue.
 param([Parameter(Mandatory = $true)][string]$Nouvelle)
@@ -35,6 +37,18 @@ if (-not (Test-Path -LiteralPath (Join-Path $Nouvelle 'Désinstaller Nevermind.e
 $base = Join-Path $env:RUNNER_TEMP 'desinstalleur-nevermind'
 $prog = Join-Path $base 'Mindset\Programmes\Nevermind'
 $donnees = Join-Path $base 'Mindset\Donnees\Nevermind'
+# Les conseils passés à Mindset (piloté par une option), dans le dossier des données de la suite
+$conseils = Join-Path $base 'Mindset\Donnees\Nevermind.conseils-desinstallation.txt'
+$redemarrer = 'Redémarre le PC pour que tous les réglages d''origine soient pris en compte.'
+# Le fichier des conseils est-il comme le contrat le veut, avec « Redémarre le PC » d'abord ?
+function Test-Conseils {
+    if (-not (Test-Path -LiteralPath $conseils -PathType Leaf)) { throw 'pas de fichier des conseils' }
+    $o = [IO.File]::ReadAllBytes($conseils)
+    if ($o.Length -ge 3 -and $o[0] -eq 0xEF -and $o[1] -eq 0xBB -and $o[2] -eq 0xBF) { throw 'le fichier a un BOM' }
+    $l = @((New-Object Text.UTF8Encoding($false, $true)).GetString($o) -split "`r?`n" | Where-Object { $_ -ne '' })
+    if (Test-Path -LiteralPath "$conseils.tmp") { throw 'le fichier d''écriture est resté' }
+    $l.Count -ge 1 -and $l.Count -le 10 -and $l[0] -eq $redemarrer -and -not @($l | Where-Object { $_.Length -gt 300 -or $_ -match 'Nevermind est désinstallé' }).Count
+}
 $local = [Environment]::GetFolderPath('LocalApplicationData')
 $suiteFichier = Join-Path $local 'Mindset\suite.json'
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
@@ -163,6 +177,7 @@ try {
         $j = Get-Content -LiteralPath (Join-Path $donnees 'journal.txt') -Raw -Encoding UTF8
         $j -match 'Désinstallation demandée par Mindset \(données gardées\)' -and $j -match 'Désinstallation, message de fin : Nevermind est désinstallé\.'
     }
+    Test-Cas 'les conseils pour le bilan de Mindset : UTF-8 sans BOM, 10 lignes de 300 caractères au plus, « Redémarre le PC » d''abord' { Test-Conseils }
 
     # =================================================================================================================
     Write-Host '4. « -SupprimerDonnees »'
@@ -170,6 +185,7 @@ try {
     $r = Invoke-Desinstalleur '-SupprimerDonnees'
     Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
     Test-Cas 'tout le dossier des données est parti' { -not (Test-Path -LiteralPath $donnees) }
+    Test-Cas 'les conseils pour le bilan de Mindset sont là quand même (dossier de la suite)' { Test-Conseils }
     Test-Cas 'les réglages sont remis comme avant' { (Get-Valeur $cleGraphiques 'HwSchMode') -eq $o.HwSchMode -and "$((Get-Service DiagTrack).StartType)" -eq $o.Svc }
     Test-Cas 'le dossier des programmes est parti' { Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 10 }
 
@@ -179,6 +195,7 @@ try {
     $r = Invoke-Desinstalleur '-GarderDonnees -SupprimerDonnees'
     Test-Cas "la question s'est affichée (fenêtres vues : $($r.Titres -join ', '))" { @($r.Titres | Where-Object { $_ -eq 'Désinstaller Nevermind' }).Count -ge 1 }
     Test-Cas "annulée : il rend 0 (rendu : $($r.Code)), rien n'est touché" { $r.Code -eq 0 -and (Test-Path -LiteralPath (Join-Path $prog 'Nevermind.exe')) -and (Test-Path -LiteralPath (Join-Path $donnees 'sauvegarde.json')) -and (Get-Valeur $cleGraphiques 'HwSchMode') -ne $o.HwSchMode }
+    Test-Cas 'sans choix imposé : pas de fichier des conseils' { -not (Test-Path -LiteralPath $conseils) }
     # (remis comme avant pour la suite du job)
     $null = Invoke-Desinstalleur '-SupprimerDonnees'
 }

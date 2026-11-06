@@ -67,6 +67,17 @@ pub fn dossier_donnees(geree: bool, racine: &Path, localappdata: &str) -> PathBu
     if nouveau.is_dir() || !ancien.is_dir() { nouveau } else { ancien }
 }
 
+/// Le dossier des données de la suite : le parent du dossier des données d'une copie gérée (`<X>:\Mindset\Donnees`,
+/// ou `%LOCALAPPDATA%\Mindset`), même si ses données sont encore dans l'ancien dossier ; `None` pour une copie non gérée
+pub fn dossier_suite(geree: bool, racine: &Path, localappdata: &str) -> Option<PathBuf> {
+    if !geree {
+        return None;
+    }
+    let d = dossier_donnees_gere(racine, localappdata);
+    let p = parent(&d.to_string_lossy()).to_string();
+    (!p.is_empty()).then(|| PathBuf::from(p))
+}
+
 /// Le message d'une erreur de Windows, sans « (os error N) » à la fin
 pub fn message_erreur(e: &std::io::Error) -> String {
     let t = e.to_string();
@@ -268,6 +279,16 @@ mod tests {
             PathBuf::from("C:\\U\\AppData\\Local\\Mindset\\Nevermind")
         );
         assert_eq!(dossier_donnees(false, Path::new("C:\\x"), "C:\\L"), PathBuf::from("C:\\L\\OptiGame"));
+        // Le dossier des données de la suite : le parent de celui d'une copie gérée, rien pour une autre
+        assert_eq!(
+            dossier_suite(true, Path::new("E:\\Mindset\\Programmes\\Nevermind"), "C:\\L"),
+            Some(PathBuf::from("E:\\Mindset\\Donnees"))
+        );
+        assert_eq!(
+            dossier_suite(true, Path::new("C:\\Program Files\\Mindset\\Nevermind"), "C:\\L"),
+            Some(PathBuf::from("C:\\L\\Mindset"))
+        );
+        assert_eq!(dossier_suite(false, Path::new("E:\\Mindset\\Programmes\\Nevermind"), "C:\\L"), None);
     }
 
     #[test]
