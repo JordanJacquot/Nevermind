@@ -1,0 +1,22 @@
+[package]
+name = "nevermind-appli"
+version = "0.1.0"
+description = "Nevermind en Rust : l'appli (fenêtre Tauri, kit, assemblage des blocs)"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+nevermind-noyau = { path = "../nevermind-noyau" }
+nevermind-pc = { path = "../nevermind-pc" }
+nevermind-perf = { path = "../nevermind-perf" }
+nevermind-memoire = { path = "../nevermind-memoire" }
+nevermind-protection = { path = "../nevermind-protection" }
+nevermind-jeux = { path = "../nevermind-jeux" }
+nevermind-reseau = { path = "../nevermind-reseau" }
+nevermind-trafic = { path = "../nevermind-trafic" }
+nevermind-divers = { path = "../nevermind-divers" }
+serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+
+[lints]
+workspace = true
