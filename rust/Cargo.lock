@@ -1927,7 +1927,10 @@ name = "nevermind-reseau"
 version = "0.1.0"
 dependencies = [
  "nevermind-noyau",
+ "regex",
+ "serde",
  "serde_json",
+ "windows",
 ]
 
 [[package]]
