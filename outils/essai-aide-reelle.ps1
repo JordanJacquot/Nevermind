@@ -1505,10 +1505,15 @@ function Test-Cas13 {
     $lectures2 = $g.Lectures
     $etats2 = Stop-GuetCarte $g
     $apres = (Get-NetAdapter -InterfaceIndex $carte.Index -ErrorAction SilentlyContinue).LinkSpeed
-    Show-TracesCarte 'pendant la relance' (Get-TracesCarte $reperes2 $carte.Nom)
+    $traces2 = Get-TracesCarte $reperes2 $carte.Nom
+    Show-TracesCarte 'pendant la relance' $traces2
     Write-Host "         | vitesse avant $avant, après $apres ; guet pendant la relance : $lectures2 lectures ; états vus : $($etats2 -join ', ')" -ForegroundColor DarkGray
     Test-Cas 'l''Aide accepte de relancer la carte de la connexion (réponse « ok »)' { $s2.R -and $s2.R.PSObject.Properties['relancer'] -and [string]$s2.R.relancer -eq 'ok' }
-    Test-Cas "la carte a bien été éteinte puis rallumée (guet toutes les 20 ms : $($etats2 -join ', '))" { $etats2[0] -like 'Up@*' -and @($etats2 | Where-Object { $_ -notlike 'Up@*' }).Count -gt 0 -and $etats2[-1] -like 'Up@*' }
+    # (une carte virtuelle, comme celle des machines de GitHub, redémarre en moins de 20 ms : le guet peut ne jamais la
+    # voir éteinte ; son compteur d'octets reçus, remis à zéro par le redémarrage, le prouve alors. Contre-épreuve plus
+    # haut : pendant les refus, le compteur n'a fait que monter)
+    $compteurRemis = $null -ne $traces2.OctetsAvant -and $null -ne $traces2.OctetsApres -and $traces2.OctetsApres -lt $traces2.OctetsAvant
+    Test-Cas "la carte a bien été éteinte puis rallumée (guet toutes les 20 ms : $($etats2 -join ', ') ; compteur d'octets remis à zéro : $compteurRemis)" { $etats2[0] -like 'Up@*' -and (@($etats2 | Where-Object { $_ -notlike 'Up@*' }).Count -gt 0 -or $compteurRemis) -and $etats2[-1] -like 'Up@*' }
     Test-Cas "la connexion revient en 60 s au plus (revenue en $duree s depuis la demande)" { $revenue }
     Stop-Aides
 }
