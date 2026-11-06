@@ -27,12 +27,39 @@ Tout est identique, sauf ce qui suit.
    l'âge du pilote, comme quand l'option « Vérifier le pilote NVIDIA » est coupée.
 9. **Mode test** (`ctx.essai`) : sur le vrai PC, aucune écriture (registre, powercfg, écrans, Aide sauf lectures).
 
+## Tests des composants (tests.ps1, src/tests)
+
+Juges : `outils\exporter-juges-tests.ps1` (les 300 PC simulés d'analyse.json, 3 ou 4 suites de gestes chacun, des
+mesures inventées) : le panneau tel que l'écran le reçoit (Get-PanneauKit, pendant et après chaque test), la page Tests
+des composants, les messages, ce qui est demandé au moteur ([OGNative]) et les gestes sur le PC. Tout est identique ;
+ce qui suit diffère.
+
+10. **« Voir le résultat » pendant un test** : grisé comme les autres boutons des tuiles. En PowerShell il restait actif
+    (il n'est pas dans `$script:TestButtons`) et remplaçait le panneau du test en cours par l'ancien résultat.
+11. **Santé d'un disque** : les compteurs de fiabilité sont ceux que l'Aide a donnés à l'analyse (`Get-AideFiabiliteDisque`) ;
+    `Get-StorageReliabilityCounter` n'est pas appelé (il demande les droits d'administrateur : sans eux, PowerShell
+    tombait déjà sur l'Aide). Le disque lui-même est relu par WMI (MSFT_PhysicalDisk, les mêmes champs).
+12. **Recherche d'erreurs** : le même `Repair-Volume -Scan`, lancé dans un powershell.exe sans fenêtre (CREATE_NO_WINDOW)
+    au lieu du fil de Nevermind.
+13. **Mesures** : les mêmes calculs (celui du processeur est identique au bit près, voir tests_mesures.rs), les mêmes
+    durées, étapes et progressions. Le contenu écrit et les positions lues du test du disque viennent d'un autre tirage
+    au hasard (sans effet sur la mesure). L'envoi du test de débit annonce sa taille (400 morceaux de 64 Ko par demande,
+    comme natif.cs en écrit au plus) au lieu d'un envoi « chunked » : les octets comptés sont les mêmes. Les points du
+    processeur sont ceux du code compilé de Nevermind en Rust : ils ne sont pas comparables au point près à ceux de
+    l'ancienne version (même calcul, vitesse d'exécution différente).
+14. **Couleurs plein écran** : une fenêtre Windows simple (au lieu de WPF), mêmes couleurs, même texte, mêmes touches.
+15. **`$Live.Fast`** (mesures plus rapides pendant un test) : pas de signal commun ; le bloc perf garde son rythme. Les
+    fréquences du processeur sont relevées à chaque tour de 100 ms sur la dernière mesure reçue, comme avant.
+16. **Tour du bloc** : `tic` ne rend jamais « plus besoin » (un tour vide par demi-seconde hors test), car l'hôte ne
+    rappelle pas un bloc qui l'a dit, et un test peut être lancé à tout moment par un bouton.
+17. **Rapport de batterie** : le chemin du fichier était faux (« \r » pris pour un retour chariot) ; corrigé.
+18. **Mode test** (`ctx.essai`) : rien n'est mesuré ni lu ; un test lancé finit en « Échec » (« mode test »).
+19. **Thème** : les tons (vert, orange, rouge) sont lus sur les couleurs Néon, comme dans les juges ; PowerShell les
+    lisait sur les couleurs du thème en cours (`ConvertTo-ThemeHex`). Avec un autre thème, un ton pourrait différer :
+    pas vérifié.
+
 ## Pas encore porté
 
-- Les tests des composants eux-mêmes (vitesse des disques, processeur, mémoire, carte graphique en direct, connexion et
-  « lag en charge », pixels morts, 3DMark) : la page « Tests des composants » et ses tuiles sont là ; leurs boutons disent
-  que le test arrive. `mdsched.exe` et le rapport de batterie sont lancés comme avant. Le signal `test-debit` du bloc
-  réseau reçoit la même réponse (pas de `debit-mesure`).
 - « Voir les fichiers » du nettoyage (`nett-voir:N`, le panneau des plus gros fichiers).
 - La désinstallation (`Invoke-Uninstall`, `Remove-DonneesDesinstallation`), le raccourci du bureau et la tâche de
   démarrage (systeme.ps1) : elles relèvent de l'hôte et de Mindset ; non portées ici.

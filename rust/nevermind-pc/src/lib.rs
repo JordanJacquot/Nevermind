@@ -24,6 +24,7 @@ pub mod score;
 pub mod session;
 pub mod systeme;
 pub mod temps;
+pub mod tests;
 pub mod tests_composants;
 #[cfg(windows)]
 mod windows;
@@ -112,6 +113,7 @@ impl BlocPc {
             return;
         }
         self.charge = true;
+        self.tests.troisdmark = !ctx.essai && tests::troisdmark();
         self.cases.restauration = true;
         self.session.sv = systeme::lire_sauvegarde(ctx);
         self.session.ignores = systeme::lire_ignores(ctx);
@@ -332,6 +334,9 @@ impl Bloc for BlocPc {
         self.ecran = ecran.to_string();
         let mut p = pages::pages_pc(self.session.analyse.as_ref(), &self.live, &mut self.kit);
         p.insert("tests".into(), self.tests.page());
+        if let Some(pa) = self.tests.panneau() {
+            p.insert("panneau".into(), pa);
+        }
         if let Some(f) = &self.session.fiche {
             p.insert("fiche".into(), fiche::page(f, self.fiche_de.as_deref()));
         }
@@ -340,6 +345,29 @@ impl Bloc for BlocPc {
 
     fn action(&mut self, ctx: &Contexte, id: &str, valeur: &Value, effets: &mut Effets) -> bool {
         self.charger(ctx);
+        // (les tests des composants et leur panneau : tests_composants.rs ; ici seulement ce qui passe par le PC)
+        if id.starts_with("test-b:") || id.starts_with("panneau:") {
+            let Some(gestes) = self.tests.action(ctx, id, effets) else { return false };
+            let (_, annonces) = self.avec_pc(ctx, |_, pc| {
+                for g in gestes {
+                    match g {
+                        tests_composants::Geste::Lancer(a) => pc.lancer(&a),
+                        tests_composants::Geste::Batterie => {
+                            let f = format!("{}\\rapport-batterie.html", pc.dossier_temp());
+                            if pc.commande("powercfg.exe", &["/batteryreport".into(), "/output".into(), f.clone()]) == 0
+                            {
+                                pc.ouvrir(&f);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            });
+            for a in annonces {
+                effets.ajouter(a);
+            }
+            return true;
+        }
         let avant = self.session.fiche.is_some();
         if let Some(a) = self.action_perf(ctx, id, valeur, effets) {
             self.apres(avant, a, effets);
@@ -428,26 +456,6 @@ impl Bloc for BlocPc {
                 }
                 (true, Vec::new())
             }
-            _ if id.starts_with("test-b:") => match self.tests.sorte(id) {
-                Some("mdsched") => self.avec_pc(ctx, |_, pc| {
-                    pc.lancer(&["mdsched.exe".into()]);
-                    true
-                }),
-                Some("batterie") => self.avec_pc(ctx, |_, pc| {
-                    let f = format!("{}\rapport-batterie.html", pc.dossier_temp());
-                    if pc.commande("powercfg.exe", &["/batteryreport".into(), "/output".into(), f.clone()]) == 0 {
-                        pc.ouvrir(&f);
-                    }
-                    true
-                }),
-                Some(_) => {
-                    effets.ajouter(Effet::Annonce(
-                        "Ce test n'est pas encore disponible dans cette version de Nevermind.".into(),
-                    ));
-                    (true, Vec::new())
-                }
-                None => (false, Vec::new()),
-            },
             _ => (false, Vec::new()),
         };
         if pris {
@@ -457,7 +465,30 @@ impl Bloc for BlocPc {
         pris
     }
 
-    fn tic(&mut self, ctx: &Contexte, _cache: bool, effets: &mut Effets) -> Option<Duration> {
+    fn tic(&mut self, ctx: &Contexte, cache: bool, effets: &mut Effets) -> Option<Duration> {
+        // (les tests des composants : toutes les 100 ms pendant un test ; sinon un tour par demi-seconde, sans rien
+        //  lire, pour qu'un test lancé par un bouton soit suivi : l'hôte ne rappelle pas un bloc qui a dit « plus besoin »)
+        let t = self.tests.tic_bloc(ctx, effets);
+        let r = self.tic_pc(ctx, cache, effets);
+        Some(r.map_or(t, |r| r.min(t)))
+    }
+
+    fn signal(&mut self, ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
+        match nom {
+            "mesures" => self.tests.mesures(donnees),
+            "test-debit" => return self.tests.test_debit(ctx, effets),
+            _ => {}
+        }
+        self.signal_pc(ctx, nom, donnees, effets);
+    }
+
+    fn fermer(&mut self, _ctx: &Contexte) {
+        self.tests.arreter_tout();
+    }
+}
+
+impl BlocPc {
+    fn tic_pc(&mut self, ctx: &Contexte, _cache: bool, effets: &mut Effets) -> Option<Duration> {
         self.charger(ctx);
         if !self.lu {
             self.suivre_lecture(ctx);
@@ -485,7 +516,7 @@ impl Bloc for BlocPc {
         None
     }
 
-    fn signal(&mut self, ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
+    fn signal_pc(&mut self, ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
         self.charger(ctx);
         let texte = |k: &str| net::champ_texte(donnees, k);
         let liste = |k: &str| net::champ_liste(donnees, k).iter().map(net::texte).collect::<Vec<_>>();
@@ -493,13 +524,6 @@ impl Bloc for BlocPc {
         let (fait, a) = match nom {
             "mesures" => {
                 self.live = donnees.clone();
-                (false, Vec::new())
-            }
-            // (le test de débit de tests.ps1 n'est pas encore porté : voir DIVERGENCES.md)
-            "test-debit" => {
-                effets.ajouter(Effet::Annonce(
-                    "Le test de débit n'est pas encore disponible dans cette version de Nevermind.".into(),
-                ));
                 (false, Vec::new())
             }
             "pc:analyser" => self.avec_pc(ctx, |s, pc| {
