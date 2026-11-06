@@ -672,7 +672,8 @@ impl BlocJeux {
         if let Err(e) = ctx.ecrire_reglage("OrganizerAffiche", Value::Bool(oui), false) {
             ctx.journal(&e);
         }
-        if !oui {
+        // (le fil de l'Organizer, s'il tourne, ferme la vue et coupe l'Organizer lui-même)
+        if !oui && !organizer::fil::cacher() {
             let mut c = organizer::Config::lire(Some(ctx), &ctx.donnees);
             if c.on {
                 c.on = false;
@@ -901,6 +902,7 @@ impl Bloc for BlocJeux {
             "jeux-filtre" => self.filtre = texte_valeur(valeur),
             "jeux-organizer" => {
                 effets.ajouter(Effet::OuvrirEcran("jeux".into()));
+                organizer::fil::ouvrir_vue(ctx);
                 effets.ajouter(Effet::Signal { nom: "organizer-ouvrir".into(), donnees: Value::Null });
             }
             "jeu-module-lancer" => {
@@ -1087,6 +1089,7 @@ impl Bloc for BlocJeux {
     }
 
     fn tic(&mut self, ctx: &Contexte, _cache: bool, effets: &mut Effets) -> Option<Duration> {
+        organizer::fil::tic(ctx, effets);
         if self.jeux.is_none() && self.recherche_en_cours.is_none() {
             self.lancer_recherche();
         }
@@ -1143,7 +1146,7 @@ impl Bloc for BlocJeux {
             || self.mesure_restes.is_some()
             || self.suppression.is_some()
             || !self.surveillances.is_empty();
-        Some(if occupe { Duration::from_millis(500) } else { Duration::from_secs(30) })
+        Some(organizer::fil::delai(if occupe { Duration::from_millis(500) } else { Duration::from_secs(30) }))
     }
 
     fn signal(&mut self, ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
@@ -1169,6 +1172,7 @@ impl Bloc for BlocJeux {
                     effets.ajouter(Effet::Rafraichir);
                 }
             }
+            "organizer-ouvrir" => organizer::fil::ouvrir_vue(ctx),
             "jeux-rechercher" => self.rechercher_maintenant(ctx, effets),
             "ajouter-jeu" => self.ajouter_jeu(ctx, None, None, effets),
             "jeux-restes-ouvrir" => {
@@ -1188,5 +1192,9 @@ impl Bloc for BlocJeux {
             }
             _ => {}
         }
+    }
+
+    fn fermer(&mut self, ctx: &Contexte) {
+        organizer::fil::fermer(ctx);
     }
 }

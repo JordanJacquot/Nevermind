@@ -21,6 +21,9 @@ use windows::Win32::UI::Shell::{
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 use windows_registry::{CLASSES_ROOT, CURRENT_USER, Key, LOCAL_MACHINE, Type};
 
+/// L'Organizer : le fil, les fenêtres du jeu, les raccourcis, la souris, la barre flottante et la vue.
+pub mod organizer;
+
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 fn racine(r: Ruche) -> &'static Key {
