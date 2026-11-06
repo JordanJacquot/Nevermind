@@ -182,6 +182,12 @@ jobs:
           ..\outils\verifier-imports.ps1 -Liste -Fichiers $livres
           exit $LASTEXITCODE
 
+      # Les juges ont été exportés de la version PowerShell à l'heure de Paris (dates des parties, du lag) : la machine
+      # de GitHub est mise à la même heure, sinon les heures affichées diffèrent d'une ou deux heures
+      - name: "Heure de Paris pour les juges"
+        if: ${{ steps.rust.outputs.present == 'true' }}
+        run: tzutil /s "Romance Standard Time"
+
       - name: "Tests Rust (cargo test)"
         if: ${{ steps.rust.outputs.present == 'true' }}
         run: cargo test --locked --workspace

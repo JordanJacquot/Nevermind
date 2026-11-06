@@ -85,6 +85,18 @@ $Gardees = [ordered]@{
     'outils/entree-apps-rust.json'                 = @(2, 'entrée apps.json de Nevermind en Rust pour le contrat : ancien verrou et ancien dossier de données, comme dans Mindset')
     'outils/entree-apps-bascule.json'              = @(5, 'entrée apps.json d''aujourd''hui, recopiée de Mindset : ancien zip, dossier, script, verrou et dossier de données')
     'outils/tester-maj-rust.ps1'                   = @(3, 'test : rien de créé dans l''ancien dossier de données %LOCALAPPDATA%\OptiGame')
+    'outils/exporter-juges-noyau.ps1'              = @(2, 'Nevermind en Rust : juges des mises à jour depuis une version publiée sous l''ancien nom')
+    'rust/nevermind-appli/src/essai.rs'            = @(3, 'Nevermind en Rust : verrous d''essai, jamais l''ancien verrou Local\OptiGame-Instance')
+    'rust/nevermind-appli/src/vie/demarrage.rs'    = @(8, 'Nevermind en Rust : ancien verrou, renommage de l''ancien dossier de données %LOCALAPPDATA%\OptiGame et ses tests')
+    'rust/nevermind-appli/src/windows/mod.rs'      = @(1, 'Nevermind en Rust : ancien verrou Local\OptiGame-Instance')
+    'rust/nevermind-appli/src/windows/synchro.rs'  = @(1, 'Nevermind en Rust : test, jamais l''ancien verrou')
+    'rust/nevermind-noyau/DIVERGENCES.md'          = @(1, 'Nevermind en Rust : mise à jour depuis une version publiée sous l''ancien nom')
+    'rust/nevermind-noyau/src/assistance.rs'       = @(2, 'Nevermind en Rust : lignes « Démarrage OptiGame » des anciens journaux')
+    'rust/nevermind-noyau/src/mises_a_jour.rs'     = @(5, 'Nevermind en Rust : mise à jour depuis une version publiée sous l''ancien nom')
+    'rust/nevermind-noyau/tests/juges.rs'          = @(1, 'Nevermind en Rust : juges des mises à jour sous l''ancien nom')
+    'rust/nevermind-noyau/tests/juges/maj.json'    = @(9, 'Nevermind en Rust : juges des mises à jour sous l''ancien nom')
+    'rust/nevermind-pc/src/pc.rs'                  = @(1, 'Nevermind en Rust : règles du pare-feu « OptiGame : bloque ... » d''avant la 1.3.6')
+    'rust/nevermind-protection/src/regles.rs'      = @(3, 'Nevermind en Rust : anciennes règles et tâches à l''ancien nom reconnues')
     'outils/zips.ps1'                              = @(2, 'le zip de compatibilité n''est plus fait ; jamais l''ancien script à côté du nouveau')
 }
 function Get-Mentions([string]$Rev) {
