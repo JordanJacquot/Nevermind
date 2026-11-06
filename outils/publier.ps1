@@ -96,9 +96,11 @@ foreach ($f in Get-ChildItem -LiteralPath (Join-Path $app 'fichiers') -Recurse -
 }
 try { [void][xml][IO.File]::ReadAllText((Join-Path $app 'fichiers\modules\interface.xaml'), [Text.Encoding]::UTF8) } catch { $problemes += "interface.xaml : $($_.Exception.Message)" }
 $tirets = Get-ChildItem -LiteralPath $racine -Recurse -File -Include '*.ps1', '*.cs', '*.xaml', '*.txt', '*.md', '*.bat' |
-    Where-Object { $_.FullName -notmatch '\\(\.git|_test|rust\\target[^\\]*)\\' } | Select-String -Pattern '[\u2013\u2014]'
+    Where-Object { $_.Extension -in '.ps1', '.cs', '.xaml', '.txt', '.md', '.bat' -and $_.FullName -notmatch '\\(\.git|_test|rust\\target[^\\]*)\\' } |
+    Select-String -Pattern '[\u2013\u2014]'
 # (pas les dossiers de construction de Rust : leçon de Mindset 2.18.0, publication annulée par des « tirets » trouvés
-# dans des fichiers construits)
+# dans des fichiers construits. Et l'extension revérifiée : avec -LiteralPath, Windows PowerShell 5.1 ignore -Include
+# pour les fichiers de la racine, et Nevermind.zip de la publication d'avant annulait la 2.0.1)
 foreach ($t in $tirets) { $problemes += "Tiret cadratin : $($t.Path) ligne $($t.LineNumber)" }
 # Clés publiques livrées avec Nevermind : exactement la liste de Mindset (mêmes fichiers, même contenu), sinon les copies
 # autonomes refuseraient une version signée avec une nouvelle clé, ou accepteraient encore une clé retirée
