@@ -1,0 +1,83 @@
+[package]
+name = "nevermind-desinstalleur"
+version = "0.1.0"
+description = "« Désinstaller Nevermind.exe » : remet Windows comme avant Nevermind (registre, services, DNS, écrans, alimentation, tâches, l'Aide), garde ou supprime les données, puis retire Nevermind de son dossier"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+# Renommé « Désinstaller Nevermind.exe » dans le zip par la chaîne (outils\contenu-rust.ps1) : un nom de programme cargo ne
+# peut avoir ni espace ni accent. Mindset le lance (champ « desinstalleur » d'apps.json, contrat-appli, partie 9).
+[[bin]]
+name = "NevermindDesinstaller"
+path = "src/main.rs"
+
+[lib]
+name = "nevermind_desinstalleur"
+path = "src/lib.rs"
+
+[dependencies]
+# Le noyau (dossiers, réglages, sauvegarde, historique, journal) et « Tout restaurer » du bloc pc (Restore-AllSettings) :
+# repris tels quels, rien n'est récrit ici
+nevermind-noyau = { path = "../nevermind-noyau" }
+nevermind-pc = { path = "../nevermind-pc" }
+# Les règles de l'Aide : la voie « sur place » de la désinstallation vérifie chaque demande avec elles, exactement comme
+# l'Aide (le code des actions de l'Aide est repris de rust\nevermind-aide, voir src\sur_place.rs)
+aide-regles = { path = "../aide-regles" }
+# Versions figées (« = ») : les mêmes que le reste de l'espace de travail, rien de nouveau dans Cargo.lock
+serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+suite-commun = { workspace = true }
+windows-registry = "=0.6.1"
+
+# Le module Windows (src\os) et le code de l'Aide repris (src\sur_place.rs) : la liste de NevermindAide.exe, plus la
+# question (TaskDialog) et le message de fin
+[dependencies.windows]
+version = "=0.62.2"
+features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
+    "Win32_Security_Cryptography_Catalog",
+    "Win32_Security_Cryptography_Sip",
+    "Win32_Security_WinTrust",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Diagnostics_Etw",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_IO",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_System_Pipes",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Restore",
+    "Win32_System_Rpc",
+    "Win32_System_Services",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_TaskScheduler",
+    "Win32_System_Threading",
+    "Win32_System_Time",
+    "Win32_System_Variant",
+    "Win32_System_WindowsProgramming",
+    "Win32_System_Wmi",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_NetworkManagement_WindowsFirewall",
+    "Win32_Networking_WinSock",
+    "Win32_UI_Controls",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+]
+
+# Pas `workspace = true` : le module Windows (src\os) et le code repris de l'Aide (son module windows) autorisent
+# eux-mêmes le code « unsafe », refusé partout ailleurs.
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
