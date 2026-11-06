@@ -3,6 +3,7 @@
 //! administrateur de Nevermind.ps1:330-350, et le lanceur C# compilé avec UNINSTALL, outils\lanceur.cs).
 //!
 //! - [`choix`] : -GarderDonnees / -SupprimerDonnees (le choix des données, sans question) ;
+//! - [`conseils`] : piloté par Mindset, ce que la fenêtre de fin aurait dit d'important, passé à Mindset ;
 //! - [`donnees`] : le dossier des données, et ce qui en part ;
 //! - [`travail`] : la désinstallation elle-même, contre un `Systeme` (le vrai : `os`, ou le faux PC des juges) ;
 //! - `sur_place` : la voie « sur place » de la version PowerShell (aide-client.ps1, `SurPlace`) : en administrateur, le
@@ -16,6 +17,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod choix;
+pub mod conseils;
 pub mod donnees;
 pub mod travail;
 

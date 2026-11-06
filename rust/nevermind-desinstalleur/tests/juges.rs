@@ -567,7 +567,7 @@ fn rejouer(c: &Value, base: &Path) -> Result<(), String> {
     }));
     let probleme = e["probleme"].as_str().map(String::from);
     let options: Vec<String> = net::champ_liste(e, "options").iter().map(net::texte).collect();
-    let lieux = Lieux { racine: racine.clone(), donnees: donnees.clone(), pid: 999_999 };
+    let lieux = Lieux { racine: racine.clone(), donnees: donnees.clone(), suite: None, pid: 999_999 };
     let fin = travail::desinstaller(&mut pc, &mut sys, sv, probleme.as_deref(), &lieux, choix_impose(&options));
 
     let chemins = [(racine.display().to_string(), "{APPLI}"), (donnees.display().to_string(), "{DONNEES}")];
@@ -699,7 +699,7 @@ fn nevermind_ouvert_est_ferme_avec_l_aide() {
         ],
         ..Default::default()
     };
-    let lieux = Lieux { racine: racine.clone(), donnees: base.join("donnees"), pid: 15 };
+    let lieux = Lieux { racine: racine.clone(), donnees: base.join("donnees"), suite: None, pid: 15 };
     let _ = travail::desinstaller(&mut pc, &mut sys, Sauvegarde::default(), None, &lieux, Some(Choix::Garder));
     let fermes: Vec<i64> = gestes
         .borrow()
@@ -710,4 +710,252 @@ fn nevermind_ouvert_est_ferme_avec_l_aide() {
     // (l'Aide d'abord, comme la version PowerShell, puis Nevermind)
     assert_eq!(fermes, vec![13, 10, 11]);
     let _ = std::fs::remove_dir_all(&base);
+}
+
+// ---------------------------------------------------------------------------
+// Les conseils passés à Mindset (DIVERGENCES.md, point 15) : piloté par une option seulement, dans le dossier des
+// données de la suite d'une copie gérée. Les juges n'en ont pas (le texte de fin, lui, ne change pas).
+// ---------------------------------------------------------------------------
+use nevermind_desinstalleur::conseils;
+
+/// Une désinstallation d'essai : `<base>\Mindset\Programmes\Nevermind`, ses données `<base>\Mindset\Donnees\Nevermind`
+struct Essai {
+    base: PathBuf,
+    suite: PathBuf,
+    donnees: PathBuf,
+    /// Des réglages à remettre comme avant (« Redémarre le PC »)
+    reglages: bool,
+    /// Le registre (par l'Aide) et le démarrage automatique refusés : des éléments non restaurés
+    erreurs: bool,
+    probleme: Option<&'static str>,
+    historique: Vec<Value>,
+    /// Copie gérée par Mindset (sinon, pas de dossier de la suite)
+    geree: bool,
+}
+
+impl Essai {
+    fn nouveau(nom: &str) -> Essai {
+        let base = dossier_essai(nom);
+        let _ = std::fs::remove_dir_all(&base);
+        let suite = base.join("Mindset").join("Donnees");
+        let donnees = suite.join("Nevermind");
+        std::fs::create_dir_all(&donnees).unwrap();
+        std::fs::write(donnees.join("jeux.json"), "{}").unwrap();
+        Essai {
+            base,
+            suite,
+            donnees,
+            reglages: false,
+            erreurs: false,
+            probleme: None,
+            historique: Vec::new(),
+            geree: true,
+        }
+    }
+
+    fn fichier(&self) -> PathBuf {
+        self.suite.join(conseils::NOM)
+    }
+
+    fn tmp(&self) -> PathBuf {
+        self.suite.join(format!("{}.tmp", conseils::NOM))
+    }
+
+    /// Les lignes du fichier des conseils (`None` : pas de fichier) ; il est en UTF-8 sans BOM
+    fn lignes(&self) -> Option<Vec<String>> {
+        let o = std::fs::read(self.fichier()).ok()?;
+        assert!(!o.starts_with(&[0xEF, 0xBB, 0xBF]), "le fichier des conseils a un BOM");
+        assert!(!self.tmp().exists(), "le fichier d'écriture est resté");
+        Some(String::from_utf8(o).expect("pas de l'UTF-8").lines().map(String::from).collect())
+    }
+
+    fn lancer(&self, impose: Option<Choix>) -> (Fin, Vec<String>) {
+        let racine = self.base.join("Mindset").join("Programmes").join("Nevermind");
+        std::fs::create_dir_all(&racine).unwrap();
+        let refuse = if self.erreurs { vec!["reg.ecrire".to_string()] } else { Vec::new() };
+        let mut pc = FauxPc { refuse, ..Default::default() };
+        let mut sys = FauxSysteme {
+            reponse: Some(Choix::Garder),
+            demarrage_refuse: self.erreurs,
+            historique: self.historique.clone(),
+            ..Default::default()
+        };
+        let sv = if self.reglages {
+            Sauvegarde::depuis(&json!({ "Registry": { "HKLM:\\SOFTWARE\\Essai|Valeur": {
+                "Path": "HKLM:\\SOFTWARE\\Essai", "Name": "Valeur", "Existed": true, "Value": 1, "Kind": "DWord" } } }))
+        } else {
+            Sauvegarde::default()
+        };
+        let lieux = Lieux {
+            racine,
+            donnees: self.donnees.clone(),
+            suite: self.geree.then(|| self.suite.clone()),
+            pid: 999_999,
+        };
+        let fin = travail::desinstaller(&mut pc, &mut sys, sv, self.probleme, &lieux, impose);
+        (fin, sys.messages)
+    }
+}
+
+impl Drop for Essai {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.base);
+    }
+}
+
+fn definitif(quoi: &str, retour: &str) -> Value {
+    json!({ "Log": [ { "Type": "definitif", "Quoi": quoi, "Retour": retour } ] })
+}
+
+/// Piloté, avec des réglages remis (redémarrer), des éléments non restaurés, une sauvegarde abîmée et un changement de
+/// sécurité qui reste : une ligne par conseil, dans l'ordre de la fenêtre de fin
+#[test]
+fn conseils_pilote_avec_redemarrage_et_erreurs() {
+    let mut e = Essai::nouveau("conseils-erreurs");
+    e.reglages = true;
+    e.erreurs = true;
+    e.probleme = Some("abimee");
+    e.historique = vec![definitif("Pare-feu renforcé", "page Sécurité")];
+    let (fin, messages) = e.lancer(Some(Choix::Garder));
+    let Fin::Faite { erreurs, message } = fin else { panic!("annulée") };
+    assert!(erreurs.len() >= 2, "trop peu d'erreurs : {erreurs:?}");
+    assert!(erreurs.iter().any(|x| x == "Démarrage automatique: Accès refusé."));
+    // (le message de fin ne change pas, et il n'est donné qu'une fois)
+    assert_eq!(messages, vec![message.clone()]);
+    assert!(message.starts_with("Nevermind est désinstallé."));
+    let mut attendu = vec![conseils::REDEMARRER.to_string()];
+    attendu.extend(erreurs.iter().map(|x| format!("Certains éléments n'ont pas pu être restaurés : {x}")));
+    attendu.push(format!("Attention : {}", nevermind_noyau::sauvegarde::texte_probleme(Some("abimee"))));
+    attendu.push(
+        "Ce changement protège ton PC et reste en place : Pare-feu renforcé (pour revenir en arrière : page Sécurité)"
+            .into(),
+    );
+    assert_eq!(e.lignes(), Some(conseils::preparer(&attendu)));
+    // (fins de ligne de Windows, une ligne par conseil)
+    let t = std::fs::read_to_string(e.fichier()).unwrap();
+    assert_eq!(t.matches("\r\n").count(), e.lignes().unwrap().len());
+}
+
+/// Piloté, rien à dire : pas de fichier, et un ancien fichier laissé là est effacé
+#[test]
+fn conseils_pilote_sans_rien_a_dire() {
+    let e = Essai::nouveau("conseils-rien");
+    std::fs::write(e.fichier(), "ancien conseil\r\n").unwrap();
+    std::fs::write(e.tmp(), "reste").unwrap();
+    let (fin, messages) = e.lancer(Some(Choix::Garder));
+    assert!(matches!(fin, Fin::Faite { .. }));
+    assert_eq!(messages.len(), 1);
+    assert_eq!(e.lignes(), None);
+    assert!(!e.tmp().exists());
+    // (le dossier de la suite reste)
+    assert!(e.suite.is_dir());
+}
+
+/// Sans option (la question posée, la fenêtre de fin montrée) : jamais de fichier, même avec des choses à dire, et un
+/// fichier déjà là n'est pas touché (il n'est pas de cette désinstallation)
+#[test]
+fn conseils_jamais_sans_option() {
+    let mut e = Essai::nouveau("conseils-sans-option");
+    e.reglages = true;
+    e.erreurs = true;
+    let (_, messages) = e.lancer(None);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(e.lignes(), None);
+    std::fs::write(e.fichier(), "d'un autre\r\n").unwrap();
+    let _ = e.lancer(None);
+    assert_eq!(e.lignes(), Some(vec!["d'un autre".to_string()]));
+}
+
+/// Copie non gérée par Mindset : rien n'est écrit nulle part
+#[test]
+fn conseils_copie_non_geree() {
+    let mut e = Essai::nouveau("conseils-non-geree");
+    e.reglages = true;
+    e.geree = false;
+    let _ = e.lancer(Some(Choix::Garder));
+    assert_eq!(e.lignes(), None);
+    let _ = e.lancer(Some(Choix::Supprimer));
+    assert_eq!(e.lignes(), None);
+}
+
+/// Trop de lignes, des lignes trop longues ou sur plusieurs lignes : au plus 10 lignes de 300 caractères
+#[test]
+fn conseils_coupes() {
+    let mut e = Essai::nouveau("conseils-coupes");
+    e.reglages = true;
+    let long = "é".repeat(500);
+    e.historique = (0..15).map(|i| definitif(&format!("Changement {i}\r\nsur deux lignes {long}"), "x")).collect();
+    let _ = e.lancer(Some(Choix::Garder));
+    let l = e.lignes().expect("pas de fichier");
+    assert_eq!(l.len(), conseils::MAX_LIGNES);
+    assert_eq!(l[0], conseils::REDEMARRER);
+    assert!(l.iter().all(|x| x.chars().count() <= conseils::MAX_CARACTERES && !x.is_empty()));
+    assert!(l[1].starts_with("Ce changement protège ton PC et reste en place : Changement 0 sur deux lignes éé"));
+    assert_eq!(l[1].chars().count(), conseils::MAX_CARACTERES);
+    assert!(l[9].contains("Changement 8 "));
+}
+
+/// Données supprimées : le fichier est quand même là (il est dans le dossier de la suite)
+#[test]
+fn conseils_donnees_supprimees() {
+    let mut e = Essai::nouveau("conseils-supprimees");
+    e.reglages = true;
+    let (fin, _) = e.lancer(Some(Choix::Supprimer));
+    assert!(matches!(fin, Fin::Faite { ref erreurs, .. } if erreurs.is_empty()));
+    assert!(!e.donnees.exists(), "les données sont restées");
+    assert_eq!(e.lignes(), Some(vec![conseils::REDEMARRER.to_string()]));
+}
+
+/// Un lien posé à la place du fichier des conseils est remplacé : ce qu'il vise n'est pas touché
+#[cfg(windows)]
+#[test]
+fn conseils_un_lien_n_est_jamais_suivi() {
+    let mut e = Essai::nouveau("conseils-lien");
+    e.reglages = true;
+    let cible = e.base.join("precieux.txt");
+    std::fs::write(&cible, "ne pas toucher").unwrap();
+    // (un lien symbolique de fichier demande des droits ou le mode développeur : sans, l'essai n'a pas lieu)
+    if std::os::windows::fs::symlink_file(&cible, e.fichier()).is_err() {
+        return;
+    }
+    let _ = e.lancer(Some(Choix::Garder));
+    assert_eq!(std::fs::read_to_string(&cible).unwrap(), "ne pas toucher");
+    assert_eq!(e.lignes(), Some(vec![conseils::REDEMARRER.to_string()]));
+    assert!(!std::fs::symlink_metadata(e.fichier()).unwrap().file_type().is_symlink());
+}
+
+/// La contre-épreuve : chaque chose changée d'un rien change le fichier attendu
+#[test]
+fn conseils_contre_epreuve() {
+    fn prete(nom: &str) -> Essai {
+        let mut e = Essai::nouveau(nom);
+        e.reglages = true;
+        e.erreurs = true;
+        e.historique = vec![definitif("A", "B")];
+        e
+    }
+    let reference = {
+        let e = prete("conseils-contre-ref");
+        let _ = e.lancer(Some(Choix::Garder));
+        e.lignes().expect("pas de fichier")
+    };
+    let mut changes = 0;
+    for v in 0..5 {
+        let mut e = prete(&format!("conseils-contre-{v}"));
+        match v {
+            0 => e.reglages = false,
+            1 => e.erreurs = false,
+            2 => e.historique.clear(),
+            3 => e.probleme = Some("absente"),
+            _ => e.geree = false,
+        }
+        let _ = e.lancer(Some(Choix::Garder));
+        assert_ne!(e.lignes().as_ref(), Some(&reference), "variante {v} : le même fichier");
+        changes += 1;
+    }
+    assert_eq!(changes, 5);
+    // (et sans rien changer d'important : le même fichier, même avec les données supprimées)
+    let e = prete("conseils-contre-pareil");
+    let _ = e.lancer(Some(Choix::Supprimer));
+    assert_eq!(e.lignes(), Some(reference));
 }

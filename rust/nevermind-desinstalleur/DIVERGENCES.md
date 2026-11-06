@@ -71,6 +71,16 @@ registre. Tout est identique, sauf ce qui suit.
     au journal (si les données restent). Le désinstalleur de Mindset attend la fin de celui-ci (10 minutes au plus) et
     montre son propre bilan ; une fenêtre « OK » ici bloquait tout jusqu'à un clic (le contrat attend 60 s, et
     échouait). Le texte du message reste le même (juges) ; sans option, ou avec les deux, rien ne change.
+    Ce que le message aurait dit d'important est passé à Mindset, qui l'affiche dans son bilan (contrat-appli de
+    Mindset) : juste avant de rendre la main, le désinstalleur écrit `<dossier des données de la suite>\Nevermind.conseils-desinstallation.txt`
+    (le parent du dossier des données d'une copie gérée : `<X>:\Mindset\Donnees`, ou `%LOCALAPPDATA%\Mindset` ;
+    `donnees::dossier_suite`). UTF-8 sans BOM, une ligne par conseil, au plus 10 lignes de 300 caractères : « Redémarre
+    le PC... » quand des réglages ont été remis, « Certains éléments n'ont pas pu être restaurés : <élément> » (une
+    ligne par élément), puis ce que la question aurait dit (« Attention : » et le problème de la sauvegarde, une ligne
+    par changement de sécurité qui reste). « Nevermind est désinstallé. » et la phrase sur les données n'y sont pas
+    (Mindset les dit lui-même). Rien à dire : pas de fichier (un ancien est effacé). Écrit à côté puis renommé, sans
+    suivre de lien ; écrit même si les données sont supprimées. Copie non gérée, ou sans option : jamais de fichier
+    (src\conseils.rs ; tests `conseils_*` de tests\juges.rs).
 
 ## La voie « sur place » (architecture, pas une différence)
 
