@@ -1,0 +1,373 @@
+//! Le bloc avec un faux système (rien n'est lu ni touché sur le PC) : la vérification de fond, les questions avant
+//! chaque geste, « Désactiver ces tâches » (outils\tester-securite.ps1, partie 1), les menaces après une analyse
+//! (partie 2 : jamais « Aucune menace » sans résultat lu), et « C'est moi » / « Retirer ».
+
+use nevermind_noyau::{Bloc, Contexte, Effet, Effets, dossier_essai};
+use nevermind_protection::BlocProtection;
+use nevermind_protection::etat::{EtatS, Tache};
+use nevermind_protection::ps::Date;
+use nevermind_protection::regles::{self, DetectionLue};
+use nevermind_protection::systeme::{Faux, Lecture};
+use serde_json::{Value, json};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+fn contexte(nom: &str) -> Contexte {
+    let d = dossier_essai(&format!("protection-{nom}"));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    Contexte::nouveau(d.clone(), d, false, true)
+}
+
+/// Les tics jusqu'à la fin du travail de fond ; tous les effets reçus
+fn attendre(b: &mut BlocProtection, ctx: &Contexte) -> Vec<Effet> {
+    let mut tout = Vec::new();
+    let debut = Instant::now();
+    loop {
+        let mut e = Effets::default();
+        b.tic(ctx, false, &mut e);
+        tout.extend(e.0);
+        if !b.occupe() || debut.elapsed() > Duration::from_secs(10) {
+            return tout;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn faux_avec(s: EtatS) -> Faux {
+    let f = Faux::default();
+    *f.lecture.lock().unwrap() = Lecture { s, env: Default::default() };
+    f
+}
+
+fn defender() -> Value {
+    json!({ "AMRunningMode": "Normal", "RealTimeProtectionEnabled": true, "AntivirusSignatureAge": 0, "QuickScanAge": 1,
+        "QuickScanEndTime": "2026-11-05T10:00:00" })
+}
+
+fn tache(nom: &str, chemin: &str) -> Tache {
+    Tache {
+        nom: nom.into(),
+        chemin: chemin.into(),
+        cmd: format!("C:\\Users\\x\\AppData\\Local\\Temp\\{nom}.exe"),
+        grave: false,
+    }
+}
+
+fn annonces(e: &[Effet]) -> Vec<String> {
+    e.iter().filter_map(|x| if let Effet::Annonce(t) = x { Some(t.clone()) } else { None }).collect()
+}
+
+fn signal<'a>(e: &'a [Effet], nom: &str) -> Option<&'a Value> {
+    e.iter().find_map(|x| match x {
+        Effet::Signal { nom: n, donnees } if n == nom => Some(donnees),
+        _ => None,
+    })
+}
+
+#[test]
+fn verification_de_fond_puis_pages() {
+    let ctx = contexte("fond");
+    let s = EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap();
+    let f = Arc::new(faux_avec(s));
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    let p = b.pages(&ctx, "protection");
+    assert_eq!(p["protection"]["module"]["titre"], "Vérification en cours");
+    let e = attendre(&mut b, &ctx);
+    assert_eq!(signal(&e, "protection-note"), Some(&json!(100)));
+    assert!(e.contains(&Effet::Rafraichir));
+    let p = b.pages(&ctx, "protection");
+    assert_eq!(p["protection"]["module"]["titre"], "Bien protégé");
+    assert_eq!(
+        p["securite"]["onglets"][1]["blocs"].as_array().unwrap().last().unwrap()["texte"],
+        "Les analyses utilisent Microsoft Defender, l'antivirus intégré à Windows."
+    );
+    // (une seule lecture : rien ne tourne en continu)
+    let mut e = Effets::default();
+    let delai = b.tic(&ctx, true, &mut e);
+    assert_eq!(delai, Some(Duration::from_secs(60)));
+    assert_eq!(f.gestes(), vec!["lire".to_string()]);
+}
+
+fn bloc_avec_taches(nom: &str, refus: &[&str], muettes: &[&str]) -> (BlocProtection, Arc<Faux>, Contexte) {
+    let ctx = contexte(nom);
+    let mut s = EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap();
+    s.taches = vec![tache("Mise a jour", "\\"), tache("Lanceur cache", "\\Outils\\")];
+    let mut f = faux_avec(s);
+    f.refus = refus.iter().map(|x| x.to_string()).collect();
+    f.muettes = muettes.iter().map(|x| x.to_string()).collect();
+    let f = Arc::new(f);
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    attendre(&mut b, &ctx);
+    let p = b.pages(&ctx, "securite");
+    assert_eq!(p["securite"]["onglets"][0]["nom"], "Points à vérifier (1)");
+    (b, f, ctx)
+}
+
+fn desactiver(b: &mut BlocProtection, ctx: &Contexte) -> Vec<Effet> {
+    // (sans confirmation : la question d'abord, rien n'est fait)
+    let mut e = Effets::default();
+    assert!(b.action(ctx, "sec:0:0", &Value::Null, &mut e));
+    let q = signal(&e.0, "question").expect("question posée");
+    assert_eq!(
+        q["texte"],
+        "Désactiver ces tâches planifiées ? Tu pourras les réactiver dans le Planificateur de tâches."
+    );
+    let mut e = Effets::default();
+    assert!(b.action(ctx, "sec:0:0", &json!({ "id": q["id"], "valeur": "oui" }), &mut e));
+    e.0
+}
+
+#[test]
+fn taches_toutes_desactivees() {
+    let (mut b, f, ctx) = bloc_avec_taches("taches-ok", &[], &[]);
+    let e = desactiver(&mut b, &ctx);
+    assert!(annonces(&e).is_empty(), "{:?}", annonces(&e));
+    assert!(f.gestes().contains(&"désactiver \\Mise a jour".to_string()));
+}
+
+#[test]
+fn taches_refusees_jamais_comptees_comme_faites() {
+    let (mut b, _f, ctx) = bloc_avec_taches("taches-refus", &["Mise a jour", "Lanceur cache"], &[]);
+    let a = annonces(&desactiver(&mut b, &ctx));
+    assert!(
+        a.len() == 1
+            && a[0].starts_with(
+                "Oups, quelque chose s'est mal passé :
+
+Je n'ai pas pu désactiver ces tâches : Mise a jour, Lanceur cache"
+            )
+            && a[0].contains("administrateur"),
+        "{a:?}"
+    );
+    let j = std::fs::read_to_string(ctx.donnees.join("journal.txt")).unwrap_or_default();
+    assert!(j.contains("Lanceur cache") && j.contains("non désactivée"), "{j}");
+}
+
+#[test]
+fn tache_restee_active_sans_erreur() {
+    let (mut b, _f, ctx) = bloc_avec_taches("taches-muette", &[], &["Mise a jour"]);
+    let a = annonces(&desactiver(&mut b, &ctx));
+    assert!(
+        a.iter().any(|x| x.starts_with("1 tâche désactivée.")
+            && x.contains("Je n'ai pas pu désactiver cette tâche : Mise a jour")),
+        "{a:?}"
+    );
+}
+
+#[test]
+fn une_partie_seulement() {
+    let (mut b, _f, ctx) = bloc_avec_taches("taches-partie", &["Lanceur cache"], &[]);
+    let a = annonces(&desactiver(&mut b, &ctx));
+    assert!(
+        a.iter().any(|x| x.starts_with("1 tâche désactivée.") && x.contains("cette tâche : Lanceur cache")),
+        "{a:?}"
+    );
+}
+
+#[test]
+fn c_est_moi_puis_retirer() {
+    let (mut b, _f, ctx) = bloc_avec_taches("approuver", &[], &[]);
+    let mut e = Effets::default();
+    b.action(&ctx, "sec-moi:0", &Value::Null, &mut e);
+    let q = signal(&e.0, "question").unwrap().clone();
+    assert!(q["texte"].as_str().unwrap().starts_with("Marquer ces 2 éléments comme sûrs ?"));
+    let mut e = Effets::default();
+    b.action(&ctx, "sec-moi:0", &json!({ "id": q["id"], "valeur": "oui" }), &mut e);
+    let p = b.pages(&ctx, "securite");
+    assert_eq!(p["securite"]["onglets"][0]["nom"], "Points à vérifier (0)");
+    assert_eq!(p["securite"]["onglets"][3]["nom"], "Approuvés par toi (2)");
+    let reglages: Value =
+        serde_json::from_str(&std::fs::read_to_string(ctx.donnees.join("parametres.json")).unwrap()).unwrap();
+    assert_eq!(
+        reglages["SecuriteApprouves"][0]["Key"],
+        "tache|\\Mise a jour|C:\\Users\\x\\AppData\\Local\\Temp\\Mise a jour.exe"
+    );
+    let mut e = Effets::default();
+    b.action(&ctx, "sec-retirer:0", &Value::Null, &mut e);
+    let p = b.pages(&ctx, "securite");
+    assert_eq!(p["securite"]["onglets"][0]["nom"], "Points à vérifier (1)");
+    assert_eq!(p["securite"]["onglets"][3]["nom"], "Approuvés par toi (1)");
+}
+
+#[test]
+fn analyse_sans_resultat_lu_jamais_aucune_menace() {
+    let ctx = contexte("analyse");
+    let f = Arc::new(faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap()));
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    attendre(&mut b, &ctx);
+    let mut e = Effets::default();
+    b.action(&ctx, "clic:BtnScanQuick", &Value::Null, &mut e);
+    assert_eq!(signal(&e.0, "panneau-analyse").unwrap()["etat"], "en-cours");
+    let e = attendre(&mut b, &ctx);
+    let fin = signal(&e, "panneau-analyse").expect("fin de l'analyse");
+    // (sans droits, sans Aide, une liste vide ne prouve rien)
+    assert_eq!(fin["etat"], "inconnu");
+    assert!(!annonces(&e).iter().any(|a| a.contains("Aucune menace")));
+    assert!(f.gestes().iter().any(|g| g.starts_with("analyser Rapide")));
+}
+
+#[test]
+fn analyse_en_administrateur_rien_trouve() {
+    let ctx = contexte("analyse-admin");
+    let mut f = faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap());
+    f.admin = true;
+    let f = Arc::new(f);
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    attendre(&mut b, &ctx);
+    let mut e = Effets::default();
+    b.action(&ctx, "clic:BtnScanQuick", &Value::Null, &mut e);
+    let e = attendre(&mut b, &ctx);
+    let fin = signal(&e, "panneau-analyse").unwrap();
+    assert_eq!(fin["etat"], "aucune");
+    assert_eq!(fin["lignes"][0], "Aucune menace trouvée. Analyse terminée en moins d'une minute.");
+}
+
+#[test]
+fn analyses_refusees_sans_defender() {
+    let ctx = contexte("sans-defender");
+    let f = Arc::new(faux_avec(EtatS::depuis(&json!({ "OtherAv": ["Avast"], "Uac": true })).unwrap()));
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    attendre(&mut b, &ctx);
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnScanQuick", &Value::Null, &mut e));
+    assert_eq!(annonces(&e.0), vec!["Un instant : Nevermind finit ce qu'il est en train de faire.".to_string()]);
+    assert!(!f.gestes().iter().any(|g| g.starts_with("analyser")));
+    let p = b.pages(&ctx, "securite");
+    assert_eq!(
+        p["securite"]["onglets"][1]["blocs"].as_array().unwrap().last().unwrap()["texte"],
+        "Ton antivirus (Avast) remplace Microsoft Defender : lance les analyses depuis ton antivirus."
+    );
+}
+
+#[test]
+fn actions_inconnues_laissees_aux_autres_blocs() {
+    let ctx = contexte("inconnues");
+    let mut b = BlocProtection::avec_systeme(Some(Arc::new(Faux::default())));
+    let mut e = Effets::default();
+    for id in ["clic:BtnPing", "clic:BtnUndo", "jeu:1", "sec:x", "hist:XYZ"] {
+        assert!(!b.action(&ctx, id, &Value::Null, &mut e), "{id}");
+    }
+    assert!(b.action(&ctx, "hist:0000074e21f9", &Value::Null, &mut e));
+    assert_eq!(signal(&e.0, "historique-annuler"), Some(&json!({ "id": "0000074e21f9" })));
+    for id in ["dns", "carte-relancer", "debit", "clic:BtnDnsFlush"] {
+        assert!(!b.action(&ctx, id, &json!("2"), &mut e), "{id} : bloc réseau");
+    }
+}
+
+// --- outils\tester-securite.ps1, partie 2 : les menaces après une analyse (Get-ScanThreats)
+
+fn date(t: &str) -> Date {
+    Date::lire(t).unwrap()
+}
+
+#[test]
+fn menaces_apres_une_analyse() {
+    let debut = date("2026-11-06T03:00:00");
+    let apres = date("2026-11-06T03:00:30");
+    let avant = date("2026-11-03T03:00:00");
+    let rien = || (Ok(Vec::new()), Vec::new());
+    // Sans droits, l'Aide répond : sa lecture fait foi
+    let l = json!({ "Menaces": [{ "ThreatID": "9", "ThreatName": "Virus:Win32/Essai" }],
+        "Detections": [{ "ThreatID": "9", "Quand": apres.ticks(), "Resources": ["file:_C:\\Users\\x\\Downloads\\a.exe"] },
+                       { "ThreatID": "9", "Quand": avant.ticks(), "Resources": ["file:_C:\\vieux.exe"] }] });
+    let (r, _) = regles::menaces_analyse(debut, false, Some(&l), &rien);
+    assert!(
+        r.lu && r.menaces.len() == 1
+            && r.menaces[0].nom == "Virus:Win32/Essai"
+            && r.menaces[0].fichier == "C:\\Users\\x\\Downloads\\a.exe"
+    );
+    let (r, _) = regles::menaces_analyse(
+        debut,
+        false,
+        Some(&json!({ "Menaces": [], "Detections": [], "DetectionsLues": true })),
+        &rien,
+    );
+    assert!(r.lu && r.menaces.is_empty());
+    // L'Aide n'a pas pu lire les détections : une liste vide ne prouve rien
+    let (r, _) = regles::menaces_analyse(
+        debut,
+        false,
+        Some(&json!({ "Menaces": [], "Detections": [], "DetectionsLues": false })),
+        &rien,
+    );
+    assert!(!r.lu);
+    // Sans droits ni Aide : lecture vide ou en échec, résultat inconnu
+    let (r, _) = regles::menaces_analyse(debut, false, None, &rien);
+    assert!(!r.lu);
+    let echec = || (Err("Lecture impossible.".to_string()), Vec::new());
+    let (r, j) = regles::menaces_analyse(debut, false, None, &echec);
+    assert!(!r.lu && j.is_some());
+    let une = || {
+        (
+            Ok(vec![DetectionLue {
+                id: "7".into(),
+                quand: date("2026-11-06T03:00:30"),
+                ressources: vec!["file:_C:\\b.exe".into()],
+            }]),
+            vec![("7".to_string(), "Trojan:Win32/Essai".to_string())],
+        )
+    };
+    let (r, _) = regles::menaces_analyse(debut, false, None, &une);
+    assert!(r.lu && r.menaces[0].nom == "Trojan:Win32/Essai" && r.menaces[0].fichier == "C:\\b.exe");
+    // En administrateur : lecture sur place, sans l'Aide
+    let (r, _) = regles::menaces_analyse(debut, true, Some(&l), &rien);
+    assert!(r.lu && r.menaces.is_empty());
+    let (r, j) = regles::menaces_analyse(debut, true, None, &echec);
+    assert!(!r.lu && j.unwrap().contains("détections non lues"));
+    // (5 secondes avant le début comptent encore, 6 non)
+    let juste =
+        || (Ok(vec![DetectionLue { id: "1".into(), quand: date("2026-11-06T02:59:55"), ressources: vec![] }]), vec![]);
+    assert_eq!(regles::menaces_analyse(debut, true, None, &juste).0.menaces.len(), 1);
+    let trop =
+        || (Ok(vec![DetectionLue { id: "1".into(), quand: date("2026-11-06T02:59:54"), ressources: vec![] }]), vec![]);
+    assert_eq!(regles::menaces_analyse(debut, true, None, &trop).0.menaces.len(), 0);
+}
+
+/// La lecture du vrai PC (lectures sans droits seulement), écrite en JSON pour la comparer à $SecDataWork :
+/// `NEVERMIND_LECTURE_REELLE=<fichier> cargo test -- --ignored lecture_reelle`
+#[cfg(windows)]
+#[test]
+#[ignore]
+fn lecture_reelle() {
+    let Ok(f) = std::env::var("NEVERMIND_LECTURE_REELLE") else { return };
+    let sys = nevermind_protection::systeme_windows();
+    let debut = Instant::now();
+    let l = sys.lire();
+    let duree = debut.elapsed().as_millis();
+    let env = &l.env;
+    let j = json!({ "S": l.s.json(), "Hosts": env.hosts, "Proxy": { "ProxyEnable": env.proxy_actif, "AutoConfigURL": env.proxy_pac,
+        "ProxyServer": env.proxy_serveur }, "Demarrage": env.demarrage.iter().map(|d| json!({ "Nom": d.nom, "Exe": d.exe, "Enabled": d.actif })).collect::<Vec<_>>(),
+        "Admin": sys.est_admin(), "Millisecondes": duree });
+    std::fs::write(f, serde_json::to_string_pretty(&j).unwrap()).unwrap();
+}
+
+#[test]
+fn reponse_non_rien_n_est_fait() {
+    let (mut b, f, ctx) = bloc_avec_taches("non", &[], &[]);
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "sec:0:0", &json!({ "id": "sec:0:0", "valeur": "non" }), &mut e));
+    assert!(e.0.is_empty(), "{:?}", e.0);
+    assert!(!f.gestes().iter().any(|g| g.starts_with("désactiver")));
+}
+
+#[test]
+fn analyse_demandee_par_le_trafic() {
+    let ctx = contexte("trafic");
+    let mut f = faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap());
+    f.admin = true;
+    let f = Arc::new(f);
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    attendre(&mut b, &ctx);
+    let mut e = Effets::default();
+    b.signal(
+        &ctx,
+        "analyse-demandee",
+        &json!({ "Sorte": "CustomScan", "Chemins": ["C:/x/a.exe"], "Titre": "Analyse de A", "Marque": "cle-a" }),
+        &mut e,
+    );
+    assert_eq!(signal(&e.0, "panneau-analyse").unwrap()["titre"], "Analyse de A");
+    let e = attendre(&mut b, &ctx);
+    assert_eq!(signal(&e, "analyse-finie"), Some(&json!({ "Marque": "cle-a", "Resultat": "clean" })));
+    assert!(f.gestes().iter().any(|g| g == "analyser Personnalisee C:/x/a.exe"));
+}
