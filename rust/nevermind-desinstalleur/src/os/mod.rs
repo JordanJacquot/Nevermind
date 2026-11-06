@@ -176,6 +176,9 @@ pub struct SystemeWindows<'a> {
     pub aide: &'a AideSurPlace,
     /// Le dossier des programmes de cette copie
     pub racine: PathBuf,
+    /// Piloté par Mindset (`-GarderDonnees` ou `-SupprimerDonnees`) : le message de fin n'est pas montré, il va au
+    /// journal (le désinstalleur de Mindset attend la fin de celui-ci et montre son propre bilan ; DIVERGENCES.md)
+    pub muet: bool,
 }
 
 impl SystemeWindows<'_> {
@@ -213,7 +216,13 @@ impl Systeme for SystemeWindows<'_> {
         fenetre::question(texte)
     }
     fn message_fin(&mut self, texte: &str) {
-        fenetre::message_fin(texte);
+        if !self.muet {
+            fenetre::message_fin(texte);
+        } else if self.ctx.donnees.is_dir() {
+            // (données supprimées : rien n'est recréé pour une ligne de journal)
+            let ligne: Vec<&str> = texte.split_whitespace().collect();
+            self.ctx.journal(&format!("Désinstallation, message de fin : {}", ligne.join(" ")));
+        }
     }
     fn journal(&mut self, ligne: &str) {
         self.ctx.journal(ligne);

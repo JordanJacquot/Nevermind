@@ -836,3 +836,62 @@ fn page_nouvelle_envoyee_avant_d_y_aller() {
         .expect("un état avec la page « jeu »");
     assert!(etat < aller, "l'état doit partir avant l'ordre : {suite:?}");
 }
+
+/// La carte de Nevermind dans Mindset (`Write-EtatMindset`) : etat.json écrit pour une copie gérée, même cachée, une
+/// fois l'analyse du PC donnée, en UTF-8 sans BOM, seulement quand elle change ; jamais pour une copie non gérée.
+#[test]
+fn etat_json_pour_mindset() {
+    let d = nevermind_noyau::dossier_essai("hote-etat-mindset");
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    let t = suite_commun::themes::Theme::neon();
+    let nouveau = |geree: bool| {
+        Hote::nouveau(
+            Vec::new(),
+            Contexte::nouveau(d.clone(), d.clone(), geree, false),
+            Habillage::depuis(&t),
+            String::new(),
+            "1.15.6",
+            Images::default(),
+            Box::new(|| "cable".into()),
+        )
+    };
+    let signal = |d: Value| {
+        let mut e = Effets::default();
+        e.ajouter(Effet::Signal { nom: "etat-mindset".into(), donnees: d });
+        e
+    };
+    let f = d.join("etat.json");
+    let mut h = nouveau(true);
+    h.k.regardee = false;
+    // La protection seule : pas encore (`-not $A`)
+    h.appliquer(None, signal(json!({ "protection": 64 })), Duration::ZERO, &mut SansEcran, 0);
+    assert!(!f.exists());
+    let pc = json!({ "pc": { "Score": 72, "AFaire": "Plan d'alimentation", "Urgent": true, "NbAFaire": 3 } });
+    h.appliquer(None, signal(pc.clone()), Duration::ZERO, &mut SansEcran, 0);
+    let o = std::fs::read(&f).unwrap();
+    assert_eq!(o[0], b'{', "sans BOM");
+    let v: Value = serde_json::from_slice(&o).unwrap();
+    let cles: Vec<&String> = v.as_object().unwrap().keys().collect();
+    assert_eq!(cles, ["Version", "Score", "Protection", "AFaire", "Urgent", "NbAFaire", "Maj"]);
+    assert_eq!((v["Version"].as_i64(), v["Score"].as_i64(), v["Protection"].as_i64()), (Some(1), Some(72), Some(64)));
+    assert_eq!(
+        (v["AFaire"].as_str(), v["Urgent"].as_bool(), v["NbAFaire"].as_i64()),
+        (Some("Plan d'alimentation"), Some(true), Some(3))
+    );
+    assert!(!d.join("etat.json.tmp").exists() && !d.join("etat.json.bak").exists());
+    // Rien de neuf : pas réécrit
+    std::fs::write(&f, "garde").unwrap();
+    h.appliquer(None, signal(pc), Duration::ZERO, &mut SansEcran, 0);
+    assert_eq!(std::fs::read_to_string(&f).unwrap(), "garde");
+    // Un changement : réécrit
+    h.appliquer(None, signal(json!({ "protection": 90 })), Duration::ZERO, &mut SansEcran, 0);
+    let v: Value = serde_json::from_slice(&std::fs::read(&f).unwrap()).unwrap();
+    assert_eq!(v["Protection"].as_i64(), Some(90));
+    // Pas gérée : rien
+    std::fs::remove_file(&f).unwrap();
+    let mut h = nouveau(false);
+    h.appliquer(None, signal(json!({ "pc": { "Score": 50 } })), Duration::ZERO, &mut SansEcran, 0);
+    assert!(!f.exists());
+    let _ = std::fs::remove_dir_all(&d);
+}

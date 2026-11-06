@@ -37,7 +37,7 @@ $NevermindRust = @{
         'Mindset.exe'                = @{ Bin = 'Mindset'; Paquet = 'nevermind-appli'; Description = 'Mindset'; Produit = 'Mindset' }
         'Nevermind.exe'              = @{ Bin = 'Nevermind'; Paquet = ''; Description = 'Nevermind'; Produit = 'Nevermind' }
         'NevermindAide.exe'          = @{ Bin = 'NevermindAide'; Paquet = 'nevermind-aide'; Description = 'Nevermind'; Produit = 'Nevermind' }
-        "D$([char]0xE9)sinstaller Nevermind.exe" = @{ Bin = 'NevermindDesinstaller'; Paquet = ''; Description = "D$([char]0xE9)sinstaller Nevermind"; Produit = "D$([char]0xE9)sinstaller Nevermind" }
+        "D$([char]0xE9)sinstaller Nevermind.exe" = @{ Bin = 'NevermindDesinstaller'; Paquet = ''; Description = 'Nevermind'; Produit = 'Nevermind' }
     }
     # Les fichiers copiés tels quels : chemin dans le dossier Nevermind -> chemin dans le dépôt
     Copies = [ordered]@{

@@ -68,3 +68,20 @@ tests\juges\hote-accueil.json, 300 cas, plus 500 cas d'une autre graine qui pass
   protection {score}, jeux {nombre, dernier, fps, image}, reseau {appareils, scan}).
 - Construction d'essai seulement : `{ "script": "..." }` dans actions.demande joue un geste dans la page (le clic sur
   un onglet du kit, pour les captures).
+
+## Contrat de la suite (06/11, job « Contrat » de tests.yml)
+- **etat.json** (la carte de Nevermind dans l'accueil de Mindset, `Write-EtatMindset`, navigation.ps1:64-78) : écrit
+  par l'hôte pour une copie gérée, avec ce que les blocs envoient par le signal « etat-mindset » (bloc pc : score,
+  premier point à régler, urgent, nombre de points, après chaque analyse ; bloc protection : la note). Mêmes champs
+  dans le même ordre (Version, Score, Protection, AFaire, Urgent, NbAFaire, Maj), UTF-8 sans BOM, seulement quand il
+  change, rien avant la première analyse. Différence : écrit à côté puis renommé (PowerShell écrivait directement ;
+  contrat-appli, partie 5 : Mindset ne lit jamais un fichier à moitié écrit). Écrit aussi quand l'écran est caché
+  (lancé avec `-Demarrage` : l'analyse part au démarrage comme en PowerShell), jamais dans la construction d'essai
+  (son etat.json est l'état envoyé à la page). Avant : jamais écrit (le contrat échouait, et la carte de Mindset
+  restait vide).
+- **afficher.demande avec `notif:<12 hex>`** (le clic sur une bulle dans Mindset) : la fenêtre n'est plus montrée par
+  Nevermind. Mindset, qui a montré la bulle, se montre et ouvre Nevermind lui-même (`Open-BulleAppli`,
+  zone.ps1:157-167) ; la bulle est rendue à l'hôte, qui fait son action si c'est la sienne, et rien sinon. PowerShell
+  montrait sa fenêtre pour une bulle qu'il n'avait pas donnée (evenements.ps1:103-108) : le contrat de la suite
+  (tester-contrat.ps1, partie 5 : « notif:000000000000 », rien ne se montre) l'interdit. Un texte mal écrit (pas
+  12 chiffres hexadécimaux en minuscules) reste lu comme un numéro de processus : la fenêtre est montrée.

@@ -227,14 +227,16 @@ impl Vie {
         if afficher.is_file() {
             let demande = std::fs::read_to_string(&afficher).unwrap_or_default().trim().to_string();
             let _ = std::fs::remove_file(&afficher);
-            // (le clic sur une bulle : seul un id de 12 chiffres hexadécimaux est accepté, evenements.ps1:103)
+            // (le clic sur une bulle : seul un id de 12 chiffres hexadécimaux est accepté, evenements.ps1:103). La
+            //  fenêtre n'est pas montrée : Mindset, qui a montré la bulle, se montre et ouvre lui-même Nevermind
+            //  (Open-BulleAppli, zone.ps1:157-167) ; une bulle que Nevermind n'a pas donnée ne fait donc rien du tout
+            //  (contrat de la suite, partie 5 ; DIVERGENCES.md)
             if let Some(id) = demande.strip_prefix("notif:")
                 && id.len() == 12
                 && id.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
             {
                 ev.push(Evenement::Bulle(id.to_string()));
-            }
-            if !self.accrochee {
+            } else if !self.accrochee {
                 self.montrer(f, s);
             }
         }
@@ -553,6 +555,26 @@ mod tests {
         v.avancer(Duration::from_millis(1200), &mut f, &mut s, &mut |_| {});
         assert!(!a.exists());
         assert_eq!(f.activee, 0);
+    }
+
+    #[test]
+    fn bulle_cliquee_sans_rien_montrer() {
+        // (contrat de la suite, partie 5 : « notif:000000000000 », une bulle qu'elle n'a pas donnée : lue, supprimée,
+        //  rien ne se montre ; une bulle à elle est rendue à l'hôte, Mindset se montre lui-même)
+        let (_e, r) = reglages("bulle", true);
+        let a = r.dossier_donnees.join(AFFICHER);
+        let mut v = Vie::nouvelle(r);
+        let (mut f, mut s) = (FausseFenetre::default(), FauxSysteme::default());
+        std::fs::write(&a, "notif:000000000000").unwrap();
+        let ev = v.avancer(Duration::from_millis(600), &mut f, &mut s, &mut |_| {});
+        assert!(!a.exists());
+        assert_eq!((f.activee, f.montree), (0, 0));
+        assert!(ev.contains(&Evenement::Bulle("000000000000".into())));
+        // Mal écrite (majuscules, trop courte) : comme un numéro de processus, la fenêtre est montrée
+        std::fs::write(&a, "notif:0123456789AB").unwrap();
+        let ev = v.avancer(Duration::from_millis(1200), &mut f, &mut s, &mut |_| {});
+        assert!(!a.exists() && !ev.iter().any(|e| matches!(e, Evenement::Bulle(_))));
+        assert_eq!(f.activee, 1);
     }
 
     #[test]

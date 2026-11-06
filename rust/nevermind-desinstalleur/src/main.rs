@@ -69,7 +69,8 @@ mod windows_main {
             let t = String::from_utf8_lossy(&o).trim_start_matches('\u{feff}').to_string();
             serde_json::from_str::<serde_json::Value>(&t).ok()
         });
-        let geree = donnees::geree(suite.as_ref(), &racine);
+        // (suite.json de l'utilisateur, ou le dossier où Mindset installe Nevermind : DIVERGENCES.md, point 14)
+        let geree = donnees::geree(suite.as_ref(), &racine) || donnees::installee_par_mindset(&racine);
         let dossier = donnees::dossier_donnees(geree, &racine, &local);
         let ctx = Contexte::nouveau(racine.clone(), dossier.clone(), geree, false);
         ctx.definir_racine(racine.clone());
@@ -81,7 +82,7 @@ mod windows_main {
 
         let aide = AideSurPlace::nouvelle();
         let mut pc = PcDesinstallation { pc: PcWindows::nouveau(&ctx), aide: &aide };
-        let mut sys = SystemeWindows { ctx: &ctx, aide: &aide, racine: racine.clone() };
+        let mut sys = SystemeWindows { ctx: &ctx, aide: &aide, racine: racine.clone(), muet: impose.is_some() };
         let lieux = travail::Lieux { racine, donnees: dossier, pid: std::process::id() };
         let _ = travail::desinstaller(&mut pc, &mut sys, sv, probleme.as_deref(), &lieux, impose);
         0

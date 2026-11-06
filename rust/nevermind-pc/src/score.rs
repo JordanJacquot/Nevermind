@@ -57,6 +57,20 @@ pub fn apparence(score: i64) -> (&'static str, &'static str) {
     }
 }
 
+/// Ce que `Write-EtatMindset` (navigation.ps1:64-78) prend de l'analyse pour la carte de Nevermind dans Mindset : le
+/// score, le premier point à régler (un important d'abord, sinon un à faire soi-même), s'il est urgent (rouge), et le
+/// nombre de points à régler.
+pub fn etat_mindset(a: &Analyse) -> serde_json::Value {
+    let (importants, manuels) = a_regler(Some(a));
+    let top = importants.first().or(manuels.first());
+    serde_json::json!({
+        "Score": a.score,
+        "AFaire": top.map_or(String::new(), |c| c.titre.clone()),
+        "Urgent": top.is_some_and(|c| c.statut == "bad"),
+        "NbAFaire": importants.len() + manuels.len(),
+    })
+}
+
 /// `Get-HubFindings` : les points importants (un vrai problème, ou ce que Nevermind fait en un clic), puis ceux à faire
 /// soi-même ; chacun trié par gain.
 pub fn a_regler(a: Option<&Analyse>) -> (Vec<Constat>, Vec<Constat>) {

@@ -20,6 +20,8 @@ const TABLE: &[(&str, &[&str], &[&str])] = &[
     ("partie-commencee", &["perf"], &["hôte", "jeux", "memoire", "reseau", "trafic"]),
     ("partie-finie", &["perf"], &["hôte", "jeux", "memoire", "reseau", "trafic"]),
     ("theme-choisi", &["divers"], &["hôte"]),
+    // (la carte de Nevermind dans l'accueil de Mindset : etat.json, écrit par l'hôte)
+    ("etat-mindset", &["pc", "protection"], &["hôte"]),
     // Entre les blocs
     ("mesures", &["perf"], &["pc"]),
     ("mesures-rapides", &["pc"], &["perf"]),

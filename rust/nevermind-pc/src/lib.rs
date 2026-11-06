@@ -59,6 +59,9 @@ pub struct BlocPc {
     /// La lecture lente du PC, dans un fil à part
     lecture: Option<std::thread::JoinHandle<lecture::Lu>>,
     lu: bool,
+    /// La lecture lente vient de finir (dans un tic, ou dans `pages` quand l'écran est regardé) : la diffusion aux
+    /// autres blocs est due
+    a_diffuser: bool,
     charge: bool,
     /// D'où la fiche a été ouverte (`$script:Kit.FicheDe`)
     fiche_de: Option<String>,
@@ -142,6 +145,7 @@ impl BlocPc {
                     self.prendre(lu);
                 }
                 self.lu = true;
+                self.a_diffuser = true;
                 self.avec_pc(ctx, |s, pc| {
                     systeme::completer_par_aide(pc, &mut s.session.entrees);
                     s.session.analyser(pc)
@@ -223,6 +227,8 @@ impl BlocPc {
         // (Get-BackupCount : tout ce que « Tout restaurer » remettrait, origines gardées par l'Aide comprises, pour la
         //  page Sauvegarde du bloc protection ; le score et les points à régler vont à l'accueil par « _accueil »)
         effets.ajouter(sig("sauvegarde-nombre", json!({ "n": nombre })));
+        // (la carte de Nevermind dans l'accueil de Mindset : `Write-EtatMindset`, écrite par l'hôte dans etat.json)
+        effets.ajouter(sig("etat-mindset", json!({ "pc": score::etat_mindset(&a) })));
     }
 
     /// Les gestes des pages du bloc perf dont la logique est ici (onglets Optimisation, Démarrage, Nettoyage)
@@ -505,12 +511,16 @@ impl BlocPc {
         self.charger(ctx);
         if !self.lu {
             self.suivre_lecture(ctx);
-            if self.lu {
-                effets.ajouter(Effet::Rafraichir);
-                self.diffuser(ctx, effets);
-                return None;
+            if !self.lu {
+                return Some(Duration::from_millis(250));
             }
-            return Some(Duration::from_millis(250));
+        }
+        // (la lecture finie ici, ou dans `pages` quand l'écran est regardé : les autres blocs et la carte de Mindset
+        //  la reçoivent une fois)
+        if std::mem::take(&mut self.a_diffuser) {
+            effets.ajouter(Effet::Rafraichir);
+            self.diffuser(ctx, effets);
+            return None;
         }
         // « Tes écrans s'affichent bien ? » : le compte à rebours, puis l'ancien réglage revient tout seul
         if let Some(fin) = self.fin_ecran {

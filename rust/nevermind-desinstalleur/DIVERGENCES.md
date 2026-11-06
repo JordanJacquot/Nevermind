@@ -60,6 +60,18 @@ registre. Tout est identique, sauf ce qui suit.
 13. Ce que Nevermind.ps1 faisait avant `Invoke-Uninstall` et qui ne sert pas à la désinstallation n'est pas repris
     (marque « téléchargé depuis Internet », anciens `.exe.old`, fichiers manquants du dossier modules).
 
+## Contrat de la suite (06/11, job « Contrat » de tests.yml)
+
+14. **Copie gérée** : aussi quand ce programme est là où Mindset installe Nevermind (`<X>:\Mindset\Programmes\Nevermind`),
+    même si suite.json n'est pas dans le `%LOCALAPPDATA%` que donne Windows (point 12) : ses données sont alors
+    `<X>:\Mindset\Donnees\Nevermind`, un chemin tiré du seul dossier de ce programme, jamais d'une variable. Avant, le
+    contrat de la suite (qui pose suite.json dans un faux `%LOCALAPPDATA%`, comme Mindset en test) voyait une copie non
+    gérée : les données cherchées dans `%LOCALAPPDATA%\OptiGame`, et « -SupprimerDonnees » n'y supprimait rien.
+15. **Piloté par Mindset** (`-GarderDonnees` ou `-SupprimerDonnees`) : le message de fin n'est pas montré, il est écrit
+    au journal (si les données restent). Le désinstalleur de Mindset attend la fin de celui-ci (10 minutes au plus) et
+    montre son propre bilan ; une fenêtre « OK » ici bloquait tout jusqu'à un clic (le contrat attend 60 s, et
+    échouait). Le texte du message reste le même (juges) ; sans option, ou avec les deux, rien ne change.
+
 ## La voie « sur place » (architecture, pas une différence)
 
 En administrateur, la version PowerShell faisait elle-même les demandes de la liste de l'Aide (aide-actions.ps1). Ici,
@@ -72,5 +84,5 @@ dépendance.
 
 ## Fiche de version
 
-Description et produit « Désinstaller Nevermind » (demandé pour la version Rust ; le lanceur C# disait « Nevermind »).
-outils\contenu-rust.ps1 attend encore « Nevermind » pour ce programme : à changer avec la chaîne.
+Description et produit « Nevermind », comme le lanceur C# et le relais : le contrat de la suite (tester-contrat.ps1,
+partie 4) veut le nom de l'appli pour le relais et pour le désinstalleur. outils\contenu-rust.ps1 attend la même chose.

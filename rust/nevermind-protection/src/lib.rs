@@ -5,7 +5,7 @@
 //!
 //! Signaux envoyés : « question » (une confirmation à poser),
 //! « historique », « occupe », « registre-ecrire », « demarrage-desactiver » (faits par le bloc pc),
-//! « historique-annuler » (bloc pc). La note et le panneau d'une analyse sont dans les pages (« _accueil », « panneau »).
+//! « historique-annuler » (bloc pc), « etat-mindset » (la note, pour etat.json : l'hôte). La note et le panneau d'une analyse sont dans les pages (« _accueil », « panneau »).
 //! Signaux reçus : « sauvegarde-changee », « sauvegarde-nombre »,
 //! « protection-relire », « analyse-demandee » (rend « analyse-finie »). Voir DIVERGENCES.md.
 
@@ -231,9 +231,12 @@ impl BlocProtection {
         let hosts = self.sys.as_ref().map(|s| s.hosts()).unwrap_or_default();
         let v = Verification::faire(l.s.clone(), &l.env, &approuves, &hosts);
         self.note_analyses = regles::note_analyses(&v.s);
+        let note = v.note;
         self.verif = Some(v);
-        // (la note va à la tuile de l'accueil par « _accueil » dans les pages)
+        // (la note va à la tuile de l'accueil par « _accueil » dans les pages, et à la carte de Nevermind dans Mindset :
+        //  `$script:SecurityScore` de `Write-EtatMindset`, écrit par l'hôte dans etat.json)
         effets.ajouter(Effet::Rafraichir);
+        effets.ajouter(Effet::Signal { nom: "etat-mindset".into(), donnees: json!({ "protection": note }) });
     }
 
     fn defender_ok(&self) -> bool {

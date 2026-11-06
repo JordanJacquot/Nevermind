@@ -16,7 +16,8 @@
 #   3. « Désinstaller Nevermind.exe -GarderDonnees » (comme le lance le désinstalleur de Mindset) : il rend 0 ; tout est
 #      remis comme avant ; l'Aide est arrêtée, sa tâche et sa clé retirées ; les tâches et les raccourcis retirés ;
 #      Nevermind.exe et les autres programmes disparaissent, puis le dossier ; les données restent, sauf la sauvegarde,
-#      l'historique et les demandes ; le message de fin s'est affiché (fermé ici, personne pour cliquer « OK ») ;
+#      l'historique et les demandes ; aucune fenêtre (piloté par Mindset : ni question, ni message de fin, qui est
+#      écrit au journal ; le désinstalleur de Mindset montre son propre bilan) ;
 #   4. de nouveau, avec « -SupprimerDonnees » : tout le dossier des données part ;
 #   5. avec les deux options à la fois : la question s'affiche ; fermée (= Annuler), rien n'est touché, il rend 0.
 # Code de sortie 1 si un cas échoue.
@@ -146,8 +147,7 @@ try {
     Test-Cas 'avant : les réglages sont changés' { (Get-Valeur $cleGraphiques 'HwSchMode') -ne $o.HwSchMode -and (Get-Valeur $cleGameDvr 'HistoricalCaptureEnabled') -eq 0 -and "$((Get-Service DiagTrack).StartType)" -eq 'Disabled' }
     $r = Invoke-Desinstalleur '-GarderDonnees'
     Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
-    Test-Cas "le message de fin s'est affiché (fenêtres vues : $($r.Titres -join ', '))" { @($r.Titres | Where-Object { $_ -eq 'Nevermind' }).Count -ge 1 }
-    Test-Cas 'pas de question avec -GarderDonnees' { -not @($r.Titres | Where-Object { $_ -eq 'Désinstaller Nevermind' }).Count }
+    Test-Cas "aucune fenêtre avec -GarderDonnees, ni question ni message de fin (fenêtres vues : $($r.Titres -join ', '))" { -not @($r.Titres).Count }
     Test-Cas 'HwSchMode remis comme avant (HKLM, par la voie « sur place » de l''Aide)' { (Get-Valeur $cleGraphiques 'HwSchMode') -eq $o.HwSchMode }
     Test-Cas 'Game Bar : la valeur changée est remise, celle qui n''existait pas est effacée (HKCU)' { (Get-Valeur $cleGameDvr 'HistoricalCaptureEnabled') -eq 1 -and $null -eq (Get-Valeur $cleGameBar 'AutoGameModeEnabled') }
     Test-Cas "service DiagTrack remis ($($o.Svc))" { "$((Get-Service DiagTrack).StartType)" -eq $o.Svc }
@@ -159,7 +159,10 @@ try {
     Test-Cas 'puis tout le dossier des programmes (10 s au plus)' { Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 10 }
     Test-Cas 'données gardées : jeux.json, fps.json, parametres.json restent' { (Test-Path -LiteralPath (Join-Path $donnees 'jeux.json')) -and (Test-Path -LiteralPath (Join-Path $donnees 'fps.json')) -and (Test-Path -LiteralPath (Join-Path $donnees 'parametres.json')) }
     Test-Cas 'la sauvegarde, l''historique et les demandes partent' { -not (Test-Path -LiteralPath (Join-Path $donnees 'sauvegarde.json')) -and -not (Test-Path -LiteralPath (Join-Path $donnees 'historique.json')) -and -not (Test-Path -LiteralPath (Join-Path $donnees 'afficher.demande')) }
-    Test-Cas 'le journal dit ce qui a été fait' { (Get-Content -LiteralPath (Join-Path $donnees 'journal.txt') -Raw -Encoding UTF8) -match 'Désinstallation demandée par Mindset \(données gardées\)' }
+    Test-Cas 'le journal dit ce qui a été fait, et le message de fin' {
+        $j = Get-Content -LiteralPath (Join-Path $donnees 'journal.txt') -Raw -Encoding UTF8
+        $j -match 'Désinstallation demandée par Mindset \(données gardées\)' -and $j -match 'Désinstallation, message de fin : Nevermind est désinstallé\.'
+    }
 
     # =================================================================================================================
     Write-Host '4. « -SupprimerDonnees »'

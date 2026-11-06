@@ -19,7 +19,10 @@
 //!
 //! Ce que l'hôte dit aux blocs (`Bloc::signal`) : `"ecran"` `{ "id" }` à chaque écran montré, `"mindset"`
 //! `{ "accroche" }` quand Nevermind est accroché dans Mindset ou décroché. Ce qu'il écoute (`Effet::Signal`) :
-//! `"partie-commencee"` et `"partie-finie"` (pendant une partie, Nevermind n'est regardé que s'il est devant).
+//! `"partie-commencee"` et `"partie-finie"` (pendant une partie, Nevermind n'est regardé que s'il est devant), et
+//! `"etat-mindset"` (`{ "pc": { Score, AFaire, Urgent, NbAFaire } }` du bloc pc, `{ "protection": note }` du bloc
+//! protection) : la carte de Nevermind dans l'accueil de Mindset, écrite dans etat.json pour une copie gérée
+//! (`Write-EtatMindset`, navigation.ps1:64-78), même quand l'écran est caché.
 
 use std::collections::VecDeque;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -140,6 +143,23 @@ impl Accueil {
     }
 }
 
+/// Le contenu de etat.json sans sa date (`Write-EtatMindset`) : `None` tant que le bloc pc n'a pas donné son analyse
+/// (`-not $A`). Les champs dans l'ordre de la version PowerShell : Version, Score, Protection (absente : `null`),
+/// AFaire, Urgent, NbAFaire.
+pub fn etat_mindset(m: &Map<String, Value>) -> Option<Value> {
+    let pc = m.get("pc").and_then(Value::as_object)?;
+    let score = pc.get("Score").and_then(Value::as_i64)?;
+    let protection = m.get("protection").and_then(Value::as_i64);
+    Some(json!({
+        "Version": 1,
+        "Score": score,
+        "Protection": protection,
+        "AFaire": pc.get("AFaire").and_then(Value::as_str).unwrap_or(""),
+        "Urgent": pc.get("Urgent").and_then(Value::as_bool).unwrap_or(false),
+        "NbAFaire": pc.get("NbAFaire").and_then(Value::as_i64).unwrap_or(0),
+    }))
+}
+
 /// `[int]` de .NET : arrondi au pair le plus proche.
 fn arrondi_pair(x: f64) -> i64 {
     let r = x.round();
@@ -220,6 +240,10 @@ pub struct Hote {
     /// L'état d'un service (son démarrage comme .NET : « Automatic », « Manual »..., et s'il tourne), pour
     /// `Set-ServiceOff` ; donné par le programme (lecture seule de Windows)
     pub etat_service: EtatService,
+    /// Ce que les blocs ont donné pour etat.json (signal « etat-mindset ») : « pc » et « protection »
+    mindset: Map<String, Value>,
+    /// Le dernier etat.json écrit, sans sa date (`$script:EtatMindsetEcrit`)
+    mindset_ecrit: String,
 }
 
 #[path = "hote_communs.rs"]
@@ -348,6 +372,41 @@ impl Hote {
             infos: Default::default(),
             notifications: Vec::new(),
             etat_service: Box::new(|_| None),
+            mindset: Map::new(),
+            mindset_ecrit: String::new(),
+        }
+    }
+
+    /// `Write-EtatMindset` (navigation.ps1:64-78) : la carte de Nevermind dans l'accueil de Mindset (etat.json du
+    /// dossier des données), seulement pour une copie gérée, seulement une fois l'analyse du PC faite, et seulement
+    /// quand elle change. Que du texte et des nombres, en UTF-8 sans BOM, écrit à côté puis renommé (Mindset ne lit
+    /// jamais un fichier à moitié écrit). Pas dans la construction d'essai, où etat.json est l'état envoyé à la page.
+    fn etat_mindset(&mut self, donnees: &Value) {
+        if let Value::Object(o) = donnees {
+            for (k, v) in o {
+                self.mindset.insert(k.clone(), v.clone());
+            }
+        }
+        if !self.ctx.geree || self.ctx.essai || self.dossier_etat.is_some() {
+            return;
+        }
+        let Some(e) = etat_mindset(&self.mindset) else { return };
+        let cle = e.to_string();
+        if cle == self.mindset_ecrit {
+            return;
+        }
+        let mut e = e;
+        if let Value::Object(o) = &mut e {
+            o.insert("Maj".into(), json!(nevermind_noyau::contexte::horodatage()));
+        }
+        let f = self.ctx.donnees.join("etat.json");
+        let tmp = self.ctx.donnees.join("etat.json.tmp");
+        let r = std::fs::write(&tmp, e.to_string()).and_then(|()| std::fs::rename(&tmp, &f));
+        match r {
+            Ok(()) => self.mindset_ecrit = cle,
+            Err(_) => {
+                let _ = std::fs::remove_file(&tmp);
+            }
         }
     }
 
@@ -700,6 +759,11 @@ impl Hote {
                             continue;
                         }
                         "sauvegarde-changee" => refaire = true,
+                        // (pour etat.json seulement : aucun bloc ne l'écoute)
+                        "etat-mindset" => {
+                            self.etat_mindset(&donnees);
+                            continue;
+                        }
                         // (le bloc divers, copie autonome : `Select-AppTheme`, le thème enregistré puis la relance)
                         "theme-choisi" => {
                             let id = donnees.get("id").and_then(Value::as_str).unwrap_or("").to_string();

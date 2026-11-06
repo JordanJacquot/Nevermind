@@ -35,6 +35,16 @@ pub fn geree(suite: Option<&Value>, racine: &Path) -> bool {
     !d.is_empty() && egal(&d, &dossier_complet(&racine.to_string_lossy()))
 }
 
+/// Cette copie est-elle là où Mindset installe Nevermind, `<X>:\Mindset\Programmes\Nevermind` ? Alors elle est gérée,
+/// même si suite.json n'est pas trouvé dans le `%LOCALAPPDATA%` que Windows donne (DIVERGENCES.md, point 14) : ses
+/// données sont `<X>:\Mindset\Donnees\Nevermind`, un chemin tiré du dossier de ce programme seulement.
+pub fn installee_par_mindset(racine: &Path) -> bool {
+    let r = dossier_complet(&racine.to_string_lossy());
+    let p = parent(&r);
+    let m = parent(p);
+    !m.is_empty() && egal(feuille(&r), "Nevermind") && egal(feuille(p), "Programmes") && egal(feuille(m), "Mindset")
+}
+
 /// `Get-ManagedDataDir` : `<X>:\Mindset\Programmes\Nevermind` donne `<X>:\Mindset\Donnees\Nevermind`, sinon
 /// `%LOCALAPPDATA%\Mindset\Nevermind`
 pub fn dossier_donnees_gere(racine: &Path, localappdata: &str) -> PathBuf {
@@ -258,6 +268,18 @@ mod tests {
             PathBuf::from("C:\\U\\AppData\\Local\\Mindset\\Nevermind")
         );
         assert_eq!(dossier_donnees(false, Path::new("C:\\x"), "C:\\L"), PathBuf::from("C:\\L\\OptiGame"));
+    }
+
+    #[test]
+    fn installee_la_ou_mindset_l_installe() {
+        assert!(installee_par_mindset(Path::new("E:\\Mindset\\Programmes\\Nevermind")));
+        assert!(installee_par_mindset(Path::new("e:\\mindset\\programmes\\nevermind\\")));
+        assert!(installee_par_mindset(Path::new("C:\\Users\\a\\Temp\\x\\Mindset\\Programmes\\Nevermind")));
+        assert!(!installee_par_mindset(Path::new("E:\\Mindset\\Programmes\\Evermind")));
+        assert!(!installee_par_mindset(Path::new("E:\\Autre\\Programmes\\Nevermind")));
+        assert!(!installee_par_mindset(Path::new("C:\\Program Files\\Mindset\\Nevermind")));
+        assert!(!installee_par_mindset(Path::new("Mindset\\Programmes\\Nevermind")));
+        assert!(!installee_par_mindset(Path::new("D:\\Nevermind")));
     }
 
     #[test]

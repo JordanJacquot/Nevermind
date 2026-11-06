@@ -5,7 +5,8 @@
 //! - le manifeste (desinstalleur.manifest : droits « asInvoker », contrôles modernes, écran net) ;
 //! - l'icône du désinstalleur (icons\Nevermind-desinstaller.ico : celle de Nevermind avec un badge rouge, faite par
 //!   outils\icone.ps1, la même que celle de la version PowerShell) ;
-//! - la fiche de version : description et produit « Désinstaller Nevermind », version celle de Nevermind (le
+//! - la fiche de version : description et produit « Nevermind » (contrat-appli, partie 4 : le relais et le
+//!   désinstalleur disent le nom de l'appli), version celle de Nevermind (le
 //!   Cargo.toml de nevermind-appli : une seule source, la même que version.json et que Mindset.exe).
 //!
 //! Le tout va dans un fichier .res, que l'éditeur de liens de Microsoft (link.exe) accepte tel quel. Le runtime C de
@@ -166,7 +167,7 @@ fn bloc(cle: &str, valeur: &[u8], longueur_valeur: u16, texte: bool, enfants: &[
     b
 }
 
-/// Un texte des informations de version (« FileDescription » = « Désinstaller Nevermind »)
+/// Un texte des informations de version (« FileDescription » = « Nevermind »)
 fn chaine(cle: &str, valeur: &str) -> Vec<u8> {
     let mut v = Vec::new();
     let mut n = 0u16;
@@ -192,11 +193,11 @@ fn version_info(v: &[u16; 4]) -> Vec<u8> {
         true,
         &[
             chaine("Comments", "Remet Windows comme avant Nevermind, puis retire Nevermind de ce dossier."),
-            chaine("FileDescription", "Désinstaller Nevermind"),
+            chaine("FileDescription", "Nevermind"),
             chaine("FileVersion", &texte),
             chaine("InternalName", "Désinstaller Nevermind.exe"),
             chaine("OriginalFilename", "Désinstaller Nevermind.exe"),
-            chaine("ProductName", "Désinstaller Nevermind"),
+            chaine("ProductName", "Nevermind"),
             chaine("ProductVersion", &texte),
         ],
     );

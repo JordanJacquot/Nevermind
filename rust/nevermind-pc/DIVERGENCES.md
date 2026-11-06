@@ -97,3 +97,10 @@ ce qui suit diffère.
 
 `ConvertTo-ValeurPs` du script rendait les valeurs binaires en `object[]` (déroulées par PowerShell) : tous les
 programmes au démarrage passaient pour activés. Corrigé dans le script (`return , ([byte[]]...)`) avant l'export final.
+
+## Câblage du contrat de la suite (06/11)
+- Après chaque analyse (et chaque diffusion aux autres blocs), le signal « etat-mindset » `{ "pc": { Score, AFaire,
+  Urgent, NbAFaire } }` part vers l'hôte, qui écrit etat.json pour Mindset (`Write-EtatMindset`, navigation.ps1:64-78 :
+  le premier point de `Get-HubFindings`, important d'abord, urgent s'il est rouge).
+- La première diffusion (analyse-pc, reglages-jeu, etat-mindset...) part au tic qui suit la fin de la lecture lente,
+  même quand c'est `pages` (écran regardé) qui l'a vue finir : avant, elle était alors perdue jusqu'au premier geste.

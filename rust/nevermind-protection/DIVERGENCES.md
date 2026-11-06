@@ -49,3 +49,7 @@ tourne derrière change :
     Titre, Marque}, même déroulé que Invoke-DefenderScan ; à la fin, signal « analyse-finie » {Marque, Resultat}
     où Resultat vaut `$script:LastScanResult` (clean, threats, unknown, error, cancel). Le bloc trafic pose sa marque
     « analysé » seulement pour « clean ».
+
+## Câblage du contrat de la suite (06/11)
+- Chaque vérification jugée envoie aussi « etat-mindset » `{ "protection": <note> }` à l'hôte : la note de la carte de
+  Nevermind dans Mindset (`$script:SecurityScore` de `Write-EtatMindset`, écrit dans etat.json).
