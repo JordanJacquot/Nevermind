@@ -1933,8 +1933,13 @@ dependencies = [
 name = "nevermind-trafic"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "indexmap 2.14.2",
  "nevermind-noyau",
+ "regex",
  "serde_json",
+ "windows",
+ "windows-registry",
 ]
 
 [[package]]

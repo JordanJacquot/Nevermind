@@ -1,14 +1,40 @@
 [package]
 name = "nevermind-trafic"
 version = "0.1.0"
-description = "Nevermind en Rust : le bloc « trafic »"
+description = "Nevermind en Rust : le bloc « trafic » (Lag en ligne, page Trafic, ce que Windows envoie à Microsoft)"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [dependencies]
 nevermind-noyau = { path = "../nevermind-noyau" }
+# Versions figées (« = »), les mêmes que Mindcare (déjà dans le cache, aucun téléchargement)
 serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+indexmap = "=2.14.2"
+regex = { version = "=1.13.1", default-features = false, features = ["std", "unicode"] }
+chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
+windows-registry = "=0.6.1"
+
+[dependencies.windows]
+version = "=0.62.2"
+features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
+    "Win32_NetworkManagement_Dns",
+    "Win32_Networking_WinHttp",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_Security_WinTrust",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Services",
+    "Win32_System_Threading",
+    "Win32_System_IO",
+    "Win32_Security_Cryptography_Catalog",
+    "Win32_Security_Cryptography_Sip",
+]
 
 [lints]
 workspace = true
