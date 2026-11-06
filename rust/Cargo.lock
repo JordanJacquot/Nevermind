@@ -1824,7 +1824,7 @@ dependencies = [
 
 [[package]]
 name = "nevermind-appli"
-version = "1.15.6"
+version = "2.0.0"
 dependencies = [
  "nevermind-divers",
  "nevermind-jeux",
