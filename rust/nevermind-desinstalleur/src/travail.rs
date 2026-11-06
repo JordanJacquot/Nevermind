@@ -151,6 +151,9 @@ pub fn fichiers_livres(racine: &Path) -> Vec<PathBuf> {
         "Nexo.exe",
         "Désinstaller Nexo.exe",
         "LISEZMOI.txt",
+        // (Nevermind en Rust : le fichier de version lu par Mindset ; sans lui, le dossier des programmes ne se
+        // vide pas et ne disparaît pas, contrat de la suite, partie 9)
+        "version.json",
     ]
     .iter()
     .map(|n| dans(racine, n))
