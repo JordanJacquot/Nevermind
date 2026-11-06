@@ -871,6 +871,7 @@ impl Bloc for BlocMemoire {
         }
     }
 
+    // (le signal « demarrage-programmes » du bloc pc : voir `programmes_demarrage`)
     fn signal(&mut self, _ctx: &Contexte, nom: &str, donnees: &Value, _effets: &mut Effets) {
         let liste = |v: &Value| -> Vec<String> {
             match v {
@@ -879,7 +880,7 @@ impl Bloc for BlocMemoire {
             }
         };
         match nom {
-            "demarrage-programmes" => self.demarrage = liste(&donnees["programmes"]),
+            "demarrage-programmes" => self.demarrage = programmes_demarrage(&donnees["programmes"]),
             "jeux-bibliotheque" => self.jeux_exes = liste(&donnees["exes"]),
             "partie-commencee" => {
                 self.partie = donnees.get("pid").or_else(|| donnees.get("Pid")).and_then(Value::as_i64).unwrap_or(0)
@@ -894,4 +895,35 @@ impl Bloc for BlocMemoire {
         #[cfg(windows)]
         windows::relacher();
     }
+}
+
+/// Les programmes de la page Démarrage pour la mémoire (memoire.ps1:671) : ceux qui sont activés et ont un .exe, le nom
+/// de ce .exe et ceux que nomme leur commande, en minuscules, sans doublon. `programmes` : la liste du bloc pc
+/// (`{ Nom, Commande, Exe, Enabled, Source }`), ou des noms déjà prêts.
+pub fn programmes_demarrage(programmes: &Value) -> Vec<String> {
+    static EXE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"[\w.-]+\.exe").expect("motif"));
+    let nom_fichier = |s: &str| s.trim().rsplit(['\\', '/']).next().unwrap_or("").to_lowercase();
+    let mut r: Vec<String> = Vec::new();
+    let mut ajouter = |n: String| {
+        if !n.is_empty() && !r.contains(&n) {
+            r.push(n);
+        }
+    };
+    for p in programmes.as_array().into_iter().flatten() {
+        if let Some(s) = p.as_str() {
+            ajouter(s.to_lowercase());
+            continue;
+        }
+        let exe = p.get("Exe").and_then(Value::as_str).unwrap_or("");
+        if p.get("Enabled").and_then(Value::as_bool) != Some(true) || exe.is_empty() {
+            continue;
+        }
+        ajouter(nom_fichier(exe));
+        let commande = p.get("Commande").and_then(Value::as_str).unwrap_or("");
+        for m in EXE.find_iter(commande) {
+            ajouter(nom_fichier(m.as_str()));
+        }
+    }
+    r
 }

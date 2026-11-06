@@ -31,7 +31,7 @@ mod windows;
 
 use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
 use pc::Pc;
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use session::Session;
 use std::time::{Duration, Instant};
 
@@ -129,11 +129,10 @@ impl BlocPc {
         }
         match &self.lecture {
             None => {
-                if ctx.essai && self.essai.is_none() {
-                    // (mode test sans faux PC : rien n'est lu sur le vrai PC)
-                    self.lu = true;
-                    return;
-                }
+                // (mode test sans faux PC, la construction d'essai : le vrai PC est LU, comme la version PowerShell en
+                //  test, pour que Ton PC montre son analyse ; rien n'y est écrit : PcWindows refuse toute écriture en
+                //  test)
+                let _ = ctx;
                 self.lecture = Some(std::thread::spawn(lecture::lire));
             }
             Some(h) if h.is_finished() => {
@@ -205,12 +204,12 @@ impl BlocPc {
     fn diffuser(&mut self, ctx: &Contexte, effets: &mut Effets) {
         let Some(a) = self.session.analyse.clone() else { return };
         let build = a.build;
-        let (plan_ok, _) = self.avec_pc(ctx, |s, pc| {
+        let ((plan_ok, nombre), _) = self.avec_pc(ctx, |s, pc| {
             let cree = s.session.sv.plan_cree.clone();
             diffusion::lire_reglages(pc, build, cree.as_deref(), &mut s.cases);
             diffusion::lire_demarrage(pc, &s.session.demarrage, &mut s.cases);
             s.tests.ecrans = pc.ecrans();
-            reglages::test_plan(pc, cree.as_deref())
+            (reglages::test_plan(pc, cree.as_deref()), corrections::compte_total(&s.session.sv, pc))
         });
         self.tests.portable = a.portable;
         let sig = |n: &str, d: Value| Effet::Signal { nom: n.into(), donnees: d };
@@ -221,7 +220,9 @@ impl BlocPc {
         if self.cases.nettoyage_lu {
             effets.ajouter(sig("nettoyage", diffusion::signal_nettoyage(&self.cases)));
         }
-        effets.ajouter(sig("pc:analyse", session::resume(Some(&a))));
+        // (Get-BackupCount : tout ce que « Tout restaurer » remettrait, origines gardées par l'Aide comprises, pour la
+        //  page Sauvegarde du bloc protection ; le score et les points à régler vont à l'accueil par « _accueil »)
+        effets.ajouter(sig("sauvegarde-nombre", json!({ "n": nombre })));
     }
 
     /// Les gestes des pages du bloc perf dont la logique est ici (onglets Optimisation, Démarrage, Nettoyage)
@@ -340,6 +341,9 @@ impl Bloc for BlocPc {
         if let Some(f) = &self.session.fiche {
             p.insert("fiche".into(), fiche::page(f, self.fiche_de.as_deref()));
         }
+        // La tuile « Ton PC » de l'accueil (Get-EcranNevermind : le score, et les points de Get-HubFindings)
+        let r = session::resume(self.session.analyse.as_ref());
+        p.insert("_accueil".into(), json!({ "pc": { "score": r["score"], "a_regler": r.get("aRegler") } }));
         p
     }
 
@@ -396,6 +400,15 @@ impl Bloc for BlocPc {
                 let oui = net::champ_texte(valeur, "valeur") == "oui" || valeur.as_str() == Some("oui");
                 self.avec_pc(ctx, |s, pc| {
                     s.session.repondre(pc, oui);
+                    true
+                })
+            }
+            // (« Revenir en arrière » de la fiche de résultat d'un autre bloc, montrée par l'hôte : `Invoke-UndoLastRun`)
+            "fiche:annuler" => {
+                let log = net::champ_liste(valeur, "log");
+                let id = Some(net::champ_texte(valeur, "historique")).filter(|h| !h.is_empty());
+                self.avec_pc(ctx, |s, pc| {
+                    s.session.revenir_journal(pc, Some(log), id);
                     true
                 })
             }
@@ -526,47 +539,78 @@ impl BlocPc {
                 self.live = donnees.clone();
                 (false, Vec::new())
             }
-            "pc:analyser" => self.avec_pc(ctx, |s, pc| {
-                s.session.analyser(pc);
-                true
-            }),
-            "pc:appliquer-reglages" => self.avec_pc(ctx, |s, pc| {
-                s.session.appliquer_reglages(pc, &liste("ids"), net::champ_vrai(donnees, "restauration"));
-                true
-            }),
-            "pc:demarrage" => self.avec_pc(ctx, |s, pc| {
-                let d = reglages::Demarrage {
-                    nom: texte("nom"),
-                    source: String::new(),
-                    commande: String::new(),
-                    approuve: texte("approuve"),
-                    nom_valeur: texte("nomValeur"),
-                    actif: true,
-                    exe: String::new(),
-                };
-                if let Err(e) = s.session.demarrage(pc, &d, &texte("nom"), net::champ_vrai(donnees, "activer")) {
-                    pc.message(&session::message_erreur(&e));
+            // (un autre bloc a écrit sauvegarde.json, ou l'historique a changé : la sauvegarde est relue, pour ne
+            //  jamais écraser ce qu'il y a noté)
+            "sauvegarde-changee" => {
+                if self.session.attente.is_none() {
+                    self.session.sv = systeme::lire_sauvegarde(ctx);
                 }
+                // (puis le compte de la page Sauvegarde, rediffusé)
+                (self.session.analyse.is_some(), Vec::new())
+            }
+            // (la fiche d'un jeu ou d'une partie, bloc jeux : `Invoke-TweakFix`)
+            "appliquer-reglages-windows" => self.avec_pc(ctx, |s, pc| {
+                s.session.corriger_reglages(pc, &liste("ids"));
                 true
             }),
-            "pc:nettoyer" => self.avec_pc(ctx, |s, pc| {
-                s.session.nettoyer(pc, &liste("ids"));
-                true
-            }),
-            "pc:tout-restaurer" => self.avec_pc(ctx, |s, pc| {
-                let d = systeme::changements_definitifs(pc);
-                s.session.restaurer_tout(pc, &d);
-                true
-            }),
-            // (le profil d'un jeu, bloc perf : `Set-GameProfile`, les changements déclarés faits ici, notés dans l'historique)
+            // (le profil d'un jeu, blocs perf et jeux : `Set-GameProfile`, les changements déclarés faits ici, notés
+            //  dans l'historique sous le titre donné : « historique » du bloc perf, « titre » du bloc jeux)
             "declarations" => self.avec_pc(ctx, |s, pc| {
                 let l: Vec<modele::Declaration> =
                     net::champ_liste(donnees, "changements").iter().map(modele::Declaration::depuis_json).collect();
-                if let Err(e) = s.session.declarations(pc, &l, &texte("historique")) {
+                let t = if texte("historique").is_empty() { texte("titre") } else { texte("historique") };
+                if let Err(e) = s.session.declarations(pc, &l, &t) {
                     pc.message(&session::message_erreur(&e));
                 }
                 true
             }),
+            // (« Réactiver » le contrôle des comptes, bloc protection : `Set-Reg` avec sa sauvegarde, puis l'historique)
+            "registre-ecrire" => self.avec_pc(ctx, |s, pc| {
+                let mut d = donnees.clone();
+                d["Type"] = json!("reg");
+                let l = vec![modele::Declaration::depuis_json(&d)];
+                if let Err(e) = s.session.declarations(pc, &l, &texte("titre")) {
+                    pc.message(&session::message_erreur(&e));
+                }
+                true
+            }),
+            // (« Désactiver au démarrage » des programmes suspects, bloc protection : `Set-StartupState $i $false`)
+            "demarrage-desactiver" => {
+                let a_couper: Vec<(reglages::Demarrage, String)> = net::champ_liste(donnees, "elements")
+                    .iter()
+                    .filter_map(|e| {
+                        let (n, x) = (net::champ_texte(e, "Nom"), net::champ_texte(e, "Exe"));
+                        self.cases
+                            .demarrage
+                            .iter()
+                            .find(|d| {
+                                d.0.nom.eq_ignore_ascii_case(&n) && (x.is_empty() || d.0.exe.eq_ignore_ascii_case(&x))
+                            })
+                            .or_else(|| self.cases.demarrage.iter().find(|d| d.0.nom.eq_ignore_ascii_case(&n)))
+                            .map(|d| (d.0.clone(), d.1.clone()))
+                    })
+                    .collect();
+                self.avec_pc(ctx, |s, pc| {
+                    for (d, n) in &a_couper {
+                        if let Err(e) = s.session.demarrage(pc, d, n, false) {
+                            pc.message(&session::message_erreur(&e));
+                        }
+                    }
+                    true
+                })
+            }
+            // (« Annuler » d'une ligne de l'historique, page Sauvegarde du bloc protection : `Undo-HistoryEntry`)
+            "historique-annuler" => {
+                let id = texte("id");
+                let h = ctx.historique().into_iter().find(|h| h["Id"].as_str() == Some(id.as_str()));
+                match h {
+                    Some(h) => self.avec_pc(ctx, |s, pc| {
+                        s.session.annuler_entree(pc, &h);
+                        true
+                    }),
+                    None => (false, Vec::new()),
+                }
+            }
             "ouvrir-fiche" => {
                 let id = texte("id");
                 let f = self.session.analyse.as_ref().and_then(|a| a.actifs.iter().find(|f| f.id == id).cloned());

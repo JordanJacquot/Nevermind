@@ -1293,6 +1293,19 @@ impl Bloc for BlocTrafic {
                 self.jeux_exes =
                     valeur::liste(valeur::champ(d, "Exes")).iter().map(|x| valeur::texte(x).to_lowercase()).collect();
             }
+            // (la recherche du bloc divers mène au panneau « Ce que Windows envoie à Microsoft », Open-SearchEntry)
+            "trafic-microsoft" => self.ouvrir_panneau(Detail::Microsoft, effets),
+            // (la fin de l'analyse demandée, bloc protection : `$script:LastScanResult` ; « clean » pose la marque,
+            //  trafic.ps1:324)
+            "analyse-finie" => {
+                let m = valeur::champ(d, "Marque");
+                let (reglage, cle) =
+                    (valeur::texte(valeur::champ(m, "Reglage")), valeur::texte(valeur::champ(m, "Cle")));
+                if valeur::texte(valeur::champ(d, "Resultat")) == "clean" && !reglage.is_empty() && !cle.is_empty() {
+                    Self::marquer(ctx, &reglage, &cle, true);
+                    effets.ajouter(Effet::Rafraichir);
+                }
+            }
             _ => {}
         }
     }

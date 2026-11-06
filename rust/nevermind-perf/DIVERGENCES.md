@@ -72,7 +72,9 @@ Ce que les autres blocs lui envoient par signal (le champ `donnees` du signal) :
 
 - `partie-commencee` {jeu, exe, pid} et `partie-finie` {jeu, exe, pid, duree_s} (règle commune du coordinateur) :
   temps de jeu, « En jeu » de la bibliothèque, lag, mémoire.
-- `mesures-en-direct` {Cpu, CpuPerf, RamTotal, RamUsed, Gpu, GpuTemp, VramUsed, VramTotal, GpuPower, GpuPowerLimit,
+- `mesures` (nom aligné sur le bloc pc, câblage du 06/11 ; reçu : `mesures-rapides` {on} du bloc pc pendant un test
+  des composants, `$Live.Fast` : toutes les 400 ms, même écran caché ; `profils-changes` du bloc jeux : profils relus ;
+  la tuile de l'accueil : `_accueil` {perf: {sous}}, le même compte que la page) {Cpu, CpuPerf, RamTotal, RamUsed, Gpu, GpuTemp, VramUsed, VramTotal, GpuPower, GpuPowerLimit,
   DiskBusy, Updated} : chaque seconde, seulement écran regardé (les tuiles de Ton PC, les tests).
 - `fps-partie-enregistree` : la partie ajoutée à fps.json (bloc jeux : Mes parties).
 - `notification` {titre, texte, action} ; `ajouter-jeu` {} (Add-CustomGame, bloc jeux) ; `ouvrir-fiche` (la fiche de

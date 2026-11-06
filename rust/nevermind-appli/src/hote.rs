@@ -54,6 +54,36 @@ pub enum Demande {
     OuvrirAdresse(String),
     /// Une partie commence ou finit (signal d'un bloc)
     Partie(bool),
+    /// Une page de Mindset à ouvrir (`Open-MindsetSettings` : « parametres:general » dans afficher-page.txt)
+    PageMindset(String),
+    /// Se relancer avec le thème choisi (`Set-AppTheme`)
+    Relancer,
+}
+
+/// Un écran qui ne montre rien (les signaux donnés avant que la page existe).
+struct SansEcran;
+impl Ecran for SansEcran {
+    fn etat(&mut self, _: Value) {}
+    fn ordre(&mut self, _: Value) {}
+}
+
+/// Ce que la page Paramètres montre de l'hôte (signal « etat-hote » au bloc divers) : la fenêtre d'avant après
+/// `Initialize-Suite` et `Update-ShortcutCard` (mises-a-jour.ps1:305-313, assistance.ps1:337-353). Nevermind en Rust
+/// passe toujours par Mindset pour ses mises à jour et son démarrage avec Windows.
+pub fn etat_hote(version: &str, gere: bool) -> Value {
+    json!({
+        "version": version,
+        "maj_texte": format!("Version {version}. Les mises à jour de Nevermind passent par Mindset : ouvre Mindset pour les installer."),
+        "maj_bouton": false,
+        "raccourci_texte": if gere {
+            "Le raccourci et le démarrage avec Windows se règlent dans Mindset : interrupteur « S'ouvre avec Mindset » sur la carte de Nevermind, dans l'accueil de Mindset."
+        } else {
+            "Le raccourci sur le bureau est géré par Mindset."
+        },
+        "raccourci_bouton": gere,
+        "demarrage_ligne": false,
+        "demarrage_coche": false,
+    })
 }
 
 /// Les pages qui ne sont préparées qu'à l'écran : refaites en y arrivant (accueil-console.ps1:18).
@@ -567,6 +597,8 @@ impl Hote {
     /// L'état de départ (`Initialize-AccueilConsole` appelle `Update-EcranNevermind` une fois) : envoyé même si la
     /// fenêtre n'est pas encore regardée.
     pub fn etat_initial(&mut self, maintenant: Duration) -> Value {
+        let h = etat_hote(&self.version, self.ctx.geree);
+        self.signaler(None, "etat-hote", &h, maintenant, &mut SansEcran, 0);
         let (e, _) = self.construire(maintenant);
         self.k.envoye = cle_etat(&e);
         self.habiller(e, maintenant)
@@ -634,6 +666,10 @@ impl Hote {
             match e {
                 Effet::OuvrirEcran(id) => {
                     if self.k.pret {
+                        // (l'état d'abord : la page où aller peut venir d'apparaître, la fiche d'un jeu par exemple ;
+                        //  sans elle le kit retomberait sur l'accueil)
+                        self.mettre_a_jour(maintenant, ecran);
+                        refaire = false;
                         self.aller(&id, ecran);
                     } else {
                         self.k.retour_ecran = Some(id);
@@ -664,6 +700,15 @@ impl Hote {
                             continue;
                         }
                         "sauvegarde-changee" => refaire = true,
+                        // (le bloc divers, copie autonome : `Select-AppTheme`, le thème enregistré puis la relance)
+                        "theme-choisi" => {
+                            let id = donnees.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+                            if !id.is_empty() && self.ctx.ecrire_reglage("Theme", json!(id), false).is_ok() {
+                                self.ctx.journal(&format!("Thème choisi : {id}, relance"));
+                                self.demandes.push(Demande::Relancer);
+                            }
+                            continue;
+                        }
                         // (fait ici, puis passé aux blocs aussi)
                         "veille-jeu-ajouter" => refaire |= self.signal_commun(&nom, &donnees, ecran),
                         _ => {}
@@ -700,6 +745,8 @@ impl Hote {
             if let Err(e) = protege(|| b.signal(ctx, nom, donnees, &mut eff)) {
                 self.ctx.journal(&format!("Signal {nom} pour {n} : {e}"));
             }
+            // (comme pour un geste : un signal peut donner du travail à un bloc qui n'avait plus de tic)
+            self.reveiller(j, maintenant);
             refaire |= self.appliquer(Some(j), eff, maintenant, ecran, profondeur);
         }
         refaire
@@ -729,6 +776,11 @@ impl Hote {
                     true
                 }
             };
+            // (un bloc qui a pris un geste est rappelé tout de suite, même s'il avait dit « plus besoin de tic » :
+            //  le geste peut avoir lancé un travail à suivre)
+            if pris {
+                self.reveiller(i, maintenant);
+            }
             let refaire = self.appliquer(Some(i), eff, maintenant, ecran, 0);
             if refaire {
                 self.mettre_a_jour(maintenant, ecran);
@@ -828,6 +880,12 @@ impl Hote {
                 }
             }
             "fermer" => self.demander_quitter(ecran),
+            // (« Réglages de Mindset » de la carte du raccourci : Invoke-CreateShortcut, Test-DemarrageParMindset)
+            "clic:BtnShortcut" => {
+                if self.ctx.geree {
+                    self.demandes.push(Demande::PageMindset("parametres:general".into()));
+                }
+            }
             "fiche:close" | "fiche:ignore" if self.fiche.page.is_some() => self.bouton_fiche(id),
             "retour" => {
                 if de == "fiche" && self.fiche.page.is_some() {
@@ -1001,6 +1059,15 @@ impl Hote {
         }
         if refaire {
             self.mettre_a_jour(maintenant, ecran);
+        }
+    }
+
+    /// Un bloc sans tic (il a rendu `None`) est rappelé à la prochaine minuterie.
+    fn reveiller(&mut self, i: usize, maintenant: Duration) {
+        if let Some(t) = self.tics.get_mut(i)
+            && t.is_none()
+        {
+            *t = Some(maintenant);
         }
     }
 

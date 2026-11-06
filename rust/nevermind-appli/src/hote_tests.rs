@@ -11,13 +11,19 @@ use std::rc::Rc;
 struct Page {
     etats: Vec<Value>,
     ordres: Vec<Value>,
+    /// Les deux, dans l'ordre reçu
+    suite: Vec<Value>,
 }
 struct EcranEssai(Rc<RefCell<Page>>);
 impl Ecran for EcranEssai {
     fn etat(&mut self, e: Value) {
+        self.0.borrow_mut().suite.push(
+            json!({ "etat": e.get("pages").map(|p| p.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>())) }),
+        );
         self.0.borrow_mut().etats.push(e);
     }
     fn ordre(&mut self, o: Value) {
+        self.0.borrow_mut().suite.push(o.clone());
         self.0.borrow_mut().ordres.push(o);
     }
 }
@@ -805,4 +811,28 @@ fn l_assistance_du_noyau_a_sa_fiche_et_son_panneau() {
     assert_eq!(pa["parent"], "aide");
     h.recevoir(action("panneau:close", "panneau"), Duration::ZERO, &mut e);
     assert!(p.borrow().etats.last().unwrap()["pages"].get("panneau").is_none());
+}
+
+/// Un bloc mène à une page qui vient d'apparaître (la fiche d'un jeu) : l'état qui la contient part avant l'ordre d'y
+/// aller (sinon le kit retombe sur l'accueil : essai du 06/11 sur le bureau à part).
+#[test]
+fn page_nouvelle_envoyee_avant_d_y_aller() {
+    let b = Factice { prend: vec!["jeu:0".into()], ..Factice::default() };
+    let (pages, eff) = (b.pages.clone(), b.effets.clone());
+    let mut h = hote(vec![Box::new(b)], "page-nouvelle");
+    let p = Rc::new(RefCell::new(Page::default()));
+    let mut e = EcranEssai(Rc::clone(&p));
+    h.recevoir(MessagePage::Pret, Duration::ZERO, &mut e);
+    pages.borrow_mut().insert("jeu".into(), json!({ "titre": "Un jeu", "blocs": [] }));
+    eff.borrow_mut().push(Effet::Rafraichir);
+    eff.borrow_mut().push(Effet::OuvrirEcran("jeu".into()));
+    p.borrow_mut().suite.clear();
+    h.recevoir(action("jeu:0", "jeux"), Duration::ZERO, &mut e);
+    let suite = p.borrow().suite.clone();
+    let aller = suite.iter().position(|o| o == &json!({ "kit": "aller", "ecran": "jeu" })).expect("aller jeu");
+    let etat = suite
+        .iter()
+        .position(|o| o["etat"].as_array().is_some_and(|l| l.iter().any(|k| k == "jeu")))
+        .expect("un état avec la page « jeu »");
+    assert!(etat < aller, "l'état doit partir avant l'ordre : {suite:?}");
 }

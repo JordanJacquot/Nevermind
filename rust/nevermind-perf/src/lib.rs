@@ -7,7 +7,7 @@
 //!   compteur par-dessus le jeu, le raccourci Ctrl+Maj+F, le bilan et le diagnostic de la partie ;
 //! - l'alerte de température de la carte graphique.
 //!
-//! Signaux envoyés : « partie-commencee », « partie-finie », « mesures-en-direct », « fps-partie-enregistree »,
+//! Signaux envoyés : « partie-commencee », « partie-finie », « mesures », « fps-partie-enregistree »,
 //! « notification », « ajouter-jeu », « declarations », « ouvrir-fiche », « diagnostic-fps-pret ».
 //! Signaux attendus : « jeux-liste », « reglages-jeu », « demarrage », « nettoyage », « connexion », « analyse-pc »,
 //! « memoire-constat », « diagnostic-fps ». Le contenu de chacun est décrit dans DIVERGENCES.md.
@@ -88,6 +88,8 @@ struct BilanEnCours {
 #[derive(Default)]
 pub struct BlocPerf {
     sys: Option<Box<dyn Systeme>>,
+    /// `$Live.Fast` : un test des composants est en cours (signal « mesures-rapides » du bloc pc)
+    pub rapide: bool,
     compteur: Option<Box<dyn Compteur>>,
     t0: Option<Instant>,
     /// Horloge des tests (secondes) ; `None` : la vraie
@@ -998,7 +1000,17 @@ impl Bloc for BlocPerf {
 
     fn pages(&mut self, ctx: &Contexte, ecran: &str) -> Map<String, Value> {
         let e = self.entree(ctx, ecran);
-        pages::pages(&e)
+        let mut p = pages::pages(&e);
+        // La tuile « Performances » de l'accueil (Get-EcranNevermind : le même compte que la page, Get-ReglagesKit)
+        let lignes = liste(e.get("reglages"));
+        let sous = if lignes.is_empty() {
+            "Pour gagner des FPS".to_string()
+        } else {
+            let (_, _, reste, _) = pages::compter_reglages(&lignes);
+            pages::titre_reglages(lignes.len(), reste)
+        };
+        p.insert("_accueil".into(), json!({ "perf": { "sous": sous } }));
+        p
     }
 
     fn action(&mut self, ctx: &Contexte, id: &str, valeur: &Value, effets: &mut Effets) -> bool {
@@ -1107,12 +1119,15 @@ impl Bloc for BlocPerf {
             self.detection(ctx, effets);
         }
         // Les mesures en direct : seulement l'écran regardé (pendant une partie, Nevermind doit être devant)
-        let regarde = !cache && (self.session.is_none() || self.sys().devant().0 == std::process::id());
+        // (`$Live.Fast`, signal « mesures-rapides » du bloc pc : un test des composants veut ses mesures toutes les
+        //  400 ms, même écran caché)
+        let regarde =
+            self.rapide || (!cache && (self.session.is_none() || self.sys().devant().0 == std::process::id()));
         if regarde {
             if t >= self.proch_mesure {
-                self.proch_mesure = t + 1.0;
+                self.proch_mesure = t + if self.rapide { 0.4 } else { 1.0 };
                 self.lire_mesures(Besoin::TOUT);
-                effets.ajouter(Effet::Signal { nom: "mesures-en-direct".into(), donnees: self.mesures.direct.json() });
+                effets.ajouter(Effet::Signal { nom: "mesures".into(), donnees: self.mesures.direct.json() });
                 let temp = self.mesures.direct.gpu_temp;
                 if let Some(x) = self.chaleur.tester(temp, t) {
                     Self::alerte_chaleur(ctx, effets, &x, temp.unwrap_or(0.0));
@@ -1148,6 +1163,14 @@ impl Bloc for BlocPerf {
 
     fn signal(&mut self, ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
         match nom {
+            // (un profil changé depuis la fiche d'un jeu, bloc jeux : les profils sont relus dans le registre)
+            "profils-changes" => self.profils = None,
+            "mesures-rapides" => {
+                self.rapide = vrai(donnees.get("on"));
+                if self.rapide {
+                    self.proch_mesure = 0.0;
+                }
+            }
             "jeux-liste" => {
                 let jeux = if donnees.is_array() { liste(Some(donnees)) } else { liste(donnees.get("jeux")) };
                 self.index = jeu::index_jeux(&jeux);

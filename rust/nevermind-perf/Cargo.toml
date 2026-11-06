@@ -36,5 +36,11 @@ features = [
     "Win32_UI_WindowsAndMessaging",
 ]
 
+# L'essai à l'écran du compteur (src/windows/essai_compteur.rs, test ignoré) : le nom du bureau et PrintWindow, pour les
+# tests seulement (rien de plus dans le programme livré)
+[target.'cfg(windows)'.dev-dependencies.windows]
+version = "=0.62.2"
+features = ["Win32_Storage_Xps", "Win32_System_StationsAndDesktops"]
+
 [lints]
 workspace = true

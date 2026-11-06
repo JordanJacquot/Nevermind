@@ -53,14 +53,14 @@ fn ecran_regarde_puis_cache() {
     let vu = b.lectures();
     // Regardé : 5 lectures par seconde (processeur, mémoire, moteurs, NVIDIA, compteurs) + les programmes toutes les 5 s
     assert!((60 * 5..=60 * 5 + 20).contains(&vu), "{vu} lectures en une minute, écran regardé");
-    assert!(signaux(&e).iter().any(|(n, _)| n == "mesures-en-direct"));
+    assert!(signaux(&e).iter().any(|(n, _)| n == "mesures"));
     assert_eq!(b.direct().ram_totale, Some(16e9));
     let mut e = Effets::default();
     faire(&mut b, &ctx, true, 60.0, &mut e);
     let cache = b.lectures() - vu;
     // Caché : la température toutes les 10 s, et les programmes toutes les 5 s (la détection d'une partie)
     assert!(cache <= 6 + 12 + 1, "{cache} lectures en une minute, écran caché");
-    assert!(!signaux(&e).iter().any(|(n, _)| n == "mesures-en-direct"), "rien n'est envoyé quand l'écran est caché");
+    assert!(!signaux(&e).iter().any(|(n, _)| n == "mesures"), "rien n'est envoyé quand l'écran est caché");
 }
 
 #[test]

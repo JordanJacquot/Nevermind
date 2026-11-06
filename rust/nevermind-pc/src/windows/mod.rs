@@ -230,7 +230,15 @@ pub fn souris(t1: i64, t2: i64, v: i64) {
 
 /// Un programme lancé sans fenêtre de console : (code de sortie, texte écrit)
 pub fn commande(exe: &str, args: &[String]) -> (i32, String) {
-    match std::process::Command::new(exe).args(args).creation_flags(SANS_FENETRE).output() {
+    // (un nom seul, « powercfg.exe », « shutdown.exe »... : celui de System32 par son chemin complet, jamais un
+    //  programme du même nom posé ailleurs)
+    let complet = if exe.contains(['\\', '/']) {
+        exe.to_string()
+    } else {
+        let s = format!("{}\\{exe}", nevermind_noyau::windows::dossier_systeme().trim_end_matches('\\'));
+        if std::path::Path::new(&s).is_file() { s } else { exe.to_string() }
+    };
+    match std::process::Command::new(&complet).args(args).creation_flags(SANS_FENETRE).output() {
         Ok(o) => {
             let t: String = o.stdout.iter().map(|&b| cp850(b)).collect();
             (o.status.code().unwrap_or(1), t)
@@ -318,4 +326,95 @@ pub fn uefi() -> bool {
     let mut t = FIRMWARE_TYPE::default();
     // SAFETY : écrit le type à l'adresse donnée
     unsafe { GetFirmwareType(&mut t) }.is_ok() && t == FirmwareTypeUefi
+}
+
+/// powercfg.exe pris dans System32 par son chemin complet (jamais cherché par son nom : un « powercfg.exe » posé à côté
+/// de Nevermind ne doit jamais être lancé à sa place, surtout en administrateur)
+pub fn powercfg(args: &[String]) -> (i32, String) {
+    let s = nevermind_noyau::windows::dossier_systeme();
+    commande(&format!("{}\\powercfg.exe", s.trim_end_matches('\\')), args)
+}
+
+/// Le numéro actuel d'une carte réseau d'après son identifiant (`Get-NetAdapter -InterfaceGuid`), `None` si elle
+/// n'existe plus
+pub fn index_carte(guid: &str) -> Option<i64> {
+    use windows::Win32::NetworkManagement::IpHelper::{ConvertInterfaceGuidToLuid, ConvertInterfaceLuidToIndex};
+    use windows::Win32::NetworkManagement::Ndis::NET_LUID_LH;
+    let g = GUID::try_from(guid.trim().trim_matches(['{', '}'])).ok()?;
+    let mut luid = NET_LUID_LH::default();
+    let mut index = 0u32;
+    // SAFETY : structures de taille connue, remplies par Windows
+    unsafe {
+        if ConvertInterfaceGuidToLuid(&g, &mut luid).is_err() {
+            return None;
+        }
+        if ConvertInterfaceLuidToIndex(&luid, &mut index).is_err() {
+            return None;
+        }
+    }
+    Some(i64::from(index))
+}
+
+/// Les règles du pare-feu posées par Nevermind (`Get-NetFirewallRule -DisplayName 'Nevermind : bloque *'`, et les
+/// anciennes « OptiGame : bloque ») : leur nombre, lu par l'interface COM du pare-feu (lecture, sans droits)
+pub fn regles_pare_feu() -> usize {
+    use windows::Win32::NetworkManagement::WindowsFirewall::{INetFwPolicy2, INetFwRule, NetFwPolicy2};
+    use windows::Win32::System::Com::{
+        CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize, IDispatch,
+    };
+    use windows::Win32::System::Ole::IEnumVARIANT;
+    use windows::Win32::System::Variant::{VARIANT, VT_DISPATCH, VariantClear};
+    use windows::core::Interface;
+    let commence =
+        |n: &str, d: &str| n.len() >= d.len() && n.is_char_boundary(d.len()) && n[..d.len()].eq_ignore_ascii_case(d);
+    // SAFETY : COM pour ce fil le temps de la lecture (défait s'il a été fait ici), puis des appels COM ordinaires ;
+    // chaque VARIANT est vidé après usage
+    unsafe {
+        let pret = CoInitializeEx(None, COINIT_MULTITHREADED).is_ok();
+        let n = (|| -> Option<usize> {
+            let p: INetFwPolicy2 = CoCreateInstance(&NetFwPolicy2, None, CLSCTX_INPROC_SERVER).ok()?;
+            let e: IEnumVARIANT = p.Rules().ok()?._NewEnum().and_then(|u| u.cast()).ok()?;
+            let mut n = 0;
+            loop {
+                let mut v = [VARIANT::default()];
+                let mut lus = 0u32;
+                let _ = e.Next(&mut v, &mut lus);
+                if lus == 0 {
+                    break;
+                }
+                let a = &v[0].Anonymous.Anonymous;
+                if a.vt == VT_DISPATCH {
+                    let d: &Option<IDispatch> = &a.Anonymous.pdispVal;
+                    if let Some(r) = d.as_ref().and_then(|d| d.cast::<INetFwRule>().ok()) {
+                        let nom = r.Name().map(|b| b.to_string()).unwrap_or_default();
+                        if commence(&nom, "Nevermind : bloque ") || commence(&nom, "OptiGame : bloque ") {
+                            n += 1;
+                        }
+                    }
+                }
+                let _ = VariantClear(&mut v[0]);
+            }
+            Some(n)
+        })()
+        .unwrap_or(0);
+        if pret {
+            CoUninitialize();
+        }
+        n
+    }
+}
+
+#[cfg(test)]
+mod essais {
+    // Lectures seulement (le vrai PC n'est jamais changé) : powercfg par son chemin complet, une carte inconnue, les
+    // règles du pare-feu comptées sans erreur
+    #[test]
+    fn lectures_du_pc() {
+        let (code, texte) = super::powercfg(&["/list".to_string()]);
+        assert_eq!(code, 0, "powercfg /list : {texte}");
+        assert!(!texte.trim().is_empty());
+        assert_eq!(super::index_carte("{00000000-0000-0000-0000-000000000000}"), None);
+        assert_eq!(super::index_carte("pas un identifiant"), None);
+        let _ = super::regles_pare_feu();
+    }
 }

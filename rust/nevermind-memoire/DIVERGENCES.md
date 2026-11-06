@@ -41,3 +41,8 @@ vrai Bureau (la version PowerShell l'aurait posé sur le Bureau).
 ## 6. Un geste refusé par Windows pendant « Couper ce qui est sûr »
 Le message d'un service absent est écrit par Nevermind (« Impossible de trouver un service assorti du nom « x ». »),
 comme celui de `Get-Service` en français, au lieu d'être pris dans PowerShell.
+
+## 7. Les programmes au démarrage (câblage du 06/11)
+Le signal « demarrage-programmes » du bloc pc donne la liste de la page Démarrage (`{ Nom, Commande, Exe, Enabled,
+Source }`) ; ce bloc en tire les noms comme memoire.ps1:671 (activés avec un .exe : le nom du .exe et ceux que nomme
+leur commande, en minuscules, sans doublon : `programmes_demarrage`).

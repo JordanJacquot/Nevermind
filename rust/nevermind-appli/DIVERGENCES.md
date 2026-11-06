@@ -47,3 +47,24 @@ tests\juges\hote-accueil.json, 300 cas, plus 500 cas d'une autre graine qui pass
 ## Ce que l'hôte fait en plus (pas de PowerShell)
 - Un bloc qui plante (pages, action, tic, signal, fermeture) est noté au journal et n'arrête rien (`Invoke-Safe`) ;
   un tic qui plante est rappelé au plus tôt 10 s après.
+- Un bloc qui a rendu « plus besoin de tic » (`None`) est rappelé à la minuterie suivante dès qu'il prend un geste ou
+  reçoit un signal (le geste a pu lancer un travail à suivre).
+
+## Câblage des blocs (06/11)
+- La table des signaux (qui envoie, qui écoute, sous quel nom) est dans tests\signaux.rs, vérifiée sur les sources de
+  toutes les crates ; un signal envoyé sans récepteur ni raison écrite fait échouer le test.
+- Au démarrage, l'hôte envoie « etat-hote » au bloc divers (la page Paramètres : version, mises à jour et démarrage
+  par Mindset, raccourci « se règle dans Mindset »). « clic:BtnShortcut » (copie gérée) ouvre la page
+  « parametres:general » de Mindset (afficher-page.txt et son signal, comme `Open-MindsetSettings`, sans relancer
+  Mindset.exe : il est ouvert, Nevermind est dans son onglet). Une copie de travail n'a ni bouton ni réglage de
+  mise à jour : Nevermind en Rust ne se met à jour que par Mindset.
+- « theme-choisi » {id} (bloc divers, copie autonome) : le thème enregistré, puis la relance (`Set-AppTheme`).
+- `Mindset.exe -Uninstall` lance « Désinstaller Nevermind.exe » du même dossier avec les mêmes options
+  (`-GarderDonnees`, `-SupprimerDonnees`), l'attend et rend son code. La variable NEVERMIND_DONNEES n'est pas lue
+  (le lanceur C# l'effaçait aussi) ; jamais dans la construction d'essai.
+- Les images de tous les blocs : « fichier:<chemin> » dans les pages, remplacé ici (le bloc jeux aussi, plus de
+  `https://fichier.local`).
+- Les tuiles de l'accueil : chaque bloc donne ses faits dans `_accueil` (pc {score, a_regler}, perf {sous},
+  protection {score}, jeux {nombre, dernier, fps, image}, reseau {appareils, scan}).
+- Construction d'essai seulement : `{ "script": "..." }` dans actions.demande joue un geste dans la page (le clic sur
+  un onglet du kit, pour les captures).

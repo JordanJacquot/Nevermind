@@ -31,6 +31,12 @@ pub enum Attente {
     /// « Tout restaurer » : la confirmation, puis « Réessayer maintenant ? »
     ToutRestaurer,
     Reessayer,
+    /// « Annuler » d'une ligne de l'historique (`Undo-HistoryEntry`) : la confirmation
+    AnnulerEntree {
+        id: String,
+        titre: String,
+        log: Vec<Value>,
+    },
 }
 
 /// « Tout corriger » en cours
@@ -219,7 +225,58 @@ impl Session {
             Attente::Ecran(s) => {
                 self.attente = Some(Attente::Ecran(s));
             }
+            Attente::AnnulerEntree { id, titre, log } => {
+                if oui {
+                    self.annuler_entree_suite(pc, &id, &titre, &log);
+                }
+            }
         }
+    }
+
+    /// `Undo-HistoryEntry` (assistance.ps1:196) : « Annuler » d'une ligne de l'historique (page Sauvegarde, signal
+    /// `historique-annuler` du bloc protection). L'entrée est celle de historique.json.
+    pub fn annuler_entree(&mut self, pc: &mut dyn Pc, h: &Value) {
+        use nevermind_noyau::assistance::{historique_definitif, historique_note};
+        let vrai = |v: &Value| v.as_bool().unwrap_or(false);
+        if h.is_null() || vrai(&h["Annule"]) || historique_definitif(h) || historique_note(h) {
+            return;
+        }
+        let texte = |k: &str| h.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+        let (id, titre) = (texte("Id"), texte("Titre"));
+        let log = match h.get("Log") {
+            Some(Value::Array(l)) => l.clone(),
+            Some(o @ Value::Object(_)) => vec![o.clone()],
+            _ => Vec::new(),
+        };
+        let q = format!(
+            "Annuler ce changement ?\n\n« {titre} »\n{}\n\nLes réglages concernés reviennent à ce qu'ils étaient juste avant.",
+            texte("Date")
+        );
+        match pc.question(&q) {
+            None => {
+                self.fiche = Some(fiche::question(&q));
+                self.attente = Some(Attente::AnnulerEntree { id, titre, log });
+            }
+            Some(true) => self.annuler_entree_suite(pc, &id, &titre, &log),
+            Some(false) => {}
+        }
+    }
+
+    fn annuler_entree_suite(&mut self, pc: &mut dyn Pc, id: &str, titre: &str, log: &[Value]) {
+        pc.statut("Retour en arrière...");
+        let erreurs = {
+            let mut m = self.moteur(pc);
+            corrections::annuler_journal(&mut m, log)
+        };
+        pc.historique_annule(id);
+        self.analyser(pc);
+        let mut lignes = vec![format!("« {titre} » est annulé.")];
+        if !erreurs.is_empty() {
+            lignes.push("Pas pu être restauré :".into());
+            lignes.extend(erreurs);
+        }
+        pc.statut("Changement annulé.");
+        self.resultat(pc, "Changement annulé", &lignes, None, None);
     }
 
     fn etape_restauration(&mut self, pc: &mut dyn Pc, mut suite: Suite) {
@@ -413,7 +470,14 @@ impl Session {
     /// `Invoke-UndoLastRun`
     pub fn revenir(&mut self, pc: &mut dyn Pc) {
         let journal = self.journal_resultat.clone();
+        let id = self.historique_resultat.clone();
         self.fiche = None;
+        self.revenir_journal(pc, journal, id);
+    }
+
+    /// `Invoke-UndoLastRun` pour une fiche de résultat donnée (celle d'un autre bloc, montrée par l'hôte : action
+    /// `fiche:annuler` {log, historique})
+    pub fn revenir_journal(&mut self, pc: &mut dyn Pc, journal: Option<Vec<Value>>, id: Option<String>) {
         let Some(journal) = journal.filter(|j| !j.is_empty()) else { return };
         pc.statut("Retour en arrière...");
         let avant = self.score();
@@ -422,7 +486,7 @@ impl Session {
             corrections::annuler_journal(&mut m, &journal)
         };
         self.journal_resultat = None;
-        if let Some(id) = self.historique_resultat.clone() {
+        if let Some(id) = id {
             pc.historique_annule(&id);
         }
         self.analyser(pc);
@@ -514,6 +578,38 @@ impl Session {
             }
         }
         self.analyser(pc);
+    }
+
+    /// `Invoke-TweakFix` (diagnostic-fps.ps1:290) : les réglages Windows demandés par la fiche d'un jeu ou d'une partie
+    /// (signal `appliquer-reglages-windows` {ids} du bloc jeux), sans point de restauration, ceux déjà faits laissés
+    pub fn corriger_reglages(&mut self, pc: &mut dyn Pc, ids: &[String]) {
+        let build = self.analyse.as_ref().map(|a| a.build).unwrap_or(0);
+        let cree = self.sv.plan_cree.clone();
+        let sel: Vec<&'static reglages::Reglage> = reglages::disponibles(build)
+            .into_iter()
+            .filter(|t| ids.iter().any(|i| i == t.id) && !reglages::test(pc, t.id, cree.as_deref()))
+            .collect();
+        if sel.is_empty() {
+            pc.message("C'est déjà réglé.");
+            return;
+        }
+        let mut faits = Vec::new();
+        let journal = {
+            let mut m = self.moteur(pc);
+            m.journal = Some(Vec::new());
+            for t in &sel {
+                match m.appliquer_reglage(t.id) {
+                    Ok(()) => faits.push(t.titre.to_string()),
+                    Err(e) => m.pc.journal(&format!("Échec {}: {e}", t.id)),
+                }
+            }
+            m.journal.take().unwrap_or_default()
+        };
+        self.analyser(pc);
+        let mut lignes = vec!["Réglage appliqué :".to_string()];
+        lignes.extend(faits.iter().map(|d| format!("•  {d}")));
+        lignes.push("Rejoue une partie : Nevermind comparera tes FPS avant / après.".into());
+        self.resultat(pc, "C'est fait !", &lignes, Some(journal), None);
     }
 
     /// `Invoke-ApplyTweaks` : les optimisations cochées (page Optimisation gaming), avec le point de restauration si

@@ -1,13 +1,13 @@
 //! Les images des jeux (bibliotheque.ps1) : celles que Steam garde sur le PC (Get-SteamArt), celles du launcher
 //! (Ankama), celles déjà téléchargées (jaquettes\index.json), et le même jeu sur un autre launcher. Plus l'adresse
-//! d'une image pour l'écran (Get-ImageVue : https://fichier.local/<jeton>).
+//! d'une image pour l'écran (Get-ImageVue : « fichier:<chemin> », servi par l'hôte).
 
 use crate::biblio::Jeu;
 use crate::systeme::{Ruche, Systeme};
 use crate::texte::{joindre, sans_marques, texte_recherche};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Une jaquette téléchargée (index.json du dossier « jaquettes »).
 #[derive(Debug, Clone, Default)]
@@ -24,8 +24,6 @@ pub struct Jaquettes {
     cache_steam: Option<String>,
     art: HashMap<String, Option<String>>,
     index: Option<HashMap<String, Telechargee>>,
-    /// Les images déclarées à l'écran : jeton vers chemin.
-    pub images: HashMap<String, PathBuf>,
 }
 
 fn existe(p: &str) -> bool {
@@ -169,23 +167,11 @@ impl Jaquettes {
         if existe(&c.hero) { Some(c.hero.clone()) } else { None }
     }
 
-    /// L'adresse d'une image pour l'écran (Get-ImageVue) : toujours la même pour un même fichier.
+    /// L'image d'un fichier du PC pour l'écran (Get-ImageVue) : la valeur « fichier:<chemin> », que l'hôte remplace
+    /// par son adresse servie (`http://fichier.localhost/<jeton>`, règles Tauri de la suite).
     pub fn adresse(&mut self, chemin: &str) -> String {
-        let bas = chemin.to_lowercase();
-        let ext = Path::new(&bas).extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
-        let jeton = format!("{:016x}{:016x}{ext}", fnv(&bas, 0xcbf2_9ce4_8422_2325), fnv(&bas, 0x8422_2325_cbf2_9ce4));
-        self.images.insert(jeton.clone(), PathBuf::from(chemin));
-        format!("https://fichier.local/{jeton}")
+        format!("fichier:{chemin}")
     }
-}
-
-fn fnv(s: &str, graine: u64) -> u64 {
-    let mut h = graine;
-    for b in s.bytes() {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x0100_0000_01b3);
-    }
-    h
 }
 
 /// Le premier fichier de ce nom dans les sous-dossiers (Get-ChildItem -Recurse -Filter).

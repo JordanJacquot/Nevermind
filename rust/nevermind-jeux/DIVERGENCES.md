@@ -19,8 +19,9 @@
    diagnostic d'une partie (boutons « Régler... ») ne sont pas encore branchées.
 5. **Questions et messages.** Confirm-Action devient le signal commun `question` (réponse par l'action `jeux-reponse`
    {id, valeur}) ; Show-Message et Set-Status deviennent `Effet::Annonce`.
-6. **Images.** Get-ImageVue donnait un jeton au hasard ; Rust donne un jeton fixe par fichier (empreinte du chemin).
-   L'hôte sert le fichier avec `BlocJeux::image(jeton)`.
+6. **Images.** Les pages donnent « fichier:<chemin> » ; l'hôte le remplace par `http://fichier.localhost/<jeton>`
+   (jeton au hasard, fichier servi seulement si c'est vraiment une image : règles Tauri de la suite), comme pour tous
+   les blocs. Les juges ramènent « fichier:<chemin> » à l'adresse de l'essai PowerShell.
 7. Anciennes mesures de lag (avant 1.0.119) dont le diagnostic était refait : sans objet ici (le lag est au bloc trafic).
 
 Tri : Sort-Object n'est pas stable ; Rust reproduit exactement son algorithme (l'ancien tri rapide de .NET Framework,
@@ -48,8 +49,8 @@ vérifié sur 40 éléments à égalité) et sa comparaison sans casse, pour que
 
 ## Signaux attendus
 
-- `analyse` {GPUs:[{Name}], Disks:[{Letters, Disk:{MediaType}}]} ($script:AnalysisData, bloc pc) ;
-  `reglages-windows` {reglages:[{Id, Titre}]} (réglages conseillés pas faits, bloc perf/pc).
+- `analyse-pc` {gpus:[noms], disques:[{lettres, media}]} ($script:AnalysisData, bloc pc) ;
+  `reglages-jeu` {lignes:[{id, titre, recommande, fait}]} (bloc pc : les réglages conseillés pas faits, `$script:LibTweaks`).
 - `partie-commencee` {jeu, exe, pid}, `partie-finie` {jeu, exe, pid, duree_s} (bloc perf) : « En jeu » et temps de jeu
   (jeux.json, Add-PlayTime).
 - `diagnostic-fps-pret` {Id, diagnostic}, `fps-partie-enregistree`, `ajouter-jeu` (bloc perf) ;
@@ -57,5 +58,6 @@ vérifié sur 40 éléments à égalité) et sa comparaison sans casse, pour que
 
 ## Ce dont le bloc a besoin de l'hôte
 
-Servir les images `https://fichier.local/<jeton>` (`BlocJeux::image`), poser les questions (`question`), montrer
-`resultat`, mettre la page `jeux-lag` du bloc trafic dans l'onglet Lag, et l'Organizer (fenêtres, raccourcis).
+Servir les images « fichier:<chemin> », poser les questions (`question`), montrer `resultat`, mettre la page
+`jeux-lag` du bloc trafic dans l'onglet Lag, et l'Organizer (fenêtres, raccourcis). La tuile de l'accueil : `_accueil`
+{jeux: {nombre, dernier, fps, image}} (Get-EcranNevermind : le dernier joué, sa bannière ou sa jaquette).

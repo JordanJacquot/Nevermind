@@ -28,7 +28,6 @@ use optim::Connu;
 use parties::JournalParties;
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use systeme::Systeme;
@@ -149,11 +148,6 @@ impl BlocJeux {
     /// Les jeux trouvés (pour les tests et les autres parties de l'appli).
     pub fn jeux(&self) -> Option<&[Jeu]> {
         self.jeux.as_deref()
-    }
-
-    /// Le chemin d'une image déclarée à l'écran (https://fichier.local/<jeton>) : à servir par l'hôte.
-    pub fn image(&self, jeton: &str) -> Option<PathBuf> {
-        self.jaquettes.images.get(jeton).cloned()
     }
 
     /// Choisit le jeu de la fiche par son nom (comme un clic sur sa jaquette ; pour les tests).
@@ -1148,8 +1142,8 @@ impl Bloc for BlocJeux {
 
     fn signal(&mut self, ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
         match nom {
-            "analyse" => self.connu.lire_analyse(donnees),
-            "reglages-windows" => self.connu.lire_reglages(donnees),
+            "analyse-pc" => self.connu.lire_analyse_pc(donnees),
+            "reglages-jeu" => self.connu.lire_reglages_jeu(donnees),
             "partie-commencee" => self.en_jeu = Some(json::texte(donnees, "jeu")).filter(|s| !s.is_empty()),
             "partie-finie" => {
                 let jeu = json::texte(donnees, "jeu");

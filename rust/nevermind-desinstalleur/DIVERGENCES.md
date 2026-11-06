@@ -37,12 +37,12 @@ registre. Tout est identique, sauf ce qui suit.
    continue après une erreur et dit la première. Le texte d'une erreur (fichier ouvert...) est celui de Windows (sans
    « (os error N) ») et non celui de .NET : les juges n'en ont pas, les deux textes ne peuvent pas être les mêmes.
 6. **Les règles du pare-feu** de Nevermind sont comptées et **les cartes réseau** retrouvées par leur identifiant
-   (`PcDesinstallation`, src\os\mod.rs) : le `PcWindows` du bloc pc ne le fait pas encore (règles toujours 0, carte
-   jamais trouvée : nevermind-pc\DIVERGENCES.md). Dans la désinstallation, `pare-feu.debloquer-tout` est donc demandé
+   (`PcDesinstallation`, src\os\mod.rs) ; depuis le câblage du 06/11, le `PcWindows` du bloc pc le fait aussi (lecture
+   COM du pare-feu, carte par son identifiant). Dans la désinstallation, `pare-feu.debloquer-tout` est donc demandé
    quand des règles existent, et les DNS notés par carte sont remis, comme en PowerShell.
-7. **powercfg.exe** est lancé par son chemin complet dans System32 (le `PcWindows` du bloc pc le cherche par son nom :
-   en administrateur, un « powercfg.exe » posé à côté du désinstalleur, dans une copie hors de Program Files, serait
-   lancé à sa place). Même commande, même résultat.
+7. **powercfg.exe** est lancé par son chemin complet dans System32 (en administrateur, un « powercfg.exe » posé à côté
+   du désinstalleur, dans une copie hors de Program Files, serait lancé à sa place) ; le bloc pc fait de même depuis
+   le câblage du 06/11. Même commande, même résultat.
 8. **Les valeurs d'origine de la machine** (`HKLM\SOFTWARE\Mindset\Nevermind\Aide\Origines`) sont effacées par le
    désinstalleur lui-même si l'Aide n'a pas pu les oublier, comme le repli de Restore-AllSettings en administrateur
    (`PcWindows`, sans droits, ne le peut pas).

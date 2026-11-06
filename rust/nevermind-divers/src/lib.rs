@@ -4,7 +4,7 @@
 //!
 //! Ce que la page Paramètres montre de l'hôte (version, mises à jour, raccourci, démarrage, thème) arrive par le signal
 //! « etat-hote » ; la liste des jeux par « jeux-liste » (bloc jeux) ; les réglages Windows par
-//! « reglages-windows-liste » (bloc perf).
+//! « reglages-jeu » (bloc pc).
 
 pub mod recherche;
 mod tri;
@@ -418,9 +418,10 @@ impl Bloc for BlocDivers {
                 let l = donnees.get("jeux").and_then(|v| v.as_array()).cloned().unwrap_or_default();
                 self.jeux = l.iter().map(|g| JeuConnu { nom: champ(g, "nom"), source: champ(g, "source") }).collect();
             }
-            "reglages-windows-liste" => {
-                let l = donnees.get("titres").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-                self.reglages_windows = l.iter().map(texte).collect();
+            // (le bloc pc : `$script:TweakRows`, toutes les lignes de l'onglet Optimisation gaming, recherche.ps1:127)
+            "reglages-jeu" => {
+                let l = donnees.get("lignes").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                self.reglages_windows = l.iter().map(|r| champ(r, "titre")).filter(|t| !t.is_empty()).collect();
             }
             "etat-hote" => {
                 let h = &mut self.hote;
