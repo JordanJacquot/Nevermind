@@ -1,14 +1,36 @@
 [package]
 name = "nevermind-jeux"
 version = "0.1.0"
-description = "Nevermind en Rust : le bloc « jeux »"
+description = "Nevermind en Rust : le bloc « jeux » (bibliothèque de jeux, fiche d'un jeu, Organizer)"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [dependencies]
 nevermind-noyau = { path = "../nevermind-noyau" }
+# Versions figées (« = ») : les mêmes que Mindcare et l'Aide, déjà dans le cache (aucun téléchargement).
 serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+regex = "=1.13.1"
+unicode-normalization = "=0.1.24"
+unicode-general-category = "=1.1.0"
+
+# Le module qui parle à Windows (src/windows) : registre en lecture, heure locale, choix d'un fichier, infos d'un
+# programme, applis du menu Démarrer (jeux Xbox). Seulement sous Windows.
+[target.'cfg(windows)'.dependencies]
+windows-registry = "=0.6.1"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "=0.62.2"
+features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_SystemInformation",
+    "Win32_System_Time",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_Shell_PropertiesSystem",
+]
 
 [lints]
 workspace = true
