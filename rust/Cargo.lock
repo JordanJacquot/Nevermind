@@ -1844,6 +1844,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nevermind-desinstalleur"
+version = "0.1.0"
+dependencies = [
+ "aide-regles",
+ "nevermind-noyau",
+ "nevermind-pc",
+ "serde_json",
+ "suite-commun",
+ "windows",
+ "windows-registry",
+]
+
+[[package]]
 name = "nevermind-divers"
 version = "0.1.0"
 dependencies = [
