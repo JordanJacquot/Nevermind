@@ -177,7 +177,12 @@ fn contre_epreuve() {
 fn lecture_de_l_aide_comme_powershell() {
     let j = juges("aide.json");
     assert!(j.len() >= 200);
-    let var = |n: &str| std::env::var(n).ok().filter(|v| !v.is_empty());
+    // (les juges ont été exportés sur un PC où %SystemRoot% s'écrit « C:\WINDOWS » ; la machine de GitHub écrit
+    // « C:\Windows » : la même valeur est donnée ici, pour comparer la règle et pas la machine)
+    let var = |n: &str| match n.to_ascii_lowercase().as_str() {
+        "systemroot" | "windir" => Some(r"C:\WINDOWS".to_string()),
+        _ => std::env::var(n).ok().filter(|v| !v.is_empty()),
+    };
     let non = |_: &str| false;
     let c = ContexteTaches {
         temp: "C:\\Users\\x\\AppData\\Local\\Temp",
