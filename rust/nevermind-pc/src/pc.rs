@@ -1,0 +1,203 @@
+//! Tout ce que le bloc lit ou fait sur le PC passe par [`Pc`] : le registre, l'Aide, powercfg, les écrans, la souris,
+//! les réglages de Nevermind (parametres.json), la sauvegarde, l'historique, les messages et les questions.
+//!
+//! Le vrai PC : `windows::PcWindows` (lectures sans droits en natif, écritures du registre de l'utilisateur comme
+//! donnees.ps1, tout le reste par l'Aide). Les tests : un faux PC qui NOTE chaque geste au lieu de le faire, avec les
+//! mêmes noms que le faux PC de outils\exporter-juges-pc.ps1, pour comparer la suite exacte des gestes.
+
+use serde_json::{Map, Value, json};
+
+/// Une valeur du registre (`GetValue` de .NET : DWORD signé, QWORD, texte, liste de textes, octets).
+#[derive(Debug, Clone, PartialEq)]
+pub enum ValeurReg {
+    DWord(i64),
+    QWord(i64),
+    Texte(String),
+    TexteEtendu(String),
+    Multi(Vec<String>),
+    Octets(Vec<u8>),
+}
+
+impl ValeurReg {
+    /// Le type comme le donne .NET (`GetValueKind`) : DWord, QWord, String, ExpandString, MultiString, Binary.
+    pub fn sorte(&self) -> &'static str {
+        match self {
+            ValeurReg::DWord(_) => "DWord",
+            ValeurReg::QWord(_) => "QWord",
+            ValeurReg::Texte(_) => "String",
+            ValeurReg::TexteEtendu(_) => "ExpandString",
+            ValeurReg::Multi(_) => "MultiString",
+            ValeurReg::Octets(_) => "Binary",
+        }
+    }
+
+    /// La valeur en JSON, comme la version PowerShell l'écrit (les octets : une liste de nombres).
+    pub fn json(&self) -> Value {
+        match self {
+            ValeurReg::DWord(n) | ValeurReg::QWord(n) => json!(n),
+            ValeurReg::Texte(s) | ValeurReg::TexteEtendu(s) => json!(s),
+            ValeurReg::Multi(l) => json!(l),
+            ValeurReg::Octets(o) => json!(o.iter().map(|b| i64::from(*b)).collect::<Vec<_>>()),
+        }
+    }
+
+    /// Une valeur écrite d'après son type (« DWord », « String », « Binary »...), comme `SetValue` de .NET.
+    pub fn depuis(valeur: &Value, sorte: &str) -> ValeurReg {
+        let n = crate::net::nombre_de(valeur);
+        match sorte {
+            "DWord" => ValeurReg::DWord(crate::net::entier(n)),
+            "QWord" => ValeurReg::QWord(crate::net::entier(n)),
+            "Binary" => ValeurReg::Octets(
+                crate::net::liste(valeur).iter().map(|v| crate::net::entier(crate::net::nombre_de(v)) as u8).collect(),
+            ),
+            "MultiString" => ValeurReg::Multi(crate::net::liste(valeur).iter().map(crate::net::texte).collect()),
+            "ExpandString" => ValeurReg::TexteEtendu(crate::net::texte(valeur)),
+            _ => ValeurReg::Texte(crate::net::texte(valeur)),
+        }
+    }
+
+    /// `[string]$v` (une liste : ses éléments séparés par une espace).
+    pub fn texte(&self) -> String {
+        match self {
+            ValeurReg::DWord(n) | ValeurReg::QWord(n) => n.to_string(),
+            ValeurReg::Texte(s) | ValeurReg::TexteEtendu(s) => s.clone(),
+            ValeurReg::Multi(l) => l.join(" "),
+            ValeurReg::Octets(o) => o.iter().map(|b| b.to_string()).collect::<Vec<_>>().join(" "),
+        }
+    }
+
+    /// `[int]$v` (`None` si ce n'est pas un nombre : une liste, un texte illisible).
+    pub fn entier(&self) -> Option<i64> {
+        match self {
+            ValeurReg::DWord(n) | ValeurReg::QWord(n) => Some(*n),
+            ValeurReg::Texte(s) | ValeurReg::TexteEtendu(s) => {
+                let t = s.trim();
+                if t.is_empty() { Some(0) } else { t.parse::<f64>().ok().map(crate::net::entier) }
+            }
+            _ => None,
+        }
+    }
+
+    /// Une liste (MultiString, Binary) : `-is [array]`
+    pub fn est_liste(&self) -> bool {
+        matches!(self, ValeurReg::Multi(_) | ValeurReg::Octets(_))
+    }
+}
+
+/// Le résultat du nettoyage d'une catégorie (`Invoke-CleanOne`) : { Freed, Deleted, Skipped, Errors, Log }.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ResultatNettoyage {
+    pub libere: f64,
+    pub supprimes: i64,
+    pub laisses: i64,
+    pub refuses: i64,
+    pub journal: Vec<String>,
+}
+
+/// Une demande d'écriture du registre faite par Nevermind lui-même (réglages de l'utilisateur, HKCU).
+pub trait Pc {
+    // ---- Le registre
+    /// L'état d'une valeur (`Get-RegState`) : `Ok(None)` si elle n'existe pas, `Err` si la clé est illisible.
+    fn reg_lire(&self, chemin: &str, nom: &str) -> Result<Option<ValeurReg>, String>;
+    /// Les noms des valeurs d'une clé (programmes au démarrage), `None` si la clé n'existe pas.
+    fn reg_noms(&self, _chemin: &str) -> Option<Vec<String>> {
+        None
+    }
+    /// Écrire une valeur du registre de l'utilisateur (HKCU) : Nevermind le fait lui-même (donnees.ps1).
+    fn reg_utilisateur_ecrire(&mut self, chemin: &str, nom: &str, valeur: &ValeurReg) -> Result<(), String>;
+    fn reg_utilisateur_effacer(&mut self, chemin: &str, nom: &str) -> Result<(), String>;
+    /// La copie de la valeur d'origine dans le registre de l'utilisateur (`Software\Mindset\Nevermind\Origines`), si elle
+    /// n'y est pas déjà.
+    fn origine_utilisateur(&mut self, cle: &str, json: &str);
+    fn origine_utilisateur_oublier(&mut self, cle: &str);
+    fn origines_utilisateur_effacer(&mut self);
+    /// (seulement si l'Aide n'a pas pu oublier les siennes : la clé de la machine, qui demande les droits)
+    fn origines_machine_effacer(&mut self) -> Result<(), String>;
+
+    // ---- L'Aide (tout ce qui demande les droits administrateur)
+    fn aide(&mut self, action: &str, parametres: Value, delai_ms: u64) -> Result<Value, String>;
+
+    // ---- Alimentation, écrans, souris, programmes
+    /// powercfg avec ses arguments : (code de sortie, texte écrit).
+    fn powercfg(&mut self, args: &[String]) -> (i32, String);
+    /// Le curseur du mode d'alimentation de Windows (`None` : pas de curseur sur ce PC).
+    fn curseur(&self) -> Option<String>;
+    fn curseur_ecrire(&mut self, guid: &str) -> i32;
+    /// Les écrans : « appareil|nom|largeur|hauteur|fréquence|fréquence max|principal ».
+    fn ecrans(&self) -> Vec<String>;
+    fn ecran_frequence(&mut self, appareil: &str, hz: i64) -> i32;
+    fn souris_relire(&mut self, seuil1: i64, seuil2: i64, vitesse: i64);
+    /// Un service : (démarrage « Automatic »/« Manual »/« Disabled », il tourne), `None` s'il n'existe pas.
+    fn service(&self, nom: &str) -> Option<(String, bool)>;
+    /// Lancer un programme (`Start-Process`), sans fenêtre de console.
+    fn lancer(&mut self, args: &[String]);
+    /// Ouvrir une adresse (`Open-Url`).
+    fn ouvrir(&mut self, adresse: &str);
+    /// Une commande (`shutdown.exe /r /fw /t 10`) : son code de sortie.
+    fn commande(&mut self, exe: &str, args: &[String]) -> i32;
+    /// Les règles du pare-feu posées par Nevermind (« Nevermind : bloque ... », « OptiGame : bloque ... »).
+    fn regles_pare_feu(&self) -> usize {
+        0
+    }
+    /// Le numéro actuel d'une carte réseau d'après son identifiant (il change après un redémarrage).
+    fn index_carte(&self, _guid: &str) -> Option<i64> {
+        None
+    }
+    /// Le dossier des fichiers temporaires de l'utilisateur (`$env:TEMP`) et celui de Windows.
+    fn dossier_temp(&self) -> String;
+    fn dossier_windows(&self) -> String;
+    /// Le fichier d'hibernation existe (`Test-HibernateOn`).
+    fn hiberfil(&self) -> bool;
+    /// Nettoyer une catégorie de l'utilisateur (fichiers temporaires), faite par Nevermind lui-même.
+    fn nettoyer_dossier(&mut self, id: &str, chemins: &[String], exclus: &[String]) -> ResultatNettoyage;
+
+    // ---- Les fichiers de Nevermind
+    fn reglage(&self, nom: &str) -> Option<Value>;
+    fn ecrire_reglage(&mut self, nom: &str, valeur: Value, exiger: bool) -> Result<(), String>;
+    /// sauvegarde.json (`Save-Backup`).
+    fn sauvegarde_ecrire(&mut self, sauvegarde: &Value) -> Result<(), String>;
+    /// Effacer sauvegarde.json et ses copies (fin de « Tout restaurer »).
+    fn sauvegarde_effacer(&mut self);
+    /// ignores.json
+    fn ignores_ecrire(&mut self, ignores: &[String]);
+    /// Une entrée de l'historique (`Add-History`) : son identifiant, `None` si rien n'a changé.
+    fn historique_ajouter(&mut self, titre: &str, details: &[String], journal: &[Value]) -> Option<String>;
+    fn historique_annule(&mut self, id: &str);
+    /// Le journal de nettoyage (`nettoyage\nettoyage-<date>.log`) : son chemin, vide s'il n'a pas pu être écrit.
+    fn journal_nettoyage(&mut self, nom: &str, lignes: &[String]) -> String;
+    /// Une ligne au journal de Nevermind.
+    fn journal(&mut self, _ligne: &str) {}
+
+    // ---- L'écran
+    fn message(&mut self, texte: &str);
+    /// Une question Oui / Non : `Some(réponse)` si elle est connue tout de suite (tests), `None` si elle est posée
+    /// à l'écran (la suite reprend avec la réponse).
+    fn question(&mut self, texte: &str) -> Option<bool>;
+    fn statut(&mut self, _texte: &str) {}
+    /// La réponse à « Tes écrans s'affichent bien ? » (keep, revert, timeout) si elle est connue tout de suite (tests),
+    /// `None` si elle est posée à l'écran (15 secondes, puis retour à l'ancien réglage).
+    fn choix_ecran(&mut self) -> Option<String> {
+        None
+    }
+    /// « Tout restaurer » : les entrées de l'historique entièrement remises sont marquées annulées
+    /// (`Set-HistoryAllUndone`).
+    fn historique_tout_annule(&mut self, _sauvegarde: &crate::corrections::Sauvegarde) {}
+    /// Les changements définitifs notés dans l'historique (« Tout restaurer » ne les annule pas)
+    fn definitifs(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// L'heure de maintenant (« 2026-11-06T12:00:00 »), le jour pour les âges.
+    fn maintenant(&self) -> crate::temps::Moment;
+}
+
+/// Les paramètres d'une demande à l'Aide, dans l'ordre des clés (comme le faux PC des juges les note).
+pub fn parametres(p: &[(&str, Value)]) -> Value {
+    let mut m = Map::new();
+    let mut v: Vec<&(&str, Value)> = p.iter().collect();
+    v.sort_by(|a, b| a.0.cmp(b.0));
+    for (k, x) in v {
+        m.insert((*k).to_string(), x.clone());
+    }
+    Value::Object(m)
+}

@@ -1886,8 +1886,12 @@ dependencies = [
 name = "nevermind-pc"
 version = "0.1.0"
 dependencies = [
+ "aide-regles",
  "nevermind-noyau",
+ "regex",
  "serde_json",
+ "windows",
+ "windows-registry",
 ]
 
 [[package]]
