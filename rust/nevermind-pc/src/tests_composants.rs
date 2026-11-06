@@ -71,6 +71,8 @@ pub struct Tests {
     pub direct: Direct,
     /// Le travail en cours dans un fil à part
     pub atelier: crate::tests::Atelier,
+    /// Le dernier `mesures-rapides` envoyé au bloc perf
+    pub rapide: bool,
 }
 
 fn icone(tag: &str) -> &'static str {
@@ -634,6 +636,13 @@ impl Tests {
         }
         if dessiner {
             effets.ajouter(Effet::Rafraichir);
+        }
+        // `$Live.Fast` : mesures en direct plus rapides (et même écran caché) pendant un test ou la carte graphique
+        // en direct ; le bloc perf les fait (signal `mesures-rapides` {on})
+        let rapide = self.banc.occupe() || self.banc.suivi_gpu();
+        if rapide != self.rapide {
+            self.rapide = rapide;
+            effets.ajouter(Effet::Signal { nom: "mesures-rapides".into(), donnees: json!({ "on": rapide }) });
         }
         if self.atelier.mesure.is_some() || self.atelier.sante.is_some() || self.atelier.gpu.is_some() {
             Duration::from_millis(100)

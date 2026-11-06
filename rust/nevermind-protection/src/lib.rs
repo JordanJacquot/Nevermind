@@ -3,15 +3,16 @@
 //! fois au démarrage, puis à la demande : aucune boucle de mesure), les gestes des points à vérifier et les analyses
 //! de Microsoft Defender.
 //!
-//! Signaux envoyés : « protection-note » (la note sur 100), « question » (une confirmation à poser), « choisir-dossier »,
-//! « panneau-analyse » (l'analyse en cours), « historique », « occupe », « registre-ecrire », « demarrage-desactiver »,
-//! « historique-annuler ».
+//! Signaux envoyés : « question » (une confirmation à poser),
+//! « historique », « occupe », « registre-ecrire », « demarrage-desactiver » (faits par le bloc pc),
+//! « historique-annuler » (bloc pc). La note et le panneau d'une analyse sont dans les pages (« _accueil », « panneau »).
 //! Signaux reçus : « sauvegarde-changee », « sauvegarde-nombre »,
 //! « protection-relire », « analyse-demandee » (rend « analyse-finie »). Voir DIVERGENCES.md.
 
 pub mod etat;
 pub mod historique;
 pub mod pages;
+pub mod panneau;
 pub mod ps;
 pub mod regles;
 pub mod systeme;
@@ -85,6 +86,9 @@ pub struct BlocProtection {
     occupe_texte: Option<String>,
     /// La marque de l'analyse demandée par un autre bloc (signal « analyse-demandee »), rendue à sa fin
     marque: Option<Value>,
+    /// Le panneau de la dernière analyse de Defender (ouvert jusqu'à « Fermer »)
+    panneau: Option<panneau::PanneauAnalyse>,
+    numero_panneau: u64,
 }
 
 impl Default for BlocProtection {
@@ -136,7 +140,33 @@ impl BlocProtection {
             maj_base: None,
             occupe_texte: None,
             marque: None,
+            panneau: None,
+            numero_panneau: 0,
         }
+    }
+
+    /// Le panneau d'une analyse (`Show-TestPanel` d'Invoke-DefenderScan) : nouveau numéro au début d'une analyse
+    fn montrer_panneau(&mut self, donnees: Value) {
+        let debut = donnees.get("etat").and_then(Value::as_str) == Some("en-cours");
+        if debut || self.panneau.is_none() {
+            self.numero_panneau += 1;
+        }
+        let t0 = if debut {
+            std::time::Instant::now()
+        } else {
+            self.panneau.as_ref().map(|p| p.debut).unwrap_or_else(std::time::Instant::now)
+        };
+        self.panneau = Some(panneau::PanneauAnalyse { donnees, debut: t0, numero: self.numero_panneau });
+    }
+
+    /// Ce que dit le panneau de l'analyse (pour les essais)
+    pub fn panneau_donnees(&self) -> Option<&Value> {
+        self.panneau.as_ref().map(|p| &p.donnees)
+    }
+
+    /// Le panneau de l'analyse (le temps qui passe est relu par l'hôte une fois par seconde)
+    pub fn page_panneau(&self) -> Option<Value> {
+        self.panneau.as_ref().map(|p| p.page())
     }
 
     /// La note sur 100 de la dernière vérification (`$script:SecurityScore`)
@@ -201,9 +231,8 @@ impl BlocProtection {
         let hosts = self.sys.as_ref().map(|s| s.hosts()).unwrap_or_default();
         let v = Verification::faire(l.s.clone(), &l.env, &approuves, &hosts);
         self.note_analyses = regles::note_analyses(&v.s);
-        let note = v.note;
         self.verif = Some(v);
-        effets.ajouter(Effet::Signal { nom: "protection-note".into(), donnees: json!(note) });
+        // (la note va à la tuile de l'accueil par « _accueil » dans les pages)
         effets.ajouter(Effet::Rafraichir);
     }
 
@@ -244,11 +273,9 @@ impl BlocProtection {
             return;
         }
         self.analyse = Some(AnalyseEnCours { fin: rx, arret, debut, titre: titre.clone() });
-        effets.ajouter(Effet::Signal {
-            nom: "panneau-analyse".into(),
-            donnees: json!({ "etat": "en-cours", "titre": titre, "sous": "Microsoft Defender", "texte": texte,
-                "arreter": "sec-analyse-arreter" }),
-        });
+        self.montrer_panneau(
+            json!({ "etat": "en-cours", "titre": titre, "sous": "Microsoft Defender", "texte": texte }),
+        );
     }
 
     /// La fin d'une analyse : le verdict (jamais « Aucune menace » si le résultat n'a pas été lu)
@@ -294,11 +321,10 @@ impl BlocProtection {
                 )
             }
         };
-        effets.ajouter(Effet::Signal {
-            nom: "panneau-analyse".into(),
-            donnees: json!({ "etat": etat, "titre": a.titre, "sous": "Microsoft Defender", "resultat": resultat,
-                "temps": format!("{:02}:{:02}", duree / 60, duree % 60), "lignes": lignes, "boutons": boutons }),
-        });
+        self.montrer_panneau(
+            json!({ "etat": etat, "titre": a.titre, "sous": "Microsoft Defender", "resultat": resultat,
+            "temps": format!("{:02}:{:02}", duree / 60, duree % 60), "lignes": lignes, "boutons": boutons }),
+        );
         effets.ajouter(Effet::Annonce(format!("{} : {}", a.titre, lignes.join(" "))));
         // Une analyse demandée par un autre bloc (trafic.ps1 : Invoke-TrafficScan) : son résultat ($script:LastScanResult)
         if let Some(m) = self.marque.take() {
@@ -506,10 +532,43 @@ impl Bloc for BlocProtection {
         let (p, points) = pages::pages(&e);
         self.points = points;
         self.approuves_vus = approuves;
+        // La tuile « Protection » de l'accueil ($script:SecurityScore)
+        let mut p = p;
+        if let Some(pa) = self.page_panneau() {
+            p.insert("panneau".into(), pa);
+        }
+        p.insert("_accueil".into(), json!({ "protection": { "score": self.verif.as_ref().map(|v| v.note) } }));
         p
     }
 
     fn action(&mut self, ctx: &Contexte, id: &str, valeur: &Value, effets: &mut Effets) -> bool {
+        // Les boutons du panneau d'une analyse (seulement quand il est ouvert : sinon ceux du bloc qui l'a)
+        if let Some(p) = &self.panneau
+            && id.starts_with("panneau:")
+        {
+            match id {
+                "panneau:stop" => {
+                    if let Some(a) = &self.analyse {
+                        a.arret.store(true, Ordering::SeqCst);
+                    }
+                }
+                "panneau:close" => {
+                    if !p.en_cours() {
+                        self.panneau = None;
+                        effets.ajouter(Effet::Rafraichir);
+                    }
+                }
+                _ => {
+                    let b =
+                        id.strip_prefix("panneau:b:").and_then(|n| n.parse::<usize>().ok()).and_then(|n| p.bouton(n));
+                    match b {
+                        Some(b) => return self.action(ctx, &b, &Value::Null, effets),
+                        None => return false,
+                    }
+                }
+            }
+            return true;
+        }
         match id {
             "clic:BtnSecRefresh" => {
                 self.relire();
@@ -535,10 +594,13 @@ impl Bloc for BlocProtection {
                             );
                         }
                     }
-                    "clic:BtnScanFolder" => effets.ajouter(Effet::Signal {
-                        nom: "choisir-dossier".into(),
-                        donnees: json!({ "texte": "Choisis le dossier à analyser", "retour": "sec-analyser-dossier" }),
-                    }),
+                    // (Invoke-FolderScan : la fenêtre de Windows pour choisir le dossier, puis son analyse)
+                    "clic:BtnScanFolder" => {
+                        let d = self.sys.as_ref().and_then(|s| s.choisir_dossier("Choisis le dossier à analyser"));
+                        if let Some(d) = d {
+                            return self.action(ctx, "sec-analyser-dossier", &json!(d), effets);
+                        }
+                    }
                     _ => self.mettre_a_jour_base(),
                 }
                 return true;
@@ -688,7 +750,9 @@ impl Bloc for BlocProtection {
         match nom {
             // (sauvegarde.json est relu quand il change ; ce signal commun redessine la page)
             "sauvegarde-changee" => {}
-            "sauvegarde-nombre" => self.sauvegarde_nombre = donnees.as_u64().map(|n| n as usize),
+            "sauvegarde-nombre" => {
+                self.sauvegarde_nombre = donnees.get("n").unwrap_or(donnees).as_u64().map(|n| n as usize)
+            }
             "protection-relire" => self.relire(),
             // (Invoke-DefenderScan appelé par trafic.ps1 : une analyse personnalisée, sans vérifier Defender avant)
             "analyse-demandee" => {

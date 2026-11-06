@@ -8,6 +8,8 @@
 #![allow(unsafe_code)]
 
 pub mod compteur;
+#[cfg(test)]
+mod essai_compteur;
 
 use crate::systeme::{Nvidia, Programme, Systeme};
 use std::os::windows::process::CommandExt;

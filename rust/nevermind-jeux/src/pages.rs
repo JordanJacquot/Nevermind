@@ -413,5 +413,22 @@ pub fn pages(b: &mut BlocJeux, ctx: &Contexte, ecran: &str) -> Map<String, Value
         pages.insert("panneau".into(), b.panneau_restes());
     }
 
+    // ---- La tuile « Jeux » de l'accueil (Get-EcranNevermind) : le nombre de jeux, le dernier joué, ses FPS et sa
+    // jaquette (Get-HeroFile, sinon Get-CoverFile), un chemin du PC que l'hôte sert
+    if b.jeux.is_some() {
+        let mut t = json!({ "nombre": tous.len() });
+        if let Some(l) = &last {
+            let sys = b.sys.clone();
+            let image = b
+                .jaquettes
+                .banniere(sys.as_ref(), &ctx.donnees, &l.jeu)
+                .or_else(|| b.jaquettes.jaquette(sys.as_ref(), &ctx.donnees, &l.jeu, &tous, false));
+            t["dernier"] = json!(l.jeu.nom);
+            t["fps"] = json!(l.derniere.as_ref().map(|s| s.avg));
+            t["image"] = json!(image);
+        }
+        pages.insert("_accueil".into(), json!({ "jeux": t }));
+    }
+
     pages
 }

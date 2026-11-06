@@ -57,3 +57,10 @@ Chaque différence est voulue, avec sa preuve. Tout le reste est vérifié par l
 ## Fermeture après un blocage (ajout du coordinateur)
 
 Stop-ProgrammeChemin ferme d'abord lui-même les processus permis, puis demande « processus.fermer » {Chemin} à l'Aide pour ceux qu'il ne peut pas lire. Ici, tout passe par « processus.fermer » {Chemin} à l'Aide, qui applique la même règle commune (aide-regles).
+
+## Câblage avec les autres blocs (06/11)
+
+- « analyse-finie » {Marque: {Reglage, Cle}, Resultat} (bloc protection, à la fin de l'analyse demandée) : « clean »
+  pose la marque (`Set-TrafficMark 'TrafficScanned' $App.Key $true`, trafic.ps1:324).
+- « trafic-microsoft » reçu en signal (la recherche du bloc divers) ouvre le panneau « Ce que Windows envoie à
+  Microsoft », comme l'action du même nom.

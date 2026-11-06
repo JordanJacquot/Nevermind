@@ -307,14 +307,9 @@ impl Contexte {
 
     /// La clé où Nevermind garde les valeurs d'origine des réglages de l'utilisateur (une clé à part en test)
     pub fn cle_origines_utilisateur(&self) -> String {
-        if self.essai {
-            match std::env::var("NEVERMIND_TEST_REG") {
-                Ok(c) if c.to_lowercase().starts_with("software\\mindsettest") => format!("{c}\\Origines"),
-                _ => "Software\\MindsetTest\\Origines".into(),
-            }
-        } else {
-            ORIGINES_UTILISATEUR.into()
-        }
+        // (en test, toujours la même clé à part : aucune variable d'environnement n'est lue, l'exe livré n'en connaît
+        //  aucune, outils\verifier-sans-essai.ps1 ; le faux registre du contexte sert de toute façon en test)
+        if self.essai { "Software\\MindsetTest\\Origines".into() } else { ORIGINES_UTILISATEUR.into() }
     }
 
     fn cle_faux(chemin: &str, nom: &str) -> String {

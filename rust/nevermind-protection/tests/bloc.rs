@@ -74,7 +74,8 @@ fn verification_de_fond_puis_pages() {
     let p = b.pages(&ctx, "protection");
     assert_eq!(p["protection"]["module"]["titre"], "Vérification en cours");
     let e = attendre(&mut b, &ctx);
-    assert_eq!(signal(&e, "protection-note"), Some(&json!(100)));
+    assert_eq!(b.note(), Some(100));
+    assert_eq!(b.pages(&ctx, "protection")["_accueil"]["protection"]["score"], 100);
     assert!(e.contains(&Effet::Rafraichir));
     let p = b.pages(&ctx, "protection");
     assert_eq!(p["protection"]["module"]["titre"], "Bien protégé");
@@ -198,9 +199,9 @@ fn analyse_sans_resultat_lu_jamais_aucune_menace() {
     attendre(&mut b, &ctx);
     let mut e = Effets::default();
     b.action(&ctx, "clic:BtnScanQuick", &Value::Null, &mut e);
-    assert_eq!(signal(&e.0, "panneau-analyse").unwrap()["etat"], "en-cours");
+    assert_eq!(b.panneau_donnees().unwrap()["etat"], "en-cours");
     let e = attendre(&mut b, &ctx);
-    let fin = signal(&e, "panneau-analyse").expect("fin de l'analyse");
+    let fin = b.panneau_donnees().cloned().expect("fin de l'analyse");
     // (sans droits, sans Aide, une liste vide ne prouve rien)
     assert_eq!(fin["etat"], "inconnu");
     assert!(!annonces(&e).iter().any(|a| a.contains("Aucune menace")));
@@ -217,8 +218,8 @@ fn analyse_en_administrateur_rien_trouve() {
     attendre(&mut b, &ctx);
     let mut e = Effets::default();
     b.action(&ctx, "clic:BtnScanQuick", &Value::Null, &mut e);
-    let e = attendre(&mut b, &ctx);
-    let fin = signal(&e, "panneau-analyse").unwrap();
+    attendre(&mut b, &ctx);
+    let fin = b.panneau_donnees().cloned().unwrap();
     assert_eq!(fin["etat"], "aucune");
     assert_eq!(fin["lignes"][0], "Aucune menace trouvée. Analyse terminée en moins d'une minute.");
 }
@@ -366,7 +367,7 @@ fn analyse_demandee_par_le_trafic() {
         &json!({ "Sorte": "CustomScan", "Chemins": ["C:/x/a.exe"], "Titre": "Analyse de A", "Marque": "cle-a" }),
         &mut e,
     );
-    assert_eq!(signal(&e.0, "panneau-analyse").unwrap()["titre"], "Analyse de A");
+    assert_eq!(b.panneau_donnees().unwrap()["titre"], "Analyse de A");
     let e = attendre(&mut b, &ctx);
     assert_eq!(signal(&e, "analyse-finie"), Some(&json!({ "Marque": "cle-a", "Resultat": "clean" })));
     assert!(f.gestes().iter().any(|g| g == "analyser Personnalisee C:/x/a.exe"));

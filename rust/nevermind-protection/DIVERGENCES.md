@@ -16,13 +16,18 @@ tourne derrière change :
    n'est pas redemandée.
 4. **Les analyses de Defender** lancent `MpCmdRun.exe -Scan -ScanType 1|2|3` (sans fenêtre) au lieu de `Start-MpScan`,
    et la base `MpCmdRun -SignatureUpdate` au lieu de `Update-MpSignature`. Codes 0 et 2 (menaces trouvées) : analyse
-   faite. L'arrêt tue notre MpCmdRun puis lance `MpCmdRun -Cancel` (comme le bouton Arrêter). Le panneau animé n'est
-   pas dessiné ici : signal « panneau-analyse » ({etat, titre, sous, texte | resultat, temps, lignes, boutons}).
+   faite. L'arrêt tue notre MpCmdRun puis lance `MpCmdRun -Cancel` (comme le bouton Arrêter). Le panneau (câblage du
+   06/11) est donné dans les pages (« panneau », src\panneau.rs) comme celui d'un test du bloc pc après la traduction
+   de `Get-PanneauKit` : le temps qui passe, le texte d'aide, puis l'état et les verdicts, « Arrêter le test »
+   (`panneau:stop`), « Fermer » (`panneau:close`), « Supprimer les menaces » (`panneau:b:0`). Le radar animé n'est pas
+   dessiné (il ne l'était pas non plus dans l'écran façon console : « SansImageKit »).
    Le verdict reste celui de `Get-ScanThreats` (jamais « Aucune menace » sans résultat lu).
 5. **Délégués aux autres blocs par signaux** (leur moteur n'est pas dans ce bloc) : l'écriture de l'historique
-   (« historique », signal commun), le contrôle des comptes (« registre-ecrire » : Set-Reg avec sa sauvegarde),
-   « Désactiver au démarrage » (« demarrage-desactiver »), l'annulation d'une ligne (« historique-annuler » :
-   Undo-HistoryEntry), le choix d'un dossier (« choisir-dossier », réponse par l'action « sec-analyser-dossier »).
+   (« historique », signal commun, fait par l'hôte), le contrôle des comptes (« registre-ecrire » : Set-Reg avec sa
+   sauvegarde, bloc pc), « Désactiver au démarrage » (« demarrage-desactiver », bloc pc), l'annulation d'une ligne
+   (« historique-annuler » : Undo-HistoryEntry, bloc pc). Le choix d'un dossier (`Invoke-FolderScan`) : la fenêtre de
+   Windows (IFileOpenDialog, dossiers seulement) ouverte par ce bloc, au lieu de FolderBrowserDialog, puis l'analyse.
+   La note va à la tuile de l'accueil par `_accueil` {protection: {score}} (plus de signal « protection-note »).
    La page Connexion et ses actions (dns, carte-relancer, debit, clic:BtnPing, clic:BtnDnsFlush) sont au bloc réseau ;
    `clic:BtnUndo`, `BtnRestorePoint`, `BtnOpenRestore`, `BtnExport` ne sont pas pris par ce bloc.
 6. **La page Sauvegarde lit le disque** : historique.json (et .bak) et sauvegarde.json (et .bak), relus seulement quand

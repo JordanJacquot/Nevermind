@@ -97,6 +97,17 @@ $Gardees = [ordered]@{
     'rust/nevermind-noyau/tests/juges/maj.json'    = @(9, 'Nevermind en Rust : juges des mises à jour sous l''ancien nom')
     'rust/nevermind-pc/src/pc.rs'                  = @(1, 'Nevermind en Rust : règles du pare-feu « OptiGame : bloque ... » d''avant la 1.3.6')
     'rust/nevermind-protection/src/regles.rs'      = @(3, 'Nevermind en Rust : anciennes règles et tâches à l''ancien nom reconnues')
+    'rust/nevermind-desinstalleur/src/travail.rs'  = @(8, 'Nevermind en Rust, désinstalleur : ancienne tâche « OptiGame (démarrage) », anciens programmes, script, icône et fichiers de secours retirés')
+    'rust/nevermind-desinstalleur/src/sur_place.rs' = @(2, 'Nevermind en Rust, désinstalleur : règles du pare-feu « OptiGame : bloque ... » d''avant la 1.3.6 comptées et retirées')
+    'rust/nevermind-desinstalleur/src/donnees.rs'  = @(3, 'Nevermind en Rust, désinstalleur : ancien dossier de données %LOCALAPPDATA%\OptiGame et son test')
+    'rust/nevermind-desinstalleur/DIVERGENCES.md'  = @(1, 'Nevermind en Rust, désinstalleur : ancienne tâche de démarrage cherchée')
+    'rust/nevermind-desinstalleur/tests/juges/desinstallation.json' = @(1, 'Nevermind en Rust, désinstalleur : juges, anciens fichiers de l''appli retirés (une seule ligne JSON)')
+    'outils/tester-desinstalleur-rust.ps1'         = @(3, 'Nevermind en Rust, test du désinstalleur sur GitHub : ancienne tâche « OptiGame (démarrage) » créée puis vérifiée retirée')
+    'outils/exporter-juges-desinstalleur.ps1'      = @(7, 'Nevermind en Rust : juges du désinstalleur, anciennes tâches et anciens fichiers de l''appli ($OldAutoStartTasks, $FichiersAppli)')
+    'outils/exporter-juges-tests.ps1'              = @(1, 'Nevermind en Rust : juges des tests des composants, ancien fichier OptiGame-test-disque.tmp effacé')
+    'rust/nevermind-pc/tests/juges/tests-composants.json' = @(1, 'Nevermind en Rust : juges des tests des composants, ancien fichier OptiGame-test-disque.tmp effacé (une seule ligne JSON)')
+    'rust/nevermind-pc/src/tests/banc.rs'          = @(1, 'Nevermind en Rust : ancien fichier temporaire du test du disque (OptiGame-test-disque.tmp), effacé')
+    'rust/nevermind-pc/src/windows/mod.rs'         = @(2, 'Nevermind en Rust : règles du pare-feu « OptiGame : bloque ... » d''avant la 1.3.6 comptées pour « Tout restaurer »')
     'outils/zips.ps1'                              = @(2, 'le zip de compatibilité n''est plus fait ; jamais l''ancien script à côté du nouveau')
 }
 function Get-Mentions([string]$Rev) {

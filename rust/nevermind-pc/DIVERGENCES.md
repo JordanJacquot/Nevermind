@@ -13,9 +13,12 @@ Tout est identique, sauf ce qui suit.
    signal commun `question` (action de retour `pc:reponse`) et la suite reprend avec la réponse. Même texte, même suite.
 3. **« Tes écrans s'affichent bien ? »** : le compte à rebours de 15 s est tenu par `tic` (au lieu d'une boucle qui
    bloque la fenêtre). Sans réponse : retour à l'ancienne fréquence, comme avant.
-4. **Historique** : les entrées partent au bloc « protection » par le signal `historique` (au lieu d'écrire
-   historique.json ici). « Revenir en arrière » depuis la fiche de résultat marche ; marquer l'entrée « annulée » dans
-   l'historique (`Set-HistoryUndone`, `Set-HistoryAllUndone`) n'a pas de signal commun : à ajouter par l'intégration.
+4. **Historique** (câblage du 06/11) : les entrées vont dans l'historique du noyau (`Contexte::ajouter_historique`,
+   commun à tous les blocs : historique.json), avec leur vrai identifiant ; « Revenir en arrière » les marque
+   « annulées » (`Set-HistoryUndone`) et « Tout restaurer » aussi (`Set-HistoryAllUndone`, la remise du pare-feu n'y
+   est pas suivie). Après chaque écriture de sauvegarde.json, le noyau la relit (il la garde aussi en mémoire pour les
+   écritures des autres blocs) ; sur « sauvegarde-changee », ce bloc relit la sienne (rien n'est écrasé) et renvoie
+   le compte de la page Sauvegarde (`sauvegarde-nombre` {n}, Get-BackupCount).
 5. **Culture** : les nombres sont toujours écrits en français (fr-FR de Windows 11 : groupes séparés par U+202F, virgule),
    comme sur le PC de Jordan ; PowerShell suivait la culture de chaque PC. `LastClean.Date` est écrit sans décalage horaire.
 6. **Dates WMI** (pilote, BIOS) : lues sans conversion en heure locale (PowerShell les convertit) : le jour affiché peut
@@ -26,6 +29,8 @@ Tout est identique, sauf ce qui suit.
 8. **Dernier pilote NVIDIA** (`NvLatest`, geforce.com) : pas lu (pas de client HTTP dans le bloc) : l'analyse se base sur
    l'âge du pilote, comme quand l'option « Vérifier le pilote NVIDIA » est coupée.
 9. **Mode test** (`ctx.essai`) : sur le vrai PC, aucune écriture (registre, powercfg, écrans, Aide sauf lectures).
+   Le PC est lu (WMI, registre, powercfg en lecture), comme la version PowerShell en test, pour que la construction
+   d'essai montre l'analyse de Ton PC (avant le câblage du 06/11, rien n'était lu et l'analyse restait « en cours »).
 
 ## Tests des composants (tests.ps1, src/tests)
 
@@ -48,7 +53,8 @@ ce qui suit diffère.
     processeur sont ceux du code compilé de Nevermind en Rust : ils ne sont pas comparables au point près à ceux de
     l'ancienne version (même calcul, vitesse d'exécution différente).
 14. **Couleurs plein écran** : une fenêtre Windows simple (au lieu de WPF), mêmes couleurs, même texte, mêmes touches.
-15. **`$Live.Fast`** (mesures plus rapides pendant un test) : pas de signal commun ; le bloc perf garde son rythme. Les
+15. **`$Live.Fast`** (mesures plus rapides pendant un test ou la carte graphique en direct) : le signal
+    `mesures-rapides` {on} au bloc perf, qui mesure alors toutes les 400 ms, même écran caché (onglets.ps1:82). Les
     fréquences du processeur sont relevées à chaque tour de 100 ms sur la dernière mesure reçue, comme avant.
 16. **Tour du bloc** : `tic` ne rend jamais « plus besoin » (un tour vide par demi-seconde hors test), car l'hôte ne
     rappelle pas un bloc qui l'a dit, et un test peut être lancé à tout moment par un bouton.
@@ -64,8 +70,28 @@ ce qui suit diffère.
 - La désinstallation (`Invoke-Uninstall`, `Remove-DonneesDesinstallation`), le raccourci du bureau et la tâche de
   démarrage (systeme.ps1) : elles relèvent de l'hôte et de Mindset ; non portées ici.
 - `Export-Report` (rapport HTML) et visuels.ps1 (animations WPF, inutiles avec le kit).
-- Les règles du pare-feu « Nevermind : bloque ... » ne sont pas comptées (`Get-NetFirewallRule`) : « Tout restaurer »
-  ne demande donc `pare-feu.debloquer-tout` que si un autre bloc le fait (à brancher).
+
+## Câblage avec les autres blocs (06/11)
+
+- **`PcWindows`** : les règles du pare-feu « Nevermind : bloque ... » (et « OptiGame : bloque ... ») sont comptées par
+  l'interface COM du pare-feu (lecture sans droits, comme `Get-NetFirewallRule`) ; une carte réseau est retrouvée par
+  son identifiant (`ConvertInterfaceGuidToLuid`) ; powercfg.exe, et toute commande donnée par son seul nom, est
+  lancé par son chemin complet dans System32 (comme le désinstalleur). Essai `lectures_du_pc` (lecture seule).
+- **Signaux pris ici** : `mesures` (bloc perf), `test-debit` (bloc réseau), `declarations` (blocs perf et jeux : le titre
+  est « historique » ou « titre »), `appliquer-reglages-windows` {ids} (fiche d'un jeu : `Invoke-TweakFix`, sans point
+  de restauration, « C'est déjà réglé. » si rien à faire), `ouvrir-fiche` {id} (bloc perf), `registre-ecrire`
+  (« Réactiver » le contrôle des comptes, bloc protection : `Set-Reg` avec sa sauvegarde et l'historique),
+  `demarrage-desactiver` {elements:[{Nom, Exe}]} (bloc protection : `Set-StartupState $i $false` pour chaque
+  programme ; une ligne d'historique par programme, comme « Désactiver » de la page Démarrage, au lieu d'une seule
+  ligne pour le geste de la page Sécurité), `historique-annuler` {id} (page Sauvegarde : `Undo-HistoryEntry`, avec sa
+  question), `sauvegarde-changee`. L'action `fiche:annuler` {log, historique} (« Revenir en arrière » de la fiche de
+  résultat d'un autre bloc, montrée par l'hôte) fait `Invoke-UndoLastRun`.
+- **Signaux envoyés** : `analyse-pc`, `reglages-jeu` (avec `id` et `fait` en plus), `demarrage`,
+  `demarrage-programmes`, `nettoyage`, `sauvegarde-nombre`, `mesures-rapides`, `debit-mesure`. `pc:analyse` n'est plus
+  envoyé : le score et les points à régler vont à l'accueil par `_accueil` {pc: {score, a_regler}}. Les anciens
+  `pc:analyser`, `pc:appliquer-reglages`, `pc:demarrage`, `pc:nettoyer`, `pc:tout-restaurer` (que personne n'envoyait)
+  sont retirés : les pages passent par leurs actions.
+- Table complète et vérifiée : rust\nevermind-appli\tests\signaux.rs.
 
 ## Correction d'un défaut du faux PC des juges (pas de Nevermind)
 

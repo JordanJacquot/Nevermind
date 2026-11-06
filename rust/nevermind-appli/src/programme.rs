@@ -167,6 +167,45 @@ fn donnees_suite(gere: bool, donnees: &Path) -> PathBuf {
     }
 }
 
+/// Le désinstalleur à côté de ce programme (programme cargo « NevermindDesinstaller », renommé dans le zip).
+pub const DESINSTALLEUR: &str = "Désinstaller Nevermind.exe";
+
+/// `Mindset.exe -Uninstall` (Nevermind.ps1:330 et lanceur.cs avec UNINSTALL) : « Désinstaller Nevermind.exe » du même
+/// dossier, avec les mêmes options (`-GarderDonnees`, `-SupprimerDonnees`), attendu jusqu'à la fin ; son code est
+/// rendu (celui qui a lancé, Mindset, sait quand c'est fini). Jamais dans la construction d'essai.
+fn desinstaller() -> i32 {
+    if cfg!(feature = "essai") {
+        return 1;
+    }
+    let Some(exe) = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(DESINSTALLEUR))) else {
+        return 1;
+    };
+    if !exe.is_file() {
+        return 1;
+    }
+    let options: Vec<String> = std::env::args()
+        .skip(1)
+        .filter(|a| {
+            let n = a.trim_start_matches(['-', '/']);
+            n.eq_ignore_ascii_case("GarderDonnees") || n.eq_ignore_ascii_case("SupprimerDonnees")
+        })
+        .collect();
+    let mut c = std::process::Command::new(&exe);
+    c.args(&options);
+    if let Some(d) = exe.parent() {
+        c.current_dir(d);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000);
+    }
+    match c.status() {
+        Ok(s) => s.code().unwrap_or(1),
+        Err(_) => 1,
+    }
+}
+
 /// Le programme : ne revient jamais (`std::process::exit`).
 pub fn lancer() -> ! {
     let _ = identite::poser();
@@ -175,6 +214,7 @@ pub fn lancer() -> ! {
     let mut systeme = SystemeWindows::nouveau();
     let l = match demarrage::demarrer(arguments, &env, &noms, &mut systeme, &mut note_lancement) {
         Depart::Lancer(l) => *l,
+        Depart::Desinstallation => std::process::exit(desinstaller()),
         _ => std::process::exit(0),
     };
     let essai = cfg!(feature = "essai");
@@ -425,6 +465,21 @@ impl Etat {
         journal_dans(&self.dossier_donnees, t);
     }
 
+    /// Une page de Mindset à montrer (`Request-MenuMindset`, `Open-MindsetSettings`) : afficher-page.txt, puis le
+    /// signal de Mindset (jamais dans la construction d'essai : `lever_signal` n'y fait rien).
+    fn page_mindset(&mut self, page: &str) {
+        let d = self.vie.reglages().dossier_mindset.clone();
+        let quoi = if page == "menu" { "Retour au menu de Mindset" } else { "Page de Mindset" };
+        let ligne = match std::fs::create_dir_all(&d).and_then(|()| std::fs::write(d.join(AFFICHER_PAGE), page)) {
+            Ok(()) => {
+                self.systeme.lever_signal(SIGNAL_MINDSET);
+                format!("{quoi} demandé")
+            }
+            Err(e) => format!("{quoi} impossible ({e})"),
+        };
+        self.journal(&ligne);
+    }
+
     /// Ce que l'hôte demande au programme.
     fn demandes(&mut self, d: Vec<Demande>) {
         for x in d {
@@ -441,18 +496,13 @@ impl Etat {
                         if self.vie.reglages().gere { f.cacher() } else { f.reduire() }
                     }
                 }
-                Demande::MenuMindset => {
-                    let d = self.vie.reglages().dossier_mindset.clone();
-                    let ligne = match std::fs::create_dir_all(&d)
-                        .and_then(|()| std::fs::write(d.join(AFFICHER_PAGE), "menu"))
-                    {
-                        Ok(()) => {
-                            self.systeme.lever_signal(SIGNAL_MINDSET);
-                            "Retour au menu de Mindset demandé".to_string()
-                        }
-                        Err(e) => format!("Retour au menu de Mindset impossible ({e})"),
-                    };
-                    self.journal(&ligne);
+                Demande::MenuMindset => self.page_mindset("menu"),
+                Demande::PageMindset(p) => self.page_mindset(&p),
+                Demande::Relancer => {
+                    if self.fin.is_none() && self.vie.quitter().is_some() {
+                        self.journal("Fermeture pour le nouveau thème");
+                        self.fin = Some(Fin::Relancer { cachee: self.vie.reglages().gere });
+                    }
                 }
                 Demande::OuvrirAdresse(a) => {
                     let permise = a.starts_with("https://")
@@ -557,6 +607,13 @@ fn essai_demandes(etat: &mut Etat) {
         let _ = std::fs::remove_file(&demande);
         for ligne in texte.trim_start_matches('\u{feff}').lines().map(str::trim).filter(|l| !l.is_empty()) {
             let Ok(v) = serde_json::from_str::<Value>(ligne) else { continue };
+            // (un geste de la souris joué dans la page : `{ "script": "..." }`, par exemple le clic sur un onglet)
+            if let Some(s) = v.get("script").and_then(Value::as_str) {
+                if let Some(w) = etat.app.as_ref().and_then(|a| a.get_webview_window(LABEL)) {
+                    let _ = w.eval(s);
+                }
+                continue;
+            }
             if v.get("kit").is_some() {
                 if let Some(app) = etat.app.clone() {
                     app.state::<Page>().ordre(v);

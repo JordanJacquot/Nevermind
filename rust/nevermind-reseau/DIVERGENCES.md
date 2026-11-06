@@ -41,3 +41,8 @@ test du ping donnent la même chose, au champ près. Ce qui suit est différent,
     Internet publique (ipify, https) pas lue : elle ne servait qu'à la carte WPF.
 12. **« Passer en public »** : Set-NetConnectionProfile lancé dans un PowerShell sans fenêtre, comme la version
     PowerShell le faisait dans son propre processus (Windows peut refuser sans droits administrateur).
+
+## Câblage (06/11)
+
+13. **La tuile de l'accueil** : `_accueil` {reseau: {appareils, scan}} dans les pages ($script:NetList,
+    $script:NetScanning de Get-EcranNevermind).

@@ -30,9 +30,16 @@ pas les uns des autres).
 - `etat-hote` {version, maj_texte, maj_bouton, raccourci_texte, raccourci_bouton, demarrage_ligne, demarrage_coche,
   theme_cle, theme_nom, themes:[{id, titre, texte}]} : ce que montrait la fenêtre d'avant ($AppVersion,
   $ui.UpdateStatus, $ui.ShortcutStatus, $ui.AutoStartRow, thèmes et packs). Sans lui : thème lu dans le réglage
-  « Theme » parmi les 5 thèmes de base, la version vide.
+  « Theme » parmi les 5 thèmes de base, la version vide. Envoyé par l'hôte au démarrage (câblage du 06/11) : la
+  version, les mises à jour et le démarrage avec Windows passent par Mindset (Initialize-Suite), le raccourci « se
+  règle dans Mindset » (bouton `clic:BtnShortcut` : la page « parametres:general » de Mindset) ; le thème n'y est pas
+  (lu dans le réglage « Theme », que l'hôte écrit au démarrage).
 - `jeux-liste` (bloc jeux) : les 80 premiers jeux dans la recherche, et l'Organizer proposé si Dofus est installé.
-- `reglages-windows-liste` {titres:[...]} (bloc perf/pc) : les réglages Windows dans la recherche ($script:TweakRows).
+- `reglages-jeu` {lignes:[{titre...}]} (bloc pc) : les réglages Windows dans la recherche ($script:TweakRows).
+- Envoyés : `theme-choisi` {id} (l'hôte enregistre le thème et se relance), `jeux-restes-ouvrir` (bloc jeux),
+  `trafic-microsoft` (bloc trafic, le panneau). `reseau-carte` n'a pas de récepteur : la carte du réseau d'avant
+  n'existe plus, la recherche mène à la page Réseau. `visite` n'est jamais envoyé : l'action est prise par
+  l'assistance du noyau avant ce bloc.
 
 Les pages d'assistance (`pages_assistance` du noyau) ne sont pas encore là : la ligne « Signaler un problème » de l'Aide
 garde l'action `clic:BtnReportProblem` pour l'hôte.

@@ -54,6 +54,26 @@ impl Connu {
             .map(|t| (crate::json::texte(t, "Id"), crate::json::texte(t, "Titre")))
             .collect();
     }
+    /// Lit le signal « analyse-pc » du bloc pc : `{ gpus: [noms], disques: [{ lettres, bus, media }] }`.
+    pub fn lire_analyse_pc(&mut self, v: &Value) {
+        self.cartes = crate::biblio::liste(v.get("gpus")).iter().map(crate::json::texte_de).collect();
+        self.disques = crate::biblio::liste(v.get("disques"))
+            .iter()
+            .map(|d| {
+                let l = crate::biblio::liste(d.get("lettres")).iter().map(crate::json::texte_de).collect();
+                (l, crate::json::texte(d, "media"))
+            })
+            .collect();
+    }
+    /// Lit le signal « reglages-jeu » du bloc pc (`$script:TweakRows`) : les réglages conseillés
+    /// (`Recommended -ne $false`) pas encore faits (`$script:LibTweaks`, bibliotheque.ps1:950).
+    pub fn lire_reglages_jeu(&mut self, v: &Value) {
+        self.reglages = crate::biblio::liste(v.get("lignes"))
+            .iter()
+            .filter(|t| t.get("recommande") != Some(&Value::Bool(false)) && t.get("fait") != Some(&Value::Bool(true)))
+            .map(|t| (crate::json::texte(t, "id"), crate::json::texte(t, "titre")))
+            .collect();
+    }
 }
 
 /// Les cartes graphiques qui comptent (sans les écrans virtuels).

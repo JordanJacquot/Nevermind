@@ -189,4 +189,45 @@ impl Systeme for Vrai {
             .creation_flags(SANS_FENETRE)
             .spawn();
     }
+
+    fn choisir_dossier(&self, titre: &str) -> Option<String> {
+        choisir_dossier(titre)
+    }
+}
+
+/// La fenêtre de Windows pour choisir un dossier (FOS_PICKFOLDERS), dans un fil à elle (COM en appartement simple,
+/// ce qu'il faut à cette fenêtre), attendue jusqu'à la réponse comme la fenêtre de PowerShell (ShowDialog)
+fn choisir_dossier(titre: &str) -> Option<String> {
+    use windows::Win32::System::Com::{
+        CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize,
+    };
+    use windows::Win32::UI::Shell::{FOS_PICKFOLDERS, FileOpenDialog, IFileOpenDialog, SIGDN_FILESYSPATH};
+    use windows::core::HSTRING;
+    let titre = titre.to_string();
+    std::thread::spawn(move || {
+        // SAFETY : COM pour ce fil seulement (défait à la fin), puis des appels COM ordinaires à la fenêtre de Windows
+        unsafe {
+            let pret = CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok();
+            let r = (|| {
+                let d: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+                let _ = d.SetTitle(&HSTRING::from(titre.as_str()));
+                if let Ok(o) = d.GetOptions() {
+                    let _ = d.SetOptions(o | FOS_PICKFOLDERS);
+                }
+                d.Show(None).ok()?;
+                let it = d.GetResult().ok()?;
+                let p = it.GetDisplayName(SIGDN_FILESYSPATH).ok()?;
+                let s = p.to_string().ok();
+                CoTaskMemFree(Some(p.0 as *const _));
+                s
+            })();
+            if pret {
+                CoUninitialize();
+            }
+            r
+        }
+    })
+    .join()
+    .ok()
+    .flatten()
 }

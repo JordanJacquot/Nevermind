@@ -56,6 +56,10 @@ pub trait Systeme: Send + Sync {
     fn bloc_notes(&self, chemin: &str);
     /// L'Explorateur, l'élément sélectionné
     fn montrer(&self, chemin: &str);
+    /// La fenêtre « Choisis le dossier à analyser » (`Invoke-FolderScan`, FolderBrowserDialog) : le dossier, ou rien
+    fn choisir_dossier(&self, _titre: &str) -> Option<String> {
+        None
+    }
 }
 
 /// Un faux système : tout est simulé et noté dans `gestes`

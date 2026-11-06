@@ -246,7 +246,7 @@ impl Pc for PcWindows<'_> {
         }
         #[cfg(windows)]
         {
-            crate::windows::commande("powercfg.exe", args)
+            crate::windows::powercfg(args)
         }
         #[cfg(not(windows))]
         {
@@ -345,6 +345,27 @@ impl Pc for PcWindows<'_> {
             1
         }
     }
+    fn regles_pare_feu(&self) -> usize {
+        #[cfg(windows)]
+        {
+            crate::windows::regles_pare_feu()
+        }
+        #[cfg(not(windows))]
+        {
+            0
+        }
+    }
+    fn index_carte(&self, guid: &str) -> Option<i64> {
+        #[cfg(windows)]
+        {
+            crate::windows::index_carte(guid)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = guid;
+            None
+        }
+    }
     fn dossier_temp(&self) -> String {
         std::env::var("TEMP").unwrap_or_default().trim_end_matches('\\').to_string()
     }
@@ -369,6 +390,8 @@ impl Pc for PcWindows<'_> {
     fn sauvegarde_ecrire(&mut self, sauvegarde: &Value) -> Result<(), String> {
         let t = serde_json::to_string_pretty(sauvegarde).unwrap_or_default();
         ecrire_sur(&self.ctx.donnees.join("sauvegarde.json"), &t, true)?;
+        // (le noyau garde aussi sauvegarde.json en mémoire, pour les écritures des autres blocs : il le relit)
+        self.ctx.importer_sauvegarde();
         self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
         Ok(())
     }
@@ -376,6 +399,7 @@ impl Pc for PcWindows<'_> {
         for n in ["sauvegarde.json", "sauvegarde.json.bak", "sauvegarde.json.tmp"] {
             let _ = std::fs::remove_file(self.ctx.donnees.join(n));
         }
+        self.ctx.importer_sauvegarde();
         self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
     }
     fn ignores_ecrire(&mut self, ignores: &[String]) {
@@ -389,13 +413,23 @@ impl Pc for PcWindows<'_> {
         if journal.is_empty() {
             return None;
         }
-        self.effets.push(Effet::Signal {
-            nom: "historique".into(),
-            donnees: json!({ "titre": titre, "details": details, "log": journal }),
-        });
-        Some("signal".into())
+        // (l'historique est celui du noyau, commun à tous les blocs : son vrai identifiant sert à « Revenir en
+        //  arrière », Set-HistoryUndone)
+        let id = self.ctx.ajouter_historique(titre, details, journal.to_vec());
+        if id.is_some() {
+            self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
+        }
+        id
     }
-    fn historique_annule(&mut self, _id: &str) {}
+    fn historique_annule(&mut self, id: &str) {
+        self.ctx.marquer_historique_annule(id);
+        self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
+    }
+    fn historique_tout_annule(&mut self, _sauvegarde: &crate::corrections::Sauvegarde) {
+        // (Set-HistoryAllUndone ; la remise du pare-feu n'est pas suivie ici : `pare_feu_echoue` faux)
+        self.ctx.marquer_historique_tout_annule(false);
+        self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
+    }
     fn journal_nettoyage(&mut self, nom: &str, lignes: &[String]) -> String {
         let d = self.ctx.donnees.join("nettoyage");
         let _ = std::fs::create_dir_all(&d);

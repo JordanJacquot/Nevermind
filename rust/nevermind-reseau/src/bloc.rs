@@ -744,6 +744,8 @@ impl Bloc for BlocReseau {
         if let Some(p) = self.page_panneau() {
             m.insert("panneau".into(), p);
         }
+        // La tuile « Réseau » de l'accueil ($script:NetList, $script:NetScanning)
+        m.insert("_accueil".into(), json!({ "reseau": { "appareils": self.liste.len(), "scan": self.scan } }));
         m
     }
 

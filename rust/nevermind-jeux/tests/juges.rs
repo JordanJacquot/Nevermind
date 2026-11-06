@@ -391,18 +391,13 @@ fn barre_des_restes() {
     assert!(faux.is_empty(), "{} écarts :\n{}", faux.len(), faux.join("\n"));
 }
 
-/// Remplace les adresses d'images (jeton) par celle de la version PowerShell de l'essai (« https://fichier.local/<chemin> »).
-fn images(b: &BlocJeux, v: &Value) -> Value {
+/// Les images du PC (« fichier:<chemin> », remplacées par l'hôte) ramenées à l'adresse de la version PowerShell de
+/// l'essai (« https://fichier.local/<chemin> »).
+fn images(v: &Value) -> Value {
     match v {
-        Value::String(x) if x.starts_with("https://fichier.local/") => {
-            let jeton = &x["https://fichier.local/".len()..];
-            Value::String(format!(
-                "https://fichier.local/{}",
-                b.image(jeton).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| jeton.into())
-            ))
-        }
-        Value::Array(a) => Value::Array(a.iter().map(|x| images(b, x)).collect()),
-        Value::Object(m) => Value::Object(m.iter().map(|(k, x)| (k.clone(), images(b, x))).collect()),
+        Value::String(x) if x.starts_with("fichier:") => Value::String(format!("https://fichier.local/{}", &x[8..])),
+        Value::Array(a) => Value::Array(a.iter().map(images).collect()),
+        Value::Object(m) => Value::Object(m.iter().map(|(k, x)| (k.clone(), images(x))).collect()),
         x => x.clone(),
     }
 }
@@ -462,9 +457,25 @@ fn pages_juges(cas: &Value, sortie: &mut Vec<String>) -> usize {
         }
         b.action(&ctx, "jeux-filtre", &c["filtre"], &mut ef);
         b.action(&ctx, "jeux-cherche", &c["recherche"], &mut ef);
-        let analyse = c["analyse"].clone();
-        b.signal(&ctx, "analyse", &analyse, &mut ef);
-        b.signal(&ctx, "reglages-windows", &json!({ "reglages": c["reglages"] }), &mut ef);
+        // (les données de l'analyse et les réglages Windows, comme le bloc pc les envoie : « analyse-pc » et
+        //  « reglages-jeu » ; le juge les donne comme $script:AnalysisData et $script:LibTweaks)
+        let a = &c["analyse"];
+        let liste = |v: &Value| match v {
+            Value::Array(l) => l.clone(),
+            Value::Null => Vec::new(),
+            x => vec![x.clone()],
+        };
+        let gpus: Vec<Value> = liste(&a["GPUs"]).iter().map(|g| g["Name"].clone()).collect();
+        let disques: Vec<Value> = liste(&a["Disks"])
+            .iter()
+            .map(|d| json!({ "lettres": d["Letters"], "media": d["Disk"]["MediaType"] }))
+            .collect();
+        b.signal(&ctx, "analyse-pc", &json!({ "gpus": gpus, "disques": disques }), &mut ef);
+        let lignes: Vec<Value> = liste(&c["reglages"])
+            .iter()
+            .map(|t| json!({ "id": t["Id"], "titre": t["Titre"], "recommande": true, "fait": false }))
+            .collect();
+        b.signal(&ctx, "reglages-jeu", &json!({ "lignes": lignes }), &mut ef);
         if !s(&c["enJeu"]).is_empty() {
             b.signal(&ctx, "partie-commencee", &json!({ "jeu": c["enJeu"] }), &mut ef);
         }
@@ -475,7 +486,7 @@ fn pages_juges(cas: &Value, sortie: &mut Vec<String>) -> usize {
         let mut obtenu = Map::new();
         for k in ["jeux", "jeu", "overlay"] {
             if let Some(v) = p.get(k) {
-                obtenu.insert(k.into(), bac.norm_json(&images(&b, v)));
+                obtenu.insert(k.into(), bac.norm_json(&images(v)));
             }
         }
         let mut attendu = bac.norm_json(&c["pages"]);
