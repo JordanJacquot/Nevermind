@@ -10,6 +10,11 @@ edition = "2024"
 license = "MIT"
 publish = false
 
+# La bibliothèque commune de la suite (dépôt Mindset), épinglée à une révision relue (la même que Mindcare), sans ses
+# options par défaut : chaque crate prend seulement celles dont il a besoin (nevermind-noyau : heure-locale, signature).
+[workspace.dependencies]
+suite-commun = { git = "https://github.com/JordanJacquot/Mindset", rev = "0aad77c0fd1cd92983775bec64646e1486cc857e", default-features = false }
+
 [workspace.lints.rust]
 # Le code « unsafe » n'est permis que dans le module Windows de l'exe (nevermind-aide/src/windows) et dans la frontière C
 # de la DLL (nevermind-pont/src/ffi.rs), qui l'autorisent eux-mêmes ; la bibliothèque des règles l'interdit tout à fait.

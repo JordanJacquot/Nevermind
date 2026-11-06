@@ -12,8 +12,22 @@ use serde_json::{Map, Value};
 use std::path::PathBuf;
 use std::time::Duration;
 
+pub mod aide;
+pub mod assistance;
 pub mod contexte;
-pub use contexte::Contexte;
+pub mod fausse_aide;
+pub mod fichiers;
+pub mod journal;
+pub mod json_ps;
+pub mod mises_a_jour;
+pub mod moment;
+pub mod pont;
+pub mod registre;
+pub mod sauvegarde;
+pub mod signaux;
+pub mod windows;
+pub use assistance::pages_assistance;
+pub use contexte::{Contexte, horodatage};
 
 /// Ce qu'un bloc demande à l'hôte (il ne touche jamais la fenêtre lui-même).
 #[derive(Debug, Clone, PartialEq)]

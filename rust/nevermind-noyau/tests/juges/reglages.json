@@ -1,0 +1,326 @@
+{
+    "format":  1,
+    "cas":  [
+                {
+                    "journal":  [
+
+                                ],
+                    "avant":  {
+
+                              },
+                    "operations":  [
+                                       {
+                                           "valeur":  "false",
+                                           "defaut":  "false",
+                                           "op":  "lire",
+                                           "nom":  "Beta"
+                                       },
+                                       {
+                                           "valeur":  "true",
+                                           "op":  "ecrire",
+                                           "nom":  "Beta",
+                                           "erreur":  null,
+                                           "exiger":  false
+                                       },
+                                       {
+                                           "valeur":  "true",
+                                           "defaut":  "false",
+                                           "op":  "lire",
+                                           "nom":  "Beta"
+                                       },
+                                       {
+                                           "valeur":  "\"défaut\"",
+                                           "defaut":  "\"défaut\"",
+                                           "op":  "lire",
+                                           "nom":  "Absent"
+                                       }
+                                   ],
+                    "fichiers":  [
+                                     "parametres.json"
+                                 ],
+                    "parametres":  "{\r\n    \"Beta\":  true\r\n}",
+                    "nom":  "premier lancement"
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "avant":  {
+                                  "parametres.json":  "eyJUb3VyRG9uZSI6dHJ1ZSwiTGFzdFZlcnNpb24iOiIxLjE1LjUiLCJGcHNWZWlsbGUiOlsiYS5leGUiXX0="
+                              },
+                    "operations":  [
+                                       {
+                                           "valeur":  "true",
+                                           "defaut":  "false",
+                                           "op":  "lire",
+                                           "nom":  "TourDone"
+                                       },
+                                       {
+                                           "valeur":  "\"a.exe\"",
+                                           "defaut":  "[]",
+                                           "op":  "lire",
+                                           "nom":  "FpsVeille"
+                                       },
+                                       {
+                                           "valeur":  "\"1.15.6\"",
+                                           "op":  "ecrire",
+                                           "nom":  "LastVersion",
+                                           "erreur":  null,
+                                           "exiger":  false
+                                       }
+                                   ],
+                    "fichiers":  [
+                                     "parametres.json",
+                                     "parametres.json.bak"
+                                 ],
+                    "parametres":  "{\r\n    \"TourDone\":  true,\r\n    \"FpsVeille\":  [\r\n                      \"a.exe\"\r\n                  ],\r\n    \"LastVersion\":  \"1.15.6\"\r\n}",
+                    "nom":  "fichier existant"
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "avant":  {
+                                  "parametres.json":  "eyJYIjpudWxsfQ=="
+                              },
+                    "operations":  [
+                                       {
+                                           "valeur":  {
+
+                                                      },
+                                           "defaut":  "5",
+                                           "op":  "lire",
+                                           "nom":  "X"
+                                       },
+                                       {
+                                           "valeur":  "null",
+                                           "op":  "ecrire",
+                                           "nom":  "Y",
+                                           "erreur":  null,
+                                           "exiger":  false
+                                       }
+                                   ],
+                    "fichiers":  [
+                                     "parametres.json",
+                                     "parametres.json.bak"
+                                 ],
+                    "parametres":  "{\r\n    \"Y\":  null,\r\n    \"X\":  null\r\n}",
+                    "nom":  "valeur nulle"
+                },
+                {
+                    "journal":  [
+                                    "Fichier abîmé (\u003cdossier\u003e\\parametres.json : Objet non valide passé, \u0027:\u0027 ou \u0027}\u0027 attendu. (15): {\"SvcOriginal\":), mis de côté : parametres.json.abime-20261106-210509",
+                                    "parametres.json repris de sa copie de secours"
+                                ],
+                    "avant":  {
+                                  "parametres.json.bak":  "eyJTdmNPcmlnaW5hbCI6WyJEaWFnVHJhY2t8QXV0b21hdGljfFJ1bm5pbmciXX0=",
+                                  "parametres.json":  "eyJTdmNPcmlnaW5hbCI6"
+                              },
+                    "operations":  [
+                                       {
+                                           "valeur":  "\"DiagTrack|Automatic|Running\"",
+                                           "defaut":  "[]",
+                                           "op":  "lire",
+                                           "nom":  "SvcOriginal"
+                                       },
+                                       {
+                                           "valeur":  "false",
+                                           "op":  "ecrire",
+                                           "nom":  "Beta",
+                                           "erreur":  null,
+                                           "exiger":  false
+                                       }
+                                   ],
+                    "fichiers":  [
+                                     "parametres.json",
+                                     "parametres.json.abime-20261106-210509",
+                                     "parametres.json.bak"
+                                 ],
+                    "parametres":  "{\r\n    \"Beta\":  false,\r\n    \"SvcOriginal\":  [\r\n                        \"DiagTrack|Automatic|Running\"\r\n                    ]\r\n}",
+                    "nom":  "abîmé : copie reprise"
+                },
+                {
+                    "journal":  [
+                                    "Fichier abîmé (\u003cdossier\u003e\\parametres.json : Primitive JSON non valide : zz.), mis de côté : parametres.json.abime-20261106-210509"
+                                ],
+                    "avant":  {
+                                  "parametres.json":  "eno="
+                              },
+                    "operations":  [
+                                       {
+                                           "valeur":  "1",
+                                           "defaut":  "1",
+                                           "op":  "lire",
+                                           "nom":  "A"
+                                       },
+                                       {
+                                           "valeur":  "2",
+                                           "op":  "ecrire",
+                                           "nom":  "A",
+                                           "erreur":  null,
+                                           "exiger":  false
+                                       }
+                                   ],
+                    "fichiers":  [
+                                     "parametres.json",
+                                     "parametres.json.abime-20261106-210509"
+                                 ],
+                    "parametres":  "{\r\n    \"A\":  2\r\n}",
+                    "nom":  "abîmé sans copie"
+                },
+                {
+                    "journal":  [
+                                    "Écriture des préférences impossible: Exception lors de l\u0027appel de « Copy » avec « 3 » argument(s) : « Le processus ne peut pas accéder au fichier \u0027\u003cdossier\u003e\\parametres.json\u0027, car il est en cours d\u0027utilisation par un autre processus. »",
+                                    "Écriture des préférences impossible: Exception lors de l\u0027appel de « Copy » avec « 3 » argument(s) : « Le processus ne peut pas accéder au fichier \u0027\u003cdossier\u003e\\parametres.json\u0027, car il est en cours d\u0027utilisation par un autre processus. »"
+                                ],
+                    "avant":  {
+                                  "parametres.json":  "eyJBIjoxfQ=="
+                              },
+                    "operations":  [
+                                       {
+                                           "valeur":  "1",
+                                           "defaut":  "0",
+                                           "op":  "lire",
+                                           "nom":  "A"
+                                       },
+                                       {
+                                           "op":  "prendre"
+                                       },
+                                       {
+                                           "valeur":  "[\"x|Manual|Stopped\"]",
+                                           "op":  "ecrire",
+                                           "nom":  "SvcOriginal",
+                                           "erreur":  "Nevermind n\u0027a pas pu noter l\u0027état d\u0027origine (son fichier de préférences est pris par un autre programme) : rien n\u0027a été changé. Réessaie dans un instant.",
+                                           "exiger":  true
+                                       },
+                                       {
+                                           "valeur":  "3",
+                                           "op":  "ecrire",
+                                           "nom":  "B",
+                                           "erreur":  null,
+                                           "exiger":  false
+                                       },
+                                       {
+                                           "op":  "lacher"
+                                       },
+                                       {
+                                           "valeur":  "\"rien\"",
+                                           "defaut":  "\"rien\"",
+                                           "op":  "lire",
+                                           "nom":  "SvcOriginal"
+                                       },
+                                       {
+                                           "valeur":  "3",
+                                           "defaut":  "0",
+                                           "op":  "lire",
+                                           "nom":  "B"
+                                       }
+                                   ],
+                    "fichiers":  [
+                                     "parametres.json",
+                                     "parametres.json.tmp"
+                                 ],
+                    "parametres":  "{\"A\":1}",
+                    "nom":  "pris : Exiger refuse"
+                },
+                {
+                    "journal":  [
+                                    "Fichier illisible pour l\u0027instant (\u003cdossier\u003e\\parametres.json) : Exception lors de l\u0027appel de « ReadAllText » avec « 2 » argument(s) : « Le processus ne peut pas accéder au fichier \u0027\u003cdossier\u003e\\parametres.json\u0027, car il est en cours d\u0027utilisation par un autre processus. »",
+                                    "Écriture des préférences impossible: parametres.json n\u0027a pas pu être lu : il n\u0027est pas réécrit",
+                                    "Écriture des préférences impossible: parametres.json n\u0027a pas pu être lu : il n\u0027est pas réécrit"
+                                ],
+                    "avant":  {
+                                  "parametres.json":  "eyJBIjoxfQ=="
+                              },
+                    "operations":  [
+                                       {
+                                           "op":  "prendre"
+                                       },
+                                       {
+                                           "valeur":  "0",
+                                           "defaut":  "0",
+                                           "op":  "lire",
+                                           "nom":  "A"
+                                       },
+                                       {
+                                           "op":  "lacher"
+                                       },
+                                       {
+                                           "valeur":  "2",
+                                           "op":  "ecrire",
+                                           "nom":  "A",
+                                           "erreur":  null,
+                                           "exiger":  false
+                                       },
+                                       {
+                                           "valeur":  "[1]",
+                                           "op":  "ecrire",
+                                           "nom":  "C",
+                                           "erreur":  "Nevermind n\u0027a pas pu noter l\u0027état d\u0027origine (son fichier de préférences est pris par un autre programme) : rien n\u0027a été changé. Réessaie dans un instant.",
+                                           "exiger":  true
+                                       },
+                                       {
+                                           "valeur":  "0",
+                                           "defaut":  "0",
+                                           "op":  "lire",
+                                           "nom":  "C"
+                                       }
+                                   ],
+                    "fichiers":  [
+                                     "parametres.json"
+                                 ],
+                    "parametres":  "{\"A\":1}",
+                    "nom":  "pris au démarrage : jamais réécrit"
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "avant":  {
+
+                              },
+                    "operations":  [
+                                       {
+                                           "valeur":  "{\"x\":{\"y\":[1,{\"z\":\"é\"}]}}",
+                                           "op":  "ecrire",
+                                           "nom":  "O",
+                                           "erreur":  null,
+                                           "exiger":  false
+                                       },
+                                       {
+                                           "valeur":  "[\"a\"]",
+                                           "op":  "ecrire",
+                                           "nom":  "L",
+                                           "erreur":  null,
+                                           "exiger":  false
+                                       },
+                                       {
+                                           "valeur":  "[]",
+                                           "op":  "ecrire",
+                                           "nom":  "V",
+                                           "erreur":  null,
+                                           "exiger":  false
+                                       },
+                                       {
+                                           "valeur":  "{\"x\":{\"y\":[1,{\"z\":\"é\"}]}}",
+                                           "defaut":  "null",
+                                           "op":  "lire",
+                                           "nom":  "O"
+                                       },
+                                       {
+                                           "valeur":  "\"a\"",
+                                           "defaut":  "null",
+                                           "op":  "lire",
+                                           "nom":  "L"
+                                       }
+                                   ],
+                    "fichiers":  [
+                                     "parametres.json",
+                                     "parametres.json.bak"
+                                 ],
+                    "parametres":  "{\r\n    \"O\":  {\r\n              \"x\":  {\r\n                        \"y\":  [\r\n                                  1,\r\n                                  {\r\n                                      \"z\":  \"é\"\r\n                                  }\r\n                              ]\r\n                    }\r\n          },\r\n    \"L\":  [\r\n              \"a\"\r\n          ],\r\n    \"V\":  [\r\n\r\n          ]\r\n}",
+                    "nom":  "objets et listes"
+                }
+            ],
+    "sujet":  "Get-Setting et Set-Setting -Exiger (donnees.ps1) : valeurs lues, erreurs, parametres.json, journal"
+}

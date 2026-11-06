@@ -1,0 +1,776 @@
+{
+    "qualites":  [
+                     {
+                         "partDefinitive":  false,
+                         "retour":  "",
+                         "definitif":  false,
+                         "log":  [
+
+                                 ],
+                         "note":  false
+                     },
+                     {
+                         "partDefinitive":  true,
+                         "retour":  "r1",
+                         "definitif":  true,
+                         "log":  [
+                                     "{\"Type\":\"definitif\",\"Quoi\":\"a\",\"Retour\":\"r1\"}"
+                                 ],
+                         "note":  false
+                     },
+                     {
+                         "partDefinitive":  true,
+                         "retour":  "r1 r2",
+                         "definitif":  true,
+                         "log":  [
+                                     "{\"Type\":\"definitif\",\"Quoi\":\"a\",\"Retour\":\"r1\"}",
+                                     "{\"Type\":\"definitif\",\"Quoi\":\"b\",\"Retour\":\"r1\"}",
+                                     "{\"Type\":\"definitif\",\"Quoi\":\"c\",\"Retour\":\"r2\"}"
+                                 ],
+                         "note":  false
+                     },
+                     {
+                         "partDefinitive":  false,
+                         "retour":  "",
+                         "definitif":  false,
+                         "log":  [
+                                     "{\"Type\":\"note\",\"Quoi\":\"n\"}"
+                                 ],
+                         "note":  true
+                     },
+                     {
+                         "partDefinitive":  false,
+                         "retour":  "",
+                         "definitif":  false,
+                         "log":  [
+                                     "{\"Type\":\"note\",\"Quoi\":\"n\"}",
+                                     "{\"Type\":\"reg\",\"Path\":\"HKCU:\\\\A\",\"Name\":\"b\",\"Existed\":false}"
+                                 ],
+                         "note":  false
+                     },
+                     {
+                         "partDefinitive":  true,
+                         "retour":  "",
+                         "definitif":  false,
+                         "log":  [
+                                     "{\"Type\":\"definitif\",\"Quoi\":\"a\"}",
+                                     "{\"Type\":\"svc\",\"Name\":\"x\",\"StartType\":\"Manual\"}"
+                                 ],
+                         "note":  false
+                     }
+                 ],
+    "sujet":  "Assistance (assistance.ps1) : historique, détails techniques, titres, nouveautés, masque des données personnelles",
+    "cas":  [
+                {
+                    "convertie":  "{\"Path\":\"HKCU:\\\\Control Panel\\\\Mouse\",\"Type\":\"reg\",\"Kind\":\"String\",\"Value\":\"1\",\"Name\":\"MouseSpeed\",\"Nouveau\":\"0\",\"Existed\":true}",
+                    "entree":  "{\"Type\":\"reg\",\"Path\":\"HKCU:\\\\Control Panel\\\\Mouse\",\"Name\":\"MouseSpeed\",\"Existed\":true,\"Value\":\"1\",\"Kind\":\"String\",\"Nouveau\":\"0\"}",
+                    "details":  [
+                                    "Registre HKCU:\\Control Panel\\Mouse : valeur « MouseSpeed », avant 1, après 0"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Path\":\"HKLM:\\\\X\",\"Type\":\"reg\",\"Kind\":null,\"Value\":null,\"Name\":\"N\",\"Existed\":false}",
+                    "entree":  "{\"Type\":\"reg\",\"Path\":\"HKLM:\\\\X\",\"Name\":\"N\",\"Existed\":false,\"Value\":null,\"Kind\":null}",
+                    "details":  [
+                                    "Registre HKLM:\\X : valeur « N », avant absente, après modifiée"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Path\":\"HKLM:\\\\X\",\"Type\":\"reg\",\"Efface\":true,\"Kind\":\"DWord\",\"Value\":5,\"Name\":\"N\",\"Existed\":true}",
+                    "entree":  "{\"Type\":\"reg\",\"Path\":\"HKLM:\\\\X\",\"Name\":\"N\",\"Existed\":true,\"Value\":5,\"Kind\":\"DWord\",\"Efface\":true}",
+                    "details":  [
+                                    "Registre HKLM:\\X : valeur « N », avant 5, après effacée"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Path\":\"HKLM:\\\\X\",\"Type\":\"reg\",\"Kind\":\"Binary\",\"Value\":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18],\"Name\":\"B\",\"Nouveau\":[0],\"Existed\":true}",
+                    "entree":  "{\"Type\":\"reg\",\"Path\":\"HKLM:\\\\X\",\"Name\":\"B\",\"Existed\":true,\"Value\":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18],\"Kind\":\"Binary\",\"Nouveau\":[0]}",
+                    "details":  [
+                                    "Registre HKLM:\\X : valeur « B », avant 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16..., après 0"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Path\":\"HKLM:\\\\X\",\"Type\":\"reg\",\"Kind\":\"QWord\",\"Value\":12345678901,\"Name\":\"Q\",\"Nouveau\":null,\"Existed\":true}",
+                    "entree":  "{\"Type\":\"reg\",\"Path\":\"HKLM:\\\\X\",\"Name\":\"Q\",\"Existed\":true,\"Value\":\"12345678901\",\"Kind\":\"QWord\",\"Nouveau\":null}",
+                    "details":  [
+                                    "Registre HKLM:\\X : valeur « Q », avant 12345678901, après vide"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Path\":\"HKLM:\\\\X\",\"Type\":\"reg\",\"Kind\":\"MultiString\",\"Value\":[\"a\",\"b\"],\"Name\":\"M\",\"Existed\":true}",
+                    "entree":  "{\"Type\":\"reg\",\"Path\":\"HKLM:\\\\X\",\"Name\":\"M\",\"Existed\":true,\"Value\":[\"a\",\"b\"],\"Kind\":\"MultiString\"}",
+                    "details":  [
+                                    "Registre HKLM:\\X : valeur « M », avant a,b, après modifiée"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Path\":\"HKLM:\\\\X\",\"Type\":\"reg\",\"Kind\":\"DWord\",\"Value\":7,\"Name\":\"D\",\"Existed\":true}",
+                    "entree":  "{\"Type\":\"reg\",\"Path\":\"HKLM:\\\\X\",\"Name\":\"D\",\"Existed\":true,\"Value\":\"7\",\"Kind\":\"DWord\"}",
+                    "details":  [
+                                    "Registre HKLM:\\X : valeur « D », avant 7, après modifiée"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Path\":\"HKLM:\\\\X\",\"Type\":\"reg\",\"Kind\":\"String\",\"Value\":\"vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\",\"Name\":\"L\",\"Existed\":true}",
+                    "entree":  "{\"Type\":\"reg\",\"Path\":\"HKLM:\\\\X\",\"Name\":\"L\",\"Existed\":true,\"Value\":\"vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\",\"Kind\":\"String\"}",
+                    "details":  [
+                                    "Registre HKLM:\\X : valeur « L », avant vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv..., après modifiée"
+                                ]
+                },
+                {
+                    "convertie":  "{\"StartType\":\"Automatic\",\"Nouveau\":\"Disabled\",\"Running\":true,\"Name\":\"DiagTrack\",\"Type\":\"svc\"}",
+                    "entree":  "{\"Type\":\"svc\",\"Name\":\"DiagTrack\",\"StartType\":\"Automatic\",\"Running\":true,\"Nouveau\":\"Disabled\"}",
+                    "details":  [
+                                    "Service DiagTrack : démarrage avant automatique, il tournait, après désactivé, arrêté"
+                                ]
+                },
+                {
+                    "convertie":  "{\"StartType\":\"Manual\",\"Running\":false,\"Name\":\"SysMain\",\"Type\":\"svc\"}",
+                    "entree":  "{\"Type\":\"svc\",\"Name\":\"SysMain\",\"StartType\":\"Manual\",\"Running\":false}",
+                    "details":  [
+                                    "Service SysMain : démarrage avant manuel"
+                                ]
+                },
+                {
+                    "convertie":  "{\"StartType\":\"Boot\",\"Name\":\"X\",\"Type\":\"svc\"}",
+                    "entree":  "{\"Type\":\"svc\",\"Name\":\"X\",\"StartType\":\"Boot\"}",
+                    "details":  [
+                                    "Service X : démarrage avant Boot"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Nouveau\":\"8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c\",\"Nom\":\"\",\"Guid\":\"381b4222-f694-41f0-9685-ff5bb260df2e\",\"Type\":\"power\"}",
+                    "entree":  "{\"Type\":\"power\",\"Guid\":\"381b4222-f694-41f0-9685-ff5bb260df2e\",\"Nom\":\"\",\"Nouveau\":\"8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c\"}",
+                    "details":  [
+                                    "Plan d\u0027alimentation : avant « Utilisation normale » (381b4222-f694-41f0-9685-ff5bb260df2e), après « Performances élevées » (8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c)"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Nom\":\"Mon plan\",\"Guid\":\"aaaa\",\"Type\":\"power\"}",
+                    "entree":  "{\"Type\":\"power\",\"Guid\":\"aaaa\",\"Nom\":\"Mon plan\"}",
+                    "details":  [
+                                    "Plan d\u0027alimentation : avant « Mon plan » (aaaa)"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Nouveau\":\"e9a42b02-d5df-448d-aa00-03f14749eb61\",\"Guid\":\"11111111-2222-3333-4444-555555555555\",\"Type\":\"power\"}",
+                    "entree":  "{\"Type\":\"power\",\"Guid\":\"11111111-2222-3333-4444-555555555555\",\"Nouveau\":\"e9a42b02-d5df-448d-aa00-03f14749eb61\"}",
+                    "details":  [
+                                    "Plan d\u0027alimentation : avant « copie de Performances élevées » (11111111-2222-3333-4444-555555555555), après « Performances optimales » (e9a42b02-d5df-448d-aa00-03f14749eb61)"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Type\":\"pcfg\",\"Key\":\"CritAction\",\"Guid\":\"637ea02f-bbcb-4015-8e2c-a1c7b9c0b546\",\"Nouveau\":3,\"Dc\":2,\"Ac\":0}",
+                    "entree":  "{\"Type\":\"pcfg\",\"Key\":\"CritAction\",\"Guid\":\"637ea02f-bbcb-4015-8e2c-a1c7b9c0b546\",\"Ac\":0,\"Dc\":2,\"Nouveau\":3}",
+                    "details":  [
+                                    "Réglage d\u0027alimentation, action à batterie critique : avant secteur ne rien faire, batterie mise en veille prolongée, après arrêt du PC (secteur et batterie)"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Dc\":7,\"Ac\":5,\"Guid\":\"9a66d8d7-4ff7-4ef9-b5a2-5a326ca2a469\",\"Type\":\"pcfg\"}",
+                    "entree":  "{\"Type\":\"pcfg\",\"Guid\":\"9a66d8d7-4ff7-4ef9-b5a2-5a326ca2a469\",\"Ac\":5,\"Dc\":7}",
+                    "details":  [
+                                    "Réglage d\u0027alimentation, niveau de batterie critique : avant secteur 5 %, batterie 7 %"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Dc\":0,\"Key\":\"LowNotify\",\"Ac\":1,\"Nouveau\":1,\"Type\":\"pcfg\"}",
+                    "entree":  "{\"Type\":\"pcfg\",\"Key\":\"LowNotify\",\"Ac\":1,\"Dc\":0,\"Nouveau\":1}",
+                    "details":  [
+                                    "Réglage d\u0027alimentation, alerte de batterie faible : avant secteur activée, batterie coupée, après activée (secteur et batterie)"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Dc\":null,\"Key\":\"LowAction\",\"Ac\":9,\"Type\":\"pcfg\"}",
+                    "entree":  "{\"Type\":\"pcfg\",\"Key\":\"LowAction\",\"Ac\":9,\"Dc\":null}",
+                    "details":  [
+                                    "Réglage d\u0027alimentation, action à batterie faible : avant secteur 9, batterie inconnu"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Dc\":2,\"Ac\":1,\"Guid\":\"ffff\",\"Nouveau\":3,\"Type\":\"pcfg\"}",
+                    "entree":  "{\"Type\":\"pcfg\",\"Guid\":\"ffff\",\"Ac\":1,\"Dc\":2,\"Nouveau\":3}",
+                    "details":  [
+                                    "Réglage d\u0027alimentation ffff : avant secteur 1, batterie 2, après 3 (secteur et batterie)"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Nouveau\":144,\"Type\":\"display\",\"Device\":\"\\\\\\\\.\\\\DISPLAY1\",\"Hz\":60}",
+                    "entree":  "{\"Type\":\"display\",\"Device\":\"\\\\\\\\.\\\\DISPLAY1\",\"Hz\":60,\"Nouveau\":144}",
+                    "details":  [
+                                    "Écran \\\\.\\DISPLAY1 : fréquence avant 60 Hz, après 144 Hz"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Type\":\"display\",\"Device\":\"\\\\\\\\.\\\\DISPLAY2\",\"Hz\":75}",
+                    "entree":  "{\"Type\":\"display\",\"Device\":\"\\\\\\\\.\\\\DISPLAY2\",\"Hz\":75}",
+                    "details":  [
+                                    "Écran \\\\.\\DISPLAY2 : fréquence avant 75 Hz"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Nouveau\":\"ded574b5-45a0-4f42-8737-46345c09c238\",\"Guid\":\"00000000-0000-0000-0000-000000000000\",\"Type\":\"overlay\"}",
+                    "entree":  "{\"Type\":\"overlay\",\"Guid\":\"00000000-0000-0000-0000-000000000000\",\"Nouveau\":\"ded574b5-45a0-4f42-8737-46345c09c238\"}",
+                    "details":  [
+                                    "Curseur du mode d\u0027alimentation de Windows : avant 00000000-0000-0000-0000-000000000000, après « Meilleures performances » (ded574b5-45a0-4f42-8737-46345c09c238)"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Nouveau\":[\"1.1.1.1\",\"1.0.0.1\"],\"Servers\":[\"192.168.1.1\"],\"Type\":\"dns\"}",
+                    "entree":  "{\"Type\":\"dns\",\"Servers\":[\"192.168.1.1\",\"\"],\"Nouveau\":[\"1.1.1.1\",\"1.0.0.1\"]}",
+                    "details":  [
+                                    "DNS de la carte réseau : avant 192.168.1.1, après 1.1.1.1, 1.0.0.1"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Servers\":[],\"Type\":\"dns\"}",
+                    "entree":  "{\"Type\":\"dns\",\"Servers\":[]}",
+                    "details":  [
+                                    "DNS de la carte réseau : avant automatique (box)"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Nouveau\":[],\"Servers\":[],\"Type\":\"dns\"}",
+                    "entree":  "{\"Type\":\"dns\",\"Servers\":null,\"Nouveau\":[]}",
+                    "details":  [
+                                    "DNS de la carte réseau : avant automatique (box), après automatique (box)"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Name\":\"Nevermind - Bloquer jeu.exe\",\"Type\":\"fw\"}",
+                    "entree":  "{\"Type\":\"fw\",\"Name\":\"Nevermind - Bloquer jeu.exe\"}",
+                    "details":  [
+                                    "Pare-feu : règle « Nevermind - Bloquer jeu.exe », avant aucune règle, après Internet bloqué pour ce programme"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Retour\":\"Panneau de configuration, Fonctionnalités.\",\"Type\":\"definitif\",\"Quoi\":\"SMBv1 coupé\"}",
+                    "entree":  "{\"Type\":\"definitif\",\"Quoi\":\"SMBv1 coupé\",\"Retour\":\"Panneau de configuration, Fonctionnalités.\"}",
+                    "details":  [
+                                    "SMBv1 coupé (définitif)"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Chemins\":[\"C:\\\\a.exe\",\"C:\\\\b.exe\"],\"Type\":\"note\",\"Quoi\":\"Appli fermée depuis la page RAM\"}",
+                    "entree":  "{\"Type\":\"note\",\"Quoi\":\"Appli fermée depuis la page RAM\",\"Chemins\":[\"C:\\\\a.exe\",\"C:\\\\b.exe\"]}",
+                    "details":  [
+                                    "Appli fermée depuis la page RAM : C:\\a.exe, C:\\b.exe"
+                                ]
+                },
+                {
+                    "convertie":  "{\"Quoi\":\"Rien d\\u0027autre\",\"Type\":\"note\"}",
+                    "entree":  "{\"Type\":\"note\",\"Quoi\":\"Rien d\u0027autre\"}",
+                    "details":  [
+                                    "Rien d\u0027autre : "
+                                ]
+                },
+                {
+                    "convertie":  "{\"Quoi\":\"x\",\"Type\":\"inconnu\"}",
+                    "entree":  "{\"Type\":\"inconnu\",\"Quoi\":\"x\"}",
+                    "details":  [
+
+                                ]
+                }
+            ],
+    "format":  1,
+    "masques":  [
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "C:\\Users\\jorda\\AppData\\x",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "C:\\Users\\\u003cutilisateur\u003e\\AppData\\x",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "c:\\users\\JORDA\\doc",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "c:\\Users\\\u003cutilisateur\u003e\\doc",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "C:\\Users\\jordan\\x",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "C:\\Users\\\u003cutilisateur\u003e\\x",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "C:\\Users\\jorda",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "C:\\Users\\\u003cutilisateur\u003e",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "C:\\Users\\jorda.old\\x",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "C:\\Users\\\u003cutilisateur\u003e.old\\x",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "C:\\Users\\jorda-2",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "C:\\Users\\\u003cutilisateur\u003e-2",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "Jordan sur PC-JORDAN",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "\u003cutilisateur\u003e sur PC-\u003cutilisateur\u003e",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "jordan",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "\u003cutilisateur\u003e",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "C:\\Users\\Élo\\é",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "C:\\Users\\Élo\\é",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "C:\\Users\\Éloise",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "C:\\Users\\Éloise",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "ab ab abc",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "ab ab abc",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "Marc-PC de Marc",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "Marc-PC de Marc",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Jordan",
+                        "texte":  "rien",
+                        "pc":  "PC-JORDAN",
+                        "masque":  "rien",
+                        "profil":  "C:\\Users\\jorda"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "C:\\Users\\jorda\\AppData\\x",
+                        "pc":  "BUREAU",
+                        "masque":  "C:\\Users\\jorda\\AppData\\x",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "c:\\users\\JORDA\\doc",
+                        "pc":  "BUREAU",
+                        "masque":  "c:\\users\\JORDA\\doc",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "C:\\Users\\jordan\\x",
+                        "pc":  "BUREAU",
+                        "masque":  "C:\\Users\\jordan\\x",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "C:\\Users\\jorda",
+                        "pc":  "BUREAU",
+                        "masque":  "C:\\Users\\jorda",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "C:\\Users\\jorda.old\\x",
+                        "pc":  "BUREAU",
+                        "masque":  "C:\\Users\\jorda.old\\x",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "C:\\Users\\jorda-2",
+                        "pc":  "BUREAU",
+                        "masque":  "C:\\Users\\jorda-2",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "Jordan sur PC-JORDAN",
+                        "pc":  "BUREAU",
+                        "masque":  "Jordan sur PC-JORDAN",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "jordan",
+                        "pc":  "BUREAU",
+                        "masque":  "jordan",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "C:\\Users\\Élo\\é",
+                        "pc":  "BUREAU",
+                        "masque":  "C:\\Users\\\u003cutilisateur\u003e\\é",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "C:\\Users\\Éloise",
+                        "pc":  "BUREAU",
+                        "masque":  "C:\\Users\\Éloise",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "ab ab abc",
+                        "pc":  "BUREAU",
+                        "masque":  "ab ab abc",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "Marc-PC de Marc",
+                        "pc":  "BUREAU",
+                        "masque":  "Marc-PC de Marc",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "Élodie",
+                        "texte":  "rien",
+                        "pc":  "BUREAU",
+                        "masque":  "rien",
+                        "profil":  "C:\\Users\\Élo"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "C:\\Users\\jorda\\AppData\\x",
+                        "pc":  "X1",
+                        "masque":  "C:\\Users\\jorda\\AppData\\x",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "c:\\users\\JORDA\\doc",
+                        "pc":  "X1",
+                        "masque":  "c:\\users\\JORDA\\doc",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "C:\\Users\\jordan\\x",
+                        "pc":  "X1",
+                        "masque":  "C:\\Users\\jordan\\x",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "C:\\Users\\jorda",
+                        "pc":  "X1",
+                        "masque":  "C:\\Users\\jorda",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "C:\\Users\\jorda.old\\x",
+                        "pc":  "X1",
+                        "masque":  "C:\\Users\\jorda.old\\x",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "C:\\Users\\jorda-2",
+                        "pc":  "X1",
+                        "masque":  "C:\\Users\\jorda-2",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "Jordan sur PC-JORDAN",
+                        "pc":  "X1",
+                        "masque":  "Jordan sur PC-JORDAN",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "jordan",
+                        "pc":  "X1",
+                        "masque":  "jordan",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "C:\\Users\\Élo\\é",
+                        "pc":  "X1",
+                        "masque":  "C:\\Users\\Élo\\é",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "C:\\Users\\Éloise",
+                        "pc":  "X1",
+                        "masque":  "C:\\Users\\Éloise",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "ab ab abc",
+                        "pc":  "X1",
+                        "masque":  "\u003cutilisateur\u003e \u003cutilisateur\u003e \u003cutilisateur\u003ec",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "Marc-PC de Marc",
+                        "pc":  "X1",
+                        "masque":  "Marc-PC de Marc",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "ab",
+                        "texte":  "rien",
+                        "pc":  "X1",
+                        "masque":  "rien",
+                        "profil":  "C:\\Users\\ab"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "C:\\Users\\jorda\\AppData\\x",
+                        "pc":  "Marc-PC",
+                        "masque":  "C:\\Users\\jorda\\AppData\\x",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "c:\\users\\JORDA\\doc",
+                        "pc":  "Marc-PC",
+                        "masque":  "c:\\users\\JORDA\\doc",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "C:\\Users\\jordan\\x",
+                        "pc":  "Marc-PC",
+                        "masque":  "C:\\Users\\jordan\\x",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "C:\\Users\\jorda",
+                        "pc":  "Marc-PC",
+                        "masque":  "C:\\Users\\jorda",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "C:\\Users\\jorda.old\\x",
+                        "pc":  "Marc-PC",
+                        "masque":  "C:\\Users\\jorda.old\\x",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "C:\\Users\\jorda-2",
+                        "pc":  "Marc-PC",
+                        "masque":  "C:\\Users\\jorda-2",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "Jordan sur PC-JORDAN",
+                        "pc":  "Marc-PC",
+                        "masque":  "Jordan sur PC-JORDAN",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "jordan",
+                        "pc":  "Marc-PC",
+                        "masque":  "jordan",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "C:\\Users\\Élo\\é",
+                        "pc":  "Marc-PC",
+                        "masque":  "C:\\Users\\Élo\\é",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "C:\\Users\\Éloise",
+                        "pc":  "Marc-PC",
+                        "masque":  "C:\\Users\\Éloise",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "ab ab abc",
+                        "pc":  "Marc-PC",
+                        "masque":  "ab ab abc",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "Marc-PC de Marc",
+                        "pc":  "Marc-PC",
+                        "masque":  "\u003cutilisateur\u003e-PC de \u003cutilisateur\u003e",
+                        "profil":  "D:\\Profils\\Marc"
+                    },
+                    {
+                        "compte":  "Marc",
+                        "texte":  "rien",
+                        "pc":  "Marc-PC",
+                        "masque":  "rien",
+                        "profil":  "D:\\Profils\\Marc"
+                    }
+                ],
+    "historique":  {
+                       "fichier":  "W3siSWQiOiJhYmMxMjNkZWY0NTYiLCJEYXRlIjoiMDYvMTEvMjAyNiDDoCAyMTowNSIsIlRpdHJlIjoiU291cmlzIiwiRGV0YWlscyI6WyJhIiwiIixudWxsXSwiTG9nIjpbeyJUeXBlIjoicmVnIiwiUGF0aCI6IkhLQ1U6XFxDb250cm9sIFBhbmVsXFxNb3VzZSIsIk5hbWUiOiJNb3VzZVNwZWVkIiwiRXhpc3RlZCI6dHJ1ZSwiVmFsdWUiOiIxIiwiS2luZCI6IlN0cmluZyIsIk5vdXZlYXUiOiIwIn0seyJUeXBlIjoicmVnIiwiUGF0aCI6IkhLTE06XFxYIiwiTmFtZSI6IkIiLCJFeGlzdGVkIjp0cnVlLCJWYWx1ZSI6WzEsMiwzLDQsNSw2LDcsOCw5LDEwLDExLDEyLDEzLDE0LDE1LDE2LDE3LDE4XSwiS2luZCI6IkJpbmFyeSIsIk5vdXZlYXUiOlswXX0seyJUeXBlIjoiZG5zIiwiU2VydmVycyI6WyIxOTIuMTY4LjEuMSIsIiJdLCJOb3V2ZWF1IjpbIjEuMS4xLjEiLCIxLjAuMC4xIl19LG51bGxdLCJBbm51bGUiOmZhbHNlfSxudWxsLHsiSWQiOjcsIlRpdHJlIjpudWxsLCJBbm51bGUiOjF9XQ==",
+                       "lu":  "[{\"Id\":\"abc123def456\",\"Details\":[\"a\"],\"Annule\":false,\"Date\":\"06/11/2026 à 21:05\",\"Log\":[{\"Path\":\"HKCU:\\\\Control Panel\\\\Mouse\",\"Type\":\"reg\",\"Kind\":\"String\",\"Value\":\"1\",\"Name\":\"MouseSpeed\",\"Nouveau\":\"0\",\"Existed\":true},{\"Path\":\"HKLM:\\\\X\",\"Type\":\"reg\",\"Kind\":\"Binary\",\"Value\":[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18],\"Name\":\"B\",\"Nouveau\":[0],\"Existed\":true},{\"Nouveau\":[\"1.1.1.1\",\"1.0.0.1\"],\"Servers\":[\"192.168.1.1\"],\"Type\":\"dns\"}],\"Titre\":\"Souris\"},{\"Id\":\"7\",\"Details\":[],\"Annule\":true,\"Date\":\"\",\"Log\":[],\"Titre\":\"\"}]"
+                   },
+    "titres":  [
+                   {
+                       "lignes":  [
+
+                                  ],
+                       "elements":  [
+
+                                    ],
+                       "resultat":  "Titre de la fiche",
+                       "titre":  "Titre de la fiche"
+                   },
+                   {
+                       "lignes":  [
+                                      "Rien"
+                                  ],
+                       "elements":  [
+
+                                    ],
+                       "resultat":  "Titre de la fiche",
+                       "titre":  "Titre de la fiche"
+                   },
+                   {
+                       "lignes":  [
+                                      "•  Un seul changement"
+                                  ],
+                       "elements":  [
+                                        "Un seul changement"
+                                    ],
+                       "resultat":  "Un seul changement",
+                       "titre":  "Titre de la fiche"
+                   },
+                   {
+                       "lignes":  [
+                                      "•  a",
+                                      "•  b"
+                                  ],
+                       "elements":  [
+                                        "a",
+                                        "b"
+                                    ],
+                       "resultat":  "2 changements : a, b",
+                       "titre":  "Titre de la fiche"
+                   },
+                   {
+                       "lignes":  [
+                                      "Intro",
+                                      "•  a",
+                                      "x",
+                                      "•b",
+                                      "•   c",
+                                      "• d"
+                                  ],
+                       "elements":  [
+                                        "a",
+                                        "b",
+                                        "c",
+                                        "d"
+                                    ],
+                       "resultat":  "4 changements : a, b, c...",
+                       "titre":  "Titre de la fiche"
+                   },
+                   {
+                       "lignes":  [
+                                      "•  1",
+                                      "•  2",
+                                      "•  3",
+                                      "•  4",
+                                      "•  5"
+                                  ],
+                       "elements":  [
+                                        "1",
+                                        "2",
+                                        "3",
+                                        "4",
+                                        "5"
+                                    ],
+                       "resultat":  "5 changements : 1, 2, 3...",
+                       "titre":  "Titre de la fiche"
+                   },
+                   {
+                       "lignes":  [
+                                      "pas de puce",
+                                      "- tiret"
+                                  ],
+                       "elements":  [
+
+                                    ],
+                       "resultat":  "Titre de la fiche",
+                       "titre":  "Titre de la fiche"
+                   }
+               ],
+    "nouveautes":  [
+                       {
+                           "lignes":  [
+                                          "•  un",
+                                          "•  deux",
+                                          "•  trois"
+                                      ],
+                           "notes":  "- un\n- deux\r\n\r\n* trois"
+                       },
+                       {
+                           "lignes":  [
+
+                                      ],
+                           "notes":  ""
+                       },
+                       {
+                           "lignes":  [
+
+                                      ],
+                           "notes":  "   "
+                       },
+                       {
+                           "lignes":  [
+                                          "Titre",
+                                          "-pas un tiret",
+                                          "•  deux espaces",
+                                          "•  avec tab",
+                                          "•  indenté"
+                                      ],
+                           "notes":  "Titre\n-pas un tiret\n-  deux espaces\n*\tavec tab\n  - indenté"
+                       },
+                       {
+                           "lignes":  [
+                                          "• déjà",
+                                          "1. étape"
+                                      ],
+                           "notes":  "• déjà\n1. étape"
+                       }
+                   ]
+}

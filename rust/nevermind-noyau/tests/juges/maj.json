@@ -1,0 +1,2354 @@
+{
+    "comparaisons":  [
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  true,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "1.2"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  true,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  true,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  true,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  true,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  true,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "1.2.0"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  true,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  true,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  true,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  true,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  true,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  true,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "1.2.0.0"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  true,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  true,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  true,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  true,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  true,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  true,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  true,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "1.15.6"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  true,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  true,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  true,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  true,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  true,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  true,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  true,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  true,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  true,
+                             "distante":  "1.15.10"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  true,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  true,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  true,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  true,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  true,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  true,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  true,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  true,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  true,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  true,
+                             "distante":  "2.0"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "1"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  ""
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "a.b"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "1.2.3.4.5"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  true,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "01.2"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  true,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "1.2 "
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  true,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  " 1.2"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "1.-2"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  true,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  true,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  true,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  true,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  true,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  true,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  true,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  true,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  true,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  true,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  true,
+                             "distante":  "2147483647.0"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "2147483648.0"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "1.2.3-beta"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "v1.2"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "0.0"
+                         },
+                         {
+                             "locale":  "1.2",
+                             "plus":  true,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "1.2.0",
+                             "plus":  true,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "1.2.0.0",
+                             "plus":  true,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "1.15.6",
+                             "plus":  true,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "1.15.10",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "2.0",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "1",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "a.b",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "1.2.3.4.5",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "01.2",
+                             "plus":  true,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "1.2 ",
+                             "plus":  true,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  " 1.2",
+                             "plus":  true,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "1.-2",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "2147483647.0",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "2147483648.0",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "1.2.3-beta",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "v1.2",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "0.0",
+                             "plus":  true,
+                             "distante":  "1.15.6.1"
+                         },
+                         {
+                             "locale":  "1.15.6.1",
+                             "plus":  false,
+                             "distante":  "1.15.6.1"
+                         }
+                     ],
+    "installation":  {
+                         "zip":  "UEsDBBQAAAAIACEiZl2sMkpgGAAAABYAAAAgAAAATmV2ZXJtaW5kL2ZpY2hpZXJzL05ldmVybWluZC5wczFTcSwoCEstKs7Mz1OwVVA31DM00zNQBwBQSwMEFAAAAAgAISJmXcgE2+sLAAAACQAAACYAAABOZXZlcm1pbmQvZmljaGllcnMvbW9kdWxlcy9ub3V2ZWF1LnBzMVNWyMsvLUtNLAUAUEsDBBQAAAAIACEiZl3wtmNrBQAAAAMAAAAXAAAATmV2ZXJtaW5kL05ldmVybWluZC5leGVLrUgFAFBLAwQUAAAAAAAhImZdAAAAAAAAAAAAAAAAFgAAAE5ldmVybWluZC9maWNoaWVycy91aS9QSwECFAAUAAAACAAhImZdrDJKYBgAAAAWAAAAIAAAAAAAAAAAAAAAAAAAAAAATmV2ZXJtaW5kL2ZpY2hpZXJzL05ldmVybWluZC5wczFQSwECFAAUAAAACAAhImZdyATb6wsAAAAJAAAAJgAAAAAAAAAAAAAAAABWAAAATmV2ZXJtaW5kL2ZpY2hpZXJzL21vZHVsZXMvbm91dmVhdS5wczFQSwECFAAUAAAACAAhImZd8LZjawUAAAADAAAAFwAAAAAAAAAAAAAAAAClAAAATmV2ZXJtaW5kL05ldmVybWluZC5leGVQSwECFAAUAAAAAAAhImZdAAAAAAAAAAAAAAAAFgAAAAAAAAAAAAAAAADfAAAATmV2ZXJtaW5kL2ZpY2hpZXJzL3VpL1BLBQYAAAAABAAEACsBAAATAQAAAAA=",
+                         "signature":  "AzbMQQ9uXQJKDLGFmck+TN+zVTvDNBeLNT8zPmJqczB4GSOGpZkyMENRw2itRLnVcNcF9P8cQXMGVZdevBJyYzVvoMx5VfSQxOMgapke7Tk5JLA9rCGkye7L5bqzNq9KGNi1QO0UsQUvZEAX5ZTBECw6yksfNn8W3ns6u6Gcp4n2mXRFYIaBAskYQ2goyiTNDJtiWMgHVmd4Rcok9DRc6r+0pQxlazX7SaUzYFnb1xlAiqEcs1nP6l4ptLwGIESDqjbXXcQD3IvFj8gNAZw1KEtPVycP/llBlsT4l8raZB8bh+Uvdy/GI5zqXUYghxyFGc/fbI8IjMkvvffYU3AmMSEQufUNIcHG3QghZSWv7hDdVkwNK7gX9HbjIxPcA6tMGW7UYO5Lc8GKclzeKoQdVuWN8TVb3DvWoJ5cw6xm1RcmYFCR4Y3Stff4c8+SmK1ujSkEjUMahlCWYfVZ5m/EHzTKqiZRQXQ9ldMLw4+8cMS5mSwgpgWKC3nFTZuXgeta",
+                         "cle":  "\u003cRSAKeyValue\u003e\u003cModulus\u003etRevBALH908XXnQanoF70Z1K3mgOyEm/X3j7cCnQrNTXOrQVwmjpIqLM4a4fnrXHclAbz5Pa5zNO+iR/qou/EGrJjuyFawxDu3hmrJWqjL//nw3vA6zO05T4bRBeRq77w/V3K7sw5usUWusDYSv2N6472F/DF/wU7SdlOCCDy6xQ2/YC7acIioCAZai8w3hjAb7uBAgy6249qjnwk4vOTvtp7yD0LMXWjhN23sjcMQN9M6yTbTw/zAFWnyoJvHF2yeihosOwVyr+VzWNvnh999OY1NSFQCWYuI5USMXRGBj/dl/NNohQVj60MhLrIjH8u9xjosGpJR7jW8QalB2RgNh7ME1CJb2OaU7nYeOunHOcTb/SETNTr5yBH2QiMMsIjgDqui57yijjrJBL3LaQIbXfXWV2w3nUqAB7/jKJFKgh/PqxAM4a913dedUsreuvw4tMi0//ABpEOQX5zXk7HwgCGsLiONNQcftZDS6Iq9E88tF3qrdhWo0rxCCNyFWp\u003c/Modulus\u003e\u003cExponent\u003eAQAB\u003c/Exponent\u003e\u003c/RSAKeyValue\u003e"
+                     },
+    "publications":  [
+                         {
+                             "beta":  false,
+                             "ancien":  false,
+                             "nom":  "latest normal",
+                             "resultat":  {
+                                              "Beta":  false,
+                                              "Url":  "https://github.com/dl/Nevermind.zip",
+                                              "Version":  "1.16.0",
+                                              "SigUrl":  "https://github.com/dl/Nevermind.zip.sig",
+                                              "Notes":  "- un\n- deux"
+                                          },
+                             "reponses":  {
+                                              "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"v1.16.0\",\"prerelease\":false,\"body\":\"- un\\n- deux\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"},{\"name\":\"Nevermind.zip.sig\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip.sig\"}]}"
+                                          }
+                         },
+                         {
+                             "beta":  false,
+                             "ancien":  false,
+                             "nom":  "latest sans signature",
+                             "resultat":  {
+                                              "Beta":  false,
+                                              "Url":  "https://github.com/dl/Nevermind.zip",
+                                              "Version":  "1.16.0",
+                                              "SigUrl":  "",
+                                              "Notes":  ""
+                                          },
+                             "reponses":  {
+                                              "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"1.16.0\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"}]}"
+                                          }
+                         },
+                         {
+                             "beta":  false,
+                             "ancien":  true,
+                             "nom":  "ancien nom",
+                             "resultat":  {
+                                              "Beta":  false,
+                                              "Url":  "https://github.com/dl/OptiGame.zip",
+                                              "Version":  "1.13.0",
+                                              "SigUrl":  "https://github.com/dl/OptiGame.zip.sig",
+                                              "Notes":  ""
+                                          },
+                             "reponses":  {
+                                              "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"V1.13.0\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"},{\"name\":\"OptiGame.zip\",\"browser_download_url\":\"https://github.com/dl/OptiGame.zip\"},{\"name\":\"OptiGame.zip.sig\",\"browser_download_url\":\"https://github.com/dl/OptiGame.zip.sig\"}]}"
+                                          }
+                         },
+                         {
+                             "beta":  false,
+                             "ancien":  false,
+                             "nom":  "seulement OptiGame",
+                             "resultat":  {
+                                              "Beta":  false,
+                                              "Url":  "https://github.com/dl/optigame.ZIP",
+                                              "Version":  "1.12.0",
+                                              "SigUrl":  "https://github.com/dl/OptiGame.zip.SIG",
+                                              "Notes":  ""
+                                          },
+                             "reponses":  {
+                                              "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"v1.12.0\",\"assets\":[{\"name\":\"optigame.ZIP\",\"browser_download_url\":\"https://github.com/dl/optigame.ZIP\"},{\"name\":\"OptiGame.zip.SIG\",\"browser_download_url\":\"https://github.com/dl/OptiGame.zip.SIG\"}]}"
+                                          }
+                         },
+                         {
+                             "beta":  false,
+                             "ancien":  false,
+                             "nom":  "pas de zip",
+                             "resultat":  {
+                                              "Error":  "Aucun fichier Nevermind.zip dans la dernière version publiée."
+                                          },
+                             "reponses":  {
+                                              "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"v2.0\",\"assets\":[{\"name\":\"autre.zip\",\"browser_download_url\":\"https://github.com/dl/autre.zip\"}]}"
+                                          }
+                         },
+                         {
+                             "beta":  false,
+                             "ancien":  false,
+                             "nom":  "erreur réseau",
+                             "resultat":  {
+                                              "Error":  "Le serveur distant a retourné une erreur : (404) Introuvable."
+                                          },
+                             "reponses":  {
+
+                                          }
+                         },
+                         {
+                             "beta":  true,
+                             "ancien":  false,
+                             "nom":  "bêta : la première pas brouillon",
+                             "resultat":  {
+                                              "Beta":  true,
+                                              "Url":  "https://github.com/dl/Nevermind.zip",
+                                              "Version":  "1.17.0-b",
+                                              "SigUrl":  "",
+                                              "Notes":  ""
+                                          },
+                             "reponses":  {
+                                              "https://api.github.com/repos/JordanJacquot/Nevermind/releases?per_page=10":  "[{\"draft\":true,\"tag_name\":\"v9\"},{\"draft\":false,\"prerelease\":true,\"tag_name\":\"v1.17.0-b\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"}]},{\"tag_name\":\"v1.16.0\"}]"
+                                          }
+                         },
+                         {
+                             "beta":  true,
+                             "ancien":  false,
+                             "nom":  "bêta : liste vide",
+                             "resultat":  {
+                                              "Error":  "Aucune version publiée."
+                                          },
+                             "reponses":  {
+                                              "https://api.github.com/repos/JordanJacquot/Nevermind/releases?per_page=10":  "[]"
+                                          }
+                         },
+                         {
+                             "beta":  true,
+                             "ancien":  false,
+                             "nom":  "bêta : une seule",
+                             "resultat":  {
+                                              "Beta":  true,
+                                              "Url":  "https://github.com/dl/Nevermind.zip",
+                                              "Version":  "1.16.1",
+                                              "SigUrl":  "https://github.com/dl/Nevermind.zip.sig",
+                                              "Notes":  ""
+                                          },
+                             "reponses":  {
+                                              "https://api.github.com/repos/JordanJacquot/Nevermind/releases?per_page=10":  "[{\"tag_name\":\"v1.16.1\",\"prerelease\":true,\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"},{\"name\":\"Nevermind.zip.sig\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip.sig\"}]}]"
+                                          }
+                         }
+                     ],
+    "sujet":  "Mises à jour (mises-a-jour.ps1) : la version choisie, Test-NewerVersion, les textes de Invoke-UpdateCheck, un zip signé d\u0027essai",
+    "cas":  [
+                {
+                    "journal":  [
+
+                                ],
+                    "nom":  "géré par Mindset",
+                    "version":  "1.15.6",
+                    "manuel":  false,
+                    "reponses":  {
+                                     "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"v1.16.0\",\"prerelease\":false,\"body\":\"- un\\n- deux\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"},{\"name\":\"Nevermind.zip.sig\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip.sig\"}]}"
+                                 },
+                    "messages":  [
+
+                                 ],
+                    "reglages":  "{}",
+                    "statut":  "Version 1.15.6. Les mises à jour de Nevermind passent par Mindset : ouvre Mindset pour les installer.",
+                    "bandeau":  "",
+                    "enAttente":  {
+
+                                  },
+                    "bouton":  "Vérifier les mises à jour",
+                    "geree":  true
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "nom":  "recherche coupée",
+                    "version":  "1.15.6",
+                    "manuel":  false,
+                    "reponses":  {
+                                     "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"v1.16.0\",\"prerelease\":false,\"body\":\"- un\\n- deux\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"},{\"name\":\"Nevermind.zip.sig\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip.sig\"}]}"
+                                 },
+                    "messages":  [
+
+                                 ],
+                    "reglages":  "{\"MajAuto\":false}",
+                    "statut":  "Version 1.15.6. Clique sur « Vérifier les mises à jour » pour chercher une nouvelle version.",
+                    "bandeau":  "",
+                    "enAttente":  {
+
+                                  },
+                    "bouton":  "Vérifier les mises à jour",
+                    "geree":  false
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "nom":  "recherche coupée, bouton",
+                    "version":  "1.15.6",
+                    "manuel":  true,
+                    "reponses":  {
+                                     "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"v1.16.0\",\"prerelease\":false,\"body\":\"- un\\n- deux\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"},{\"name\":\"Nevermind.zip.sig\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip.sig\"}]}"
+                                 },
+                    "messages":  [
+
+                                 ],
+                    "reglages":  "{\"MajAuto\":false}",
+                    "statut":  "Version 1.15.6. La version 1.16.0 est disponible.",
+                    "bandeau":  "Nouvelle version 1.16.0 disponible (tu as la 1.15.6).",
+                    "enAttente":  "1.16.0",
+                    "bouton":  "Mettre à jour",
+                    "geree":  false
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "nom":  "nouvelle version",
+                    "version":  "1.15.6",
+                    "manuel":  false,
+                    "reponses":  {
+                                     "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"v1.16.0\",\"prerelease\":false,\"body\":\"- un\\n- deux\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"},{\"name\":\"Nevermind.zip.sig\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip.sig\"}]}"
+                                 },
+                    "messages":  [
+
+                                 ],
+                    "reglages":  "{}",
+                    "statut":  "Version 1.15.6. La version 1.16.0 est disponible.",
+                    "bandeau":  "Nouvelle version 1.16.0 disponible (tu as la 1.15.6).",
+                    "enAttente":  "1.16.0",
+                    "bouton":  "Mettre à jour",
+                    "geree":  false
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "nom":  "nouvelle bêta",
+                    "version":  "1.15.6",
+                    "manuel":  true,
+                    "reponses":  {
+                                     "https://api.github.com/repos/JordanJacquot/Nevermind/releases?per_page=10":  "[{\"draft\":true,\"tag_name\":\"v9\"},{\"draft\":false,\"prerelease\":true,\"tag_name\":\"v1.17.0-b\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"}]},{\"tag_name\":\"v1.16.0\"}]"
+                                 },
+                    "messages":  [
+                                     "statut|Nevermind est à jour."
+                                 ],
+                    "reglages":  "{\"Beta\":true}",
+                    "statut":  "Version 1.15.6 : tu as la dernière version.",
+                    "bandeau":  "",
+                    "enAttente":  {
+
+                                  },
+                    "bouton":  "Vérifier les mises à jour",
+                    "geree":  false
+                },
+                {
+                    "journal":  [
+                                    "Mise à jour: Le serveur distant a retourné une erreur : (404) Introuvable."
+                                ],
+                    "nom":  "pas de connexion, au lancement",
+                    "version":  "1.15.6",
+                    "manuel":  false,
+                    "reponses":  {
+
+                                 },
+                    "messages":  [
+
+                                 ],
+                    "reglages":  "{}",
+                    "statut":  "Version 1.15.6. Impossible de vérifier les mises à jour (pas de connexion ?).",
+                    "bandeau":  "",
+                    "enAttente":  {
+
+                                  },
+                    "bouton":  "Vérifier les mises à jour",
+                    "geree":  false
+                },
+                {
+                    "journal":  [
+                                    "Mise à jour: Le serveur distant a retourné une erreur : (404) Introuvable."
+                                ],
+                    "nom":  "pas de connexion, bouton",
+                    "version":  "1.15.6",
+                    "manuel":  true,
+                    "reponses":  {
+
+                                 },
+                    "messages":  [
+                                     "Warning|Impossible de vérifier les mises à jour pour le moment.\n\nVérifie ta connexion Internet et réessaie."
+                                 ],
+                    "reglages":  "{}",
+                    "statut":  "Version 1.15.6. Impossible de vérifier les mises à jour (pas de connexion ?).",
+                    "bandeau":  "",
+                    "enAttente":  {
+
+                                  },
+                    "bouton":  "Vérifier les mises à jour",
+                    "geree":  false
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "nom":  "à jour, bouton",
+                    "version":  "1.16.0",
+                    "manuel":  true,
+                    "reponses":  {
+                                     "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"V1.13.0\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"},{\"name\":\"OptiGame.zip\",\"browser_download_url\":\"https://github.com/dl/OptiGame.zip\"},{\"name\":\"OptiGame.zip.sig\",\"browser_download_url\":\"https://github.com/dl/OptiGame.zip.sig\"}]}"
+                                 },
+                    "messages":  [
+                                     "statut|Nevermind est à jour."
+                                 ],
+                    "reglages":  "{}",
+                    "statut":  "Version 1.16.0 : tu as la dernière version.",
+                    "bandeau":  "",
+                    "enAttente":  {
+
+                                  },
+                    "bouton":  "Vérifier les mises à jour",
+                    "geree":  false
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "nom":  "à jour, au lancement",
+                    "version":  "1.16.0",
+                    "manuel":  false,
+                    "reponses":  {
+                                     "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"V1.13.0\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"},{\"name\":\"OptiGame.zip\",\"browser_download_url\":\"https://github.com/dl/OptiGame.zip\"},{\"name\":\"OptiGame.zip.sig\",\"browser_download_url\":\"https://github.com/dl/OptiGame.zip.sig\"}]}"
+                                 },
+                    "messages":  [
+
+                                 ],
+                    "reglages":  "{}",
+                    "statut":  "Version 1.16.0 : tu as la dernière version.",
+                    "bandeau":  "",
+                    "enAttente":  {
+
+                                  },
+                    "bouton":  "Vérifier les mises à jour",
+                    "geree":  false
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "nom":  "plus ancienne en ligne",
+                    "version":  "1.20.0",
+                    "manuel":  true,
+                    "reponses":  {
+                                     "https://api.github.com/repos/JordanJacquot/Nevermind/releases/latest":  "{\"tag_name\":\"v1.16.0\",\"prerelease\":false,\"body\":\"- un\\n- deux\",\"assets\":[{\"name\":\"Nevermind.zip\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip\"},{\"name\":\"Nevermind.zip.sig\",\"browser_download_url\":\"https://github.com/dl/Nevermind.zip.sig\"}]}"
+                                 },
+                    "messages":  [
+                                     "statut|Nevermind est à jour."
+                                 ],
+                    "reglages":  "{}",
+                    "statut":  "Version 1.20.0 : tu as la dernière version.",
+                    "bandeau":  "",
+                    "enAttente":  {
+
+                                  },
+                    "bouton":  "Vérifier les mises à jour",
+                    "geree":  false
+                }
+            ],
+    "format":  1
+}

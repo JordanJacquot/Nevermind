@@ -1,14 +1,47 @@
 [package]
 name = "nevermind-noyau"
 version = "0.1.0"
-description = "Le noyau de Nevermind en Rust : contexte (dossiers, journal, réglages), contrat d'un bloc (pages, actions, tics, signaux), effets demandés à l'hôte, client de l'Aide"
+description = "Le noyau de Nevermind en Rust : contexte (dossiers, journal, réglages, fichiers sûrs, registre, sauvegarde, historique), contrat d'un bloc (pages, actions, tics, signaux), effets demandés à l'hôte, client de l'Aide, mises à jour, assistance"
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [dependencies]
-# Version figée (« = ») : une nouvelle version n'entre que par un changement relu.
+# Les règles de l'Aide (le même code que NevermindAide.exe) : nom du canal, tâche, règle « fermable », serveur accepté
+aide-regles = { path = "../aide-regles" }
+# Versions figées (« = ») : une nouvelle version n'entre que par un changement relu.
 serde_json = { version = "=1.0.154", features = ["preserve_order"] }
+# La bibliothèque commune de la suite (dépôt Mindset), à la révision épinglée dans le Cargo.toml de l'espace de
+# travail (la même que Mindcare) : le décodage des fichiers et la reconnaissance d'un fichier pris (json_sur), l'heure
+# locale du PC (heure-locale), la vérification des zips signés (signature : la même que Mindset et Mindcare), les
+# versions et les chemins comme .NET.
+suite-commun = { workspace = true, features = ["heure-locale", "signature"] }
+# Le registre en lecture (et HKCU en écriture pour les réglages de l'utilisateur) : la même version que l'Aide
+windows-registry = "=0.6.1"
+# Le dézippage vérifié d'une mise à jour et le zip de « Signaler un problème » : la même version que Mindset
+# (suite-commun), seulement « deflate »
+zip = { version = "=9.1.2", default-features = false, features = ["deflate"] }
+
+# Le seul module qui parle à Windows (src\windows) : la même version que le reste de la suite
+[dependencies.windows]
+version = "=0.62.2"
+features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Networking_WinHttp",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Environment",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Registry",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+]
 
 [lints]
 workspace = true
