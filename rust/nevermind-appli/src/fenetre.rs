@@ -53,7 +53,8 @@ pub fn creer_principale<R: Runtime, M: Manager<R>>(
 ) -> tauri::Result<(WebviewWindow<R>, DossierEcran)> {
     let choix = webview::choisir_dossier(donnees_suite, crate::NOM_APPLI, donnees_appli);
     let pour_navigation = Arc::clone(&journal);
-    let fenetre = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
+    // (le label écrit en clair, égal à LABEL : verifier-tauri.ps1 le lit ici pour le relier à sa capability)
+    let fenetre = WebviewWindowBuilder::new(app, "principale", WebviewUrl::App("index.html".into()))
         .title(crate::NOM_APPLI)
         .inner_size(TAILLE.0, TAILLE.1)
         .min_inner_size(TAILLE_MIN.0, TAILLE_MIN.1)
