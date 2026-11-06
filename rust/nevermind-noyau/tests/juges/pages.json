@@ -1,0 +1,183 @@
+{
+    "format":  1,
+    "cas":  [
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"Bienvenue dans Nevermind\",\"module\":{\"texte\":\"\",\"couleur\":\"P\",\"boutons\":[{\"id\":\"fiche:run\",\"texte\":\"Suivant\"}],\"icone\":\"etoile\",\"titre\":\"\"},\"sous\":\"Étape 1 sur 3\",\"parent\":\"parametres\",\"icone\":\"etoile\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Nevermind analyse ton PC et le règle pour que tes jeux tournent au mieux.\",\"type\":\"texte\"},{\"texte\":\"Rien n\\u0027est modifié sans ton accord : chaque changement passe par un bouton sur lequel tu cliques.\",\"type\":\"texte\"},{\"texte\":\"Passer\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "etape":  0,
+                    "de":  "parametres",
+                    "quoi":  "visite"
+                },
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"L\\u0027accueil\",\"module\":{\"texte\":\"\",\"couleur\":\"P\",\"boutons\":[{\"id\":\"fiche:run\",\"texte\":\"Suivant\"}],\"icone\":\"etoile\",\"titre\":\"\"},\"sous\":\"Étape 2 sur 3\",\"parent\":\"parametres\",\"icone\":\"etoile\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Les grandes tuiles : Ton PC et sa note sur 100, Performances, Protection, Jeux, Réseau, Trafic et Overlay.\",\"type\":\"texte\"},{\"texte\":\"Fais glisser la rangée à la souris, ou utilise les flèches du clavier : un clic sur la tuile du milieu (ou Entrée) l\\u0027ouvre, Échap revient.\",\"type\":\"texte\"},{\"texte\":\"En haut, le logo ramène à l\\u0027accueil ; les onglets mènent aux mêmes pages, et les petites icônes à droite : la loupe pour rechercher un réglage (ou Ctrl + K), Paramètres et Aide.\",\"type\":\"texte\"},{\"texte\":\"Un souci ? « Signaler un problème » est dans l\\u0027Aide.\",\"type\":\"texte\"},{\"texte\":\"Passer\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "etape":  1,
+                    "de":  "parametres",
+                    "quoi":  "visite"
+                },
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"Tu peux revenir en arrière\",\"module\":{\"texte\":\"\",\"couleur\":\"P\",\"boutons\":[{\"id\":\"fiche:run\",\"texte\":\"C\\u0027est parti\"}],\"icone\":\"etoile\",\"titre\":\"\"},\"sous\":\"Étape 3 sur 3\",\"parent\":\"parametres\",\"icone\":\"etoile\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Chaque changement est sauvegardé avant d\\u0027être fait.\",\"type\":\"texte\"},{\"texte\":\"Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde (dans Protection) garde l\\u0027historique : tu peux annuler chaque changement, sauf quatre protections du PC qui restent en place (marquées « Définitif »).\",\"type\":\"texte\"},{\"texte\":\"Dans Ton PC, choisis un point à régler, lis la fiche, puis « Exécuter » pour que Nevermind le corrige.\",\"type\":\"texte\"}]}",
+                    "etape":  2,
+                    "de":  "parametres",
+                    "quoi":  "visite"
+                },
+                {
+                    "lignes":  [
+                                   "•  un",
+                                   "•  deux",
+                                   "Titre",
+                                   "•  trois",
+                                   "1. étape",
+                                   "2. suite",
+                                   "fin"
+                               ],
+                    "quoi":  "resultat",
+                    "de":  "parametres",
+                    "note":  "Tu avais la version 1.15.5.",
+                    "page":  "{\"couleur\":\"vert\",\"titre\":\"Quoi de neuf dans la version 1.16.0\",\"module\":{\"texte\":\"\",\"couleur\":\"vert\",\"boutons\":[],\"icone\":\"ok\",\"titre\":\"\"},\"sous\":\"\",\"parent\":\"parametres\",\"icone\":\"ok\",\"retour\":\"appli\",\"blocs\":[{\"elements\":[\"un\",\"deux\"],\"type\":\"liste\"},{\"texte\":\"Titre\",\"type\":\"texte\"},{\"elements\":[\"trois\"],\"type\":\"liste\"},{\"elements\":[{\"texte\":\"étape\"},{\"texte\":\"suite\"}],\"type\":\"etapes\"},{\"texte\":\"fin\",\"type\":\"texte\"},{\"texte\":\"Tu avais la version 1.15.5.\",\"type\":\"note\"},{\"texte\":\"OK\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "titre":  "Quoi de neuf dans la version 1.16.0"
+                },
+                {
+                    "lignes":  [
+                                   "Corrections et améliorations."
+                               ],
+                    "quoi":  "resultat",
+                    "de":  "parametres",
+                    "note":  "Nevermind vient d\u0027être mis à jour.",
+                    "page":  "{\"couleur\":\"vert\",\"titre\":\"Quoi de neuf dans la version 1.16.0\",\"module\":{\"texte\":\"\",\"couleur\":\"vert\",\"boutons\":[],\"icone\":\"ok\",\"titre\":\"\"},\"sous\":\"\",\"parent\":\"parametres\",\"icone\":\"ok\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Corrections et améliorations.\",\"type\":\"texte\"},{\"texte\":\"Nevermind vient d\\u0027être mis à jour.\",\"type\":\"note\"},{\"texte\":\"OK\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "titre":  "Quoi de neuf dans la version 1.16.0"
+                },
+                {
+                    "lignes":  [
+
+                               ],
+                    "quoi":  "resultat",
+                    "de":  "parametres",
+                    "note":  "",
+                    "page":  "{\"couleur\":\"vert\",\"titre\":\"Sans note\",\"module\":{\"texte\":\"\",\"couleur\":\"vert\",\"boutons\":[],\"icone\":\"ok\",\"titre\":\"\"},\"sous\":\"\",\"parent\":\"parametres\",\"icone\":\"ok\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"OK\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "titre":  "Sans note"
+                },
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"Signaler un problème\",\"module\":{\"texte\":\"Un fichier à envoyer, sans données personnelles\",\"couleur\":\"P\",\"boutons\":[{\"texte\":\"Fermer\",\"style\":\"second\",\"id\":\"panneau:close\"}],\"icone\":\"aide\",\"titre\":\"Rapport\"},\"sous\":\"Un fichier à envoyer, sans données personnelles\",\"parent\":\"parametres\",\"icone\":\"aide\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Explique en une ou deux phrases ce qui ne va pas (ce que tu faisais, ce qui s\\u0027est passé) :\",\"type\":\"texte\"},{\"texte\":\"Nevermind crée un fichier .zip sur ton bureau avec ta phrase, les infos du PC (Windows, composants, score) et le journal de Nevermind. Il ne contient ni tes fichiers, ni ton nom, ni tes mots de passe. Envoie-le à la personne qui t\\u0027a donné Nevermind (Discord par exemple).\",\"type\":\"texte\"},{\"texte\":\"Créer le fichier\",\"style\":{},\"id\":\"panneau:b:0\",\"type\":\"bouton\"}]}",
+                    "de":  "parametres",
+                    "quoi":  "signalement"
+                },
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"Bienvenue dans Nevermind\",\"module\":{\"texte\":\"\",\"couleur\":\"P\",\"boutons\":[{\"id\":\"fiche:run\",\"texte\":\"Suivant\"}],\"icone\":\"etoile\",\"titre\":\"\"},\"sous\":\"Étape 1 sur 3\",\"parent\":{},\"icone\":\"etoile\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Nevermind analyse ton PC et le règle pour que tes jeux tournent au mieux.\",\"type\":\"texte\"},{\"texte\":\"Rien n\\u0027est modifié sans ton accord : chaque changement passe par un bouton sur lequel tu cliques.\",\"type\":\"texte\"},{\"texte\":\"Passer\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "etape":  0,
+                    "de":  "accueil",
+                    "quoi":  "visite"
+                },
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"L\\u0027accueil\",\"module\":{\"texte\":\"\",\"couleur\":\"P\",\"boutons\":[{\"id\":\"fiche:run\",\"texte\":\"Suivant\"}],\"icone\":\"etoile\",\"titre\":\"\"},\"sous\":\"Étape 2 sur 3\",\"parent\":{},\"icone\":\"etoile\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Les grandes tuiles : Ton PC et sa note sur 100, Performances, Protection, Jeux, Réseau, Trafic et Overlay.\",\"type\":\"texte\"},{\"texte\":\"Fais glisser la rangée à la souris, ou utilise les flèches du clavier : un clic sur la tuile du milieu (ou Entrée) l\\u0027ouvre, Échap revient.\",\"type\":\"texte\"},{\"texte\":\"En haut, le logo ramène à l\\u0027accueil ; les onglets mènent aux mêmes pages, et les petites icônes à droite : la loupe pour rechercher un réglage (ou Ctrl + K), Paramètres et Aide.\",\"type\":\"texte\"},{\"texte\":\"Un souci ? « Signaler un problème » est dans l\\u0027Aide.\",\"type\":\"texte\"},{\"texte\":\"Passer\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "etape":  1,
+                    "de":  "accueil",
+                    "quoi":  "visite"
+                },
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"Tu peux revenir en arrière\",\"module\":{\"texte\":\"\",\"couleur\":\"P\",\"boutons\":[{\"id\":\"fiche:run\",\"texte\":\"C\\u0027est parti\"}],\"icone\":\"etoile\",\"titre\":\"\"},\"sous\":\"Étape 3 sur 3\",\"parent\":{},\"icone\":\"etoile\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Chaque changement est sauvegardé avant d\\u0027être fait.\",\"type\":\"texte\"},{\"texte\":\"Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde (dans Protection) garde l\\u0027historique : tu peux annuler chaque changement, sauf quatre protections du PC qui restent en place (marquées « Définitif »).\",\"type\":\"texte\"},{\"texte\":\"Dans Ton PC, choisis un point à régler, lis la fiche, puis « Exécuter » pour que Nevermind le corrige.\",\"type\":\"texte\"}]}",
+                    "etape":  2,
+                    "de":  "accueil",
+                    "quoi":  "visite"
+                },
+                {
+                    "lignes":  [
+                                   "•  un",
+                                   "•  deux",
+                                   "Titre",
+                                   "•  trois",
+                                   "1. étape",
+                                   "2. suite",
+                                   "fin"
+                               ],
+                    "quoi":  "resultat",
+                    "de":  "accueil",
+                    "note":  "Tu avais la version 1.15.5.",
+                    "page":  "{\"couleur\":\"vert\",\"titre\":\"Quoi de neuf dans la version 1.16.0\",\"module\":{\"texte\":\"\",\"couleur\":\"vert\",\"boutons\":[],\"icone\":\"ok\",\"titre\":\"\"},\"sous\":\"\",\"parent\":{},\"icone\":\"ok\",\"retour\":\"appli\",\"blocs\":[{\"elements\":[\"un\",\"deux\"],\"type\":\"liste\"},{\"texte\":\"Titre\",\"type\":\"texte\"},{\"elements\":[\"trois\"],\"type\":\"liste\"},{\"elements\":[{\"texte\":\"étape\"},{\"texte\":\"suite\"}],\"type\":\"etapes\"},{\"texte\":\"fin\",\"type\":\"texte\"},{\"texte\":\"Tu avais la version 1.15.5.\",\"type\":\"note\"},{\"texte\":\"OK\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "titre":  "Quoi de neuf dans la version 1.16.0"
+                },
+                {
+                    "lignes":  [
+                                   "Corrections et améliorations."
+                               ],
+                    "quoi":  "resultat",
+                    "de":  "accueil",
+                    "note":  "Nevermind vient d\u0027être mis à jour.",
+                    "page":  "{\"couleur\":\"vert\",\"titre\":\"Quoi de neuf dans la version 1.16.0\",\"module\":{\"texte\":\"\",\"couleur\":\"vert\",\"boutons\":[],\"icone\":\"ok\",\"titre\":\"\"},\"sous\":\"\",\"parent\":{},\"icone\":\"ok\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Corrections et améliorations.\",\"type\":\"texte\"},{\"texte\":\"Nevermind vient d\\u0027être mis à jour.\",\"type\":\"note\"},{\"texte\":\"OK\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "titre":  "Quoi de neuf dans la version 1.16.0"
+                },
+                {
+                    "lignes":  [
+
+                               ],
+                    "quoi":  "resultat",
+                    "de":  "accueil",
+                    "note":  "",
+                    "page":  "{\"couleur\":\"vert\",\"titre\":\"Sans note\",\"module\":{\"texte\":\"\",\"couleur\":\"vert\",\"boutons\":[],\"icone\":\"ok\",\"titre\":\"\"},\"sous\":\"\",\"parent\":{},\"icone\":\"ok\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"OK\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "titre":  "Sans note"
+                },
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"Signaler un problème\",\"module\":{\"texte\":\"Un fichier à envoyer, sans données personnelles\",\"couleur\":\"P\",\"boutons\":[{\"texte\":\"Fermer\",\"style\":\"second\",\"id\":\"panneau:close\"}],\"icone\":\"aide\",\"titre\":\"Rapport\"},\"sous\":\"Un fichier à envoyer, sans données personnelles\",\"parent\":{},\"icone\":\"aide\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Explique en une ou deux phrases ce qui ne va pas (ce que tu faisais, ce qui s\\u0027est passé) :\",\"type\":\"texte\"},{\"texte\":\"Nevermind crée un fichier .zip sur ton bureau avec ta phrase, les infos du PC (Windows, composants, score) et le journal de Nevermind. Il ne contient ni tes fichiers, ni ton nom, ni tes mots de passe. Envoie-le à la personne qui t\\u0027a donné Nevermind (Discord par exemple).\",\"type\":\"texte\"},{\"texte\":\"Créer le fichier\",\"style\":{},\"id\":\"panneau:b:0\",\"type\":\"bouton\"}]}",
+                    "de":  "accueil",
+                    "quoi":  "signalement"
+                },
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"Bienvenue dans Nevermind\",\"module\":{\"texte\":\"\",\"couleur\":\"P\",\"boutons\":[{\"id\":\"fiche:run\",\"texte\":\"Suivant\"}],\"icone\":\"etoile\",\"titre\":\"\"},\"sous\":\"Étape 1 sur 3\",\"parent\":\"aide\",\"icone\":\"etoile\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Nevermind analyse ton PC et le règle pour que tes jeux tournent au mieux.\",\"type\":\"texte\"},{\"texte\":\"Rien n\\u0027est modifié sans ton accord : chaque changement passe par un bouton sur lequel tu cliques.\",\"type\":\"texte\"},{\"texte\":\"Passer\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "etape":  0,
+                    "de":  "aide",
+                    "quoi":  "visite"
+                },
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"L\\u0027accueil\",\"module\":{\"texte\":\"\",\"couleur\":\"P\",\"boutons\":[{\"id\":\"fiche:run\",\"texte\":\"Suivant\"}],\"icone\":\"etoile\",\"titre\":\"\"},\"sous\":\"Étape 2 sur 3\",\"parent\":\"aide\",\"icone\":\"etoile\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Les grandes tuiles : Ton PC et sa note sur 100, Performances, Protection, Jeux, Réseau, Trafic et Overlay.\",\"type\":\"texte\"},{\"texte\":\"Fais glisser la rangée à la souris, ou utilise les flèches du clavier : un clic sur la tuile du milieu (ou Entrée) l\\u0027ouvre, Échap revient.\",\"type\":\"texte\"},{\"texte\":\"En haut, le logo ramène à l\\u0027accueil ; les onglets mènent aux mêmes pages, et les petites icônes à droite : la loupe pour rechercher un réglage (ou Ctrl + K), Paramètres et Aide.\",\"type\":\"texte\"},{\"texte\":\"Un souci ? « Signaler un problème » est dans l\\u0027Aide.\",\"type\":\"texte\"},{\"texte\":\"Passer\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "etape":  1,
+                    "de":  "aide",
+                    "quoi":  "visite"
+                },
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"Tu peux revenir en arrière\",\"module\":{\"texte\":\"\",\"couleur\":\"P\",\"boutons\":[{\"id\":\"fiche:run\",\"texte\":\"C\\u0027est parti\"}],\"icone\":\"etoile\",\"titre\":\"\"},\"sous\":\"Étape 3 sur 3\",\"parent\":\"aide\",\"icone\":\"etoile\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Chaque changement est sauvegardé avant d\\u0027être fait.\",\"type\":\"texte\"},{\"texte\":\"Après une correction, « Revenir en arrière » annule tout de suite. Plus tard, la page Sauvegarde (dans Protection) garde l\\u0027historique : tu peux annuler chaque changement, sauf quatre protections du PC qui restent en place (marquées « Définitif »).\",\"type\":\"texte\"},{\"texte\":\"Dans Ton PC, choisis un point à régler, lis la fiche, puis « Exécuter » pour que Nevermind le corrige.\",\"type\":\"texte\"}]}",
+                    "etape":  2,
+                    "de":  "aide",
+                    "quoi":  "visite"
+                },
+                {
+                    "lignes":  [
+                                   "•  un",
+                                   "•  deux",
+                                   "Titre",
+                                   "•  trois",
+                                   "1. étape",
+                                   "2. suite",
+                                   "fin"
+                               ],
+                    "quoi":  "resultat",
+                    "de":  "aide",
+                    "note":  "Tu avais la version 1.15.5.",
+                    "page":  "{\"couleur\":\"vert\",\"titre\":\"Quoi de neuf dans la version 1.16.0\",\"module\":{\"texte\":\"\",\"couleur\":\"vert\",\"boutons\":[],\"icone\":\"ok\",\"titre\":\"\"},\"sous\":\"\",\"parent\":\"aide\",\"icone\":\"ok\",\"retour\":\"appli\",\"blocs\":[{\"elements\":[\"un\",\"deux\"],\"type\":\"liste\"},{\"texte\":\"Titre\",\"type\":\"texte\"},{\"elements\":[\"trois\"],\"type\":\"liste\"},{\"elements\":[{\"texte\":\"étape\"},{\"texte\":\"suite\"}],\"type\":\"etapes\"},{\"texte\":\"fin\",\"type\":\"texte\"},{\"texte\":\"Tu avais la version 1.15.5.\",\"type\":\"note\"},{\"texte\":\"OK\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "titre":  "Quoi de neuf dans la version 1.16.0"
+                },
+                {
+                    "lignes":  [
+                                   "Corrections et améliorations."
+                               ],
+                    "quoi":  "resultat",
+                    "de":  "aide",
+                    "note":  "Nevermind vient d\u0027être mis à jour.",
+                    "page":  "{\"couleur\":\"vert\",\"titre\":\"Quoi de neuf dans la version 1.16.0\",\"module\":{\"texte\":\"\",\"couleur\":\"vert\",\"boutons\":[],\"icone\":\"ok\",\"titre\":\"\"},\"sous\":\"\",\"parent\":\"aide\",\"icone\":\"ok\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Corrections et améliorations.\",\"type\":\"texte\"},{\"texte\":\"Nevermind vient d\\u0027être mis à jour.\",\"type\":\"note\"},{\"texte\":\"OK\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "titre":  "Quoi de neuf dans la version 1.16.0"
+                },
+                {
+                    "lignes":  [
+
+                               ],
+                    "quoi":  "resultat",
+                    "de":  "aide",
+                    "note":  "",
+                    "page":  "{\"couleur\":\"vert\",\"titre\":\"Sans note\",\"module\":{\"texte\":\"\",\"couleur\":\"vert\",\"boutons\":[],\"icone\":\"ok\",\"titre\":\"\"},\"sous\":\"\",\"parent\":\"aide\",\"icone\":\"ok\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"OK\",\"style\":\"second\",\"id\":\"fiche:close\",\"type\":\"bouton\"}]}",
+                    "titre":  "Sans note"
+                },
+                {
+                    "page":  "{\"couleur\":\"P\",\"titre\":\"Signaler un problème\",\"module\":{\"texte\":\"Un fichier à envoyer, sans données personnelles\",\"couleur\":\"P\",\"boutons\":[{\"texte\":\"Fermer\",\"style\":\"second\",\"id\":\"panneau:close\"}],\"icone\":\"aide\",\"titre\":\"Rapport\"},\"sous\":\"Un fichier à envoyer, sans données personnelles\",\"parent\":\"aide\",\"icone\":\"aide\",\"retour\":\"appli\",\"blocs\":[{\"texte\":\"Explique en une ou deux phrases ce qui ne va pas (ce que tu faisais, ce qui s\\u0027est passé) :\",\"type\":\"texte\"},{\"texte\":\"Nevermind crée un fichier .zip sur ton bureau avec ta phrase, les infos du PC (Windows, composants, score) et le journal de Nevermind. Il ne contient ni tes fichiers, ni ton nom, ni tes mots de passe. Envoie-le à la personne qui t\\u0027a donné Nevermind (Discord par exemple).\",\"type\":\"texte\"},{\"texte\":\"Créer le fichier\",\"style\":{},\"id\":\"panneau:b:0\",\"type\":\"bouton\"}]}",
+                    "de":  "aide",
+                    "quoi":  "signalement"
+                }
+            ],
+    "sujet":  "La fiche (Get-FicheKit) de la visite guidée et des fiches de résultat, le panneau (Get-PanneauKit) de « Signaler un problème »"
+}

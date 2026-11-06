@@ -1,0 +1,157 @@
+{
+    "format":  1,
+    "cas":  [
+                {
+                    "avant":  {
+
+                              },
+                    "journal":  [
+
+                                ],
+                    "texte":  "",
+                    "nom":  "absente, rien à reprendre",
+                    "probleme":  null,
+                    "origines":  [
+
+                                 ],
+                    "sauvegarde":  "{\"Overlay\":null,\"CreatedScheme\":null,\"Registry\":{},\"PowerScheme\":null,\"Displays\":{},\"Oublies\":[],\"Dns\":{}}",
+                    "apres":  [
+
+                              ]
+                },
+                {
+                    "avant":  {
+                                  "sauvegarde.json":  "77u/eyJSZWdpc3RyeSI6eyJIS0NVOlxcQXxiIjp7IlBhdGgiOiJIS0NVOlxcQSIsIk5hbWUiOiJiIiwiRXhpc3RlZCI6dHJ1ZSwiVmFsdWUiOjEsIktpbmQiOiJEV29yZCJ9fSwiUG93ZXJTY2hlbWUiOiIzODFiNDIyMiIsIkNyZWF0ZWRTY2hlbWUiOm51bGwsIk92ZXJsYXkiOiIiLCJEbnMiOnsiMTIiOiIxLjEuMS4xIn0sIkRpc3BsYXlzIjp7IlxcXFwuXFxESVNQTEFZMSI6IjYwIn0sIk91YmxpZXMiOlsiSEtMTTpcXFp8eSIsIiJdfQ=="
+                              },
+                    "journal":  [
+
+                                ],
+                    "texte":  "",
+                    "nom":  "bonne",
+                    "probleme":  null,
+                    "origines":  [
+
+                                 ],
+                    "sauvegarde":  "{\"Overlay\":null,\"Oublies\":[\"HKLM:\\\\Z|y\"],\"PowerScheme\":\"381b4222\",\"Registry\":{\"HKCU:\\\\A|b\":{\"Existed\":true,\"Path\":\"HKCU:\\\\A\",\"Name\":\"b\",\"Value\":1,\"Kind\":\"DWord\"}},\"Dns\":{\"12\":\"1.1.1.1\"},\"CreatedScheme\":null,\"Displays\":{\"\\\\\\\\.\\\\DISPLAY1\":60}}",
+                    "apres":  [
+                                  "sauvegarde.json"
+                              ]
+                },
+                {
+                    "avant":  {
+                                  "sauvegarde.json":  "eyJSZWdpc3RyeSI6",
+                                  "sauvegarde.json.bak":  "eyJSZWdpc3RyeSI6eyJIS0NVOlxcQXxiIjp7IlBhdGgiOiJIS0NVOlxcQSIsIk5hbWUiOiJiIiwiRXhpc3RlZCI6dHJ1ZSwiVmFsdWUiOjEsIktpbmQiOiJEV29yZCJ9fSwiUG93ZXJTY2hlbWUiOiIzODFiNDIyMiIsIkNyZWF0ZWRTY2hlbWUiOm51bGwsIk92ZXJsYXkiOiIiLCJEbnMiOnsiMTIiOiIxLjEuMS4xIn0sIkRpc3BsYXlzIjp7IlxcXFwuXFxESVNQTEFZMSI6IjYwIn0sIk91YmxpZXMiOlsiSEtMTTpcXFp8eSIsIiJdfQ=="
+                              },
+                    "journal":  [
+                                    "Sauvegarde abîmée (Objet non valide passé, \u0027:\u0027 ou \u0027}\u0027 attendu. (12): {\"Registry\":) : mise de côté",
+                                    "Sauvegarde reprise de sa copie de secours"
+                                ],
+                    "texte":  "Le fichier qui garde les réglages d\u0027origine est abîmé : certains réglages changés par Nevermind ne pourront peut-être pas être remis comme avant. Pour tout remettre, utilise le point de restauration de Windows créé par Nevermind (page Sauvegarde, « Restauration du système »).",
+                    "nom":  "abîmée, copie bonne",
+                    "probleme":  "abimee",
+                    "origines":  [
+
+                                 ],
+                    "sauvegarde":  "{\"Overlay\":null,\"Oublies\":[\"HKLM:\\\\Z|y\"],\"PowerScheme\":\"381b4222\",\"Registry\":{\"HKCU:\\\\A|b\":{\"Existed\":true,\"Path\":\"HKCU:\\\\A\",\"Name\":\"b\",\"Value\":1,\"Kind\":\"DWord\"}},\"Dns\":{\"12\":\"1.1.1.1\"},\"CreatedScheme\":null,\"Displays\":{\"\\\\\\\\.\\\\DISPLAY1\":60}}",
+                    "apres":  [
+                                  "sauvegarde.json.bak",
+                                  "sauvegarde-abimee-20261106-210509.json"
+                              ]
+                },
+                {
+                    "avant":  {
+                                  "sauvegarde.json":  "eyJEbnMiOnt9fQ=="
+                              },
+                    "journal":  [
+                                    "Sauvegarde abîmée (contenu inattendu) : mise de côté"
+                                ],
+                    "texte":  "Le fichier qui garde les réglages d\u0027origine est abîmé : certains réglages changés par Nevermind ne pourront peut-être pas être remis comme avant. Pour tout remettre, utilise le point de restauration de Windows créé par Nevermind (page Sauvegarde, « Restauration du système »).",
+                    "nom":  "sans Registry",
+                    "probleme":  "abimee",
+                    "origines":  [
+
+                                 ],
+                    "sauvegarde":  "{\"Overlay\":null,\"CreatedScheme\":null,\"Registry\":{},\"PowerScheme\":null,\"Displays\":{},\"Oublies\":[],\"Dns\":{}}",
+                    "apres":  [
+                                  "sauvegarde-abimee-20261106-210509.json"
+                              ]
+                },
+                {
+                    "avant":  {
+
+                              },
+                    "journal":  [
+                                    "Sauvegarde : 2 valeur(s) d\u0027origine reprise(s) du registre"
+                                ],
+                    "texte":  "",
+                    "nom":  "absente, origines du registre",
+                    "probleme":  null,
+                    "origines":  [
+                                     "{\"Path\":\"HKLM:\\\\SOFTWARE\\\\X\",\"Name\":\"n\",\"Existed\":true,\"Value\":3,\"Kind\":\"DWord\"}",
+                                     "{\"Path\":\"\",\"Name\":\"x\"}",
+                                     "{\"Path\":\"Registry::HKEY_LOCAL_MACHINE\\\\SOFTWARE\\\\Y\",\"Name\":\"m\",\"Existed\":false}"
+                                 ],
+                    "sauvegarde":  "{\"Overlay\":null,\"CreatedScheme\":null,\"Registry\":{\"HKLM:\\\\SOFTWARE\\\\X|n\":{\"Existed\":true,\"Path\":\"HKLM:\\\\SOFTWARE\\\\X\",\"Name\":\"n\",\"Value\":3,\"Kind\":\"DWord\"},\"Registry::HKEY_LOCAL_MACHINE\\\\SOFTWARE\\\\Y|m\":{\"Existed\":false,\"Path\":\"Registry::HKEY_LOCAL_MACHINE\\\\SOFTWARE\\\\Y\",\"Name\":\"m\",\"Value\":null,\"Kind\":null}},\"PowerScheme\":null,\"Displays\":{},\"Oublies\":[],\"Dns\":{}}",
+                    "apres":  [
+
+                              ]
+                },
+                {
+                    "avant":  {
+                                  "sauvegarde.json":  "eyJSZWdpc3RyeSI6eyJIS0NVOlxcQXxiIjp7IlBhdGgiOiJIS0NVOlxcQSIsIk5hbWUiOiJiIiwiRXhpc3RlZCI6dHJ1ZSwiVmFsdWUiOjEsIktpbmQiOiJEV29yZCJ9fSwiUG93ZXJTY2hlbWUiOiIzODFiNDIyMiIsIkNyZWF0ZWRTY2hlbWUiOm51bGwsIk92ZXJsYXkiOiIiLCJEbnMiOnsiMTIiOiIxLjEuMS4xIn0sIkRpc3BsYXlzIjp7IlxcXFwuXFxESVNQTEFZMSI6IjYwIn0sIk91YmxpZXMiOlsiSEtMTTpcXFp8eSIsIiJdfQ=="
+                              },
+                    "journal":  [
+                                    "Sauvegarde : 1 valeur(s) d\u0027origine reprise(s) du registre"
+                                ],
+                    "texte":  "",
+                    "nom":  "bonne, origines déjà connues ou oubliées",
+                    "probleme":  null,
+                    "origines":  [
+                                     "{\"Path\":\"HKEY_CURRENT_USER\\\\A\",\"Name\":\"b\",\"Existed\":false}",
+                                     "{\"Path\":\"HKLM:\\\\Z\",\"Name\":\"y\",\"Existed\":true,\"Value\":1}",
+                                     "{\"Path\":\"HKLM:\\\\W\",\"Name\":\"v\",\"Existed\":true,\"Value\":\"t\",\"Kind\":\"String\"}"
+                                 ],
+                    "sauvegarde":  "{\"Overlay\":null,\"Oublies\":[\"HKLM:\\\\Z|y\"],\"PowerScheme\":\"381b4222\",\"Registry\":{\"HKCU:\\\\A|b\":{\"Existed\":true,\"Path\":\"HKCU:\\\\A\",\"Name\":\"b\",\"Value\":1,\"Kind\":\"DWord\"},\"HKLM:\\\\W|v\":{\"Existed\":true,\"Path\":\"HKLM:\\\\W\",\"Name\":\"v\",\"Value\":\"t\",\"Kind\":\"String\"}},\"Dns\":{\"12\":\"1.1.1.1\"},\"CreatedScheme\":null,\"Displays\":{\"\\\\\\\\.\\\\DISPLAY1\":60}}",
+                    "apres":  [
+                                  "sauvegarde.json"
+                              ]
+                },
+                {
+                    "avant":  {
+                                  "historique.json":  "W3siSWQiOiJhIiwiVGl0cmUiOiJ0IiwiQW5udWxlIjpmYWxzZSwiTG9nIjpbeyJUeXBlIjoicmVnIiwiUGF0aCI6IkhLTE06XFxYIiwiTmFtZSI6Im4ifV19XQ=="
+                              },
+                    "journal":  [
+
+                                ],
+                    "texte":  "Le fichier qui garde les réglages d\u0027origine a disparu : certains réglages changés par Nevermind ne pourront peut-être pas être remis comme avant. Pour tout remettre, utilise le point de restauration de Windows créé par Nevermind (page Sauvegarde, « Restauration du système »).",
+                    "nom":  "disparue, historique pas annulé",
+                    "probleme":  "absente",
+                    "origines":  [
+
+                                 ],
+                    "sauvegarde":  "{\"Overlay\":null,\"CreatedScheme\":null,\"Registry\":{},\"PowerScheme\":null,\"Displays\":{},\"Oublies\":[],\"Dns\":{}}",
+                    "apres":  [
+                                  "historique.json"
+                              ]
+                },
+                {
+                    "avant":  {
+                                  "historique.json":  "W3siSWQiOiJhIiwiVGl0cmUiOiJ0IiwiQW5udWxlIjp0cnVlLCJMb2ciOlt7IlR5cGUiOiJyZWciLCJQYXRoIjoiSEtMTTpcXFgiLCJOYW1lIjoibiJ9XX1d"
+                              },
+                    "journal":  [
+
+                                ],
+                    "texte":  "",
+                    "nom":  "disparue, historique annulé",
+                    "probleme":  null,
+                    "origines":  [
+
+                                 ],
+                    "sauvegarde":  "{\"Overlay\":null,\"CreatedScheme\":null,\"Registry\":{},\"PowerScheme\":null,\"Displays\":{},\"Oublies\":[],\"Dns\":{}}",
+                    "apres":  [
+                                  "historique.json"
+                              ]
+                }
+            ],
+    "sujet":  "Import-Backup (donnees.ps1) : sauvegarde lue, problème, texte, fichiers, journal"
+}

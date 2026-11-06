@@ -1,0 +1,414 @@
+{
+    "format":  1,
+    "cas":  [
+                {
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+
+                              },
+                    "nom":  "absent",
+                    "resultat":  null,
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "eyJhIjoxLCJiIjoiw6kifQ=="
+                              },
+                    "nom":  "objet",
+                    "resultat":  "{\"a\":1,\"b\":\"é\"}",
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "eyJhIjoxLCJiIjoiw6kifQ=="
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "W3siSWQiOiJhIn0seyJJZCI6ImIifV0="
+                              },
+                    "nom":  "liste",
+                    "resultat":  "[{\"Id\":\"a\"},{\"Id\":\"b\"}]",
+                    "ecriture":  null,
+                    "liste":  true,
+                    "avant":  {
+                                  "x.json":  "W3siSWQiOiJhIn0seyJJZCI6ImIifV0="
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "W3siSWQiOiJhIn1d"
+                              },
+                    "nom":  "liste d\u0027un seul",
+                    "resultat":  "[{\"Id\":\"a\"}]",
+                    "ecriture":  null,
+                    "liste":  true,
+                    "avant":  {
+                                  "x.json":  "W3siSWQiOiJhIn1d"
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "bnVsbA=="
+                              },
+                    "nom":  "texte null",
+                    "resultat":  null,
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "bnVsbA=="
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+                                    "Fichier abîmé (\u003cdossier\u003e\\x.json : fichier vide), mis de côté : x.json.abime-20261106-210509"
+                                ],
+                    "apres":  {
+                                  "x.json.abime-20261106-210509":  ""
+                              },
+                    "nom":  "vide, sans copie",
+                    "resultat":  null,
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  ""
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+                                    "Fichier abîmé (\u003cdossier\u003e\\x.json : fichier vide), mis de côté : x.json.abime-20261106-210509",
+                                    "x.json repris de sa copie de secours"
+                                ],
+                    "apres":  {
+                                  "x.json.abime-20261106-210509":  "ICANCiA=",
+                                  "x.json.bak":  "eyJ2IjoyfQ=="
+                              },
+                    "nom":  "espaces, copie bonne",
+                    "resultat":  "{\"v\":2}",
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "ICANCiA=",
+                                  "x.json.bak":  "eyJ2IjoyfQ=="
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "77u/eyJhIjoiw6DDqSJ9"
+                              },
+                    "nom":  "avec BOM",
+                    "resultat":  "{\"a\":\"àé\"}",
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "77u/eyJhIjoiw6DDqSJ9"
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "//57ACIAdQAiADoAIgAxADYAIgB9AA=="
+                              },
+                    "nom":  "UTF-16",
+                    "resultat":  "{\"u\":\"16\"}",
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "//57ACIAdQAiADoAIgAxADYAIgB9AA=="
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+                                    "Fichier abîmé (\u003cdossier\u003e\\x.json : Objet non valide passé, \u0027:\u0027 ou \u0027}\u0027 attendu. (5): {\"a\":), mis de côté : x.json.abime-20261106-210509",
+                                    "x.json repris de sa copie de secours"
+                                ],
+                    "apres":  {
+                                  "x.json.abime-20261106-210509":  "eyJhIjo=",
+                                  "x.json.bak":  "eyJhIjowfQ=="
+                              },
+                    "nom":  "abîmé, copie bonne",
+                    "resultat":  "{\"a\":0}",
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "eyJhIjo=",
+                                  "x.json.bak":  "eyJhIjowfQ=="
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+                                    "Fichier abîmé (\u003cdossier\u003e\\x.json : Objet non valide passé, \u0027:\u0027 ou \u0027}\u0027 attendu. (6): {abîmé), mis de côté : x.json.abime-20261106-210509",
+                                    "Fichier abîmé (\u003cdossier\u003e\\x.json.bak : Primitive JSON non valide : pas.), mis de côté : x.json.bak.abime-20261106-210509"
+                                ],
+                    "apres":  {
+                                  "x.json.abime-20261106-210509":  "e2Fiw65tw6k=",
+                                  "x.json.bak.abime-20261106-210509":  "cGFzIGR1IGpzb24="
+                              },
+                    "nom":  "abîmé, copie abîmée",
+                    "resultat":  null,
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "e2Fiw65tw6k=",
+                                  "x.json.bak":  "cGFzIGR1IGpzb24="
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+                                    "Fichier abîmé (\u003cdossier\u003e\\x.json : Tableau non valide passé, \u0027,\u0027 attendue. (4): [1,2), mis de côté : x.json.abime-20261106-210509"
+                                ],
+                    "apres":  {
+                                  "x.json.abime-20261106-210509":  "WzEsMg=="
+                              },
+                    "nom":  "abîmé, sans copie",
+                    "resultat":  null,
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "WzEsMg=="
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "eyJvayI6dHJ1ZX0=",
+                                  "x.json.bak":  "e3p6"
+                              },
+                    "nom":  "bon, copie abîmée",
+                    "resultat":  "{\"ok\":true}",
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "eyJvayI6dHJ1ZX0=",
+                                  "x.json.bak":  "e3p6"
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+                                    "x.json repris de sa copie de secours"
+                                ],
+                    "apres":  {
+                                  "x.json.bak":  "eyJkZSI6ImxhIGNvcGllIn0="
+                              },
+                    "nom":  "absent, copie bonne",
+                    "resultat":  "{\"de\":\"la copie\"}",
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json.bak":  "eyJkZSI6ImxhIGNvcGllIn0="
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+                                    "x.json repris de sa copie de secours"
+                                ],
+                    "apres":  {
+                                  "x.json.bak":  "WzEsMiwzXQ=="
+                              },
+                    "nom":  "absent, copie liste",
+                    "resultat":  "[1,2,3]",
+                    "ecriture":  null,
+                    "liste":  true,
+                    "avant":  {
+                                  "x.json.bak":  "WzEsMiwzXQ=="
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+                                    "Fichier abîmé (\u003cdossier\u003e\\x.json : Objet non valide passé, \u0027:\u0027 ou \u0027}\u0027 attendu. (1): {), mis de côté : x.json.abime-20261106-210509",
+                                    "Fichier abîmé pas mis de côté (\u003cdossier\u003e\\x.json) : Exception lors de l\u0027appel de « Move » avec « 2 » argument(s) : « Impossible de créer un fichier déjà existant.\r\n »"
+                                ],
+                    "apres":  {
+                                  "x.json":  "ew==",
+                                  "x.json.abime-20261106-210509":  "YXZhbnQ="
+                              },
+                    "nom":  "abîmé, mis de côté déjà là",
+                    "resultat":  null,
+                    "ecriture":  null,
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "ew==",
+                                  "x.json.abime-20261106-210509":  "YXZhbnQ="
+                              },
+                    "pris":  false,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+                                    "Fichier illisible pour l\u0027instant (\u003cdossier\u003e\\x.json) : Exception lors de l\u0027appel de « ReadAllText » avec « 2 » argument(s) : « Le processus ne peut pas accéder au fichier \u0027\u003cdossier\u003e\\x.json\u0027, car il est en cours d\u0027utilisation par un autre processus. »"
+                                ],
+                    "apres":  {
+                                  "x.json":  "eyJvIjpbMSwyLDNdfQ=="
+                              },
+                    "nom":  "pris par un autre programme",
+                    "resultat":  null,
+                    "ecriture":  "x.json n\u0027a pas pu être lu : il n\u0027est pas réécrit",
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "eyJvIjpbMSwyLDNdfQ=="
+                              },
+                    "pris":  true,
+                    "operation":  "lire"
+                },
+                {
+                    "journal":  [
+                                    "Fichier illisible pour l\u0027instant (\u003cdossier\u003e\\x.json) : Exception lors de l\u0027appel de « ReadAllText » avec « 2 » argument(s) : « Le processus ne peut pas accéder au fichier \u0027\u003cdossier\u003e\\x.json\u0027, car il est en cours d\u0027utilisation par un autre processus. »",
+                                    "x.json repris de sa copie de secours"
+                                ],
+                    "apres":  {
+                                  "x.json":  "eyJvIjoxfQ==",
+                                  "x.json.bak":  "eyJvIjowfQ==",
+                                  "x.json.tmp":  "ew0KICAgICJhIjogIDENCn0="
+                              },
+                    "nom":  "pris, copie bonne",
+                    "resultat":  "{\"o\":0}",
+                    "ecriture":  "Exception lors de l\u0027appel de « Copy » avec « 3 » argument(s) : « Le processus ne peut pas accéder au fichier \u0027C:\\Users\\death\\AppData\\Local\\Temp\\nevermind-juges-noyau-5321a8b6\\f\\x.json\u0027, car il est en cours d\u0027utilisation par un autre processus. »",
+                    "liste":  false,
+                    "avant":  {
+                                  "x.json":  "eyJvIjoxfQ==",
+                                  "x.json.bak":  "eyJvIjowfQ=="
+                              },
+                    "pris":  true,
+                    "operation":  "lire"
+                },
+                {
+                    "avant":  {
+
+                              },
+                    "compact":  false,
+                    "valeur":  "{\"a\":1,\"l\":[1,2],\"o\":{\"p\":\"é\"}}",
+                    "bom":  false,
+                    "nom":  "nouveau",
+                    "operation":  "ecrire",
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "ew0KICAgICJhIjogIDEsDQogICAgImwiOiAgWw0KICAgICAgICAgICAgICAxLA0KICAgICAgICAgICAgICAyDQogICAgICAgICAgXSwNCiAgICAibyI6ICB7DQogICAgICAgICAgICAgICJwIjogICLDqSINCiAgICAgICAgICB9DQp9"
+                              }
+                },
+                {
+                    "avant":  {
+                                  "x.json":  "eyJ2aWV1eCI6MX0=",
+                                  "x.json.bak":  "eyJ0cmVzIHZpZXV4IjowfQ=="
+                              },
+                    "compact":  false,
+                    "valeur":  "{\"neuf\":2}",
+                    "bom":  false,
+                    "nom":  "remplace, ancien en copie",
+                    "operation":  "ecrire",
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "ew0KICAgICJuZXVmIjogIDINCn0=",
+                                  "x.json.bak":  "eyJ2aWV1eCI6MX0="
+                              }
+                },
+                {
+                    "avant":  {
+                                  "x.json":  "WzFd"
+                              },
+                    "compact":  true,
+                    "valeur":  "[1,2,{\"a\":\"\u003c\u0026\u003e\"}]",
+                    "bom":  true,
+                    "nom":  "compact avec BOM",
+                    "operation":  "ecrire",
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "77u/WzEsMix7ImEiOiJcdTAwM2NcdTAwMjZcdTAwM2UifV0=",
+                                  "x.json.bak":  "WzFd"
+                              }
+                },
+                {
+                    "avant":  {
+
+                              },
+                    "compact":  false,
+                    "valeur":  "[]",
+                    "bom":  false,
+                    "nom":  "liste vide",
+                    "operation":  "ecrire",
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "Ww0KDQpd"
+                              }
+                },
+                {
+                    "avant":  {
+                                  "x.json":  "e2FiaW1l"
+                              },
+                    "compact":  false,
+                    "valeur":  "{\"v\":1}",
+                    "bom":  false,
+                    "nom":  "remplace un abîmé",
+                    "operation":  "ecrire",
+                    "journal":  [
+
+                                ],
+                    "apres":  {
+                                  "x.json":  "ew0KICAgICJ2IjogIDENCn0=",
+                                  "x.json.bak":  "e2FiaW1l"
+                              }
+                }
+            ],
+    "sujet":  "Save-JsonSur et Read-JsonSur (donnees.ps1) : fichiers avant et après, valeur lue, journal"
+}

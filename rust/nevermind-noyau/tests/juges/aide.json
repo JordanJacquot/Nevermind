@@ -1,0 +1,405 @@
+{
+    "demandes":  [
+                     {
+                         "demande":  "{\"a\":\"aide.bonjour\",\"p\":{}}",
+                         "parametres":  "{}",
+                         "action":  "aide.bonjour"
+                     },
+                     {
+                         "demande":  "{\"a\":\"reg.ecrire\",\"p\":{\"Cle\":\"HKLM:\\\\SOFTWARE\\\\X\",\"Nom\":\"n\",\"Valeur\":1,\"Type\":\"DWord\"}}",
+                         "parametres":  "{\"Cle\":\"HKLM:\\\\SOFTWARE\\\\X\",\"Nom\":\"n\",\"Valeur\":1,\"Type\":\"DWord\"}",
+                         "action":  "reg.ecrire"
+                     },
+                     {
+                         "demande":  "{\"a\":\"processus.fermer\",\"p\":{\"Nom\":\"l\\u0027appli \\u003ctest\\u003e \\u0026 co\"}}",
+                         "parametres":  "{\"Nom\":\"l\u0027appli \u003ctest\u003e \u0026 co\"}",
+                         "action":  "processus.fermer"
+                     },
+                     {
+                         "demande":  "{\"a\":\"fps.veiller\",\"p\":{\"Noms\":[\"bf6.exe\",\"jeu é.exe\"]}}",
+                         "parametres":  "{\"Noms\":[\"bf6.exe\",\"jeu é.exe\"]}",
+                         "action":  "fps.veiller"
+                     },
+                     {
+                         "demande":  "{\"a\":\"restauration.creer\",\"p\":{\"Description\":\"Nevermind (manuel)\"}}",
+                         "parametres":  "{\"Description\":\"Nevermind (manuel)\"}",
+                         "action":  "restauration.creer"
+                     },
+                     {
+                         "demande":  "{\"a\":\"reg.ecrire\",\"p\":{\"Cle\":\"HKLM:\\\\A\",\"Nom\":\"B\",\"Valeur\":[1,2,255],\"Type\":\"Binary\"}}",
+                         "parametres":  "{\"Cle\":\"HKLM:\\\\A\",\"Nom\":\"B\",\"Valeur\":[1,2,255],\"Type\":\"Binary\"}",
+                         "action":  "reg.ecrire"
+                     },
+                     {
+                         "demande":  "{\"a\":\"dns.regler\",\"p\":{\"Index\":12,\"Serveurs\":[\"1.1.1.1\",\"1.0.0.1\"],\"Nom\":\"Wi-Fi\"}}",
+                         "parametres":  "{\"Index\":12,\"Serveurs\":[\"1.1.1.1\",\"1.0.0.1\"],\"Nom\":\"Wi-Fi\"}",
+                         "action":  "dns.regler"
+                     },
+                     {
+                         "demande":  "{\"a\":\"lecture.pc\",\"p\":null}",
+                         "parametres":  "null",
+                         "action":  "lecture.pc"
+                     },
+                     {
+                         "demande":  "{\"a\":\"x\",\"p\":{\"t\":\"\\t\\n\\u0001\\u2028\"}}",
+                         "parametres":  "{\"t\":\"\\t\\n\\u0001\\u2028\"}",
+                         "action":  "x"
+                     }
+                 ],
+    "refusFps":  [
+                     {
+                         "texte":  "Access denied",
+                         "refus":  true
+                     },
+                     {
+                         "texte":  "accès refusé par Windows",
+                         "refus":  true
+                     },
+                     {
+                         "texte":  "Membre de Performance Log Users requis",
+                         "refus":  true
+                     },
+                     {
+                         "texte":  "ACCESS DENIED",
+                         "refus":  true
+                     },
+                     {
+                         "texte":  "Accès Refusé",
+                         "refus":  true
+                     },
+                     {
+                         "texte":  "autre erreur",
+                         "refus":  false
+                     },
+                     {
+                         "texte":  "",
+                         "refus":  false
+                     }
+                 ],
+    "cas":  [
+                {
+                    "nom":  "réponse simple",
+                    "journal":  [
+                                    "Aide : les actions administrateur passent par l\u0027Aide"
+                                ],
+                    "etapes":  [
+                                   {
+                                       "action":  "aide.bonjour",
+                                       "erreur":  null,
+                                       "ecoute":  true,
+                                       "erreurAide":  null,
+                                       "reponse":  "{\"ok\":true,\"r\":\"bonjour\"}",
+                                       "resultat":  "\"bonjour\"",
+                                       "parametres":  "{}"
+                                   }
+                               ],
+                    "recues":  [
+                                   "{\"a\":\"aide.bonjour\",\"p\":{}}"
+                               ]
+                },
+                {
+                    "nom":  "deux réponses, une voie",
+                    "journal":  [
+                                    "Aide : les actions administrateur passent par l\u0027Aide"
+                                ],
+                    "etapes":  [
+                                   {
+                                       "action":  "trafic.tcp",
+                                       "erreur":  null,
+                                       "ecoute":  true,
+                                       "erreurAide":  null,
+                                       "reponse":  "{\"ok\":true,\"r\":{\"CompteursOk\":true,\"Lignes\":[\"a\",\"b\"]}}",
+                                       "resultat":  "{\"CompteursOk\":true,\"Lignes\":[\"a\",\"b\"]}",
+                                       "parametres":  "{}"
+                                   },
+                                   {
+                                       "action":  "lecture.pc",
+                                       "erreur":  null,
+                                       "ecoute":  true,
+                                       "erreurAide":  null,
+                                       "reponse":  "{\"ok\":true,\"r\":{\"SecureBoot\":true,\"Fiabilite\":{}}}",
+                                       "resultat":  "{\"SecureBoot\":true,\"Fiabilite\":{}}",
+                                       "parametres":  "{}"
+                                   }
+                               ],
+                    "recues":  [
+                                   "{\"a\":\"trafic.tcp\",\"p\":{}}",
+                                   "{\"a\":\"lecture.pc\",\"p\":{}}"
+                               ]
+                },
+                {
+                    "nom":  "refusée par l\u0027Aide",
+                    "journal":  [
+                                    "Aide : les actions administrateur passent par l\u0027Aide",
+                                    "Aide : reg.ecrire refusé ou raté : Clé refusée : HKLM:\\X"
+                                ],
+                    "etapes":  [
+                                   {
+                                       "action":  "reg.ecrire",
+                                       "erreur":  "Clé refusée : HKLM:\\X",
+                                       "ecoute":  true,
+                                       "erreurAide":  null,
+                                       "reponse":  "{\"ok\":false,\"e\":\"Clé refusée : HKLM:\\\\X\"}",
+                                       "resultat":  {
+
+                                                    },
+                                       "parametres":  "{\"Cle\":\"HKLM:\\\\X\",\"Nom\":\"n\",\"Valeur\":1,\"Type\":\"DWord\"}"
+                                   }
+                               ],
+                    "recues":  [
+                                   "{\"a\":\"reg.ecrire\",\"p\":{\"Cle\":\"HKLM:\\\\X\",\"Nom\":\"n\",\"Valeur\":1,\"Type\":\"DWord\"}}"
+                               ]
+                },
+                {
+                    "nom":  "Aide absente",
+                    "journal":  [
+                                    "Aide : indisponible (l\u0027Aide ne répond pas)",
+                                    "Aide : aide.bonjour impossible (l\u0027Aide ne répond pas)"
+                                ],
+                    "etapes":  [
+                                   {
+                                       "action":  "aide.bonjour",
+                                       "erreur":  "Nevermind a besoin de son Aide pour ça, mais elle ne répond pas (l\u0027Aide ne répond pas). Ouvre Mindset et mets Nevermind à jour.",
+                                       "ecoute":  false,
+                                       "erreurAide":  null,
+                                       "reponse":  null,
+                                       "resultat":  {
+
+                                                    },
+                                       "parametres":  "{}"
+                                   }
+                               ],
+                    "recues":  [
+
+                               ]
+                },
+                {
+                    "nom":  "absente puis là",
+                    "journal":  [
+                                    "Aide : indisponible (l\u0027Aide ne répond pas)",
+                                    "Aide : flux.lire impossible (l\u0027Aide ne répond pas)",
+                                    "Aide : les actions administrateur passent par l\u0027Aide",
+                                    "Aide : indisponible (l\u0027Aide ne répond pas)",
+                                    "Aide : flux.lire impossible (l\u0027Aide ne répond pas)"
+                                ],
+                    "etapes":  [
+                                   {
+                                       "action":  "flux.lire",
+                                       "erreur":  "Nevermind a besoin de son Aide pour ça, mais elle ne répond pas (l\u0027Aide ne répond pas). Ouvre Mindset et mets Nevermind à jour.",
+                                       "ecoute":  false,
+                                       "erreurAide":  null,
+                                       "reponse":  null,
+                                       "resultat":  {
+
+                                                    },
+                                       "parametres":  "{}"
+                                   },
+                                   {
+                                       "action":  "flux.lire",
+                                       "erreur":  null,
+                                       "ecoute":  true,
+                                       "erreurAide":  null,
+                                       "reponse":  "{\"ok\":true,\"r\":[\"l1\",\"l2\"]}",
+                                       "resultat":  "[\"l1\",\"l2\"]",
+                                       "parametres":  "{}"
+                                   },
+                                   {
+                                       "action":  "flux.lire",
+                                       "erreur":  "Nevermind a besoin de son Aide pour ça, mais elle ne répond pas (l\u0027Aide ne répond pas). Ouvre Mindset et mets Nevermind à jour.",
+                                       "ecoute":  false,
+                                       "erreurAide":  null,
+                                       "reponse":  null,
+                                       "resultat":  {
+
+                                                    },
+                                       "parametres":  "{}"
+                                   }
+                               ],
+                    "recues":  [
+                                   "{\"a\":\"flux.lire\",\"p\":{}}"
+                               ]
+                },
+                {
+                    "nom":  "réponse en retard",
+                    "journal":  [
+                                    "Aide : indisponible (L\u0027Aide n\u0027a pas répondu à temps.)",
+                                    "Aide : fps.demarrer impossible (L\u0027Aide n\u0027a pas répondu à temps.)"
+                                ],
+                    "etapes":  [
+                                   {
+                                       "action":  "fps.demarrer",
+                                       "erreur":  "Nevermind a besoin de son Aide pour ça, mais elle ne répond pas (L\u0027Aide n\u0027a pas répondu à temps.). Ouvre Mindset et mets Nevermind à jour.",
+                                       "ecoute":  true,
+                                       "erreurAide":  "L\u0027Aide n\u0027a pas répondu à temps.",
+                                       "reponse":  null,
+                                       "resultat":  {
+
+                                                    },
+                                       "parametres":  "{\"Pid\":42}"
+                                   }
+                               ],
+                    "recues":  [
+                                   "{\"a\":\"fps.demarrer\",\"p\":{\"Pid\":42}}"
+                               ]
+                },
+                {
+                    "nom":  "coupée sans réponse",
+                    "journal":  [
+                                    "Aide : indisponible (L\u0027Aide a coupé l\u0027échange sans répondre.)",
+                                    "Aide : aide.journal impossible (L\u0027Aide a coupé l\u0027échange sans répondre.)",
+                                    "Aide : les actions administrateur passent par l\u0027Aide"
+                                ],
+                    "etapes":  [
+                                   {
+                                       "action":  "aide.journal",
+                                       "erreur":  "Nevermind a besoin de son Aide pour ça, mais elle ne répond pas (L\u0027Aide a coupé l\u0027échange sans répondre.). Ouvre Mindset et mets Nevermind à jour.",
+                                       "ecoute":  true,
+                                       "erreurAide":  "L\u0027Aide a coupé l\u0027échange sans répondre.",
+                                       "reponse":  null,
+                                       "resultat":  {
+
+                                                    },
+                                       "parametres":  "{}"
+                                   },
+                                   {
+                                       "action":  "aide.journal",
+                                       "erreur":  null,
+                                       "ecoute":  true,
+                                       "erreurAide":  null,
+                                       "reponse":  "{\"ok\":true,\"r\":[]}",
+                                       "resultat":  {
+
+                                                    },
+                                       "parametres":  "{}"
+                                   }
+                               ],
+                    "recues":  [
+                                   "{\"a\":\"aide.journal\",\"p\":{}}",
+                                   "{\"a\":\"aide.journal\",\"p\":{}}"
+                               ]
+                },
+                {
+                    "nom":  "réponse nulle et liste",
+                    "journal":  [
+                                    "Aide : les actions administrateur passent par l\u0027Aide"
+                                ],
+                    "etapes":  [
+                                   {
+                                       "action":  "a",
+                                       "erreur":  null,
+                                       "ecoute":  true,
+                                       "erreurAide":  null,
+                                       "reponse":  "{\"ok\":true,\"r\":null}",
+                                       "resultat":  {
+
+                                                    },
+                                       "parametres":  "{}"
+                                   },
+                                   {
+                                       "action":  "b",
+                                       "erreur":  null,
+                                       "ecoute":  true,
+                                       "erreurAide":  null,
+                                       "reponse":  "{\"ok\":true,\"r\":[1,\"deux\",{\"t\":3}]}",
+                                       "resultat":  "[1,\"deux\",{\"t\":3}]",
+                                       "parametres":  "{}"
+                                   }
+                               ],
+                    "recues":  [
+                                   "{\"a\":\"a\",\"p\":{}}",
+                                   "{\"a\":\"b\",\"p\":{}}"
+                               ]
+                },
+                {
+                    "nom":  "ok absent",
+                    "journal":  [
+                                    "Aide : les actions administrateur passent par l\u0027Aide",
+                                    "Aide : c refusé ou raté : "
+                                ],
+                    "etapes":  [
+                                   {
+                                       "action":  "c",
+                                       "erreur":  "",
+                                       "ecoute":  true,
+                                       "erreurAide":  null,
+                                       "reponse":  "{\"r\":1}",
+                                       "resultat":  {
+
+                                                    },
+                                       "parametres":  "{}"
+                                   }
+                               ],
+                    "recues":  [
+                                   "{\"a\":\"c\",\"p\":{}}"
+                               ]
+                }
+            ],
+    "veille":  {
+                   "reglage":  "[\"Jeu.EXE\",\"bf6.exe\",\"\",\"autre.exe\"]",
+                   "journal":  [
+                                   "Mesure des FPS : autre.exe refuse une mesure démarrée après lui, elle sera lancée avant lui la prochaine fois"
+                               ],
+                   "avant":  [
+                                 "bf6.exe",
+                                 "jeu.exe"
+                             ],
+                   "apres":  [
+                                 "bf6.exe",
+                                 "jeu.exe",
+                                 "autre.exe"
+                             ]
+               },
+    "sujet":  "Le canal de l\u0027Aide (aide-client.ps1) : texte des demandes, Invoke-Aide (réponses, refus, absente, délai), variables dangereuses, veille des FPS",
+    "variables":  [
+                      {
+                          "dangereuses":  [
+                                              "COMPlus_x",
+                                              "COR_ENABLE_PROFILING",
+                                              "cor_profiler"
+                                          ],
+                          "noms":  [
+                                       "PATH",
+                                       "COR_ENABLE_PROFILING",
+                                       "cor_profiler",
+                                       "DOTNET_TieredCompilation",
+                                       "COMPlus_x",
+                                       "TEMP"
+                                   ]
+                      },
+                      {
+                          "dangereuses":  [
+                                              "CORECLR_A",
+                                              "dotnet_additional_deps",
+                                              "DOTNET_SHARED_STORE",
+                                              "DOTNET_STARTUP_HOOKS"
+                                          ],
+                          "noms":  [
+                                       "DOTNET_STARTUP_HOOKS",
+                                       "dotnet_additional_deps",
+                                       "DOTNET_SHARED_STORE",
+                                       "DOTNET_SHARED_STOREX",
+                                       "CORECLR_A"
+                                   ]
+                      },
+                      {
+                          "dangereuses":  [
+
+                                          ],
+                          "noms":  [
+
+                                   ]
+                      },
+                      {
+                          "dangereuses":  [
+                                              "COR_A",
+                                              "cor_b"
+                                          ],
+                          "noms":  [
+                                       "Cor_A",
+                                       "COR_A",
+                                       "cor_b"
+                                   ]
+                      }
+                  ],
+    "format":  1
+}

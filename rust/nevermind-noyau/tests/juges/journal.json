@@ -1,0 +1,70 @@
+{
+    "format":  1,
+    "cas":  [
+                {
+                    "lignes":  2000,
+                    "nom":  "2000 lignes de 600 octets",
+                    "longueur":  600,
+                    "empreintes":  {
+                                       "journal-ancien.txt":  null,
+                                       "journal.txt":  "67D1C83A63725D9C2CC29BACF0F2007E5A37AE2652D1A0AD011B07C011F89610"
+                                   },
+                    "taille":  1210890
+                },
+                {
+                    "lignes":  3000,
+                    "nom":  "3000 lignes de 400 octets",
+                    "longueur":  400,
+                    "empreintes":  {
+                                       "journal-ancien.txt":  null,
+                                       "journal.txt":  "04D22F6FCA7CB56EA8FE1F5AF694D095DF485751F6EE27DEA316D0946957C9C8"
+                                   },
+                    "taille":  1216890
+                },
+                {
+                    "lignes":  3001,
+                    "nom":  "3001 lignes de 400 octets",
+                    "longueur":  400,
+                    "empreintes":  {
+                                       "journal-ancien.txt":  "AF92FD7078D6FBAF1D63DF57E1D713B94CD79DAB68F463A349B4E6F8FFBA4692",
+                                       "journal.txt":  "B0B1EDD69188C5838CBF6D51C4BFEFFD532BC2C6FAF5998BFC4943229E6987BE"
+                                   },
+                    "taille":  1217296
+                },
+                {
+                    "lignes":  5000,
+                    "nom":  "5000 lignes de 260 octets",
+                    "longueur":  260,
+                    "empreintes":  {
+                                       "journal-ancien.txt":  "1CE33DB6161704A3B338ADA3A2C0D3E70AC8C8A61DBE2084268C73DB6B76FDEF",
+                                       "journal.txt":  "C1986FD155DB76BF31E2146897948E4E0E336A27FC3E4EB23FEDD6B808CEB849"
+                                   },
+                    "taille":  1328890
+                },
+                {
+                    "lignes":  2999,
+                    "nom":  "2999 lignes de 380 octets",
+                    "longueur":  380,
+                    "empreintes":  {
+                                       "journal-ancien.txt":  null,
+                                       "journal.txt":  "AE1C2D5CBB8F581CF1AC593BB24E403C86193C88D174D5D8C9C50E0B661A820D"
+                                   },
+                    "taille":  1156504
+                },
+                {
+                    "lignes":  12000,
+                    "nom":  "12000 lignes de 100 octets",
+                    "longueur":  100,
+                    "empreintes":  {
+                                       "journal-ancien.txt":  "9E704A85F833C7720120AC943069BB1D7307D4C7D41CA345071C358B4BDB611C",
+                                       "journal.txt":  "712145875729DDDD347126DA249EC360B33394D7DC113143FBBB3AFE5F150747"
+                                   },
+                    "taille":  1272890
+                }
+            ],
+    "sujet":  "Le journal (donnees.ps1) : mise au propre au-delà de 1 Mo et 3000 lignes, LogError",
+    "logError":  {
+                     "LogError":  "2026-11-06T21:05:09 MethodInvocationException: Exception lors de l\u0027appel de « AppendAllText » avec « 3 » argument(s) : « L\u0027accès au chemin d\u0027accès \u0027C:\\Users\\death\\AppData\\Local\\Temp\\nevermind-juges-noyau-5321a8b6\\j\\journal.txt\u0027 est refusé. »",
+                     "apresDeuxieme":  "2026-11-06T21:05:09 MethodInvocationException: Exception lors de l\u0027appel de « AppendAllText » avec « 3 » argument(s) : « L\u0027accès au chemin d\u0027accès \u0027C:\\Users\\death\\AppData\\Local\\Temp\\nevermind-juges-noyau-5321a8b6\\j\\journal.txt\u0027 est refusé. »"
+                 }
+}
