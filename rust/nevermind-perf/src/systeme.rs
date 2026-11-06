@@ -107,7 +107,28 @@ pub struct FauxSysteme {
     pub lances: Vec<String>,
     pub lancements_rates: Vec<String>,
     pub batterie_seule: bool,
+    /// Les fichiers présents sur le faux PC (PresentMon de l'appli...)
+    pub fichiers: Vec<String>,
+    /// Programmes ouverts et fenêtre au premier plan que le test change pendant que le bloc tourne (un jeu lancé
+    /// puis quitté) ; à la place de `progs` et `premier_plan` quand il est donné
+    pub partage: Option<std::sync::Arc<std::sync::Mutex<Partage>>>,
     pub n: u64,
+}
+
+/// Ce que le test change sur le faux PC pendant que le bloc tourne
+#[derive(Default)]
+pub struct Partage {
+    pub progs: Vec<Programme>,
+    pub premier_plan: u32,
+}
+
+impl FauxSysteme {
+    fn progs_vus(&self) -> Vec<Programme> {
+        match &self.partage {
+            Some(p) => p.lock().unwrap_or_else(|e| e.into_inner()).progs.clone(),
+            None => self.progs.clone(),
+        }
+    }
 }
 
 impl Systeme for FauxSysteme {
@@ -133,7 +154,7 @@ impl Systeme for FauxSysteme {
     }
     fn programmes(&mut self) -> Vec<Programme> {
         self.n += 1;
-        self.progs.clone()
+        self.progs_vus()
     }
     fn chemin(&mut self, pid: u32) -> String {
         self.n += 1;
@@ -141,11 +162,14 @@ impl Systeme for FauxSysteme {
     }
     fn vivant(&mut self, pid: u32) -> bool {
         self.n += 1;
-        self.progs.iter().any(|p| p.pid == pid)
+        self.progs_vus().iter().any(|p| p.pid == pid)
     }
     fn devant(&mut self) -> (u32, String) {
         self.n += 1;
-        self.premier_plan.clone()
+        match &self.partage {
+            Some(p) => (p.lock().unwrap_or_else(|e| e.into_inner()).premier_plan, String::new()),
+            None => self.premier_plan.clone(),
+        }
     }
     fn lancer(&mut self, chemin: &str, args: Option<&str>) -> bool {
         self.lances.push(format!("{chemin}|{}", args.unwrap_or("")));
@@ -175,8 +199,8 @@ impl Systeme for FauxSysteme {
     fn preference_gpu(&mut self, _exe: &str) -> String {
         String::new()
     }
-    fn fichier_existe(&mut self, _chemin: &str) -> bool {
-        false
+    fn fichier_existe(&mut self, chemin: &str) -> bool {
+        self.fichiers.iter().any(|f| f.eq_ignore_ascii_case(chemin))
     }
     fn dossier_existe(&mut self, _chemin: &str) -> bool {
         false

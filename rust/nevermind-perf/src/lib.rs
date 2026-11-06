@@ -10,7 +10,7 @@
 //! Signaux envoyés : « partie-commencee », « partie-finie », « mesures », « fps-partie-enregistree »,
 //! « notification », « ajouter-jeu », « declarations », « ouvrir-fiche », « diagnostic-fps-pret ».
 //! Signaux attendus : « jeux-liste », « reglages-jeu », « demarrage », « nettoyage », « connexion », « analyse-pc »,
-//! « memoire-constat », « diagnostic-fps ». Le contenu de chacun est décrit dans DIVERGENCES.md.
+//! « memoire-constat », « diagnostic-fps », « mesure-lag ». Le contenu de chacun est décrit dans DIVERGENCES.md.
 
 pub mod diag;
 pub mod fichier;
@@ -107,8 +107,10 @@ pub struct BlocPerf {
     bilans: Vec<BilanEnCours>,
     veille_demande: Option<f64>,
     veille_etat: String,
-    aide_vue: bool,
-    aide_essai: Option<f64>,
+    /// `$script:FluxVeille` : la trace réseau a été mise en veille (un jeu guetté est installé)
+    flux_veille: bool,
+    /// `$script:LagSession` : une mesure du lag tourne (signal « mesure-lag » du bloc trafic, test rapide compris)
+    lag_en_cours: bool,
     ext: Map<String, Value>,
     /// Les profils lus (priorité et carte puissante de chaque jeu), gardés jusqu'au prochain changement
     profils: Option<Vec<Value>>,
@@ -390,8 +392,15 @@ impl BlocPerf {
         l
     }
 
+    /// Update-FpsVeille (hors partie, toutes les 5 s) : la veille de la mesure des FPS (`fps.veiller`) ET de la trace
+    /// réseau de « Lag en ligne » (`flux.veiller`), demandée à l'Aide au plus toutes les 30 s, seulement si elle écoute
+    /// déjà (`[AideClient]::Joignable(1)`, puis `[AideClient]::Texte` : jamais de réveil ni de demande de Windows).
+    /// Pas pour un jeu guetté déjà ouvert : la veille serait relancée sans lui.
     fn veille(&mut self, ctx: &Contexte, progs: &[Programme]) {
-        if !Self::mesure_fps(ctx) || self.cible.is_some() {
+        let fps = Self::mesure_fps(ctx) && self.cible.is_none();
+        let flux_voulue = Self::reglage_vrai(ctx, "LagMeasure", true) && !self.lag_en_cours;
+        let flux = self.flux_veille_utile(ctx, flux_voulue);
+        if !(fps || flux) {
             return;
         }
         let t = self.maintenant();
@@ -404,22 +413,45 @@ impl BlocPerf {
             return;
         }
         self.veille_demande = Some(t);
-        // (l'Aide n'est pas réveillée pour la veille : seulement si elle a déjà répondu, ou toutes les 10 minutes)
-        if noms.is_empty() || (!self.aide_vue && self.aide_essai.is_some_and(|a| t - a < 600.0)) {
+        if noms.is_empty() || !ctx.aide_joignable(1) {
             return;
         }
-        self.aide_essai = Some(t);
-        let etat = match ctx.aide("fps.veiller", &json!({ "Noms": noms }), 15000) {
-            Ok(_) => {
-                self.aide_vue = true;
-                format!("en veille avant {} (FPS)", noms.join(", "))
-            }
-            Err(e) => format!("veille impossible (FPS : {e})"),
+        let mut erreurs: Vec<String> = Vec::new();
+        if fps && let Err(e) = ctx.aide_texte("fps.veiller", &json!({ "Noms": noms }).to_string(), 15000) {
+            erreurs.push(format!("FPS : {e}"));
+        }
+        if flux && let Err(e) = ctx.aide_texte("flux.veiller", "{}", 15000) {
+            erreurs.push(format!("trace réseau : {e}"));
+        }
+        let quoi: Vec<&str> = [(fps, "FPS"), (flux, "trace réseau")].iter().filter(|x| x.0).map(|x| x.1).collect();
+        let etat = if erreurs.is_empty() {
+            format!("en veille avant {} ({})", noms.join(", "), quoi.join(" et "))
+        } else {
+            format!("veille impossible ({})", erreurs.join(" ; "))
         };
         if etat != self.veille_etat {
             ctx.journal(&format!("Mesure des FPS : {etat}"));
             self.veille_etat = etat;
         }
+    }
+
+    /// Test-FluxVeilleUtile (lag.ps1) : la trace réseau en veille tourne en administrateur et coûte du processeur
+    /// pendant les téléchargements ; seulement si un des jeux guettés est installé. Sinon, celle déjà lancée (jeu
+    /// désinstallé, mesure du lag coupée) est arrêtée (Stop-FluxVeille).
+    fn flux_veille_utile(&mut self, ctx: &Contexte, voulue: bool) -> bool {
+        let utile = voulue
+            && Self::veille_jeux(ctx).iter().any(|n| {
+                let base = n.strip_suffix(".exe").unwrap_or(n);
+                self.index.contains_key(&texte::minuscules(base))
+            });
+        if utile {
+            self.flux_veille = true;
+        } else if self.flux_veille && !self.lag_en_cours {
+            self.flux_veille = false;
+            ctx.journal("Lag : trace réseau en veille arrêtée (aucun jeu guetté installé, ou mesure du lag coupée)");
+            let _ = ctx.aide_texte("flux.arreter", "{}", 15000);
+        }
+        utile
     }
 
     /// Update-FpsVeilleAntiTriche : les jeux à anti-triche EA repérés à l'installation, guettés dès leur première partie
@@ -462,11 +494,14 @@ impl BlocPerf {
         if self.cible.is_some() {
             self.arreter_cible(ctx, false);
         }
-        let attache = match ctx.aide("fps.demarrer", &json!({ "Pid": pid }), 15000) {
-            Ok(v) => {
-                self.aide_vue = true;
-                ch(Some(&v)) == "rattachee"
-            }
+        // Start-FpsMesure : Test-MesuresAide (l'Aide réveillée au besoin, sans demande de Windows), puis
+        // [FrameMon]::StartRemote (`fps.demarrer` par [AideClient]::Texte). Le repli sur place n'est pas porté.
+        if !ctx.mesures_aide() {
+            ctx.journal("Mesure des FPS: l'Aide ne répond pas.");
+            return;
+        }
+        let attache = match ctx.aide_texte("fps.demarrer", &format!("{{\"Pid\":{pid}}}"), 15000) {
+            Ok(r) => r == "rattachee",
             Err(e) => {
                 ctx.journal(&format!("Mesure des FPS par l'Aide impossible : {e}"));
                 ctx.journal(&format!("Mesure des FPS: {e}"));
@@ -511,10 +546,9 @@ impl BlocPerf {
         if !c.distant {
             return;
         }
-        match ctx.aide("fps.lire", &json!({}), 5000) {
-            Ok(v) => {
+        match ctx.aide_texte("fps.lire", "{}", 5000) {
+            Ok(t) => {
                 c.rates = 0;
-                let t = ch(Some(&v));
                 for l in t.split('\n') {
                     let l = l.trim_end_matches('\r');
                     if l.is_empty() {
@@ -701,9 +735,8 @@ impl BlocPerf {
             self.compteur().cacher();
         }
         let copie = c.images.copie();
-        if c.distant || c.rates < 20 {
-            let _ = ctx.aide("fps.arreter", &json!({}), 8000);
-        }
+        // ([FrameMon]::Stop : toujours, même après #FIN ou 20 lectures ratées, comme `remoteOn` en PowerShell)
+        let _ = ctx.aide_texte("fps.arreter", "{}", 8000);
         let fil = std::thread::spawn(move || copie.calculer());
         let b = BilanEnCours {
             nom: c.nom,
@@ -1165,6 +1198,8 @@ impl Bloc for BlocPerf {
         match nom {
             // (un profil changé depuis la fiche d'un jeu, bloc jeux : les profils sont relus dans le registre)
             "profils-changes" => self.profils = None,
+            // (bloc trafic : une mesure du lag commence ou finit, `$script:LagSession` de Update-FpsVeille)
+            "mesure-lag" => self.lag_en_cours = vrai(donnees.get("en_cours")),
             "mesures-rapides" => {
                 self.rapide = vrai(donnees.get("on"));
                 if self.rapide {

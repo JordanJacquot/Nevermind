@@ -64,3 +64,13 @@ Stop-ProgrammeChemin ferme d'abord lui-même les processus permis, puis demande 
   pose la marque (`Set-TrafficMark 'TrafficScanned' $App.Key $true`, trafic.ps1:324).
 - « trafic-microsoft » reçu en signal (la recherche du bloc divers) ouvre le panneau « Ce que Windows envoie à
   Microsoft », comme l'action du même nom.
+
+## Trace réseau et veille (06/11, défaut de la 2.0.0)
+
+- La trace est mise en veille avant les jeux guettés par le bloc perf (`flux.veiller`, Update-FpsVeille) : sans elle,
+  la trace démarrée au lancement de Battlefield 6 était refusée par son anti-triche (journal de Jordan, 06/11 19:18).
+  Ce bloc envoie « mesure-lag » {en_cours} au début et à la fin de chaque mesure du lag (`$script:LagSession`).
+- `flux.demarrer`, `flux.lire`, `flux.arreter` : comme Start-FluxReseau, Get-FluxReseau, Stop-FluxReseau, après
+  Test-MesuresAide et sans demande de Windows (avant : `ctx.aide`, qui pouvait montrer la demande de Windows en
+  pleine partie). Le refus d'un anti-triche est reconnu comme Test-FpsRefus (accès refusé), et le jeu est ajouté à la
+  veille tout de suite (Add-FpsVeilleJeu, même ordre au journal), le signal `veille-jeu-ajouter` restant pour l'hôte.

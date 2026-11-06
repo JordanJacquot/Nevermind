@@ -17,6 +17,7 @@ const TABLE: &[(&str, &[&str], &[&str])] = &[
     ("notification", &["perf", "trafic"], &["hôte"]),
     ("bulle", &["reseau"], &["hôte"]),
     ("veille-jeu-ajouter", &["trafic"], &["hôte"]),
+    ("mesure-lag", &["trafic"], &["perf"]),
     ("partie-commencee", &["perf"], &["hôte", "jeux", "memoire", "reseau", "trafic"]),
     ("partie-finie", &["perf"], &["hôte", "jeux", "memoire", "reseau", "trafic"]),
     ("theme-choisi", &["divers"], &["hôte"]),

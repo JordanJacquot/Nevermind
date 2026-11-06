@@ -1,0 +1,1177 @@
+{
+    "cas":  [
+                {
+                    "nom":  "démarrage avec BF6 et FC 27 installés",
+                    "jeux":  [
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                              ],
+                                     "nom":  "Battlefield™ 6",
+                                     "source":  "EA"
+                                 },
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\FC 27\\FC27.exe"
+                                              ],
+                                     "nom":  "EA SPORTS FC™ 27",
+                                     "source":  "EA"
+                                 },
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                              ],
+                                     "nom":  "Rocket League",
+                                     "source":  "Epic"
+                                 }
+                             ],
+                    "fin":  62,
+                    "reglages":  {
+                                     "FpsMeasure":  true,
+                                     "FpsVeille":  [
+                                                       "fc27.exe",
+                                                       "fc27_trial.exe"
+                                                   ]
+                                 },
+                    "reponses":  {
+
+                                 },
+                    "evenements":  [
+
+                                   ],
+                    "images":  [
+                                   [
+                                       "7.5",
+                                       "9.5",
+                                       3600,
+                                       "4.1",
+                                       "6.2"
+                                   ],
+                                   [
+                                       "16.667",
+                                       "16.667",
+                                       1200,
+                                       "2.0",
+                                       "3.0"
+                                   ],
+                                   [
+                                       "10",
+                                       "12",
+                                       3000,
+                                       "5.5",
+                                       "9.75"
+                                   ]
+                               ],
+                    "entete":  "Application,ProcessID,MsBetweenPresents,PresentMode,MsCPUBusy,MsGPUBusy",
+                    "demandes":  [
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     }
+                                 ],
+                    "lectures":  {
+                                     "flux":  false,
+                                     "fps":  false
+                                 },
+                    "journal":  [
+                                    "Mesure des FPS : en veille avant bf6.exe, fc27.exe, fc27_trial.exe (FPS et trace réseau)"
+                                ],
+                    "fpsVeille":  [
+                                      "fc27.exe",
+                                      "fc27_trial.exe"
+                                  ],
+                    "parties":  [
+
+                                ]
+                },
+                {
+                    "nom":  "BF6 lancé, veille déjà ouverte, partie puis fin",
+                    "jeux":  [
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                              ],
+                                     "nom":  "Battlefield™ 6",
+                                     "source":  "EA"
+                                 },
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\FC 27\\FC27.exe"
+                                              ],
+                                     "nom":  "EA SPORTS FC™ 27",
+                                     "source":  "EA"
+                                 },
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                              ],
+                                     "nom":  "Rocket League",
+                                     "source":  "Epic"
+                                 }
+                             ],
+                    "fin":  150,
+                    "reglages":  {
+                                     "FpsMeasure":  true,
+                                     "FpsVeille":  [
+                                                       "fc27.exe",
+                                                       "fc27_trial.exe"
+                                                   ]
+                                 },
+                    "reponses":  {
+                                     "fps.demarrer":  "{\"ok\":true,\"r\":\"rattachee\"}"
+                                 },
+                    "evenements":  [
+                                       {
+                                           "t":  12,
+                                           "jeux":  {
+
+                                                    },
+                                           "quitte":  {
+
+                                                      },
+                                           "lance":  {
+                                                         "pid":  7000101,
+                                                         "nom":  "bf6",
+                                                         "chemin":  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                                     }
+                                       },
+                                       {
+                                           "t":  135,
+                                           "jeux":  {
+
+                                                    },
+                                           "quitte":  {
+                                                          "pid":  7000101,
+                                                          "nom":  "bf6",
+                                                          "chemin":  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                                      },
+                                           "lance":  {
+
+                                                     }
+                                       }
+                                   ],
+                    "images":  [
+                                   [
+                                       "7.5",
+                                       "9.5",
+                                       3600,
+                                       "4.1",
+                                       "6.2"
+                                   ],
+                                   [
+                                       "16.667",
+                                       "16.667",
+                                       1200,
+                                       "2.0",
+                                       "3.0"
+                                   ],
+                                   [
+                                       "10",
+                                       "12",
+                                       3000,
+                                       "5.5",
+                                       "9.75"
+                                   ]
+                               ],
+                    "entete":  "Application,ProcessID,MsBetweenPresents,PresentMode,MsCPUBusy,MsGPUBusy",
+                    "demandes":  [
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.demarrer",
+                                         "p":  {
+                                                   "Pid":  7000101
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.demarrer",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.arreter",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.arreter",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     }
+                                 ],
+                    "lectures":  {
+                                     "flux":  true,
+                                     "fps":  true
+                                 },
+                    "journal":  [
+                                    "Mesure des FPS : en veille avant bf6.exe, fc27.exe, fc27_trial.exe (FPS et trace réseau)",
+                                    "Mode jeu: Battlefield™ 6 lancé, applis fermées: ",
+                                    "Mesure des FPS : par l\u0027Aide, reprise de la veille lancée avant le jeu",
+                                    "Mesure des FPS: Battlefield™ 6",
+                                    "Lag : trace réseau par l\u0027Aide",
+                                    "Lag: mesure de la connexion (Battlefield™ 6), serveur repérable en UDP",
+                                    "Mode jeu: fin de Battlefield™ 6 après 2 min"
+                                ],
+                    "fpsVeille":  [
+                                      "fc27.exe",
+                                      "fc27_trial.exe"
+                                  ],
+                    "parties":  [
+                                    {
+                                        "Game":  "Battlefield™ 6",
+                                        "Key":  "bf6",
+                                        "Avg":  103.8,
+                                        "Low1":  83.3,
+                                        "Low01":  83.3,
+                                        "Seconds":  64,
+                                        "Frames":  6600,
+                                        "Exclusive":  false,
+                                        "Series":  [
+                                                       93.3
+                                                   ],
+                                        "MenuSec":  20,
+                                        "MenuFps":  60
+                                    }
+                                ]
+                },
+                {
+                    "nom":  "jeu sans anti-triche (Rocket League), partie puis fin",
+                    "jeux":  [
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                              ],
+                                     "nom":  "Battlefield™ 6",
+                                     "source":  "EA"
+                                 },
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\FC 27\\FC27.exe"
+                                              ],
+                                     "nom":  "EA SPORTS FC™ 27",
+                                     "source":  "EA"
+                                 },
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                              ],
+                                     "nom":  "Rocket League",
+                                     "source":  "Epic"
+                                 }
+                             ],
+                    "fin":  195,
+                    "reglages":  {
+                                     "FpsMeasure":  true,
+                                     "FpsVeille":  [
+                                                       "fc27.exe",
+                                                       "fc27_trial.exe"
+                                                   ]
+                                 },
+                    "reponses":  {
+
+                                 },
+                    "evenements":  [
+                                       {
+                                           "t":  58,
+                                           "jeux":  {
+
+                                                    },
+                                           "quitte":  {
+
+                                                      },
+                                           "lance":  {
+                                                         "pid":  7000202,
+                                                         "nom":  "RocketLeague",
+                                                         "chemin":  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                                     }
+                                       },
+                                       {
+                                           "t":  180,
+                                           "jeux":  {
+
+                                                    },
+                                           "quitte":  {
+                                                          "pid":  7000202,
+                                                          "nom":  "RocketLeague",
+                                                          "chemin":  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                                      },
+                                           "lance":  {
+
+                                                     }
+                                       }
+                                   ],
+                    "images":  [
+                                   [
+                                       "7.5",
+                                       "9.5",
+                                       3600,
+                                       "4.1",
+                                       "6.2"
+                                   ],
+                                   [
+                                       "16.667",
+                                       "16.667",
+                                       1200,
+                                       "2.0",
+                                       "3.0"
+                                   ],
+                                   [
+                                       "10",
+                                       "12",
+                                       3000,
+                                       "5.5",
+                                       "9.75"
+                                   ]
+                               ],
+                    "entete":  "Application,ProcessID,MsBetweenPresents,PresentMode,MsCPUBusy,MsGPUBusy",
+                    "demandes":  [
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.demarrer",
+                                         "p":  {
+                                                   "Pid":  7000202
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.demarrer",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.arreter",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.arreter",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     }
+                                 ],
+                    "lectures":  {
+                                     "flux":  true,
+                                     "fps":  true
+                                 },
+                    "journal":  [
+                                    "Mesure des FPS : en veille avant bf6.exe, fc27.exe, fc27_trial.exe (FPS et trace réseau)",
+                                    "Mode jeu: Rocket League lancé, applis fermées: ",
+                                    "Mesure des FPS : par l\u0027Aide",
+                                    "Mesure des FPS: Rocket League",
+                                    "Lag : trace réseau par l\u0027Aide",
+                                    "Lag: mesure de la connexion (Rocket League), serveur repérable en UDP",
+                                    "Mode jeu: fin de Rocket League après 2 min"
+                                ],
+                    "fpsVeille":  [
+                                      "fc27.exe",
+                                      "fc27_trial.exe"
+                                  ],
+                    "parties":  [
+                                    {
+                                        "Game":  "Rocket League",
+                                        "Key":  "rocketleague",
+                                        "Avg":  103.8,
+                                        "Low1":  83.3,
+                                        "Low01":  83.3,
+                                        "Seconds":  64,
+                                        "Frames":  6600,
+                                        "Exclusive":  false,
+                                        "Series":  [
+                                                       93.3
+                                                   ],
+                                        "MenuSec":  20,
+                                        "MenuFps":  60
+                                    }
+                                ]
+                },
+                {
+                    "nom":  "Aide qui refuse la veille et les mesures",
+                    "jeux":  [
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                              ],
+                                     "nom":  "Battlefield™ 6",
+                                     "source":  "EA"
+                                 },
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\FC 27\\FC27.exe"
+                                              ],
+                                     "nom":  "EA SPORTS FC™ 27",
+                                     "source":  "EA"
+                                 },
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                              ],
+                                     "nom":  "Rocket League",
+                                     "source":  "Epic"
+                                 }
+                             ],
+                    "fin":  70,
+                    "reglages":  {
+                                     "FpsMeasure":  true,
+                                     "FpsVeille":  [
+                                                       "fc27.exe",
+                                                       "fc27_trial.exe"
+                                                   ]
+                                 },
+                    "reponses":  {
+                                     "fps.demarrer":  "{\"ok\":false,\"e\":\"Mesure refusée par Windows : accès refusé\"}",
+                                     "fps.veiller":  "{\"ok\":false,\"e\":\"PresentMon refusé : accès refusé\"}",
+                                     "flux.demarrer":  "{\"ok\":false,\"e\":\"Trace réseau refusée par Windows : accès refusé (droits administrateur, ou anti-triche d\u0027un jeu en cours)\"}",
+                                     "flux.veiller":  "{\"ok\":false,\"e\":\"Trace réseau refusée par Windows : accès refusé (droits administrateur, ou anti-triche d\u0027un jeu en cours)\"}"
+                                 },
+                    "evenements":  [
+                                       {
+                                           "t":  12,
+                                           "jeux":  {
+
+                                                    },
+                                           "quitte":  {
+
+                                                      },
+                                           "lance":  {
+                                                         "pid":  7000202,
+                                                         "nom":  "RocketLeague",
+                                                         "chemin":  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                                     }
+                                       },
+                                       {
+                                           "t":  40,
+                                           "jeux":  {
+
+                                                    },
+                                           "quitte":  {
+                                                          "pid":  7000202,
+                                                          "nom":  "RocketLeague",
+                                                          "chemin":  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                                      },
+                                           "lance":  {
+
+                                                     }
+                                       }
+                                   ],
+                    "images":  [
+                                   [
+                                       "7.5",
+                                       "9.5",
+                                       3600,
+                                       "4.1",
+                                       "6.2"
+                                   ],
+                                   [
+                                       "16.667",
+                                       "16.667",
+                                       1200,
+                                       "2.0",
+                                       "3.0"
+                                   ],
+                                   [
+                                       "10",
+                                       "12",
+                                       3000,
+                                       "5.5",
+                                       "9.75"
+                                   ]
+                               ],
+                    "entete":  "Application,ProcessID,MsBetweenPresents,PresentMode,MsCPUBusy,MsGPUBusy",
+                    "demandes":  [
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.demarrer",
+                                         "p":  {
+                                                   "Pid":  7000202
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.demarrer",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe",
+                                                                "rocketleague.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     }
+                                 ],
+                    "lectures":  {
+                                     "flux":  false,
+                                     "fps":  false
+                                 },
+                    "journal":  [
+                                    "Mesure des FPS : veille impossible (FPS : Exception lors de l\u0027appel de « Texte » avec « 3 » argument(s) : « PresentMon refusé : accès refusé » ; trace réseau : Exception lors de l\u0027appel de « Texte » avec « 3 » argument(s) : « Trace réseau refusée par Windows : accès refusé (droits administrateur, ou anti-triche d\u0027un jeu en cours) »)",
+                                    "Mode jeu: Rocket League lancé, applis fermées: ",
+                                    "Mesure des FPS par l\u0027Aide impossible : Mesure refusée par Windows : accès refusé",
+                                    "Mesure des FPS : PresentMon n\u0027est pas lancé, signature non valable (UnknownError) (C:\\Users\\death\\AppData\\Local\\Temp\\nevermind-juge-veille-6740\\outils-tiers\\PresentMon.exe)",
+                                    "Mesure des FPS: PresentMon refusé : signature non valable (UnknownError)",
+                                    "Aide : flux.demarrer refusé ou raté : Trace réseau refusée par Windows : accès refusé (droits administrateur, ou anti-triche d\u0027un jeu en cours)",
+                                    "Lag : trace réseau par l\u0027Aide impossible (Trace réseau refusée par Windows : accès refusé (droits administrateur, ou anti-triche d\u0027un jeu en cours))",
+                                    "Lag: Type [NetFlow] introuvable.",
+                                    "Mesure des FPS : rocketleague.exe refuse une mesure démarrée après lui, elle sera lancée avant lui la prochaine fois",
+                                    "Lag: mesure de la connexion (Rocket League)",
+                                    "Mode jeu: fin de Rocket League après 0 min"
+                                ],
+                    "fpsVeille":  [
+                                      "fc27.exe",
+                                      "fc27_trial.exe",
+                                      "rocketleague.exe"
+                                  ],
+                    "parties":  [
+
+                                ]
+                },
+                {
+                    "nom":  "mesure du lag coupée",
+                    "jeux":  [
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                              ],
+                                     "nom":  "Battlefield™ 6",
+                                     "source":  "EA"
+                                 },
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                              ],
+                                     "nom":  "Rocket League",
+                                     "source":  "Epic"
+                                 }
+                             ],
+                    "fin":  150,
+                    "reglages":  {
+                                     "LagMeasure":  false,
+                                     "FpsMeasure":  true,
+                                     "FpsVeille":  [
+                                                       "fc27.exe",
+                                                       "fc27_trial.exe"
+                                                   ]
+                                 },
+                    "reponses":  {
+                                     "fps.demarrer":  "{\"ok\":true,\"r\":\"rattachee\"}"
+                                 },
+                    "evenements":  [
+                                       {
+                                           "t":  12,
+                                           "jeux":  {
+
+                                                    },
+                                           "quitte":  {
+
+                                                      },
+                                           "lance":  {
+                                                         "pid":  7000101,
+                                                         "nom":  "bf6",
+                                                         "chemin":  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                                     }
+                                       },
+                                       {
+                                           "t":  135,
+                                           "jeux":  {
+
+                                                    },
+                                           "quitte":  {
+                                                          "pid":  7000101,
+                                                          "nom":  "bf6",
+                                                          "chemin":  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                                      },
+                                           "lance":  {
+
+                                                     }
+                                       }
+                                   ],
+                    "images":  [
+                                   [
+                                       "7.5",
+                                       "9.5",
+                                       3600,
+                                       "4.1",
+                                       "6.2"
+                                   ],
+                                   [
+                                       "16.667",
+                                       "16.667",
+                                       1200,
+                                       "2.0",
+                                       "3.0"
+                                   ],
+                                   [
+                                       "10",
+                                       "12",
+                                       3000,
+                                       "5.5",
+                                       "9.75"
+                                   ]
+                               ],
+                    "entete":  "Application,ProcessID,MsBetweenPresents,PresentMode,MsCPUBusy,MsGPUBusy",
+                    "demandes":  [
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.demarrer",
+                                         "p":  {
+                                                   "Pid":  7000101
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.arreter",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     }
+                                 ],
+                    "lectures":  {
+                                     "flux":  false,
+                                     "fps":  true
+                                 },
+                    "journal":  [
+                                    "Mesure des FPS : en veille avant bf6.exe, fc27.exe, fc27_trial.exe (FPS)",
+                                    "Mode jeu: Battlefield™ 6 lancé, applis fermées: ",
+                                    "Mesure des FPS : par l\u0027Aide, reprise de la veille lancée avant le jeu",
+                                    "Mesure des FPS: Battlefield™ 6",
+                                    "Mode jeu: fin de Battlefield™ 6 après 2 min"
+                                ],
+                    "fpsVeille":  [
+                                      "fc27.exe",
+                                      "fc27_trial.exe"
+                                  ],
+                    "parties":  [
+                                    {
+                                        "Game":  "Battlefield™ 6",
+                                        "Key":  "bf6",
+                                        "Avg":  103.8,
+                                        "Low1":  83.3,
+                                        "Low01":  83.3,
+                                        "Seconds":  64,
+                                        "Frames":  6600,
+                                        "Exclusive":  false,
+                                        "Series":  [
+                                                       93.3
+                                                   ],
+                                        "MenuSec":  20,
+                                        "MenuFps":  60
+                                    }
+                                ]
+                },
+                {
+                    "nom":  "mesure des FPS coupée",
+                    "jeux":  [
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                              ],
+                                     "nom":  "Battlefield™ 6",
+                                     "source":  "EA"
+                                 },
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                              ],
+                                     "nom":  "Rocket League",
+                                     "source":  "Epic"
+                                 }
+                             ],
+                    "fin":  150,
+                    "reglages":  {
+                                     "FpsMeasure":  false,
+                                     "FpsVeille":  [
+                                                       "fc27.exe",
+                                                       "fc27_trial.exe"
+                                                   ]
+                                 },
+                    "reponses":  {
+
+                                 },
+                    "evenements":  [
+                                       {
+                                           "t":  12,
+                                           "jeux":  {
+
+                                                    },
+                                           "quitte":  {
+
+                                                      },
+                                           "lance":  {
+                                                         "pid":  7000101,
+                                                         "nom":  "bf6",
+                                                         "chemin":  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                                     }
+                                       },
+                                       {
+                                           "t":  135,
+                                           "jeux":  {
+
+                                                    },
+                                           "quitte":  {
+                                                          "pid":  7000101,
+                                                          "nom":  "bf6",
+                                                          "chemin":  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                                      },
+                                           "lance":  {
+
+                                                     }
+                                       }
+                                   ],
+                    "images":  [
+                                   [
+                                       "7.5",
+                                       "9.5",
+                                       3600,
+                                       "4.1",
+                                       "6.2"
+                                   ],
+                                   [
+                                       "16.667",
+                                       "16.667",
+                                       1200,
+                                       "2.0",
+                                       "3.0"
+                                   ],
+                                   [
+                                       "10",
+                                       "12",
+                                       3000,
+                                       "5.5",
+                                       "9.75"
+                                   ]
+                               ],
+                    "entete":  "Application,ProcessID,MsBetweenPresents,PresentMode,MsCPUBusy,MsGPUBusy",
+                    "demandes":  [
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.demarrer",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.arreter",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     }
+                                 ],
+                    "lectures":  {
+                                     "flux":  true,
+                                     "fps":  false
+                                 },
+                    "journal":  [
+                                    "Mesure des FPS : en veille avant bf6.exe, fc27.exe, fc27_trial.exe (trace réseau)",
+                                    "Mode jeu: Battlefield™ 6 lancé, applis fermées: ",
+                                    "Lag : trace réseau par l\u0027Aide",
+                                    "Lag: mesure de la connexion (Battlefield™ 6), serveur repérable en UDP",
+                                    "Mode jeu: fin de Battlefield™ 6 après 2 min"
+                                ],
+                    "fpsVeille":  [
+                                      "fc27.exe",
+                                      "fc27_trial.exe"
+                                  ],
+                    "parties":  [
+
+                                ]
+                },
+                {
+                    "nom":  "BF6 désinstallé pendant la veille",
+                    "jeux":  [
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\Battlefield 6\\bf6.exe"
+                                              ],
+                                     "nom":  "Battlefield™ 6",
+                                     "source":  "EA"
+                                 },
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                              ],
+                                     "nom":  "Rocket League",
+                                     "source":  "Epic"
+                                 }
+                             ],
+                    "fin":  40,
+                    "reglages":  {
+                                     "FpsMeasure":  true,
+                                     "FpsVeille":  [
+                                                       "fc27.exe",
+                                                       "fc27_trial.exe"
+                                                   ]
+                                 },
+                    "reponses":  {
+
+                                 },
+                    "evenements":  [
+                                       {
+                                           "t":  20,
+                                           "jeux":  {
+                                                        "exes":  [
+                                                                     "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                                                 ],
+                                                        "nom":  "Rocket League",
+                                                        "source":  "Epic"
+                                                    },
+                                           "quitte":  {
+
+                                                      },
+                                           "lance":  {
+
+                                                     }
+                                       }
+                                   ],
+                    "images":  [
+                                   [
+                                       "7.5",
+                                       "9.5",
+                                       3600,
+                                       "4.1",
+                                       "6.2"
+                                   ],
+                                   [
+                                       "16.667",
+                                       "16.667",
+                                       1200,
+                                       "2.0",
+                                       "3.0"
+                                   ],
+                                   [
+                                       "10",
+                                       "12",
+                                       3000,
+                                       "5.5",
+                                       "9.75"
+                                   ]
+                               ],
+                    "entete":  "Application,ProcessID,MsBetweenPresents,PresentMode,MsCPUBusy,MsGPUBusy",
+                    "demandes":  [
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.veiller",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "flux.arreter",
+                                         "p":  {
+
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe",
+                                                                "fc27.exe",
+                                                                "fc27_trial.exe"
+                                                            ]
+                                               }
+                                     }
+                                 ],
+                    "lectures":  {
+                                     "flux":  false,
+                                     "fps":  false
+                                 },
+                    "journal":  [
+                                    "Mesure des FPS : en veille avant bf6.exe, fc27.exe, fc27_trial.exe (FPS et trace réseau)",
+                                    "Lag : trace réseau en veille arrêtée (aucun jeu guetté installé, ou mesure du lag coupée)",
+                                    "Mesure des FPS : en veille avant bf6.exe, fc27.exe, fc27_trial.exe (FPS)"
+                                ],
+                    "fpsVeille":  [
+                                      "fc27.exe",
+                                      "fc27_trial.exe"
+                                  ],
+                    "parties":  [
+
+                                ]
+                },
+                {
+                    "nom":  "aucun jeu guetté installé",
+                    "jeux":  [
+                                 {
+                                     "exes":  [
+                                                  "C:\\JeuxEssaiNevermind\\rocketleague\\Binaries\\Win64\\RocketLeague.exe"
+                                              ],
+                                     "nom":  "Rocket League",
+                                     "source":  "Epic"
+                                 }
+                             ],
+                    "fin":  40,
+                    "reglages":  {
+                                     "FpsMeasure":  true,
+                                     "FpsVeille":  [
+
+                                                   ]
+                                 },
+                    "reponses":  {
+
+                                 },
+                    "evenements":  [
+
+                                   ],
+                    "images":  [
+                                   [
+                                       "7.5",
+                                       "9.5",
+                                       3600,
+                                       "4.1",
+                                       "6.2"
+                                   ],
+                                   [
+                                       "16.667",
+                                       "16.667",
+                                       1200,
+                                       "2.0",
+                                       "3.0"
+                                   ],
+                                   [
+                                       "10",
+                                       "12",
+                                       3000,
+                                       "5.5",
+                                       "9.75"
+                                   ]
+                               ],
+                    "entete":  "Application,ProcessID,MsBetweenPresents,PresentMode,MsCPUBusy,MsGPUBusy",
+                    "demandes":  [
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe"
+                                                            ]
+                                               }
+                                     },
+                                     {
+                                         "a":  "fps.veiller",
+                                         "p":  {
+                                                   "Noms":  [
+                                                                "bf6.exe"
+                                                            ]
+                                               }
+                                     }
+                                 ],
+                    "lectures":  {
+                                     "flux":  false,
+                                     "fps":  false
+                                 },
+                    "journal":  [
+                                    "Mesure des FPS : en veille avant bf6.exe (FPS)"
+                                ],
+                    "fpsVeille":  [
+
+                                  ],
+                    "parties":  [
+
+                                ]
+                }
+            ]
+}

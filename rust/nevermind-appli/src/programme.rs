@@ -102,6 +102,13 @@ impl Ecran for EcranPage {
     }
 }
 
+/// Le dossier de l'appli (`$AppDir`, `Contexte::appli`) : « fichiers » à côté de Mindset.exe, où le zip met
+/// outils-tiers\PresentMon.exe (outils\contenu-rust.ps1), celui que l'Aide lance. Avant le 06/11, le dossier de
+/// Mindset.exe lui-même : PresentMon y était cherché à tort, et aucune partie n'était mesurée (2.0.0).
+pub fn dossier_appli(racine: &std::path::Path) -> PathBuf {
+    racine.join("fichiers")
+}
+
 /// Le dossier du programme (celui de Mindset.exe).
 fn dossier_programme() -> Option<String> {
     std::env::current_exe().ok()?.parent()?.to_str().map(str::to_string)
@@ -219,7 +226,7 @@ pub fn lancer() -> ! {
     };
     let essai = cfg!(feature = "essai");
     let racine = env.racine.as_deref().map(PathBuf::from).unwrap_or_default();
-    let ctx = Contexte::nouveau(racine.clone(), l.dossier_donnees.clone(), l.gere, essai);
+    let ctx = Contexte::nouveau(dossier_appli(&racine), l.dossier_donnees.clone(), l.gere, essai);
     // (le noyau les attend avant la première demande à l'Aide)
     ctx.definir_version(VERSION);
     ctx.definir_racine(racine);

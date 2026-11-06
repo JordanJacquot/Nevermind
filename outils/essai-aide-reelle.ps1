@@ -1514,11 +1514,43 @@ function Test-Cas13 {
 }
 
 # =====================================================================================================================
+# 14. Veille des FPS et de la trace réseau avant un jeu, puis la mesure de ce jeu (le défaut de Nevermind 2.0.0 : la
+#     trace réseau démarrée après Battlefield 6 était refusée par son anti-triche, et rien n'était mesuré)
+# =====================================================================================================================
+# Comme Update-FpsVeille puis Start-GameSession : fps.veiller et flux.veiller AVANT que le « jeu » (Dormeur.exe, sous
+# Élodie) ne démarre ; puis fps.demarrer doit reprendre la veille (« rattachee »), flux.demarrer la trace déjà lancée,
+# et les lectures et arrêts répondent.
+function Test-Cas14 {
+    Write-Partie '14. Veille des FPS et de la trace réseau avant un jeu, puis la mesure de ce jeu'
+    Reset-Machine
+    $e = Get-Compte $NomElodie
+    $null = Install-Appli $InstallateurNeuf $PaquetEssai $e.Sid
+    # (un Nevermind ouvert tout du long : l'Aide ne s'arrête pas entre la veille et la partie)
+    $garde = Invoke-Client $e @{ Mode = 'garder'; Secondes = 150 } -Fond
+    $s1 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'veilleFps'; Action = 'fps.veiller'; P = @{ Noms = @('dormeur.exe') } },
+                                                                            @{ Nom = 'veilleFlux'; Action = 'flux.veiller'; P = @{} }) }
+    Test-Cas 'veille avant le jeu : fps.veiller et flux.veiller acceptés' { $s1.R -and [string]$s1.R.veilleFps -eq 'ok' -and [string]$s1.R.veilleFlux -eq 'ok' }
+    $jeu = Start-Process -FilePath "$Racine\appli\Dormeur.exe" -Credential $e.Cred -LoadUserProfile -WorkingDirectory $env:SystemRoot -PassThru
+    Start-Sleep -Seconds 3
+    $s2 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'demarrer'; Action = 'fps.demarrer'; P = @{ Pid = $jeu.Id } },
+        @{ Nom = 'trace'; Action = 'flux.demarrer'; P = @{} }, @{ Nom = 'lireFps'; Action = 'fps.lire'; P = @{} }, @{ Nom = 'lireFlux'; Action = 'flux.lire'; P = @{} },
+        @{ Nom = 'arreterFps'; Action = 'fps.arreter'; P = @{} }, @{ Nom = 'arreterFlux'; Action = 'flux.arreter'; P = @{} }) }
+    Test-Cas 'le jeu lancé après la veille : fps.demarrer reprend la veille (« rattachee »)' { $s2.R -and [string]$s2.R.demarrer -eq 'rattachee' }
+    Test-Cas 'flux.demarrer reprend la trace déjà lancée par la veille (pas de refus)' { $s2.R -and [string]$s2.R.trace -eq 'ok' -and -not ($s2.E -and $s2.E.PSObject.Properties['trace']) }
+    Test-Cas 'fps.lire répond, sans refus de Windows' { $s2.R -and $s2.R.PSObject.Properties['lireFps'] -and [string]$s2.R.lireFps -notmatch 'access denied|Performance Log Users' }
+    Test-Cas 'flux.lire répond pendant la partie (la trace tourne)' { $s2.R -and $s2.R.PSObject.Properties['lireFlux'] }
+    Test-Cas 'fps.arreter et flux.arreter acceptés' { $s2.R -and [string]$s2.R.arreterFps -eq 'ok' -and [string]$s2.R.arreterFlux -eq 'ok' }
+    foreach ($p in $jeu, $garde) { try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {} }
+    Stop-Aides
+}
+
+# =====================================================================================================================
 $titres = @{ 0 = 'Préparation'; 1 = 'Installation : tâche SYSTEM pour Élodie'; 2 = 'Élodie obtient des actions en lecture seule'; 3 = 'Un autre compte refusé'
     4 = 'Mise à jour depuis Nevermind 1.10.0'; 5 = 'Repli par la demande de Windows'; 6 = 'Désinstallation'; 7 = 'Environnement d''Élodie'
     8 = 'Changement de nom : mise à jour par le nouveau Mindset, une seule instance'; 9 = 'Aide lancée en secours par la demande de Windows'
-    10 = 'Tout optimiser puis tout restaurer'; 11 = 'Banc PowerShell / Rust sous un compte sans droits'; 13 = 'Relancer la carte réseau de la connexion' }
-if (-not $titres.ContainsKey($Cas)) { Write-Host 'Indique -Cas 0 (préparation), -Cas 1 à 11 ou -Cas 13.' -ForegroundColor Yellow; exit 2 }
+    10 = 'Tout optimiser puis tout restaurer'; 11 = 'Banc PowerShell / Rust sous un compte sans droits'; 13 = 'Relancer la carte réseau de la connexion'
+    14 = 'Veille des FPS et de la trace réseau avant un jeu, puis mesure' }
+if (-not $titres.ContainsKey($Cas)) { Write-Host 'Indique -Cas 0 (préparation), -Cas 1 à 11, -Cas 13 ou -Cas 14.' -ForegroundColor Yellow; exit 2 }
 try {
     switch ($Cas) {
         0 { if ($env:GITHUB_STEP_SUMMARY) { [IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, "| Cas | Quoi | Résultat |`n|---|---|---|`n", (New-Object Text.UTF8Encoding $false)) }; Initialize-Essai }
@@ -1534,6 +1566,7 @@ try {
         10 { Test-Cas10 }
         11 { Test-Cas11 }
         13 { Test-Cas13 }
+        14 { Test-Cas14 }
     }
 } catch {
     $script:Echoues.Add("erreur : $($_.Exception.Message)")

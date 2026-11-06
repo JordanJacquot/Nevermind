@@ -232,6 +232,10 @@ jobs:
         if: ${{ !cancelled() && matrix.aide == 'rust' }}
         run: .\outils\essai-mesures-reelles.ps1 -Exe $env:AIDE
 
+      - name: "14. Veille des FPS et de la trace réseau avant un jeu, puis la mesure de ce jeu (rattachée à la veille)"
+        if: ${{ !cancelled() }}
+        run: .\outils\essai-aide-reelle.ps1 -Cas 14
+
       # (en dernier : la machine perd sa connexion quelques secondes, le temps que la carte se rallume)
       - name: "13. Relancer la carte réseau de la connexion : l'Aide la relance pour de vrai, la connexion revient ; le reste est refusé"
         if: ${{ !cancelled() }}

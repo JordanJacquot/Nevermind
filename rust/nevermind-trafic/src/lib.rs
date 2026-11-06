@@ -58,6 +58,9 @@ pub mod signaux {
     /// Envoyé au bloc des FPS : la trace réseau a été refusée par l'anti-triche de ce jeu, la lancer avant lui la
     /// prochaine fois (`Add-FpsVeilleJeu`) { Processus }
     pub const VEILLE_JEU: &str = "veille-jeu-ajouter";
+    /// Envoyé au bloc Perf : une mesure du lag commence ou finit (partie ou test rapide) { en_cours } ; pendant
+    /// qu'elle tourne, la trace réseau n'est pas mise en veille (`$script:LagSession` dans Update-FpsVeille)
+    pub const MESURE_LAG: &str = "mesure-lag";
 }
 
 /// Le panneau de détail ouvert par ce bloc
@@ -209,7 +212,8 @@ struct EnvLag<'a> {
 
 impl Env for EnvLag<'_> {
     fn flux(&mut self) -> Vec<String> {
-        match self.ctx.aide("flux.lire", &json!({}), 15000) {
+        // (Get-FluxReseau : Invoke-Aide -SansDemande, jamais de demande de Windows pendant une partie)
+        match self.ctx.aide_sans_demande("flux.lire", &json!({}), 15000) {
             Ok(v) => valeur::liste(&v).iter().filter(|x| valeur::vrai(x)).map(valeur::texte).collect(),
             Err(_) => Vec::new(),
         }
@@ -365,26 +369,33 @@ impl BlocTrafic {
         self.charger_annuaire(ctx);
         let reseau = sys.reseau();
         // Trace réseau par l'Aide (le serveur de la partie, en UDP) ; sinon le serveur de connexion du jeu (TCP)
+        // (Start-FluxReseau : Test-MesuresAide, puis Invoke-Aide -SansDemande ; une trace déjà lancée par la veille
+        //  d'avant le jeu, flux.veiller du bloc perf, est reprise telle quelle par l'Aide)
         let mut etw = false;
-        match ctx.aide("flux.demarrer", &json!({}), 20000) {
-            Ok(_) => {
-                etw = true;
-                ctx.journal("Lag : trace réseau par l'Aide");
-            }
-            Err(e) => {
-                ctx.journal(&format!("Lag : trace réseau par l'Aide impossible ({e})"));
-                // (un anti-triche refuse la trace une fois le jeu lancé : elle sera lancée avant lui la prochaine fois)
-                let refus = e.to_lowercase();
-                if pid != 0
-                    && (refus.contains("anti-triche") || refus.contains("refus"))
-                    && let Some((_, _, nom)) = sys.processus().into_iter().find(|(p, _, _)| *p == pid)
-                {
-                    effets.ajouter(Effet::Signal {
-                        nom: signaux::VEILLE_JEU.into(),
-                        donnees: json!({ "Processus": nom }),
-                    });
+        let mut erreur = String::new();
+        if ctx.mesures_aide() {
+            match ctx.aide_sans_demande("flux.demarrer", &json!({}), 20000) {
+                Ok(_) => {
+                    etw = true;
+                    ctx.journal("Lag : trace réseau par l'Aide");
+                }
+                Err(e) => {
+                    ctx.journal(&format!("Lag : trace réseau par l'Aide impossible ({e})"));
+                    erreur = e;
                 }
             }
+        }
+        // (un anti-triche refuse la trace une fois le jeu lancé : elle sera lancée avant lui la prochaine fois,
+        //  Test-FpsRefus puis Add-FpsVeilleJeu)
+        if !etw
+            && pid != 0
+            && nevermind_noyau::aide::fps_refus(&erreur)
+            && let Some((_, _, nom)) = sys.processus().into_iter().find(|(p, _, _)| *p == pid)
+        {
+            // (tout de suite, comme Add-FpsVeilleJeu dans Start-LagSession : la ligne du journal vient avant celle de
+            //  la mesure ; le signal reste pour l'hôte, qui n'a alors plus rien à ajouter)
+            ctx.ajouter_fps_veille(&nom);
+            effets.ajouter(Effet::Signal { nom: signaux::VEILLE_JEU.into(), donnees: json!({ "Processus": nom }) });
         }
         let pings = Box::new(lag::pings::Moniteur::nouveau(sys.pingeur(), 500));
         let s2 = sys.clone();
@@ -405,6 +416,7 @@ impl BlocTrafic {
         ));
         self.lag = Some(s);
         self.passage_lag = Some(self.maintenant());
+        effets.ajouter(Effet::Signal { nom: signaux::MESURE_LAG.into(), donnees: json!({ "en_cours": true }) });
         effets.ajouter(Effet::Rafraichir);
     }
 
@@ -441,8 +453,10 @@ impl BlocTrafic {
     pub fn arreter_lag(&mut self, ctx: &Contexte, effets: &mut Effets) {
         let Some(mut s) = self.lag.take() else { return };
         self.passage_lag = None;
+        effets.ajouter(Effet::Signal { nom: signaux::MESURE_LAG.into(), donnees: json!({ "en_cours": false }) });
+        // (Stop-FluxReseau : Invoke-Aide -SansDemande)
         if s.etw {
-            let _ = ctx.aide("flux.arreter", &json!({}), 15000);
+            let _ = ctx.aide_sans_demande("flux.arreter", &json!({}), 15000);
         }
         self.recevoir_annuaire(ctx);
         self.recevoir_lieux(ctx);

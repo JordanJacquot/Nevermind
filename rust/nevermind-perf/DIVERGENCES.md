@@ -30,10 +30,32 @@ direct d'`onglets.ps1`, `jeu.ps1` (mode jeu, partie, mesure des FPS, compteur), 
   la page RAM), au lieu de `Kill()` sur place puis l'Aide pour les programmes administrateur. Mêmes refus.
 - **Mesure des FPS** : seulement par l'Aide (`fps.demarrer`, `fps.lire` toutes les 250 ms, `fps.arreter`). Le repli
   sur place de PowerShell (PresentMon lancé par Nevermind, contrôle de signature) n'est pas porté : sans droits il est
-  refusé par Windows, et c'est lui qui lançait un programme.
-- **Veille avant les jeux à anti-triche** (`fps.veiller`) : l'Aide n'est pas réveillée pour elle (PowerShell regardait
-  seulement si elle répondait) : appel si l'Aide a déjà répondu, sinon un essai toutes les 10 minutes. La trace réseau
-  (`flux.veiller`, lag.ps1) est au bloc réseau.
+  refusé par Windows, et c'est lui qui lançait un programme. Sans Aide joignable (Test-MesuresAide faux), le journal
+  dit « Mesure des FPS: l'Aide ne répond pas. » au lieu des lignes du repli.
+- **Veille avant les jeux à anti-triche** (Update-FpsVeille, Test-FluxVeilleUtile, Stop-FluxVeille) : comme
+  PowerShell, `fps.veiller` PUIS `flux.veiller` (la trace réseau de « Lag en ligne », seulement si un jeu guetté est
+  installé et la mesure du lag active, pas pendant une mesure du lag : signal « mesure-lag » du bloc trafic), au plus
+  toutes les 30 s, seulement si l'Aide écoute (`aide_joignable(1)` puis `aide_texte` : jamais de réveil ni de demande
+  de Windows) ; `flux.arreter` quand plus aucun jeu guetté n'est installé. Seule différence : la ligne « en veille
+  avant ... » est écrite au même passage (PowerShell l'écrivait au passage suivant, la demande tournant en fond), et
+  le message d'erreur est celui de l'Aide, sans « Exception lors de l'appel de « Texte » ... » autour.
+
+## Défauts de la 2.0.0 corrigés le 06/11 (partie de Battlefield 6 de Jordan, 47 min, rien mesuré)
+
+- **Aucune partie mesurée** : l'hôte donnait aux blocs le dossier de Mindset.exe comme dossier de l'appli, et
+  `demarrer_cible` cherchait PresentMon dans `<dossier>\outils-tiers` ; le zip le met dans `fichiers\outils-tiers`
+  (outils\contenu-rust.ps1), où l'Aide le lance. Le bloc s'arrêtait sur une annonce à l'écran (caché pendant le jeu),
+  sans rien au journal ni à l'Aide : aucun `fps.demarrer`, rien dans fps.json. Corrigé dans l'hôte
+  (`programme::dossier_appli` : `<dossier>\fichiers`, le `$AppDir` de PowerShell). La page FPS du bloc jeux, qui
+  cherche au même endroit, disait aussi à tort « PresentMon est absent ».
+- **Trace réseau refusée par l'anti-triche** : personne ne demandait `flux.veiller` (la veille était « laissée » au
+  bloc réseau, qui ne la faisait pas) ; la trace était démarrée au lancement du jeu, après lui, et refusée.
+- **Demandes à l'Aide** : `fps.demarrer`, `fps.lire`, `fps.arreter` et la veille passaient par `ctx.aide` (réveil de
+  l'Aide et, en dernier recours, demande de Windows) ; maintenant comme PowerShell (`[AideClient]::Texte` après
+  Test-MesuresAide). `fps.arreter` est envoyé à chaque fin de mesure (avant : pas après 20 lectures ratées).
+- Juge : `nevermind-appli/tests/juges/veille-aide.json` (8 scénarios, `outils\exporter-juges-veille.ps1`, la vraie
+  FrameMon de natif.cs), rejoué par `nevermind-appli/tests/veille_aide.rs` (blocs perf et trafic contre une fausse
+  Aide sur le canal de test) : même suite de demandes, même journal, même fps.json.
 - **Bilan de fin de partie** : calculé dans un autre fil (comme BilanAsync), relevé au passage suivant.
 - **Compteur par-dessus le jeu** : fenêtre Win32 native (UpdateLayeredWindow, transparente pixel par pixel, souris qui
   passe au travers, jamais le focus, hors Alt+Tab), dans son propre fil créé à la première demande. Police Consolas
