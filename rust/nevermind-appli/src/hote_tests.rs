@@ -895,3 +895,37 @@ fn etat_json_pour_mindset() {
     assert!(!f.exists());
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// « Lancer » d'un jeu : les adresses des lanceurs que la bibliothèque produit (nevermind-jeux) passent, le reste non
+/// (07/11/2026 : steam://rungameid/4080220, EA SPORTS FC 27, refusée, « Ouverture impossible »).
+#[test]
+fn les_adresses_des_lanceurs_de_jeux_sont_permises() {
+    for a in [
+        "steam://rungameid/4080220",
+        "steam://nav/games",
+        "steam://uninstall/4080220",
+        "com.epicgames.launcher://apps/Fortnite?action=launch&silent=true",
+        "uplay://launch/635/0",
+        "battlenet://Pro",
+        r"shell:AppsFolder\Microsoft.MinecraftUWP_8wekyb3d8bbwe!App",
+        "windowsdefender://threatsettings",
+        "ms-settings:appsfeatures",
+        "https://github.com/JordanJacquot/Nevermind",
+        r"C:\Jeux\jeu.exe",
+    ] {
+        assert!(adresse_permise(a), "refusée à tort : {a}");
+    }
+    for a in [
+        "",
+        "cmd.exe",
+        "file:///C:/x.bat",
+        "javascript:alert(1)",
+        "ms-msdt:/id",
+        "search-ms:query=x",
+        " steam://rungameid/1",
+        "steamx",
+        "é",
+    ] {
+        assert!(!adresse_permise(a), "permise à tort : {a}");
+    }
+}

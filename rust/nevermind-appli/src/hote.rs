@@ -63,6 +63,26 @@ pub enum Demande {
     Relancer,
 }
 
+/// Les adresses que `Demande::OuvrirAdresse` peut confier à l'Explorateur : le web, les Paramètres et la Sécurité de
+/// Windows, un fichier ou un dossier de ce PC, et les lanceurs de jeux que la bibliothèque sait reconnaître
+/// (nevermind-jeux : biblio.rs et lancement.rs). Jusqu'au 07/11/2026, les lanceurs manquaient : « Lancer » d'un jeu
+/// Steam (ou Epic, Ubisoft, Battle.net, Xbox) ne faisait rien (vu par Jordan avec EA SPORTS FC 27).
+pub fn adresse_permise(a: &str) -> bool {
+    const DEBUTS: [&str; 9] = [
+        "https://",
+        "http://",
+        "ms-settings:",
+        "windowsdefender://",
+        "steam://",
+        "com.epicgames.launcher://",
+        "uplay://",
+        "battlenet://",
+        "shell:AppsFolder\\",
+    ];
+    DEBUTS.iter().any(|d| a.get(..d.len()).is_some_and(|x| x.eq_ignore_ascii_case(d)))
+        || std::path::Path::new(a).is_absolute()
+}
+
 /// Un écran qui ne montre rien (les signaux donnés avant que la page existe).
 struct SansEcran;
 impl Ecran for SansEcran {

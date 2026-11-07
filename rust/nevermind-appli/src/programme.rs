@@ -512,11 +512,7 @@ impl Etat {
                     }
                 }
                 Demande::OuvrirAdresse(a) => {
-                    let permise = a.starts_with("https://")
-                        || a.starts_with("http://")
-                        || a.starts_with("ms-settings:")
-                        || Path::new(&a).is_absolute();
-                    if !permise || self.systeme.ouvrir_par_explorateur(&a).is_err() {
+                    if !crate::hote::adresse_permise(&a) || self.systeme.ouvrir_par_explorateur(&a).is_err() {
                         self.journal(&format!("Ouverture impossible : {}", a.chars().take(120).collect::<String>()));
                     }
                 }
