@@ -12,9 +12,10 @@
 # cadratins et lance le test automatique (outils\tester.ps1). -SansTest saute le test (urgence).
 #
 # Nevermind en Rust (rust\nevermind-appli ; contenu du zip : outils\contenu-rust.ps1) :
-#   .\outils\publier.ps1 -Rust -Preversion -Version 2.0.0 -Notes "..."   publie Nevermind en Rust en version d'essai :
-#                                                                        seuls ceux qui ont coché « Recevoir les versions
-#                                                                        d'essai » de Nevermind dans Mindset la reçoivent
+#   .\outils\publier.ps1 -Rust -Version 2.0.2 -Notes "..."               publie Nevermind en Rust pour tout le monde
+#   .\outils\publier.ps1 -Rust -Preversion -Version 2.0.2 -Notes "..."   en version d'essai : seuls ceux qui ont coché
+#                                                                        « Recevoir les versions d'essai » de Nevermind dans
+#                                                                        Mindset la reçoivent
 #   .\outils\publier.ps1 -Rust -Essai                                     essai à blanc : rien n'est modifié, envoyé ni
 #                                                                        publié (voir plus bas)
 #
@@ -27,9 +28,9 @@
 # outils\verifier-zip-rust.ps1 revérifie son contenu (fichiers exacts, version.json, fiches de version, pas de
 # construction d'essai, aucun runtime C à part). Ensuite seulement : signature, tag, préversion. Le numéro doit être plus
 # grand que la dernière version PowerShell (Mindset ne revient jamais en arrière). La copie installée à la racine de ce
-# dépôt n'est pas touchée (c'est Mindset qui met Nevermind à jour). -Rust demande -Preversion (ou -Beta) : Nevermind en
-# Rust ne va pas encore à tout le monde (après l'essai de Jordan et de ses amis seulement). Pour revenir en arrière : une
-# version PowerShell normale plus haute (par exemple 2.0.1).
+# dépôt n'est pas touchée (c'est Mindset qui met Nevermind à jour). Sans -Preversion, la version va à tout le monde
+# (décision de Jordan du 07/11 : à 4 utilisateurs, pas de version d'essai). Pour revenir en arrière : une version
+# PowerShell normale plus haute.
 #
 # -Essai avec -Rust : les mêmes vérifications, sans rien écrire dans le dépôt ni rien envoyer sur GitHub. Le zip est
 # celui que GitHub a déjà construit pour le commit en cours (seulement lu), ou -ZipLocal <Nevermind.zip> (un zip fait sur
@@ -56,7 +57,6 @@ if ($Rust) {
     . (Join-Path $PSScriptRoot 'contenu-rust.ps1')
     if ($Beta) { $Preversion = $true }   # (-Beta : le nom de la préversion dans la version PowerShell)
     if (-not (Get-VersionNevermindRust $racine)) { throw 'Nevermind en Rust introuvable : rust\nevermind-appli\Cargo.toml.' }
-    if (-not $Essai -and -not $Preversion) { throw 'Nevermind en Rust ne se publie pour l''instant qu''en version d''essai : ajoute -Preversion.' }
     if ($Essai -and -not $Version) { $Version = Get-VersionNevermindRust $racine }
     if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Numéro de version invalide : $Version (exemple : 2.0.0)" }
     # Plus grand que la dernière version PowerShell (Nevermind.ps1 et les tags) : Mindset ne revient jamais à une version
@@ -143,7 +143,8 @@ function Get-FichiersGitNevermind {
 
 if ($Rust) {
     $zipRust = Join-Path $racine 'Nevermind.zip'
-    $titre = "Nevermind $Version (version d'essai)"
+    $titre = if ($Preversion) { "Nevermind $Version (version d'essai)" } else { "Nevermind $Version" }
+    $optionsGh = if ($Preversion) { @('--prerelease') } else { @('--latest') }
     # Les fichiers où outils\version-rust.ps1 écrit le numéro
     $siensRust = @('rust/nevermind-appli/Cargo.toml', 'rust/Cargo.lock', 'Nevermind/fichiers/Nevermind.ps1', 'outils/LISEZMOI-rust.txt')
     # 1. Tout est commité : la version publiée est celle de git (GitHub construit le commit, pas ce dossier). Une
@@ -209,7 +210,7 @@ if ($Rust) {
     if (-not $Notes) { $Notes = "Nevermind $Version" }
     if ($Essai) {
         Write-Host "Essai fini : $zipRust (Nevermind $Version en Rust, signé avec une clé jetable). Rien n'est publié." -ForegroundColor Green
-        Write-Host "Une vraie publication ferait : tag v$Version, envoi, puis gh release create v$Version Nevermind.zip Nevermind.zip.sig --title `"$titre`" --prerelease."
+        Write-Host "Une vraie publication ferait : tag v$Version, envoi, puis gh release create v$Version Nevermind.zip Nevermind.zip.sig --title `"$titre`" $($optionsGh -join ' ')."
         return
     }
 
@@ -219,9 +220,9 @@ if ($Rust) {
     try {
         Invoke-Native git @('tag', "v$Version")
         Invoke-Native git @('push', 'origin', "v$Version")
-        Invoke-Native gh @('release', 'create', "v$Version", $zipRust, "$zipRust.sig", '--title', $titre, '--notes', $Notes, '--prerelease')
+        Invoke-Native gh (@('release', 'create', "v$Version", $zipRust, "$zipRust.sig", '--title', $titre, '--notes', $Notes) + $optionsGh)
     } finally { Pop-Location }
-    "Nevermind $Version (Rust, version d'essai) publiée."
+    if ($Preversion) { "Nevermind $Version (Rust, version d'essai) publiée." } else { "Nevermind $Version (Rust) publiée pour tout le monde." }
     return
 }
 
