@@ -58,3 +58,22 @@ fn les_animations_sans_fin_avancent_par_pas() {
     }
     assert!(vues >= 4, "kit.css : les animations en pas ont disparu ({vues})");
 }
+
+/// Les bulles des anneaux (page Ton PC : processeur, mémoire vive, carte graphique, température) ne doivent pas
+/// s'emballer quand la valeur change (vu par Jordan le 07/11/2026, Nevermind ouvert depuis 14 h) : leur position
+/// n'est plus « secondes depuis l'ouverture × vitesse », mais un courant avancé image par image, gardé entre 0 et 2π.
+#[test]
+fn les_bulles_des_anneaux_ne_s_emballent_pas_quand_la_valeur_change() {
+    let js = lire("plasma.js");
+    assert!(
+        !js.contains("t * (6.0 + v * 5.0)"),
+        "plasma.js : la position des bulles multiplie de nouveau le temps par la vitesse"
+    );
+    assert!(
+        js.contains("sin(u * 70.0 - ph)"),
+        "plasma.js : le shader de l'anneau ne lit plus le courant de bulles (ph)"
+    );
+    assert!(js.contains("% TOUR"), "plasma.js : le courant de bulles n'est plus gardé entre 0 et 2π");
+    assert_eq!(js.matches("ph: { value: 0 }").count(), 2, "plasma.js : un anneau n'a plus son courant de bulles");
+    assert_eq!(js.matches("vitesseBulles(").count(), 2, "plasma.js : un anneau n'avance plus son courant de bulles");
+}

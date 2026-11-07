@@ -31,13 +31,20 @@ function demarrer() {
   // ---------------------------------------------------------------- les shaders : l'anneau et le bord de plasma
   const vsUv = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
   // L'anneau : le plasma coule du cyan au violet puis au magenta le long de la partie remplie ; orange en alerte
-  const fsAnneau = `uniform float t; uniform float v; uniform float force; uniform float alerte; uniform vec3 c1; uniform vec3 c2; uniform vec3 c3; uniform vec3 co; varying vec2 vUv;
+  // (ph : où en est le courant de bulles le long de l'anneau, avancé image par image par vitesseBulles. Avant, c'était
+  // t * vitesse : quand la valeur changeait, t, qui compte les secondes depuis l'ouverture (des dizaines de milliers),
+  // multipliait le moindre écart, et les bulles sautaient comme folles jusqu'à ce que l'anneau ait rejoint sa valeur)
+  const fsAnneau = `uniform float t; uniform float ph; uniform float v; uniform float force; uniform float alerte; uniform vec3 c1; uniform vec3 c2; uniform vec3 c3; uniform vec3 co; varying vec2 vUv;
     void main() { float u = vUv.x; float dedans = step(u, v); float k = clamp(u / max(v, 0.001), 0.0, 1.0);
       vec3 c = k < 0.5 ? mix(c1, c2, k * 2.0) : mix(c2, c3, k * 2.0 - 1.0); c = mix(c, co, alerte);
-      float n = sin(u * 70.0 - t * (6.0 + v * 5.0)) * sin(vUv.y * 6.283 + t * 2.0) * 0.5 + 0.5; float n2 = sin(u * 23.0 + t * 1.3) * sin(vUv.y * 12.566 - t * 3.0) * 0.5 + 0.5;
+      float n = sin(u * 70.0 - ph) * sin(vUv.y * 6.283 + t * 2.0) * 0.5 + 0.5; float n2 = sin(u * 23.0 + t * 1.3) * sin(vUv.y * 12.566 - t * 3.0) * 0.5 + 0.5;
       vec3 vif = c * (0.55 + 0.6 * n * n2) * force + vec3(1.0) * pow(n * n2, 4.0) * 0.5;
       float bout = smoothstep(0.035, 0.0, abs(u - v)) * 1.2 * step(v, 0.999) * step(0.004, v);
       gl_FragColor = vec4(mix(vec3(0.10, 0.09, 0.22), vif, dedans) + c * bout, 1.0); }`;
+  // Le courant de bulles d'un anneau avance de dt secondes à sa vitesse du moment (plus vite quand l'anneau est plus
+  // rempli) ; gardé entre 0 et 2π (le même dessin), pour rester précis même après des jours d'ouverture
+  const TOUR = Math.PI * 2;
+  const vitesseBulles = (ph, dt, v) => ((ph || 0) + Math.max(0, Math.min(0.1, dt)) * (6 + v * 5)) % TOUR;
   // Le bord d'une tuile : un rectangle arrondi de plasma qui tourne
   const fsBord = `uniform float t; uniform float force; uniform vec2 taille; uniform vec3 c1; uniform vec3 c2; uniform vec3 c3; uniform vec3 co; uniform float alerte; varying vec2 vUv;
     float sd(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
@@ -165,7 +172,7 @@ function demarrer() {
           let anneau = null;
           const v = parseFloat(t.gros);
           if (isFinite(v) && /\/\s*100/.test(t.petit || '')) {
-            anneau = new THREE.Mesh(geo.anneau, new THREE.ShaderMaterial({ vertexShader: vsUv, fragmentShader: fsAnneau, uniforms: { t: { value: 0 }, v: { value: Math.max(0, Math.min(1, v / 100)) }, force: { value: 1 }, alerte: { value: 0 }, ...unis() } }));
+            anneau = new THREE.Mesh(geo.anneau, new THREE.ShaderMaterial({ vertexShader: vsUv, fragmentShader: fsAnneau, uniforms: { t: { value: 0 }, ph: { value: 0 }, v: { value: Math.max(0, Math.min(1, v / 100)) }, force: { value: 1 }, alerte: { value: 0 }, ...unis() } }));
             anneau.rotation.z = Math.PI / 2; anneau.position.set(0, 0.56, 0.3); g.add(anneau);
           }
           const reflet = new THREE.Mesh(geo.reflet, new THREE.MeshBasicMaterial({ color: 0xFFFFFF, transparent: true, opacity: 0.12 })); reflet.position.set(0, 1.0, 0.27); g.add(reflet);
@@ -189,6 +196,7 @@ function demarrer() {
       aller(i, tout) { this.cible = Math.max(0, Math.min(this.items.length - 1, i)); if (tout) this.pos = this.cible; },
       image(t) {
         const hote = document.getElementById('accueil3d'); if (!hote) return;
+        const dt = this.tPrec == null ? 0 : t - this.tPrec; this.tPrec = t;
         if (toile.parentElement !== hote) hote.prepend(toile);
         const w = hote.clientWidth, h = hote.clientHeight; if (!w || !h) return;
         if (this.w !== w || this.h !== h) {
@@ -205,7 +213,7 @@ function demarrer() {
           x.g.position.y += ((s ? 0.25 : 0) - x.g.position.y) * 0.1; x.g.position.z = proche * 0.7 - Math.min(2, Math.abs(d)) * 0.25;
           x.g.rotation.y = -Math.max(-1, Math.min(1, d)) * 0.28 + (s ? this.souris.x * 0.2 : 0); x.g.rotation.x += ((s ? this.souris.y * 0.14 : 0) - x.g.rotation.x) * 0.1;
           const u = x.bord.material.uniforms; u.t.value = t; u.force.value += ((s ? 1 : 0.2 + proche * 0.4) - u.force.value) * 0.1;
-          if (x.anneau) { x.anneau.material.uniforms.t.value = t; x.anneau.material.uniforms.force.value = s ? 1.2 : 0.7; }
+          if (x.anneau) { const ua = x.anneau.material.uniforms; ua.t.value = t; ua.ph.value = vitesseBulles(ua.ph.value, dt, ua.v.value); ua.force.value = s ? 1.2 : 0.7; }
           if (x.img) { const b = x.img.userData.base, c = s ? b + Math.abs(Math.sin(t * 2.6)) * 0.07 : b; x.img.position.y += (c - x.img.position.y) * (s ? 0.6 : 0.15); }
         });
         r.render(scene, cam);
@@ -247,20 +255,22 @@ function demarrer() {
   const toileA = document.getElementById('plasma');
   const rA = new THREE.WebGLRenderer({ canvas: toileA, antialias: true, alpha: true }); rA.setPixelRatio(Math.min(devicePixelRatio, 2)); rA.autoClear = false; rA.setClearColor(0x000000, 0);
   const sA = new THREE.Scene(), camA = new THREE.PerspectiveCamera(30, 1, 0.1, 20); camA.position.z = 4.7;
-  const matA = new THREE.ShaderMaterial({ vertexShader: vsUv, fragmentShader: fsAnneau, uniforms: { t: { value: 0 }, v: { value: 0.5 }, force: { value: 1.05 }, alerte: { value: 0 }, ...unis() } });
+  const matA = new THREE.ShaderMaterial({ vertexShader: vsUv, fragmentShader: fsAnneau, uniforms: { t: { value: 0 }, ph: { value: 0 }, v: { value: 0.5 }, force: { value: 1.05 }, alerte: { value: 0 }, ...unis() } });
   const geosA = {}; const anneauA = new THREE.Mesh(new THREE.TorusGeometry(1, 0.14, 32, 220), matA); sA.add(anneauA);
   const sourisP = { x: 0, y: 0 }; addEventListener('pointermove', (e) => { sourisP.x = e.clientX; sourisP.y = e.clientY; });
   let aEffacer = false;
   // La valeur affichée de chaque anneau, gardée entre deux rendus : une page redessinée (mise à jour toutes les
   // quelques secondes) recrée ses anneaux, qui repartent alors de leur valeur d'avant et non de 0. La clé : la page,
   // puis l'élément nommé le plus proche (data-id, data-k : une mesure, une ligne...), sinon la place de l'anneau
-  const vus = new Map();
+  const vus = new Map(), courants = new Map();   // (courants : le courant de bulles de chaque anneau, même clé)
+  let tA = null;
   const cleAnneau = (el, i) => {
     const pg = el.closest('.page, .accueil, .question'), n = el.closest('[data-id], [data-k]');
     return `${pg?.dataset.id || ''}|${n && n !== pg ? n.dataset.id || n.dataset.k : `#${i}`}`;
   };
   function anneaux(t) {
     const W = innerWidth, H = innerHeight, els = document.querySelectorAll('#ecran [data-anneau]');
+    const dt = tA == null ? 0 : t - tA; tA = t;
     if (!els.length) { if (aEffacer) { rA.setScissorTest(false); rA.clear(); aEffacer = false; } return; }
     if (toileA.width !== Math.round(W * rA.getPixelRatio()) || toileA.height !== Math.round(H * rA.getPixelRatio())) rA.setSize(W, H, false);
     rA.setScissorTest(false); rA.clear(); rA.setScissorTest(true); aEffacer = true;
@@ -271,7 +281,8 @@ function demarrer() {
       const b = el.getBoundingClientRect(); if (b.width < 4 || b.bottom < z.top || b.top > z.bottom || el.offsetParent === null) return;
       const cible = +el.dataset.anneau || 0; el._v += (cible - el._v) * 0.06; vus.set(el._cle, el._v);
       const ep = +(el.dataset.ep || 0.14); if (!geosA[ep]) geosA[ep] = new THREE.TorusGeometry(1, ep, 32, 220); anneauA.geometry = geosA[ep];
-      const u = matA.uniforms; u.t.value = t; u.v.value = el._v; u.alerte.value = el.dataset.alerte ? 1 : 0;
+      const ph = vitesseBulles(courants.get(el._cle), dt, el._v); courants.set(el._cle, ph);
+      const u = matA.uniforms; u.t.value = t; u.ph.value = ph; u.v.value = el._v; u.alerte.value = el.dataset.alerte ? 1 : 0;
       const dx = (sourisP.x - (b.left + b.width / 2)) / W, dy = (sourisP.y - (b.top + b.height / 2)) / H;
       anneauA.rotation.set(dy * 0.6, dx * 0.6, Math.PI / 2);
       const x = Math.floor(b.left), y = Math.floor(H - b.bottom), w = Math.ceil(b.width), hh = Math.ceil(b.height);
