@@ -51,7 +51,7 @@ pub struct Suite {
 }
 
 /// L'état de « Ton PC » : la dernière analyse, la sauvegarde, les points ignorés, la fiche ouverte
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Session {
     pub entrees: Entrees,
     /// Les programmes au démarrage tels que lus (activés ou pas : relu dans le registre à chaque analyse)

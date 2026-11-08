@@ -36,6 +36,10 @@ struct FauxPc {
     reponse_restauration: String,
     choix_ecran: String,
     statut: String,
+    /// Le point de restauration attend ce feu (60 s au plus) : un PC lent (audit G3)
+    restauration_lente: Option<std::sync::mpsc::Receiver<()>>,
+    /// Les points de restauration demandés
+    restaurations: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl FauxPc {
@@ -115,7 +119,13 @@ impl Pc for FauxPc {
                     json!({ "Running": net::champ_vrai(&p, "Lancer"), "StartType": net::champ_texte(&p, "Demarrage") }),
                 );
             }
-            "restauration.creer" => return Ok(json!(self.reponse_restauration)),
+            "restauration.creer" => {
+                self.restaurations.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if let Some(r) = self.restauration_lente.take() {
+                    let _ = r.recv_timeout(std::time::Duration::from_secs(60));
+                }
+                return Ok(json!(self.reponse_restauration));
+            }
             "nettoyage.lancer" => {
                 return Ok(
                     json!({ "Freed": 1048576.0, "Deleted": 3, "Skipped": 1, "Errors": 0, "Log": [format!("[SUPPRIMÉ] C:\\Faux\\{}\\a.tmp - 1,0 Mo", net::champ_texte(&p, "Id"))] }),
@@ -730,6 +740,124 @@ fn le_bloc_sur_un_faux_pc() {
     let mut e = Effets::default();
     assert!(b.action(&ctx, "fiche:ignore", &Value::Null, &mut e));
     assert!(b.session().journal_resultat.is_none(), "revenu en arrière");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// Audit G3 : « Tout corriger » commence par un point de restauration, qui peut attendre l'Aide jusqu'à 10 min. Le
+/// geste part dans un travail de fond : le clic rend la main tout de suite, les pages répondent, un deuxième clic ne
+/// refait rien, et à la fin tout est exactement comme quand le geste était fait sur place (mêmes effets, même fiche,
+/// même sauvegarde, mêmes gestes sur le PC).
+#[test]
+fn tout_corriger_ne_fige_pas_pendant_le_point_de_restauration() {
+    use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
+    use std::time::{Duration, Instant};
+    let cas = lire("corrections.json");
+    let c = cas.iter().find(|c| !c["sortie"]["annuler"].is_null()).expect("un cas avec retour en arrière");
+    // Le geste joué de bout en bout ; `partage` : le contexte de Nevermind (travaux de fond), sinon sur place
+    let jouer = |partage: bool| {
+        let (mut pc, s, _) = charger(&c["entree"]);
+        let (feu, attente) = std::sync::mpsc::channel::<()>();
+        let restaurations = pc.restaurations.clone();
+        if partage {
+            pc.restauration_lente = Some(attente);
+        }
+        let lu = nevermind_pc::lecture::Lu { entrees: s.entrees.clone(), demarrage: s.demarrage.clone() };
+        let mut b = nevermind_pc::BlocPc::sur(Box::new(pc), lu);
+        let d = nevermind_noyau::dossier_essai(&format!("pc-fond-{partage}"));
+        let _ = std::fs::remove_dir_all(&d);
+        let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true);
+        let ctx = if partage { ctx.partage() } else { std::sync::Arc::new(ctx) };
+        let _ = b.pages(&ctx, "pc");
+        let mut tout = Vec::new();
+        let mut e = Effets::default();
+        assert!(b.action(&ctx, "toutcorriger", &Value::Null, &mut e));
+        tout.extend(e.0);
+        let _ = b.pages(&ctx, "fiche");
+        let mut e = Effets::default();
+        let debut = Instant::now();
+        assert!(b.action(&ctx, "fiche:run", &Value::Null, &mut e));
+        let duree = debut.elapsed();
+        tout.extend(e.0);
+        if partage {
+            assert!(duree < Duration::from_secs(2), "« Exécuter » a pris {duree:?} : le fil des blocs était figé");
+            assert!(b.travail_en_cours(), "le geste n'est pas parti en fond");
+            // Pendant le point de restauration : les pages répondent, un deuxième clic ne refait rien
+            let fin = Instant::now() + Duration::from_secs(10);
+            while restaurations.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                assert!(Instant::now() < fin, "le point de restauration n'est pas demandé");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let debut = Instant::now();
+            let p = b.pages(&ctx, "fiche");
+            assert!(p.contains_key("fiche") && debut.elapsed() < Duration::from_secs(1), "la page ne répond pas");
+            let mut e = Effets::default();
+            assert!(b.action(&ctx, "fiche:run", &Value::Null, &mut e), "le deuxième clic est pris (sans rien faire)");
+            assert!(e.0.is_empty(), "le deuxième clic a fait quelque chose : {:?}", e.0);
+            feu.send(()).unwrap();
+            while b.travail_en_cours() {
+                assert!(Instant::now() < fin, "le geste ne finit pas");
+                std::thread::sleep(Duration::from_millis(10));
+                let mut e = Effets::default();
+                b.travaux_finis(&ctx, &mut e);
+                tout.extend(e.0);
+            }
+        }
+        assert_eq!(restaurations.load(std::sync::atomic::Ordering::SeqCst), 1, "un seul point de restauration");
+        let r = (
+            tout.into_iter().filter(|x| !matches!(x, Effet::Rafraichir)).collect::<Vec<_>>(),
+            b.session().fiche.clone(),
+            b.session().sv.clone(),
+            b.session().journal_resultat.clone(),
+        );
+        let _ = std::fs::remove_dir_all(&d);
+        r
+    };
+    let sur_place = jouer(false);
+    let en_fond = jouer(true);
+    assert_eq!(sur_place.1.as_ref().map(|f| f.mode.as_str()), Some("result"));
+    assert_eq!(en_fond.0, sur_place.0, "pas les mêmes effets");
+    assert_eq!(en_fond.1, sur_place.1, "pas la même fiche");
+    assert_eq!(en_fond.2, sur_place.2, "pas la même sauvegarde");
+    assert_eq!(en_fond.3, sur_place.3, "pas le même journal du résultat");
+}
+
+/// Audit G3 : dans un travail de fond, le vrai PC envoie son texte d'attente tout de suite (« Création du point de
+/// restauration... » avant la réponse de l'Aide) ; la fin du geste rend le reste comme avant (pastille retirée, dernier
+/// texte en message). Avec une fausse Aide (mode test) : rien ne touche le vrai PC.
+#[test]
+fn le_texte_d_attente_du_vrai_pc_part_tout_de_suite() {
+    use nevermind_noyau::{Contexte, Effet};
+    let d = nevermind_noyau::dossier_essai("pc-direct");
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true);
+    let vus = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let v = vus.clone();
+    let envoyes = std::sync::Mutex::new(Vec::<Effet>::new());
+    ctx.fausse_aide(std::sync::Arc::new(move |a: &str, _p: &Value| {
+        v.lock().unwrap().push(a.to_string());
+        Ok(json!("OK"))
+    }));
+    let envoi = |e: Effet| envoyes.lock().unwrap().push(e);
+    let mut p = nevermind_pc::systeme::PcWindows::nouveau(&ctx).en_direct(&envoi);
+    let mut sv = Sauvegarde::default();
+    let r = {
+        let mut m = Moteur::nouveau(&mut p, &mut sv, false);
+        m.point_de_restauration()
+    };
+    assert_eq!(r, Ok(Some(true)));
+    assert!(vus.lock().unwrap().contains(&"restauration.creer".to_string()), "la fausse Aide est appelée");
+    let occupe = |t: &str| Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": t }) };
+    assert_eq!(
+        envoyes.lock().unwrap().clone(),
+        vec![
+            occupe("Création du point de restauration (ça peut prendre une minute)..."),
+            occupe("Point de restauration créé.")
+        ],
+        "les textes d'attente partent tout de suite, dans l'ordre"
+    );
+    let a = p.annonces();
+    assert!(a.contains(&occupe("")), "la pastille est retirée à la fin : {a:?}");
+    assert!(a.contains(&Effet::Annonce("Point de restauration créé.".into())));
+    assert!(!a.iter().any(|x| *x == occupe("Point de restauration créé.")), "un texte d'attente en double : {a:?}");
     let _ = std::fs::remove_dir_all(&d);
 }
 

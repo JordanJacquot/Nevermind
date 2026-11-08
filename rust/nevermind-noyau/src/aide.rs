@@ -204,6 +204,11 @@ impl Contexte {
         })
     }
 
+    /// Une fausse Aide est-elle donnée (tests, construction d'essai) ?
+    pub fn a_fausse_aide(&self) -> bool {
+        verrou(&self.aide.fausse).is_some()
+    }
+
     /// Une fausse Aide pour les tests : toutes les demandes lui vont (jamais au canal), rien n'est lancé.
     pub fn fausse_aide(&self, f: FausseAide) {
         *verrou(&self.aide.fausse) = Some(f);
