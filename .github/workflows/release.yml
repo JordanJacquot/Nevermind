@@ -283,7 +283,7 @@ jobs:
       artifact-id: ${{ steps.depot.outputs.artifact-id }}
     steps:
       - name: "Récupérer le code"
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: "Numéro de version"
         id: version
@@ -386,7 +386,7 @@ jobs:
       # SignPath vérifie qu'il vient bien de ce workflow (origin verification).
       - name: "Déposer l'artefact non signé"
         id: depot
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Nevermind-non-signe
           path: _ci/a-signer
@@ -405,7 +405,7 @@ jobs:
     steps:
       # (seulement pour outils\zips.ps1, qui fait le zip depuis le dossier signé)
       - name: "Récupérer le code"
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: "Vérifier la configuration SignPath"
         env:
@@ -420,7 +420,7 @@ jobs:
       # Sans artifact-configuration-slug, SignPath prend la configuration d'artefact par défaut du projet.
       - name: "Demande de signature (approbation manuelle dans SignPath)"
         id: signpath
-        uses: signpath/github-action-submit-signing-request@v3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -482,7 +482,7 @@ jobs:
 
       # Récupéré ensuite par outils\publier.ps1 sur le PC de Jordan (signature RSA et Release)
       - name: "Déposer les zips signés"
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Nevermind-zip-signe
           path: _ci/sortie
