@@ -433,7 +433,7 @@ impl BlocReseau {
                 Ok(())
             }
             Geste::Partages => {
-                effets.ajouter(Effet::OuvrirAdresse("fsmgmt.msc".into()));
+                effets.ajouter(Effet::OuvrirAdresse(nevermind_noyau::programme_windows("fsmgmt.msc")));
                 Ok(())
             }
             // (par l'Aide, jusqu'à 15 min pour SMBv1, ou PowerShell : dans un travail de fond, audit G3)

@@ -90,3 +90,12 @@ pub trait Bloc: Send {
 pub fn dossier_essai(nom: &str) -> PathBuf {
     std::env::temp_dir().join(format!("nevermind-essai-{nom}-{}", std::process::id()))
 }
+
+/// Un programme de Windows (« fsmgmt.msc », « mdsched.exe »...) par son chemin complet dans System32, pris à Windows
+/// (jamais un programme du même nom posé ailleurs). L'hôte n'ouvre que les chemins complets (M8, audit du 08/11 :
+/// « Gérer les partages » et « Planificateur de tâches », donnés par leur seul nom, étaient refusés sans rien dire).
+pub fn programme_windows(nom: &str) -> String {
+    let d = windows::dossier_systeme();
+    let d = if d.trim().is_empty() { r"C:\Windows\System32".to_string() } else { d };
+    format!("{}\\{nom}", d.trim_end_matches('\\'))
+}

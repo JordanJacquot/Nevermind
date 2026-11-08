@@ -410,7 +410,7 @@ impl BlocProtection {
         }
         match &a.sorte {
             Sorte::Ouvrir(u) => effets.ajouter(Effet::OuvrirAdresse(u.clone())),
-            Sorte::Planificateur => effets.ajouter(Effet::OuvrirAdresse("taskschd.msc".into())),
+            Sorte::Planificateur => effets.ajouter(Effet::OuvrirAdresse(nevermind_noyau::programme_windows("taskschd.msc"))),
             Sorte::MettreAJourBase => {
                 self.mettre_a_jour_base();
                 rafraichir = false;
