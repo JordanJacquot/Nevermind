@@ -23,6 +23,7 @@ pub mod valeur;
 pub mod windows;
 
 use lag::session::{Env, Session};
+use nevermind_noyau::travaux::Rendu;
 use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
 use serde_json::{Map, Value, json};
 use serveurs::{Annuaire, Entree, Lieu, Reponse};
@@ -127,6 +128,8 @@ pub struct BlocTrafic {
     kit_alertes: Vec<Alerte>,
     attente: Option<Attente>,
     travaux: Travaux,
+    /// Les gestes longs par l'Aide (bloquer un programme) : dans un fil à part (audit G3)
+    fond: nevermind_noyau::travaux::Travaux<Vec<Effet>>,
     jeux_exes: Vec<String>,
     compteurs_ok: bool,
     aide_tcp_ko: Option<f64>,
@@ -156,6 +159,7 @@ impl Default for BlocTrafic {
             kit_alertes: Vec::new(),
             attente: None,
             travaux: Travaux::default(),
+            fond: Default::default(),
             jeux_exes: Vec::new(),
             compteurs_ok: false,
             aide_tcp_ko: None,
@@ -956,33 +960,58 @@ impl BlocTrafic {
         }
     }
 
-    /// `Block-TrafficApp` (après le « Oui ») : la règle du pare-feu par l'Aide, notée dans l'historique
+    /// `Block-TrafficApp` (après le « Oui ») : la règle du pare-feu par l'Aide, notée dans l'historique. L'Aide peut
+    /// mettre du temps (sa tâche à réveiller, la demande de Windows) : dans un travail de fond (audit G3), un seul à
+    /// la fois ; les messages arrivent à la fin, comme avant.
     fn bloquer(&mut self, ctx: &Contexte, cle: &str, effets: &mut Effets) {
         let Some(a) = self.app(cle) else { return };
         let (titre, chemin, services) = (a.titre.clone(), a.chemin.clone(), a.services.clone());
-        let nom = format!("Nevermind : bloque {titre}");
-        let svc: Vec<String> = services.iter().map(|s| s.nom.clone()).collect();
-        if let Err(e) =
-            ctx.aide("pare-feu.bloquer", &json!({ "Nom": nom, "Programme": chemin, "Services": svc }), 15000)
-        {
-            effets.ajouter(Effet::Annonce(e));
+        if self.fond.occupe() {
+            ctx.journal(&format!("Trafic : blocage de {titre} pas lancé, un geste est encore en cours"));
             return;
         }
-        effets.ajouter(Effet::Signal {
-            nom: signaux::HISTORIQUE.into(),
-            donnees: json!({ "titre": format!("Internet bloqué pour {titre}"), "details": [chemin], "log": [{ "Type": "fw", "Name": nom }] }),
+        self.fond.lancer(ctx, "bloquer", move |fond| {
+            let ctx = fond.ctx;
+            let mut effets = Vec::new();
+            let nom = format!("Nevermind : bloque {titre}");
+            let svc: Vec<String> = services.iter().map(|s| s.nom.clone()).collect();
+            if let Err(e) =
+                ctx.aide("pare-feu.bloquer", &json!({ "Nom": nom, "Programme": chemin, "Services": svc }), 15000)
+            {
+                effets.push(Effet::Annonce(e));
+                return effets;
+            }
+            effets.push(Effet::Signal {
+                nom: signaux::HISTORIQUE.into(),
+                donnees: json!({ "titre": format!("Internet bloqué pour {titre}"), "details": [chemin], "log": [{ "Type": "fw", "Name": nom }] }),
+            });
+            let windir = std::env::var("windir").unwrap_or_else(|_| r"C:\Windows".into()).to_lowercase();
+            let systeme = !services.is_empty() || chemin.to_lowercase().starts_with(&format!("{windir}\\"));
+            if !systeme {
+                // (la règle commune de fermeture est celle de l'Aide : jamais un service, Windows, la suite...)
+                // (l'Aide vient de poser la règle du pare-feu : jamais une deuxième demande de Windows pour la fermeture)
+                let _ = ctx.aide_sans_demande("processus.fermer", &json!({ "Chemin": chemin }), 15000);
+            }
+            effets.push(Effet::Annonce(format!(
+                "« {titre} » est bloqué{}.\n\nPour annuler : page Sauvegarde, historique, « Annuler ».",
+                if systeme { "" } else { " et a été fermé" }
+            )));
+            effets
         });
-        let windir = std::env::var("windir").unwrap_or_else(|_| r"C:\Windows".into()).to_lowercase();
-        let systeme = !services.is_empty() || chemin.to_lowercase().starts_with(&format!("{windir}\\"));
-        if !systeme {
-            // (la règle commune de fermeture est celle de l'Aide : jamais un service, Windows, la suite...)
-            // (l'Aide vient de poser la règle du pare-feu : jamais une deuxième demande de Windows pour la fermeture)
-            let _ = ctx.aide_sans_demande("processus.fermer", &json!({ "Chemin": chemin }), 15000);
+        self.relever_fond(effets);
+    }
+
+    /// Ce que les gestes longs ont rendu (sur le fil des blocs)
+    fn relever_fond(&mut self, effets: &mut Effets) {
+        for r in self.fond.relever() {
+            match r {
+                Rendu::Effet(e) => effets.ajouter(e),
+                Rendu::Fini { resultat: Ok(l), .. } => l.into_iter().for_each(|e| effets.ajouter(e)),
+                Rendu::Fini { resultat: Err(e), .. } => {
+                    effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")))
+                }
+            }
         }
-        effets.ajouter(Effet::Annonce(format!(
-            "« {titre} » est bloqué{}.\n\nPour annuler : page Sauvegarde, historique, « Annuler ».",
-            if systeme { "" } else { " et a été fermé" }
-        )));
     }
 
     // -----------------------------------------------------------------------------------------------------------
@@ -1256,7 +1285,12 @@ impl Bloc for BlocTrafic {
         false
     }
 
+    fn travaux_finis(&mut self, _ctx: &Contexte, effets: &mut Effets) {
+        self.relever_fond(effets);
+    }
+
     fn tic(&mut self, ctx: &Contexte, cache: bool, effets: &mut Effets) -> Option<Duration> {
+        self.relever_fond(effets);
         self.cache = cache;
         let maintenant = self.maintenant();
         let mut prochain = 60.0f64;

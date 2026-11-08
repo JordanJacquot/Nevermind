@@ -230,7 +230,7 @@ struct Kit {
 }
 
 /// L'état d'un service : son démarrage et s'il tourne (lecture de Windows, donnée par le programme).
-pub type EtatService = Box<dyn Fn(&str) -> Option<(String, bool)> + Send>;
+pub type EtatService = std::sync::Arc<dyn Fn(&str) -> Option<(String, bool)> + Send + Sync>;
 
 /// Les blocs et ce qui les entoure.
 pub struct Hote {
@@ -265,6 +265,9 @@ pub struct Hote {
     mindset: Map<String, Value>,
     /// Le dernier etat.json écrit, sans sa date (`$script:EtatMindsetEcrit`)
     mindset_ecrit: String,
+    /// Les travaux de fond de l'hôte (`sauvegarde-appliquer`, audit G3), et les demandes qui attendent leur tour
+    travaux: nevermind_noyau::travaux::Travaux<communs::Appliquee>,
+    sauvegardes_en_attente: Vec<Value>,
 }
 
 #[path = "hote_communs.rs"]
@@ -392,7 +395,9 @@ impl Hote {
             fiche: communs::Fiche::default(),
             infos: Default::default(),
             notifications: Vec::new(),
-            etat_service: Box::new(|_| None),
+            etat_service: std::sync::Arc::new(|_| None),
+            travaux: Default::default(),
+            sauvegardes_en_attente: Vec::new(),
             mindset: Map::new(),
             mindset_ecrit: String::new(),
         }
@@ -1154,6 +1159,7 @@ impl Hote {
         if !self.ctx.travaux_a_relever() {
             return;
         }
+        self.relever_hote(ecran);
         let mut refaire = false;
         for i in 0..self.blocs.len() {
             let mut eff = Effets::default();

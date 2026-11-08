@@ -699,6 +699,16 @@ fn sauvegarde_appliquer_notee_pour_revenir_en_arriere() {
         "Message": "1 réglage(s) coupé(s). Annulable depuis la page Sauvegarde, historique." }),
     ));
     h.recevoir(action("x", "accueil"), Duration::ZERO, &mut e);
+    // (les écritures passent par l'Aide, jusqu'à 2 min chacune : dans un travail de fond, audit G3 ; la fin est
+    //  relevée par la minuterie)
+    let debut = std::time::Instant::now();
+    let mut t = Duration::ZERO;
+    while h.ctx.historique().is_empty() {
+        assert!(debut.elapsed() < Duration::from_secs(10), "sauvegarde-appliquer ne finit pas");
+        std::thread::sleep(Duration::from_millis(20));
+        t += Duration::from_millis(200);
+        h.minuterie(t, &mut e);
+    }
     assert_eq!(h.ctx.registre_etat(cle, "Enabled")["Value"], 0, "écrit (faux registre d'essai)");
     let hist = h.ctx.historique();
     assert_eq!(hist[0]["Titre"], "Envois à Microsoft réduits");
@@ -711,6 +721,54 @@ fn sauvegarde_appliquer_notee_pour_revenir_en_arriere() {
     );
     assert!(o.iter().any(|x| x["texte"] == "1 réglage(s) coupé(s). Annulable depuis la page Sauvegarde, historique."));
     assert!(recus.borrow().iter().any(|r| r == "signal sauvegarde-changee {}"));
+}
+
+/// Audit G3 : `sauvegarde-appliquer` coupe des services par l'Aide (jusqu'à 60 s chacun) : dans un travail de fond.
+/// Le geste rend la main tout de suite ; à la fin, la même ligne d'historique qu'avant. Fausse Aide, faux service.
+#[test]
+fn sauvegarde_appliquer_ne_fige_pas() {
+    let b = Factice { prend: vec!["x".into()], ..Factice::default() };
+    let eff = b.effets.clone();
+    let mut h = hote(vec![Box::new(b)], "sauvegarde-appliquer-fond");
+    let _ = std::fs::remove_file(h.ctx.donnees.join("historique.json"));
+    h.ctx.oublier_reglages();
+    h.etat_service = std::sync::Arc::new(|_| Some(("Automatic".into(), true)));
+    let (feu, attente) = std::sync::mpsc::channel::<()>();
+    let attente = std::sync::Mutex::new(Some(attente));
+    h.ctx.fausse_aide(std::sync::Arc::new(move |_a: &str, _p: &Value| {
+        if let Some(r) = attente.lock().unwrap().take() {
+            let _ = r.recv_timeout(Duration::from_secs(60));
+        }
+        Ok(json!("ok"))
+    }));
+    let p = Rc::new(RefCell::new(Page::default()));
+    let mut e = EcranEssai(Rc::clone(&p));
+    h.recevoir(MessagePage::Pret, Duration::ZERO, &mut e);
+    eff.borrow_mut().push(signal(
+        "sauvegarde-appliquer",
+        json!({ "Titre": "Services coupés", "Details": [],
+        "Ecritures": [{ "Type": "svc", "Name": "NevermindEssaiService", "Demarrage": "Disabled" }], "Message": "" }),
+    ));
+    let debut = std::time::Instant::now();
+    h.recevoir(action("x", "accueil"), Duration::ZERO, &mut e);
+    assert!(
+        debut.elapsed() < Duration::from_secs(2),
+        "le geste a pris {:?} : le fil des blocs était figé",
+        debut.elapsed()
+    );
+    assert!(h.ctx.historique().is_empty(), "fini avant la réponse de l'Aide ?");
+    feu.send(()).unwrap();
+    let mut t = Duration::ZERO;
+    while h.ctx.historique().is_empty() {
+        assert!(debut.elapsed() < Duration::from_secs(10), "sauvegarde-appliquer ne finit pas");
+        std::thread::sleep(Duration::from_millis(20));
+        t += Duration::from_millis(200);
+        h.minuterie(t, &mut e);
+    }
+    let hist = h.ctx.historique();
+    assert_eq!(hist[0]["Titre"], "Services coupés");
+    assert_eq!(hist[0]["Log"][0]["Type"], "svc");
+    assert_eq!(hist[0]["Log"][0]["Name"], "NevermindEssaiService");
 }
 
 #[test]

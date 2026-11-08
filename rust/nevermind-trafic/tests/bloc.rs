@@ -272,3 +272,68 @@ fn surveillance_sans_demande_de_windows() {
         b.fermer(&ctx);
     }
 }
+
+/// Audit G3 : « Bloquer » un programme attend l'Aide (sa tâche à réveiller, la demande de Windows) : dans un travail
+/// de fond. Le « Oui » rend la main tout de suite, et la fin donne la même ligne d'historique et le même message
+/// qu'avant. Fausse Aide : rien sur le vrai PC.
+#[test]
+fn bloquer_un_programme_ne_fige_pas() {
+    use std::time::{Duration, Instant};
+    let ctx = contexte("bloc-trafic-fond").partage();
+    let (feu, attente) = std::sync::mpsc::channel::<()>();
+    let attente = std::sync::Mutex::new(Some(attente));
+    let demandes = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let d = demandes.clone();
+    ctx.fausse_aide(Arc::new(move |a: &str, _p: &Value| {
+        if a == "pare-feu.bloquer" {
+            d.lock().unwrap().push(a.to_string());
+            if let Some(r) = attente.lock().unwrap().take() {
+                let _ = r.recv_timeout(Duration::from_secs(60));
+            }
+        }
+        Err("pas dans ce test".into())
+    }));
+    let w = Arc::new(FauxWindows::default());
+    let mut b = BlocTrafic::avec_systeme(w.clone());
+    let mut e = Effets::default();
+    let _ = b.pages(&ctx, "trafic");
+    assert!(b.action(&ctx, "clic:BtnTraffic", &Value::Null, &mut e));
+    attendre_travaux(&mut b, &ctx, &mut e);
+    let _ = b.pages(&ctx, "trafic");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "trafic-al:0:2", &Value::Null, &mut e));
+    let q =
+        e.0.iter()
+            .find_map(|x| match x {
+                Effet::Signal { nom, donnees } if nom == "question" => Some(donnees.clone()),
+                _ => None,
+            })
+            .expect("question");
+    assert!(q["texte"].as_str().unwrap().starts_with("Bloquer l'accès à Internet"), "{q}");
+    let mut e = Effets::default();
+    let debut = Instant::now();
+    assert!(b.action(&ctx, q["action"].as_str().unwrap(), &json!({ "id": q["id"], "valeur": "oui" }), &mut e));
+    assert!(
+        debut.elapsed() < Duration::from_secs(2),
+        "le « Oui » a pris {:?} : le fil des blocs était figé",
+        debut.elapsed()
+    );
+    let fin = Instant::now() + Duration::from_secs(10);
+    while demandes.lock().unwrap().is_empty() {
+        assert!(Instant::now() < fin, "l'Aide n'est pas appelée");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(b.pages(&ctx, "trafic").contains_key("trafic"), "la page ne répond pas");
+    feu.send(()).unwrap();
+    let mut tout = Vec::new();
+    while !tout.iter().any(|x| matches!(x, Effet::Annonce(_))) {
+        assert!(Instant::now() < fin, "le blocage ne finit pas");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // (la fausse Aide refuse : le message de l'Aide, rien dans l'historique, comme avant)
+    assert_eq!(tout, vec![Effet::Annonce("pas dans ce test".into())]);
+    assert_eq!(*demandes.lock().unwrap(), ["pare-feu.bloquer"]);
+}

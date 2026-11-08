@@ -269,7 +269,7 @@ pub fn lancer() -> ! {
         images.clone(),
         Box::new(reseau::connexion),
     );
-    hote.etat_service = Box::new(services::etat);
+    hote.etat_service = std::sync::Arc::new(services::etat);
     if essai {
         hote.dossier_etat = Some(l.dossier_donnees.clone());
     }
