@@ -1007,3 +1007,40 @@ fn un_programme_de_windows_qui_ne_s_ouvre_pas_le_dit() {
     assert_eq!(r, Err("Le test de la mémoire de Windows ne s'est pas ouvert : Accès refusé.".to_string()));
     assert_eq!(pc.gestes, vec![json!({ "geste": "lancer", "donnees": ["mdsched.exe"] })]);
 }
+
+/// M9 (audit du 08/11) : une sauvegarde abîmée était lue sans rien dire, et « Tout restaurer » répondait « Il n'y a
+/// aucun changement à annuler ». Comme Get-TexteProblemeSauvegarde (onglets.ps1:870-873) : le problème est dit, avec
+/// le point de restauration de Windows ; et la question de « Tout restaurer » prévient aussi.
+#[test]
+fn une_sauvegarde_abimee_est_dite_comme_telle() {
+    use nevermind_noyau::Contexte;
+    let d = nevermind_noyau::dossier_essai("pc-sauvegarde-abimee");
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::write(d.join("sauvegarde.json"), "\u{feff}{ \"Registry\": { \"HKLM:\\SOFT").unwrap();
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true);
+    let sv = nevermind_pc::systeme::lire_sauvegarde(&ctx);
+    assert_eq!(sv.probleme.as_deref(), Some("abimee"), "le problème de la sauvegarde n'est pas noté");
+    let texte = nevermind_noyau::sauvegarde::texte_probleme(Some("abimee"));
+    // Rien à remettre : le problème est dit, pas « rien à annuler »
+    let mut pc = FauxPc::default();
+    let mut s =
+        Session { sv: Sauvegarde { probleme: Some("abimee".into()), ..Default::default() }, ..Default::default() };
+    s.restaurer_tout(&mut pc, &[]);
+    assert_eq!(pc.gestes, vec![json!({ "geste": "message", "donnees": texte })]);
+    // Des réglages à remettre : la question prévient
+    let mut pc = FauxPc::default();
+    let mut s = Session {
+        sv: Sauvegarde { probleme: Some("abimee".into()), plan: Some("guid".into()), ..Default::default() },
+        ..Default::default()
+    };
+    s.restaurer_tout(&mut pc, &[]);
+    let q = pc.gestes.iter().find(|g| g["geste"] == "question").expect("la question");
+    assert!(q["donnees"].as_str().unwrap().ends_with(&format!("\n\nAttention : {texte}")), "{q}");
+    // Une sauvegarde lisible : rien de dit en plus
+    let mut pc = FauxPc::default();
+    let mut s = Session::default();
+    s.restaurer_tout(&mut pc, &[]);
+    assert_eq!(pc.gestes, vec![json!({ "geste": "message", "donnees": "Il n'y a aucun changement à annuler." })]);
+    let _ = std::fs::remove_dir_all(&d);
+}

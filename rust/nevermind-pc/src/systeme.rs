@@ -53,7 +53,15 @@ fn ecrire_sur(p: &Path, texte: &str, bom: bool) -> Result<(), String> {
 
 /// `Import-Backup` : sauvegarde.json (ou sa copie), complétée par les valeurs d'origine gardées dans le registre
 pub fn lire_sauvegarde(ctx: &Contexte) -> Sauvegarde {
-    let mut sv = lire_json(&ctx.donnees.join("sauvegarde.json")).map(|j| Sauvegarde::depuis(&j)).unwrap_or_default();
+    // (M9, audit du 08/11 : une sauvegarde abîmée ou disparue est dite comme telle. Le noyau la lit d'abord : il met un
+    //  fichier abîmé de côté, reprend sa copie de secours, et note le problème, comme Import-Backup)
+    let probleme = ctx.sauvegarde().probleme;
+    let fichier = ctx.donnees.join("sauvegarde.json");
+    let abime = fichier.exists()
+        && !std::fs::read_to_string(&fichier)
+            .is_ok_and(|t| serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')).is_ok());
+    let mut sv = lire_json(&fichier).map(|j| Sauvegarde::depuis(&j)).unwrap_or_default();
+    sv.probleme = probleme.filter(|p| !p.is_empty()).or_else(|| abime.then(|| "abimee".to_string()));
     #[cfg(windows)]
     {
         let mut connues: Vec<String> = sv

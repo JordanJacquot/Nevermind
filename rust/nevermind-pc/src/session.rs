@@ -534,13 +534,17 @@ impl Session {
 
     /// `Invoke-UndoAll` : « Tout restaurer » (avec sa question, puis « Réessayer » si des réglages restent)
     pub fn restaurer_tout(&mut self, pc: &mut dyn Pc, definitifs: &[String]) {
+        // (Get-TexteProblemeSauvegarde, onglets.ps1:870-873 : une sauvegarde abîmée ou disparue est dite, avec le point
+        //  de restauration de Windows ; M9, audit du 08/11)
+        let probleme = nevermind_noyau::sauvegarde::texte_probleme(self.sv.probleme.as_deref());
         if corrections::compte_total(&self.sv, pc) == 0 {
-            pc.message("Il n'y a aucun changement à annuler.");
+            pc.message(if probleme.is_empty() { "Il n'y a aucun changement à annuler." } else { &probleme });
             return;
         }
         let q = format!(
-            "Remettre les réglages modifiés par Nevermind comme ils étaient avant ?{}",
-            texte_definitifs(definitifs)
+            "Remettre les réglages modifiés par Nevermind comme ils étaient avant ?{}{}",
+            texte_definitifs(definitifs),
+            if probleme.is_empty() { String::new() } else { format!("\n\nAttention : {probleme}") }
         );
         match pc.question(&q) {
             None => {
