@@ -18,7 +18,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, FILETIME, GetLastError, HWND};
+use windows::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, FILETIME, GetLastError, HANDLE, HWND};
 use windows::Win32::NetworkManagement::IpHelper::{
     FreeMibTable, GetExtendedTcpTable, GetPerTcp6ConnectionEStats, GetPerTcpConnectionEStats, GetUnicastIpAddressTable,
     MIB_TCP_STATE, MIB_TCP6ROW, MIB_TCP6ROW_OWNER_PID, MIB_TCPROW_LH, MIB_TCPROW_LH_0, MIB_TCPROW_OWNER_PID,
@@ -40,6 +40,10 @@ use windows::Win32::System::Diagnostics::Etw::{
     EVENT_TRACE_LOGFILEW_0, EVENT_TRACE_LOGFILEW_1, EVENT_TRACE_PROPERTIES, EVENT_TRACE_REAL_TIME_MODE, EnableTraceEx2,
     OpenTraceW, PROCESS_TRACE_MODE_EVENT_RECORD, PROCESS_TRACE_MODE_REAL_TIME, PROCESSTRACE_HANDLE, ProcessTrace,
     StartTraceW, WNODE_FLAG_TRACED_GUID,
+};
+use windows::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject,
 };
 use windows::Win32::System::SystemInformation::GetSystemTimePreciseAsFileTime;
 use windows::core::{GUID, HSTRING, PCWSTR, PWSTR};
@@ -168,6 +172,43 @@ impl Lance for PresentMonLance {
     }
 }
 
+/// Un objet job qui ferme tout ce qu'il contient quand sa dernière poignée se ferme (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
+pub(crate) fn nouveau_job() -> Option<HANDLE> {
+    // SAFETY : objet sans nom, réglage d'une structure de la bonne taille ; refermé si le réglage échoue
+    unsafe {
+        let j = CreateJobObjectW(None, PCWSTR::null()).ok()?;
+        let mut l = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        l.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if SetInformationJobObject(
+            j,
+            JobObjectExtendedLimitInformation,
+            (&l as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+        .is_err()
+        {
+            let _ = CloseHandle(j);
+            return None;
+        }
+        Some(j)
+    }
+}
+
+/// Le job de l'Aide (petit défaut de l'audit du 08/11) : PresentMon y est mis dès son lancement. Sa poignée n'est
+/// jamais refermée par l'Aide : Windows la ferme quand l'Aide s'arrête, même tuée ou plantée, et ferme alors PresentMon
+/// avec elle (avant, un PresentMon en veille restait en SYSTEM jusqu'au redémarrage du PC).
+fn job_aide() -> Option<HANDLE> {
+    static JOB: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    JOB.get_or_init(|| nouveau_job().map(|h| h.0 as usize)).map(|h| HANDLE(h as *mut core::ffi::c_void))
+}
+
+/// Met ce programme dans ce job ; faux si Windows refuse
+pub(crate) fn mettre_dans_job(job: HANDLE, enfant: &Child) -> bool {
+    use std::os::windows::io::AsRawHandle;
+    // SAFETY : poignées vivantes (le job, le processus de `enfant`)
+    unsafe { AssignProcessToJobObject(job, HANDLE(enfant.as_raw_handle())).is_ok() }
+}
+
 /// Lance PresentMon ; ses lignes arrivent dans `rappel`, puis la fin (une fois ses deux sorties fermées et lui arrêté)
 pub fn lancer_presentmon(
     exe: &str,
@@ -175,9 +216,24 @@ pub fn lancer_presentmon(
     env: &[(String, String)],
     rappel: RappelPm,
 ) -> Result<Box<dyn Lance>, String> {
+    lancer_presentmon_dans(exe, arguments, env, rappel, job_aide())
+}
+
+/// [`lancer_presentmon`], dans ce job
+fn lancer_presentmon_dans(
+    exe: &str,
+    arguments: &str,
+    env: &[(String, String)],
+    rappel: RappelPm,
+    job: Option<HANDLE>,
+) -> Result<Box<dyn Lance>, String> {
     let mut c = commande(exe, arguments, env);
     c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut enfant = c.spawn().map_err(|e| e.to_string())?;
+    // (sans job, il tourne quand même, comme avant)
+    if let Some(j) = job {
+        let _ = mettre_dans_job(j, &enfant);
+    }
     let sortie = enfant.stdout.take();
     let erreurs = enfant.stderr.take();
     let enfant = Arc::new(Mutex::new(enfant));
@@ -548,6 +604,41 @@ mod essais {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("fichiers").join("outils-tiers")).unwrap();
         d
+    }
+
+    #[test]
+    fn un_programme_du_job_se_ferme_avec_l_aide() {
+        // (petit défaut de l'audit du 08/11) Un programme lancé comme PresentMon, dans un job : quand la dernière
+        // poignée du job se ferme (ce que Windows fait quand l'Aide est tuée), il est fermé aussi. Le vrai Windows, sans
+        // droits, sur un PING.EXE caché de 60 s lancé par l'essai.
+        let w = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+        let (envoi, reception) = std::sync::mpsc::channel();
+        let rappel: RappelPm = Arc::new(move |s| {
+            let _ = envoi.send(s);
+        });
+        let job = nouveau_job().expect("job refusé");
+        let debut = Instant::now();
+        let _l = lancer_presentmon_dans(
+            &format!(r"{w}\System32\PING.EXE"),
+            "-n 60 127.0.0.1",
+            &[("SystemRoot".into(), w.clone())],
+            rappel,
+            Some(job),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        // SAFETY : la seule poignée du job, créée par l'essai
+        unsafe {
+            let _ = CloseHandle(job);
+        }
+        let mut fini = false;
+        while let Ok(s) = reception.recv_timeout(Duration::from_secs(10)) {
+            if s == SortiePm::Fin {
+                fini = true;
+                break;
+            }
+        }
+        assert!(fini && debut.elapsed() < Duration::from_secs(20), "le programme a survécu à la fermeture du job");
     }
 
     #[test]

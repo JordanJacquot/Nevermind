@@ -1545,6 +1545,16 @@ function Test-Cas14 {
     Test-Cas 'fps.lire répond, sans refus de Windows' { $s2.R -and $s2.R.PSObject.Properties['lireFps'] -and [string]$s2.R.lireFps -notmatch 'access denied|Performance Log Users' }
     Test-Cas 'flux.lire répond pendant la partie (la trace tourne)' { $s2.R -and $s2.R.PSObject.Properties['lireFlux'] }
     Test-Cas 'fps.arreter et flux.arreter acceptés' { $s2.R -and [string]$s2.R.arreterFps -eq 'ok' -and [string]$s2.R.arreterFlux -eq 'ok' }
+    # (audit du 08/11, petit défaut de l'Aide Rust) L'Aide tuée de force pendant une veille des FPS : PresentMon, mis
+    # dans son objet job, est fermé avec elle (avant, il restait en SYSTEM jusqu'au redémarrage du PC)
+    if ($env:AIDE) {
+        $s3 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'veilleFps'; Action = 'fps.veiller'; P = @{ Noms = @('dormeur-absent.exe') } }) }
+        $pm = { @(Get-Process -Name PresentMon -ErrorAction SilentlyContinue) }
+        Test-Cas 'veille des FPS : PresentMon tourne' { $s3.R -and [string]$s3.R.veilleFps -eq 'ok' -and (Wait-Jusque { (& $pm).Count } 15) }
+        foreach ($a in @(Get-AidesEnCours)) { try { Stop-Process -Id $a.Id -Force -ErrorAction Stop } catch {} }
+        Test-Cas 'l''Aide tuée de force : PresentMon est fermé avec elle (objet job)' { Wait-Jusque { -not (& $pm).Count } 15 }
+        foreach ($x in (& $pm)) { try { $x.Kill() } catch {} }
+    }
     foreach ($p in $jeu, $garde) { try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {} }
     Stop-Aides
 }
