@@ -199,9 +199,16 @@ try {
     # =================================================================================================================
     Write-Host '4. « -SupprimerDonnees »'
     $o = Install-Nevermind
+    # (audit du 08/11, M4) Une jonction posée par le compte dans ses données, vers un dossier qui n'est pas à lui : le
+    # désinstalleur, en administrateur, la retire seule et ne touche jamais ce qu'elle vise
+    $temoinDossier = Join-Path $env:RUNNER_TEMP 'temoin-jonction'
+    New-Item -ItemType Directory -Force -Path $temoinDossier | Out-Null
+    [IO.File]::WriteAllText((Join-Path $temoinDossier 'precieux.txt'), 'ne pas toucher', $utf8)
+    New-Item -ItemType Junction -Path (Join-Path $donnees 'lien') -Target $temoinDossier | Out-Null
     $r = Invoke-Desinstalleur '-SupprimerDonnees'
     Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
     Test-Cas 'tout le dossier des données est parti' { -not (Test-Path -LiteralPath $donnees) }
+    Test-Cas 'la jonction des données est retirée seule : ce qu''elle vise est intact (M4)' { Test-Path -LiteralPath (Join-Path $temoinDossier 'precieux.txt') }
     Test-Cas 'les conseils pour le bilan de Mindset sont là quand même (dossier de la suite)' { Test-Conseils }
     Test-Cas 'les réglages sont remis comme avant' { (Get-Valeur $cleGraphiques 'HwSchMode') -eq $o.HwSchMode -and "$((Get-Service DiagTrack).StartType)" -eq $o.Svc }
     Test-Cas 'le dossier des programmes est parti' { Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 10 }

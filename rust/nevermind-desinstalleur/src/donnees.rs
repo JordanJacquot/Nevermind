@@ -103,95 +103,19 @@ pub fn correspond(nom: &str, filtre: &str) -> bool {
     ok(&n, &f)
 }
 
-/// Un lien (point de jonction, lien symbolique) : jamais suivi
-fn est_lien(m: &std::fs::Metadata) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        m.file_attributes() & 0x400 != 0 // FILE_ATTRIBUTE_REPARSE_POINT
-    }
-    #[cfg(not(windows))]
-    {
-        m.file_type().is_symlink()
-    }
-}
-
-/// Un lien vers un dossier (point de jonction, lien symbolique de dossier) : il se retire comme un dossier vide
-fn lien_vers_dossier(m: &std::fs::Metadata) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        m.file_attributes() & 0x10 != 0 // FILE_ATTRIBUTE_DIRECTORY
-    }
-    #[cfg(not(windows))]
-    {
-        m.is_dir()
-    }
-}
-
-/// Efface un fichier (remis en écriture s'il est en lecture seule, comme `Remove-Item -Force`)
-fn effacer_fichier(p: &Path) -> std::io::Result<()> {
-    match std::fs::remove_file(p) {
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            if let Ok(m) = std::fs::symlink_metadata(p) {
-                let mut perm = m.permissions();
-                if perm.readonly() {
-                    #[allow(clippy::permissions_set_readonly_false)]
-                    perm.set_readonly(false);
-                    let _ = std::fs::set_permissions(p, perm);
-                    return std::fs::remove_file(p);
-                }
-            }
-            Err(e)
-        }
-        r => r,
-    }
-}
-
 /// Supprime le dossier et tout ce qu'il contient (`Remove-Item -Recurse -Force`), sans jamais suivre un lien : un
 /// lien est retiré seul, ce qu'il vise n'est pas touché (le désinstalleur tourne en administrateur : un lien posé dans
-/// les données ne doit pas lui faire effacer autre chose). Continue malgré une erreur ; rend la première.
+/// les données, avant ou pendant le travail, ne doit pas lui faire effacer autre chose ; audit du 08/11, M4). Sous
+/// Windows, tout est ouvert sans suivre les liens, vérifié, puis effacé par sa poignée (`os::effacement`). Continue
+/// malgré une erreur ; rend la première.
 pub fn supprimer_dossier(d: &Path) -> Result<(), String> {
-    let mut premiere: Option<String> = None;
-    fn parcourir(d: &Path, premiere: &mut Option<String>) {
-        let note = |e: std::io::Error, premiere: &mut Option<String>| {
-            if premiere.is_none() {
-                *premiere = Some(message_erreur(&e));
-            }
-        };
-        match std::fs::read_dir(d) {
-            Ok(entrees) => {
-                for e in entrees.flatten() {
-                    let p = e.path();
-                    let Ok(m) = std::fs::symlink_metadata(&p) else { continue };
-                    let r = if est_lien(&m) {
-                        // (un lien vers un dossier se retire comme un dossier vide, un lien vers un fichier comme un fichier)
-                        if lien_vers_dossier(&m) { std::fs::remove_dir(&p) } else { effacer_fichier(&p) }
-                    } else if m.is_dir() {
-                        parcourir(&p, premiere);
-                        continue;
-                    } else {
-                        effacer_fichier(&p)
-                    };
-                    if let Err(e) = r {
-                        note(e, premiere);
-                    }
-                }
-            }
-            Err(e) => note(e, premiere),
-        }
-        if let Err(e) = std::fs::remove_dir(d) {
-            note(e, premiere);
-        }
+    #[cfg(windows)]
+    {
+        crate::os::effacement::supprimer_dossier(d).map_err(|e| message_erreur(&e))
     }
-    match std::fs::symlink_metadata(d) {
-        Ok(m) if est_lien(&m) => std::fs::remove_dir(d).map_err(|e| message_erreur(&e))?,
-        Ok(_) => parcourir(d, &mut premiere),
-        Err(e) => return Err(message_erreur(&e)),
-    }
-    match premiere {
-        Some(e) => Err(e),
-        None => Ok(()),
+    #[cfg(not(windows))]
+    {
+        par_chemin::supprimer_dossier(d)
     }
 }
 
@@ -201,51 +125,166 @@ pub const PARTENT: [&str; 5] =
 /// L'historique (et sa copie de secours, qui serait reprise), quand tout a été remis comme avant
 pub const HISTORIQUE: [&str; 3] = ["historique.json", "historique.json.bak", "historique.json.tmp"];
 
-/// `Remove-DonneesDesinstallation` : les données après la restauration. `garder_historique` : des réglages n'ont pas
-/// pu être remis comme avant (ou la sauvegarde avait un problème). Rend la liste des erreurs (vide si tout va bien).
-pub fn retirer_donnees(dossier: &Path, garder: bool, garder_historique: bool) -> Vec<String> {
-    let mut erreurs = Vec::new();
-    if !dossier.is_dir() {
-        return erreurs;
-    }
-    if !garder {
-        if let Err(e) = supprimer_dossier(dossier) {
-            erreurs.push(format!("Données: {e}"));
-        }
-        return erreurs;
-    }
+fn filtres(garder_historique: bool) -> Vec<&'static str> {
     let mut filtres: Vec<&str> = PARTENT.to_vec();
     if !garder_historique {
         filtres.extend(HISTORIQUE);
     }
+    filtres
+}
+
+/// `Remove-DonneesDesinstallation` : les données après la restauration. `garder_historique` : des réglages n'ont pas
+/// pu être remis comme avant (ou la sauvegarde avait un problème). Rend la liste des erreurs (vide si tout va bien).
+/// Un dossier des données qui est un lien, ou qui passe par un lien, n'est jamais touché (audit du 08/11, M4).
+#[cfg(windows)]
+pub fn retirer_donnees(dossier: &Path, garder: bool, garder_historique: bool) -> Vec<String> {
+    use crate::os::effacement::{self, EtatDonnees};
+    let mut erreurs = Vec::new();
+    let etat = match effacement::ouvrir_donnees(dossier) {
+        Ok(e) => e,
+        Err(e) => {
+            erreurs.push(format!("Données: {}", message_erreur(&e)));
+            return erreurs;
+        }
+    };
+    if !garder {
+        if !matches!(etat, EtatDonnees::Absent) {
+            drop(etat);
+            if let Err(e) = supprimer_dossier(dossier) {
+                erreurs.push(format!("Données: {e}"));
+            }
+        }
+        return erreurs;
+    }
+    let d = match etat {
+        EtatDonnees::Absent => return erreurs,
+        EtatDonnees::Lien => {
+            erreurs.push(format!("Données: {}", effacement::PAR_UN_LIEN));
+            return erreurs;
+        }
+        EtatDonnees::Dossier(d) => d,
+    };
     // (les fichiers du dossier seulement, cachés compris, dans l'ordre où Windows les donne)
-    let fichiers: Vec<(String, PathBuf)> = std::fs::read_dir(dossier)
-        .map(|r| {
-            r.flatten()
-                .filter(|e| std::fs::symlink_metadata(e.path()).is_ok_and(|m| !m.is_dir()))
-                .map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
-                .collect()
-        })
-        .unwrap_or_default();
-    for f in filtres {
-        for (nom, p) in &fichiers {
+    let fichiers = d.fichiers().unwrap_or_default();
+    for f in filtres(garder_historique) {
+        for nom in &fichiers {
             if correspond(nom, f)
-                && p.exists()
-                && let Err(e) = effacer_fichier(p)
+                && let Err(e) = d.effacer_fichier(nom)
+                && e.kind() != std::io::ErrorKind::NotFound
             {
                 erreurs.push(format!("Données ({nom}): {}", message_erreur(&e)));
             }
         }
     }
     // Plus rien à garder : le dossier part aussi
-    if std::fs::read_dir(dossier).is_ok_and(|mut r| r.next().is_none()) {
-        let _ = std::fs::remove_dir(dossier);
-    }
+    d.effacer_si_vide();
     erreurs
 }
 
+#[cfg(not(windows))]
+pub fn retirer_donnees(dossier: &Path, garder: bool, garder_historique: bool) -> Vec<String> {
+    par_chemin::retirer_donnees(dossier, garder, garder_historique)
+}
+
+/// Hors Windows (le désinstalleur n'y tourne pas) : le même travail par les chemins
+#[cfg(not(windows))]
+mod par_chemin {
+    use super::*;
+
+    fn est_lien(m: &std::fs::Metadata) -> bool {
+        m.file_type().is_symlink()
+    }
+
+    fn effacer_fichier(p: &Path) -> std::io::Result<()> {
+        std::fs::remove_file(p)
+    }
+
+    pub fn supprimer_dossier(d: &Path) -> Result<(), String> {
+        let mut premiere: Option<String> = None;
+        fn parcourir(d: &Path, premiere: &mut Option<String>) {
+            let note = |e: std::io::Error, premiere: &mut Option<String>| {
+                if premiere.is_none() {
+                    *premiere = Some(message_erreur(&e));
+                }
+            };
+            match std::fs::read_dir(d) {
+                Ok(entrees) => {
+                    for e in entrees.flatten() {
+                        let p = e.path();
+                        let Ok(m) = std::fs::symlink_metadata(&p) else { continue };
+                        let r = if est_lien(&m) {
+                            effacer_fichier(&p)
+                        } else if m.is_dir() {
+                            parcourir(&p, premiere);
+                            continue;
+                        } else {
+                            effacer_fichier(&p)
+                        };
+                        if let Err(e) = r {
+                            note(e, premiere);
+                        }
+                    }
+                }
+                Err(e) => note(e, premiere),
+            }
+            if let Err(e) = std::fs::remove_dir(d) {
+                note(e, premiere);
+            }
+        }
+        match std::fs::symlink_metadata(d) {
+            Ok(m) if est_lien(&m) => effacer_fichier(d).map_err(|e| message_erreur(&e))?,
+            Ok(_) => parcourir(d, &mut premiere),
+            Err(e) => return Err(message_erreur(&e)),
+        }
+        match premiere {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+
+    pub fn retirer_donnees(dossier: &Path, garder: bool, garder_historique: bool) -> Vec<String> {
+        let mut erreurs = Vec::new();
+        match std::fs::symlink_metadata(dossier) {
+            Ok(m) if m.is_dir() => {}
+            Ok(m) if est_lien(&m) && !garder => {
+                let _ = effacer_fichier(dossier);
+                return erreurs;
+            }
+            _ => return erreurs,
+        }
+        if !garder {
+            if let Err(e) = supprimer_dossier(dossier) {
+                erreurs.push(format!("Données: {e}"));
+            }
+            return erreurs;
+        }
+        let fichiers: Vec<(String, PathBuf)> = std::fs::read_dir(dossier)
+            .map(|r| {
+                r.flatten()
+                    .filter(|e| std::fs::symlink_metadata(e.path()).is_ok_and(|m| !m.is_dir()))
+                    .map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        for f in filtres(garder_historique) {
+            for (nom, p) in &fichiers {
+                if correspond(nom, f)
+                    && let Err(e) = effacer_fichier(p)
+                    && e.kind() != std::io::ErrorKind::NotFound
+                {
+                    erreurs.push(format!("Données ({nom}): {}", message_erreur(&e)));
+                }
+            }
+        }
+        if std::fs::read_dir(dossier).is_ok_and(|mut r| r.next().is_none()) {
+            let _ = std::fs::remove_dir(dossier);
+        }
+        erreurs
+    }
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use serde_json::json;
 
@@ -327,6 +366,162 @@ mod tests {
         assert!(retirer_donnees(&donnees, false, false).is_empty());
         assert!(!donnees.exists());
         assert!(cible.join("precieux.txt").exists(), "le lien a été suivi");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // -----------------------------------------------------------------------------------------------------------------
+    // M4 (audit du 08/11) : en administrateur, une jonction posée à la place d'un dossier (avant ou PENDANT le travail)
+    // ne fait jamais effacer autre chose
+    // -----------------------------------------------------------------------------------------------------------------
+
+    type Rappel = Box<dyn FnMut(&Path)>;
+    thread_local! {
+        static AVANT_LECTURE: std::cell::RefCell<Option<Rappel>> = const { std::cell::RefCell::new(None) };
+    }
+
+    /// Appelé quand un sous-dossier vient d'être jugé « vrai dossier », juste avant qu'il soit lu : l'essai y gagne la
+    /// course (il remplace le dossier par une jonction à ce moment-là)
+    pub(crate) fn avant_lecture(p: &Path) {
+        AVANT_LECTURE.with(|r| {
+            if let Some(f) = r.borrow_mut().as_mut() {
+                f(p);
+            }
+        });
+    }
+
+    /// Un point de jonction `lien` vers `cible` (sans droits : mklink /J, sans fenêtre)
+    #[cfg(windows)]
+    fn jonction(lien: &Path, cible: &Path) {
+        use std::os::windows::process::CommandExt;
+        let st = std::process::Command::new(format!("{}\\cmd.exe", nevermind_noyau::windows::dossier_systeme()))
+            .raw_arg(format!("/d /c mklink /J \"{}\" \"{}\"", lien.display(), cible.display()))
+            .creation_flags(0x0800_0000)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(st.success(), "mklink /J {} a échoué", lien.display());
+        let m = std::fs::symlink_metadata(lien).unwrap();
+        use std::os::windows::fs::MetadataExt;
+        assert!(m.file_attributes() & 0x400 != 0, "pas une jonction : {}", lien.display());
+    }
+
+    fn dossier_essai(nom: &str) -> PathBuf {
+        let base = std::env::temp_dir().join(format!("nevermind-desinst-{nom}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        base
+    }
+
+    /// Un précieux hors des données, que rien ne doit toucher
+    fn precieux(dossier: &Path) -> PathBuf {
+        std::fs::create_dir_all(dossier).unwrap();
+        for n in ["precieux.txt", "sauvegarde.json", "historique.json", "x.demande"] {
+            std::fs::write(dossier.join(n), "ne pas toucher").unwrap();
+        }
+        dossier.join("precieux.txt")
+    }
+
+    fn intact(dossier: &Path) -> bool {
+        ["precieux.txt", "sauvegarde.json", "historique.json", "x.demande"].iter().all(|n| dossier.join(n).exists())
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn une_jonction_posee_pendant_la_suppression_n_est_jamais_suivie() {
+        let base = dossier_essai("course");
+        let cible = base.join("cible");
+        precieux(&cible);
+        let donnees = base.join("donnees");
+        std::fs::create_dir_all(donnees.join("sous")).unwrap();
+        std::fs::write(donnees.join("sous").join("a.txt"), "a").unwrap();
+        std::fs::write(donnees.join("jeux.json"), "{}").unwrap();
+        // La course gagnée : « sous » vient d'être jugé vrai dossier ; il est mis de côté et remplacé par une jonction
+        let (sous, parti, c) = (donnees.join("sous"), base.join("sous-parti"), cible.clone());
+        AVANT_LECTURE.with(|r| {
+            *r.borrow_mut() = Some(Box::new(move |p: &Path| {
+                if p.file_name() == sous.file_name() && !parti.exists() {
+                    std::fs::rename(&sous, &parti).unwrap();
+                    jonction(&sous, &c);
+                }
+            }))
+        });
+        let _ = retirer_donnees(&donnees, false, false);
+        AVANT_LECTURE.with(|r| *r.borrow_mut() = None);
+        assert!(intact(&cible), "la jonction posée pendant la suppression a été suivie");
+        assert!(!donnees.join("jeux.json").exists());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn un_dossier_parent_en_jonction_n_est_jamais_traverse() {
+        let base = dossier_essai("parent");
+        let ailleurs = base.join("ailleurs");
+        precieux(&ailleurs.join("Nevermind"));
+        // « Mindset » (le parent des données, dans le compte) remplacé par une jonction vers un autre dossier
+        jonction(&base.join("Mindset"), &ailleurs);
+        let donnees = base.join("Mindset").join("Nevermind");
+        let e = retirer_donnees(&donnees, false, false);
+        assert!(intact(&ailleurs.join("Nevermind")), "la jonction du dossier parent a été traversée");
+        assert_eq!(e.len(), 1, "{e:?}");
+        // Données gardées : pareil, rien n'est effacé à travers la jonction
+        let e = retirer_donnees(&donnees, true, false);
+        assert!(intact(&ailleurs.join("Nevermind")), "la jonction du dossier parent a été traversée (données gardées)");
+        assert_eq!(e.len(), 1, "{e:?}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn des_donnees_gardees_en_jonction_ne_sont_jamais_suivies() {
+        let base = dossier_essai("garder");
+        let cible = base.join("cible");
+        precieux(&cible);
+        let donnees = base.join("donnees");
+        jonction(&donnees, &cible);
+        let e = retirer_donnees(&donnees, true, false);
+        assert!(intact(&cible), "le dossier des données en jonction a été suivi");
+        assert_eq!(e.len(), 1, "{e:?}");
+        // Supprimées : seule la jonction part
+        let e = retirer_donnees(&donnees, false, false);
+        assert!(e.is_empty(), "{e:?}");
+        assert!(std::fs::symlink_metadata(&donnees).is_err());
+        assert!(intact(&cible));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn donnees_gardees_et_supprimees_pour_de_vrai() {
+        let base = dossier_essai("vrai");
+        let donnees = base.join("donnees");
+        std::fs::create_dir_all(donnees.join("sous").join("plus")).unwrap();
+        for n in ["sauvegarde.json", "Sauvegarde-Abimee-1.json", "historique.json", "a.demande", "jeux.json"] {
+            std::fs::write(donnees.join(n), "x").unwrap();
+        }
+        std::fs::write(donnees.join("sous").join("plus").join("b.txt"), "b").unwrap();
+        // (un fichier en lecture seule part aussi, comme avec Remove-Item -Force)
+        let ro = donnees.join("sous").join("lecture-seule.txt");
+        std::fs::write(&ro, "r").unwrap();
+        let mut perm = std::fs::metadata(&ro).unwrap().permissions();
+        perm.set_readonly(true);
+        std::fs::set_permissions(&ro, perm).unwrap();
+        // Gardées, historique gardé : seules la sauvegarde et les demandes partent
+        assert!(retirer_donnees(&donnees, true, true).is_empty());
+        let mut reste: Vec<String> =
+            std::fs::read_dir(&donnees).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into()).collect();
+        reste.sort();
+        assert_eq!(reste, vec!["historique.json", "jeux.json", "sous"]);
+        // Gardées : l'historique part aussi
+        assert!(retirer_donnees(&donnees, true, false).is_empty());
+        assert!(!donnees.join("historique.json").exists());
+        // Supprimées : tout part
+        assert!(retirer_donnees(&donnees, false, false).is_empty());
+        assert!(!donnees.exists());
+        // Absent : rien à faire, pas d'erreur
+        assert!(retirer_donnees(&donnees, false, false).is_empty());
+        assert!(retirer_donnees(&donnees, true, false).is_empty());
         let _ = std::fs::remove_dir_all(&base);
     }
 }

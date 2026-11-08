@@ -10,6 +10,7 @@
 
 #![allow(unsafe_code)]
 
+pub mod effacement;
 pub mod fenetre;
 
 use crate::choix::Choix;
