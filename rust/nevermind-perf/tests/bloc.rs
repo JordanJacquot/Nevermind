@@ -148,3 +148,16 @@ fn lancement_d_un_jeu_sans_demande_de_windows() {
     assert!(vues.lock().unwrap().iter().any(|a| a == "processus.fermer"), "OneDrive est fermé par l'Aide");
     assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new(), "aucune demande de Windows au lancement d'un jeu");
 }
+
+/// M5 (audit du 08/11) : la carte graphique puissante d'un jeu (HKCU) est dans la liste fermée du noyau, sinon « Tout
+/// restaurer » et le désinstalleur refuseraient de la remettre comme avant
+#[test]
+fn le_profil_gpu_ecrit_dans_la_liste_fermee() {
+    for on in [true, false] {
+        let l = nevermind_perf::changements_profil(&json!({ "exes": [r"C:\Jeux\Jeu\jeu.exe"] }), "gpu", on);
+        assert_eq!(l.len(), 1);
+        let (p, n) = (l[0]["Path"].as_str().unwrap(), l[0]["Name"].as_str().unwrap());
+        assert!(nevermind_noyau::registre::utilisateur(p));
+        assert!(nevermind_noyau::registre::utilisateur_permis(p, n), "{p}|{n} hors de la liste");
+    }
+}

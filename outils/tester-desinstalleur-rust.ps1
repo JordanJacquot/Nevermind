@@ -205,10 +205,20 @@ try {
     New-Item -ItemType Directory -Force -Path $temoinDossier | Out-Null
     [IO.File]::WriteAllText((Join-Path $temoinDossier 'precieux.txt'), 'ne pas toucher', $utf8)
     New-Item -ItemType Junction -Path (Join-Path $donnees 'lien') -Target $temoinDossier | Out-Null
+    # (audit du 08/11, M5) Une stratégie ajoutée à sauvegarde.json par un programme sans droits : le désinstalleur, en
+    # administrateur, ne remet que les réglages que Nevermind change (liste fermée), jamais celle-ci
+    $clePolitique = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System'
+    Remove-ItemProperty -LiteralPath $clePolitique -Name NevermindTemoinM5 -ErrorAction SilentlyContinue
+    $fs = Join-Path $donnees 'sauvegarde.json'
+    $sv = [IO.File]::ReadAllText($fs, [Text.Encoding]::UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json
+    $sv.Registry | Add-Member -NotePropertyName "$clePolitique|NevermindTemoinM5" -NotePropertyValue ([ordered]@{ Path = $clePolitique; Name = 'NevermindTemoinM5'; Existed = $true; Value = 1; Kind = 'DWord' })
+    [IO.File]::WriteAllText($fs, (ConvertTo-Json -InputObject $sv -Depth 6), $utf8Bom)
     $r = Invoke-Desinstalleur '-SupprimerDonnees'
     Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
     Test-Cas 'tout le dossier des données est parti' { -not (Test-Path -LiteralPath $donnees) }
     Test-Cas 'la jonction des données est retirée seule : ce qu''elle vise est intact (M4)' { Test-Path -LiteralPath (Join-Path $temoinDossier 'precieux.txt') }
+    Test-Cas 'la stratégie ajoutée à sauvegarde.json n''est pas posée (M5)' { $null -eq (Get-Valeur $clePolitique 'NevermindTemoinM5') }
+    Remove-ItemProperty -LiteralPath $clePolitique -Name NevermindTemoinM5 -ErrorAction SilentlyContinue
     Test-Cas 'les conseils pour le bilan de Mindset sont là quand même (dossier de la suite)' { Test-Conseils }
     Test-Cas 'les réglages sont remis comme avant' { (Get-Valeur $cleGraphiques 'HwSchMode') -eq $o.HwSchMode -and "$((Get-Service DiagTrack).StartType)" -eq $o.Svc }
     Test-Cas 'le dossier des programmes est parti' { Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 10 }

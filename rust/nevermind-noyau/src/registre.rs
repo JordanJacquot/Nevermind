@@ -79,6 +79,66 @@ pub fn utilisateur(chemin: &str) -> bool {
     sans_debut(p, "HKCU:").is_some() || sans_debut(p, "HKEY_CURRENT_USER").is_some()
 }
 
+/// Les réglages de l'utilisateur (HKCU) que Nevermind change lui-même, et donc les seuls qu'il remet comme avant :
+/// (sous-clé de HKCU, nom de la valeur ; « * » : toute valeur de cette clé, des noms de programmes). Liste fermée (audit
+/// du 08/11, M5) : sauvegarde.json, l'historique et la copie des valeurs d'origine sont modifiables sans droits, et le
+/// désinstalleur les remet en administrateur ; sans cette liste, il poserait n'importe quelle valeur, une stratégie
+/// (`...\Policies\...`) par exemple, que le compte ne peut pas poser seul.
+///
+/// Qui les change : le bloc pc (`reglages::changements`, la carte graphique de chaque jeu, les programmes au démarrage),
+/// le bloc trafic (`microsoft::reglages`), les profils des jeux (blocs jeux et perf). Chacun le vérifie par un test.
+pub const REGLAGES_UTILISATEUR: &[(&str, &str)] = &[
+    // Bloc pc : Game DVR, mode jeu, souris, raccourcis d'accessibilité, transparence
+    (r"Software\Microsoft\Windows\CurrentVersion\GameDVR", "HistoricalCaptureEnabled"),
+    (r"Software\Microsoft\GameBar", "AutoGameModeEnabled"),
+    (r"Software\Microsoft\GameBar", "AllowAutoGameMode"),
+    (r"Control Panel\Mouse", "MouseSpeed"),
+    (r"Control Panel\Mouse", "MouseThreshold1"),
+    (r"Control Panel\Mouse", "MouseThreshold2"),
+    (r"Control Panel\Accessibility\StickyKeys", "Flags"),
+    (r"Control Panel\Accessibility\Keyboard Response", "Flags"),
+    (r"Control Panel\Accessibility\ToggleKeys", "Flags"),
+    (r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "EnableTransparency"),
+    // Fenêtré optimisé (DirectXUserGlobalSettings) et carte graphique de chaque jeu (le chemin de son programme)
+    (r"Software\Microsoft\DirectX\UserGpuPreferences", "*"),
+    // Programmes au démarrage (le nom de chaque programme)
+    (r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run", "*"),
+    (r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder", "*"),
+    // Bloc trafic : ce que Windows envoie à Microsoft
+    (r"Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo", "Enabled"),
+    (r"Software\Microsoft\Windows\CurrentVersion\Privacy", "TailoredExperiencesWithDiagnosticDataEnabled"),
+    (r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-338388Enabled"),
+    (r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-338389Enabled"),
+    (r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-353694Enabled"),
+    (r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SubscribedContent-353696Enabled"),
+    (r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SilentInstalledAppsEnabled"),
+    (r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SystemPaneSuggestionsEnabled"),
+    (r"Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager", "SoftLandingEnabled"),
+    (r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "Start_IrisRecommendations"),
+    (r"Software\Microsoft\Windows\CurrentVersion\Search", "BingSearchEnabled"),
+    // (la seule stratégie : les suggestions Bing de la recherche, une seule valeur)
+    (r"Software\Policies\Microsoft\Windows\Explorer", "DisableSearchBoxSuggestions"),
+    (r"Software\Microsoft\Input\TIPC", "Enabled"),
+    (r"Software\Microsoft\InputPersonalization", "RestrictImplicitTextCollection"),
+    (r"Software\Microsoft\InputPersonalization", "RestrictImplicitInkCollection"),
+    (r"Software\Microsoft\Speech_OneCore\Settings\OnlineSpeechPrivacy", "HasAccepted"),
+];
+
+/// La sous-clé de HKCU d'un chemin (HKCU:\..., HKEY_CURRENT_USER\..., Registry::...), lue comme l'écrit Nevermind (les
+/// « \ » du début retirés) ; `None` pour une autre ruche
+fn sous_cle_utilisateur(chemin: &str) -> Option<&str> {
+    let p = sans_debut(chemin, "Registry::").unwrap_or(chemin);
+    let r = sans_debut(p, "HKCU:").or_else(|| sans_debut(p, "HKEY_CURRENT_USER"))?;
+    Some(r.trim_start_matches('\\'))
+}
+
+/// Cette valeur de HKCU est-elle un des réglages que Nevermind change ([`REGLAGES_UTILISATEUR`]) ? Exactement : même
+/// clé, même nom (sans tenir compte des majuscules, comme Windows) ; un chemin d'une autre ruche n'en est pas un.
+pub fn utilisateur_permis(chemin: &str, nom: &str) -> bool {
+    let Some(sous) = sous_cle_utilisateur(chemin) else { return false };
+    REGLAGES_UTILISATEUR.iter().any(|(c, n)| sous.eq_ignore_ascii_case(c) && (*n == "*" || nom.eq_ignore_ascii_case(n)))
+}
+
 /// Le nom .NET d'un type de valeur (`GetValueKind().ToString()`)
 pub fn nom_type(t: Type) -> &'static str {
     match t {
@@ -234,6 +294,29 @@ mod tests {
         assert_eq!(cle_normale("hkcu:\\A"), "HKCU:\\A");
         assert!(utilisateur("Registry::HKEY_CURRENT_USER\\x"));
         assert!(!utilisateur("HKLM:\\x"));
+    }
+
+    /// M5 (audit du 08/11) : seuls les réglages que Nevermind change, exactement
+    #[test]
+    fn liste_fermee_des_reglages_de_l_utilisateur() {
+        assert!(utilisateur_permis(r"HKCU:\Software\Microsoft\GameBar", "AutoGameModeEnabled"));
+        assert!(utilisateur_permis(r"Registry::HKEY_CURRENT_USER\control panel\mouse", "mousespeed"));
+        assert!(utilisateur_permis(r"HKCU:\Software\Microsoft\DirectX\UserGpuPreferences", r"C:\Jeux\x.exe"));
+        assert!(utilisateur_permis(
+            r"HKCU:\Software\Policies\Microsoft\Windows\Explorer",
+            "DisableSearchBoxSuggestions"
+        ));
+        // Une autre valeur de la même clé, une stratégie, une clé voisine, une autre ruche : non
+        assert!(!utilisateur_permis(r"HKCU:\Software\Policies\Microsoft\Windows\Explorer", "NoWinKeys"));
+        assert!(!utilisateur_permis(
+            r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System",
+            "DisableTaskMgr"
+        ));
+        assert!(!utilisateur_permis(r"HKCU:\Software\Microsoft\GameBar\Autre", "AutoGameModeEnabled"));
+        assert!(!utilisateur_permis(r"HKCU:\Software\Microsoft\GameBar\", "AutoGameModeEnabled"));
+        assert!(!utilisateur_permis(r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Run", "x"));
+        assert!(!utilisateur_permis(r"HKLM:\Software\Microsoft\GameBar", "AutoGameModeEnabled"));
+        assert!(!utilisateur_permis(r"Software\Microsoft\GameBar", "AutoGameModeEnabled"));
     }
 
     #[test]
