@@ -72,6 +72,8 @@ struct Etat {
     fenetre: Option<FenetreTauri>,
     debut: Instant,
     fin: Option<Fin>,
+    /// Quand « Quitter » a été décidé : le journal dit ensuite où la fermeture a pris du temps, si elle est longue
+    fin_depuis: Option<Instant>,
     /// L'hôte, jusqu'à ce que son fil démarre (avec la fenêtre)
     hote: Option<Hote>,
     demandes: Option<Receiver<Vec<Demande>>>,
@@ -298,6 +300,7 @@ pub fn lancer() -> ! {
             fenetre: None,
             debut: Instant::now(),
             fin: None,
+            fin_depuis: None,
             hote: Some(hote),
             demandes: None,
             app: None,
@@ -502,8 +505,8 @@ impl Etat {
             match x {
                 Demande::Quitter => {
                     if let Some(f) = self.vie.quitter() {
+                        self.quitter(f);
                         self.journal("Fermeture");
-                        self.fin = Some(f);
                     }
                 }
                 Demande::Reduire => {
@@ -555,11 +558,25 @@ impl Etat {
                 Evenement::Fin(fin) => {
                     if self.fin.is_none() {
                         ordonner(Ordre::Journal("Fermeture".into()));
-                        self.fin = Some(fin);
+                        self.quitter(fin);
                     }
                 }
             }
         }
+    }
+
+    /// La fin décidée. Pour quitter, la fenêtre est cachée tout de suite (Jordan, 08/11/2026) : Nevermind met
+    /// ensuite un moment à s'arrêter (l'écran, puis les blocs), et pendant ce temps sa fenêtre ne se dessine plus ;
+    /// affichée dans Mindset, c'était une place noire, et Mindset attendait. Cachée, elle s'efface tout de suite, et
+    /// Mindset revient à son accueil. Pour une relance (nouveau thème), elle reste : Mindset la raccroche.
+    fn quitter(&mut self, fin: Fin) {
+        if fin == Fin::Quitter
+            && let Some(f) = self.fenetre.as_mut()
+        {
+            f.cacher();
+        }
+        self.fin = Some(fin);
+        self.fin_depuis = Some(Instant::now());
     }
 }
 
@@ -657,9 +674,14 @@ fn essai_demandes(etat: &mut Etat) {
 /// La fin (Nevermind.ps1:481-496) : les blocs fermés sur leur fil, la relance si le thème a changé (verrous rendus
 /// d'abord), puis `std::process::exit`.
 fn finir() -> ! {
+    // (l'écran fermé : le temps depuis « Quitter », pour le journal si la fermeture est longue)
+    let ecran = ETAT.with(|e| e.try_borrow().ok().and_then(|e| e.as_ref().and_then(|x| x.fin_depuis)));
+    let ecran = ecran.map(|d| d.elapsed());
+    let debut_blocs = Instant::now();
     let (t, r) = mpsc::channel();
     ordonner(Ordre::Fermer(t));
     let fermes = r.recv_timeout(ATTENTE_FERMETURE).is_ok();
+    let blocs = debut_blocs.elapsed();
     ETAT.with(|e| {
         if let Ok(mut e) = e.try_borrow_mut()
             && let Some(etat) = e.as_mut()
@@ -669,6 +691,13 @@ fn finir() -> ! {
             }
             if !fermes && ORDRES.get().is_some() {
                 etat.journal("Fermeture : les blocs n'ont pas fini en 4 s");
+            }
+            if let Some(x) = ecran.filter(|x| *x + blocs >= Duration::from_secs(1)) {
+                etat.journal(&format!(
+                    "Fermeture longue : écran fermé en {} ms, blocs fermés en {} ms",
+                    x.as_millis(),
+                    blocs.as_millis()
+                ));
             }
             if let Some(Fin::Relancer { cachee }) = etat.fin {
                 let d = etat.dossier_donnees.clone();
