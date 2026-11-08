@@ -444,8 +444,8 @@
       case 'choix': return `<div class="choix-p" role="radiogroup">${(b.options || []).map((o) => `<button type="button" class="f${o.id === b.valeur ? ' oui' : ''}" data-k="p:${esc(b.id)}:${esc(o.id)}" data-action="${esc(b.id)}" data-valeur="${esc(o.id)}" data-choix="1" role="radio" aria-checked="${o.id === b.valeur}">${esc(o.texte)}</button>`).join('')}</div>`;
       case 'cartes': return `<div class="cartes-choix">${(b.options || []).map((o) => `<button type="button" class="carte-choix plaque f${o.id === b.valeur ? ' oui' : ''}" data-k="p:${esc(b.id)}:${esc(o.id)}" data-action="${esc(b.id)}" data-valeur="${esc(o.id)}" data-choix="1"><b>${esc(o.titre)}</b><span>${esc(o.texte)}</span></button>`).join('')}</div>`;
       case 'outils': return `<div class="outils">${(b.elements || []).map((x) => {
-        // (l'icône à gauche ; à côté, l'étiquette en haut à droite, le titre et la note : voir .outil dans kit.css)
-        const dedans = `${icone(x.icone || 'etoile', x.couleur)}<span class="texte-o">${etiq(x.etiquette, x.ton)}<b>${esc(x.nom)}</b><span class="n">${esc(x.note)}</span></span>`;
+        // (l'icône à gauche ; à côté, le titre, la note et l'étiquette dessous : voir .outil dans kit.css)
+        const dedans = `${icone(x.icone || 'etoile', x.couleur)}<span class="texte-o"><b>${esc(x.nom)}</b><span class="n">${esc(x.note)}</span>${etiq(x.etiquette, x.ton)}</span>`;
         // (inactif : une carte grisée, ni choisissable ni cliquable ; sa note dit pourquoi)
         if (x.inactif) return `<div class="outil plaque inactif" aria-disabled="true">${dedans}</div>`;
         return `<button type="button" class="outil plaque f" data-k="l:${esc(x.id)}" data-action="${esc(x.id)}">${dedans}</button>`;
