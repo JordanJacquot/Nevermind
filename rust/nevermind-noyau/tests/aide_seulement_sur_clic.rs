@@ -27,6 +27,7 @@ const GESTES_SUR_CLIC: &[&str] = &[
     "smb1.couper",                  // réseau, geste de l'audit : bouton
     "dns.regler",                   // réseau et retour en arrière : boutons
     "carte.relancer",               // réseau, « Relancer la carte » : bouton
+    "processus.fermer",             // jeux, « Fermer X » du diagnostic d'une partie, puis « Oui »
 ];
 
 /// Les fonctions qui transmettent une action reçue (pas de nom écrit) : celui qui les appelle est relevé à sa place
