@@ -87,12 +87,26 @@ pub fn panneau(b: &BlocJeux, ctx: &Contexte, s: &PartieFps, toutes: &[PartieFps]
                 json!({ "type": "ligne", "icone": if st == "ok" { "ok" } else { "alerte" }, "couleur": couleur(&st),
                 "texte": texte(dg, "titre"), "note": texte(dg, "texte") }),
             );
-            for e in crate::biblio::liste(dg.get("elements")) {
-                let es = texte(&e, "statut");
+            // (chaque cause comme New-SecurityCard, securite.ps1:289-345 : toutes ses lignes de conseil, puis un bouton
+            //  par action, le premier en avant ; le clic part en « fps-diag:<cause>:<bouton> », audit M10)
+            for (k, e) in crate::biblio::liste(dg.get("elements")).iter().enumerate() {
+                let es = texte(e, "statut");
                 blocs.push(
                     json!({ "type": "ligne", "icone": if es == "ok" { "ok" } else { "alerte" }, "couleur": couleur(&es),
-                    "texte": texte(&e, "titre"), "note": texte(&e, "detail") }),
+                    "texte": texte(e, "titre"), "note": texte(e, "detail") }),
                 );
+                let lignes: Vec<String> = crate::biblio::liste(e.get("lignes"))
+                    .iter()
+                    .map(crate::json::texte_de)
+                    .filter(|l| !l.is_empty())
+                    .collect();
+                if !lignes.is_empty() {
+                    blocs.push(json!({ "type": "liste", "elements": lignes }));
+                }
+                for (j, a) in crate::biblio::liste(e.get("actions")).iter().enumerate() {
+                    blocs.push(json!({ "type": "bouton", "id": format!("fps-diag:{k}:{j}"), "texte": texte(a, "texte"),
+                        "style": if j > 0 { json!("second") } else { Value::Null } }));
+                }
             }
         }
         None => blocs.push(json!({ "type": "texte", "texte": "Analyse de la partie..." })),

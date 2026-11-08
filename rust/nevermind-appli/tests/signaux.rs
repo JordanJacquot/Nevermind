@@ -47,7 +47,7 @@ const TABLE: &[(&str, &[&str], &[&str])] = &[
     ("diagnostic-fps-pret", &["perf"], &["jeux"]),
     ("fps-partie-enregistree", &["perf"], &["jeux"]),
     ("ajouter-jeu", &["perf"], &["jeux"]),
-    ("ouvrir-fiche", &["perf"], &["pc"]),
+    ("ouvrir-fiche", &["perf", "jeux"], &["pc"]),
     ("profils-changes", &["jeux"], &["perf"]),
     ("registre-ecrire", &["protection"], &["pc"]),
     ("demarrage-desactiver", &["protection"], &["pc"]),

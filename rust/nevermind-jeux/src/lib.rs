@@ -40,6 +40,8 @@ enum Question {
     Desinstaller(Jeu),
     Optimiser(Jeu),
     SupprimerRestes(Vec<String>),
+    /// « Fermer X » du diagnostic d'une partie : le nom du programme
+    FermerProgramme(String),
 }
 
 /// Une désinstallation suivie (Watch-Uninstall) : toutes les 10 s pendant 15 min, le jeu a-t-il disparu ?
@@ -59,6 +61,8 @@ enum FinJeux {
     Recherche(Box<biblio::Decouverte>),
     /// La fenêtre « Choisis le programme du jeu (.exe) » : le programme choisi, ou rien
     Choisi(Option<String>),
+    /// « Fermer X » du diagnostic d'une partie, par l'Aide : le nom du programme et la réponse
+    Ferme(String, Result<Value, String>),
 }
 
 /// Ce qui est dit quand la recherche des jeux est finie
@@ -69,6 +73,7 @@ enum ApresRecherche {
 }
 
 const RECHERCHE: &str = "recherche";
+const FERMER: &str = "fermer-programme";
 const CHOIX: &str = "choix";
 
 pub struct BlocJeux {
@@ -210,6 +215,115 @@ impl BlocJeux {
         effets.ajouter(Effet::OuvrirEcran("panneau".into()));
     }
 
+    /// Le jeu d'une partie (Get-SessionGame, diagnostic-fps.ps1:118-127) : le jeu connu, sinon le programme mesuré
+    fn jeu_de_partie(&self, s: &parties::PartieFps) -> Option<Jeu> {
+        if let Some(x) = self.index.get(&s.cle.to_lowercase())
+            && let Some(g) = self.jeux.iter().flatten().find(|g| g.nom == x.jeu)
+        {
+            return Some(g.clone());
+        }
+        let chemin = s.brut.get("Diag").map(|d| json::texte(d, "Path")).unwrap_or_default();
+        (!chemin.is_empty()).then(|| Jeu { nom: self.nom_partie(s), exes: vec![chemin], ..Default::default() })
+    }
+
+    /// Un bouton du diagnostic de la partie ouverte (« fps-diag:<cause>:<bouton> ») : les Actions de `Add-DiagItem`
+    /// (diagnostic-fps.ps1:184-279), cliquées dans `New-SecurityCard` (la question `Confirm` d'abord). Audit M10.
+    fn geste_diagnostic(&mut self, ctx: &Contexte, place: &str, effets: &mut Effets) {
+        let mut p = place.split(':').map(|n| n.parse::<usize>().ok());
+        let (Some(Some(k)), Some(Some(j)), None) = (p.next(), p.next(), p.next()) else { return };
+        let Some(pid) = self.partie_ouverte.clone() else { return };
+        let Some(a) = self
+            .diagnostics
+            .get(&pid)
+            .and_then(|d| biblio::liste(d.get("elements")).get(k).cloned())
+            .and_then(|e| biblio::liste(e.get("actions")).get(j).cloned())
+        else {
+            return;
+        };
+        let Some(s) = parties::parties_fps(Some(ctx), &ctx.donnees).into_iter().find(|p| p.id == pid) else { return };
+        let arg = json::texte(&a, "arg");
+        let quoi = json::texte(&a, "quoi");
+        ctx.journal(&format!("Diagnostic d'une partie : {}", json::texte(&a, "texte")));
+        match quoi.as_str() {
+            // (Set-GameProfile, puis le message ; Hide-TestPanel : le panneau se ferme)
+            "gpu" | "priorite" => {
+                let Some(g) = self.jeu_de_partie(&s) else { return };
+                self.partie_ouverte = None;
+                effets.ajouter(Effet::OuvrirEcran("jeux".into()));
+                self.changer_profil(&g, if quoi == "gpu" { "gpu" } else { "priority" }, true, effets);
+                let m = if quoi == "gpu" {
+                    format!("C'est réglé. Relance {} pour que ce soit pris en compte.", g.nom)
+                } else {
+                    format!("C'est réglé : {} passera avant les autres programmes à son prochain lancement.", g.nom)
+                };
+                self.message(effets, &m);
+            }
+            // (Invoke-TweakFix @('power') : le bloc pc règle Windows et montre le résultat)
+            "alimentation" => {
+                self.partie_ouverte = None;
+                effets.ajouter(Effet::Signal {
+                    nom: "appliquer-reglages-windows".into(),
+                    donnees: json!({ "ids": ["power"] }),
+                });
+            }
+            // (Open-Sheet du point de l'écran où tournait le jeu : le bloc pc ouvre sa fiche)
+            "ecran" => {
+                let ecran = s.brut.get("Diag").map(|d| json::texte(d, "Display")).unwrap_or_default();
+                if ecran.is_empty() {
+                    return;
+                }
+                self.partie_ouverte = None;
+                effets.ajouter(Effet::Signal {
+                    nom: "ouvrir-fiche".into(),
+                    donnees: json!({ "id": format!("display:{ecran}") }),
+                });
+            }
+            // (Open-Url : seulement une page web)
+            "pilote" => {
+                if arg.starts_with("https://") {
+                    effets.ajouter(Effet::OuvrirAdresse(arg));
+                }
+            }
+            // (Set-Setting 'GameMode' $true ; le bloc perf relit le réglage)
+            "modejeu" => {
+                if let Err(e) = ctx.ecrire_reglage("GameMode", Value::Bool(true), false) {
+                    ctx.journal(&e);
+                }
+                effets.ajouter(Effet::Signal {
+                    nom: "reglage-change".into(),
+                    donnees: json!({ "nom": "GameMode", "valeur": true }),
+                });
+                self.statut(
+                    effets,
+                    "Mode jeu automatique activé : les applis cochées seront fermées pendant tes parties.",
+                );
+                effets.ajouter(Effet::Rafraichir);
+            }
+            "fermer" if !arg.is_empty() => {
+                let t = json::texte(&a, "confirmer");
+                let t = if t.is_empty() { format!("Fermer tous les {arg} ?") } else { t };
+                self.poser_question(effets, Question::FermerProgramme(arg), &t, Vec::new());
+            }
+            _ => {}
+        }
+    }
+
+    /// « Fermer X » confirmé (Stop-ProgrammeNom) : jamais la suite Mindset ; l'Aide applique la règle commune de
+    /// fermeture à chaque programme de ce nom, dans un travail de fond (elle peut mettre du temps à répondre).
+    fn fermer_programme(&mut self, ctx: &Contexte, nom: String, effets: &mut Effets) {
+        let nom = nom.trim().to_string();
+        if nevermind_noyau::pont::nom_de_la_suite(&nom) {
+            self.message(effets, &format!("{nom} fait partie de la suite Mindset : Nevermind ne le ferme pas."));
+            return;
+        }
+        self.statut(effets, &format!("Fermeture de {nom}..."));
+        self.travaux.lancer(ctx, FERMER, move |f| {
+            let r = f.ctx.aide("processus.fermer", &json!({ "Nom": nom }), 15000);
+            FinJeux::Ferme(nom, r)
+        });
+        self.relever_travaux(ctx, effets);
+    }
+
     /// « Mes FPS ne sont pas normaux » (Invoke-FpsHelp) : le détail de la dernière partie, ou comment en mesurer une.
     fn aide_fps(&mut self, ctx: &Contexte, effets: &mut Effets) {
         let mut l = parties::parties_fps(Some(ctx), &ctx.donnees);
@@ -291,6 +405,13 @@ impl BlocJeux {
                         self.ajouter_jeu(ctx, Some(e), None, effets);
                     }
                 }
+                Rendu::Fini { resultat: Ok(FinJeux::Ferme(nom, r)), .. } => match r {
+                    Ok(_) => self.statut(effets, &format!("{nom} fermé.")),
+                    Err(e) => {
+                        ctx.journal(&format!("Diagnostic d'une partie : {nom} pas fermé ({e})"));
+                        self.message(effets, &format!("{nom} n'a pas pu être fermé ({e})."));
+                    }
+                },
                 Rendu::Fini { cle, resultat: Err(e) } => {
                     ctx.journal(&format!("Bibliothèque : {cle} impossible ({e})"));
                     if cle == RECHERCHE {
@@ -1117,6 +1238,7 @@ impl Bloc for BlocJeux {
                                 Question::Desinstaller(g) => self.desinstaller_confirme(ctx, &g, effets),
                                 Question::Optimiser(g) => self.optimiser_confirme(ctx, &g, effets),
                                 Question::SupprimerRestes(l) => self.supprimer_restes(l, true, effets),
+                                Question::FermerProgramme(n) => self.fermer_programme(ctx, n, effets),
                             }
                         }
                     }
@@ -1145,6 +1267,8 @@ impl Bloc for BlocJeux {
                             });
                         }
                     }
+                } else if let Some(x) = id.strip_prefix("fps-diag:") {
+                    self.geste_diagnostic(ctx, x, effets);
                 } else if let Some(x) = id.strip_prefix("fps:") {
                     if !x.is_empty() && x.len() <= 40 {
                         self.ouvrir_partie(x, effets);
