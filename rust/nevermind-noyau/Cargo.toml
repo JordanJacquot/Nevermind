@@ -6,6 +6,11 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# La construction d'essai de l'appli (nevermind-appli, option « essai », jamais livrée) : NEVERMIND_LANGUE y impose la
+# langue écrite dans « Signaler un problème »
+essai = []
+
 [dependencies]
 # Les règles de l'Aide (le même code que NevermindAide.exe) : nom du canal, tâche, règle « fermable », serveur accepté
 aide-regles = { path = "../aide-regles" }
