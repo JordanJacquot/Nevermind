@@ -253,10 +253,14 @@ body.avec-3d .anneau { background: none; }
 .carte-choix { padding: 14px 16px; text-align: left; } .carte-choix b { display: block; font-size: 16px; } .carte-choix span { color: var(--doux); font-size: 13px; }
 /* Les cartes d'outils, les raccourcis */
 .outils { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-bottom: 22px; }
-.outil { padding: 16px; text-align: left; display: flex; flex-direction: column; gap: 2px; }
-.outil .haut-o { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.outil .ic { width: 44px; height: 44px; } .outil b { font-size: 17px; } .outil .n { color: var(--doux); font-size: 13.5px; }
-.outil.inactif { cursor: default; box-shadow: none; } .outil.inactif .haut-o, .outil.inactif b { opacity: .45; filter: grayscale(1); }
+/* (l'icône à gauche, centrée sur le titre et la note ; l'étiquette flotte en haut à droite : un titre qui ne tient pas
+   à côté d'elle passe à la ligne, ou dessous, sans jamais la chevaucher) */
+.outil { padding: 14px 16px; text-align: left; display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; column-gap: 14px; }
+.outil .ic { width: 44px; height: 44px; }
+.outil .texte-o { display: flow-root; min-width: 0; }
+.outil .etiquette { float: right; margin-left: 10px; line-height: 16px; }   /* (24 px de haut, comme une ligne du titre : la note passe dessous) */
+.outil b { display: block; font-size: 17px; line-height: 24px; } .outil .n { display: block; margin-top: 2px; color: var(--doux); font-size: 13.5px; }
+.outil.inactif { cursor: default; box-shadow: none; } .outil.inactif .ic, .outil.inactif .etiquette, .outil.inactif b { opacity: .45; filter: grayscale(1); }
 .raccourcis { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
 .raccourci { display: inline-flex; align-items: center; gap: 10px; padding: 7px 12px 7px 7px; border-radius: 99px; font-size: 14.5px; }
 .raccourci .ic { width: 32px; height: 32px; border-radius: 50%; } .raccourci .ic svg { width: 18px; height: 18px; } .raccourci .chev svg { width: 16px; height: 16px; }
