@@ -68,6 +68,15 @@ fn schtasks(args: &[&str]) -> Option<i32> {
         .and_then(|s| s.code())
 }
 
+/// Retire cette tâche planifiée : son erreur, dite simplement
+fn retirer(tache: &str) -> Result<(), String> {
+    match schtasks(&["/Delete", "/TN", tache, "/F"]) {
+        Some(0) => Ok(()),
+        Some(c) => Err(format!("la tâche « {tache} » n'a pas pu être retirée (schtasks a répondu {c})")),
+        None => Err("schtasks.exe n'a pas pu se lancer".into()),
+    }
+}
+
 /// La cible d'un raccourci (.lnk), vide s'il n'existe pas ou est illisible (`Get-ShortcutTarget`)
 pub fn cible_raccourci(lnk: &Path) -> String {
     if !lnk.is_file() {
@@ -226,7 +235,10 @@ impl Systeme for SystemeWindows<'_> {
         }
     }
     fn journal(&mut self, ligne: &str) {
-        self.ctx.journal(ligne);
+        // (données supprimées : rien n'est recréé pour une ligne de journal)
+        if self.ctx.donnees.is_dir() {
+            self.ctx.journal(ligne);
+        }
     }
     fn arreter_tache_aide(&mut self) {
         let _ = schtasks(&["/End", "/TN", &format!("{}{}", travail::TACHE_AIDE_DOSSIER, travail::TACHE_AIDE_NOM)]);
@@ -241,27 +253,27 @@ impl Systeme for SystemeWindows<'_> {
         if !self.tache_existe(travail::TACHE_DEMARRAGE) {
             return Ok(());
         }
-        match schtasks(&["/Delete", "/TN", travail::TACHE_DEMARRAGE, "/F"]) {
-            Some(0) => Ok(()),
-            Some(c) => Err(format!(
-                "la tâche « {} » n'a pas pu être retirée (schtasks a répondu {c})",
-                travail::TACHE_DEMARRAGE
-            )),
-            None => Err("schtasks.exe n'a pas pu se lancer".into()),
-        }
+        retirer(travail::TACHE_DEMARRAGE)
     }
     fn tache_existe(&mut self, nom: &str) -> bool {
         schtasks(&["/Query", "/TN", nom]) == Some(0)
     }
-    fn retirer_tache(&mut self, nom: &str) {
-        let _ = schtasks(&["/Delete", "/TN", nom, "/F"]);
+    fn retirer_tache(&mut self, nom: &str) -> Result<(), String> {
+        retirer(nom)
     }
-    fn retirer_tache_aide(&mut self) {
-        let _ =
-            schtasks(&["/Delete", "/TN", &format!("{}{}", travail::TACHE_AIDE_DOSSIER, travail::TACHE_AIDE_NOM), "/F"]);
+    fn retirer_tache_aide(&mut self) -> Result<(), String> {
+        let t = format!("{}{}", travail::TACHE_AIDE_DOSSIER, travail::TACHE_AIDE_NOM);
+        if !self.tache_existe(&t) {
+            return Ok(());
+        }
+        retirer(&t)
     }
-    fn effacer_cle_aide(&mut self) {
-        let _ = windows_registry::LOCAL_MACHINE.remove_tree("SOFTWARE\\Mindset\\Nevermind\\Aide");
+    fn effacer_cle_aide(&mut self) -> Result<(), String> {
+        let c = "SOFTWARE\\Mindset\\Nevermind\\Aide";
+        if windows_registry::LOCAL_MACHINE.open(c).is_err() {
+            return Ok(());
+        }
+        windows_registry::LOCAL_MACHINE.remove_tree(c).map_err(|e| e.message())
     }
     fn effacer_raccourci_bureau(&mut self) {
         if let Some(l) = self.raccourci_du_bureau() {
