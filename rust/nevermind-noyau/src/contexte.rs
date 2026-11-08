@@ -55,6 +55,10 @@ pub struct Contexte {
     pub(crate) ignores: Mutex<Option<Vec<String>>>,
     pub(crate) assistance: Mutex<crate::assistance::EtatAssistance>,
     pub(crate) maj: Mutex<crate::mises_a_jour::EtatMaj>,
+    /// Lui-même, une fois partagé ([`Contexte::partage`]) : ce que reçoit un travail de fond
+    soi: std::sync::OnceLock<std::sync::Weak<Contexte>>,
+    /// Un travail de fond a rendu quelque chose (à relever sur le fil des blocs)
+    a_relever: std::sync::atomic::AtomicBool,
 }
 
 impl Contexte {
@@ -87,7 +91,32 @@ impl Contexte {
             ignores: Mutex::new(None),
             assistance: Mutex::new(Default::default()),
             maj: Mutex::new(Default::default()),
+            soi: Default::default(),
+            a_relever: Default::default(),
         }
+    }
+
+    /// Le contexte partagé entre le fil des blocs et les travaux de fond (`crate::travaux`) : l'hôte le crée ainsi.
+    /// Un contexte qui n'est pas partagé (les tests d'un bloc seul) fait ses travaux de fond sur place.
+    pub fn partage(self) -> std::sync::Arc<Contexte> {
+        let a = std::sync::Arc::new(self);
+        let _ = a.soi.set(std::sync::Arc::downgrade(&a));
+        a
+    }
+
+    /// Ce contexte partagé, s'il l'est
+    pub fn partage_actuel(&self) -> Option<std::sync::Arc<Contexte>> {
+        self.soi.get().and_then(std::sync::Weak::upgrade)
+    }
+
+    /// Un travail de fond a rendu quelque chose : l'hôte appellera `Bloc::travaux_finis`
+    pub fn travail_a_relever(&self) {
+        self.a_relever.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// L'hôte : un travail a-t-il rendu quelque chose depuis la dernière fois ? (remis à faux)
+    pub fn travaux_a_relever(&self) -> bool {
+        self.a_relever.swap(false, std::sync::atomic::Ordering::SeqCst)
     }
 
     // -----------------------------------------------------------------------------------------------------------

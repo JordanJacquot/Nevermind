@@ -3,7 +3,8 @@
 
 use crate::constat::Cible;
 use crate::donnees::{Donnees, Pilote};
-use aide_regles::fermeture::{Contexte as ContexteRegle, Fiche};
+// (publics : un faux PC des tests de l'hôte en a besoin)
+pub use aide_regles::fermeture::{Contexte as ContexteRegle, Fiche};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;

@@ -23,8 +23,9 @@ pub mod texte;
 #[cfg(windows)]
 pub mod windows;
 
-use constat::{Appli, Cible, Constat};
+use constat::{Appli, Cible, Constat, Correction};
 use donnees::{Donnees, Jeux, Pilote};
+use nevermind_noyau::travaux::{Rendu, Travaux};
 use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
 use pc::{Aide, AideDuContexte, Lecture, Pc};
 use serde_json::{Map, Value, json};
@@ -45,6 +46,16 @@ struct Travail {
 enum Resultat {
     Donnees(Box<Lecture>),
     Pilotes(HashMap<String, Vec<Pilote>>),
+}
+
+/// Le travail de fond de « Couper ce qui est sûr »
+const COUPER: &str = "couper";
+
+/// Ce que rend « Couper ce qui est sûr » : ce qui est fait, ce qui a raté, les changements notés
+struct Coupe {
+    faits: Vec<Correction>,
+    rates: Vec<String>,
+    log: Vec<Value>,
 }
 
 /// Une appli en train de se fermer (`$script:MemoireFermeture`)
@@ -95,6 +106,8 @@ pub struct BlocMemoire {
     partie: i64,
     /// Les effets demandés hors d'un appel qui en reçoit (rendus au prochain appel)
     en_attente: Vec<Effet>,
+    /// Les gestes longs (« Couper ce qui est sûr ») : dans un fil à part (audit G3)
+    travaux: Travaux<Coupe>,
 }
 
 impl Default for BlocMemoire {
@@ -115,6 +128,7 @@ impl Default for BlocMemoire {
             jeux_exes: Vec::new(),
             partie: 0,
             en_attente: Vec::new(),
+            travaux: Travaux::default(),
         }
     }
 }
@@ -431,6 +445,10 @@ impl BlocMemoire {
     // « Couper ce qui est sûr » (Invoke-CorrectionMemoire)
     // -----------------------------------------------------------------------
     fn demander_couper(&mut self, effets: &mut Effets) {
+        // (déjà en train de couper : pas une deuxième question)
+        if self.travaux.en_cours(COUPER) {
+            return;
+        }
         let pc = self.pc();
         let Some(c) = &self.constat else { return };
         if c.corrections.is_empty() {
@@ -467,20 +485,36 @@ impl BlocMemoire {
         if corrections.is_empty() {
             return;
         }
+        // (les services passent par l'Aide, jusqu'à 120 s chacun : dans un travail de fond, la page reste vivante ;
+        //  audit G3. Un deuxième « Oui » pendant ce temps ne relance rien.)
+        if self.travaux.en_cours(COUPER) {
+            return;
+        }
         let pc = self.pc();
-        let mut faits = Vec::new();
-        let mut rates = Vec::new();
-        let mut log: Vec<Value> = Vec::new();
+        let aide = self.aide.clone();
         Self::occupe(effets, "Un instant...");
-        for x in &corrections {
-            match self.service_manuel(ctx, pc.as_ref(), &x.service, &x.demarrage, &mut log) {
-                Ok(()) => faits.push(x.clone()),
-                Err(e) => {
-                    rates.push(format!("{} : {e}", x.nom));
-                    ctx.journal(&format!("Mémoire, correction {} : {e}", x.id));
+        self.travaux.lancer(ctx, COUPER, move |fond| {
+            let ctx = fond.ctx;
+            let mut faits = Vec::new();
+            let mut rates = Vec::new();
+            let mut log: Vec<Value> = Vec::new();
+            for x in &corrections {
+                match service_manuel(ctx, pc.as_ref(), aide.as_ref(), &x.service, &x.demarrage, &mut log) {
+                    Ok(()) => faits.push(x.clone()),
+                    Err(e) => {
+                        rates.push(format!("{} : {e}", x.nom));
+                        ctx.journal(&format!("Mémoire, correction {} : {e}", x.id));
+                    }
                 }
             }
-        }
+            Coupe { faits, rates, log }
+        });
+        self.relever_travaux(ctx, effets);
+    }
+
+    /// La fin de « Couper ce qui est sûr » : la fiche de résultat, et la liste relue
+    fn fin_couper(&mut self, ctx: &Contexte, effets: &mut Effets, r: Coupe) {
+        let Coupe { faits, rates, log } = r;
         Self::occupe(effets, "");
         effets.ajouter(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: Value::Null });
         self.constat = None;
@@ -509,32 +543,48 @@ impl BlocMemoire {
         });
     }
 
-    /// `Set-ServiceOff -Demarrage Manual` : l'état d'origine noté (SvcOriginal), puis le changement par l'Aide
-    fn service_manuel(
-        &self,
-        ctx: &Contexte,
-        pc: &dyn Pc,
-        nom: &str,
-        demarrage: &str,
-        log: &mut Vec<Value>,
-    ) -> Result<(), String> {
-        let (depart, tourne) =
-            pc.service(nom).ok_or_else(|| format!("Impossible de trouver un service assorti du nom « {nom} »."))?;
-        let mut orig: Vec<Value> = match ctx.reglage("SvcOriginal") {
-            Some(Value::Array(a)) => a,
-            Some(Value::Null) | None => Vec::new(),
-            Some(x) => vec![x],
-        };
-        let deja = orig.iter().any(|x| x.as_str().unwrap_or("").split('|').next() == Some(nom));
-        if !deja {
-            orig.push(Value::String(format!("{nom}|{depart}|{}", if tourne { "True" } else { "False" })));
-            ctx.ecrire_reglage("SvcOriginal", Value::Array(orig), true)?;
+    /// Ce que les travaux de fond ont rendu (sur le fil des blocs)
+    fn relever_travaux(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        for r in self.travaux.relever() {
+            match r {
+                Rendu::Effet(e) => effets.ajouter(e),
+                Rendu::Fini { resultat: Ok(c), .. } => self.fin_couper(ctx, effets, c),
+                Rendu::Fini { resultat: Err(e), .. } => {
+                    Self::occupe(effets, "");
+                    Self::message(effets, &format!("Oups, quelque chose s'est mal passé :\n\n{e}"));
+                }
+            }
         }
-        log.push(json!({ "Type": "svc", "Name": nom, "StartType": depart, "Running": tourne, "Nouveau": demarrage }));
-        self.aide.demander(ctx, "service.regler", &json!({ "Nom": nom, "Demarrage": demarrage, "Arreter": tourne }))?;
-        Ok(())
     }
+}
 
+/// `Set-ServiceOff -Demarrage Manual` : l'état d'origine noté (SvcOriginal), puis le changement par l'Aide
+fn service_manuel(
+    ctx: &Contexte,
+    pc: &dyn Pc,
+    aide: &dyn Aide,
+    nom: &str,
+    demarrage: &str,
+    log: &mut Vec<Value>,
+) -> Result<(), String> {
+    let (depart, tourne) =
+        pc.service(nom).ok_or_else(|| format!("Impossible de trouver un service assorti du nom « {nom} »."))?;
+    let mut orig: Vec<Value> = match ctx.reglage("SvcOriginal") {
+        Some(Value::Array(a)) => a,
+        Some(Value::Null) | None => Vec::new(),
+        Some(x) => vec![x],
+    };
+    let deja = orig.iter().any(|x| x.as_str().unwrap_or("").split('|').next() == Some(nom));
+    if !deja {
+        orig.push(Value::String(format!("{nom}|{depart}|{}", if tourne { "True" } else { "False" })));
+        ctx.ecrire_reglage("SvcOriginal", Value::Array(orig), true)?;
+    }
+    log.push(json!({ "Type": "svc", "Name": nom, "StartType": depart, "Running": tourne, "Nouveau": demarrage }));
+    aide.demander(ctx, "service.regler", &json!({ "Nom": nom, "Demarrage": demarrage, "Arreter": tourne }))?;
+    Ok(())
+}
+
+impl BlocMemoire {
     // -----------------------------------------------------------------------
     // « Fermer » une appli (Start-FermetureMemoire, Update-FermetureMemoire, Complete-FermetureMemoire)
     // -----------------------------------------------------------------------
@@ -859,11 +909,12 @@ impl Bloc for BlocMemoire {
 
     fn tic(&mut self, ctx: &Contexte, _cache: bool, effets: &mut Effets) -> Option<Duration> {
         self.rendre_en_attente(effets);
+        self.relever_travaux(ctx, effets);
         self.relever(ctx, effets);
         self.suivre_fermeture(ctx, effets);
         if self.fermeture.is_some() {
             Some(Duration::from_millis(250))
-        } else if self.travail.is_some() {
+        } else if self.travail.is_some() || self.travaux.occupe() {
             Some(Duration::from_millis(300))
         } else {
             // (rien en cours : un coup d'oeil de temps en temps, sans rien lire)
@@ -888,6 +939,10 @@ impl Bloc for BlocMemoire {
             "partie-finie" => self.partie = 0,
             _ => {}
         }
+    }
+
+    fn travaux_finis(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        self.relever_travaux(ctx, effets);
     }
 
     fn fermer(&mut self, _ctx: &Contexte) {

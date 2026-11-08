@@ -235,7 +235,8 @@ pub type EtatService = Box<dyn Fn(&str) -> Option<(String, bool)> + Send>;
 /// Les blocs et ce qui les entoure.
 pub struct Hote {
     blocs: Vec<Box<dyn Bloc>>,
-    pub ctx: Contexte,
+    /// (partagé avec les travaux de fond des blocs, audit G3)
+    pub ctx: std::sync::Arc<Contexte>,
     habillage: Habillage,
     phrase: String,
     version: String,
@@ -375,7 +376,7 @@ impl Hote {
         let n = blocs.len();
         Hote {
             blocs,
-            ctx,
+            ctx: ctx.partage(),
             habillage,
             phrase,
             version: version.to_string(),
@@ -1113,6 +1114,7 @@ impl Hote {
             }
         }
         self.tics(maintenant, ecran);
+        self.travaux(maintenant, ecran);
         // Les bulles pour Mindset (notification.demande), une à la fois, vérifiées toutes les secondes
         if self.k.tic.is_multiple_of(5) && self.ctx.bulles_en_attente() {
             self.ctx.envoyer_notification_suivante();
@@ -1138,6 +1140,30 @@ impl Hote {
                     self.ctx.journal(&format!("Tic de {n} : {e}"));
                     self.tics[i] = Some(maintenant + APRES_ERREUR);
                 }
+            }
+            refaire |= self.appliquer(Some(i), eff, maintenant, ecran, 0);
+        }
+        if refaire {
+            self.mettre_a_jour(maintenant, ecran);
+        }
+    }
+
+    /// Les travaux de fond des blocs (audit G3) : dès que l'un a rendu quelque chose (un texte d'attente, sa fin),
+    /// chaque bloc relève les siens (`Bloc::travaux_finis`), ici, sur le fil des blocs.
+    fn travaux(&mut self, maintenant: Duration, ecran: &mut dyn Ecran) {
+        if !self.ctx.travaux_a_relever() {
+            return;
+        }
+        let mut refaire = false;
+        for i in 0..self.blocs.len() {
+            let mut eff = Effets::default();
+            let (b, ctx) = (&mut self.blocs[i], &self.ctx);
+            let n = b.nom();
+            if let Err(e) = protege(|| b.travaux_finis(ctx, &mut eff)) {
+                self.ctx.journal(&format!("Travail de fond de {n} : {e}"));
+            }
+            if !eff.0.is_empty() {
+                self.reveiller(i, maintenant);
             }
             refaire |= self.appliquer(Some(i), eff, maintenant, ecran, 0);
         }
