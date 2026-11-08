@@ -304,6 +304,7 @@ pub fn lancer() -> ! {
     });
 
     let dossier_pack = choix.theme.pack.as_ref().map(|p| p.dossier.clone());
+    let lecture_images = pack::LectureImages::nouvelle(images);
     let pour_pack = journal_page.clone();
     let pour_fenetre = journal_page.clone();
     let montree = !arguments.demarrage;
@@ -322,7 +323,10 @@ pub fn lancer() -> ! {
             }
             reponse
         })
-        .register_uri_scheme_protocol("fichier", move |_, demande| images.repondre(demande.uri().path()))
+        // (les jaquettes, jusqu'à 15 Mo chacune : lues sur un fil à part, jamais sur celui de la fenêtre)
+        .register_asynchronous_uri_scheme_protocol("fichier", move |_, demande, repondeur| {
+            lecture_images.demander(demande.uri().path(), move |r| repondeur.respond(r))
+        })
         .setup(move |app| {
             ouvrir_fenetre(app, &suite, &donnees_appli, montree, &pour_fenetre);
             Ok(())

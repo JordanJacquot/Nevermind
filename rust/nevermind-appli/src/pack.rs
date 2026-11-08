@@ -290,6 +290,40 @@ impl Images {
     }
 }
 
+/// Ce qui rend la réponse d'une image (le `UriSchemeResponder` de Tauri)
+type Rendre = Box<dyn FnOnce(Response<Vec<u8>>) + Send>;
+
+/// Le protocole `fichier` hors du fil de la fenêtre (petit de l'audit du 08/11) : Tauri appelle un protocole
+/// synchrone sur le fil de la fenêtre, et chaque jaquette (jusqu'à 15 Mo) y était lue en entier, ce qui faisait
+/// saccader la fenêtre sur un disque lent. Les images sont lues ici sur un fil à elles, une à la fois (un disque dur
+/// lit mieux dans l'ordre), et la réponse est rendue quand elle est prête.
+#[derive(Clone)]
+pub struct LectureImages {
+    images: Images,
+    envoi: std::sync::mpsc::Sender<(String, Rendre)>,
+}
+
+impl LectureImages {
+    pub fn nouvelle(images: Images) -> LectureImages {
+        let (envoi, reception) = std::sync::mpsc::channel::<(String, Rendre)>();
+        let pour_fil = images.clone();
+        // (si le fil ne démarre pas, `demander` lit sur place, comme avant)
+        let _ = std::thread::Builder::new().name("nevermind-images".into()).spawn(move || {
+            for (chemin, rendre) in reception {
+                rendre(pour_fil.repondre(&chemin));
+            }
+        });
+        LectureImages { images, envoi }
+    }
+
+    /// L'image de l'adresse `chemin`, rendue par `rendre` depuis le fil des images (sans attendre ici)
+    pub fn demander(&self, chemin: &str, rendre: impl FnOnce(Response<Vec<u8>>) + Send + 'static) {
+        if let Err(std::sync::mpsc::SendError((c, r))) = self.envoi.send((chemin.to_string(), Box::new(rendre))) {
+            r(self.images.repondre(&c));
+        }
+    }
+}
+
 /// Le type d'une image à ses premiers octets (bmp en plus de ceux de suite-commun).
 fn image_type(o: &[u8]) -> Option<&'static str> {
     fichier_pack::type_image(&o[..o.len().min(64)]).or_else(|| o.starts_with(b"BM").then_some("image/bmp"))
@@ -394,5 +428,31 @@ mod tests {
         assert_eq!(i.repondre(&format!("/{}", &a[ADRESSE_FICHIER.len()..])).status(), StatusCode::NOT_FOUND);
         let a = i.adresse(Path::new(r"C:\Windows\win.ini"));
         assert_eq!(i.repondre(&format!("/{}", &a[ADRESSE_FICHIER.len()..])).status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Petit de l'audit du 08/11 : les jaquettes sont lues sur un fil à elles, jamais sur celui qui les demande (le
+    /// fil de la fenêtre) ; la réponse est la même qu'avant.
+    #[test]
+    fn les_images_sont_lues_hors_du_fil_qui_les_demande() {
+        let d = dossier("images-fil", &["jaquette.png"]);
+        let i = Images::default();
+        let a = i.adresse(&d.0.join("jaquette.png"));
+        let j = format!("/{}", &a[ADRESSE_FICHIER.len()..]);
+        let l = LectureImages::nouvelle(i.clone());
+        let (envoi, reception) = std::sync::mpsc::channel();
+        for c in [j.clone(), "/inconnu.png".to_string()] {
+            let e = envoi.clone();
+            l.demander(&c, move |r| {
+                let _ = e.send((std::thread::current().id(), r.status(), r.body().len()));
+            });
+        }
+        let ici = std::thread::current().id();
+        let attente = std::time::Duration::from_secs(10);
+        let (fil, statut, taille) = reception.recv_timeout(attente).unwrap();
+        assert_ne!(fil, ici, "l'image est lue sur le fil qui la demande");
+        assert_eq!((statut, taille), (StatusCode::OK, i.repondre(&j).body().len()));
+        let (fil, statut, _) = reception.recv_timeout(attente).unwrap();
+        assert_ne!(fil, ici);
+        assert_eq!(statut, StatusCode::NOT_FOUND);
     }
 }
