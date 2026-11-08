@@ -742,6 +742,9 @@
 
   let bulleMinuterie = 0;
   // ---------------------------------------------------------------- ce que l'appli peut appeler
+  // Les questions par-dessus l'écran : celle qui est montrée, et celles qui attendent leur tour
+  const questionsEnAttente = [];
+  let questionVue = false;
   const kit = window.kit = {
     surMessage: null,
     etat(nouveau) {
@@ -795,14 +798,18 @@
       if (texte) { o.querySelector('span').textContent = texte; o.classList.add('vu'); } else o.classList.remove('vu');
     },
     // Une question par-dessus l'écran (« Continuer ? ») : la réponse part à l'appli, l'écran reprend
+    // (une seule à l'écran : une question qui arrive pendant une autre attend son tour, sinon l'écouteur clavier de
+    // la première resterait actif et un Entrée répondrait aux deux)
     question(q) {
       const fond = document.getElementById('questionM'); if (!fond) return;
+      if (questionVue) { questionsEnAttente.push(q); return; }
+      questionVue = true;
       const boutons = (q.boutons?.length ? q.boutons : [{ id: 'ok', texte: 'OK' }]);
       const det = q.details?.lignes?.length ? `<div class="details question-r plaque"><button type="button" class="q" data-detail="1" aria-expanded="false">${icone('liste')}<b>${esc(q.details.titre || 'Détails techniques')}</b>${fleche()}</button><p>${q.details.lignes.map(esc).join('<br>')}</p></div>` : '';
       fond.innerHTML = `<div class="boite plasma-bord fort" role="dialog" aria-modal="true">${q.titre ? `<h3>${esc(q.titre)}</h3>` : ''}<p>${esc(q.texte).replace(/\n/g, '<br>')}</p>${det}
         <div class="boutons">${boutons.map((b) => `<button type="button" class="btn${b.style ? ` ${esc(b.style)}` : ''}" data-rep="${esc(b.id)}">${esc(b.texte)}</button>`).join('')}</div></div>`;
       fond.classList.add('vu'); son.ok();
-      const repondre = (v) => { fond.classList.remove('vu'); fond.innerHTML = ''; removeEventListener('keydown', clavier, true); envoyer({ type: 'reponse', id: q.id, valeur: v }); };
+      const repondre = (v) => { fond.classList.remove('vu'); fond.innerHTML = ''; removeEventListener('keydown', clavier, true); questionVue = false; envoyer({ type: 'reponse', id: q.id, valeur: v }); const s = questionsEnAttente.shift(); if (s) kit.question(s); };
       // Le bloc « Détails » s'ouvre et se ferme (clic, Entrée ou A) : il ne répond jamais à la question
       const ouvrirDetails = (b) => { const o = b.parentElement.classList.toggle('ouvert'); b.setAttribute('aria-expanded', String(o)); son.tic(); };
       const clavier = (e) => {

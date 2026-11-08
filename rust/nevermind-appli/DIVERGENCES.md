@@ -43,6 +43,9 @@ tests\juges\hote-accueil.json, 300 cas, plus 500 cas d'une autre graine qui pass
 ## Navigation
 - `focus` de l'état n'est jamais posé : il ne servait qu'au retour depuis une page d'avant (WPF), qui n'existe plus.
 - `page:<n>` mène à la page du kit (comme `Show-Page`) ; l'Organizer et la carte du réseau d'avant n'existent plus.
+- Les questions par-dessus l'écran (`kit.question`) : une seule à la fois ; celle qui arrive pendant une autre attend
+  son tour (audit M10). Le kit.js de PowerShell remplaçait la boîte mais laissait l'écouteur clavier de la première :
+  un Entrée répondait alors aux deux questions (tests\questions.rs).
 
 ## Ce que l'hôte fait en plus (pas de PowerShell)
 - Un bloc qui plante (pages, action, tic, signal, fermeture) est noté au journal et n'arrête rien (`Invoke-Safe`) ;
