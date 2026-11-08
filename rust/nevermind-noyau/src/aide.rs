@@ -76,6 +76,8 @@ pub struct EtatAide {
     etat: Mutex<Etat>,
     reveil: AtomicBool,
     pub(crate) fausse: Mutex<Option<FausseAide>>,
+    /// En test : les actions demandées par `aide` (celles qui peuvent proposer la demande de Windows)
+    pub(crate) avec_demande: Mutex<Vec<String>>,
     pub(crate) exe_attendu: Mutex<Option<String>>,
     pub(crate) attentes: Mutex<Option<(Duration, Duration)>>,
 }
@@ -207,6 +209,13 @@ impl Contexte {
         *verrou(&self.aide.fausse) = Some(f);
     }
 
+    /// Tests : les actions demandées par [`Contexte::aide`], la seule voie qui peut proposer la demande de Windows
+    /// (relevées en mode test ou avec une fausse Aide). Une lecture, une mesure ou un geste de fond (minuterie,
+    /// lancement d'un jeu, fin d'une lecture) ne doit jamais y être : seulement la réponse à un clic.
+    pub fn aide_demandes_relevees(&self) -> Vec<String> {
+        verrou(&self.aide.avec_demande).clone()
+    }
+
     /// Tests : le programme attendu au bout du canal (le test lui-même, pour une fausse Aide sur le vrai canal), et
     /// des attentes plus courtes (tâche, demande de Windows). À appeler avant la première demande.
     pub fn regler_aide_essai(&self, exe_attendu: Option<String>, attentes: Option<(Duration, Duration)>) {
@@ -305,6 +314,9 @@ impl Contexte {
         sans_demande: bool,
     ) -> Result<Value, String> {
         let fausse = verrou(&self.aide.fausse).clone();
+        if !sans_demande && (self.essai || fausse.is_some()) {
+            verrou(&self.aide.avec_demande).push(action.to_string());
+        }
         if let Some(f) = fausse {
             return f(action, parametres);
         }

@@ -188,10 +188,10 @@ pub fn requete(espace: &str, wql: &str, noms: &[&str], delai_s: i32) -> Result<V
     Ok(r)
 }
 
-/// Appelle la méthode statique `methode` de la classe WMI `classe`
-pub fn methode(espace: &str, classe: &str, methode: &str) -> Result<(), String> {
-    let s = wmi(espace)?;
-    // SAFETY : appels COM ordinaires ; chaque VARIANT est vidé après usage
+/// Les paramètres d'entrée à donner à `ExecMethod` pour la méthode `methode` de la classe `classe` (lecture de la
+/// définition de la classe seulement, rien n'est appelé).
+fn parametres_entree(s: &IWbemServices, classe: &str, methode: &str) -> Result<Option<IWbemClassObject>, String> {
+    // SAFETY : appels COM ordinaires
     unsafe {
         let mut c = None;
         s.GetObject(&BSTR::from(classe), WBEM_FLAG_RETURN_WBEM_COMPLETE, None, Some(&mut c), None)
@@ -199,15 +199,26 @@ pub fn methode(espace: &str, classe: &str, methode: &str) -> Result<(), String> 
         let c: IWbemClassObject = c.ok_or("classe WMI introuvable")?;
         let mut entree = None;
         c.GetMethod(&HSTRING::from(methode), 0, &mut entree, std::ptr::null_mut()).map_err(|e| message(&e))?;
-        let entree: IWbemClassObject = entree.ok_or("méthode WMI introuvable")?;
-        let inst = entree.SpawnInstance(0).map_err(|e| message(&e))?;
+        // (une méthode sans paramètre d'entrée, comme MSFT_MpThreat.Remove : Windows ne donne aucune signature, et
+        //  ExecMethod prend alors NULL ; une méthode qui n'existe pas fait échouer GetMethod lui-même)
+        let Some(entree) = entree else { return Ok(None) };
+        Ok(Some(entree.SpawnInstance(0).map_err(|e| message(&e))?))
+    }
+}
+
+/// Appelle la méthode statique `methode` de la classe WMI `classe`
+pub fn methode(espace: &str, classe: &str, methode: &str) -> Result<(), String> {
+    let s = wmi(espace)?;
+    let entree = parametres_entree(&s, classe, methode)?;
+    // SAFETY : appels COM ordinaires ; chaque VARIANT est vidé après usage
+    unsafe {
         let mut sortie = None;
         s.ExecMethod(
             &BSTR::from(classe),
             &BSTR::from(methode),
             WBEM_FLAG_RETURN_WBEM_COMPLETE,
             None,
-            &inst,
+            entree.as_ref(),
             Some(&mut sortie),
             None,
         )
@@ -221,5 +232,47 @@ pub fn methode(espace: &str, classe: &str, methode: &str) -> Result<(), String> 
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod essais {
+    use super::*;
+
+    /// La définition d'une méthode sans paramètre d'entrée : Windows ne donne aucune signature (GetMethod rend NULL,
+    /// documenté), et ExecMethod accepte alors NULL. Lecture des définitions de classes de root\cimv2 seulement :
+    /// rien n'est appelé.
+    #[test]
+    fn methode_sans_parametre_appelable() {
+        let _c = Com::pret();
+        let s = wmi(r"root\cimv2").expect("WMI");
+        // (Reboot n'a aucun paramètre : il n'est jamais appelé ici, seule sa définition est lue)
+        let r = parametres_entree(&s, "Win32_OperatingSystem", "Reboot");
+        assert!(matches!(r, Ok(None)), "méthode sans paramètre : {:?}", r.map(|x| x.is_some()));
+        let r = parametres_entree(&s, "Win32_Process", "Create");
+        assert!(matches!(r, Ok(Some(_))), "méthode avec paramètres : {:?}", r.map(|x| x.is_some()));
+        assert!(parametres_entree(&s, "Win32_Process", "Inexistante").is_err());
+    }
+
+    /// Ce que fait `Remove-MpThreat` (le module Defender de Windows, lu sur le disque) : la méthode STATIQUE `Remove`,
+    /// sans paramètre, de la classe MSFT_MpThreat de root\Microsoft\Windows\Defender. C'est ce que Nevermind appelle.
+    #[test]
+    fn supprimer_les_menaces_comme_remove_mpthreat() {
+        use crate::windows::{DEFENDER, SUPPRIMER_MENACES};
+        assert_eq!(SUPPRIMER_MENACES, ("MSFT_MpThreat", "Remove"));
+        let windir = std::env::var("windir").unwrap_or_else(|_| r"C:\Windows".into());
+        let f = format!(r"{windir}\System32\WindowsPowerShell\v1.0\Modules\Defender\MSFT_MpThreat.cdxml");
+        let Ok(t) = std::fs::read_to_string(&f) else {
+            eprintln!("{f} absent : vérification du module Defender sautée");
+            return;
+        };
+        let t = t.split("<!-- SIG").next().unwrap_or_default().to_string();
+        let classe = format!(r#"ClassName="{}\{}""#, DEFENDER, SUPPRIMER_MENACES.0);
+        assert!(t.to_lowercase().contains(&classe.to_lowercase()), "classe : {classe}");
+        let statiques =
+            t.split("<StaticCmdlets>").nth(1).and_then(|x| x.split("</StaticCmdlets>").next()).unwrap_or("");
+        assert!(statiques.contains("Verb=\"Remove\""), "Remove-MpThreat est une méthode statique");
+        assert!(statiques.contains(&format!("MethodName=\"{}\"", SUPPRIMER_MENACES.1)));
+        assert!(!statiques.contains("<Parameters>"), "Remove n'a aucun paramètre");
     }
 }

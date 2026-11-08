@@ -115,7 +115,14 @@ pub trait Pc {
     fn origines_machine_effacer(&mut self) -> Result<(), String>;
 
     // ---- L'Aide (tout ce qui demande les droits administrateur)
+    /// Un geste demandé d'un clic : peut proposer la demande de Windows si l'Aide ne répond pas.
     fn aide(&mut self, action: &str, parametres: Value, delai_ms: u64) -> Result<Value, String>;
+    /// `Get-AideLecture` : une lecture réservée aux administrateurs (fin d'une lecture, pas un clic), jamais de
+    /// demande de Windows. Par défaut `aide` : seulement pour un Pc dont l'Aide ne demande jamais rien (le
+    /// désinstalleur, déjà administrateur ; les faux PC des tests). Celui de Nevermind passe par `ctx.aide_lecture`.
+    fn aide_lecture(&mut self, action: &str, parametres: Value) -> Option<Value> {
+        self.aide(action, parametres, 60000).ok()
+    }
 
     // ---- Alimentation, écrans, souris, programmes
     /// powercfg avec ses arguments : (code de sortie, texte écrit).

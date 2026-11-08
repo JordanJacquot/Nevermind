@@ -1027,6 +1027,25 @@ pub fn message_taches(faites: &[String], ratees: &[String]) -> Result<Option<Str
     Ok(Some(format!("{n} tâche{} désactivée{}.\n\n{txt}", s(n), s(n))))
 }
 
+/// « Analyser un dossier » : le dossier choisi sans sa barre finale (« C:\Jeux\ » donne « C:\Jeux »), sauf la racine
+/// d'un lecteur qui reste « C:\ » (« C: » seul est le dossier courant du lecteur, pas le disque).
+pub fn dossier_a_analyser(choisi: &str) -> String {
+    let d = choisi.trim().trim_end_matches('\\');
+    let b = d.as_bytes();
+    if b.len() == 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+        return format!("{d}\\");
+    }
+    d.to_string()
+}
+
+/// Le nom montré dans le titre de l'analyse (`Split-Path -Leaf`) : le dernier dossier, ou « C:\ » pour un lecteur
+pub fn nom_du_dossier(d: &str) -> String {
+    if d.ends_with('\\') {
+        return d.to_string();
+    }
+    d.rsplit('\\').next().unwrap_or(d).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -199,9 +199,9 @@ impl BlocProtection {
         if let Some(sys) = self.sys.clone()
             && !sys.est_admin()
         {
-            let lecture = ctx.aide("lecture.securite", &json!({}), 60_000).ok();
+            let lecture = ctx.aide_lecture("lecture.securite", &json!({}));
             if lecture.is_some() {
-                let taches = ctx.aide("lecture.taches", &json!({}), 60_000);
+                let taches = ctx.aide_sans_demande("lecture.taches", &json!({}), 60_000);
                 if let Err(e) = &taches {
                     ctx.journal(&format!("Aide : tâches planifiées non lues ({e})"));
                 }
@@ -295,7 +295,7 @@ impl BlocProtection {
             ("echec", "Échec".into(), vec![format!("L'analyse n'a pas pu se faire : {e}")], Vec::new())
         } else {
             let admin = sys.est_admin();
-            let aide = if admin { None } else { ctx.aide("lecture.securite", &json!({}), 60_000).ok() };
+            let aide = if admin { None } else { ctx.aide_lecture("lecture.securite", &json!({})) };
             let (lu, journal) = regles::menaces_analyse(a.debut, admin, aide.as_ref(), &|| sys.detections());
             if let Some(j) = journal {
                 ctx.journal(&j);
@@ -609,9 +609,9 @@ impl Bloc for BlocProtection {
                 return true;
             }
             "sec-analyser-dossier" => {
-                let d = valeur.as_str().map(str::trim).unwrap_or_default().trim_end_matches('\\').to_string();
+                let d = regles::dossier_a_analyser(valeur.as_str().unwrap_or_default());
                 if !d.is_empty() && self.defender_ok() {
-                    let nom = d.rsplit('\\').next().unwrap_or(&d).to_string();
+                    let nom = regles::nom_du_dossier(&d);
                     self.analyser(
                         effets,
                         TypeAnalyse::Personnalisee,

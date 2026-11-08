@@ -237,3 +237,38 @@ fn lag_mesure_coupee_et_mesures_gardees() {
     assert!(!b.mesure_en_cours());
     let _ = std::fs::remove_dir_all(&ctx.donnees);
 }
+
+/// Les passages de la surveillance (minuterie) lisent les connexions et les emplacements cachés par l'Aide, sans
+/// jamais proposer la demande de Windows, même quand l'Aide ne répond pas (audit G5).
+#[test]
+fn surveillance_sans_demande_de_windows() {
+    for repond in [true, false] {
+        let ctx = contexte(if repond { "bloc-trafic-aide" } else { "bloc-trafic-sans-aide" });
+        let vues = Arc::new(Mutex::new(Vec::<String>::new()));
+        let v = vues.clone();
+        ctx.fausse_aide(Arc::new(move |a: &str, _p: &Value| {
+            v.lock().unwrap().push(a.to_string());
+            if !repond {
+                return Err("l'Aide ne répond pas".into());
+            }
+            Ok(match a {
+                "trafic.tcp" => json!({ "CompteursOk": true, "Lignes": ["7000004|20.1.2.3|4444|50000|5|300|200"] }),
+                _ => json!({}),
+            })
+        }));
+        let w = Arc::new(FauxWindows::default());
+        let mut b = BlocTrafic::avec_systeme(w.clone());
+        let mut e = Effets::default();
+        assert!(b.action(&ctx, "clic:BtnTraffic", &Value::Null, &mut e));
+        for _ in 0..3 {
+            let _ = b.tic(&ctx, false, &mut e);
+        }
+        let vues = vues.lock().unwrap().clone();
+        assert!(vues.iter().any(|a| a == "trafic.tcp"), "{vues:?}");
+        if repond {
+            assert!(vues.iter().any(|a| a == "lecture.chemins"), "{vues:?}");
+        }
+        assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new(), "aucune demande de Windows pour une lecture");
+        b.fermer(&ctx);
+    }
+}

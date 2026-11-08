@@ -288,7 +288,8 @@ impl BlocPerf {
             }
             let mut n = 0;
             for nom in noms {
-                match ctx.aide("processus.fermer", &json!({ "Nom": nom }), 15000) {
+                // (jamais de demande de Windows : la partie commence, personne n'a cliqué ; audit G5)
+                match ctx.aide_sans_demande("processus.fermer", &json!({ "Nom": nom }), 15000) {
                     Ok(v) => n += nb(Some(&v)) as usize,
                     Err(e) => ctx.journal(&format!("Mode jeu : {} pas fermé ({e})", a.nom)),
                 }

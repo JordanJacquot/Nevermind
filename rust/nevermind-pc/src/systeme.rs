@@ -107,7 +107,8 @@ pub fn changements_definitifs(pc: &mut dyn Pc) -> Vec<String> {
 
 /// `Add-AideLecturePc` : ce que seule l'Aide sait lire (Secure Boot, puce TPM, santé des disques)
 pub fn completer_par_aide(pc: &mut dyn Pc, e: &mut crate::analyse::Entrees) {
-    let Ok(l) = pc.aide("lecture.pc", json!({}), 120000) else { return };
+    // (la lecture vient de finir, personne n'a cliqué : jamais de demande de Windows ; audit G5)
+    let Some(l) = pc.aide_lecture("lecture.pc", json!({})) else { return };
     let d = &mut e.data;
     if d.get("SecureBoot").is_none_or(|x| x.is_null())
         && let Some(sb) = l.get("SecureBoot").filter(|x| !x.is_null())
@@ -238,6 +239,9 @@ impl Pc for PcWindows<'_> {
             return Err("mode test : l'Aide n'est pas appelée".into());
         }
         self.ctx.aide(action, &parametres, delai_ms)
+    }
+    fn aide_lecture(&mut self, action: &str, parametres: Value) -> Option<Value> {
+        self.ctx.aide_lecture(action, &parametres)
     }
     fn powercfg(&mut self, args: &[String]) -> (i32, String) {
         let lecture = matches!(args.first().map(|s| s.as_str()), Some("/getactivescheme" | "/list" | "/q"));

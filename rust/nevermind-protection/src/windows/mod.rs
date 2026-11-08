@@ -22,6 +22,8 @@ use windows::Win32::System::SystemInformation::GetLocalTime;
 /// CREATE_NO_WINDOW : aucun programme lancé n'ouvre de fenêtre de console
 const SANS_FENETRE: u32 = 0x0800_0000;
 pub(crate) const DEFENDER: &str = "root\\Microsoft\\Windows\\Defender";
+/// `Remove-MpThreat` : la méthode statique `Remove` (sans paramètre) de `MSFT_MpThreat` (MSFT_MpThreat.cdxml)
+pub(crate) const SUPPRIMER_MENACES: (&str, &str) = ("MSFT_MpThreat", "Remove");
 
 /// Le message d'une erreur de Windows, en clair
 pub(crate) fn message(e: &windows::core::Error) -> String {
@@ -165,7 +167,7 @@ impl Systeme for Vrai {
 
     fn supprimer_menaces(&self) -> Result<(), String> {
         let _c = com::Com::pret();
-        com::methode(DEFENDER, "MSFT_MpThreat", "Remove")
+        com::methode(DEFENDER, SUPPRIMER_MENACES.0, SUPPRIMER_MENACES.1)
     }
 
     fn desactiver_tache(&self, nom: &str, chemin: &str) -> Result<bool, String> {

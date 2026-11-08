@@ -1043,7 +1043,7 @@ impl Contexte {
         }
         // Journal de l'Aide (gardé en mémoire par elle, 200 lignes) : seulement si elle tourne, sans la réveiller
         if self.aide_joignable(1)
-            && let Ok(v) = self.aide("aide.journal", &json!({}), 10000)
+            && let Ok(v) = self.aide_sans_demande("aide.journal", &json!({}), 10000)
         {
             let l: Vec<String> = liste(&v).iter().map(texte_ps).collect();
             fichiers.push(("journal-aide.txt".into(), masque.appliquer(&l.join("\r\n"))));

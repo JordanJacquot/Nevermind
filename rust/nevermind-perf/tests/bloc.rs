@@ -123,3 +123,28 @@ fn actions_du_mode_jeu() {
     assert!(!b.action(&ctx, "tweak", &json!({ "valeur": "0", "oui": true }), &mut e));
     assert!(!b.action(&ctx, "dem:0", &json!(true), &mut e));
 }
+
+/// Le lancement d'un jeu ferme les applis du mode jeu par l'Aide, sans jamais proposer la demande de Windows : la
+/// partie commence, l'utilisateur n'a rien cliqué (audit G5).
+#[test]
+fn lancement_d_un_jeu_sans_demande_de_windows() {
+    let ctx = contexte("jeu-sans-demande");
+    let vues = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let v = vues.clone();
+    ctx.fausse_aide(std::sync::Arc::new(move |a: &str, _p: &Value| {
+        v.lock().unwrap().push(a.to_string());
+        Ok(json!(1))
+    }));
+    let mut s = pc();
+    s.progs.push(Programme { pid: 77, nom: "OneDrive".into(), ..Default::default() });
+    s.progs.push(Programme { pid: 4242, nom: "RocketLeague".into(), ..Default::default() });
+    s.chemins.insert(4242, r"C:\Jeux\RocketLeague\Binaries\Win64\RocketLeague.exe".into());
+    let mut b = BlocPerf::avec(Box::new(s), Box::new(FauxCompteur::default()));
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "modejeu", &json!(true), &mut e));
+    b.signal(&ctx, "jeux-liste", &json!([{ "nom": "Rocket League", "exes": [r"C:\Jeux\RocketLeague\Binaries\Win64\RocketLeague.exe"], "source": "Epic" }]), &mut e);
+    faire(&mut b, &ctx, true, 6.0, &mut e);
+    assert!(signaux(&e).iter().any(|(n, _)| n == "partie-commencee"), "la partie doit être vue");
+    assert!(vues.lock().unwrap().iter().any(|a| a == "processus.fermer"), "OneDrive est fermé par l'Aide");
+    assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new(), "aucune demande de Windows au lancement d'un jeu");
+}

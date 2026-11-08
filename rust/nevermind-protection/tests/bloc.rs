@@ -372,3 +372,63 @@ fn analyse_demandee_par_le_trafic() {
     assert_eq!(signal(&e, "analyse-finie"), Some(&json!({ "Marque": "cle-a", "Resultat": "clean" })));
     assert!(f.gestes().iter().any(|g| g == "analyser Personnalisee C:/x/a.exe"));
 }
+
+/// La vérification de fond et la fin d'une analyse complètent leur lecture par l'Aide (sans droits), sans jamais
+/// proposer la demande de Windows : ce sont des lectures, pas des clics (audit G5).
+#[test]
+fn lectures_par_l_aide_sans_demande_de_windows() {
+    let ctx = contexte("sans-demande");
+    let vues = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let v = vues.clone();
+    ctx.fausse_aide(Arc::new(move |a: &str, _p: &Value| {
+        v.lock().unwrap().push(a.to_string());
+        Ok(match a {
+            "lecture.taches" => json!([]),
+            _ => json!({ "ExclusionsNombre": 0, "Menaces": [], "Detections": [] }),
+        })
+    }));
+    let f = Arc::new(faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap()));
+    assert!(!f.admin);
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    let _ = b.pages(&ctx, "protection");
+    attendre(&mut b, &ctx);
+    let mut e = Effets::default();
+    b.signal(
+        &ctx,
+        "analyse-demandee",
+        &json!({ "Sorte": "CustomScan", "Chemins": ["C:/x/a.exe"], "Titre": "Analyse de A", "Marque": "cle-a" }),
+        &mut e,
+    );
+    attendre(&mut b, &ctx);
+    let vues = vues.lock().unwrap().clone();
+    assert!(vues.iter().filter(|a| *a == "lecture.securite").count() >= 2, "{vues:?}");
+    assert!(vues.iter().any(|a| a == "lecture.taches"), "{vues:?}");
+    assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new(), "aucune demande de Windows pour une lecture");
+}
+
+/// « Analyser un dossier » : la racine d'un lecteur reste « C:\ » (« C: » serait le dossier courant du lecteur), la
+/// barre finale d'un dossier est enlevée.
+#[test]
+fn analyser_un_dossier_garde_la_racine_du_lecteur() {
+    for (choisi, analyse, titre) in [
+        (r"C:\", r"C:\", r"Analyse de C:\"),
+        (r"D:\", r"D:\", r"Analyse de D:\"),
+        (r"d:\\", r"d:\", r"Analyse de d:\"),
+        (r"C:\Jeux\", r"C:\Jeux", "Analyse de Jeux"),
+        (r"C:\Jeux", r"C:\Jeux", "Analyse de Jeux"),
+        (r" C:\Jeux\Steam\ ", r"C:\Jeux\Steam", "Analyse de Steam"),
+    ] {
+        let ctx = contexte("dossier");
+        let mut f = faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap());
+        f.admin = true;
+        let f = Arc::new(f);
+        let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+        attendre(&mut b, &ctx);
+        let mut e = Effets::default();
+        assert!(b.action(&ctx, "sec-analyser-dossier", &json!(choisi), &mut e));
+        assert_eq!(b.panneau_donnees().unwrap()["titre"], titre, "{choisi}");
+        attendre(&mut b, &ctx);
+        let g = f.gestes();
+        assert!(g.iter().any(|x| *x == format!("analyser Personnalisee {analyse}")), "{choisi} : {g:?}");
+    }
+}

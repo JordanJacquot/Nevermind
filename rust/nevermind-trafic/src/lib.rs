@@ -662,7 +662,8 @@ impl BlocTrafic {
     fn lignes_tcp(&mut self, ctx: &Contexte) -> Vec<String> {
         let maintenant = self.maintenant();
         if self.aide_tcp_ko.is_none_or(|t| maintenant - t > 60.0) {
-            match ctx.aide("trafic.tcp", &json!({}), 15000) {
+            // (une lecture de la minuterie : jamais de demande de Windows, comme Get-TrafficTcp ; audit G5)
+            match ctx.aide_sans_demande("trafic.tcp", &json!({}), 15000) {
                 Ok(r) => {
                     self.aide_tcp_ko = None;
                     self.compteurs_ok = valeur::vrai(valeur::champ(&r, "CompteursOk"));
@@ -731,7 +732,7 @@ impl BlocTrafic {
                     r.chemins_aide.insert(*p, String::new());
                 }
                 let pids: Vec<String> = v.iter().map(|p| p.to_string()).collect();
-                if let Ok(x) = ctx.aide("lecture.chemins", &json!({ "Pids": pids }), 15000)
+                if let Ok(x) = ctx.aide_sans_demande("lecture.chemins", &json!({ "Pids": pids }), 15000)
                     && let Some(o) = x.as_object()
                 {
                     for (k, c) in o {
@@ -975,7 +976,8 @@ impl BlocTrafic {
         let systeme = !services.is_empty() || chemin.to_lowercase().starts_with(&format!("{windir}\\"));
         if !systeme {
             // (la règle commune de fermeture est celle de l'Aide : jamais un service, Windows, la suite...)
-            let _ = ctx.aide("processus.fermer", &json!({ "Chemin": chemin }), 15000);
+            // (l'Aide vient de poser la règle du pare-feu : jamais une deuxième demande de Windows pour la fermeture)
+            let _ = ctx.aide_sans_demande("processus.fermer", &json!({ "Chemin": chemin }), 15000);
         }
         effets.ajouter(Effet::Annonce(format!(
             "« {titre} » est bloqué{}.\n\nPour annuler : page Sauvegarde, historique, « Annuler ».",

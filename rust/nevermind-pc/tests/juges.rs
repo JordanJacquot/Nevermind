@@ -732,3 +732,21 @@ fn le_bloc_sur_un_faux_pc() {
     assert!(b.session().journal_resultat.is_none(), "revenu en arrière");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// Fin de la lecture du PC (le fil de lecture a fini, aucun clic) : Secure Boot, TPM et santé des disques sont
+/// complétés par l'Aide sans jamais proposer la demande de Windows (audit G5, `Get-AideLecture`).
+#[test]
+fn lecture_du_pc_completee_sans_demande_de_windows() {
+    use nevermind_noyau::Contexte;
+    let d = nevermind_noyau::dossier_essai("pc-lecture-aide");
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true);
+    ctx.fausse_aide(std::sync::Arc::new(|a: &str, _p: &Value| {
+        assert_eq!(a, "lecture.pc");
+        Ok(json!({ "SecureBoot": true, "TpmOk": false, "Fiabilite": {} }))
+    }));
+    let mut p = nevermind_pc::systeme::PcWindows::nouveau(&ctx);
+    let mut e = Entrees { data: json!({ "SecureBoot": null, "Disks": [] }), ..Default::default() };
+    nevermind_pc::systeme::completer_par_aide(&mut p, &mut e);
+    assert_eq!(e.data["SecureBoot"], json!(true), "la lecture de l'Aide est prise");
+    assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new(), "aucune demande de Windows pour une lecture");
+}
