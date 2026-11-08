@@ -19,8 +19,8 @@ mod taches;
 mod temps;
 
 use crate::systeme::{
-    Entree, ErreurCanal, ErreurEffacement, Hote, Identite, Lance, LigneTcp, ProcessusVu, RappelPm, RappelTrace,
-    RefusTrace, Systeme, TacheVue, Trace, ValeurLue,
+    Entree, ErreurCanal, ErreurEffacement, Hote, Identite, Lance, LigneTcp, ProcessusTenu, ProcessusVu, RappelPm,
+    RappelTrace, RefusTrace, Systeme, TacheVue, Trace, ValeurLue,
 };
 use aide_regles::carte::FicheCarte;
 use aide_regles::demandes::{Carte, ContexteProgrammes, Demarrage, Pc, ip_normale};
@@ -520,8 +520,8 @@ impl Systeme for Windows {
         processus::fiche(pid, chemin)
     }
 
-    fn fermer_processus(&self, pid: i64) -> bool {
-        processus::fermer(pid)
+    fn tenir_processus(&self, pid: i64) -> Option<Box<dyn ProcessusTenu + '_>> {
+        processus::tenir(pid).map(|t| Box::new(t) as Box<dyn ProcessusTenu>)
     }
 
     fn presentmon(&self) -> Result<String, String> {

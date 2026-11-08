@@ -55,6 +55,10 @@ pub(crate) struct FauxSysteme {
     // Pour le faux canal : les connexions qui arrivent, une par une
     connexions: Arc<Mutex<VecDeque<FausseConnexion>>>,
     reponses: Arc<Mutex<Vec<String>>>,
+    /// M6 : ce numéro est redonné par Windows à ce processus juste après la lecture de la fiche (le processus visé
+    /// s'est terminé entre-temps)
+    pub(crate) redonne_apres_fiche: Mutex<HashMap<i64, FauxProcessus>>,
+    redonnes: Mutex<HashMap<i64, FauxProcessus>>,
     /// Les fausses mesures (PresentMon, trace réseau, tables TCP) : rejouées par essais_mesures
     pub(crate) mesures: Arc<Mutex<FaussesMesures>>,
 }
@@ -99,6 +103,54 @@ impl Trace for FausseTrace {
     }
     fn arreter(&mut self) {
         self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Un faux processus tenu par sa poignée : il reste celui qui a été ouvert. Si son numéro est redonné après la lecture
+/// de sa fiche, c'est qu'il s'est terminé (tant qu'une poignée est ouverte, Windows ne redonne pas un numéro : c'est le
+/// seul cas possible)
+struct FauxTenu<'a> {
+    s: &'a FauxSysteme,
+    x: FauxProcessus,
+}
+
+impl FauxTenu<'_> {
+    fn remplace(&self) -> bool {
+        self.s.redonnes.lock().unwrap().get(&self.x.pid).is_some_and(|n| n.chemin != self.x.chemin)
+    }
+}
+
+impl ProcessusTenu for FauxTenu<'_> {
+    fn fiche(&self) -> Fiche {
+        let f = fiche_de(&self.x);
+        if let Some(n) = self.s.redonne_apres_fiche.lock().unwrap().remove(&self.x.pid) {
+            self.s.redonnes.lock().unwrap().insert(self.x.pid, n);
+        }
+        f
+    }
+    fn debut(&self) -> Option<i64> {
+        Some(self.x.pid * 1000)
+    }
+    fn actif(&self) -> bool {
+        !self.remplace()
+    }
+    fn chemin(&self) -> String {
+        self.x.chemin.clone()
+    }
+    fn terminer(&self) -> bool {
+        self.s.etat().fermes.push(self.x.pid);
+        true
+    }
+}
+
+fn fiche_de(x: &FauxProcessus) -> Fiche {
+    Fiche {
+        id: x.pid,
+        chemin: x.chemin.clone(),
+        session: Some(x.session),
+        compte: x.compte.clone(),
+        protection: Some(x.protection),
+        eleve: Some(x.eleve),
     }
 }
 
@@ -158,6 +210,8 @@ impl FauxSysteme {
             connexions: Arc::default(),
             reponses: Arc::default(),
             mesures: Arc::default(),
+            redonne_apres_fiche: Mutex::default(),
+            redonnes: Mutex::default(),
         }
     }
 
@@ -357,21 +411,21 @@ impl Systeme for FauxSysteme {
         self.processus.iter().find(|x| x.pid == pid).map(|x| x.chemin.clone()).unwrap_or_default()
     }
     fn fiche(&self, pid: i64, chemin: &str) -> Fiche {
-        match self.processus.iter().find(|x| x.pid == pid) {
-            Some(x) => Fiche {
-                id: pid,
-                chemin: x.chemin.clone(),
-                session: Some(x.session),
-                compte: x.compte.clone(),
-                protection: Some(x.protection),
-                eleve: Some(x.eleve),
-            },
+        let actuel = self.redonnes.lock().unwrap().get(&pid).cloned();
+        let f = match actuel.as_ref().or_else(|| self.processus.iter().find(|x| x.pid == pid)) {
+            Some(x) => fiche_de(x),
             None => Fiche { id: pid, chemin: chemin.into(), ..Default::default() },
+        };
+        // (la fiche lue, le processus visé se termine et son numéro est redonné)
+        if let Some(n) = self.redonne_apres_fiche.lock().unwrap().remove(&pid) {
+            self.redonnes.lock().unwrap().insert(pid, n);
         }
+        f
     }
-    fn fermer_processus(&self, pid: i64) -> bool {
-        self.etat().fermes.push(pid);
-        true
+    fn tenir_processus(&self, pid: i64) -> Option<Box<dyn ProcessusTenu + '_>> {
+        let actuel = self.redonnes.lock().unwrap().get(&pid).cloned();
+        let x = actuel.or_else(|| self.processus.iter().find(|x| x.pid == pid).cloned())?;
+        Some(Box::new(FauxTenu { s: self, x }))
     }
 
     fn presentmon(&self) -> Result<String, String> {
@@ -646,6 +700,21 @@ fn fermer_seulement_ce_que_la_regle_permet() {
     // Un Mindset.exe : jamais par son nom
     let r = demander(&s, NEVERMIND as u32, r#"{"a":"processus.fermer","p":{"Nom":"Mindset"}}"#);
     assert_eq!(r["ok"], false);
+}
+
+/// M6 (audit du 08/11) : le programme visé se termine juste après la lecture de sa fiche, et Windows redonne aussitôt
+/// son numéro à un autre processus (un service, un programme d'un autre compte) : l'Aide (SYSTEM) ne doit pas fermer
+/// ce nouveau processus
+#[test]
+fn un_numero_redonne_entre_la_fiche_et_la_fermeture_n_est_pas_ferme() {
+    let s = FauxSysteme::new();
+    s.redonne_apres_fiche
+        .lock()
+        .unwrap()
+        .insert(800, FauxProcessus { eleve: 1, ..p(800, "C:\\Windows\\System32\\svchost.exe", "S-1-5-18") });
+    let r = demander(&s, NEVERMIND as u32, r#"{"a":"processus.fermer","p":{"Nom":"chrome"}}"#);
+    assert_eq!(r["r"], 1, "{r}");
+    assert_eq!(s.etat().fermes, vec![804], "le processus qui a repris le numéro a été fermé : {:?}", s.etat().appels);
 }
 
 #[test]

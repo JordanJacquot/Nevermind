@@ -452,13 +452,18 @@ fn fermer(
     };
     let mut n = 0;
     // (par son nom exact : « [ » ou « * » dans un nom de programme ne sont pas des jokers)
+    let meme_nom = |n: &str| texte::egal(if texte::finit(n, ".exe") { &n[..n.len() - 4] } else { n }, nom);
     for p in s.processus() {
-        let nom_processus = if texte::finit(&p.nom, ".exe") { &p.nom[..p.nom.len() - 4] } else { p.nom.as_str() };
-        if !texte::egal(nom_processus, nom) {
+        if !meme_nom(&p.nom) {
             continue;
         }
-        let pc = s.chemin_processus(p.pid);
-        if pc.is_empty() || s.dossiers().dans_windows(&pc) {
+        // (audit du 08/11, M6) Une seule poignée, gardée de la fiche à la fermeture : le numéro ne peut pas être
+        // redonné entre-temps, et tout ce qui décide est lu par elle (jamais rouvert par son numéro)
+        let Some(t) = s.tenir_processus(p.pid) else { continue };
+        let Some(debut) = t.debut() else { continue };
+        let f = t.fiche();
+        let pc = f.chemin.clone();
+        if pc.is_empty() || s.dossiers().dans_windows(&pc) || !meme_nom(texte::nom_fichier(&pc)) {
             continue;
         }
         if let Some(c) = chemin
@@ -466,10 +471,14 @@ fn fermer(
         {
             continue;
         }
-        if fermeture::refus(&ctx, &s.fiche(p.pid, &pc), true).is_some() {
+        if fermeture::refus(&ctx, &f, true).is_some() {
             continue;
         }
-        if s.fermer_processus(p.pid) {
+        // Revérifié juste avant de fermer : toujours en cours, même heure de démarrage, même programme
+        if !t.actif() || t.debut() != Some(debut) || !texte::egal(&t.chemin(), &pc) {
+            continue;
+        }
+        if t.terminer() {
             n += 1;
         }
     }

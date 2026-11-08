@@ -62,6 +62,23 @@ pub struct ProcessusVu {
     pub nom: String,
 }
 
+/// Un processus tenu par une poignée, gardée de la lecture de sa fiche jusqu'à sa fermeture (audit du 08/11, M6) : tant
+/// qu'elle est ouverte, Windows ne peut pas redonner son numéro à un autre processus. Tout est lu, et il est fermé, par
+/// cette même poignée, jamais rouvert par son numéro (comme la page RAM, nevermind-memoire `garder`, `verifier`,
+/// `terminer`).
+pub trait ProcessusTenu {
+    /// Ce que Windows dit de lui (chemin, session, compte, protection, droits administrateur)
+    fn fiche(&self) -> Fiche;
+    /// Son heure de démarrage (FILETIME), `None` si illisible
+    fn debut(&self) -> Option<i64>;
+    /// Il tourne encore
+    fn actif(&self) -> bool;
+    /// Son chemin complet, relu maintenant (vide si illisible)
+    fn chemin(&self) -> String;
+    /// Le ferme (comme Process.Kill de .NET : code de sortie -1) ; vrai si Windows l'a fait
+    fn terminer(&self) -> bool;
+}
+
 /// Une tâche planifiée
 #[derive(Clone, Debug)]
 pub struct TacheVue {
@@ -217,8 +234,8 @@ pub trait Systeme: Pc + Send + Sync + 'static {
     fn chemin_processus(&self, pid: i64) -> String;
     /// Ce que Windows dit d'un processus (`Read-AideFiche` ; `chemin` : à défaut de le lire)
     fn fiche(&self, pid: i64, chemin: &str) -> Fiche;
-    /// Ferme le processus ; vrai si Windows l'a fait
-    fn fermer_processus(&self, pid: i64) -> bool;
+    /// Ouvre le processus pour le lire puis peut-être le fermer, et garde sa poignée ; `None` s'il ne s'ouvre pas
+    fn tenir_processus(&self, pid: i64) -> Option<Box<dyn ProcessusTenu + '_>>;
 
     // --- Mesures continues (étape 1b)
     /// PresentMon du dossier de Nevermind, seulement s'il est bien signé par Intel (`Get-AidePresentMon`) : son

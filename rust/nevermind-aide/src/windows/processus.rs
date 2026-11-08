@@ -2,22 +2,24 @@
 //! droits administrateur ; et le compte de l'Aide elle-même.
 
 use super::outils::{MemoireLocale, Poignee, texte};
+use crate::systeme::ProcessusTenu;
 use aide_regles::fermeture::Fiche;
-use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError, HANDLE, LUID};
+use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, FILETIME, GetLastError, HANDLE, LUID, WAIT_TIMEOUT};
 use windows::Win32::Security::Authorization::{ConvertSidToStringSidW, ConvertStringSidToSidW};
 use windows::Win32::Security::{
     AdjustTokenPrivileges, CheckTokenMembership, GetTokenInformation, LUID_AND_ATTRIBUTES, LookupAccountNameW,
     LookupPrivilegeValueW, PSID, SE_PRIVILEGE_ENABLED, SID_NAME_USE, TOKEN_ADJUST_PRIVILEGES, TOKEN_ELEVATION,
-    TOKEN_PRIVILEGES, TOKEN_QUERY, TOKEN_USER, TokenElevation, TokenUser,
+    TOKEN_PRIVILEGES, TOKEN_QUERY, TOKEN_USER, TokenElevation, TokenSessionId, TokenUser,
 };
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
 use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows::Win32::System::Threading::{
-    CreateMutexW, GetCurrentProcess, GetProcessInformation, OpenProcess, OpenProcessToken, PROCESS_ACCESS_RIGHTS,
-    PROCESS_NAME_WIN32, PROCESS_PROTECTION_LEVEL_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
-    ProcessProtectionLevelInfo, QueryFullProcessImageNameW, ReleaseMutex, TerminateProcess,
+    CreateMutexW, GetCurrentProcess, GetProcessInformation, GetProcessTimes, OpenProcess, OpenProcessToken,
+    PROCESS_ACCESS_RIGHTS, PROCESS_NAME_WIN32, PROCESS_PROTECTION_LEVEL_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, ProcessProtectionLevelInfo, QueryFullProcessImageNameW, ReleaseMutex,
+    TerminateProcess, WaitForSingleObject,
 };
 use windows::core::{BOOL, HSTRING, PCWSTR, PWSTR};
 
@@ -29,14 +31,7 @@ fn ouvrir(pid: i64, acces: PROCESS_ACCESS_RIGHTS) -> Option<Poignee> {
 
 /// Le chemin complet du programme d'un processus (vide si illisible)
 pub fn chemin(pid: i64) -> String {
-    let Some(h) = ouvrir(pid, PROCESS_QUERY_LIMITED_INFORMATION) else { return String::new() };
-    let mut b = vec![0u16; 32768];
-    let mut n = b.len() as u32;
-    // SAFETY : tampon et taille cohérents
-    match unsafe { QueryFullProcessImageNameW(h.0, PROCESS_NAME_WIN32, PWSTR(b.as_mut_ptr()), &mut n) } {
-        Ok(()) => String::from_utf16_lossy(&b[..n as usize]),
-        Err(_) => String::new(),
-    }
+    ouvrir(pid, PROCESS_QUERY_LIMITED_INFORMATION).map(|h| chemin_poignee(h.0)).unwrap_or_default()
 }
 
 /// Un SID en texte (« S-1-5-18 »)
@@ -75,11 +70,7 @@ fn compte_du_jeton(jeton: HANDLE) -> Option<String> {
 
 /// Le jeton d'un processus
 fn jeton(pid: i64) -> Option<Poignee> {
-    let h = ouvrir(pid, PROCESS_QUERY_LIMITED_INFORMATION)?;
-    let mut j = HANDLE::default();
-    // SAFETY : lecture seule du jeton
-    unsafe { OpenProcessToken(h.0, TOKEN_QUERY, &mut j).ok()? };
-    Some(Poignee(j))
+    jeton_poignee(ouvrir(pid, PROCESS_QUERY_LIMITED_INFORMATION)?.0)
 }
 
 /// Le compte d'un processus (SID), vide si Windows ne le dit pas
@@ -97,35 +88,12 @@ fn session(pid: i64) -> Option<i64> {
 
 /// Niveau de protection : 0 aucun, 1 protégé (antivirus, Windows), -1 illisible (traité comme protégé)
 pub fn protection(pid: i64) -> i64 {
-    let Some(h) = ouvrir(pid, PROCESS_QUERY_LIMITED_INFORMATION) else { return -1 };
-    let mut info = PROCESS_PROTECTION_LEVEL_INFORMATION::default();
-    // SAFETY : structure de la bonne taille
-    let r = unsafe {
-        GetProcessInformation(
-            h.0,
-            ProcessProtectionLevelInfo,
-            (&mut info as *mut PROCESS_PROTECTION_LEVEL_INFORMATION).cast(),
-            size_of::<PROCESS_PROTECTION_LEVEL_INFORMATION>() as u32,
-        )
-    };
-    match r {
-        Ok(()) if info.ProtectionLevel.0 == 0xFFFF_FFFE => 0, // PROTECTION_LEVEL_NONE
-        Ok(()) => 1,
-        Err(_) => -1,
-    }
+    ouvrir(pid, PROCESS_QUERY_LIMITED_INFORMATION).map(|h| protection_poignee(h.0)).unwrap_or(-1)
 }
 
 /// Lancé en administrateur : 0 non, 1 oui, -1 illisible (traité comme oui)
 fn eleve(pid: i64) -> i64 {
-    let Some(j) = jeton(pid) else { return -1 };
-    match info_jeton(j.0, TokenElevation) {
-        Some(b) => {
-            // SAFETY : le tampon contient un TOKEN_ELEVATION
-            let e = unsafe { &*(b.as_ptr() as *const TOKEN_ELEVATION) };
-            i64::from(e.TokenIsElevated != 0)
-        }
-        None => -1,
-    }
+    eleve_jeton(jeton(pid).as_ref())
 }
 
 /// La fiche d'un processus (`Read-AideFiche`)
@@ -161,11 +129,110 @@ pub fn liste() -> Vec<(i64, i64, String)> {
     r
 }
 
-/// Ferme un processus (comme Process.Kill de .NET : code de sortie -1)
-pub fn fermer(pid: i64) -> bool {
-    let Some(h) = ouvrir(pid, PROCESS_TERMINATE) else { return false };
-    // SAFETY : poignée ouverte avec le droit de fermer
-    unsafe { TerminateProcess(h.0, u32::MAX).is_ok() }
+// ---------------------------------------------------------------------------------------------------------------------
+// Un processus tenu par sa poignée (audit du 08/11, M6) : ouvert une seule fois, lu et fermé par cette poignée
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// Le chemin complet du programme d'un processus ouvert (vide si illisible)
+fn chemin_poignee(h: HANDLE) -> String {
+    let mut b = vec![0u16; 32768];
+    let mut n = b.len() as u32;
+    // SAFETY : tampon et taille cohérents
+    match unsafe { QueryFullProcessImageNameW(h, PROCESS_NAME_WIN32, PWSTR(b.as_mut_ptr()), &mut n) } {
+        Ok(()) => String::from_utf16_lossy(&b[..n as usize]),
+        Err(_) => String::new(),
+    }
+}
+
+/// Le jeton d'un processus ouvert
+fn jeton_poignee(h: HANDLE) -> Option<Poignee> {
+    let mut j = HANDLE::default();
+    // SAFETY : lecture seule du jeton
+    unsafe { OpenProcessToken(h, TOKEN_QUERY, &mut j).ok()? };
+    Some(Poignee(j))
+}
+
+/// Niveau de protection d'un processus ouvert : 0 aucun, 1 protégé, -1 illisible (traité comme protégé)
+fn protection_poignee(h: HANDLE) -> i64 {
+    let mut info = PROCESS_PROTECTION_LEVEL_INFORMATION::default();
+    // SAFETY : structure de la bonne taille
+    let r = unsafe {
+        GetProcessInformation(
+            h,
+            ProcessProtectionLevelInfo,
+            (&mut info as *mut PROCESS_PROTECTION_LEVEL_INFORMATION).cast(),
+            size_of::<PROCESS_PROTECTION_LEVEL_INFORMATION>() as u32,
+        )
+    };
+    match r {
+        Ok(()) if info.ProtectionLevel.0 == 0xFFFF_FFFE => 0, // PROTECTION_LEVEL_NONE
+        Ok(()) => 1,
+        Err(_) => -1,
+    }
+}
+
+/// Lancé en administrateur (d'après son jeton) : 0 non, 1 oui, -1 illisible (traité comme oui)
+fn eleve_jeton(j: Option<&Poignee>) -> i64 {
+    let Some(j) = j else { return -1 };
+    match info_jeton(j.0, TokenElevation) {
+        Some(b) => {
+            // SAFETY : le tampon contient un TOKEN_ELEVATION
+            let e = unsafe { &*(b.as_ptr() as *const TOKEN_ELEVATION) };
+            i64::from(e.TokenIsElevated != 0)
+        }
+        None => -1,
+    }
+}
+
+/// La session Windows d'après le jeton
+fn session_jeton(j: Option<&Poignee>) -> Option<i64> {
+    let b = info_jeton(j?.0, TokenSessionId)?;
+    // SAFETY : le tampon contient un DWORD (TokenSessionId)
+    Some(i64::from(unsafe { *(b.as_ptr() as *const u32) }))
+}
+
+/// Un processus tenu par sa poignée (lire, fermer, attendre), refermée à la fin
+pub struct Tenu {
+    pid: i64,
+    h: Poignee,
+}
+
+/// Ouvre le processus et garde sa poignée (`None` s'il ne s'ouvre pas)
+pub fn tenir(pid: i64) -> Option<Tenu> {
+    let h = ouvrir(pid, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | PROCESS_SYNCHRONIZE)?;
+    Some(Tenu { pid, h })
+}
+
+impl ProcessusTenu for Tenu {
+    fn fiche(&self) -> Fiche {
+        let j = jeton_poignee(self.h.0);
+        Fiche {
+            id: self.pid,
+            chemin: chemin_poignee(self.h.0),
+            session: session_jeton(j.as_ref()),
+            compte: j.as_ref().and_then(|j| compte_du_jeton(j.0)).unwrap_or_default(),
+            protection: Some(protection_poignee(self.h.0)),
+            eleve: Some(eleve_jeton(j.as_ref())),
+        }
+    }
+    fn debut(&self) -> Option<i64> {
+        let (mut c, mut f, mut k, mut u) =
+            (FILETIME::default(), FILETIME::default(), FILETIME::default(), FILETIME::default());
+        // SAFETY : lecture des temps d'un processus ouvert
+        unsafe { GetProcessTimes(self.h.0, &mut c, &mut f, &mut k, &mut u).ok()? };
+        Some((i64::from(c.dwHighDateTime) << 32) | i64::from(c.dwLowDateTime))
+    }
+    fn actif(&self) -> bool {
+        // SAFETY : attente nulle sur une poignée ouverte avec SYNCHRONIZE
+        unsafe { WaitForSingleObject(self.h.0, 0) == WAIT_TIMEOUT }
+    }
+    fn chemin(&self) -> String {
+        chemin_poignee(self.h.0)
+    }
+    fn terminer(&self) -> bool {
+        // SAFETY : poignée ouverte avec le droit de fermer ; le processus a été revérifié juste avant
+        unsafe { TerminateProcess(self.h.0, u32::MAX).is_ok() }
+    }
 }
 
 /// Le compte de l'Aide, et si elle a les droits administrateur (membre actif du groupe Administrateurs)
@@ -265,5 +332,51 @@ pub fn verrou(nom: &str) -> Option<Verrou> {
             return None;
         }
         Some(Verrou(v))
+    }
+}
+
+#[cfg(test)]
+mod essais {
+    use super::*;
+    use std::os::windows::process::CommandExt;
+
+    /// Le vrai Windows, sans droits, sur un programme lancé par l'essai lui-même (PING.EXE caché, fermé à la fin) : la
+    /// fiche, l'heure de démarrage et le chemin sont lus par la poignée tenue, puis il est fermé par elle ; une fois
+    /// fini, la poignée le dit (plus actif), et rien d'autre n'est touché
+    #[test]
+    fn un_processus_tenu_est_lu_et_ferme_par_sa_poignee() {
+        let ping = format!(r"{}\PING.EXE", nevermind_noyau_sys32());
+        let mut enfant = std::process::Command::new(&ping)
+            .args(["-n", "60", "127.0.0.1"])
+            .creation_flags(0x0800_0000)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = i64::from(enfant.id());
+        let t = tenir(pid).expect("le processus de l'essai ne s'ouvre pas");
+        let f = t.fiche();
+        assert!(f.chemin.eq_ignore_ascii_case(&ping), "{}", f.chemin);
+        assert_eq!(f.compte, moi().0);
+        assert_eq!(f.session, session(pid));
+        assert_eq!(f.protection, Some(0));
+        assert_eq!(f.eleve, Some(eleve(pid)));
+        let debut = t.debut().expect("heure de démarrage illisible");
+        assert!(t.actif());
+        assert!(t.chemin().eq_ignore_ascii_case(&ping));
+        assert!(t.terminer());
+        let fin = enfant.wait().unwrap();
+        assert!(!fin.success());
+        // Fini : la poignée tenue le voit, garde la même heure de démarrage (le numéro n'a pas pu être redonné)
+        assert!(!t.actif());
+        assert_eq!(t.debut(), Some(debut));
+        drop(t);
+    }
+
+    fn nevermind_noyau_sys32() -> String {
+        let mut b = vec![0u16; 1024];
+        // SAFETY : tampon et taille cohérents
+        let n = unsafe { windows::Win32::System::SystemInformation::GetSystemDirectoryW(Some(&mut b)) } as usize;
+        String::from_utf16_lossy(&b[..n.min(b.len())])
     }
 }
