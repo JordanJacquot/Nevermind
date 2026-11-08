@@ -13,6 +13,7 @@
 //!   qui garde l'historique de tous les blocs), puis le signal `sauvegarde-changee` aux blocs (`Update-HistoryList`) ;
 //! - `sauvegarde-changee` : l'écran refait, et le signal passé aux autres blocs (hote.rs).
 
+use nevermind_noyau::travaux::Rendu;
 use serde_json::{Value, json};
 
 use super::{Ecran, Hote, id_question};
@@ -181,64 +182,112 @@ impl Hote {
     /// passe par la sauvegarde du noyau (`Set-Reg` : origine notée, changement noté, l'Aide pour un réglage du PC ;
     /// `Set-ServiceOff` : origine dans SvcOriginal, changement noté, `service.regler` par l'Aide), puis une ligne
     /// d'historique (`Add-History`) : c'est ce qui permet « Revenir en arrière » (microsoft.ps1:158-168, lag.ps1:497).
+    /// L'Aide peut mettre jusqu'à 2 min par écriture : dans un travail de fond (audit G3), une demande à la fois (les
+    /// suivantes attendent leur tour, dans l'ordre).
     fn appliquer_sauvegarde(&mut self, d: &Value, ecran: &mut dyn Ecran) {
-        self.ctx.commencer_changements();
-        let mut erreurs = Vec::new();
-        for e in d.get("Ecritures").and_then(Value::as_array).cloned().unwrap_or_default() {
-            let r = match texte(&e, "Type").as_str() {
-                "reg" => {
-                    let kind = texte(&e, "Kind");
-                    self.ctx.changer_registre(
-                        &texte(&e, "Path"),
-                        &texte(&e, "Name"),
-                        e.get("Value").unwrap_or(&Value::Null),
-                        if kind.is_empty() { "DWord" } else { &kind },
-                    )
-                }
-                "svc" => self.couper_service(&texte(&e, "Name"), &texte(&e, "Demarrage")),
-                t => Err(format!("écriture inconnue ({t})")),
-            };
-            if let Err(x) = r {
-                erreurs.push(format!("{} : {x}", texte(&e, "Name")));
-            }
+        if self.travaux.occupe() {
+            self.sauvegardes_en_attente.push(d.clone());
+            return;
         }
-        let log = self.ctx.finir_changements();
-        if self.ctx.ajouter_historique(&texte(d, "Titre"), &lignes(d, "Details"), log).is_some() {
+        let (d, etat_service, ctx) = (d.clone(), self.etat_service.clone(), self.ctx.clone());
+        self.travaux.lancer(&ctx, "sauvegarde-appliquer", move |fond| {
+            let ctx = fond.ctx;
+            ctx.commencer_changements();
+            let mut erreurs = Vec::new();
+            for e in d.get("Ecritures").and_then(Value::as_array).cloned().unwrap_or_default() {
+                let r = match texte(&e, "Type").as_str() {
+                    "reg" => {
+                        let kind = texte(&e, "Kind");
+                        ctx.changer_registre(
+                            &texte(&e, "Path"),
+                            &texte(&e, "Name"),
+                            e.get("Value").unwrap_or(&Value::Null),
+                            if kind.is_empty() { "DWord" } else { &kind },
+                        )
+                    }
+                    "svc" => couper_service(ctx, etat_service.as_ref(), &texte(&e, "Name"), &texte(&e, "Demarrage")),
+                    t => Err(format!("écriture inconnue ({t})")),
+                };
+                if let Err(x) = r {
+                    erreurs.push(format!("{} : {x}", texte(&e, "Name")));
+                }
+            }
+            let log = ctx.finir_changements();
+            Appliquee { d, erreurs, log }
+        });
+        self.relever_hote(ecran);
+    }
+
+    /// La fin de `sauvegarde-appliquer` (sur le fil des blocs) : l'historique, les messages
+    fn fin_sauvegarde(&mut self, a: Appliquee, ecran: &mut dyn Ecran) {
+        let Appliquee { d, erreurs, log } = a;
+        if self.ctx.ajouter_historique(&texte(&d, "Titre"), &lignes(&d, "Details"), log).is_some() {
             self.a_signaler_sauvegarde();
         }
         if !erreurs.is_empty() {
             let t = format!("Certains réglages n'ont pas pu être changés :\n\n{}", erreurs.join("\n"));
             self.ordre(json!({ "kit": "message", "texte": t, "bravo": false }), ecran);
         }
-        let m = texte(d, "Message");
+        let m = texte(&d, "Message");
         if !m.is_empty() {
             self.ordre(json!({ "kit": "message", "texte": m, "bravo": false }), ecran);
         }
     }
 
-    /// `Set-ServiceOff` (microsoft.ps1:68-75).
-    fn couper_service(&mut self, nom: &str, demarrage: &str) -> Result<(), String> {
-        let demarrage = if demarrage.is_empty() { "Disabled" } else { demarrage };
-        let (debut, tourne) = (self.etat_service)(nom).ok_or_else(|| format!("service {nom} introuvable"))?;
-        let orig: Vec<Value> = match self.ctx.reglage("SvcOriginal") {
-            Some(Value::Array(l)) => l,
-            Some(Value::String(s)) => vec![Value::String(s)],
-            _ => Vec::new(),
-        };
-        let deja = orig.iter().any(|x| x.as_str().and_then(|s| s.split('|').next()) == Some(nom));
-        if !deja {
-            let mut n = orig.clone();
-            n.push(json!(format!("{nom}|{debut}|{}", if tourne { "True" } else { "False" })));
-            self.ctx.ecrire_reglage("SvcOriginal", Value::Array(n), true)?;
+    /// Les travaux de fond de l'hôte lui-même, relevés ; puis la demande suivante qui attendait
+    pub(super) fn relever_hote(&mut self, ecran: &mut dyn Ecran) {
+        for r in self.travaux.relever() {
+            match r {
+                Rendu::Effet(_) => {}
+                Rendu::Fini { resultat: Ok(a), .. } => self.fin_sauvegarde(a, ecran),
+                Rendu::Fini { resultat: Err(e), .. } => {
+                    let _ = self.ctx.finir_changements();
+                    let t = format!("Oups, quelque chose s'est mal passé :\n\n{e}");
+                    self.ordre(json!({ "kit": "message", "texte": t, "bravo": false }), ecran);
+                }
+            }
         }
-        self.ctx.noter_changement(
-            json!({ "Type": "svc", "Name": nom, "StartType": debut, "Running": tourne, "Nouveau": demarrage }),
-        );
-        self.ctx
-            .aide("service.regler", &json!({ "Nom": nom, "Demarrage": demarrage, "Arreter": tourne }), 60_000)
-            .map(|_| ())
+        if !self.travaux.occupe() && !self.sauvegardes_en_attente.is_empty() {
+            let d = self.sauvegardes_en_attente.remove(0);
+            self.appliquer_sauvegarde(&d, ecran);
+        }
     }
+}
 
+/// Ce que rend `sauvegarde-appliquer`, fait dans un travail de fond
+pub(super) struct Appliquee {
+    d: Value,
+    erreurs: Vec<String>,
+    log: Vec<Value>,
+}
+
+/// `Set-ServiceOff` (microsoft.ps1:68-75).
+fn couper_service(
+    ctx: &nevermind_noyau::Contexte,
+    etat_service: &(dyn Fn(&str) -> Option<(String, bool)> + Send + Sync),
+    nom: &str,
+    demarrage: &str,
+) -> Result<(), String> {
+    let demarrage = if demarrage.is_empty() { "Disabled" } else { demarrage };
+    let (debut, tourne) = etat_service(nom).ok_or_else(|| format!("service {nom} introuvable"))?;
+    let orig: Vec<Value> = match ctx.reglage("SvcOriginal") {
+        Some(Value::Array(l)) => l,
+        Some(Value::String(s)) => vec![Value::String(s)],
+        _ => Vec::new(),
+    };
+    let deja = orig.iter().any(|x| x.as_str().and_then(|s| s.split('|').next()) == Some(nom));
+    if !deja {
+        let mut n = orig.clone();
+        n.push(json!(format!("{nom}|{debut}|{}", if tourne { "True" } else { "False" })));
+        ctx.ecrire_reglage("SvcOriginal", Value::Array(n), true)?;
+    }
+    ctx.noter_changement(
+        json!({ "Type": "svc", "Name": nom, "StartType": debut, "Running": tourne, "Nouveau": demarrage }),
+    );
+    ctx.aide("service.regler", &json!({ "Nom": nom, "Demarrage": demarrage, "Arreter": tourne }), 60_000).map(|_| ())
+}
+
+impl Hote {
     /// `notification` (`Show-Notify`) : `{ Titre, Texte, Action, Valeur, Ecran }` (bloc trafic) ou
     /// `{ titre, texte, action }` (bloc perf), ou `bulle` `{ titre, texte, ecran }` (bloc réseau) ; la bulle part vers Mindset (notification.demande) ; son clic
     /// (`notif:<id>` dans afficher.demande) fait l'action et mène à l'écran.

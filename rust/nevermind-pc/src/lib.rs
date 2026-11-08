@@ -29,10 +29,12 @@ pub mod tests_composants;
 #[cfg(windows)]
 mod windows;
 
+use nevermind_noyau::travaux::{Rendu, Travaux};
 use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
 use pc::Pc;
 use serde_json::{Map, Value, json};
 use session::Session;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Les pages d'avant de Nevermind vers celles du kit (`$KitPagesIndex`, accueil-console.ps1)
@@ -49,6 +51,36 @@ fn page_kit(index: i64) -> Option<&'static str> {
         _ => return None,
     })
 }
+
+/// Un faux PC (tests), partagé avec un travail de fond
+type FauxPc = Arc<Mutex<Box<dyn Pc + Send>>>;
+
+/// Ce qu'un travail de fond du bloc emporte et rend (audit G3) : une copie de la session et des cases (la page
+/// montre l'ancienne pendant ce temps), et ce que le PC a demandé de montrer à la fin du geste
+struct Atelier {
+    session: Session,
+    cases: diffusion::Cases,
+    annonces: Vec<Effet>,
+    /// Le PC a été relu (« Analyser ») : les données des tests des composants suivent
+    relu: bool,
+}
+
+/// Ce qui suit la fin d'un travail de fond
+enum Suite {
+    /// Un geste : la fiche (ouverte avant le geste ou non), l'écran, les autres blocs à jour
+    Geste { avant: bool },
+    /// La fin de la lecture lente (complétée par l'Aide, puis l'analyse) : la diffusion est due
+    Lecture,
+}
+
+/// Un geste : fait sur place (avec ce que le PC a demandé de montrer), ou parti en fond (sa fin fait la suite)
+enum Fait {
+    Sur(Vec<Effet>),
+    Fond,
+}
+
+/// La clé du travail de fond du bloc : un seul geste sur la session à la fois
+const TRAVAIL: &str = "pc";
 
 #[derive(Default)]
 pub struct BlocPc {
@@ -67,18 +99,28 @@ pub struct BlocPc {
     fiche_de: Option<String>,
     fin_ecran: Option<Instant>,
     /// Un faux PC (tests) : rien ne touche le vrai PC
-    essai: Option<Box<dyn Pc + Send>>,
+    essai: Option<FauxPc>,
     tests: tests_composants::Tests,
     /// Les cases des pages du bloc perf (réglages, nettoyage) et la liste de démarrage
     cases: diffusion::Cases,
     /// L'écran montré (le dernier demandé par l'hôte)
     ecran: String,
+    /// Les gestes longs sur la session (point de restauration, corrections, nettoyage, analyse) : dans un fil à
+    /// part (audit G3), un à la fois
+    travaux: Travaux<Atelier>,
+    suite: Option<Suite>,
+    /// Les demandes des autres blocs arrivées pendant un geste long : faites après, dans l'ordre
+    signaux_en_attente: Vec<(String, Value)>,
+    /// sauvegarde.json a changé pendant un geste long : relue après
+    sv_a_relire: bool,
+    /// Les effets demandés hors d'un appel qui en reçoit (rendus au prochain appel)
+    en_attente: Vec<Effet>,
 }
 
 impl BlocPc {
     /// Le bloc sur un faux PC (tests), avec ce qu'il aurait lu
     pub fn sur(pc: Box<dyn Pc + Send>, lu: lecture::Lu) -> Self {
-        let mut b = BlocPc { essai: Some(pc), lu: true, charge: true, ..Default::default() };
+        let mut b = BlocPc { essai: Some(Arc::new(Mutex::new(pc))), lu: true, charge: true, ..Default::default() };
         b.prendre(lu);
         b
     }
@@ -90,7 +132,13 @@ impl BlocPc {
 
     /// Le faux PC (tests)
     pub fn faux_pc(&mut self) -> Option<&mut (dyn Pc + Send + 'static)> {
-        self.essai.as_deref_mut()
+        let m = Arc::get_mut(self.essai.as_mut()?)?;
+        Some(m.get_mut().unwrap_or_else(|e| e.into_inner()).as_mut())
+    }
+
+    /// Un geste long est en cours (tests)
+    pub fn travail_en_cours(&self) -> bool {
+        self.travaux.occupe()
     }
 
     fn prendre(&mut self, lu: lecture::Lu) {
@@ -101,14 +149,111 @@ impl BlocPc {
 
     /// Le PC sur lequel agir : le faux (tests) ou le vrai
     fn avec_pc<R>(&mut self, ctx: &Contexte, f: impl FnOnce(&mut Self, &mut dyn Pc) -> R) -> (R, Vec<Effet>) {
-        if let Some(mut p) = self.essai.take() {
-            let r = f(self, p.as_mut());
-            self.essai = Some(p);
+        if let Some(p) = self.essai.clone() {
+            let mut g = p.lock().unwrap_or_else(|e| e.into_inner());
+            let r = f(self, g.as_mut());
             return (r, Vec::new());
         }
         let mut p = systeme::PcWindows::nouveau(ctx);
         let r = f(self, &mut p);
         (r, p.annonces())
+    }
+
+    /// Un geste long sur la session (audit G3) : fait dans un travail de fond, sur une copie de la session et des
+    /// cases, que la fin remet en place (`relever_travaux`). `direct` : le texte d'attente du PC est montré tout de
+    /// suite. `false` si un autre geste long est en cours (rien n'est lancé : un double clic ne refait rien).
+    fn en_fond(
+        &mut self,
+        ctx: &Contexte,
+        quoi: &str,
+        suite: Suite,
+        direct: bool,
+        f: impl FnOnce(&mut Atelier, &mut dyn Pc) + Send + 'static,
+    ) -> bool {
+        if self.travaux.occupe() {
+            ctx.journal(&format!("Ton PC : {quoi} pas lancé, un geste est encore en cours"));
+            return false;
+        }
+        let mut at =
+            Atelier { session: self.session.clone(), cases: self.cases.clone(), annonces: Vec::new(), relu: false };
+        let essai = self.essai.clone();
+        self.suite = Some(suite);
+        self.travaux.lancer(ctx, TRAVAIL, move |fond| {
+            match essai {
+                Some(p) => {
+                    let mut g = p.lock().unwrap_or_else(|e| e.into_inner());
+                    f(&mut at, g.as_mut());
+                }
+                None => {
+                    let envoi = |e: Effet| fond.effet(e);
+                    let mut p = systeme::PcWindows::nouveau(fond.ctx);
+                    if direct {
+                        p = p.en_direct(&envoi);
+                    }
+                    f(&mut at, &mut p);
+                    at.annonces = p.annonces();
+                }
+            }
+            at
+        })
+    }
+
+    /// Ce que le travail de fond a rendu (sur le fil des blocs) : le texte d'attente, puis à la fin la session mise
+    /// à jour, la fiche, l'écran et les autres blocs ; ensuite les demandes des autres blocs qui ont attendu.
+    fn relever_travaux(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        for r in self.travaux.relever() {
+            let resultat = match r {
+                Rendu::Effet(e) => {
+                    effets.ajouter(e);
+                    continue;
+                }
+                Rendu::Fini { resultat, .. } => resultat,
+            };
+            let suite = self.suite.take();
+            match resultat {
+                Ok(at) => {
+                    self.session = at.session;
+                    self.cases = at.cases;
+                    if at.relu {
+                        self.tests.donnees = self.session.entrees.data.clone();
+                    }
+                    match suite {
+                        Some(Suite::Geste { avant }) => {
+                            self.apres(avant, at.annonces, effets);
+                            self.diffuser(ctx, effets);
+                        }
+                        // (comme avant : ce que dit le PC à la fin de la lecture n'est pas montré)
+                        Some(Suite::Lecture) | None => {
+                            self.lu = true;
+                            self.a_diffuser = true;
+                        }
+                    }
+                }
+                Err(e) => {
+                    if matches!(suite, Some(Suite::Lecture)) {
+                        self.lu = true;
+                    }
+                    effets.ajouter(Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": "" }) });
+                    effets.ajouter(Effet::Annonce(session::message_erreur(&e)));
+                }
+            }
+            if std::mem::take(&mut self.sv_a_relire) && self.session.attente.is_none() {
+                self.session.sv = systeme::lire_sauvegarde(ctx);
+            }
+            // (les demandes des autres blocs arrivées pendant le geste, dans l'ordre, tant qu'aucune ne repart en fond)
+            while !self.travaux.occupe() && !self.signaux_en_attente.is_empty() {
+                let (nom, donnees) = self.signaux_en_attente.remove(0);
+                self.signal_pc(ctx, &nom, &donnees, effets);
+            }
+        }
+    }
+
+    /// La diffusion due après la lecture lente (une fois)
+    fn diffuser_si_du(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        if self.lu && std::mem::take(&mut self.a_diffuser) {
+            effets.ajouter(Effet::Rafraichir);
+            self.diffuser(ctx, effets);
+        }
     }
 
     fn charger(&mut self, ctx: &Contexte) {
@@ -130,6 +275,10 @@ impl BlocPc {
             }
             return;
         }
+        // (la fin de la lecture est déjà en cours dans un travail de fond, ou un geste long attend : plus tard)
+        if self.travaux.occupe() {
+            return;
+        }
         match &self.lecture {
             None => {
                 // (mode test sans faux PC, la construction d'essai : le vrai PC est LU, comme la version PowerShell en
@@ -144,12 +293,15 @@ impl BlocPc {
                 {
                     self.prendre(lu);
                 }
-                self.lu = true;
-                self.a_diffuser = true;
-                self.avec_pc(ctx, |s, pc| {
-                    systeme::completer_par_aide(pc, &mut s.session.entrees);
-                    s.session.analyser(pc)
+                // (l'Aide peut mettre jusqu'à 20 s à se réveiller pour sa lecture : dans un travail de fond, audit G3 ;
+                //  la diffusion suit sa fin)
+                self.en_fond(ctx, "fin de la lecture", Suite::Lecture, false, |at, pc| {
+                    systeme::completer_par_aide(pc, &mut at.session.entrees);
+                    at.session.analyser(pc);
                 });
+                let mut e = Effets::default();
+                self.relever_travaux(ctx, &mut e);
+                self.en_attente.extend(e.0);
             }
             Some(_) => {}
         }
@@ -232,51 +384,61 @@ impl BlocPc {
     }
 
     /// Les gestes des pages du bloc perf dont la logique est ici (onglets Optimisation, Démarrage, Nettoyage)
-    fn action_perf(&mut self, ctx: &Contexte, id: &str, valeur: &Value, effets: &mut Effets) -> Option<Vec<Effet>> {
+    fn action_perf(
+        &mut self,
+        ctx: &Contexte,
+        id: &str,
+        valeur: &Value,
+        avant: bool,
+        effets: &mut Effets,
+    ) -> Option<Fait> {
         let k = net::champ_entier(valeur, "valeur") as usize;
         let oui = net::champ_vrai(valeur, "oui");
+        let rien = || Some(Fait::Sur(Vec::new()));
         match id {
             "tweak" => {
                 if let Some(r) = self.cases.reglages.get_mut(k).filter(|r| !r.1) {
                     r.2 = oui;
                 }
-                Some(Vec::new())
+                rien()
             }
             "opti:recommande" => {
                 for r in self.cases.reglages.iter_mut().filter(|r| !r.1) {
                     r.2 = reglages::reglage(&r.0).is_some_and(|t| t.conseille);
                 }
-                Some(Vec::new())
+                rien()
             }
             "coche:ChkRestore" => {
                 self.cases.restauration = net::vrai(valeur);
-                Some(Vec::new())
+                rien()
             }
+            // (le point de restauration, jusqu'à 10 min, puis chaque réglage par l'Aide : dans un travail de fond)
             "clic:BtnApply" => {
                 let ids: Vec<String> =
                     self.cases.reglages.iter().filter(|r| !r.1 && r.2).map(|r| r.0.clone()).collect();
                 let rest = self.cases.restauration;
-                Some(self.avec_pc(ctx, |s, pc| s.session.appliquer_reglages(pc, &ids, rest)).1)
+                Some(self.geste_fond(ctx, id, avant, move |at, pc| at.session.appliquer_reglages(pc, &ids, rest)))
             }
             "nett" => {
                 if let Some(r) = self.cases.nettoyage.get_mut(k).filter(|r| r.2 > 0) {
                     r.3 = oui;
                 }
-                Some(Vec::new())
+                rien()
             }
-            "clic:BtnCleanScan" => Some(self.avec_pc(ctx, |s, pc| diffusion::lire_nettoyage(pc, &mut s.cases)).1),
+            // (la taille des dossiers à nettoyer : un parcours des disques)
+            "clic:BtnCleanScan" => {
+                Some(self.geste_fond(ctx, id, avant, |at, pc| diffusion::lire_nettoyage(pc, &mut at.cases)))
+            }
+            // (le nettoyage de Windows par l'Aide, jusqu'à 15 min)
             "clic:BtnClean" => {
                 let ids: Vec<String> =
                     self.cases.nettoyage.iter().filter(|r| r.3).map(|r| r.0.id.to_string()).collect();
-                Some(
-                    self.avec_pc(ctx, |s, pc| {
-                        s.session.nettoyer(pc, &ids);
-                        diffusion::lire_nettoyage(pc, &mut s.cases);
-                    })
-                    .1,
-                )
+                Some(self.geste_fond(ctx, id, avant, move |at, pc| {
+                    at.session.nettoyer(pc, &ids);
+                    diffusion::lire_nettoyage(pc, &mut at.cases);
+                }))
             }
-            "nett-journal" => Some(
+            "nett-journal" => Some(Fait::Sur(
                 self.avec_pc(ctx, |_, pc| {
                     if let Some(f) =
                         pc.reglage("LastClean").map(|l| net::champ_texte(&l, "File")).filter(|f| !f.is_empty())
@@ -285,8 +447,9 @@ impl BlocPc {
                     }
                 })
                 .1,
-            ),
-            "clic:BtnRefreshStartup" => Some(Vec::new()),
+            )),
+            "clic:BtnRefreshStartup" => rien(),
+            // (un programme de tout le PC passe par l'Aide)
             "clic:BtnDisableStartup" => {
                 let a_couper: Vec<(reglages::Demarrage, String)> = self
                     .cases
@@ -295,38 +458,78 @@ impl BlocPc {
                     .filter(|x| x.2 == "safe" && x.0.actif)
                     .map(|x| (x.0.clone(), x.1.clone()))
                     .collect();
-                Some(
-                    self.avec_pc(ctx, |s, pc| {
-                        for (d, nom) in &a_couper {
-                            if let Err(e) = s.session.demarrage(pc, d, nom, false) {
-                                pc.message(&session::message_erreur(&e));
-                            }
+                Some(self.geste_fond(ctx, id, avant, move |at, pc| {
+                    for (d, nom) in &a_couper {
+                        if let Err(e) = at.session.demarrage(pc, d, nom, false) {
+                            pc.message(&session::message_erreur(&e));
                         }
-                    })
-                    .1,
-                )
+                    }
+                }))
             }
             _ if id.starts_with("nett-voir:") => {
                 effets.ajouter(Effet::Annonce(
                     "La liste des fichiers arrive bientôt dans cette version de Nevermind.".into(),
                 ));
-                Some(Vec::new())
+                rien()
             }
             _ if id.starts_with("dem:") => {
                 let n: usize = id[4..].parse().ok()?;
                 let (d, nom) = self.cases.demarrage.get(n).map(|x| (x.0.clone(), x.1.clone()))?;
                 let on = net::vrai(valeur);
-                Some(
-                    self.avec_pc(ctx, |s, pc| {
-                        if let Err(e) = s.session.demarrage(pc, &d, &nom, on) {
-                            pc.message(&session::message_erreur(&e));
-                        }
-                    })
-                    .1,
-                )
+                Some(self.geste_fond(ctx, id, avant, move |at, pc| {
+                    if let Err(e) = at.session.demarrage(pc, &d, &nom, on) {
+                        pc.message(&session::message_erreur(&e));
+                    }
+                }))
             }
             _ => None,
         }
+    }
+
+    /// Un geste long (audit G3) : lancé en fond, avec le texte d'attente montré tout de suite ; sa fin fait la
+    /// suite (`apres`, `diffuser`). Sans contexte partagé (tests d'un bloc seul), il est déjà fini ici.
+    fn geste_fond(
+        &mut self,
+        ctx: &Contexte,
+        id: &str,
+        avant: bool,
+        f: impl FnOnce(&mut Atelier, &mut dyn Pc) + Send + 'static,
+    ) -> Fait {
+        self.en_fond(ctx, id, Suite::Geste { avant }, true, f);
+        Fait::Fond
+    }
+
+    /// Les gestes de la page que ce bloc prend (pour ne pas en faire un deuxième pendant un geste long)
+    fn est_a_moi(&self, id: &str) -> bool {
+        let num = |p: &str| id.strip_prefix(p).is_some_and(|n| n.parse::<usize>().is_ok());
+        matches!(
+            id,
+            "tweak"
+                | "opti:recommande"
+                | "coche:ChkRestore"
+                | "clic:BtnApply"
+                | "nett"
+                | "clic:BtnCleanScan"
+                | "clic:BtnClean"
+                | "nett-journal"
+                | "clic:BtnRefreshStartup"
+                | "clic:BtnDisableStartup"
+                | "analyser"
+                | "toutcorriger"
+                | "pc:reponse"
+                | "fiche:annuler"
+                | "fiche:run"
+                | "fiche:ignore"
+                | "fiche:close"
+                | "fiche:open"
+                | "clic:BtnUndoAll"
+                | "pc:tout-restaurer"
+        ) || (id == "retour" && self.session.fiche.is_some())
+            || id.starts_with("nett-voir:")
+            || id.starts_with("dem:")
+            || num("fiche:")
+            || num("constat:")
+            || num("composant:")
     }
 }
 
@@ -378,118 +581,121 @@ impl Bloc for BlocPc {
             }
             return true;
         }
-        let avant = self.session.fiche.is_some();
-        if let Some(a) = self.action_perf(ctx, id, valeur, effets) {
-            self.apres(avant, a, effets);
-            self.diffuser(ctx, effets);
+        self.rendre_en_attente(effets);
+        // (un geste long sur la session est en cours, audit G3 : pas un deuxième geste par-dessus, un double clic ne
+        //  refait rien ; la page montre l'attente)
+        if self.travaux.occupe() && self.est_a_moi(id) {
+            ctx.journal(&format!("Ton PC : geste {id} pas fait, un geste est encore en cours"));
             return true;
         }
+        let avant = self.session.fiche.is_some();
         let num = |p: &str| id.strip_prefix(p).and_then(|n| n.parse::<usize>().ok());
-        let (pris, annonces) = match id {
-            "analyser" => {
-                effets.ajouter(Effet::Annonce("Analyse de ton PC lancée".into()));
-                if self.lu && self.essai.is_none() && !ctx.essai {
-                    // (relire le PC : les données lentes aussi, comme $AnalysisDataWork)
-                    let lu = lecture::lire();
-                    self.prendre(lu);
+        let question =
+            self.session.attente.is_some() && self.session.fiche.as_ref().is_some_and(|f| f.mode == "question");
+        let fait = match self.action_perf(ctx, id, valeur, avant, effets) {
+            Some(f) => f,
+            None => match id {
+                "analyser" => {
+                    effets.ajouter(Effet::Annonce("Analyse de ton PC lancée".into()));
+                    // (relire le PC : les données lentes aussi, comme $AnalysisDataWork ; WMI, dans le travail de fond)
+                    let relire = self.lu && self.essai.is_none() && !ctx.essai;
+                    self.geste_fond(ctx, id, avant, move |at, pc| {
+                        if relire {
+                            let lu = lecture::lire();
+                            at.session.entrees = lu.entrees;
+                            at.session.demarrage = lu.demarrage;
+                            at.relu = true;
+                        }
+                        at.session.analyser(pc);
+                    })
                 }
-                self.avec_pc(ctx, |s, pc| {
-                    s.session.analyser(pc);
-                    true
-                })
-            }
-            "toutcorriger" => self.avec_pc(ctx, |s, pc| {
-                s.session.ouvrir_tout(pc);
-                true
-            }),
-            "pc:reponse" => {
-                let oui = net::champ_texte(valeur, "valeur") == "oui" || valeur.as_str() == Some("oui");
-                self.avec_pc(ctx, |s, pc| {
-                    s.session.repondre(pc, oui);
-                    true
-                })
-            }
-            // (« Revenir en arrière » de la fiche de résultat d'un autre bloc, montrée par l'hôte : `Invoke-UndoLastRun`)
-            "fiche:annuler" => {
-                let log = net::champ_liste(valeur, "log");
-                let id = Some(net::champ_texte(valeur, "historique")).filter(|h| !h.is_empty());
-                self.avec_pc(ctx, |s, pc| {
-                    s.session.revenir_journal(pc, Some(log), id);
-                    true
-                })
-            }
-            "fiche:run" => self.avec_pc(ctx, |s, pc| {
-                s.session.executer(pc);
-                true
-            }),
-            "fiche:ignore" => self.avec_pc(ctx, |s, pc| {
-                s.session.bouton_ignorer(pc);
-                true
-            }),
-            "fiche:close" => self.avec_pc(ctx, |s, pc| {
-                if s.session.attente.is_some() && s.session.fiche.as_ref().is_some_and(|f| f.mode == "question") {
-                    s.session.repondre(pc, false);
-                } else if s.session.fiche.as_ref().is_some_and(|f| f.mode != "display") {
-                    s.session.fiche = None;
+                "toutcorriger" => Fait::Sur(self.avec_pc(ctx, |s, pc| s.session.ouvrir_tout(pc)).1),
+                "pc:reponse" => {
+                    let oui = net::champ_texte(valeur, "valeur") == "oui" || valeur.as_str() == Some("oui");
+                    self.geste_fond(ctx, id, avant, move |at, pc| at.session.repondre(pc, oui))
                 }
-                true
-            }),
-            "fiche:open" => {
-                let cible = self.session.fiche.as_ref().and_then(|f| f.ouvrir.clone());
-                if let Some(c) = cible {
-                    self.session.fiche = None;
-                    self.aller(ctx, &c, effets);
+                // (« Revenir en arrière » de la fiche de résultat d'un autre bloc, montrée par l'hôte : `Invoke-UndoLastRun`)
+                "fiche:annuler" => {
+                    let log = net::champ_liste(valeur, "log");
+                    let h = Some(net::champ_texte(valeur, "historique")).filter(|h| !h.is_empty());
+                    self.geste_fond(ctx, id, avant, move |at, pc| at.session.revenir_journal(pc, Some(log), h))
                 }
-                (true, Vec::new())
-            }
-            "retour" if self.session.fiche.is_some() => self.avec_pc(ctx, |s, pc| {
-                match s.session.fiche.as_ref().map(|f| f.mode.clone()).as_deref() {
-                    Some("display") => {}
-                    Some("question") => s.session.repondre(pc, false),
-                    _ => s.session.fiche = None,
+                "fiche:run" => self.geste_fond(ctx, id, avant, |at, pc| at.session.executer(pc)),
+                "fiche:ignore" => self.geste_fond(ctx, id, avant, |at, pc| at.session.bouton_ignorer(pc)),
+                // (« Non » à une question : la suite de « Tout corriger » peut continuer, en fond)
+                "fiche:close" if question => self.geste_fond(ctx, id, avant, |at, pc| at.session.repondre(pc, false)),
+                "fiche:close" => {
+                    if self.session.fiche.as_ref().is_some_and(|f| f.mode != "display") {
+                        self.session.fiche = None;
+                    }
+                    Fait::Sur(Vec::new())
                 }
-                true
-            }),
-            "clic:BtnUndoAll" | "pc:tout-restaurer" => self.avec_pc(ctx, |s, pc| {
-                let d = systeme::changements_definitifs(pc);
-                s.session.restaurer_tout(pc, &d);
-                true
-            }),
-            _ if num("fiche:").is_some() || num("constat:").is_some() => {
-                let f = if let Some(k) = num("fiche:") {
-                    self.kit.fiches.get(k).cloned()
-                } else {
-                    num("constat:").and_then(|k| self.kit.constats.get(k).cloned())
-                };
-                match f {
-                    Some(f) => self.avec_pc(ctx, |s, pc| {
-                        s.session.ouvrir(pc, &f);
-                        true
-                    }),
-                    None => (true, Vec::new()),
+                "fiche:open" => {
+                    let cible = self.session.fiche.as_ref().and_then(|f| f.ouvrir.clone());
+                    if let Some(c) = cible {
+                        self.session.fiche = None;
+                        self.aller(ctx, &c, effets);
+                    }
+                    Fait::Sur(Vec::new())
                 }
-            }
-            _ if num("composant:").is_some() => {
-                if let Some(x) = num("composant:").and_then(|k| self.kit.actions_composants.get(k).cloned()) {
-                    self.aller(ctx, &x, effets);
+                "retour" if self.session.fiche.is_some() => {
+                    match self.session.fiche.as_ref().map(|f| f.mode.clone()).as_deref() {
+                        Some("display") => Fait::Sur(Vec::new()),
+                        Some("question") => self.geste_fond(ctx, id, avant, |at, pc| at.session.repondre(pc, false)),
+                        _ => {
+                            self.session.fiche = None;
+                            Fait::Sur(Vec::new())
+                        }
+                    }
                 }
-                (true, Vec::new())
-            }
-            _ => (false, Vec::new()),
+                "clic:BtnUndoAll" | "pc:tout-restaurer" => self.geste_fond(ctx, id, avant, |at, pc| {
+                    let d = systeme::changements_definitifs(pc);
+                    at.session.restaurer_tout(pc, &d);
+                }),
+                _ if num("fiche:").is_some() || num("constat:").is_some() => {
+                    let f = if let Some(k) = num("fiche:") {
+                        self.kit.fiches.get(k).cloned()
+                    } else {
+                        num("constat:").and_then(|k| self.kit.constats.get(k).cloned())
+                    };
+                    match f {
+                        Some(f) => Fait::Sur(self.avec_pc(ctx, |s, pc| s.session.ouvrir(pc, &f)).1),
+                        None => Fait::Sur(Vec::new()),
+                    }
+                }
+                _ if num("composant:").is_some() => {
+                    if let Some(x) = num("composant:").and_then(|k| self.kit.actions_composants.get(k).cloned()) {
+                        self.aller(ctx, &x, effets);
+                    }
+                    Fait::Sur(Vec::new())
+                }
+                _ => return false,
+            },
         };
-        if pris {
-            self.apres(avant, annonces, effets);
-            self.diffuser(ctx, effets);
+        match fait {
+            Fait::Sur(annonces) => {
+                self.apres(avant, annonces, effets);
+                self.diffuser(ctx, effets);
+            }
+            // (la suite à la fin du travail ; déjà là sans contexte partagé)
+            Fait::Fond => self.relever_travaux(ctx, effets),
         }
-        pris
+        true
     }
 
     fn tic(&mut self, ctx: &Contexte, cache: bool, effets: &mut Effets) -> Option<Duration> {
         // (les tests des composants : toutes les 100 ms pendant un test ; sinon un tour par demi-seconde, sans rien
         //  lire, pour qu'un test lancé par un bouton soit suivi : l'hôte ne rappelle pas un bloc qui a dit « plus besoin »)
+        self.rendre_en_attente(effets);
+        self.relever_travaux(ctx, effets);
         let t = self.tests.tic_bloc(ctx, effets);
         let r = self.tic_pc(ctx, cache, effets);
         Some(r.map_or(t, |r| r.min(t)))
+    }
+
+    fn travaux_finis(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        self.relever_travaux(ctx, effets);
+        self.diffuser_si_du(ctx, effets);
     }
 
     fn signal(&mut self, ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
@@ -522,8 +728,9 @@ impl BlocPc {
             self.diffuser(ctx, effets);
             return None;
         }
-        // « Tes écrans s'affichent bien ? » : le compte à rebours, puis l'ancien réglage revient tout seul
-        if let Some(fin) = self.fin_ecran {
+        // « Tes écrans s'affichent bien ? » : le compte à rebours, puis l'ancien réglage revient tout seul (pas pendant
+        //  un geste long : sa fin remet la session en place)
+        if let Some(fin) = self.fin_ecran.filter(|_| !self.travaux.occupe()) {
             let reste = fin.saturating_duration_since(Instant::now()).as_secs_f64().ceil() as i64;
             if reste <= 0 {
                 let (_, a) = self.avec_pc(ctx, |s, pc| s.session.repondre_ecran(pc, "timeout"));
@@ -544,46 +751,58 @@ impl BlocPc {
         let texte = |k: &str| net::champ_texte(donnees, k);
         let liste = |k: &str| net::champ_liste(donnees, k).iter().map(net::texte).collect::<Vec<_>>();
         let avant = self.session.fiche.is_some();
-        let (fait, a) = match nom {
-            "mesures" => {
-                self.live = donnees.clone();
-                (false, Vec::new())
-            }
-            // (un autre bloc a écrit sauvegarde.json, ou l'historique a changé : la sauvegarde est relue, pour ne
-            //  jamais écraser ce qu'il y a noté)
-            "sauvegarde-changee" => {
-                if self.session.attente.is_none() {
-                    self.session.sv = systeme::lire_sauvegarde(ctx);
+        // (un geste long est en cours, audit G3 : sa session sera remise en place à sa fin ; les demandes des autres
+        //  blocs sont faites après, dans l'ordre, et sauvegarde.json relue)
+        if self.travaux.occupe() {
+            match nom {
+                "sauvegarde-changee" => {
+                    self.sv_a_relire = true;
+                    return;
                 }
-                // (puis le compte de la page Sauvegarde, rediffusé)
-                (self.session.analyse.is_some(), Vec::new())
+                "appliquer-reglages-windows"
+                | "declarations"
+                | "registre-ecrire"
+                | "demarrage-desactiver"
+                | "historique-annuler"
+                | "ouvrir-fiche" => {
+                    ctx.journal(&format!("Ton PC : {nom} attend la fin du geste en cours"));
+                    self.signaux_en_attente.push((nom.to_string(), donnees.clone()));
+                    return;
+                }
+                _ => {}
             }
+        }
+        // Les demandes qui passent par l'Aide (un réglage du PC) : dans un travail de fond
+        let fond = match nom {
             // (la fiche d'un jeu ou d'une partie, bloc jeux : `Invoke-TweakFix`)
-            "appliquer-reglages-windows" => self.avec_pc(ctx, |s, pc| {
-                s.session.corriger_reglages(pc, &liste("ids"));
-                true
-            }),
+            "appliquer-reglages-windows" => {
+                let ids = liste("ids");
+                Some(self.geste_fond(ctx, nom, avant, move |at, pc| at.session.corriger_reglages(pc, &ids)))
+            }
             // (le profil d'un jeu, blocs perf et jeux : `Set-GameProfile`, les changements déclarés faits ici, notés
             //  dans l'historique sous le titre donné : « historique » du bloc perf, « titre » du bloc jeux)
-            "declarations" => self.avec_pc(ctx, |s, pc| {
+            "declarations" => {
                 let l: Vec<modele::Declaration> =
                     net::champ_liste(donnees, "changements").iter().map(modele::Declaration::depuis_json).collect();
                 let t = if texte("historique").is_empty() { texte("titre") } else { texte("historique") };
-                if let Err(e) = s.session.declarations(pc, &l, &t) {
-                    pc.message(&session::message_erreur(&e));
-                }
-                true
-            }),
+                Some(self.geste_fond(ctx, nom, avant, move |at, pc| {
+                    if let Err(e) = at.session.declarations(pc, &l, &t) {
+                        pc.message(&session::message_erreur(&e));
+                    }
+                }))
+            }
             // (« Réactiver » le contrôle des comptes, bloc protection : `Set-Reg` avec sa sauvegarde, puis l'historique)
-            "registre-ecrire" => self.avec_pc(ctx, |s, pc| {
+            "registre-ecrire" => {
                 let mut d = donnees.clone();
                 d["Type"] = json!("reg");
                 let l = vec![modele::Declaration::depuis_json(&d)];
-                if let Err(e) = s.session.declarations(pc, &l, &texte("titre")) {
-                    pc.message(&session::message_erreur(&e));
-                }
-                true
-            }),
+                let t = texte("titre");
+                Some(self.geste_fond(ctx, nom, avant, move |at, pc| {
+                    if let Err(e) = at.session.declarations(pc, &l, &t) {
+                        pc.message(&session::message_erreur(&e));
+                    }
+                }))
+            }
             // (« Désactiver au démarrage » des programmes suspects, bloc protection : `Set-StartupState $i $false`)
             "demarrage-desactiver" => {
                 let a_couper: Vec<(reglages::Demarrage, String)> = net::champ_liste(donnees, "elements")
@@ -600,26 +819,39 @@ impl BlocPc {
                             .map(|d| (d.0.clone(), d.1.clone()))
                     })
                     .collect();
-                self.avec_pc(ctx, |s, pc| {
+                Some(self.geste_fond(ctx, nom, avant, move |at, pc| {
                     for (d, n) in &a_couper {
-                        if let Err(e) = s.session.demarrage(pc, d, n, false) {
+                        if let Err(e) = at.session.demarrage(pc, d, n, false) {
                             pc.message(&session::message_erreur(&e));
                         }
                     }
-                    true
-                })
+                }))
             }
             // (« Annuler » d'une ligne de l'historique, page Sauvegarde du bloc protection : `Undo-HistoryEntry`)
             "historique-annuler" => {
                 let id = texte("id");
                 let h = ctx.historique().into_iter().find(|h| h["Id"].as_str() == Some(id.as_str()));
-                match h {
-                    Some(h) => self.avec_pc(ctx, |s, pc| {
-                        s.session.annuler_entree(pc, &h);
-                        true
-                    }),
-                    None => (false, Vec::new()),
+                h.map(|h| self.geste_fond(ctx, nom, avant, move |at, pc| at.session.annuler_entree(pc, &h)))
+            }
+            _ => None,
+        };
+        if fond.is_some() {
+            self.relever_travaux(ctx, effets);
+            return;
+        }
+        let (fait, a) = match nom {
+            "mesures" => {
+                self.live = donnees.clone();
+                (false, Vec::new())
+            }
+            // (un autre bloc a écrit sauvegarde.json, ou l'historique a changé : la sauvegarde est relue, pour ne
+            //  jamais écraser ce qu'il y a noté)
+            "sauvegarde-changee" => {
+                if self.session.attente.is_none() {
+                    self.session.sv = systeme::lire_sauvegarde(ctx);
                 }
+                // (puis le compte de la page Sauvegarde, rediffusé)
+                (self.session.analyse.is_some(), Vec::new())
             }
             "ouvrir-fiche" => {
                 let id = texte("id");
@@ -637,6 +869,13 @@ impl BlocPc {
         if fait {
             self.apres(avant, a, effets);
             self.diffuser(ctx, effets);
+        }
+    }
+
+    /// Les effets demandés hors d'un appel qui en reçoit (fin de la lecture relevée dans `pages`)
+    fn rendre_en_attente(&mut self, effets: &mut Effets) {
+        for e in self.en_attente.drain(..) {
+            effets.ajouter(e);
         }
     }
 }

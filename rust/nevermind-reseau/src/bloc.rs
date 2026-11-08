@@ -15,6 +15,7 @@ use crate::pages::{self, DNS_CHOIX, EtatReseau, ResultatPing};
 use crate::panneau::{self, BoutonPanneau, PingDirect, Services};
 use crate::scan::{self, Autour, BrutApprofondi, BrutScan, Connus};
 use crate::sonde::{Avancement, Sonde, SondeVide};
+use nevermind_noyau::travaux::{Rendu, Travaux};
 use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
 use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
@@ -34,6 +35,16 @@ enum Message {
     Surveillance(Connexion, Vec<String>, Result<BrutScan, String>),
     Connexion(Option<Connexion>),
 }
+
+/// Ce que rend un geste par l'Aide, fait dans un travail de fond (audit G3)
+enum FinGeste {
+    Audit { act: Box<crate::audit::ActionAudit>, titre: String, r: Result<Vec<Value>, String> },
+    Dns { log: Value, serveurs: Vec<String>, r: Result<Option<Box<Connexion>>, String> },
+    Carte { idx: i64, r: Result<(), String> },
+}
+
+/// La clé des gestes par l'Aide : un seul à la fois
+const GESTE: &str = "geste";
 
 /// Le panneau ouvert par le bloc
 enum Panneau {
@@ -100,6 +111,8 @@ pub struct BlocReseau {
     attente: Vec<(String, Attente)>,
     occupe: String,
     signal_connexion: Option<Value>,
+    /// Les gestes par l'Aide (SMBv1 jusqu'à 15 min, DNS, carte, pare-feu...) : dans un fil à part (audit G3)
+    travaux: Travaux<FinGeste>,
 }
 
 impl Default for BlocReseau {
@@ -161,6 +174,7 @@ impl BlocReseau {
             attente: Vec::new(),
             occupe: String::new(),
             signal_connexion: None,
+            travaux: Travaux::default(),
         }
     }
 
@@ -408,10 +422,6 @@ impl BlocReseau {
         let Some(p) = a.points.get(k) else { return };
         let Some(act) = p.actions.get(j).cloned() else { return };
         let titre = p.titre.clone();
-        let mut log: Vec<Value> = Vec::new();
-        let definitif = |log: &mut Vec<Value>, t: &str, d: String, retour: &str| {
-            log.push(json!({ "Type": "definitif", "Titre": t, "Detail": d, "Retour": retour }));
-        };
         let r: Result<(), String> = match act.geste {
             Geste::Ouvrir => {
                 effets.ajouter(Effet::OuvrirAdresse(crate::texte::chaine(Some(&act.arg))));
@@ -426,39 +436,83 @@ impl BlocReseau {
                 effets.ajouter(Effet::OuvrirAdresse("fsmgmt.msc".into()));
                 Ok(())
             }
-            Geste::WifiManuel => {
-                let noms = crate::texte::liste(Some(&act.arg));
-                ctx.aide("wifi.manuel", &json!({ "Profils": noms }), 30_000).map(|_| {
-                    definitif(&mut log, "Wi-Fi ouverts en connexion manuelle", format!("Connexion manuelle : {}", noms.join(", ")),
-                        "Paramètres de Windows, Réseau et Internet, Wi-Fi, « Gérer les réseaux connus » : choisir le réseau et cocher « Se connecter automatiquement ».");
-                })
+            // (par l'Aide, jusqu'à 15 min pour SMBv1, ou PowerShell : dans un travail de fond, audit G3)
+            Geste::WifiManuel | Geste::PareFeu | Geste::Smb1 | Geste::BureauDistance | Geste::Public => {
+                return self.geste_audit_fond(ctx, effets, act, titre);
             }
-            Geste::PareFeu => ctx.aide("pare-feu.activer", &json!({}), 30_000).map(|_| {
-                definitif(&mut log, "Pare-feu de Windows réactivé", "Pare-feu réactivé sur tous les réseaux".into(),
-                    "Sécurité Windows, « Pare-feu et protection du réseau » : choisir le réseau et désactiver le pare-feu.");
-            }),
-            Geste::Smb1 => {
-                self.occuper(effets, "Désactivation de SMBv1...");
-                let r = ctx.aide("smb1.couper", &json!({ "Client": crate::texte::vrai(Some(&act.arg)) }), 900_000).map(|_| {
-                    definitif(&mut log, "SMBv1 désactivé", "Ancien partage de fichiers SMBv1 désactivé".into(),
-                        "Panneau de configuration, Programmes, « Activer ou désactiver des fonctionnalités Windows » : cocher « Support de partage de fichiers SMB 1.0/CIFS ».");
-                });
-                self.occuper(effets, "");
-                r
-            }
-            Geste::BureauDistance => {
-                let cle = r"HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server";
-                log.push(json!({ "Type": "reg", "Path": cle, "Name": "fDenyTSConnections", "Existed": true, "Value": 0, "Kind": "DWord", "Nouveau": 1, "NouveauType": "DWord" }));
-                let r = ctx.aide("reg.ecrire", &json!({ "Cle": cle, "Nom": "fDenyTSConnections", "Valeur": 1, "Type": "DWord" }), 30_000).map(|_| ());
-                signal(effets, "sauvegarde-changee", json!({}));
-                r
-            }
-            Geste::Public => self.sonde.passer_public(crate::texte::reel(Some(&act.arg)) as i64),
         };
-        if let Err(e) = r {
-            effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")));
+        self.fin_geste_audit(ctx, effets, &act, &titre, r.map(|_| Vec::new()));
+    }
+
+    /// Un geste de l'audit qui attend l'Aide (ou PowerShell) : dans un travail de fond ; sa fin dans
+    /// `fin_geste_audit`. Un autre geste en cours : rien n'est lancé (un double clic ne refait rien).
+    fn geste_audit_fond(&mut self, ctx: &Contexte, effets: &mut Effets, act: crate::audit::ActionAudit, titre: String) {
+        if self.travaux.occupe() {
+            ctx.journal(&format!("Réseau : {} pas lancé, un geste est encore en cours", act.label));
             return;
         }
+        if act.geste == Geste::Smb1 {
+            self.occuper(effets, "Désactivation de SMBv1...");
+        }
+        let sonde = self.sonde.clone();
+        self.travaux.lancer(ctx, GESTE, move |fond| {
+            let ctx = fond.ctx;
+            let mut log: Vec<Value> = Vec::new();
+            let definitif = |log: &mut Vec<Value>, t: &str, d: String, retour: &str| {
+                log.push(json!({ "Type": "definitif", "Titre": t, "Detail": d, "Retour": retour }));
+            };
+            let r: Result<(), String> = match act.geste {
+                Geste::WifiManuel => {
+                    let noms = crate::texte::liste(Some(&act.arg));
+                    ctx.aide("wifi.manuel", &json!({ "Profils": noms }), 30_000).map(|_| {
+                        definitif(&mut log, "Wi-Fi ouverts en connexion manuelle", format!("Connexion manuelle : {}", noms.join(", ")),
+                            "Paramètres de Windows, Réseau et Internet, Wi-Fi, « Gérer les réseaux connus » : choisir le réseau et cocher « Se connecter automatiquement ».");
+                    })
+                }
+                Geste::PareFeu => ctx.aide("pare-feu.activer", &json!({}), 30_000).map(|_| {
+                    definitif(&mut log, "Pare-feu de Windows réactivé", "Pare-feu réactivé sur tous les réseaux".into(),
+                        "Sécurité Windows, « Pare-feu et protection du réseau » : choisir le réseau et désactiver le pare-feu.");
+                }),
+                Geste::Smb1 => {
+                    ctx.aide("smb1.couper", &json!({ "Client": crate::texte::vrai(Some(&act.arg)) }), 900_000).map(|_| {
+                        definitif(&mut log, "SMBv1 désactivé", "Ancien partage de fichiers SMBv1 désactivé".into(),
+                            "Panneau de configuration, Programmes, « Activer ou désactiver des fonctionnalités Windows » : cocher « Support de partage de fichiers SMB 1.0/CIFS ».");
+                    })
+                }
+                Geste::BureauDistance => {
+                    let cle = r"HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server";
+                    log.push(json!({ "Type": "reg", "Path": cle, "Name": "fDenyTSConnections", "Existed": true, "Value": 0, "Kind": "DWord", "Nouveau": 1, "NouveauType": "DWord" }));
+                    ctx.aide("reg.ecrire", &json!({ "Cle": cle, "Nom": "fDenyTSConnections", "Valeur": 1, "Type": "DWord" }), 30_000).map(|_| ())
+                }
+                Geste::Public => sonde.passer_public(crate::texte::reel(Some(&act.arg)) as i64),
+                Geste::Ouvrir | Geste::ChangerDns | Geste::Partages => Ok(()),
+            };
+            FinGeste::Audit { act: Box::new(act), titre, r: r.map(|_| log) }
+        });
+        self.relever_travaux(ctx, effets);
+    }
+
+    /// La fin d'un geste de l'audit (sur le fil des blocs)
+    fn fin_geste_audit(
+        &mut self,
+        ctx: &Contexte,
+        effets: &mut Effets,
+        act: &crate::audit::ActionAudit,
+        titre: &str,
+        r: Result<Vec<Value>, String>,
+    ) {
+        match act.geste {
+            Geste::Smb1 => self.occuper(effets, ""),
+            Geste::BureauDistance => signal(effets, "sauvegarde-changee", json!({})),
+            _ => {}
+        }
+        let log = match r {
+            Ok(l) => l,
+            Err(e) => {
+                effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")));
+                return;
+            }
+        };
         signal(effets, "historique", json!({ "titre": format!("{} ({titre})", act.label), "details": [], "log": log }));
         if act.apres {
             self.lancer_audit(ctx, effets);
@@ -572,15 +626,40 @@ impl BlocReseau {
             effets.ajouter(Effet::Annonce("Aucune connexion détectée.".into()));
             return;
         };
-        let avant = self.sonde.dns_fixes(&net.guid);
-        let serveurs: Vec<&str> = DNS_CHOIX[k].to_vec();
-        let log = json!([{ "Type": "dns", "IfIndex": net.if_index, "Guid": net.guid,
-            "Servers": avant.split([',', ' ', '\t']).filter(|x| !x.is_empty()).collect::<Vec<_>>(), "Nouveau": serveurs }]);
-        if let Err(e) = ctx.aide("dns.regler", &json!({ "Index": net.if_index, "Serveurs": serveurs }), 30_000) {
-            effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")));
+        // (par l'Aide : dans un travail de fond, audit G3 ; un autre geste en cours : rien n'est lancé)
+        if self.travaux.occupe() {
+            ctx.journal("Réseau : DNS pas changé, un geste est encore en cours");
             return;
         }
-        self.net = self.sonde.connexion();
+        let avant = self.sonde.dns_fixes(&net.guid);
+        let serveurs: Vec<String> = DNS_CHOIX[k].iter().map(|s| s.to_string()).collect();
+        let log = json!([{ "Type": "dns", "IfIndex": net.if_index, "Guid": net.guid,
+            "Servers": avant.split([',', ' ', '\t']).filter(|x| !x.is_empty()).collect::<Vec<_>>(), "Nouveau": serveurs }]);
+        let sonde = self.sonde.clone();
+        self.travaux.lancer(ctx, GESTE, move |fond| {
+            let r = fond
+                .ctx
+                .aide("dns.regler", &json!({ "Index": net.if_index, "Serveurs": serveurs }), 30_000)
+                .map(|_| sonde.connexion().map(Box::new));
+            FinGeste::Dns { log, serveurs, r }
+        });
+        self.relever_travaux(ctx, effets);
+    }
+
+    fn fin_dns(
+        &mut self,
+        effets: &mut Effets,
+        log: Value,
+        serveurs: Vec<String>,
+        r: Result<Option<Box<Connexion>>, String>,
+    ) {
+        match r {
+            Err(e) => {
+                effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")));
+                return;
+            }
+            Ok(n) => self.net = n.map(|c| *c),
+        }
         signal(effets, "sauvegarde-changee", json!({}));
         let titre = format!(
             "Serveur DNS : {}",
@@ -595,19 +674,53 @@ impl BlocReseau {
             effets.ajouter(Effet::Annonce("Aucune carte réseau par câble détectée.".into()));
             return;
         };
+        // (par l'Aide, jusqu'à 60 s : dans un travail de fond, audit G3)
+        if self.travaux.occupe() {
+            ctx.journal("Réseau : carte pas redémarrée, un geste est encore en cours");
+            return;
+        }
         self.occuper(effets, "Redémarrage de la carte réseau...");
         ctx.journal(&format!("Carte réseau : redémarrage de {} (à {})", net.desc, format_vitesse(net.bps)));
-        if let Err(e) = ctx.aide("carte.relancer", &json!({ "Index": net.if_index }), 60_000) {
+        let idx = net.if_index;
+        self.travaux.lancer(ctx, GESTE, move |fond| FinGeste::Carte {
+            idx,
+            r: fond.ctx.aide("carte.relancer", &json!({ "Index": idx }), 60_000).map(|_| ()),
+        });
+        self.relever_travaux(ctx, effets);
+    }
+
+    fn fin_relance(&mut self, effets: &mut Effets, idx: i64, r: Result<(), String>) {
+        if let Err(e) = r {
             self.occuper(effets, "");
             effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")));
             return;
         }
         self.occuper(effets, "Carte réseau redémarrée, elle se reconnecte...");
-        let (s, tx, idx) = (self.sonde.clone(), self.tx.clone(), net.if_index);
+        let (s, tx) = (self.sonde.clone(), self.tx.clone());
         std::thread::spawn(move || {
             s.attendre_carte(idx);
             let _ = tx.send(Message::CarteRevenue(s.connexion()));
         });
+    }
+
+    /// Ce que les gestes par l'Aide ont rendu (sur le fil des blocs)
+    fn relever_travaux(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        for r in self.travaux.relever() {
+            match r {
+                Rendu::Effet(e) => effets.ajouter(e),
+                Rendu::Fini { resultat: Ok(FinGeste::Audit { act, titre, r }), .. } => {
+                    self.fin_geste_audit(ctx, effets, &act, &titre, r)
+                }
+                Rendu::Fini { resultat: Ok(FinGeste::Dns { log, serveurs, r }), .. } => {
+                    self.fin_dns(effets, log, serveurs, r)
+                }
+                Rendu::Fini { resultat: Ok(FinGeste::Carte { idx, r }), .. } => self.fin_relance(effets, idx, r),
+                Rendu::Fini { resultat: Err(e), .. } => {
+                    self.occuper(effets, "");
+                    effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")));
+                }
+            }
+        }
     }
 
     fn fin_carte(&mut self, ctx: &Contexte, effets: &mut Effets, n: Option<Connexion>) {
@@ -847,6 +960,7 @@ impl Bloc for BlocReseau {
 
     fn tic(&mut self, ctx: &Contexte, cache: bool, effets: &mut Effets) -> Option<Duration> {
         self.recevoir(ctx, effets);
+        self.relever_travaux(ctx, effets);
         if self.test_en_cours {
             let p = self.av.phase_actuelle();
             if !p.is_empty() {
@@ -899,8 +1013,12 @@ impl Bloc for BlocReseau {
                 });
             }
         }
-        let actif =
-            self.scan || self.audit_en_cours || self.test_en_cours || self.panneau.is_some() || self.carte_en_vol;
+        let actif = self.scan
+            || self.audit_en_cours
+            || self.test_en_cours
+            || self.panneau.is_some()
+            || self.carte_en_vol
+            || self.travaux.occupe();
         if actif {
             if self.scan || self.audit_en_cours {
                 effets.ajouter(Effet::Rafraichir);
@@ -926,6 +1044,10 @@ impl Bloc for BlocReseau {
             }
             _ => {}
         }
+    }
+
+    fn travaux_finis(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        self.relever_travaux(ctx, effets);
     }
 
     fn fermer(&mut self, _ctx: &Contexte) {

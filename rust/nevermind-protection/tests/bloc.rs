@@ -432,3 +432,64 @@ fn analyser_un_dossier_garde_la_racine_du_lecteur() {
         assert!(g.iter().any(|x| *x == format!("analyser Personnalisee {analyse}")), "{choisi} : {g:?}");
     }
 }
+
+/// Audit G3 : « Réactiver le pare-feu » attend l'Aide (jusqu'à 60 s) : dans un travail de fond. Le « Oui » rend la
+/// main tout de suite, un deuxième « Oui » ne refait rien, et la fin note la même ligne d'historique qu'avant. Fausse
+/// Aide : rien sur le vrai PC.
+#[test]
+fn reactiver_le_pare_feu_ne_fige_pas() {
+    let ctx = contexte("pare-feu-fond").partage();
+    let (feu, attente) = std::sync::mpsc::channel::<()>();
+    let attente = std::sync::Mutex::new(Some(attente));
+    let demandes = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let d = demandes.clone();
+    ctx.fausse_aide(Arc::new(move |a: &str, _p: &Value| {
+        if !a.starts_with("lecture.") {
+            d.lock().unwrap().push(a.to_string());
+            if let Some(r) = attente.lock().unwrap().take() {
+                let _ = r.recv_timeout(Duration::from_secs(60));
+            }
+        }
+        Ok(json!("ok"))
+    }));
+    let s = EtatS::depuis(&json!({ "Mp": defender(), "Uac": true, "FirewallOff": ["Public"] })).unwrap();
+    let f = Arc::new(faux_avec(s));
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    attendre(&mut b, &ctx);
+    let _ = b.pages(&ctx, "securite");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "sec:0:0", &Value::Null, &mut e));
+    let q = signal(&e.0, "question").expect("question posée").clone();
+    assert!(q["texte"].as_str().unwrap().starts_with("Réactiver le pare-feu"), "{q}");
+    let oui = json!({ "id": q["id"], "valeur": "oui" });
+    let mut e = Effets::default();
+    let debut = Instant::now();
+    assert!(b.action(&ctx, "sec:0:0", &oui, &mut e));
+    assert!(
+        debut.elapsed() < Duration::from_secs(2),
+        "le « Oui » a pris {:?} : le fil des blocs était figé",
+        debut.elapsed()
+    );
+    let fin = Instant::now() + Duration::from_secs(10);
+    while demandes.lock().unwrap().is_empty() {
+        assert!(Instant::now() < fin, "l'Aide n'est pas appelée");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Un deuxième « Oui » (la même question) pendant ce temps : rien
+    let mut e = Effets::default();
+    b.action(&ctx, "sec:0:0", &oui, &mut e);
+    assert!(b.pages(&ctx, "securite").contains_key("securite"), "la page ne répond pas");
+    feu.send(()).unwrap();
+    let mut tout = Vec::new();
+    while signal(&tout, "historique").is_none() {
+        assert!(Instant::now() < fin, "le pare-feu ne finit pas : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(*demandes.lock().unwrap(), ["pare-feu.activer"], "le geste est reparti");
+    let h = signal(&tout, "historique").unwrap();
+    assert_eq!(h["titre"], "Réactiver le pare-feu (Pare-feu désactivé)");
+    assert_eq!(h["log"][0]["Quoi"], "Pare-feu réactivé sur tous les réseaux");
+}

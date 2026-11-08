@@ -17,6 +17,8 @@ pub struct PcWindows<'a> {
     ctx: &'a Contexte,
     effets: Vec<Effet>,
     statut: String,
+    /// Dans un travail de fond (audit G3) : le texte d'attente part tout de suite, sans attendre la fin du geste
+    direct: Option<&'a (dyn Fn(Effet) + 'a)>,
 }
 
 /// Lire un fichier JSON de Nevermind (ou sa copie de secours)
@@ -134,7 +136,13 @@ pub fn completer_par_aide(pc: &mut dyn Pc, e: &mut crate::analyse::Entrees) {
 
 impl<'a> PcWindows<'a> {
     pub fn nouveau(ctx: &'a Contexte) -> Self {
-        PcWindows { ctx, effets: Vec::new(), statut: String::new() }
+        PcWindows { ctx, effets: Vec::new(), statut: String::new(), direct: None }
+    }
+
+    /// Le texte d'attente (`occupe`) envoyé tout de suite par `envoi` (un travail de fond), pas à la fin du geste
+    pub fn en_direct(mut self, envoi: &'a (dyn Fn(Effet) + 'a)) -> Self {
+        self.direct = Some(envoi);
+        self
     }
 
     /// Ce qui est à montrer ou à dire à l'hôte après le geste
@@ -235,7 +243,8 @@ impl Pc for PcWindows<'_> {
         Err("droits administrateur".into())
     }
     fn aide(&mut self, action: &str, parametres: Value, delai_ms: u64) -> Result<Value, String> {
-        if self.ctx.essai && !action.starts_with("lecture.") {
+        // (en test, seulement une fausse Aide : jamais la vraie)
+        if self.ctx.essai && !action.starts_with("lecture.") && !self.ctx.a_fausse_aide() {
             return Err("mode test : l'Aide n'est pas appelée".into());
         }
         self.ctx.aide(action, &parametres, delai_ms)
@@ -477,7 +486,11 @@ impl Pc for PcWindows<'_> {
     }
     fn statut(&mut self, texte: &str) {
         self.statut = texte.into();
-        self.effets.push(Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": texte }) });
+        let e = Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": texte }) };
+        match self.direct {
+            Some(envoi) => envoi(e),
+            None => self.effets.push(e),
+        }
     }
     fn definitifs(&mut self) -> Vec<String> {
         let h = lire_json(&self.ctx.donnees.join("historique.json")).unwrap_or(Value::Null);

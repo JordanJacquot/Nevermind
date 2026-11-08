@@ -47,6 +47,8 @@ pub struct EtatAssistance {
     ecran: String,
     bulles: Vec<Bulle>,
     derniere_bulle: Option<Instant>,
+    /// « Signaler un problème » (la lecture de l'Aide, jusqu'à 30 s, puis le zip) : dans un travail de fond (audit G3)
+    signalement: crate::travaux::Travaux<Result<std::path::PathBuf, String>>,
 }
 
 /// Les étapes de la visite guidée (celles de l'écran façon console, Initialize-AccueilConsole)
@@ -835,21 +837,44 @@ pub fn action(ctx: &Contexte, id: &str, _valeur: &Value, infos: &InfosSignalemen
             }
             ctx.fermer_signalement(effets);
             if id == "panneau:b:0" {
-                match ctx.signaler_probleme(None, "", infos) {
-                    Ok(zip) => {
-                        effets.ajouter(Effet::Annonce("Fichier créé sur le bureau.".into()));
-                        effets.ajouter(Effet::OuvrirAdresse(zip.to_string_lossy().into_owned()));
-                        effets.ajouter(Effet::Annonce(message_signalement(&zip)));
-                    }
-                    Err(e) => {
-                        ctx.noter_erreur(&format!("Signaler un problème : {e}"));
-                        effets.ajouter(Effet::Annonce(e));
-                    }
-                }
+                // (la lecture de l'Aide et le zip : dans un travail de fond, audit G3 ; la fin est relevée par
+                //  `relever_assistance` ; déjà en cours : rien de plus)
+                let infos = infos.clone();
+                let mut t = std::mem::take(&mut verrou(&ctx.assistance).signalement);
+                t.lancer(ctx, "signalement", move |fond| fond.ctx.signaler_probleme(None, "", &infos));
+                verrou(&ctx.assistance).signalement = t;
+                ctx.relever_assistance(effets);
             }
             true
         }
         _ => false,
+    }
+}
+
+impl Contexte {
+    /// La fin de « Signaler un problème » (sur le fil des blocs) : le fichier sur le bureau, ou l'erreur
+    pub fn relever_assistance(&self, effets: &mut Effets) {
+        let rendus = verrou(&self.assistance).signalement.relever();
+        for r in rendus {
+            let r = match r {
+                crate::travaux::Rendu::Effet(e) => {
+                    effets.ajouter(e);
+                    continue;
+                }
+                crate::travaux::Rendu::Fini { resultat, .. } => resultat.and_then(|x| x),
+            };
+            match r {
+                Ok(zip) => {
+                    effets.ajouter(Effet::Annonce("Fichier créé sur le bureau.".into()));
+                    effets.ajouter(Effet::OuvrirAdresse(zip.to_string_lossy().into_owned()));
+                    effets.ajouter(Effet::Annonce(message_signalement(&zip)));
+                }
+                Err(e) => {
+                    self.noter_erreur(&format!("Signaler un problème : {e}"));
+                    effets.ajouter(Effet::Annonce(e));
+                }
+            }
+        }
     }
 }
 

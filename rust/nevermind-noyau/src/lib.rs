@@ -25,6 +25,7 @@ pub mod pont;
 pub mod registre;
 pub mod sauvegarde;
 pub mod signaux;
+pub mod travaux;
 pub mod windows;
 pub use assistance::pages_assistance;
 pub use contexte::{Contexte, horodatage};
@@ -76,6 +77,10 @@ pub trait Bloc: Send {
 
     /// Un message d'un autre bloc (voir `Effet::Signal`).
     fn signal(&mut self, _ctx: &Contexte, _nom: &str, _donnees: &Value, _effets: &mut Effets) {}
+
+    /// Un de ses travaux de fond (`travaux::Travaux`) a rendu quelque chose : le relever (sur le fil des blocs).
+    /// Appelé par l'hôte dès qu'un travail a rendu un effet ou a fini (au plus tard 200 ms après).
+    fn travaux_finis(&mut self, _ctx: &Contexte, _effets: &mut Effets) {}
 
     /// Nevermind se ferme : remettre ce qui doit l'être, arrêter les mesures.
     fn fermer(&mut self, _ctx: &Contexte) {}

@@ -23,6 +23,7 @@ mod windows;
 use biblio::Jeu;
 use jaquettes::Jaquettes;
 use lancement::{Desinstallation, Lancement};
+use nevermind_noyau::travaux::{Rendu, Travaux};
 use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
 use optim::Connu;
 use parties::JournalParties;
@@ -52,6 +53,24 @@ struct Surveillance {
 
 type Resultat<T> = Arc<Mutex<Option<T>>>;
 
+/// Ce que rend un travail de fond du bloc (audit G3)
+enum FinJeux {
+    /// La recherche des jeux (registre et disques)
+    Recherche(Box<biblio::Decouverte>),
+    /// La fenêtre « Choisis le programme du jeu (.exe) » : le programme choisi, ou rien
+    Choisi(Option<String>),
+}
+
+/// Ce qui est dit quand la recherche des jeux est finie
+enum ApresRecherche {
+    Texte(String),
+    /// « N jeux trouvés. »
+    Compte,
+}
+
+const RECHERCHE: &str = "recherche";
+const CHOIX: &str = "choix";
+
 pub struct BlocJeux {
     sys: Arc<dyn Systeme>,
     /// La liste des jeux ($script:Games) ; `None` : pas encore cherchée.
@@ -61,6 +80,11 @@ pub struct BlocJeux {
     incomplets: Vec<String>,
     index: HashMap<String, biblio::Indexe>,
     recherche_en_cours: Option<Resultat<biblio::Decouverte>>,
+    /// La recherche des jeux demandée par un geste, et la fenêtre de choix du programme : dans un fil à part
+    travaux: Travaux<FinJeux>,
+    apres_recherche: Vec<ApresRecherche>,
+    /// La liste a encore changé pendant une recherche : une autre, ensuite
+    relancer_recherche: bool,
     filtre: String,
     recherche: String,
     choisi: Option<Jeu>,
@@ -116,6 +140,9 @@ impl BlocJeux {
             incomplets: Vec::new(),
             index: HashMap::new(),
             recherche_en_cours: None,
+            travaux: Travaux::default(),
+            apres_recherche: Vec::new(),
+            relancer_recherche: false,
             filtre: String::new(),
             recherche: String::new(),
             choisi: None,
@@ -222,6 +249,56 @@ impl BlocJeux {
     pub fn rechercher_maintenant(&mut self, ctx: &Contexte, effets: &mut Effets) {
         let d = biblio::decouvrir(self.sys.as_ref());
         self.recevoir_jeux(ctx, d, effets);
+    }
+
+    /// Cherche les jeux après un geste (Actualiser, un jeu ajouté ou retiré, une désinstallation) : le registre et
+    /// les disques sont parcourus dans un travail de fond (audit G3) ; `apres` est dit à la fin. Une recherche déjà
+    /// en cours : une autre la suit (la liste a changé entre-temps).
+    fn rechercher(&mut self, ctx: &Contexte, effets: &mut Effets, apres: Option<ApresRecherche>) {
+        self.apres_recherche.extend(apres);
+        if self.travaux.en_cours(RECHERCHE) {
+            self.relancer_recherche = true;
+            return;
+        }
+        let sys = self.sys.clone();
+        self.travaux.lancer(ctx, RECHERCHE, move |_| FinJeux::Recherche(Box::new(biblio::decouvrir(sys.as_ref()))));
+        self.relever_travaux(ctx, effets);
+    }
+
+    /// Ce que les travaux de fond ont rendu (sur le fil des blocs)
+    fn relever_travaux(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        for r in self.travaux.relever() {
+            match r {
+                Rendu::Effet(e) => effets.ajouter(e),
+                Rendu::Fini { resultat: Ok(FinJeux::Recherche(d)), .. } => {
+                    if std::mem::take(&mut self.relancer_recherche) {
+                        self.rechercher(ctx, effets, None);
+                        continue;
+                    }
+                    self.recevoir_jeux(ctx, *d, effets);
+                    for a in std::mem::take(&mut self.apres_recherche) {
+                        match a {
+                            ApresRecherche::Texte(t) => self.statut(effets, &t),
+                            ApresRecherche::Compte => {
+                                let n = self.bibliotheque().len();
+                                self.statut(effets, &format!("{n} jeux trouvés."));
+                            }
+                        }
+                    }
+                }
+                Rendu::Fini { resultat: Ok(FinJeux::Choisi(exe)), .. } => {
+                    if let Some(e) = exe {
+                        self.ajouter_jeu(ctx, Some(e), None, effets);
+                    }
+                }
+                Rendu::Fini { cle, resultat: Err(e) } => {
+                    ctx.journal(&format!("Bibliothèque : {cle} impossible ({e})"));
+                    if cle == RECHERCHE {
+                        self.apres_recherche.clear();
+                    }
+                }
+            }
+        }
     }
 
     /// Lance la recherche des jeux dans un fil séparé (comme Invoke-Async).
@@ -616,10 +693,16 @@ impl BlocJeux {
     pub fn ajouter_jeu(&mut self, ctx: &Contexte, exe: Option<String>, nom: Option<String>, effets: &mut Effets) {
         let exe = match exe {
             Some(e) => e,
-            None => match self.sys.choisir_exe() {
-                Some(e) => e,
-                None => return,
-            },
+            // (la fenêtre de choix attend l'utilisateur sans limite : dans un fil à part, audit G3 ; la suite vient
+            //  avec le programme choisi. Déjà ouverte : pas une deuxième.)
+            None => {
+                if !self.travaux.en_cours(CHOIX) {
+                    let sys = self.sys.clone();
+                    self.travaux.lancer(ctx, CHOIX, move |_| FinJeux::Choisi(sys.choisir_exe()));
+                    self.relever_travaux(ctx, effets);
+                }
+                return;
+            }
         };
         let nom = match nom {
             Some(n) => n,
@@ -644,8 +727,11 @@ impl BlocJeux {
         if let Err(e) = ctx.ecrire_reglage("CustomGames", Value::Array(l), false) {
             ctx.journal(&e);
         }
-        self.rechercher_maintenant(ctx, effets);
-        self.statut(effets, &format!("{nom} ajouté à tes jeux : Nevermind le reconnaîtra à son lancement."));
+        self.rechercher(
+            ctx,
+            effets,
+            Some(ApresRecherche::Texte(format!("{nom} ajouté à tes jeux : Nevermind le reconnaîtra à son lancement."))),
+        );
     }
 
     /// Retirer un jeu ajouté à la main (Remove-CustomGame).
@@ -657,8 +743,7 @@ impl BlocJeux {
         if let Err(e) = ctx.ecrire_reglage("CustomGames", Value::Array(l), false) {
             ctx.journal(&e);
         }
-        self.rechercher_maintenant(ctx, effets);
-        self.statut(effets, "Jeu retiré de la liste.");
+        self.rechercher(ctx, effets, Some(ApresRecherche::Texte("Jeu retiré de la liste.".into())));
     }
 
     /// Montrer ou cacher l'Organizer (Set-OrgVisible). Caché : il est aussi coupé.
@@ -998,9 +1083,7 @@ impl Bloc for BlocJeux {
             }
             "clic:BtnLibRefresh" => {
                 self.statut(effets, "Recherche de tes jeux...");
-                self.rechercher_maintenant(ctx, effets);
-                let n = self.bibliotheque().len();
-                self.statut(effets, &format!("{n} jeux trouvés."));
+                self.rechercher(ctx, effets, Some(ApresRecherche::Compte));
             }
             "clic:BtnLibAdd" => self.ajouter_jeu(ctx, None, None, effets),
             "clic:BtnLibLeftovers" | "jeux-restes" => {
@@ -1084,6 +1167,7 @@ impl Bloc for BlocJeux {
 
     fn tic(&mut self, ctx: &Contexte, _cache: bool, effets: &mut Effets) -> Option<Duration> {
         organizer::fil::tic(ctx, effets);
+        self.relever_travaux(ctx, effets);
         if self.jeux.is_none() && self.recherche_en_cours.is_none() {
             self.lancer_recherche();
         }
@@ -1134,13 +1218,18 @@ impl Bloc for BlocJeux {
             i += 1;
         }
         if refaire {
-            self.rechercher_maintenant(ctx, effets);
+            self.rechercher(ctx, effets, None);
         }
         let occupe = self.recherche_en_cours.is_some()
+            || self.travaux.occupe()
             || self.mesure_restes.is_some()
             || self.suppression.is_some()
             || !self.surveillances.is_empty();
         Some(organizer::fil::delai(if occupe { Duration::from_millis(500) } else { Duration::from_secs(30) }))
+    }
+
+    fn travaux_finis(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        self.relever_travaux(ctx, effets);
     }
 
     fn signal(&mut self, ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
@@ -1167,7 +1256,7 @@ impl Bloc for BlocJeux {
                 }
             }
             "organizer-ouvrir" => organizer::fil::ouvrir_vue(ctx),
-            "jeux-rechercher" => self.rechercher_maintenant(ctx, effets),
+            "jeux-rechercher" => self.rechercher(ctx, effets, None),
             "ajouter-jeu" => self.ajouter_jeu(ctx, None, None, effets),
             "jeux-restes-ouvrir" => {
                 if !self.gros_restes().is_empty() {

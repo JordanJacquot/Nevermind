@@ -20,6 +20,7 @@ pub mod systeme;
 mod windows;
 
 use etat::{Approuve, EtatS};
+use nevermind_noyau::travaux::{Rendu, Travaux};
 use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
 use pages::Verification;
 use ps::Date;
@@ -68,6 +69,8 @@ impl Cache {
 
 pub struct BlocProtection {
     sys: Option<Arc<dyn Systeme>>,
+    /// Les gestes longs des points à vérifier (Defender, l'Aide) : dans un fil à part (audit G3)
+    travaux: Travaux<FinGeste>,
     verif: Option<Verification>,
     /// La dernière lecture (pour rejuger sans tout relire quand seuls les éléments approuvés changent)
     lecture: Option<Lecture>,
@@ -139,6 +142,7 @@ impl BlocProtection {
             analyse: None,
             maj_base: None,
             occupe_texte: None,
+            travaux: Travaux::default(),
             marque: None,
             panneau: None,
             numero_panneau: 0,
@@ -176,7 +180,7 @@ impl BlocProtection {
 
     /// Un travail de fond attend sa fin (lecture, analyse, mise à jour de la base)
     pub fn occupe(&self) -> bool {
-        self.lecture_en_cours.is_some() || self.analyse.is_some() || self.maj_base.is_some()
+        self.lecture_en_cours.is_some() || self.analyse.is_some() || self.maj_base.is_some() || self.travaux.occupe()
     }
 
     /// `Update-SecurityTab` : la lecture lente part dans un fil à part ; la suite se fait au prochain tic
@@ -352,47 +356,40 @@ impl BlocProtection {
         let Some(a) = c.actions.get(j).cloned() else { return };
         let ttl = c.titre.clone();
         let sys = self.sys.clone();
-        let mut definitif: Option<(String, String)> = None;
-        let mut erreur: Option<String> = None;
+        let titre = format!("{} ({ttl})", a.texte);
         let mut rafraichir = !a.sans_rafraichir;
-        match &a.sorte {
-            Sorte::SupprimerMenaces => {
-                if let Some(s) = &sys
-                    && let Err(e) = s.supprimer_menaces()
-                {
-                    erreur = Some(e);
-                }
+        // (Defender, l'Aide jusqu'à 60 s, le Planificateur : dans un travail de fond, audit G3 ; un autre geste en
+        //  cours : rien n'est lancé, un double clic ne refait rien)
+        if matches!(
+            a.sorte,
+            Sorte::SupprimerMenaces
+                | Sorte::RetirerExclusions(_)
+                | Sorte::ReactiverPareFeu
+                | Sorte::DesactiverTaches(_)
+        ) {
+            if self.travaux.occupe() {
+                ctx.journal(&format!("Sécurité : {titre} pas lancé, un geste est encore en cours"));
+                return;
             }
+            let sorte = a.sorte.clone();
+            self.travaux.lancer(ctx, GESTE, move |fond| {
+                let (definitif, erreur, annonces) = geste_long(fond.ctx, sys.as_deref(), &sorte);
+                FinGeste { titre, definitif, erreur, annonces, rafraichir }
+            });
+            self.relever_travaux(effets);
+            return;
+        }
+        match &a.sorte {
             Sorte::Ouvrir(u) => effets.ajouter(Effet::OuvrirAdresse(u.clone())),
             Sorte::Planificateur => effets.ajouter(Effet::OuvrirAdresse("taskschd.msc".into())),
             Sorte::MettreAJourBase => {
                 self.mettre_a_jour_base();
                 rafraichir = false;
             }
-            Sorte::RetirerExclusions(l) => {
-                match ctx.aide("antivirus.retirer-exclusions", &json!({ "Elements": l }), 60_000) {
-                    Ok(_) => {
-                        definitif = Some((
-                            format!("Exclusions retirées : {}", l.join(", ")),
-                            "Sécurité Windows, Protection contre les virus et menaces, « Gérer les paramètres », Exclusions : ajouter de nouveau l'élément.".into(),
-                        ))
-                    }
-                    Err(e) => erreur = Some(e),
-                }
-            }
-            Sorte::ReactiverPareFeu => match ctx.aide("pare-feu.activer", &json!({}), 60_000) {
-                Ok(_) => {
-                    definitif = Some((
-                        "Pare-feu réactivé sur tous les réseaux".into(),
-                        "Sécurité Windows, « Pare-feu et protection du réseau » : choisir le réseau et désactiver le pare-feu.".into(),
-                    ))
-                }
-                Err(e) => erreur = Some(e),
-            },
             Sorte::ReactiverUac => effets.ajouter(Effet::Signal {
                 nom: "registre-ecrire".into(),
                 donnees: json!({ "Path": "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "Name": "EnableLUA",
-                    "Value": 1, "Kind": "DWord", "titre": format!("{} ({ttl})", a.texte) }),
+                    "Value": 1, "Kind": "DWord", "titre": titre }),
             }),
             Sorte::OuvrirFichier(f) => {
                 if let Some(s) = &sys {
@@ -411,30 +408,19 @@ impl BlocProtection {
             Sorte::DesactiverDemarrage(l) => effets.ajouter(Effet::Signal {
                 nom: "demarrage-desactiver".into(),
                 donnees: json!({ "elements": l.iter().map(|d| json!({ "Nom": d.nom, "Exe": d.exe })).collect::<Vec<_>>(),
-                    "titre": format!("{} ({ttl})", a.texte) }),
+                    "titre": titre }),
             }),
-            Sorte::DesactiverTaches(l) => {
-                let (mut faites, mut ratees) = (Vec::new(), Vec::new());
-                if let Some(s) = &sys {
-                    for t in l {
-                        match s.desactiver_tache(&t.nom, &t.chemin) {
-                            Ok(true) => faites.push(t.nom.clone()),
-                            Ok(false) => ratees.push(t.nom.clone()),
-                            Err(e) => {
-                                ctx.journal(&format!("Sécurité : tâche « {}{} » non désactivée ({e})", t.chemin, t.nom));
-                                ratees.push(t.nom.clone());
-                            }
-                        }
-                    }
-                }
-                match regles::message_taches(&faites, &ratees) {
-                    Ok(Some(m)) => effets.ajouter(Effet::Annonce(m)),
-                    Ok(None) => {}
-                    Err(m) => erreur = Some(m),
-                }
-            }
+            Sorte::SupprimerMenaces | Sorte::RetirerExclusions(_) | Sorte::ReactiverPareFeu | Sorte::DesactiverTaches(_) => {}
         }
-        if let Some(e) = erreur {
+        self.fin_geste(effets, FinGeste { titre, definitif: None, erreur: None, annonces: Vec::new(), rafraichir });
+    }
+
+    /// La fin d'un geste (sur le fil des blocs) : le message d'erreur, ou l'historique ; puis la protection relue
+    fn fin_geste(&mut self, effets: &mut Effets, f: FinGeste) {
+        for a in f.annonces {
+            effets.ajouter(a);
+        }
+        if let Some(e) = f.erreur {
             // (Invoke-Safe : un message écrit pour l'utilisateur, montré tel quel après cette phrase)
             effets.ajouter(Effet::Annonce(format!(
                 "Oups, quelque chose s'est mal passé :
@@ -443,16 +429,29 @@ impl BlocProtection {
             )));
             return;
         }
-        if let Some((quoi, retour)) = definitif {
+        if let Some((quoi, retour)) = f.definitif {
             // (Add-ChangementDefinitif puis Add-History : écrit par le bloc qui tient l'historique)
             effets.ajouter(Effet::Signal {
                 nom: "historique".into(),
-                donnees: json!({ "titre": format!("{} ({ttl})", a.texte), "details": [],
+                donnees: json!({ "titre": f.titre, "details": [],
                     "log": [{ "Type": "definitif", "Quoi": quoi, "Retour": retour }] }),
             });
         }
-        if rafraichir && self.analyse.is_none() {
+        if f.rafraichir && self.analyse.is_none() {
             self.relire();
+        }
+    }
+
+    /// Ce que les gestes longs ont rendu (sur le fil des blocs)
+    fn relever_travaux(&mut self, effets: &mut Effets) {
+        for r in self.travaux.relever() {
+            match r {
+                Rendu::Effet(e) => effets.ajouter(e),
+                Rendu::Fini { resultat: Ok(f), .. } => self.fin_geste(effets, f),
+                Rendu::Fini { resultat: Err(e), .. } => {
+                    effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")))
+                }
+            }
         }
     }
 
@@ -701,7 +700,12 @@ impl Bloc for BlocProtection {
         false
     }
 
+    fn travaux_finis(&mut self, _ctx: &Contexte, effets: &mut Effets) {
+        self.relever_travaux(effets);
+    }
+
     fn tic(&mut self, ctx: &Contexte, _cache: bool, effets: &mut Effets) -> Option<Duration> {
+        self.relever_travaux(effets);
         if let Some(t) = self.occupe_texte.take() {
             effets.ajouter(Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": t }) });
         }
@@ -808,4 +812,79 @@ pub fn pages_pour(c: CasPages) -> (Map<String, Value>, Option<i64>, Vec<Constat>
     };
     let (p, points) = pages::pages(&e);
     (p, verif.map(|v| v.note), points)
+}
+
+/// Ce que rend un geste long d'un point à vérifier (audit G3)
+struct FinGeste {
+    titre: String,
+    /// Le changement définitif à noter dans l'historique (quoi, comment revenir)
+    definitif: Option<(String, String)>,
+    erreur: Option<String>,
+    annonces: Vec<Effet>,
+    rafraichir: bool,
+}
+
+/// La clé des gestes longs : un seul à la fois
+const GESTE: &str = "geste";
+
+/// Un geste long (Defender, l'Aide, le Planificateur), fait dans un travail de fond : le changement définitif,
+/// l'erreur, les messages
+fn geste_long(
+    ctx: &Contexte,
+    sys: Option<&dyn Systeme>,
+    sorte: &Sorte,
+) -> (Option<(String, String)>, Option<String>, Vec<Effet>) {
+    let mut definitif: Option<(String, String)> = None;
+    let mut erreur: Option<String> = None;
+    let mut annonces = Vec::new();
+    match sorte {
+        Sorte::SupprimerMenaces => {
+            if let Some(s) = sys
+                && let Err(e) = s.supprimer_menaces()
+            {
+                erreur = Some(e);
+            }
+        }
+        Sorte::RetirerExclusions(l) => {
+            match ctx.aide("antivirus.retirer-exclusions", &json!({ "Elements": l }), 60_000) {
+                Ok(_) => {
+                    definitif = Some((
+                        format!("Exclusions retirées : {}", l.join(", ")),
+                        "Sécurité Windows, Protection contre les virus et menaces, « Gérer les paramètres », Exclusions : ajouter de nouveau l'élément.".into(),
+                    ))
+                }
+                Err(e) => erreur = Some(e),
+            }
+        }
+        Sorte::ReactiverPareFeu => match ctx.aide("pare-feu.activer", &json!({}), 60_000) {
+            Ok(_) => definitif = Some((
+                "Pare-feu réactivé sur tous les réseaux".into(),
+                "Sécurité Windows, « Pare-feu et protection du réseau » : choisir le réseau et désactiver le pare-feu."
+                    .into(),
+            )),
+            Err(e) => erreur = Some(e),
+        },
+        Sorte::DesactiverTaches(l) => {
+            let (mut faites, mut ratees) = (Vec::new(), Vec::new());
+            if let Some(s) = sys {
+                for t in l {
+                    match s.desactiver_tache(&t.nom, &t.chemin) {
+                        Ok(true) => faites.push(t.nom.clone()),
+                        Ok(false) => ratees.push(t.nom.clone()),
+                        Err(e) => {
+                            ctx.journal(&format!("Sécurité : tâche « {}{} » non désactivée ({e})", t.chemin, t.nom));
+                            ratees.push(t.nom.clone());
+                        }
+                    }
+                }
+            }
+            match regles::message_taches(&faites, &ratees) {
+                Ok(Some(m)) => annonces.push(Effet::Annonce(m)),
+                Ok(None) => {}
+                Err(m) => erreur = Some(m),
+            }
+        }
+        _ => {}
+    }
+    (definitif, erreur, annonces)
 }

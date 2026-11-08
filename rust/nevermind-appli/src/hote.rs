@@ -230,12 +230,13 @@ struct Kit {
 }
 
 /// L'état d'un service : son démarrage et s'il tourne (lecture de Windows, donnée par le programme).
-pub type EtatService = Box<dyn Fn(&str) -> Option<(String, bool)> + Send>;
+pub type EtatService = std::sync::Arc<dyn Fn(&str) -> Option<(String, bool)> + Send + Sync>;
 
 /// Les blocs et ce qui les entoure.
 pub struct Hote {
     blocs: Vec<Box<dyn Bloc>>,
-    pub ctx: Contexte,
+    /// (partagé avec les travaux de fond des blocs, audit G3)
+    pub ctx: std::sync::Arc<Contexte>,
     habillage: Habillage,
     phrase: String,
     version: String,
@@ -264,6 +265,9 @@ pub struct Hote {
     mindset: Map<String, Value>,
     /// Le dernier etat.json écrit, sans sa date (`$script:EtatMindsetEcrit`)
     mindset_ecrit: String,
+    /// Les travaux de fond de l'hôte (`sauvegarde-appliquer`, audit G3), et les demandes qui attendent leur tour
+    travaux: nevermind_noyau::travaux::Travaux<communs::Appliquee>,
+    sauvegardes_en_attente: Vec<Value>,
 }
 
 #[path = "hote_communs.rs"]
@@ -375,7 +379,7 @@ impl Hote {
         let n = blocs.len();
         Hote {
             blocs,
-            ctx,
+            ctx: ctx.partage(),
             habillage,
             phrase,
             version: version.to_string(),
@@ -391,7 +395,9 @@ impl Hote {
             fiche: communs::Fiche::default(),
             infos: Default::default(),
             notifications: Vec::new(),
-            etat_service: Box::new(|_| None),
+            etat_service: std::sync::Arc::new(|_| None),
+            travaux: Default::default(),
+            sauvegardes_en_attente: Vec::new(),
             mindset: Map::new(),
             mindset_ecrit: String::new(),
         }
@@ -1113,6 +1119,7 @@ impl Hote {
             }
         }
         self.tics(maintenant, ecran);
+        self.travaux(maintenant, ecran);
         // Les bulles pour Mindset (notification.demande), une à la fois, vérifiées toutes les secondes
         if self.k.tic.is_multiple_of(5) && self.ctx.bulles_en_attente() {
             self.ctx.envoyer_notification_suivante();
@@ -1138,6 +1145,34 @@ impl Hote {
                     self.ctx.journal(&format!("Tic de {n} : {e}"));
                     self.tics[i] = Some(maintenant + APRES_ERREUR);
                 }
+            }
+            refaire |= self.appliquer(Some(i), eff, maintenant, ecran, 0);
+        }
+        if refaire {
+            self.mettre_a_jour(maintenant, ecran);
+        }
+    }
+
+    /// Les travaux de fond des blocs (audit G3) : dès que l'un a rendu quelque chose (un texte d'attente, sa fin),
+    /// chaque bloc relève les siens (`Bloc::travaux_finis`), ici, sur le fil des blocs.
+    fn travaux(&mut self, maintenant: Duration, ecran: &mut dyn Ecran) {
+        if !self.ctx.travaux_a_relever() {
+            return;
+        }
+        self.relever_hote(ecran);
+        // (« Signaler un problème » de l'assistance du noyau)
+        let mut eff = Effets::default();
+        self.ctx.relever_assistance(&mut eff);
+        let mut refaire = self.appliquer(None, eff, maintenant, ecran, 0);
+        for i in 0..self.blocs.len() {
+            let mut eff = Effets::default();
+            let (b, ctx) = (&mut self.blocs[i], &self.ctx);
+            let n = b.nom();
+            if let Err(e) = protege(|| b.travaux_finis(ctx, &mut eff)) {
+                self.ctx.journal(&format!("Travail de fond de {n} : {e}"));
+            }
+            if !eff.0.is_empty() {
+                self.reveiller(i, maintenant);
             }
             refaire |= self.appliquer(Some(i), eff, maintenant, ecran, 0);
         }
