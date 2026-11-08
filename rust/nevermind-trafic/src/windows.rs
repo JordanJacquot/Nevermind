@@ -653,7 +653,25 @@ pub struct Reseau {
     pub desc: String,
 }
 
-/// La route par défaut au plus petit coût et sa carte
+/// Le choix parmi les routes par défaut (carte, coût de la route, passerelle) de la table en service
+/// (GetIpForwardTable2 ne donne que l'ActiveStore)
+fn route_choisie(
+    routes: &[(u32, u32, [u8; 4])],
+    interfaces: &[nevermind_noyau::route::InterfaceIp],
+    cartes: &[nevermind_noyau::route::EtatCarte],
+) -> Option<(u32, [u8; 4])> {
+    use nevermind_noyau::route::{RouteDefaut, choisir_route};
+    let defauts: Vec<RouteDefaut> = routes
+        .iter()
+        .map(|(i, m, _)| RouteDefaut { index: i64::from(*i), metrique: i64::from(*m), active: true })
+        .collect();
+    let index = choisir_route(&defauts, interfaces, cartes)?;
+    routes.iter().find(|(i, _, _)| i64::from(*i) == index).map(|(i, _, p)| (*i, *p))
+}
+
+/// La route par défaut que Windows prend vraiment et sa carte. Avant, la première au plus petit coût de route : une
+/// carte Wi-Fi débranchée qui garde sa route au même coût que le câble pouvait gagner (PC de Jordan, 08/11 : il
+/// n'était choisi juste que parce que Windows donnait le câble en premier).
 pub fn reseau_actif() -> Option<Reseau> {
     // SAFETY : tables données par Windows, lues dans leurs limites puis rendues
     unsafe {
@@ -662,18 +680,14 @@ pub fn reseau_actif() -> Option<Reseau> {
             return None;
         }
         let lignes = std::slice::from_raw_parts((*t).Table.as_ptr(), (*t).NumEntries as usize);
-        let mut meilleure: Option<(u32, u32, [u8; 4])> = None;
-        for l in lignes {
-            if l.DestinationPrefix.PrefixLength != 0 {
-                continue;
-            }
-            let pa = l.NextHop.Ipv4.sin_addr.S_un.S_addr.to_ne_bytes();
-            if meilleure.is_none_or(|m| l.Metric < m.1) {
-                meilleure = Some((l.InterfaceIndex, l.Metric, pa));
-            }
-        }
+        let routes: Vec<(u32, u32, [u8; 4])> = lignes
+            .iter()
+            .filter(|l| l.DestinationPrefix.PrefixLength == 0)
+            .map(|l| (l.InterfaceIndex, l.Metric, l.NextHop.Ipv4.sin_addr.S_un.S_addr.to_ne_bytes()))
+            .collect();
         FreeMibTable(t.cast());
-        let (index, _, pa) = meilleure?;
+        let (interfaces, cartes) = nevermind_noyau::windows::route::etats_ipv4();
+        let (index, pa) = route_choisie(&routes, &interfaces, &cartes)?;
         let mut taille = 16 * 1024u32;
         let mut b = vec![0u64; taille as usize / 8];
         let mut r = GetAdaptersAddresses(
@@ -1080,6 +1094,30 @@ mod essais {
         let _ = compte_microsoft();
         let _ = cache_dns();
         let _ = reseau_actif();
+    }
+
+    /// Lecture seule de ce PC (lancé à la main : `cargo test -p nevermind-trafic reseau_de_ce_pc -- --ignored
+    /// --nocapture`) : la connexion vers Internet choisie, à comparer avec Get-NetRoute et Get-NetAdapter.
+    #[test]
+    #[ignore]
+    fn reseau_de_ce_pc() {
+        eprintln!("reseau : {:?}", reseau_actif());
+    }
+
+    /// Le PC de Jordan le 08/11, le Wi-Fi débranché (12) lu avant le câble (6), au même coût de route (0) : avant, la
+    /// première route au plus petit coût gagnait (« Wi-Fi ») ; la bonne n'était prise que si Windows donnait le câble
+    /// en premier.
+    #[test]
+    fn jordan_cable_et_wifi_debranche() {
+        use nevermind_noyau::route::{EtatCarte, InterfaceIp};
+        let ip = |index, metrique, connectee| InterfaceIp { index, metrique, connectee };
+        let carte = |index, connectee, materielle| EtatCarte { index, connectee, materielle };
+        let interfaces = [ip(13, 25, true), ip(6, 25, true), ip(12, 65, false), ip(1, 75, true)];
+        let cartes = [carte(13, true, false), carte(12, false, true), carte(6, true, true)];
+        let pa = [192, 168, 1, 1];
+        assert_eq!(route_choisie(&[(12, 0, pa), (6, 0, pa)], &interfaces, &cartes), Some((6, pa)));
+        assert_eq!(route_choisie(&[(6, 0, pa), (12, 0, pa)], &interfaces, &cartes), Some((6, pa)));
+        assert_eq!(route_choisie(&[], &interfaces, &cartes), None);
     }
 
     #[test]
