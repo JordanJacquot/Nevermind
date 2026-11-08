@@ -3,11 +3,34 @@
 
 use nevermind_noyau::Contexte;
 use serde_json::Value;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
+
+/// `$script:JsonBloques` : les fichiers qui n'ont pas pu être lus à leur dernière lecture (pris par un autre
+/// programme) ; ils ne sont pas réécrits, ils gardent peut-être plus que ce que Nevermind a en mémoire
+static BLOQUES: LazyLock<Mutex<HashSet<PathBuf>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn bloques() -> std::sync::MutexGuard<'static, HashSet<PathBuf>> {
+    BLOQUES.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// Le contenu du fichier (ou de sa copie de secours), `None` s'il n'y en a pas (Read-JsonSur).
-/// `occupe` : le fichier existe mais n'a pas pu être lu (pris par un autre programme) : il ne faut pas le réécrire.
+/// `occupe` : le fichier existe mais n'a pas pu être lu (pris par un autre programme) : il ne faut pas le réécrire,
+/// et [`ecrire_json_sur`] le refuse jusqu'à la prochaine lecture réussie (Save-JsonSur, donnees.ps1:57 ; avant le
+/// 08/11, jeux.json et organizer.json étaient réécrits quand même, avec seulement ce qui venait d'être ajouté).
 pub fn lire_json_sur(ctx: Option<&Contexte>, chemin: &Path) -> (Option<Value>, bool) {
+    let (v, occupe) = lire_json_sur_une_fois(ctx, chemin);
+    let mut b = bloques();
+    if occupe && v.is_none() {
+        b.insert(chemin.to_path_buf());
+    } else {
+        b.remove(chemin);
+    }
+    (v, occupe)
+}
+
+fn lire_json_sur_une_fois(ctx: Option<&Contexte>, chemin: &Path) -> (Option<Value>, bool) {
     let mut occupe = false;
     let bak = avec_suffixe(chemin, ".bak");
     for p in [chemin.to_path_buf(), bak] {
@@ -78,6 +101,9 @@ pub fn ecrire_texte_sur(chemin: &Path, texte: &str) -> std::io::Result<()> {
 
 /// Écrit un JSON (compact, comme `-Compress`, ou lisible).
 pub fn ecrire_json_sur(chemin: &Path, v: &Value, compact: bool) -> std::io::Result<()> {
+    if bloques().contains(chemin) {
+        return Err(std::io::Error::other(format!("{} n'a pas pu être lu : il n'est pas réécrit", nom(chemin))));
+    }
     let t = if compact { serde_json::to_string(v) } else { serde_json::to_string_pretty(v) }.unwrap_or_default();
     ecrire_texte_sur(chemin, &t)
 }
