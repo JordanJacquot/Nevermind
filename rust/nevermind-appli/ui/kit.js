@@ -444,11 +444,14 @@
       case 'choix': return `<div class="choix-p" role="radiogroup">${(b.options || []).map((o) => `<button type="button" class="f${o.id === b.valeur ? ' oui' : ''}" data-k="p:${esc(b.id)}:${esc(o.id)}" data-action="${esc(b.id)}" data-valeur="${esc(o.id)}" data-choix="1" role="radio" aria-checked="${o.id === b.valeur}">${esc(o.texte)}</button>`).join('')}</div>`;
       case 'cartes': return `<div class="cartes-choix">${(b.options || []).map((o) => `<button type="button" class="carte-choix plaque f${o.id === b.valeur ? ' oui' : ''}" data-k="p:${esc(b.id)}:${esc(o.id)}" data-action="${esc(b.id)}" data-valeur="${esc(o.id)}" data-choix="1"><b>${esc(o.titre)}</b><span>${esc(o.texte)}</span></button>`).join('')}</div>`;
       case 'outils': return `<div class="outils">${(b.elements || []).map((x) => {
-        // (l'icône à gauche ; à côté, le titre, la note et l'étiquette dessous : voir .outil dans kit.css)
-        const dedans = `${icone(x.icone || 'etoile', x.couleur)}<span class="texte-o"><b>${esc(x.nom)}</b><span class="n">${esc(x.note)}</span>${etiq(x.etiquette, x.ton)}</span>`;
-        // (inactif : une carte grisée, ni choisissable ni cliquable ; sa note dit pourquoi)
-        if (x.inactif) return `<div class="outil plaque inactif" aria-disabled="true">${dedans}</div>`;
-        return `<button type="button" class="outil plaque f" data-k="l:${esc(x.id)}" data-action="${esc(x.id)}">${dedans}</button>`;
+        // (l'icône et le titre à côté, l'étiquette dans le coin haut droit : voir .outil dans kit.css ; la note est
+        // l'infobulle de la dalle, sauf sur une dalle grisée, où elle reste écrite sous le titre : elle dit pourquoi)
+        const note = x.inactif && x.note ? `<span class="n">${esc(x.note)}</span>` : '';
+        const dedans = `${icone(x.icone || 'etoile', x.couleur)}<span class="texte-o"><b>${esc(x.nom)}</b>${note}</span>${etiq(x.etiquette, x.ton)}`;
+        const bulle = x.note ? ` title="${esc(x.note)}"` : '';
+        // (inactif : une carte grisée, ni choisissable ni cliquable)
+        if (x.inactif) return `<div class="outil plaque inactif" aria-disabled="true"${bulle}>${dedans}</div>`;
+        return `<button type="button" class="outil plaque f" data-k="l:${esc(x.id)}" data-action="${esc(x.id)}"${bulle}>${dedans}</button>`;
       }).join('')}</div>`;
       case 'raccourcis': return `<div class="raccourcis">${(b.elements || []).map((x) => `<button type="button" class="raccourci plaque f" data-k="l:${esc(x.id)}" data-action="${esc(x.id)}">${icone(x.icone || 'etoile', x.couleur)}<b>${esc(x.nom)}</b>${fleche()}</button>`).join('')}</div>`;
       case 'mesures': return `<div class="mesures">${(b.elements || []).map((x) => `<div class="mesure plaque"${x.id ? ` data-id="${esc(x.id)}"` : ''}>${anneau(x.valeur, `<span class="centre"><b class="${x.ton ? esc(x.ton) : ''}">${esc(x.texte ?? `${Math.round(+x.valeur || 0)} %`)}</b></span>`, x.ton)}<b>${esc(x.nom)}</b><span class="n">${esc(x.note)}</span></div>`).join('')}</div>`;
