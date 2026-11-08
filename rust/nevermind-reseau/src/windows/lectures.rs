@@ -389,6 +389,86 @@ fn valeurs(cle: &str) -> Vec<(String, String)> {
     r
 }
 
+/// Toutes les valeurs d'une clé (HKLM) : nom, type et octets ; `None` si la clé ne s'ouvre pas (absente ou refusée)
+pub fn valeurs_brutes(cle: &str) -> Option<Vec<(String, u32, Vec<u8>)>> {
+    let mut r = Vec::new();
+    let h = ouvrir(cle)?;
+    let mut nom = vec![0u16; 16384];
+    let mut donnees = vec![0u8; 65536];
+    // SAFETY : clé ouverte, fermée à la fin ; tampons de la taille annoncée, remise à chaque valeur
+    unsafe {
+        for i in 0..512 {
+            let mut n = nom.len() as u32;
+            let mut t = donnees.len() as u32;
+            let mut ty: u32 = 0;
+            if RegEnumValueW(
+                h,
+                i,
+                Some(PWSTR(nom.as_mut_ptr())),
+                &mut n,
+                None,
+                Some(&mut ty),
+                Some(donnees.as_mut_ptr()),
+                Some(&mut t),
+            ) != ERROR_SUCCESS
+            {
+                break;
+            }
+            let t = (t as usize).min(donnees.len());
+            r.push((String::from_utf16_lossy(&nom[..n as usize]), ty, donnees[..t].to_vec()));
+        }
+        let _ = RegCloseKey(h);
+    }
+    Some(r)
+}
+
+/// Un texte multiple du registre (REG_MULTI_SZ) : ses lignes
+pub fn lignes_multiples(o: &[u8]) -> Vec<String> {
+    let w: Vec<u16> = o.chunks(2).map(|c| u16::from_le_bytes([c[0], *c.get(1).unwrap_or(&0)])).collect();
+    String::from_utf16_lossy(&w).split('\0').filter(|l| !l.is_empty()).map(str::to_string).collect()
+}
+
+/// La catégorie du réseau de la carte (`Get-NetConnectionProfile -InterfaceIndex` : NetworkCategory), par le
+/// gestionnaire des réseaux de Windows (lecture sans droits) : 0 public, 1 privé, 2 domaine ; `None` si illisible
+pub fn categorie_reseau(guid_carte: &str) -> Option<i32> {
+    use windows::Win32::Networking::NetworkListManager::{INetworkListManager, NetworkListManager};
+    use windows::Win32::System::Com::{CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize};
+    let voulu = guid_carte.trim().trim_start_matches('{').trim_end_matches('}').to_ascii_uppercase();
+    if voulu.is_empty() {
+        return None;
+    }
+    // SAFETY : COM ouvert sur ce fil (et refermé seulement s'il l'a été ici) ; les objets sont lâchés avant
+    unsafe {
+        let init = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let r = (|| -> Option<i32> {
+            let nlm: INetworkListManager = CoCreateInstance(&NetworkListManager, None, CLSCTX_ALL).ok()?;
+            let connexions = nlm.GetNetworkConnections().ok()?;
+            for _ in 0..64 {
+                let mut c = [None];
+                let mut n: u32 = 0;
+                if connexions.Next(&mut c, Some(&mut n)).is_err() || n == 0 {
+                    return None;
+                }
+                let Some(c) = c[0].take() else { return None };
+                let Ok(g) = c.GetAdapterId() else { continue };
+                let d = g.data4;
+                let texte = format!(
+                    "{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
+                    g.data1, g.data2, g.data3, d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7]
+                );
+                if texte == voulu {
+                    return c.GetNetwork().ok()?.GetCategory().ok().map(|x| x.0);
+                }
+            }
+            None
+        })();
+        if init.is_ok() {
+            CoUninitialize();
+        }
+        r
+    }
+}
+
 /// Les vitesses que la carte sait faire (réglage « *SpeedDuplex » de son pilote) : textes et valeurs
 pub fn vitesses_carte(guid: &str) -> (Vec<String>, Vec<String>) {
     let base = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}";

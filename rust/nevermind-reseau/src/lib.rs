@@ -8,6 +8,7 @@
 pub mod appareil;
 pub mod audit;
 pub mod bloc;
+pub mod ce_pc;
 pub mod fichiers;
 pub mod net;
 pub mod pages;

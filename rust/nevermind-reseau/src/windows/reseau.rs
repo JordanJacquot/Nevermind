@@ -320,6 +320,26 @@ fn champ(lignes: &[String], noms: &[&str]) -> String {
     String::new()
 }
 
+/// Les partages de ce PC, lus sans droits dans le registre du serveur de fichiers de Windows : chaque partage
+/// (REG_MULTI_SZ « Path=... ») et son descripteur de sécurité (REG_BINARY sous Security). Une clé Security illisible :
+/// les droits restent inconnus (jamais une fausse alerte « tout le monde »).
+fn partages_du_pc() -> Vec<crate::ce_pc::PartageLu> {
+    let base = r"SYSTEM\CurrentControlSet\Services\LanmanServer\Shares";
+    let Some(valeurs) = lectures::valeurs_brutes(base) else { return Vec::new() };
+    let securite = lectures::valeurs_brutes(&format!(r"{base}\Security"));
+    valeurs
+        .into_iter()
+        .filter(|(_, ty, _)| *ty == 7)
+        .map(|(nom, _, octets)| {
+            let sd = match &securite {
+                Some(l) => l.iter().find(|(n, ty, _)| *ty == 3 && n.eq_ignore_ascii_case(&nom)).map(|x| x.2.clone()),
+                None => Some(Vec::new()),
+            };
+            crate::ce_pc::PartageLu { lignes: lectures::lignes_multiples(&octets), securite: sd, nom }
+        })
+        .collect()
+}
+
 /// L'audit (`$NetAuditWork`)
 pub fn audit(ip: &str, passerelle: &str, if_index: i64, ips: &[String], ports: &[i64], av: &Avancement) -> Value {
     let ouvert = crate::texte::re("^(ouvrir|ouvert|open)");
@@ -397,7 +417,7 @@ pub fn audit(ip: &str, passerelle: &str, if_index: i64, ips: &[String], ports: &
     av.phase("pc");
     av.mettre(86.0);
     let dw = |cle: &str, nom: &str| lectures::registre_texte(cle, nom).and_then(|v| v.parse::<u32>().ok());
-    let pare: Vec<&str> = [("DomainProfile", "Domain"), ("StandardProfile", "Private"), ("PublicProfile", "Public")]
+    let pare: Vec<String> = [("DomainProfile", "Domain"), ("StandardProfile", "Private"), ("PublicProfile", "Public")]
         .iter()
         .filter(|(k, _)| {
             dw(
@@ -405,16 +425,22 @@ pub fn audit(ip: &str, passerelle: &str, if_index: i64, ips: &[String], ports: &
                 "EnableFirewall",
             ) == Some(0)
         })
-        .map(|(_, n)| *n)
+        .map(|(_, n)| n.to_string())
         .collect();
-    let partages: Vec<String> = Vec::new();
-    out.insert(
-        "Pc".into(),
-        json!({ "Smb1": dw(r"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters", "SMB1") == Some(1),
-            "Smb1Client": lectures::registre_cle(r"SYSTEM\CurrentControlSet\Services\mrxsmb10"),
-            "Rdp": dw(r"SYSTEM\CurrentControlSet\Control\Terminal Server", "fDenyTSConnections") == Some(0),
-            "FirewallOff": pare, "Category": "", "Shares": partages }),
-    );
+    let lu = crate::ce_pc::LecturePc {
+        smb1: dw(r"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters", "SMB1") == Some(1),
+        smb1_client: lectures::registre_cle(r"SYSTEM\CurrentControlSet\Services\mrxsmb10"),
+        rdp: dw(r"SYSTEM\CurrentControlSet\Control\Terminal Server", "fDenyTSConnections") == Some(0),
+        pare_feu_coupe: pare,
+        // (Get-NetConnectionProfile de la carte de la connexion, et Get-SmbShare : audit-reseau.ps1:132-141 ;
+        //  audit M10)
+        categorie: lectures::adaptateurs()
+            .into_iter()
+            .find(|a| i64::from(a.index) == if_index)
+            .and_then(|a| lectures::categorie_reseau(&a.guid)),
+        partages: partages_du_pc(),
+    };
+    out.insert("Pc".into(), crate::ce_pc::bloc_pc(&lu));
     av.mettre(100.0);
     Value::Object(out)
 }
@@ -542,4 +568,25 @@ pub fn passer_public(index: i64) -> Result<(), String> {
         .output()
         .map_err(|e| e.to_string())?;
     if o.status.success() { Ok(()) } else { Err(lectures::texte_oem(&o.stderr).trim().to_string()) }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Lecture seule de ce PC (lancé à la main : `cargo test -p nevermind-reseau lecture_de_ce_pc -- --ignored
+    /// --nocapture`) : les partages et la catégorie du réseau, à comparer avec Get-SmbShare et Get-NetConnectionProfile.
+    #[test]
+    #[ignore]
+    fn lecture_de_ce_pc() {
+        let p = super::partages_du_pc();
+        let route = super::lectures::route_defaut();
+        let cat = route.and_then(|(i, _)| {
+            super::lectures::adaptateurs()
+                .into_iter()
+                .find(|a| a.index == i)
+                .and_then(|a| super::lectures::categorie_reseau(&a.guid))
+        });
+        let pc = crate::ce_pc::bloc_pc(&crate::ce_pc::LecturePc { categorie: cat, partages: p.clone(), ..Default::default() });
+        eprintln!("partages lus : {:?}", p.iter().map(|x| &x.nom).collect::<Vec<_>>());
+        eprintln!("Pc : {pc}");
+    }
 }
