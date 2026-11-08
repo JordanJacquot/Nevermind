@@ -124,6 +124,24 @@ fn annonces(e: &[Effet]) -> Vec<String> {
         .collect()
 }
 
+/// Le bouton de retour en haut du panneau d'une partie (l'hôte envoie « panneau:close » au bloc qui l'a ouvert) :
+/// il revient à la bibliothèque, comme « Fermer ». Avant le 08/11/2026, le bloc jeux ne le prenait pas : le clic
+/// faisait son bruit, et rien d'autre (vu par Jordan sur le détail des FPS de Battlefield 6).
+#[test]
+fn le_retour_du_panneau_d_une_partie_revient_aux_jeux() {
+    let mut s = Essai::nouveau("jeux-retour-panneau");
+    let e = s.action("panneau:close", Value::Null);
+    assert!(
+        e.iter().any(|x| matches!(x, Effet::OuvrirEcran(p) if p == "jeux")),
+        "le retour ne revient pas à la bibliothèque : {e:?}"
+    );
+    let p = s.b.pages(&s.ctx, "panneau");
+    assert!(p.get("panneau").is_none_or(Value::is_null), "le panneau de la partie est encore là : {p:?}");
+    // (plus rien d'ouvert : un autre « panneau:close » n'est pas pour le bloc jeux)
+    let mut e = Effets::default();
+    assert!(!s.b.action(&s.ctx, "panneau:close", &Value::Null, &mut e), "un retour qui n'est pas pour lui est pris");
+}
+
 #[test]
 fn le_panneau_montre_les_conseils_et_les_boutons_du_diagnostic() {
     let mut s = Essai::nouveau("jeux-diagnostic-panneau");

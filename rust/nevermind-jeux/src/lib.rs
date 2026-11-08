@@ -1366,8 +1366,18 @@ impl Bloc for BlocJeux {
                 self.statut(effets, &format!("Compteur de FPS : {nom}."));
             }
             "fps-aide" => self.aide_fps(ctx, effets),
+            // (« panneau:close » : le bouton de retour en haut du panneau et Échap, envoyés par l'hôte au bloc qui a
+            //  ouvert le panneau ; avant le 08/11/2026, le bloc jeux ne les prenait pas et rien ne se passait)
             "panneau-fps-fermer" => {
                 self.partie_ouverte = None;
+                effets.ajouter(Effet::OuvrirEcran("jeux".into()));
+            }
+            "panneau:close" if self.partie_ouverte.is_some() => {
+                self.partie_ouverte = None;
+                effets.ajouter(Effet::OuvrirEcran("jeux".into()));
+            }
+            "panneau:close" if self.restes_ouverts => {
+                self.restes_ouverts = false;
                 effets.ajouter(Effet::OuvrirEcran("jeux".into()));
             }
             "fps-ajouter" => {
