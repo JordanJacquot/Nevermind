@@ -750,3 +750,59 @@ fn lecture_du_pc_completee_sans_demande_de_windows() {
     assert_eq!(e.data["SecureBoot"], json!(true), "la lecture de l'Aide est prise");
     assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new(), "aucune demande de Windows pour une lecture");
 }
+
+/// M5 (audit du 08/11) : sauvegarde.json est modifiable sans droits, et « Tout restaurer » tourne en administrateur
+/// dans le désinstalleur. Une sauvegarde trafiquée ne fait écrire ni effacer dans HKCU que les réglages que Nevermind
+/// change lui-même (liste fermée) : jamais une stratégie (Policies), jamais une autre valeur. Contre le faux PC.
+#[test]
+fn une_sauvegarde_trafiquee_ne_pose_aucune_strategie() {
+    let entree = |p: &str, n: &str, existait: bool, v: Value, k: &str| {
+        (
+            format!("{p}|{n}"),
+            json!({ "Path": p, "Name": n, "Existed": existait, "Value": v, "Kind": if existait { json!(k) } else { Value::Null } }),
+        )
+    };
+    let mut reg = Map::new();
+    for (k, v) in [
+        // Le seul vrai réglage de Nevermind
+        entree(r"HKCU:\Software\Microsoft\GameBar", "AutoGameModeEnabled", true, json!(0), "DWord"),
+        // Ajoutés par un programme sans droits
+        entree(
+            r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System",
+            "DisableTaskMgr",
+            true,
+            json!(1),
+            "DWord",
+        ),
+        entree(
+            r"Registry::HKEY_CURRENT_USER\Software\Policies\Microsoft\Windows\System",
+            "DisableCMD",
+            true,
+            json!(1),
+            "DWord",
+        ),
+        entree(r"HKCU:\Software\Policies\Microsoft\Windows\Explorer", "NoWinKeys", true, json!(1), "DWord"),
+        entree(r"HKCU:\\Software\Policies\Microsoft\Windows Defender", "DisableAntiSpyware", true, json!(1), "DWord"),
+        entree(r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Run", "Piege", true, json!(r"C:\x.exe"), "String"),
+        entree(r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "Hidden", false, Value::Null, ""),
+    ] {
+        reg.insert(k, v);
+    }
+    let mut sv = Sauvegarde::depuis(&json!({ "Registry": reg }));
+    let mut pc = FauxPc::default();
+    let erreurs = {
+        let mut m = Moteur::nouveau(&mut pc, &mut sv, false);
+        corrections::tout_restaurer(&mut m)
+    };
+    let ecrits: Vec<String> = pc
+        .gestes
+        .iter()
+        .filter(|g| net::champ_texte(g, "geste").starts_with("reg.utilisateur"))
+        .map(|g| format!("{}|{}", net::champ_texte(&g["donnees"], "Cle"), net::champ_texte(&g["donnees"], "Nom")))
+        .collect();
+    assert_eq!(ecrits, vec![r"HKCU:\Software\Microsoft\GameBar|AutoGameModeEnabled".to_string()], "{:?}", pc.gestes);
+    assert!(pc.reg.keys().all(|k| !k.to_ascii_lowercase().contains("policies")), "{:?}", pc.reg);
+    assert_eq!(erreurs.len(), 6, "{erreurs:?}");
+    // Le vrai réglage est oublié (remis), les autres restent notés et refusés
+    assert_eq!(sv.registre.len(), 6);
+}

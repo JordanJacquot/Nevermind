@@ -57,6 +57,7 @@ $utf8Bom = New-Object Text.UTF8Encoding($true)
 $cleGraphiques = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'
 $cleGameDvr = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR'
 $cleGameBar = 'HKCU:\Software\Microsoft\GameBar'
+$cleCmd = 'HKCU:\Software\Microsoft\Command Processor'
 $script:Echecs = @()
 $script:Reussis = 0
 function Test-Cas([string]$Nom, [scriptblock]$Condition) {
@@ -159,7 +160,23 @@ try {
     $o = Install-Nevermind
     Test-Cas 'avant : l''Aide tourne en SYSTEM pour ce dossier' { (Get-AidesEnCours).Count -ge 1 }
     Test-Cas 'avant : les réglages sont changés' { (Get-Valeur $cleGraphiques 'HwSchMode') -ne $o.HwSchMode -and (Get-Valeur $cleGameDvr 'HistoricalCaptureEnabled') -eq 0 -and "$((Get-Service DiagTrack).StartType)" -eq 'Disabled' }
-    $r = Invoke-Desinstalleur '-GarderDonnees'
+    # (audit du 08/11, G2) Les pièges qu'un programme sans droits peut poser pour la commande de fin, lancée en
+    # administrateur : l'AutoRun de cmd.exe (HKCU) et un « ping.bat » dans le dossier temporaire du compte
+    $temoinAutoRun = Join-Path $env:RUNNER_TEMP 'temoin-autorun.txt'
+    $temoinPing = Join-Path $env:RUNNER_TEMP 'temoin-ping.txt'
+    $pingPiege = Join-Path ([IO.Path]::GetTempPath()) 'ping.bat'
+    Remove-Item -LiteralPath $temoinAutoRun, $temoinPing -Force -ErrorAction SilentlyContinue
+    New-Item -Path $cleCmd -Force | Out-Null
+    New-ItemProperty -LiteralPath $cleCmd -Name AutoRun -Value "echo piege>`"$temoinAutoRun`"" -PropertyType String -Force | Out-Null
+    [IO.File]::WriteAllText($pingPiege, "@echo piege>`"$temoinPing`"`r`n", [Text.Encoding]::ASCII)
+    try { $r = Invoke-Desinstalleur '-GarderDonnees' }
+    finally {
+        # (la commande de fin se finit avant que les pièges soient retirés)
+        $null = Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 15
+        Remove-ItemProperty -LiteralPath $cleCmd -Name AutoRun -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $pingPiege -Force -ErrorAction SilentlyContinue
+    }
+    Test-Cas 'commande de fin : ni l''AutoRun de cmd.exe ni un ping.bat du dossier temporaire ne sont lancés (G2)' { -not (Test-Path -LiteralPath $temoinAutoRun) -and -not (Test-Path -LiteralPath $temoinPing) }
     Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
     Test-Cas "aucune fenêtre avec -GarderDonnees, ni question ni message de fin (fenêtres vues : $($r.Titres -join ', '))" { -not @($r.Titres).Count }
     Test-Cas 'HwSchMode remis comme avant (HKLM, par la voie « sur place » de l''Aide)' { (Get-Valeur $cleGraphiques 'HwSchMode') -eq $o.HwSchMode }
@@ -182,9 +199,26 @@ try {
     # =================================================================================================================
     Write-Host '4. « -SupprimerDonnees »'
     $o = Install-Nevermind
+    # (audit du 08/11, M4) Une jonction posée par le compte dans ses données, vers un dossier qui n'est pas à lui : le
+    # désinstalleur, en administrateur, la retire seule et ne touche jamais ce qu'elle vise
+    $temoinDossier = Join-Path $env:RUNNER_TEMP 'temoin-jonction'
+    New-Item -ItemType Directory -Force -Path $temoinDossier | Out-Null
+    [IO.File]::WriteAllText((Join-Path $temoinDossier 'precieux.txt'), 'ne pas toucher', $utf8)
+    New-Item -ItemType Junction -Path (Join-Path $donnees 'lien') -Target $temoinDossier | Out-Null
+    # (audit du 08/11, M5) Une stratégie ajoutée à sauvegarde.json par un programme sans droits : le désinstalleur, en
+    # administrateur, ne remet que les réglages que Nevermind change (liste fermée), jamais celle-ci
+    $clePolitique = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System'
+    Remove-ItemProperty -LiteralPath $clePolitique -Name NevermindTemoinM5 -ErrorAction SilentlyContinue
+    $fs = Join-Path $donnees 'sauvegarde.json'
+    $sv = [IO.File]::ReadAllText($fs, [Text.Encoding]::UTF8).TrimStart([char]0xFEFF) | ConvertFrom-Json
+    $sv.Registry | Add-Member -NotePropertyName "$clePolitique|NevermindTemoinM5" -NotePropertyValue ([ordered]@{ Path = $clePolitique; Name = 'NevermindTemoinM5'; Existed = $true; Value = 1; Kind = 'DWord' })
+    [IO.File]::WriteAllText($fs, (ConvertTo-Json -InputObject $sv -Depth 6), $utf8Bom)
     $r = Invoke-Desinstalleur '-SupprimerDonnees'
     Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
     Test-Cas 'tout le dossier des données est parti' { -not (Test-Path -LiteralPath $donnees) }
+    Test-Cas 'la jonction des données est retirée seule : ce qu''elle vise est intact (M4)' { Test-Path -LiteralPath (Join-Path $temoinDossier 'precieux.txt') }
+    Test-Cas 'la stratégie ajoutée à sauvegarde.json n''est pas posée (M5)' { $null -eq (Get-Valeur $clePolitique 'NevermindTemoinM5') }
+    Remove-ItemProperty -LiteralPath $clePolitique -Name NevermindTemoinM5 -ErrorAction SilentlyContinue
     Test-Cas 'les conseils pour le bilan de Mindset sont là quand même (dossier de la suite)' { Test-Conseils }
     Test-Cas 'les réglages sont remis comme avant' { (Get-Valeur $cleGraphiques 'HwSchMode') -eq $o.HwSchMode -and "$((Get-Service DiagTrack).StartType)" -eq $o.Svc }
     Test-Cas 'le dossier des programmes est parti' { Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 10 }

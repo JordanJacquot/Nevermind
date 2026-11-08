@@ -18,7 +18,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, FILETIME, GetLastError, HWND};
+use windows::Win32::Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, FILETIME, GetLastError, HANDLE, HWND};
 use windows::Win32::NetworkManagement::IpHelper::{
     FreeMibTable, GetExtendedTcpTable, GetPerTcp6ConnectionEStats, GetPerTcpConnectionEStats, GetUnicastIpAddressTable,
     MIB_TCP_STATE, MIB_TCP6ROW, MIB_TCP6ROW_OWNER_PID, MIB_TCPROW_LH, MIB_TCPROW_LH_0, MIB_TCPROW_OWNER_PID,
@@ -40,6 +40,10 @@ use windows::Win32::System::Diagnostics::Etw::{
     EVENT_TRACE_LOGFILEW_0, EVENT_TRACE_LOGFILEW_1, EVENT_TRACE_PROPERTIES, EVENT_TRACE_REAL_TIME_MODE, EnableTraceEx2,
     OpenTraceW, PROCESS_TRACE_MODE_EVENT_RECORD, PROCESS_TRACE_MODE_REAL_TIME, PROCESSTRACE_HANDLE, ProcessTrace,
     StartTraceW, WNODE_FLAG_TRACED_GUID,
+};
+use windows::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject,
 };
 use windows::Win32::System::SystemInformation::GetSystemTimePreciseAsFileTime;
 use windows::core::{GUID, HSTRING, PCWSTR, PWSTR};
@@ -168,6 +172,43 @@ impl Lance for PresentMonLance {
     }
 }
 
+/// Un objet job qui ferme tout ce qu'il contient quand sa dernière poignée se ferme (JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
+pub(crate) fn nouveau_job() -> Option<HANDLE> {
+    // SAFETY : objet sans nom, réglage d'une structure de la bonne taille ; refermé si le réglage échoue
+    unsafe {
+        let j = CreateJobObjectW(None, PCWSTR::null()).ok()?;
+        let mut l = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        l.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if SetInformationJobObject(
+            j,
+            JobObjectExtendedLimitInformation,
+            (&l as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+        )
+        .is_err()
+        {
+            let _ = CloseHandle(j);
+            return None;
+        }
+        Some(j)
+    }
+}
+
+/// Le job de l'Aide (petit défaut de l'audit du 08/11) : PresentMon y est mis dès son lancement. Sa poignée n'est
+/// jamais refermée par l'Aide : Windows la ferme quand l'Aide s'arrête, même tuée ou plantée, et ferme alors PresentMon
+/// avec elle (avant, un PresentMon en veille restait en SYSTEM jusqu'au redémarrage du PC).
+fn job_aide() -> Option<HANDLE> {
+    static JOB: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    JOB.get_or_init(|| nouveau_job().map(|h| h.0 as usize)).map(|h| HANDLE(h as *mut core::ffi::c_void))
+}
+
+/// Met ce programme dans ce job ; faux si Windows refuse
+pub(crate) fn mettre_dans_job(job: HANDLE, enfant: &Child) -> bool {
+    use std::os::windows::io::AsRawHandle;
+    // SAFETY : poignées vivantes (le job, le processus de `enfant`)
+    unsafe { AssignProcessToJobObject(job, HANDLE(enfant.as_raw_handle())).is_ok() }
+}
+
 /// Lance PresentMon ; ses lignes arrivent dans `rappel`, puis la fin (une fois ses deux sorties fermées et lui arrêté)
 pub fn lancer_presentmon(
     exe: &str,
@@ -175,9 +216,24 @@ pub fn lancer_presentmon(
     env: &[(String, String)],
     rappel: RappelPm,
 ) -> Result<Box<dyn Lance>, String> {
+    lancer_presentmon_dans(exe, arguments, env, rappel, job_aide())
+}
+
+/// [`lancer_presentmon`], dans ce job
+fn lancer_presentmon_dans(
+    exe: &str,
+    arguments: &str,
+    env: &[(String, String)],
+    rappel: RappelPm,
+    job: Option<HANDLE>,
+) -> Result<Box<dyn Lance>, String> {
     let mut c = commande(exe, arguments, env);
     c.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut enfant = c.spawn().map_err(|e| e.to_string())?;
+    // (sans job, il tourne quand même, comme avant)
+    if let Some(j) = job {
+        let _ = mettre_dans_job(j, &enfant);
+    }
     let sortie = enfant.stdout.take();
     let erreurs = enfant.stderr.take();
     let enfant = Arc::new(Mutex::new(enfant));
@@ -206,12 +262,12 @@ pub fn lancer_presentmon(
     Ok(Box::new(PresentMonLance(enfant)))
 }
 
-/// Ferme la session de mesure « Nevermind » que PresentMon arrêté de force laisse ouverte (3 s au plus)
-pub fn fermer_session_presentmon(exe: &str, env: &[(String, String)]) {
+/// Ferme la session de mesure `session` que PresentMon arrêté de force laisse ouverte (3 s au plus)
+pub fn fermer_session_presentmon(exe: &str, session: &str, env: &[(String, String)]) {
     if exe.is_empty() {
         return;
     }
-    let mut c = commande(exe, "--terminate_existing_session --session_name Nevermind", env);
+    let mut c = commande(exe, &format!("--terminate_existing_session --session_name {session}"), env);
     c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     let Ok(mut e) = c.spawn() else { return };
     let limite = Instant::now() + Duration::from_secs(3);
@@ -224,9 +280,15 @@ pub fn fermer_session_presentmon(exe: &str, env: &[(String, String)]) {
 // Trace réseau (ETW, fournisseur Microsoft-Windows-Kernel-Network)
 // ---------------------------------------------------------------------------------------------------------------
 
-const SESSION: &str = "Nevermind-Reseau";
 /// Nom d'avant la 1.3.7 : une session restée ouverte sous ce nom après une mise à jour est fermée au démarrage
 const ANCIENNE_SESSION: &str = "OptiGame-Reseau";
+
+/// Au démarrage de l'Aide : sa trace restée ouverte (l'Aide d'avant tuée ou plantée) est fermée, et celle d'avant la
+/// 1.3.7. Seulement la sienne (son nom est propre à son compte et à sa copie) : jamais celle d'une autre Aide.
+pub fn fermer_trace_restee(session: &str) {
+    arreter_session(ANCIENNE_SESSION);
+    arreter_session(session);
+}
 const FOURNISSEUR: GUID = GUID::from_u128(0x7DD42A49_5329_4832_8DFD_43D979153A88);
 /// Taille des réglages d'une session : la structure, puis la place du nom
 const TAILLE_PROPRIETES: usize = 120 + 1024;
@@ -286,6 +348,7 @@ struct TraceWindows {
     tourne: Arc<AtomicBool>,
     /// Le rappel (contexte des événements), le nom et la description de la lecture : gardés jusqu'à la fin
     contexte: *mut RappelTrace,
+    session: String,
     _nom: Vec<u16>,
     _lecture: Box<EVENT_TRACE_LOGFILEW>,
 }
@@ -299,7 +362,7 @@ impl Trace for TraceWindows {
     }
 
     fn arreter(&mut self) {
-        arreter_session(SESSION);
+        arreter_session(&self.session);
         if self.lecture.Value != 0 && self.lecture.Value != u64::MAX {
             // SAFETY : poignée de lecture ouverte par OpenTraceW, fermée une seule fois
             unsafe {
@@ -333,17 +396,19 @@ impl Drop for TraceWindows {
     }
 }
 
-/// Démarre la trace réseau ; sinon, l'appel de Windows qui a échoué et son code
-pub fn demarrer_trace(rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace> {
+/// Démarre la trace réseau dans la session `nom_session` (celle de cette Aide) ; sinon, l'appel de Windows qui a échoué
+/// et son code
+pub fn demarrer_trace(nom_session: &str, rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace> {
     arreter_session(ANCIENNE_SESSION);
     let mut session = CONTROLTRACE_HANDLE::default();
-    let nom = HSTRING::from(SESSION);
+    let nom = HSTRING::from(nom_session);
     let mut p = proprietes();
     // SAFETY : réglages dans un tampon aligné de la bonne taille, nom terminé par un zéro
     let mut r = unsafe { StartTraceW(&mut session, &nom, p.as_mut_ptr().cast()) };
     if r == ERROR_ALREADY_EXISTS {
-        // (une session restée ouverte, Aide arrêtée brutalement : on la remplace)
-        arreter_session(SESSION);
+        // (sa session restée ouverte, Aide arrêtée brutalement : on la remplace ; le nom est propre à cette Aide, ce
+        // n'est jamais celle d'une autre)
+        arreter_session(nom_session);
         p = proprietes();
         // SAFETY : comme plus haut
         r = unsafe { StartTraceW(&mut session, &nom, p.as_mut_ptr().cast()) };
@@ -355,12 +420,12 @@ pub fn demarrer_trace(rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace>
     // SAFETY : session ouverte juste avant, GUID local
     let r = unsafe { EnableTraceEx2(session, &FOURNISSEUR, 1, 5, 0x30, 0, 0, None) };
     if r.0 != 0 {
-        arreter_session(SESSION);
+        arreter_session(nom_session);
         return Err(RefusTrace::Fournisseur(r.0));
     }
 
     let contexte = Box::into_raw(Box::new(rappel));
-    let mut nom_lecture: Vec<u16> = SESSION.encode_utf16().chain([0]).collect();
+    let mut nom_lecture: Vec<u16> = nom_session.encode_utf16().chain([0]).collect();
     let mut lecture = Box::new(EVENT_TRACE_LOGFILEW {
         LoggerName: PWSTR(nom_lecture.as_mut_ptr()),
         Anonymous1: EVENT_TRACE_LOGFILEW_0 {
@@ -375,7 +440,7 @@ pub fn demarrer_trace(rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace>
     if h.Value == u64::MAX {
         // SAFETY : simple lecture de l'erreur de Windows
         let e = unsafe { GetLastError() };
-        arreter_session(SESSION);
+        arreter_session(nom_session);
         // SAFETY : créé juste avant, jamais donné à Windows (OpenTrace a échoué)
         drop(unsafe { Box::from_raw(contexte) });
         return Err(RefusTrace::Lecture(e.0));
@@ -390,7 +455,15 @@ pub fn demarrer_trace(rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace>
         }
         t2.store(false, Ordering::SeqCst);
     });
-    Ok(Box::new(TraceWindows { lecture: h, fil: Some(fil), tourne, contexte, _nom: nom_lecture, _lecture: lecture }))
+    Ok(Box::new(TraceWindows {
+        lecture: h,
+        fil: Some(fil),
+        tourne,
+        contexte,
+        session: nom_session.to_string(),
+        _nom: nom_lecture,
+        _lecture: lecture,
+    }))
 }
 
 /// Les adresses de ce PC (toutes les cartes, bouclage compris)
@@ -548,6 +621,41 @@ mod essais {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("fichiers").join("outils-tiers")).unwrap();
         d
+    }
+
+    #[test]
+    fn un_programme_du_job_se_ferme_avec_l_aide() {
+        // (petit défaut de l'audit du 08/11) Un programme lancé comme PresentMon, dans un job : quand la dernière
+        // poignée du job se ferme (ce que Windows fait quand l'Aide est tuée), il est fermé aussi. Le vrai Windows, sans
+        // droits, sur un PING.EXE caché de 60 s lancé par l'essai.
+        let w = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+        let (envoi, reception) = std::sync::mpsc::channel();
+        let rappel: RappelPm = Arc::new(move |s| {
+            let _ = envoi.send(s);
+        });
+        let job = nouveau_job().expect("job refusé");
+        let debut = Instant::now();
+        let _l = lancer_presentmon_dans(
+            &format!(r"{w}\System32\PING.EXE"),
+            "-n 60 127.0.0.1",
+            &[("SystemRoot".into(), w.clone())],
+            rappel,
+            Some(job),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        // SAFETY : la seule poignée du job, créée par l'essai
+        unsafe {
+            let _ = CloseHandle(job);
+        }
+        let mut fini = false;
+        while let Ok(s) = reception.recv_timeout(Duration::from_secs(10)) {
+            if s == SortiePm::Fin {
+                fini = true;
+                break;
+            }
+        }
+        assert!(fini && debut.elapsed() < Duration::from_secs(20), "le programme a survécu à la fermeture du job");
     }
 
     #[test]

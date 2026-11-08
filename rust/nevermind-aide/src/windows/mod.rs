@@ -19,8 +19,8 @@ mod taches;
 mod temps;
 
 use crate::systeme::{
-    Entree, ErreurCanal, ErreurEffacement, Hote, Identite, Lance, LigneTcp, ProcessusVu, RappelPm, RappelTrace,
-    RefusTrace, Systeme, TacheVue, Trace, ValeurLue,
+    Entree, ErreurCanal, ErreurEffacement, Hote, Identite, Lance, LigneTcp, ProcessusTenu, ProcessusVu, RappelPm,
+    RappelTrace, RefusTrace, Systeme, TacheVue, Trace, ValeurLue,
 };
 use aide_regles::carte::FicheCarte;
 use aide_regles::demandes::{Carte, ContexteProgrammes, Demarrage, Pc, ip_normale};
@@ -74,6 +74,8 @@ pub struct Windows {
     racine: String,
     /// Le dossier aide-temp, une fois préparé : dossier temporaire des programmes lancés par l'Aide (dism)
     temp: OnceLock<String>,
+    /// Les noms des sessions de mesure de cette Aide (FPS, réseau), donnés au démarrage
+    sessions: OnceLock<(String, String)>,
 }
 
 /// Prépare le processus avant toute chose : les DLL ne sont cherchées que dans System32, le dossier courant devient
@@ -151,6 +153,7 @@ impl Windows {
             system32: system32.trim_end_matches('\\').to_string(),
             racine,
             temp: OnceLock::new(),
+            sessions: OnceLock::new(),
         }
     }
 
@@ -520,8 +523,29 @@ impl Systeme for Windows {
         processus::fiche(pid, chemin)
     }
 
-    fn fermer_processus(&self, pid: i64) -> bool {
-        processus::fermer(pid)
+    fn compte_processus(&self, pid: i64) -> String {
+        processus::compte(pid)
+    }
+
+    fn tenir_processus(&self, pid: i64) -> Option<Box<dyn ProcessusTenu + '_>> {
+        processus::tenir(pid).map(|t| Box::new(t) as Box<dyn ProcessusTenu>)
+    }
+
+    fn nommer_sessions(&self, fps: &str, reseau: &str) {
+        let _ = self.sessions.set((fps.to_string(), reseau.to_string()));
+    }
+
+    fn sessions(&self) -> (String, String) {
+        self.sessions.get().cloned().unwrap_or_else(|| {
+            (
+                aide_regles::canal::SESSION_FPS_COMMUNE.to_string(),
+                aide_regles::canal::SESSION_RESEAU_COMMUNE.to_string(),
+            )
+        })
+    }
+
+    fn fermer_trace_restee(&self) {
+        mesures::fermer_trace_restee(&self.sessions().1);
     }
 
     fn presentmon(&self) -> Result<String, String> {
@@ -533,11 +557,11 @@ impl Systeme for Windows {
     }
 
     fn fermer_session_presentmon(&self, chemin: &str) {
-        mesures::fermer_session_presentmon(chemin, &self.environnement());
+        mesures::fermer_session_presentmon(chemin, &self.sessions().0, &self.environnement());
     }
 
     fn demarrer_trace(&self, rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace> {
-        mesures::demarrer_trace(rappel)
+        mesures::demarrer_trace(&self.sessions().1, rappel)
     }
 
     fn adresses_locales(&self) -> Vec<std::net::IpAddr> {

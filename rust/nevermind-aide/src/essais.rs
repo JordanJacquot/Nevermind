@@ -55,6 +55,12 @@ pub(crate) struct FauxSysteme {
     // Pour le faux canal : les connexions qui arrivent, une par une
     connexions: Arc<Mutex<VecDeque<FausseConnexion>>>,
     reponses: Arc<Mutex<Vec<String>>>,
+    /// M6 : ce numéro est redonné par Windows à ce processus juste après la lecture de la fiche (le processus visé
+    /// s'est terminé entre-temps)
+    pub(crate) redonne_apres_fiche: Mutex<HashMap<i64, FauxProcessus>>,
+    redonnes: Mutex<HashMap<i64, FauxProcessus>>,
+    /// Les noms des sessions de mesure, une fois donnés
+    sessions: Mutex<Option<(String, String)>>,
     /// Les fausses mesures (PresentMon, trace réseau, tables TCP) : rejouées par essais_mesures
     pub(crate) mesures: Arc<Mutex<FaussesMesures>>,
 }
@@ -66,6 +72,10 @@ pub(crate) struct FaussesMesures {
     pub(crate) presentmon_refus: Option<String>,
     /// Ce qui est lancé, dans l'ordre : les arguments de chaque PresentMon, et ceux de la fermeture de sa session
     pub(crate) lancements: Vec<String>,
+    /// Le nom de session de chaque trace réseau démarrée
+    pub(crate) traces: Vec<String>,
+    /// Les traces restées ouvertes fermées au démarrage de l'Aide (leur nom)
+    pub(crate) traces_fermees: Vec<String>,
     /// Où parle le dernier PresentMon lancé
     pub(crate) rappel_pm: Option<RappelPm>,
     /// Ce que Windows répond au prochain démarrage de la trace (aucun : accepté)
@@ -99,6 +109,54 @@ impl Trace for FausseTrace {
     }
     fn arreter(&mut self) {
         self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// Un faux processus tenu par sa poignée : il reste celui qui a été ouvert. Si son numéro est redonné après la lecture
+/// de sa fiche, c'est qu'il s'est terminé (tant qu'une poignée est ouverte, Windows ne redonne pas un numéro : c'est le
+/// seul cas possible)
+struct FauxTenu<'a> {
+    s: &'a FauxSysteme,
+    x: FauxProcessus,
+}
+
+impl FauxTenu<'_> {
+    fn remplace(&self) -> bool {
+        self.s.redonnes.lock().unwrap().get(&self.x.pid).is_some_and(|n| n.chemin != self.x.chemin)
+    }
+}
+
+impl ProcessusTenu for FauxTenu<'_> {
+    fn fiche(&self) -> Fiche {
+        let f = fiche_de(&self.x);
+        if let Some(n) = self.s.redonne_apres_fiche.lock().unwrap().remove(&self.x.pid) {
+            self.s.redonnes.lock().unwrap().insert(self.x.pid, n);
+        }
+        f
+    }
+    fn debut(&self) -> Option<i64> {
+        Some(self.x.pid * 1000)
+    }
+    fn actif(&self) -> bool {
+        !self.remplace()
+    }
+    fn chemin(&self) -> String {
+        self.x.chemin.clone()
+    }
+    fn terminer(&self) -> bool {
+        self.s.etat().fermes.push(self.x.pid);
+        true
+    }
+}
+
+fn fiche_de(x: &FauxProcessus) -> Fiche {
+    Fiche {
+        id: x.pid,
+        chemin: x.chemin.clone(),
+        session: Some(x.session),
+        compte: x.compte.clone(),
+        protection: Some(x.protection),
+        eleve: Some(x.eleve),
     }
 }
 
@@ -158,6 +216,9 @@ impl FauxSysteme {
             connexions: Arc::default(),
             reponses: Arc::default(),
             mesures: Arc::default(),
+            redonne_apres_fiche: Mutex::default(),
+            redonnes: Mutex::default(),
+            sessions: Mutex::default(),
         }
     }
 
@@ -357,21 +418,24 @@ impl Systeme for FauxSysteme {
         self.processus.iter().find(|x| x.pid == pid).map(|x| x.chemin.clone()).unwrap_or_default()
     }
     fn fiche(&self, pid: i64, chemin: &str) -> Fiche {
-        match self.processus.iter().find(|x| x.pid == pid) {
-            Some(x) => Fiche {
-                id: pid,
-                chemin: x.chemin.clone(),
-                session: Some(x.session),
-                compte: x.compte.clone(),
-                protection: Some(x.protection),
-                eleve: Some(x.eleve),
-            },
+        let actuel = self.redonnes.lock().unwrap().get(&pid).cloned();
+        let f = match actuel.as_ref().or_else(|| self.processus.iter().find(|x| x.pid == pid)) {
+            Some(x) => fiche_de(x),
             None => Fiche { id: pid, chemin: chemin.into(), ..Default::default() },
+        };
+        // (la fiche lue, le processus visé se termine et son numéro est redonné)
+        if let Some(n) = self.redonne_apres_fiche.lock().unwrap().remove(&pid) {
+            self.redonnes.lock().unwrap().insert(pid, n);
         }
+        f
     }
-    fn fermer_processus(&self, pid: i64) -> bool {
-        self.etat().fermes.push(pid);
-        true
+    fn compte_processus(&self, pid: i64) -> String {
+        self.processus.iter().find(|x| x.pid == pid).map(|x| x.compte.clone()).unwrap_or_default()
+    }
+    fn tenir_processus(&self, pid: i64) -> Option<Box<dyn ProcessusTenu + '_>> {
+        let actuel = self.redonnes.lock().unwrap().get(&pid).cloned();
+        let x = actuel.or_else(|| self.processus.iter().find(|x| x.pid == pid).cloned())?;
+        Some(Box::new(FauxTenu { s: self, x }))
     }
 
     fn presentmon(&self) -> Result<String, String> {
@@ -387,10 +451,25 @@ impl Systeme for FauxSysteme {
         Ok(Box::new(FauxLance))
     }
     fn fermer_session_presentmon(&self, _chemin: &str) {
-        self.mesures.lock().unwrap().lancements.push("--terminate_existing_session --session_name Nevermind".into());
+        let s = self.sessions().0;
+        self.mesures.lock().unwrap().lancements.push(format!("--terminate_existing_session --session_name {s}"));
+    }
+    fn nommer_sessions(&self, fps: &str, reseau: &str) {
+        *self.sessions.lock().unwrap() = Some((fps.into(), reseau.into()));
+    }
+    fn sessions(&self) -> (String, String) {
+        self.sessions.lock().unwrap().clone().unwrap_or_else(|| {
+            (aide_regles::canal::SESSION_FPS_COMMUNE.into(), aide_regles::canal::SESSION_RESEAU_COMMUNE.into())
+        })
+    }
+    fn fermer_trace_restee(&self) {
+        let s = self.sessions().1;
+        self.mesures.lock().unwrap().traces_fermees.push(s);
     }
     fn demarrer_trace(&self, rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace> {
+        let session = self.sessions().1;
         let mut m = self.mesures.lock().unwrap();
+        m.traces.push(session);
         if let Some(r) = m.trace_refus.take() {
             return Err(r);
         }
@@ -648,6 +727,21 @@ fn fermer_seulement_ce_que_la_regle_permet() {
     assert_eq!(r["ok"], false);
 }
 
+/// M6 (audit du 08/11) : le programme visé se termine juste après la lecture de sa fiche, et Windows redonne aussitôt
+/// son numéro à un autre processus (un service, un programme d'un autre compte) : l'Aide (SYSTEM) ne doit pas fermer
+/// ce nouveau processus
+#[test]
+fn un_numero_redonne_entre_la_fiche_et_la_fermeture_n_est_pas_ferme() {
+    let s = FauxSysteme::new();
+    s.redonne_apres_fiche
+        .lock()
+        .unwrap()
+        .insert(800, FauxProcessus { eleve: 1, ..p(800, "C:\\Windows\\System32\\svchost.exe", "S-1-5-18") });
+    let r = demander(&s, NEVERMIND as u32, r#"{"a":"processus.fermer","p":{"Nom":"chrome"}}"#);
+    assert_eq!(r["r"], 1, "{r}");
+    assert_eq!(s.etat().fermes, vec![804], "le processus qui a repris le numéro a été fermé : {:?}", s.etat().appels);
+}
+
 #[test]
 fn pare_feu_regles_de_nevermind_seulement() {
     let s = FauxSysteme::new();
@@ -685,6 +779,22 @@ fn nettoyage_sans_suivre_les_liens() {
     let effaces = s.etat().effaces.clone();
     assert!(!effaces.iter().any(|e| e.contains("recent") || e.contains("piege") || e.contains("lien")), "{effaces:?}");
     assert!(effaces.contains(&"C:\\Windows\\Minidump\\sous\\".to_string()));
+}
+
+/// Petit défaut de l'audit du 08/11 : un compte standard ne peut pas lire où sont les programmes des autres comptes ;
+/// l'Aide ne les lui donne pas non plus (seulement les siens et ceux des comptes du système)
+#[test]
+fn chemins_du_compte_seulement() {
+    let mut s = FauxSysteme::new();
+    s.processus.push(p(4242, "C:\\Windows\\System32\\svchost.exe", "S-1-5-19"));
+    s.processus.push(FauxProcessus { compte: String::new(), ..p(4343, "C:\\Illisible\\x.exe", "") });
+    let r =
+        demander(&s, NEVERMIND as u32, r#"{"a":"lecture.chemins","p":{"Pids":["800","801","4242","4343","9000"]}}"#);
+    let mut pids: Vec<&String> = r["r"].as_object().unwrap().keys().collect();
+    pids.sort();
+    assert_eq!(pids, vec!["4242", "800", "9000"], "{r}");
+    assert_eq!(r["r"]["800"], "C:\\Jeux\\chrome.exe");
+    assert_eq!(demander(&s, 0, r#"{"a":"lecture.chemins","p":{"Pids":["800"]}}"#)["ok"], false);
 }
 
 #[test]

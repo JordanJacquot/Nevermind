@@ -62,6 +62,23 @@ pub struct ProcessusVu {
     pub nom: String,
 }
 
+/// Un processus tenu par une poignée, gardée de la lecture de sa fiche jusqu'à sa fermeture (audit du 08/11, M6) : tant
+/// qu'elle est ouverte, Windows ne peut pas redonner son numéro à un autre processus. Tout est lu, et il est fermé, par
+/// cette même poignée, jamais rouvert par son numéro (comme la page RAM, nevermind-memoire `garder`, `verifier`,
+/// `terminer`).
+pub trait ProcessusTenu {
+    /// Ce que Windows dit de lui (chemin, session, compte, protection, droits administrateur)
+    fn fiche(&self) -> Fiche;
+    /// Son heure de démarrage (FILETIME), `None` si illisible
+    fn debut(&self) -> Option<i64>;
+    /// Il tourne encore
+    fn actif(&self) -> bool;
+    /// Son chemin complet, relu maintenant (vide si illisible)
+    fn chemin(&self) -> String;
+    /// Le ferme (comme Process.Kill de .NET : code de sortie -1) ; vrai si Windows l'a fait
+    fn terminer(&self) -> bool;
+}
+
 /// Une tâche planifiée
 #[derive(Clone, Debug)]
 pub struct TacheVue {
@@ -217,18 +234,27 @@ pub trait Systeme: Pc + Send + Sync + 'static {
     fn chemin_processus(&self, pid: i64) -> String;
     /// Ce que Windows dit d'un processus (`Read-AideFiche` ; `chemin` : à défaut de le lire)
     fn fiche(&self, pid: i64, chemin: &str) -> Fiche;
-    /// Ferme le processus ; vrai si Windows l'a fait
-    fn fermer_processus(&self, pid: i64) -> bool;
+    /// Le compte (SID) d'un processus, vide si Windows ne le dit pas
+    fn compte_processus(&self, pid: i64) -> String;
+    /// Ouvre le processus pour le lire puis peut-être le fermer, et garde sa poignée ; `None` s'il ne s'ouvre pas
+    fn tenir_processus(&self, pid: i64) -> Option<Box<dyn ProcessusTenu + '_>>;
 
     // --- Mesures continues (étape 1b)
+    /// Nomme les sessions de mesure de cette Aide (FPS, réseau), au démarrage : des noms propres à son compte et à sa
+    /// copie (`canal::nom_session_fps`, `canal::nom_session_reseau`), pour que deux Aides ne se coupent jamais
+    fn nommer_sessions(&self, fps: &str, reseau: &str);
+    /// Les noms des sessions de mesure (FPS, réseau) ; les noms communs tant qu'elles n'ont pas été nommées
+    fn sessions(&self) -> (String, String);
+    /// Ferme la trace réseau de cette Aide restée ouverte (Aide d'avant tuée ou plantée), au démarrage
+    fn fermer_trace_restee(&self);
     /// PresentMon du dossier de Nevermind, seulement s'il est bien signé par Intel (`Get-AidePresentMon`) : son
     /// chemin, ou le message d'erreur
     fn presentmon(&self) -> Result<String, String>;
     /// Lance PresentMon avec ces arguments, sans fenêtre ; ses lignes arrivent dans `rappel`, puis `SortiePm::Fin`
     fn lancer_presentmon(&self, chemin: &str, arguments: &str, rappel: RappelPm) -> Result<Box<dyn Lance>, String>;
-    /// Ferme la session de mesure que PresentMon arrêté de force laisse ouverte dans Windows (attend 3 s au plus)
+    /// Ferme la session de mesure des FPS que PresentMon arrêté de force laisse ouverte dans Windows (3 s au plus)
     fn fermer_session_presentmon(&self, chemin: &str);
-    /// Démarre la trace réseau (session « Nevermind-Reseau ») : la trace, ou la raison du refus de Windows
+    /// Démarre la trace réseau (la session réseau de cette Aide) : la trace, ou la raison du refus de Windows
     fn demarrer_trace(&self, rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace>;
     /// Les adresses de ce PC (toutes les cartes, bouclage compris)
     fn adresses_locales(&self) -> Vec<IpAddr>;

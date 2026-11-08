@@ -289,6 +289,8 @@ struct FauxSysteme {
     processus: Vec<(u32, String)>,
     anciennes: Vec<String>,
     demarrage_refuse: bool,
+    /// La tâche et la clé de l'Aide refusent de partir
+    aide_restee: bool,
     question: Option<String>,
     messages: Vec<String>,
 }
@@ -338,17 +340,20 @@ impl Systeme for FauxSysteme {
     fn tache_existe(&mut self, nom: &str) -> bool {
         self.anciennes.iter().any(|t| t == nom)
     }
-    fn retirer_tache(&mut self, nom: &str) {
+    fn retirer_tache(&mut self, nom: &str) -> Result<(), String> {
         self.geste("tache.supprimer", json!({ "TaskName": nom, "TaskPath": null }));
+        Ok(())
     }
-    fn retirer_tache_aide(&mut self) {
+    fn retirer_tache_aide(&mut self) -> Result<(), String> {
         self.geste(
             "tache.supprimer",
             json!({ "TaskName": travail::TACHE_AIDE_NOM, "TaskPath": travail::TACHE_AIDE_DOSSIER }),
         );
+        if self.aide_restee { Err("Accès refusé.".into()) } else { Ok(()) }
     }
-    fn effacer_cle_aide(&mut self) {
+    fn effacer_cle_aide(&mut self) -> Result<(), String> {
         self.geste("registre.effacer.cle", json!(travail::CLE_AIDE));
+        if self.aide_restee { Err("Accès refusé.".into()) } else { Ok(()) }
     }
     fn effacer_raccourci_bureau(&mut self) {
         self.geste("raccourci.bureau.effacer", Value::Null);
@@ -729,6 +734,10 @@ struct Essai {
     erreurs: bool,
     probleme: Option<&'static str>,
     historique: Vec<Value>,
+    /// La tâche et la clé de l'Aide refusent de partir
+    aide_restee: bool,
+    /// Le journal de Nevermind (ce que le désinstalleur y écrit)
+    journal: Lignes,
     /// Copie gérée par Mindset (sinon, pas de dossier de la suite)
     geree: bool,
 }
@@ -749,6 +758,8 @@ impl Essai {
             erreurs: false,
             probleme: None,
             historique: Vec::new(),
+            aide_restee: false,
+            journal: Lignes::default(),
             geree: true,
         }
     }
@@ -777,6 +788,8 @@ impl Essai {
         let mut sys = FauxSysteme {
             reponse: Some(Choix::Garder),
             demarrage_refuse: self.erreurs,
+            aide_restee: self.aide_restee,
+            journal: self.journal.clone(),
             historique: self.historique.clone(),
             ..Default::default()
         };
@@ -958,4 +971,23 @@ fn conseils_contre_epreuve() {
     let e = prete("conseils-contre-pareil");
     let _ = e.lancer(Some(Choix::Supprimer));
     assert_eq!(e.lignes(), Some(reference));
+}
+
+/// Petit défaut de l'audit du 08/11 : la tâche SYSTEM de l'Aide (ou sa clé HKLM) qui n'a pas pu être retirée n'est plus
+/// avalée : elle est dite à la fin (et dans les conseils passés à Mindset) et notée au journal, au lieu d'un
+/// « Nevermind est désinstallé. » sans rien de plus
+#[test]
+fn la_tache_de_l_aide_restee_est_dite() {
+    let mut e = Essai::nouveau("aide-restee");
+    e.aide_restee = true;
+    let (fin, messages) = e.lancer(Some(Choix::Garder));
+    let Fin::Faite { erreurs, message } = fin else { panic!("annulée") };
+    assert!(erreurs.iter().any(|x| x == "Tâche de l'Aide: Accès refusé."), "{erreurs:?}");
+    assert!(erreurs.iter().any(|x| x == "Réglages de l'Aide: Accès refusé."), "{erreurs:?}");
+    assert_eq!(messages, vec![message.clone()]);
+    assert!(message.contains("Tâche de l'Aide: Accès refusé."), "{message}");
+    let j = e.journal.borrow().join("\n");
+    assert!(j.contains("Désinstallation : Tâche de l'Aide: Accès refusé."), "{j}");
+    let l = e.lignes().unwrap_or_default();
+    assert!(l.iter().any(|x| x.contains("Tâche de l'Aide: Accès refusé.")), "{l:?}");
 }

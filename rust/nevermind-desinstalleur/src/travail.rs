@@ -55,12 +55,14 @@ pub trait Systeme {
     fn retirer_demarrage(&mut self) -> Result<(), String>;
     /// Une tâche de ce nom existe (`Get-ScheduledTask -TaskName`)
     fn tache_existe(&mut self, nom: &str) -> bool;
-    /// `Unregister-ScheduledTask -TaskName` (erreurs ignorées)
-    fn retirer_tache(&mut self, nom: &str);
-    /// `Unregister-ScheduledTask -TaskPath '\Mindset\' -TaskName 'Nevermind (aide)'` (erreurs ignorées)
-    fn retirer_tache_aide(&mut self);
-    /// `Remove-Item HKLM:\SOFTWARE\Mindset\Nevermind\Aide -Recurse` (erreurs ignorées)
-    fn effacer_cle_aide(&mut self);
+    /// `Unregister-ScheduledTask -TaskName` (la tâche existe) : son erreur, dite à la fin et notée au journal
+    fn retirer_tache(&mut self, nom: &str) -> Result<(), String>;
+    /// `Unregister-ScheduledTask -TaskPath '\Mindset\' -TaskName 'Nevermind (aide)'` : rien à faire si elle n'existe
+    /// pas ; son erreur sinon, dite à la fin et notée au journal (audit du 08/11 : elle n'est plus avalée)
+    fn retirer_tache_aide(&mut self) -> Result<(), String>;
+    /// `Remove-Item HKLM:\SOFTWARE\Mindset\Nevermind\Aide -Recurse` : rien à faire si elle n'existe pas ; son erreur
+    /// sinon, dite à la fin et notée au journal
+    fn effacer_cle_aide(&mut self) -> Result<(), String>;
     /// Le raccourci du bureau effacé (erreurs ignorées)
     fn effacer_raccourci_bureau(&mut self);
     /// `Remove-MenuShortcut` : le raccourci du menu Démarrer vers cette copie (et le dossier « Mindset » vide)
@@ -183,9 +185,17 @@ pub fn fichiers_livres(racine: &Path) -> Vec<PathBuf> {
     l
 }
 
-/// La commande de fin (systeme.ps1:774-781) : attendre 3 s que ce programme soit fermé, puis supprimer
+/// La commande de fin (systeme.ps1:774-781) : attendre 3 s que ce programme soit fermé, puis supprimer. C'est le texte
+/// de la version PowerShell, celui que les juges comparent ; le vrai lancement (`os`) prend PING.EXE par son chemin
+/// complet ([`commande_suppression_avec`]).
 pub fn commande_suppression(s: &Suppression) -> String {
-    let mut cmd = String::from("ping 127.0.0.1 -n 4 >nul");
+    commande_suppression_avec(s, "ping")
+}
+
+/// La commande de fin, avec ce programme pour l'attente (`ping` : la version PowerShell ; le vrai lancement passe
+/// `"C:\Windows\System32\PING.EXE"`, entre guillemets, pour que cmd.exe ne cherche jamais un « ping » ailleurs)
+pub fn commande_suppression_avec(s: &Suppression, ping: &str) -> String {
+    let mut cmd = format!("{ping} 127.0.0.1 -n 4 >nul");
     for f in &s.fichiers {
         cmd.push_str(&format!(" & del /f /q \"{}\"", f.display()));
     }
@@ -299,14 +309,27 @@ pub fn desinstaller(
     if let Err(e) = sys.retirer_demarrage() {
         erreurs.push(format!("Démarrage automatique: {e}"));
     }
+    // (audit du 08/11 : ces erreurs ne sont plus avalées ; elles sont dites à la fin, passées à Mindset et notées au
+    // journal, au lieu d'un « Nevermind est désinstallé. » alors que la tâche SYSTEM de l'Aide est restée)
+    let mut restes: Vec<String> = Vec::new();
     for t in ANCIENNES_TACHES {
-        if sys.tache_existe(t) {
-            sys.retirer_tache(t);
+        if sys.tache_existe(t)
+            && let Err(e) = sys.retirer_tache(t)
+        {
+            restes.push(format!("Ancienne tâche: {e}"));
         }
     }
     // L'Aide : sa tâche planifiée (créée par Mindset) et ce qu'elle retenait (DNS d'origine)
-    sys.retirer_tache_aide();
-    sys.effacer_cle_aide();
+    if let Err(e) = sys.retirer_tache_aide() {
+        restes.push(format!("Tâche de l'Aide: {e}"));
+    }
+    if let Err(e) = sys.effacer_cle_aide() {
+        restes.push(format!("Réglages de l'Aide: {e}"));
+    }
+    for r in &restes {
+        sys.journal(&format!("Désinstallation : {r}"));
+    }
+    erreurs.extend(restes);
     if sys.raccourci_bureau() {
         sys.effacer_raccourci_bureau();
     }

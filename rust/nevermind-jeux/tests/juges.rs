@@ -581,3 +581,19 @@ fn pc_reel_en_lecture() {
     v.extend(d.jeux.iter().map(jeu_en_json));
     std::fs::write(f, serde_json::to_string_pretty(&v).unwrap()).unwrap();
 }
+
+/// M5 (audit du 08/11) : la carte graphique puissante d'un jeu (HKCU) est dans la liste fermée du noyau, sinon « Tout
+/// restaurer » et le désinstalleur refuseraient de la remettre comme avant
+#[test]
+fn le_profil_gpu_ecrit_dans_la_liste_fermee() {
+    let g = biblio::Jeu { exes: vec![r"C:\Jeux\Jeu\jeu.exe".into(), r"D:\Autre\b.exe".into()], ..Default::default() };
+    for on in [true, false] {
+        let l = nevermind_jeux::optim::changements_profil(&g, "gpu", on);
+        assert_eq!(l.len(), 2);
+        for c in l {
+            let (p, n) = (c["Path"].as_str().unwrap(), c["Name"].as_str().unwrap());
+            assert!(nevermind_noyau::registre::utilisateur(p));
+            assert!(nevermind_noyau::registre::utilisateur_permis(p, n), "{p}|{n} hors de la liste");
+        }
+    }
+}

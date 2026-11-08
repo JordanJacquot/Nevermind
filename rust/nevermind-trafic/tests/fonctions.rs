@@ -215,3 +215,36 @@ fn rang(n: &str) -> u8 {
         _ => 2,
     }
 }
+
+/// M5 (audit du 08/11) : chaque valeur de HKCU que « Couper » écrit est dans la liste fermée du noyau, sinon « Tout
+/// restaurer » et le désinstalleur refuseraient de la remettre comme avant
+#[test]
+fn ce_que_couper_ecrit_dans_hkcu_est_dans_la_liste_fermee() {
+    struct Rien;
+    impl microsoft::LecturesWindows for Rien {
+        fn reg_nombre(&self, _: &str, _: &str) -> Option<i64> {
+            Some(1)
+        }
+        fn reg_texte(&self, _: &str, _: &str) -> String {
+            String::new()
+        }
+        fn service(&self, _: &str) -> Option<(bool, String)> {
+            Some((true, "Automatic".into()))
+        }
+        fn compte_microsoft(&self) -> bool {
+            true
+        }
+    }
+    let mut n = 0;
+    for r in microsoft::reglages(&Rien) {
+        for e in &r.couper {
+            if let microsoft::Ecriture::Registre { chemin, nom, .. } = e
+                && nevermind_noyau::registre::utilisateur(chemin)
+            {
+                n += 1;
+                assert!(nevermind_noyau::registre::utilisateur_permis(chemin, nom), "{chemin}|{nom} hors de la liste");
+            }
+        }
+    }
+    assert!(n >= 14, "{n}");
+}

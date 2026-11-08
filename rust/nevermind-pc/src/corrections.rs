@@ -101,6 +101,17 @@ pub fn reg_utilisateur(chemin: &str) -> bool {
     p.starts_with("HKCU:") || p.starts_with("HKEY_CURRENT_USER")
 }
 
+/// Une valeur de HKCU n'est écrite ou effacée que si c'est un des réglages que Nevermind change lui-même (liste fermée
+/// du noyau, audit du 08/11, M5) : « Tout restaurer » et « Revenir en arrière » relisent des fichiers que le compte
+/// peut modifier, et le désinstalleur les rejoue en administrateur.
+fn reglage_permis(chemin: &str, nom: &str) -> Result<(), String> {
+    if nevermind_noyau::registre::utilisateur_permis(chemin, nom) {
+        Ok(())
+    } else {
+        Err("ce n'est pas un réglage que Nevermind change : il n'est pas touché".into())
+    }
+}
+
 /// Ce que le moteur sait du PC au moment d'agir
 pub struct Moteur<'a> {
     pub pc: &'a mut dyn Pc,
@@ -183,6 +194,7 @@ impl<'a> Moteur<'a> {
             )?;
             return Ok(());
         }
+        reglage_permis(chemin, nom)?;
         self.pc.reg_utilisateur_ecrire(chemin, nom, v)
     }
 
@@ -192,6 +204,7 @@ impl<'a> Moteur<'a> {
             self.pc.aide("reg.effacer", parametres(&[("Cle", json!(chemin)), ("Nom", json!(nom))]), 120000)?;
             return Ok(());
         }
+        reglage_permis(chemin, nom)?;
         self.pc.reg_utilisateur_effacer(chemin, nom)
     }
 
