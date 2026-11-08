@@ -18,8 +18,8 @@ const TABLE: &[(&str, &[&str], &[&str])] = &[
     ("bulle", &["reseau"], &["hôte"]),
     ("veille-jeu-ajouter", &["trafic"], &["hôte"]),
     ("mesure-lag", &["trafic"], &["perf"]),
-    ("partie-commencee", &["perf"], &["hôte", "jeux", "memoire", "reseau", "trafic"]),
-    ("partie-finie", &["perf"], &["hôte", "jeux", "memoire", "reseau", "trafic"]),
+    ("partie-commencee", &["perf"], &["hôte", "jeux", "memoire", "reseau", "trafic", "stream"]),
+    ("partie-finie", &["perf"], &["hôte", "jeux", "memoire", "reseau", "trafic", "stream"]),
     ("theme-choisi", &["divers"], &["hôte"]),
     // (la carte de Nevermind dans l'accueil de Mindset : etat.json, écrit par l'hôte)
     ("etat-mindset", &["pc", "protection"], &["hôte"]),
@@ -32,8 +32,10 @@ const TABLE: &[(&str, &[&str], &[&str])] = &[
     ("demarrage-programmes", &["pc"], &["memoire"]),
     ("nettoyage", &["pc"], &["perf"]),
     ("sauvegarde-nombre", &["pc"], &["protection"]),
-    ("debit-mesure", &["pc"], &["reseau"]),
-    ("test-debit", &["reseau"], &["pc"]),
+    ("debit-mesure", &["pc"], &["reseau", "stream"]),
+    ("test-debit", &["reseau", "stream"], &["pc"]),
+    // (le mode streameur : sa carte dans la page Performances)
+    ("streameur", &["stream"], &["perf"]),
     ("connexion", &["reseau"], &["perf"]),
     ("memoire-constat", &["memoire"], &["perf"]),
     ("jeux-liste", &["jeux"], &["perf", "divers"]),
@@ -146,7 +148,7 @@ fn envoyes(nom: &str) -> BTreeSet<String> {
 
 #[test]
 fn chaque_signal_envoye_a_son_recepteur() {
-    let crates = ["pc", "perf", "memoire", "protection", "jeux", "reseau", "trafic", "divers", "hôte"];
+    let crates = ["pc", "perf", "memoire", "protection", "jeux", "reseau", "trafic", "divers", "stream", "hôte"];
     let mut erreurs = Vec::new();
     // 1. Tout ce qui est envoyé est dans la table (ou sans récepteur, avec sa raison), et par les bons blocs
     for c in crates {

@@ -51,9 +51,22 @@ pub struct Vue {
     pub ecran: Option<(u32, u32)>,
 }
 
+/// Le nom court d'une carte graphique, pour le résumé (« NVIDIA GeForce RTX 4080 » : « RTX 4080 »)
+pub fn carte_courte(nom: &str) -> String {
+    let mut t = nom.replace("(R)", "").replace("(TM)", "").replace("(tm)", "");
+    for debut in ["NVIDIA ", "GeForce ", "AMD ", "ATI ", "Intel "] {
+        if let Some(r) = t.strip_prefix(debut)
+            && !r.trim().is_empty()
+        {
+            t = r.to_string();
+        }
+    }
+    t.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn nom_carte(v: &Vue, plan: Option<&Plan>) -> String {
     match plan.and_then(|p| p.carte.clone()) {
-        Some(c) => c,
+        Some(c) => carte_courte(&c),
         None if v.cartes.is_empty() => "Aucune trouvée".into(),
         None => "Aucune qui encode".into(),
     }
@@ -105,7 +118,7 @@ fn module(v: &Vue, l: &VueLogiciel) -> Value {
         boutons.push(json!({ "id": format!("stream:remettre:{}", l.logiciel.id()), "texte": "Remettre comme avant", "style": "second" }));
     }
     let mut resume = vec![json!({ "nom": "Logiciel", "valeur": match l.etat.as_ref().ok().and_then(|e| e.version) {
-        Some(ver) => format!("{} {}", l.logiciel.nom(), ver.texte()),
+        Some(ver) => format!("{} {}", l.logiciel.court(), ver.texte()),
         None => l.logiciel.nom().to_string(),
     } })];
     resume.push(json!({ "nom": "Envoi", "valeur": match &v.envoi {
@@ -260,5 +273,30 @@ pub fn annonce_reglee(l: Logiciel, plan: &Plan) -> String {
             plan.sortie.0,
             plan.sortie.1
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn noms_courts_des_cartes() {
+        assert_eq!(carte_courte("NVIDIA GeForce RTX 4080"), "RTX 4080");
+        assert_eq!(carte_courte("NVIDIA RTX A2000"), "RTX A2000");
+        assert_eq!(carte_courte("AMD Radeon RX 6600"), "Radeon RX 6600");
+        assert_eq!(carte_courte("AMD Radeon(TM) Graphics"), "Radeon Graphics");
+        assert_eq!(carte_courte("Intel(R) UHD Graphics 630"), "UHD Graphics 630");
+        assert_eq!(carte_courte("NVIDIA"), "NVIDIA");
+    }
+
+    #[test]
+    fn carte_de_performances() {
+        let c = carte_perf(false, false);
+        assert_eq!((c["inactif"].as_bool(), c["note"].as_str()), (Some(true), Some(SANS_LOGICIEL)));
+        let c = carte_perf(true, true);
+        assert_eq!((c.get("inactif"), c["etiquette"].as_str(), c["ton"].as_str()), (None, Some("Réglé"), Some("ok")));
+        assert_eq!(ferme_puis(Logiciel::Obs, "Optimiser"), "Ferme OBS puis reclique sur Optimiser");
+        assert_eq!(ferme_puis(Logiciel::Streamlabs, "Optimiser"), "Ferme Streamlabs puis reclique sur Optimiser");
     }
 }

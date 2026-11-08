@@ -48,6 +48,8 @@ pub fn blocs() -> Vec<Box<dyn Bloc>> {
         Box::new(nevermind_jeux::BlocJeux::default()),
         Box::new(nevermind_reseau::BlocReseau::default()),
         Box::new(nevermind_trafic::BlocTrafic::default()),
+        // (le mode streameur, dans Performances : ajouté le 08/11/2026, sans équivalent PowerShell)
+        Box::new(nevermind_stream::BlocStream::default()),
         Box::new(nevermind_divers::BlocDivers::default()),
     ]
 }

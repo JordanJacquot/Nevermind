@@ -89,6 +89,7 @@ Ce que les autres blocs lui envoient par signal (le champ `donnees` du signal) :
 | `analyse-pc` | `{analyse:[{id, statut, titre, detail}], gpus:[noms], portable, onduleur, disques:[{lettres, bus, media}], nvidia:{installe, dernier, url}, planOk}` | pc |
 | `memoire-constat` | `{pourcent, alertes}` | mémoire |
 | `diagnostic-fps` | `{Id}` : la partie dont il faut le diagnostic ; réponse `diagnostic-fps-pret` {Id, diagnostic} | jeux |
+| `streameur` | `{disponible, regle, carte}` : la carte « Mode streameur » des outils (grisée, `inactif`, sans OBS ni Streamlabs), ajoutée sous « Pour streamer » ; entrée des pages : `streameur` (la carte, absente des juges) | stream |
 
 ## Signaux envoyés
 

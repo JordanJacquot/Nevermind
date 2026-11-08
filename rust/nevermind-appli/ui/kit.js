@@ -45,7 +45,8 @@
 //                 pour une recherche)
 //               { type: 'choix', id, valeur, options: [{ id, texte }] }          un choix parmi plusieurs (pastilles)
 //               { type: 'cartes', id, valeur, options: [{ id, titre, texte }] }  un choix en cartes (style du compteur)
-//               { type: 'outils', elements: [{ id, nom, note, icone, couleur, etiquette, ton }] }   des cartes d'outils
+//               { type: 'outils', elements: [{ id, nom, note, icone, couleur, etiquette, ton, inactif }] }   des cartes d'outils
+//                 (inactif : la carte est grisée, on ne peut pas la choisir)
 //               { type: 'raccourcis', elements: [{ id, nom, icone, couleur }] }  des petits liens vers un outil
 //               { type: 'mesures', elements: [{ nom, note, valeur (0 à 100), texte, ton }] }   des petits anneaux
 //               { type: 'pastilles', elements: [{ texte, ton }] }                un résumé en pastilles
@@ -442,7 +443,12 @@
         : `<label class="ligne plaque"><span class="txt"><b>${esc(b.texte)}</b>${note}</span><input class="champ f" data-k="c:${esc(b.id)}" data-champ="${esc(b.id)}" value="${esc(b.valeur)}" placeholder="${esc(b.indice)}"></label>`;
       case 'choix': return `<div class="choix-p" role="radiogroup">${(b.options || []).map((o) => `<button type="button" class="f${o.id === b.valeur ? ' oui' : ''}" data-k="p:${esc(b.id)}:${esc(o.id)}" data-action="${esc(b.id)}" data-valeur="${esc(o.id)}" data-choix="1" role="radio" aria-checked="${o.id === b.valeur}">${esc(o.texte)}</button>`).join('')}</div>`;
       case 'cartes': return `<div class="cartes-choix">${(b.options || []).map((o) => `<button type="button" class="carte-choix plaque f${o.id === b.valeur ? ' oui' : ''}" data-k="p:${esc(b.id)}:${esc(o.id)}" data-action="${esc(b.id)}" data-valeur="${esc(o.id)}" data-choix="1"><b>${esc(o.titre)}</b><span>${esc(o.texte)}</span></button>`).join('')}</div>`;
-      case 'outils': return `<div class="outils">${(b.elements || []).map((x) => `<button type="button" class="outil plaque f" data-k="l:${esc(x.id)}" data-action="${esc(x.id)}"><span class="haut-o">${icone(x.icone || 'etoile', x.couleur)}${etiq(x.etiquette, x.ton)}</span><b>${esc(x.nom)}</b><span class="n">${esc(x.note)}</span></button>`).join('')}</div>`;
+      case 'outils': return `<div class="outils">${(b.elements || []).map((x) => {
+        const dedans = `<span class="haut-o">${icone(x.icone || 'etoile', x.couleur)}${etiq(x.etiquette, x.ton)}</span><b>${esc(x.nom)}</b><span class="n">${esc(x.note)}</span>`;
+        // (inactif : une carte grisée, ni choisissable ni cliquable ; sa note dit pourquoi)
+        if (x.inactif) return `<div class="outil plaque inactif" aria-disabled="true">${dedans}</div>`;
+        return `<button type="button" class="outil plaque f" data-k="l:${esc(x.id)}" data-action="${esc(x.id)}">${dedans}</button>`;
+      }).join('')}</div>`;
       case 'raccourcis': return `<div class="raccourcis">${(b.elements || []).map((x) => `<button type="button" class="raccourci plaque f" data-k="l:${esc(x.id)}" data-action="${esc(x.id)}">${icone(x.icone || 'etoile', x.couleur)}<b>${esc(x.nom)}</b>${fleche()}</button>`).join('')}</div>`;
       case 'mesures': return `<div class="mesures">${(b.elements || []).map((x) => `<div class="mesure plaque"${x.id ? ` data-id="${esc(x.id)}"` : ''}>${anneau(x.valeur, `<span class="centre"><b class="${x.ton ? esc(x.ton) : ''}">${esc(x.texte ?? `${Math.round(+x.valeur || 0)} %`)}</b></span>`, x.ton)}<b>${esc(x.nom)}</b><span class="n">${esc(x.note)}</span></div>`).join('')}</div>`;
       case 'pastilles': return `<div class="pastilles">${(b.elements || []).map((x) => `<span class="pastille ${esc(x.ton || 'ok')}">${ico(x.ton === 'attention' || x.ton === 'urgent' ? 'alerte' : 'ok', 2.2)}${esc(x.texte)}</span>`).join('')}</div>`;

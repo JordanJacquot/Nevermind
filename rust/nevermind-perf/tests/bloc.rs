@@ -148,3 +148,20 @@ fn lancement_d_un_jeu_sans_demande_de_windows() {
     assert!(vues.lock().unwrap().iter().any(|a| a == "processus.fermer"), "OneDrive est fermé par l'Aide");
     assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new(), "aucune demande de Windows au lancement d'un jeu");
 }
+
+/// La carte « Mode streameur » (signal « streameur » du bloc stream) : sous « Pour streamer », grisée sans logiciel ;
+/// sans le signal, la page est celle d'avant
+#[test]
+fn carte_du_mode_streameur() {
+    let ctx = contexte("streameur");
+    let mut b = BlocPerf::avec(Box::new(pc()), Box::new(FauxCompteur::default()));
+    let blocs = |b: &mut BlocPerf| b.pages(&ctx, "perf")["perf"]["blocs"].as_array().cloned().unwrap_or_default();
+    assert!(!blocs(&mut b).iter().any(|x| x["texte"] == "Pour streamer"));
+    let mut e = Effets::default();
+    let carte = json!({ "id": "streameur", "nom": "Mode streameur", "note": "Pour utiliser le mode streameur, il faut avoir installé OBS ou Streamlabs.", "inactif": true });
+    b.signal(&ctx, "streameur", &json!({ "disponible": false, "regle": false, "carte": carte }), &mut e);
+    let l = blocs(&mut b);
+    let k = l.iter().position(|x| x["texte"] == "Pour streamer").expect("titre « Pour streamer »");
+    assert_eq!(l[k + 1]["type"], "outils");
+    assert_eq!(l[k + 1]["elements"][0], carte);
+}

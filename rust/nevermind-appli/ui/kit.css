@@ -256,6 +256,7 @@ body.avec-3d .anneau { background: none; }
 .outil { padding: 16px; text-align: left; display: flex; flex-direction: column; gap: 2px; }
 .outil .haut-o { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .outil .ic { width: 44px; height: 44px; } .outil b { font-size: 17px; } .outil .n { color: var(--doux); font-size: 13.5px; }
+.outil.inactif { cursor: default; box-shadow: none; } .outil.inactif .haut-o, .outil.inactif b { opacity: .45; filter: grayscale(1); }
 .raccourcis { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
 .raccourci { display: inline-flex; align-items: center; gap: 10px; padding: 7px 12px 7px 7px; border-radius: 99px; font-size: 14.5px; }
 .raccourci .ic { width: 32px; height: 32px; border-radius: 50%; } .raccourci .ic svg { width: 18px; height: 18px; } .raccourci .chev svg { width: 16px; height: 16px; }

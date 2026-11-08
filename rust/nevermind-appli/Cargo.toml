@@ -37,6 +37,7 @@ nevermind-jeux = { path = "../nevermind-jeux" }
 nevermind-reseau = { path = "../nevermind-reseau" }
 nevermind-trafic = { path = "../nevermind-trafic" }
 nevermind-divers = { path = "../nevermind-divers" }
+nevermind-stream = { path = "../nevermind-stream" }
 # Versions figées (« = ») : une nouvelle version n'entre que par un changement relu. Les mêmes que Mindcare.
 serde_json = { version = "=1.0.154", features = ["preserve_order"] }
 # Tauri sans ses options par défaut ; jamais « devtools » (règle 5 de regles-tauri.md). « custom-protocol » en dur :

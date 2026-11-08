@@ -10,7 +10,8 @@
 //! Signaux envoyés : « partie-commencee », « partie-finie », « mesures », « fps-partie-enregistree »,
 //! « notification », « ajouter-jeu », « declarations », « ouvrir-fiche », « diagnostic-fps-pret ».
 //! Signaux attendus : « jeux-liste », « reglages-jeu », « demarrage », « nettoyage », « connexion », « analyse-pc »,
-//! « memoire-constat », « diagnostic-fps », « mesure-lag ». Le contenu de chacun est décrit dans DIVERGENCES.md.
+//! « memoire-constat », « diagnostic-fps », « mesure-lag », « streameur » (bloc stream : la carte du mode streameur,
+//! montrée dans Performances). Le contenu de chacun est décrit dans DIVERGENCES.md.
 
 pub mod diag;
 pub mod fichier;
@@ -1001,7 +1002,8 @@ impl BlocPerf {
             "disque": disque.as_ref().map(|d| json!({ "total": d.0, "libre": d.1 })), "lecteur": disque.as_ref().map(|d| d.2.clone()).unwrap_or_else(|| "C:".into()),
             "texteNettoyage": texte_net, "boutonNettoyer": bouton_net, "dernierNettoyage": dn, "memoire": memoire, "ram": ram, "analyse": analyse,
             "modeJeu": Self::reglage_vrai(ctx, "GameMode", false), "appsModeJeu": ctx.reglage("GameModeApps"), "processus": processus, "session": session,
-            "jeux": jeux, "gpus": gpus, "nLib": n_lib.unwrap_or(0), "profilsLus": self.profils_lus
+            "jeux": jeux, "gpus": gpus, "nLib": n_lib.unwrap_or(0), "profilsLus": self.profils_lus,
+            "streameur": self.ext.get("streameur").and_then(|s| s.get("carte")).cloned().unwrap_or(Value::Null)
         })
     }
 
@@ -1215,7 +1217,8 @@ impl Bloc for BlocPerf {
                 self.dernier = None;
                 self.veille_anti_triche(ctx);
             }
-            "reglages-jeu" | "demarrage" | "nettoyage" | "connexion" | "analyse-pc" | "memoire-constat" => {
+            "reglages-jeu" | "demarrage" | "nettoyage" | "connexion" | "analyse-pc" | "memoire-constat"
+            | "streameur" => {
                 self.ext.insert(nom.into(), donnees.clone());
             }
             "diagnostic-fps" => {

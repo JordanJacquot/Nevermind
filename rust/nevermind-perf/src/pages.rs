@@ -238,6 +238,11 @@ pub fn pages(e: &Value) -> Map<String, Value> {
         json!({ "type": "titre", "texte": "Pour gagner des FPS" }),
         json!({ "type": "outils", "elements": elements }),
     ];
+    // La carte du mode streameur (bloc stream, signal « streameur ») : grisée sans OBS ni Streamlabs
+    if let Some(c) = e.get("streameur").filter(|c| c.is_object()) {
+        blocs_perf.push(json!({ "type": "titre", "texte": "Pour streamer" }));
+        blocs_perf.push(json!({ "type": "outils", "elements": [c] }));
+    }
     if !conseils.is_empty() {
         blocs_perf.push(json!({ "type": "titre", "texte": "Conseillé pour toi" }));
     }
