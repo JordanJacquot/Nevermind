@@ -198,7 +198,8 @@ pub fn chercher(net: &dyn Internet, dossier: &Path, jeux: &[ATrouver]) -> Vec<Tr
         }
         // La boutique Steam : par son identifiant, sinon par son nom
         if id.is_empty() {
-            let url = format!("https://store.steampowered.com/api/storesearch/?term={}&l=french&cc=FR", echapper(&propre));
+            let url =
+                format!("https://store.steampowered.com/api/storesearch/?term={}&l=french&cc=FR", echapper(&propre));
             match json_de(net, &url, "Nevermind") {
                 Ok(j) => {
                     let b = norme(&propre);
@@ -206,8 +207,8 @@ pub fn chercher(net: &dyn Internet, dossier: &Path, jeux: &[ATrouver]) -> Vec<Tr
                         let n = norme(&texte(&it, "name"));
                         let (ln, lb) = (n.chars().count() as f64, b.chars().count() as f64);
                         // (même jeu : même nom, ou l'un contient l'autre, « Overwatch » et « Overwatch 2 »)
-                        let proche = n == b
-                            || ((n.contains(&b) || b.contains(&n)) && ln.min(lb) / 1f64.max(ln.max(lb)) >= 0.6);
+                        let proche =
+                            n == b || ((n.contains(&b) || b.contains(&n)) && ln.min(lb) / 1f64.max(ln.max(lb)) >= 0.6);
                         if proche {
                             id = texte(&it, "id");
                             break;
@@ -220,7 +221,9 @@ pub fn chercher(net: &dyn Internet, dossier: &Path, jeux: &[ATrouver]) -> Vec<Tr
         if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
             let f = fichier(&format!("{key}.jpg"));
             for u in [
-                format!("https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/{id}/library_600x900.jpg"),
+                format!(
+                    "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/{id}/library_600x900.jpg"
+                ),
                 format!("https://cdn.cloudflare.steamstatic.com/steam/apps/{id}/library_600x900.jpg"),
             ] {
                 if telecharger(net, &u, &f) {

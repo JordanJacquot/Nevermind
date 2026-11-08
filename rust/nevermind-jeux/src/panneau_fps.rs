@@ -104,7 +104,8 @@ pub fn panneau(b: &BlocJeux, ctx: &Contexte, s: &PartieFps, toutes: &[PartieFps]
                     blocs.push(json!({ "type": "liste", "elements": lignes }));
                 }
                 for (j, a) in crate::biblio::liste(e.get("actions")).iter().enumerate() {
-                    blocs.push(json!({ "type": "bouton", "id": format!("fps-diag:{k}:{j}"), "texte": texte(a, "texte"),
+                    blocs
+                        .push(json!({ "type": "bouton", "id": format!("fps-diag:{k}:{j}"), "texte": texte(a, "texte"),
                         "style": if j > 0 { json!("second") } else { Value::Null } }));
                 }
             }

@@ -432,7 +432,9 @@ pub fn lignes_multiples(o: &[u8]) -> Vec<String> {
 /// gestionnaire des réseaux de Windows (lecture sans droits) : 0 public, 1 privé, 2 domaine ; `None` si illisible
 pub fn categorie_reseau(guid_carte: &str) -> Option<i32> {
     use windows::Win32::Networking::NetworkListManager::{INetworkListManager, NetworkListManager};
-    use windows::Win32::System::Com::{CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize};
+    use windows::Win32::System::Com::{
+        CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
+    };
     let voulu = guid_carte.trim().trim_start_matches('{').trim_end_matches('}').to_ascii_uppercase();
     if voulu.is_empty() {
         return None;
@@ -449,7 +451,7 @@ pub fn categorie_reseau(guid_carte: &str) -> Option<i32> {
                 if connexions.Next(&mut c, Some(&mut n)).is_err() || n == 0 {
                     return None;
                 }
-                let Some(c) = c[0].take() else { return None };
+                let c = c[0].take()?;
                 let Ok(g) = c.GetAdapterId() else { continue };
                 let d = g.data4;
                 let texte = format!(

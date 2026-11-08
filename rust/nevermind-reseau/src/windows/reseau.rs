@@ -585,7 +585,11 @@ mod tests {
                 .find(|a| a.index == i)
                 .and_then(|a| super::lectures::categorie_reseau(&a.guid))
         });
-        let pc = crate::ce_pc::bloc_pc(&crate::ce_pc::LecturePc { categorie: cat, partages: p.clone(), ..Default::default() });
+        let pc = crate::ce_pc::bloc_pc(&crate::ce_pc::LecturePc {
+            categorie: cat,
+            partages: p.clone(),
+            ..Default::default()
+        });
         eprintln!("partages lus : {:?}", p.iter().map(|x| &x.nom).collect::<Vec<_>>());
         eprintln!("Pc : {pc}");
     }

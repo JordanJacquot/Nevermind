@@ -83,9 +83,17 @@ fn partages_et_categorie_comme_la_version_powershell() {
             // (aucun descripteur écrit : Windows partage alors en lecture pour tout le monde)
             partage("Ancien", r"E:\Ancien", None),
             // (une liste d'accès vide « nulle » : tout le monde a tous les droits)
-            partage("Ouvert", r"E:\Ouvert", Some(vec![1, 0, 0x04, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])),
+            partage(
+                "Ouvert",
+                r"E:\Ouvert",
+                Some(vec![1, 0, 0x04, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            ),
             // (un descripteur abîmé : aucun droit lu, le partage reste montré)
-            partage("Abime", r"E:\Abime", Some(vec![1, 0, 0x04, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0])),
+            partage(
+                "Abime",
+                r"E:\Abime",
+                Some(vec![1, 0, 0x04, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0]),
+            ),
             PartageLu { nom: "SansChemin".into(), lignes: vec!["Type=0".into()], securite: None },
         ],
         ..Default::default()
@@ -106,7 +114,8 @@ fn partages_et_categorie_comme_la_version_powershell() {
             "SansChemin||Read"
         ])
     );
-    for (n, attendu) in [(Some(0), "Public"), (Some(1), "Private"), (Some(2), "DomainAuthenticated"), (None, ""), (Some(7), "")]
+    for (n, attendu) in
+        [(Some(0), "Public"), (Some(1), "Private"), (Some(2), "DomainAuthenticated"), (None, ""), (Some(7), "")]
     {
         assert_eq!(bloc_pc(&LecturePc { categorie: n, ..Default::default() })["Category"], json!(attendu), "{n:?}");
     }

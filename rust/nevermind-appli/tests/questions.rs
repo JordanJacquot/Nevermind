@@ -46,13 +46,18 @@ fn une_seule_question_a_la_fois_et_son_ecouteur_part_avec_elle() {
     // La réponse : l'écouteur est retiré, puis la question suivante (s'il y en a une) prend la place
     let rep = q.find("const repondre = (v) => {").expect("kit.question : repondre a disparu");
     let rep = &q[rep..rep + q[rep..].find("};").expect("fin de repondre")];
-    let retire = rep.find("removeEventListener('keydown', clavier, true);").expect("repondre ne retire plus l'écouteur");
+    let retire =
+        rep.find("removeEventListener('keydown', clavier, true);").expect("repondre ne retire plus l'écouteur");
     let libre = rep.find("questionVue = false;").expect("repondre ne libère plus la place");
-    let suivante = rep.find("const s = questionsEnAttente.shift(); if (s) kit.question(s);").expect(
-        "repondre : la question suivante n'est plus montrée après la réponse",
+    let suivante = rep
+        .find("const s = questionsEnAttente.shift(); if (s) kit.question(s);")
+        .expect("repondre : la question suivante n'est plus montrée après la réponse");
+    assert!(
+        retire < suivante && libre < suivante,
+        "repondre : la question suivante s'affiche avant que l'écouteur parte"
     );
-    assert!(retire < suivante && libre < suivante, "repondre : la question suivante s'affiche avant que l'écouteur parte");
-    let envoi = rep.find("envoyer({ type: 'reponse', id: q.id, valeur: v });").expect("repondre n'envoie plus la réponse");
+    let envoi =
+        rep.find("envoyer({ type: 'reponse', id: q.id, valeur: v });").expect("repondre n'envoie plus la réponse");
     assert!(envoi < suivante, "repondre : la réponse part après la question suivante");
 
     // Les questions en attente sont gardées au niveau du kit (pas recréées à chaque question)

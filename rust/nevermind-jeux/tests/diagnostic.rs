@@ -134,7 +134,8 @@ fn le_panneau_montre_les_conseils_et_les_boutons_du_diagnostic() {
         // Ce que New-SecurityCard montre pour chaque cause : le titre et le détail, les conseils, les boutons
         let mut attendu = vec![("ligne".to_string(), d["titre"].as_str().unwrap_or("").to_string())];
         for (k, e) in d["elements"].as_array().into_iter().flatten().enumerate() {
-            attendu.push(("ligne".into(), format!("{}|{}", e["titre"].as_str().unwrap(), e["detail"].as_str().unwrap())));
+            attendu
+                .push(("ligne".into(), format!("{}|{}", e["titre"].as_str().unwrap(), e["detail"].as_str().unwrap())));
             let l: Vec<&str> = e["lignes"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
             if !l.is_empty() {
                 lignes += l.len();

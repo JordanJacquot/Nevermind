@@ -22,9 +22,12 @@ const MAX: usize = 15 * 1024 * 1024;
 const STEAM: &str = "https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps";
 const CDN: &str = "https://cdn.cloudflare.steamstatic.com/steam/apps";
 
+/// Une réponse du faux réseau : le code et le contenu, ou une erreur
+type Reponse = Result<(u16, Vec<u8>), String>;
+
 #[derive(Default)]
 struct FauxInternet {
-    reponses: Mutex<HashMap<String, Result<(u16, Vec<u8>), String>>>,
+    reponses: Mutex<HashMap<String, Reponse>>,
     demandes: Mutex<Vec<(String, u32, String, usize)>>,
     pauses: Mutex<Vec<u64>>,
 }
@@ -180,7 +183,10 @@ fn la_recherche_suit_la_version_powershell() {
     assert!(!urls.iter().any(|u| u.contains("term=League")), "les images officielles passent par Steam");
     assert!(premier("term=Jeu%20Inconnu") < premier("/77/library_600x900.jpg"));
     assert!(!urls.iter().any(|u| u.contains("fr.wikipedia.org/api/rest_v1/page/summary/Petit_Jeu")));
-    assert!(premier("en.wikipedia.org/api/rest_v1/page/summary/Logo_Jeu") < premier("fr.wikipedia.org/api/rest_v1/page/summary/Logo_Jeu"));
+    assert!(
+        premier("en.wikipedia.org/api/rest_v1/page/summary/Logo_Jeu")
+            < premier("fr.wikipedia.org/api/rest_v1/page/summary/Logo_Jeu")
+    );
     assert_eq!(net.pauses.lock().unwrap().clone(), vec![400; 7], "400 ms avant chaque demande à Wikipédia");
     for (u, delai, agent, max) in net.demandes.lock().unwrap().iter() {
         if u.contains("storesearch") {
@@ -232,12 +238,14 @@ fn le_reglage_cherche_et_range_les_jaquettes() {
     ctx.ecrire_reglage("CustomGames", json!(ajoutes), false).unwrap();
     let net = Arc::new(FauxInternet::default());
     for nom in ["Petit%20Jeu", "Vieux%20Jeu"] {
-        net.json(&format!("https://store.steampowered.com/api/storesearch/?term={nom}&l=french&cc=FR"), json!({ "items": [] }));
+        net.json(
+            &format!("https://store.steampowered.com/api/storesearch/?term={nom}&l=french&cc=FR"),
+            json!({ "items": [] }),
+        );
     }
     wiki(&net, "en", "Petit_Jeu", "https://upload.wikimedia.org/a/Petit.jpg", 300, 450);
     net.repondre("https://upload.wikimedia.org/a/Petit.jpg", 200, jpeg(5000));
-    let mut sys = SystemeEssai::default();
-    sys.heure = Some(maintenant);
+    let sys = SystemeEssai { heure: Some(maintenant), ..Default::default() };
     let mut b = BlocJeux::avec_internet(Arc::new(sys), net.clone());
     let mut e = Effets::default();
     b.rechercher_maintenant(&ctx, &mut e);
@@ -254,7 +262,8 @@ fn le_reglage_cherche_et_range_les_jaquettes() {
     let a = annonces(&e.0);
     assert!(a.contains(&"Recherche des jaquettes de 2 jeux...".to_string()), "{a:?}");
     assert!(a.contains(&"1 jaquette ajoutée à ta bibliothèque.".to_string()), "{a:?}");
-    let v: Value = serde_json::from_str(std::fs::read_to_string(&index).unwrap().trim_start_matches('\u{feff}')).unwrap();
+    let v: Value =
+        serde_json::from_str(std::fs::read_to_string(&index).unwrap().trim_start_matches('\u{feff}')).unwrap();
     let cover = donnees.join("jaquettes").join("petitjeu-wiki.jpg");
     assert_eq!(v["Petit Jeu"]["Cover"], json!(cover.to_string_lossy()));
     assert_eq!(v["Petit Jeu"]["Date"], json!(maintenant.iso()));
