@@ -183,9 +183,17 @@ pub fn fichiers_livres(racine: &Path) -> Vec<PathBuf> {
     l
 }
 
-/// La commande de fin (systeme.ps1:774-781) : attendre 3 s que ce programme soit fermé, puis supprimer
+/// La commande de fin (systeme.ps1:774-781) : attendre 3 s que ce programme soit fermé, puis supprimer. C'est le texte
+/// de la version PowerShell, celui que les juges comparent ; le vrai lancement (`os`) prend PING.EXE par son chemin
+/// complet ([`commande_suppression_avec`]).
 pub fn commande_suppression(s: &Suppression) -> String {
-    let mut cmd = String::from("ping 127.0.0.1 -n 4 >nul");
+    commande_suppression_avec(s, "ping")
+}
+
+/// La commande de fin, avec ce programme pour l'attente (`ping` : la version PowerShell ; le vrai lancement passe
+/// `"C:\Windows\System32\PING.EXE"`, entre guillemets, pour que cmd.exe ne cherche jamais un « ping » ailleurs)
+pub fn commande_suppression_avec(s: &Suppression, ping: &str) -> String {
+    let mut cmd = format!("{ping} 127.0.0.1 -n 4 >nul");
     for f in &s.fichiers {
         cmd.push_str(&format!(" & del /f /q \"{}\"", f.display()));
     }

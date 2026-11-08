@@ -57,6 +57,7 @@ $utf8Bom = New-Object Text.UTF8Encoding($true)
 $cleGraphiques = 'HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'
 $cleGameDvr = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR'
 $cleGameBar = 'HKCU:\Software\Microsoft\GameBar'
+$cleCmd = 'HKCU:\Software\Microsoft\Command Processor'
 $script:Echecs = @()
 $script:Reussis = 0
 function Test-Cas([string]$Nom, [scriptblock]$Condition) {
@@ -159,7 +160,23 @@ try {
     $o = Install-Nevermind
     Test-Cas 'avant : l''Aide tourne en SYSTEM pour ce dossier' { (Get-AidesEnCours).Count -ge 1 }
     Test-Cas 'avant : les réglages sont changés' { (Get-Valeur $cleGraphiques 'HwSchMode') -ne $o.HwSchMode -and (Get-Valeur $cleGameDvr 'HistoricalCaptureEnabled') -eq 0 -and "$((Get-Service DiagTrack).StartType)" -eq 'Disabled' }
-    $r = Invoke-Desinstalleur '-GarderDonnees'
+    # (audit du 08/11, G2) Les pièges qu'un programme sans droits peut poser pour la commande de fin, lancée en
+    # administrateur : l'AutoRun de cmd.exe (HKCU) et un « ping.bat » dans le dossier temporaire du compte
+    $temoinAutoRun = Join-Path $env:RUNNER_TEMP 'temoin-autorun.txt'
+    $temoinPing = Join-Path $env:RUNNER_TEMP 'temoin-ping.txt'
+    $pingPiege = Join-Path ([IO.Path]::GetTempPath()) 'ping.bat'
+    Remove-Item -LiteralPath $temoinAutoRun, $temoinPing -Force -ErrorAction SilentlyContinue
+    New-Item -Path $cleCmd -Force | Out-Null
+    New-ItemProperty -LiteralPath $cleCmd -Name AutoRun -Value "echo piege>`"$temoinAutoRun`"" -PropertyType String -Force | Out-Null
+    [IO.File]::WriteAllText($pingPiege, "@echo piege>`"$temoinPing`"`r`n", [Text.Encoding]::ASCII)
+    try { $r = Invoke-Desinstalleur '-GarderDonnees' }
+    finally {
+        # (la commande de fin se finit avant que les pièges soient retirés)
+        $null = Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 15
+        Remove-ItemProperty -LiteralPath $cleCmd -Name AutoRun -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $pingPiege -Force -ErrorAction SilentlyContinue
+    }
+    Test-Cas 'commande de fin : ni l''AutoRun de cmd.exe ni un ping.bat du dossier temporaire ne sont lancés (G2)' { -not (Test-Path -LiteralPath $temoinAutoRun) -and -not (Test-Path -LiteralPath $temoinPing) }
     Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
     Test-Cas "aucune fenêtre avec -GarderDonnees, ni question ni message de fin (fenêtres vues : $($r.Titres -join ', '))" { -not @($r.Titres).Count }
     Test-Cas 'HwSchMode remis comme avant (HKLM, par la voie « sur place » de l''Aide)' { (Get-Valeur $cleGraphiques 'HwSchMode') -eq $o.HwSchMode }

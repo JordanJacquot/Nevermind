@@ -288,16 +288,59 @@ impl Systeme for SystemeWindows<'_> {
                 let _ = std::fs::remove_file(f);
             }
         }
-        // (dans le dossier temporaire : la commande ne doit pas tenir le dossier de Nevermind, qu'elle supprime)
-        let _ = Command::new(format!("{}\\cmd.exe", system32()))
-            .raw_arg(format!("/c {commande}"))
-            .current_dir(std::env::temp_dir())
-            .creation_flags(SANS_FENETRE)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
+        // (`commande` est le texte de la version PowerShell, celui des juges : le vrai lancement refait la même
+        // commande, avec PING.EXE par son chemin complet)
+        let _ = commande;
+        if let Err(e) = commande_fin_de(suppression).spawn() {
+            self.ctx.journal(&format!("Désinstallation : la suppression des fichiers n'a pas pu se lancer ({e})"));
+        }
     }
+}
+
+/// Le dossier de Windows, tel que Windows le donne (jamais `%SystemRoot%`, que le compte peut changer)
+fn dossier_windows() -> String {
+    let mut b = vec![0u16; 1024];
+    // SAFETY : tampon et taille cohérents
+    let n = unsafe { windows::Win32::System::SystemInformation::GetSystemWindowsDirectoryW(Some(&mut b)) } as usize;
+    String::from_utf16_lossy(&b[..n.min(b.len())]).trim_end_matches('\\').to_string()
+}
+
+/// L'environnement de cmd.exe pour la commande de fin : neuf, fait ici avec les dossiers que Windows donne, comme
+/// celui des programmes que lance l'Aide (`Windows::environnement`). Rien du compte (ni TEMP, ni PATHEXT, ni PATH).
+fn environnement_fin(system32: &str, windows: &str) -> Vec<(String, String)> {
+    vec![
+        ("SystemRoot".to_string(), windows.to_string()),
+        ("windir".to_string(), windows.to_string()),
+        ("SystemDrive".to_string(), windows.get(..2).unwrap_or("C:").to_string()),
+        ("ComSpec".to_string(), format!("{system32}\\cmd.exe")),
+        ("PATH".to_string(), format!("{system32};{windows}")),
+    ]
+}
+
+/// Le lancement de la commande de fin (audit du 08/11, G2 : le désinstalleur tourne en administrateur) :
+/// - cmd.exe de System32, avec `/d` (l'AutoRun de `HKCU\Software\Microsoft\Command Processor`, que le compte peut
+///   écrire sans droits, n'est pas exécuté), `/v:off` et `/e:on` (les réglages DelayedExpansion et EnableExtensions de
+///   cette même clé sont ignorés), `/s` (la commande est passée entre guillemets, telle quelle) ;
+/// - dossier courant System32 (jamais le dossier temporaire du compte, où un « ping.bat » pourrait attendre ; la
+///   commande ne tient pas non plus le dossier de Nevermind, qu'elle supprime) ;
+/// - environnement neuf ([`environnement_fin`]).
+fn commande_fin_de(s: &Suppression) -> Command {
+    let ping = format!("\"{}\\PING.EXE\"", system32());
+    commande_fin(&travail::commande_suppression_avec(s, &ping))
+}
+
+fn commande_fin(commande: &str) -> Command {
+    let sys32 = system32();
+    let mut c = Command::new(format!("{sys32}\\cmd.exe"));
+    c.raw_arg(format!("/d /e:on /v:off /s /c \"{commande}\""))
+        .env_clear()
+        .envs(environnement_fin(&sys32, &dossier_windows()))
+        .current_dir(&sys32)
+        .creation_flags(SANS_FENETRE)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    c
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -447,5 +490,85 @@ impl Pc for PcDesinstallation<'_> {
     }
     fn maintenant(&self) -> Moment {
         self.pc.maintenant()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn arguments(c: &Command) -> String {
+        c.get_args().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>().join(" ")
+    }
+
+    /// G2 (audit du 08/11) : en administrateur, cmd.exe ne doit rien prendre de l'utilisateur : ni son AutoRun (`/d`),
+    /// ni un « ping » trouvé ailleurs que dans System32, ni son dossier temporaire comme dossier courant, ni son
+    /// environnement
+    #[test]
+    fn la_commande_de_fin_ne_prend_rien_de_l_utilisateur() {
+        let s = Suppression { fichiers: vec![PathBuf::from("C:\\X\\a.exe")], ..Default::default() };
+        let c = commande_fin_de(&s);
+        let sys32 = system32();
+        assert!(suite_commun::chemins::egal(&c.get_program().to_string_lossy(), &format!("{sys32}\\cmd.exe")));
+        let a = arguments(&c);
+        assert!(a.starts_with("/d "), "AutoRun de cmd.exe non coupé : {a}");
+        assert!(a.contains("/v:off"), "{a}");
+        assert!(a.contains(&format!("\"{sys32}\\PING.EXE\" 127.0.0.1 -n 4 >nul")), "ping sans son chemin : {a}");
+        assert!(!a.contains(" ping "), "{a}");
+        let dossier = c.get_current_dir().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default();
+        assert!(suite_commun::chemins::egal(&dossier, &sys32), "dossier courant : {dossier}");
+        // L'environnement : seulement ce qui est fait ici (une variable du compte ne passe pas)
+        let env: Vec<(String, Option<String>)> = c
+            .get_envs()
+            .map(|(k, v)| (k.to_string_lossy().into_owned(), v.map(|v| v.to_string_lossy().into_owned())))
+            .collect();
+        let noms: Vec<String> = env.iter().map(|(k, _)| k.to_ascii_uppercase()).collect();
+        for n in ["SYSTEMROOT", "WINDIR", "COMSPEC", "PATH"] {
+            assert!(noms.contains(&n.to_string()), "{n} absent : {env:?}");
+        }
+        for n in ["TEMP", "TMP", "USERPROFILE", "PATHEXT", "APPDATA"] {
+            assert!(!noms.contains(&n.to_string()), "{n} transmis : {env:?}");
+        }
+        let path = env.iter().find(|(k, _)| k.eq_ignore_ascii_case("PATH")).and_then(|(_, v)| v.clone());
+        assert!(path.is_some_and(|p| p.split(';').all(|d| suite_commun::chemins::egal(d, &sys32)
+            || d.to_ascii_lowercase().starts_with(&dossier_windows().to_ascii_lowercase()))));
+    }
+
+    /// La commande de fin, lancée pour de vrai (sans droits, sans fenêtre) sur un dossier d'essai : les guillemets
+    /// passent, PING.EXE attend, puis les fichiers et dossiers partent
+    #[test]
+    fn la_commande_de_fin_supprime_vraiment() {
+        let base = std::env::temp_dir().join(format!("nevermind-desinst-fin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let ici = base.join("Nevermind & co").join("fichiers");
+        std::fs::create_dir_all(ici.join("modules")).unwrap();
+        std::fs::write(ici.join("modules").join("m.ps1"), "x").unwrap();
+        std::fs::write(base.join("Nevermind & co").join("Mindset.exe"), "x").unwrap();
+        std::fs::write(base.join("Nevermind & co").join("autre.txt"), "à garder").unwrap();
+        let racine = base.join("Nevermind & co");
+        let s = Suppression {
+            fichiers: vec![racine.join("Mindset.exe")],
+            dossiers: vec![ici.join("modules")],
+            vides: vec![ici.clone(), racine.clone()],
+        };
+        let mut c = commande_fin_de(&s);
+        let mut enfant = c.spawn().unwrap();
+        let debut = std::time::Instant::now();
+        let fin = loop {
+            if let Some(st) = enfant.try_wait().unwrap() {
+                break Some(st);
+            }
+            if debut.elapsed() > std::time::Duration::from_secs(30) {
+                let _ = enfant.kill();
+                break None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        };
+        assert!(fin.is_some(), "cmd.exe ne s'est pas fini");
+        assert!(debut.elapsed() >= std::time::Duration::from_secs(2), "pas d'attente avant la suppression");
+        assert!(!racine.join("Mindset.exe").exists());
+        assert!(!ici.exists(), "dossier fichiers resté");
+        assert!(racine.join("autre.txt").exists(), "un fichier qui n'est pas de Nevermind est parti");
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
