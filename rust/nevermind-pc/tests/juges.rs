@@ -44,6 +44,8 @@ struct FauxPc {
     relecture: Option<nevermind_pc::lecture::Lu>,
     /// Ce que l'Aide lit (`lecture.pc` : Secure Boot, TPM, santé des disques) ; `None` : l'Aide répond « OK »
     lecture_aide: Option<Value>,
+    /// Un lancement refusé (M8) : le texte de l'erreur
+    refus_lancement: Option<String>,
 }
 
 impl FauxPc {
@@ -233,8 +235,12 @@ impl Pc for FauxPc {
     fn service(&self, nom: &str) -> Option<(String, bool)> {
         self.services.get(nom).map(|s| (net::champ_texte(s, "StartType"), net::champ_vrai(s, "Running")))
     }
-    fn lancer(&mut self, args: &[String]) {
+    fn lancer(&mut self, args: &[String]) -> Result<(), String> {
         self.geste("lancer", json!(args));
+        match &self.refus_lancement {
+            Some(e) => Err(e.clone()),
+            None => Ok(()),
+        }
     }
     fn ouvrir(&mut self, a: &str) {
         self.geste("ouvrir", json!(a));
@@ -1011,4 +1017,108 @@ fn une_sauvegarde_trafiquee_ne_pose_aucune_strategie() {
     assert_eq!(erreurs.len(), 6, "{erreurs:?}");
     // Le vrai réglage est oublié (remis), les autres restent notés et refusés
     assert_eq!(sv.registre.len(), 6);
+}
+
+/// M8 (audit du 08/11) : « Test complet Windows » (mdsched.exe, qui demande les droits administrateur) ne se lançait
+/// pas, l'erreur était jetée et rien n'était dit. Maintenant il passe par ShellExecute (la question de Windows), dans
+/// un travail de fond, et un refus est dit. Contre le faux PC : rien n'est lancé pour de vrai.
+#[test]
+fn un_programme_de_windows_qui_ne_s_ouvre_pas_le_dit() {
+    use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
+    use std::time::{Duration, Instant};
+    fn bouton(v: &Value, texte: &str) -> Option<String> {
+        match v {
+            Value::Object(o) => {
+                if o.get("texte").and_then(Value::as_str) == Some(texte)
+                    && let Some(id) = o.get("id").and_then(Value::as_str)
+                {
+                    return Some(id.to_string());
+                }
+                o.values().find_map(|x| bouton(x, texte))
+            }
+            Value::Array(a) => a.iter().find_map(|x| bouton(x, texte)),
+            _ => None,
+        }
+    }
+    let cas = lire("corrections.json");
+    for partage in [false, true] {
+        let (mut pc, s, _) = charger(&cas[0]["entree"]);
+        pc.refus_lancement = Some("tu as répondu « Non » à la demande de Windows".into());
+        let lu = nevermind_pc::lecture::Lu { entrees: s.entrees.clone(), demarrage: s.demarrage.clone() };
+        let mut b = nevermind_pc::BlocPc::sur(Box::new(pc), lu);
+        let d = nevermind_noyau::dossier_essai(&format!("pc-mdsched-{partage}"));
+        let _ = std::fs::remove_dir_all(&d);
+        let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true);
+        let ctx = if partage { ctx.partage() } else { std::sync::Arc::new(ctx) };
+        let p = b.pages(&ctx, "tests");
+        let id = bouton(&p["tests"], "Test complet Windows").expect("le bouton « Test complet Windows »");
+        let mut e = Effets::default();
+        assert!(b.action(&ctx, &id, &Value::Null, &mut e));
+        let mut tout = e.0;
+        let fin = Instant::now() + Duration::from_secs(10);
+        let attendu = Effet::Annonce(
+            "Le test de la mémoire de Windows ne s'est pas ouvert : tu as répondu « Non » à la demande de Windows."
+                .into(),
+        );
+        while !tout.contains(&attendu) && Instant::now() < fin {
+            let mut e = Effets::default();
+            b.travaux_finis(&ctx, &mut e);
+            tout.extend(e.0);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(tout.contains(&attendu), "le refus n'est pas dit : {tout:?}");
+        let pc = b.faux_pc().expect("le faux PC");
+        let _ = pc;
+        let _ = std::fs::remove_dir_all(&d);
+    }
+    // « Tester la mémoire » d'une correction (« Tout corriger », Exécuter) : l'échec remonte, pas de faux « réussi »
+    let mut pc = FauxPc { refus_lancement: Some("Accès refusé.".into()), ..Default::default() };
+    let mut sv = Sauvegarde::default();
+    let r = {
+        let mut m = Moteur::nouveau(&mut pc, &mut sv, false);
+        nevermind_pc::session::executer_correction(
+            &mut m,
+            Some(&nevermind_pc::modele::Execution::TestMemoire),
+            &nevermind_pc::modele::Changements::Aucun,
+        )
+    };
+    assert_eq!(r, Err("Le test de la mémoire de Windows ne s'est pas ouvert : Accès refusé.".to_string()));
+    assert_eq!(pc.gestes, vec![json!({ "geste": "lancer", "donnees": ["mdsched.exe"] })]);
+}
+
+/// M9 (audit du 08/11) : une sauvegarde abîmée était lue sans rien dire, et « Tout restaurer » répondait « Il n'y a
+/// aucun changement à annuler ». Comme Get-TexteProblemeSauvegarde (onglets.ps1:870-873) : le problème est dit, avec
+/// le point de restauration de Windows ; et la question de « Tout restaurer » prévient aussi.
+#[test]
+fn une_sauvegarde_abimee_est_dite_comme_telle() {
+    use nevermind_noyau::Contexte;
+    let d = nevermind_noyau::dossier_essai("pc-sauvegarde-abimee");
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::write(d.join("sauvegarde.json"), "\u{feff}{ \"Registry\": { \"HKLM:\\SOFT").unwrap();
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true);
+    let sv = nevermind_pc::systeme::lire_sauvegarde(&ctx);
+    assert_eq!(sv.probleme.as_deref(), Some("abimee"), "le problème de la sauvegarde n'est pas noté");
+    let texte = nevermind_noyau::sauvegarde::texte_probleme(Some("abimee"));
+    // Rien à remettre : le problème est dit, pas « rien à annuler »
+    let mut pc = FauxPc::default();
+    let mut s =
+        Session { sv: Sauvegarde { probleme: Some("abimee".into()), ..Default::default() }, ..Default::default() };
+    s.restaurer_tout(&mut pc, &[]);
+    assert_eq!(pc.gestes, vec![json!({ "geste": "message", "donnees": texte })]);
+    // Des réglages à remettre : la question prévient
+    let mut pc = FauxPc::default();
+    let mut s = Session {
+        sv: Sauvegarde { probleme: Some("abimee".into()), plan: Some("guid".into()), ..Default::default() },
+        ..Default::default()
+    };
+    s.restaurer_tout(&mut pc, &[]);
+    let q = pc.gestes.iter().find(|g| g["geste"] == "question").expect("la question");
+    assert!(q["donnees"].as_str().unwrap().ends_with(&format!("\n\nAttention : {texte}")), "{q}");
+    // Une sauvegarde lisible : rien de dit en plus
+    let mut pc = FauxPc::default();
+    let mut s = Session::default();
+    s.restaurer_tout(&mut pc, &[]);
+    assert_eq!(pc.gestes, vec![json!({ "geste": "message", "donnees": "Il n'y a aucun changement à annuler." })]);
+    let _ = std::fs::remove_dir_all(&d);
 }

@@ -13,7 +13,7 @@
 //!    - le fil des blocs : l'hôte et tous les blocs (pages, gestes, effets, et la minuterie de l'écran toutes les
 //!      200 ms avec les tics des blocs). Un bloc lent (l'arrêt de la mesure des FPS peut prendre 8 s) ne fige
 //!      jamais la fenêtre. Les deux fils se parlent par des files (ordres vers les blocs, demandes vers la fenêtre).
-//! 5. La fin : les blocs fermés (sur leur fil, attendu au plus 10 s), la relance si le thème a changé, puis
+//! 5. La fin : les blocs fermés (sur leur fil, attendu au plus 4 s), la relance si le thème a changé, puis
 //!    `std::process::exit` (aucun fil ne garde le processus en vie sans fenêtre).
 
 use std::cell::RefCell;
@@ -46,8 +46,11 @@ const PAS: Duration = Duration::from_millis(100);
 const PAS_ECRAN: Duration = Duration::from_millis(200);
 /// Le signal de Mindset : levé, il relit `afficher-page.txt` (`Request-MenuMindset`).
 const SIGNAL_MINDSET: &str = r"Local\Mindset-Afficher";
-/// La fermeture des blocs est attendue au plus tant (la mesure des FPS peut prendre 8 s à s'arrêter).
-const ATTENTE_FERMETURE: Duration = Duration::from_secs(10);
+/// La fermeture des blocs est attendue au plus tant : Mindset arrête l'appli 6 s après lui avoir demandé de quitter
+/// (contrat, partie 5), et la demande peut attendre jusqu'à 600 ms d'être vue. Les blocs font d'abord ce qui compte
+/// (le bloc perf relance les applis fermées pour une partie, puis arrête la mesure des FPS en 2,5 s au plus). Petit de
+/// l'audit du 08/11 : 10 s avant.
+const ATTENTE_FERMETURE: Duration = Duration::from_secs(4);
 
 /// Ce que le fil de la fenêtre demande au fil des blocs.
 enum Ordre {
@@ -304,6 +307,7 @@ pub fn lancer() -> ! {
     });
 
     let dossier_pack = choix.theme.pack.as_ref().map(|p| p.dossier.clone());
+    let lecture_images = pack::LectureImages::nouvelle(images);
     let pour_pack = journal_page.clone();
     let pour_fenetre = journal_page.clone();
     let montree = !arguments.demarrage;
@@ -322,7 +326,10 @@ pub fn lancer() -> ! {
             }
             reponse
         })
-        .register_uri_scheme_protocol("fichier", move |_, demande| images.repondre(demande.uri().path()))
+        // (les jaquettes, jusqu'à 15 Mo chacune : lues sur un fil à part, jamais sur celui de la fenêtre)
+        .register_asynchronous_uri_scheme_protocol("fichier", move |_, demande, repondeur| {
+            lecture_images.demander(demande.uri().path(), move |r| repondeur.respond(r))
+        })
         .setup(move |app| {
             ouvrir_fenetre(app, &suite, &donnees_appli, montree, &pour_fenetre);
             Ok(())
@@ -661,7 +668,7 @@ fn finir() -> ! {
                 etat.journal("Fermeture : la fenêtre a disparu");
             }
             if !fermes && ORDRES.get().is_some() {
-                etat.journal("Fermeture : les blocs n'ont pas fini en 10 s");
+                etat.journal("Fermeture : les blocs n'ont pas fini en 4 s");
             }
             if let Some(Fin::Relancer { cachee }) = etat.fin {
                 let d = etat.dossier_donnees.clone();

@@ -28,8 +28,14 @@ pub trait Systeme: Send + Sync {
     fn applis_demarrer(&self) -> Vec<(String, String)>;
     /// L'heure locale.
     fn maintenant(&self) -> Moment;
-    /// Lance un programme dans son dossier (un jeu « exe »). Jamais appelé par les tests.
+    /// Lance un programme dans son dossier (un jeu ou un désinstalleur « exe ») ; s'il demande les droits, Windows
+    /// pose sa question (et ce lancement attend la réponse : il est fait hors du fil des blocs). `Err` : le texte à
+    /// montrer. Le vrai Windows n'est jamais appelé par les tests.
     fn lancer(&self, exe: &str, arguments: &str, dossier: &str) -> Result<(), String>;
+    /// Un faux Windows (tests) : ses lancements sont faits même en mode test, puisqu'ils ne lancent rien.
+    fn faux(&self) -> bool {
+        false
+    }
     /// Demande à l'utilisateur le programme d'un jeu (.exe) ; `None` s'il annule.
     fn choisir_exe(&self) -> Option<String>;
     /// Le nom de produit et la description d'un programme (FileVersionInfo).
@@ -49,6 +55,8 @@ pub struct SystemeEssai {
     pub exe_choisi: Option<String>,
     pub infos: HashMap<String, (String, String)>,
     pub lances: Mutex<Vec<(String, String, String)>>,
+    /// Un lancement refusé (par exemple « tu as répondu Non à la demande de Windows ») : le texte de l'erreur
+    pub refus_lancement: Option<String>,
 }
 
 impl SystemeEssai {
@@ -96,7 +104,13 @@ impl Systeme for SystemeEssai {
     }
     fn lancer(&self, exe: &str, arguments: &str, dossier: &str) -> Result<(), String> {
         self.lances.lock().unwrap_or_else(|e| e.into_inner()).push((exe.into(), arguments.into(), dossier.into()));
-        Ok(())
+        match &self.refus_lancement {
+            Some(e) => Err(e.clone()),
+            None => Ok(()),
+        }
+    }
+    fn faux(&self) -> bool {
+        true
     }
     fn choisir_exe(&self) -> Option<String> {
         self.exe_choisi.clone()

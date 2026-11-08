@@ -94,6 +94,17 @@ pub fn message_erreur(e: &str) -> String {
     format!("Oups, quelque chose s'est mal passé :\n\n{e}")
 }
 
+/// Un programme de Windows qui ne s'est pas ouvert (M8, audit du 08/11 : le bouton ne faisait rien, sans le dire)
+pub fn message_lancement(args: &[String], raison: &str) -> String {
+    let exe = args.first().map(|e| e.rsplit(['\\', '/']).next().unwrap_or(e).to_lowercase()).unwrap_or_default();
+    let quoi = match exe.as_str() {
+        "mdsched.exe" => "Le test de la mémoire de Windows".to_string(),
+        "perfmon.exe" => "L'historique de fiabilité de Windows".to_string(),
+        _ => format!("Le programme « {exe} »"),
+    };
+    format!("{quoi} ne s'est pas ouvert : {}.", raison.trim().trim_end_matches('.'))
+}
+
 impl Session {
     fn moteur<'a>(&'a mut self, pc: &'a mut dyn Pc) -> Moteur<'a> {
         let portable = self.analyse.as_ref().is_some_and(|a| a.portable);
@@ -523,13 +534,17 @@ impl Session {
 
     /// `Invoke-UndoAll` : « Tout restaurer » (avec sa question, puis « Réessayer » si des réglages restent)
     pub fn restaurer_tout(&mut self, pc: &mut dyn Pc, definitifs: &[String]) {
+        // (Get-TexteProblemeSauvegarde, onglets.ps1:870-873 : une sauvegarde abîmée ou disparue est dite, avec le point
+        //  de restauration de Windows ; M9, audit du 08/11)
+        let probleme = nevermind_noyau::sauvegarde::texte_probleme(self.sv.probleme.as_deref());
         if corrections::compte_total(&self.sv, pc) == 0 {
-            pc.message("Il n'y a aucun changement à annuler.");
+            pc.message(if probleme.is_empty() { "Il n'y a aucun changement à annuler." } else { &probleme });
             return;
         }
         let q = format!(
-            "Remettre les réglages modifiés par Nevermind comme ils étaient avant ?{}",
-            texte_definitifs(definitifs)
+            "Remettre les réglages modifiés par Nevermind comme ils étaient avant ?{}{}",
+            texte_definitifs(definitifs),
+            if probleme.is_empty() { String::new() } else { format!("\n\nAttention : {probleme}") }
         );
         match pc.question(&q) {
             None => {
@@ -805,8 +820,8 @@ pub fn executer_correction(
             Ok(())
         }
         Some(Execution::TestMemoire) => {
-            m.pc.lancer(&["mdsched.exe".into()]);
-            Ok(())
+            let a = ["mdsched.exe".to_string()];
+            m.pc.lancer(&a).map_err(|e| message_lancement(&a, &e))
         }
         Some(Execution::Bios) => {
             let code = m.pc.commande("shutdown.exe", &["/r".into(), "/fw".into(), "/t".into(), "10".into()]);

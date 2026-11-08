@@ -247,15 +247,15 @@ pub fn commande(exe: &str, args: &[String]) -> (i32, String) {
     }
 }
 
-/// Lancer un programme sans attendre (`Start-Process`)
-pub fn lancer(args: &[String]) {
-    if let Some((exe, reste)) = args.split_first() {
-        let mut c = std::process::Command::new(exe);
-        for a in reste {
-            c.args(a.split_whitespace());
-        }
-        let _ = c.creation_flags(SANS_FENETRE).spawn();
-    }
+/// Lancer un programme de Windows (`Start-Process` : ShellExecute). mdsched.exe demande les droits administrateur :
+/// `std::process::Command` ne savait pas le lancer (erreur 740, jetée). Un nom seul est pris dans System32, jamais un
+/// programme du même nom posé ailleurs. Attend la réponse à la question de Windows.
+pub fn lancer(args: &[String]) -> Result<(), String> {
+    let Some((exe, reste)) = args.split_first() else { return Err("aucun programme".into()) };
+    let complet = if exe.contains(['\\', '/']) { exe.clone() } else { nevermind_noyau::programme_windows(exe) };
+    // (« run:perfmon.exe /rel » : le reste est la ligne de commande, passée telle quelle)
+    let arguments = reste.join(" ");
+    nevermind_noyau::windows::ouvrir_programme(&complet, &arguments, "")
 }
 
 /// La console de Windows écrit en page de code OEM (850 en français) : les accents de powercfg

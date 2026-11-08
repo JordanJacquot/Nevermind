@@ -508,50 +508,23 @@ fn igd(loc: &str, passerelle: &str) -> Value {
     json!({ "Maps": maps, "External": externe })
 }
 
-/// fabricants.txt : la liste de l'IEEE, téléchargée la première fois (curl de Windows, sans fenêtre)
+/// fabricants.txt : la liste de l'IEEE, téléchargée la première fois (curl de Windows, sans fenêtre). Une réponse
+/// d'erreur (403, 5xx, portail d'un Wi-Fi public) n'est jamais gardée (`--fail`, et la liste doit être complète) :
+/// avant, elle donnait un fichier vide, et la liste n'était plus jamais téléchargée (petit de l'audit du 08/11).
 pub fn telecharger_fabricants(chemin: &std::path::Path) {
     let tmp = chemin.with_extension("txt.csv");
-    let ok = Command::new("curl.exe")
-        .args(["-s", "-L", "-m", "60", "-A", "Mozilla/5.0 Nevermind", "-o"])
+    let ok = Command::new(nevermind_noyau::programme_windows("curl.exe"))
+        .args(["-s", "--fail", "-L", "-m", "60", "-A", "Mozilla/5.0 Nevermind", "-o"])
         .arg(&tmp)
         .arg("https://standards-oui.ieee.org/oui/oui.csv")
         .creation_flags(SANS_FENETRE)
         .status()
         .is_ok_and(|s| s.success());
-    if !ok {
-        let _ = std::fs::remove_file(&tmp);
-        return;
-    }
-    let Ok(t) = std::fs::read_to_string(&tmp) else { return };
-    let mut sortie = String::from("\u{feff}");
-    for l in t.lines().skip(1) {
-        let c = colonnes_csv(l);
-        if c.len() >= 3 {
-            sortie.push_str(&format!("{}|{}\r\n", c[1], c[2]));
-        }
-    }
-    let _ = crate::fichiers::ecrire_texte(chemin, &sortie);
+    let lu = if ok { std::fs::read_to_string(&tmp).ok() } else { None };
     let _ = std::fs::remove_file(&tmp);
-}
-
-fn colonnes_csv(l: &str) -> Vec<String> {
-    let mut r = Vec::new();
-    let mut cur = String::new();
-    let mut guillemets = false;
-    let mut it = l.chars().peekable();
-    while let Some(c) = it.next() {
-        match c {
-            '"' if guillemets && it.peek() == Some(&'"') => {
-                cur.push('"');
-                it.next();
-            }
-            '"' => guillemets = !guillemets,
-            ',' if !guillemets => r.push(std::mem::take(&mut cur)),
-            c => cur.push(c),
-        }
+    if let Some(sortie) = lu.as_deref().and_then(crate::appareil::fabricants_depuis_csv) {
+        let _ = crate::fichiers::ecrire_texte(chemin, &sortie);
     }
-    r.push(cur);
-    r
 }
 
 /// Passer le réseau de cette carte en public (Set-NetConnectionProfile, comme la version PowerShell : sans droits

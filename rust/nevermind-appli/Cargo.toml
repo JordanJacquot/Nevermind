@@ -25,7 +25,7 @@ test = false
 # (NEVERMIND_ESSAI_DONNEES) et à faire une capture de sa fenêtre. Elle ne lit pas HKLM et ne lance que elle-même
 # (jamais le vrai Mindset du PC), et ne lève jamais le signal de Mindset.
 [features]
-essai = []
+essai = ["nevermind-noyau/essai"]
 
 [dependencies]
 nevermind-noyau = { path = "../nevermind-noyau" }

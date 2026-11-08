@@ -433,7 +433,7 @@ impl BlocReseau {
                 Ok(())
             }
             Geste::Partages => {
-                effets.ajouter(Effet::OuvrirAdresse("fsmgmt.msc".into()));
+                effets.ajouter(Effet::OuvrirAdresse(nevermind_noyau::programme_windows("fsmgmt.msc")));
                 Ok(())
             }
             // (par l'Aide, jusqu'à 15 min pour SMBv1, ou PowerShell : dans un travail de fond, audit G3)
@@ -458,8 +458,10 @@ impl BlocReseau {
         self.travaux.lancer(ctx, GESTE, move |fond| {
             let ctx = fond.ctx;
             let mut log: Vec<Value> = Vec::new();
-            let definitif = |log: &mut Vec<Value>, t: &str, d: String, retour: &str| {
-                log.push(json!({ "Type": "definitif", "Titre": t, "Detail": d, "Retour": retour }));
+            // (Add-ChangementDefinitif : Type, Quoi, Retour ; le titre sert seulement hors d'une action. Jusqu'au
+            //  08/11, « Detail » au lieu de « Quoi » : l'historique montrait « (définitif) » sans rien devant)
+            let definitif = |log: &mut Vec<Value>, _titre: &str, quoi: String, retour: &str| {
+                log.push(json!({ "Type": "definitif", "Quoi": quoi, "Retour": retour }));
             };
             let r: Result<(), String> = match act.geste {
                 Geste::WifiManuel => {
@@ -480,9 +482,13 @@ impl BlocReseau {
                     })
                 }
                 Geste::BureauDistance => {
+                    // (Set-Reg, audit-reseau.ps1:302 : la valeur d'avant notée dans la sauvegarde AVANT le changement,
+                    //  pour « Tout restaurer » et la désinstallation ; M9, audit du 08/11 : elle était écrite à la main,
+                    //  « 0 » en dur, sans passer par la sauvegarde)
                     let cle = r"HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server";
-                    log.push(json!({ "Type": "reg", "Path": cle, "Name": "fDenyTSConnections", "Existed": true, "Value": 0, "Kind": "DWord", "Nouveau": 1, "NouveauType": "DWord" }));
-                    ctx.aide("reg.ecrire", &json!({ "Cle": cle, "Nom": "fDenyTSConnections", "Valeur": 1, "Type": "DWord" }), 30_000).map(|_| ())
+                    let st = ctx.registre_etat(cle, "fDenyTSConnections");
+                    log.push(json!({ "Type": "reg", "Path": cle, "Name": "fDenyTSConnections", "Existed": st["Existed"], "Value": st["Value"], "Kind": st["Kind"], "Nouveau": 1, "NouveauType": "DWord" }));
+                    ctx.changer_registre(cle, "fDenyTSConnections", &json!(1), "DWord")
                 }
                 Geste::Public => sonde.passer_public(crate::texte::reel(Some(&act.arg)) as i64),
                 Geste::Ouvrir | Geste::ChangerDns | Geste::Partages => Ok(()),
@@ -632,6 +638,22 @@ impl BlocReseau {
             return;
         }
         let avant = self.sonde.dns_fixes(&net.guid);
+        // (Set-Dns, onglets.ps1:655-661 : le DNS d'avant Nevermind noté dans la sauvegarde AVANT le changement, une
+        //  fois, sous l'identifiant de la carte ; « Tout restaurer » et la désinstallation le remettent. M9, audit du
+        //  08/11 : seul l'historique le notait, et le DNS n'était jamais remis.)
+        let cle = if net.guid.is_empty() { net.if_index.to_string() } else { net.guid.clone() };
+        let sv = ctx.sauvegarde();
+        if !sv.dns.contains_key(&cle) && !sv.dns.contains_key(&net.if_index.to_string()) {
+            ctx.changer_sauvegarde(|s| {
+                s.dns.insert(cle.clone(), json!(avant));
+            });
+            if let Err(e) = ctx.enregistrer_sauvegarde_ou_oublier(move |s| {
+                s.dns.remove(&cle);
+            }) {
+                effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")));
+                return;
+            }
+        }
         let serveurs: Vec<String> = DNS_CHOIX[k].iter().map(|s| s.to_string()).collect();
         let log = json!([{ "Type": "dns", "IfIndex": net.if_index, "Guid": net.guid,
             "Servers": avant.split([',', ' ', '\t']).filter(|x| !x.is_empty()).collect::<Vec<_>>(), "Nouveau": serveurs }]);

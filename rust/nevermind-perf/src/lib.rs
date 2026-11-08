@@ -732,13 +732,33 @@ impl BlocPerf {
 
     /// Stop-FpsTarget : le bilan est calculé dans un autre fil (millions d'images sur une longue partie)
     fn arreter_cible(&mut self, ctx: &Contexte, attendre: bool) {
+        self.arreter_cible_en(ctx, if attendre { Some(Duration::from_secs(10)) } else { None }, None);
+    }
+
+    /// `arreter_cible` avec un temps compté : `bilan` (le bilan attendu au plus tant), `aide` (l'arrêt par l'Aide
+    /// attendu au plus tant, dans un fil à part : la fermeture de Nevermind, que Mindset arrête au bout de 6 s)
+    fn arreter_cible_en(&mut self, ctx: &Contexte, bilan: Option<Duration>, aide: Option<Duration>) {
         let Some(c) = self.cible.take() else { return };
         if c.compteur_vu {
             self.compteur().cacher();
         }
         let copie = c.images.copie();
         // ([FrameMon]::Stop : toujours, même après #FIN ou 20 lectures ratées, comme `remoteOn` en PowerShell)
-        let _ = ctx.aide_texte("fps.arreter", "{}", 8000);
+        match (aide, ctx.partage_actuel()) {
+            (Some(d), Some(partage)) => {
+                let (fini, attente) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let _ = partage.aide_texte("fps.arreter", "{}", 8000);
+                    let _ = fini.send(());
+                });
+                if attente.recv_timeout(d).is_err() {
+                    ctx.journal("Mesure des FPS : l'Aide n'a pas fini de s'arrêter avant la fermeture");
+                }
+            }
+            _ => {
+                let _ = ctx.aide_texte("fps.arreter", "{}", 8000);
+            }
+        }
         let fil = std::thread::spawn(move || copie.calculer());
         let b = BilanEnCours {
             nom: c.nom,
@@ -752,9 +772,9 @@ impl BlocPerf {
             fil,
         };
         self.bilans.push(b);
-        if attendre {
+        if let Some(d) = bilan {
             let mut e = Effets::default();
-            let fin = Instant::now() + Duration::from_secs(10);
+            let fin = Instant::now() + d;
             while self.bilans.iter().any(|b| !b.fil.is_finished()) && Instant::now() < fin {
                 std::thread::sleep(Duration::from_millis(20));
             }
@@ -1274,12 +1294,18 @@ impl Bloc for BlocPerf {
     }
 
     fn fermer(&mut self, ctx: &Contexte) {
+        // (Mindset arrête l'appli 6 s après lui avoir demandé de quitter, contrat partie 5 ; le PowerShell laissait
+        //  3,5 s à l'action en cours. D'abord ce qui compte pour l'utilisateur : les applis fermées pour la partie
+        //  relancées ; puis l'arrêt de la mesure des FPS en temps compté, le bilan gardé s'il est prêt à temps. Petit
+        //  de l'audit du 08/11 : jusqu'à 8 s pour l'arrêt, puis 10 s pour le bilan, avant la relance.)
         let mut e = Effets::default();
-        if self.cible.is_some() {
-            self.arreter_cible(ctx, true);
-        }
+        let cible = self.cible.take();
         if self.session.is_some() {
             self.fin_partie(ctx, &mut e);
+        }
+        if cible.is_some() {
+            self.cible = cible;
+            self.arreter_cible_en(ctx, Some(Duration::from_secs(1)), Some(Duration::from_millis(1500)));
         }
         if self.raccourci_actif == Some(true) {
             self.compteur().raccourci(false);

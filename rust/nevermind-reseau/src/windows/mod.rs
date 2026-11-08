@@ -224,7 +224,8 @@ impl Sonde for SondeWindows {
     }
 
     fn fabricants(&self, chemin: &Path) -> Option<Fabricants> {
-        if !chemin.exists() {
+        // (un fichier vide ou incomplet, laissé par une ancienne version après une page d'erreur : retéléchargé)
+        if !std::fs::read_to_string(chemin).is_ok_and(|t| crate::appareil::fabricants_complets(&t)) {
             reseau::telecharger_fabricants(chemin);
         }
         std::fs::read_to_string(chemin).ok().map(|t| lire_fabricants(&t))

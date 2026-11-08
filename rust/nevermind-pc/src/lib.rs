@@ -115,7 +115,13 @@ pub struct BlocPc {
     sv_a_relire: bool,
     /// Les effets demandés hors d'un appel qui en reçoit (rendus au prochain appel)
     en_attente: Vec<Effet>,
+    /// Les programmes de Windows lancés (mdsched, perfmon) : la question de Windows attend l'utilisateur, dans un
+    /// fil à part ; la fin dit un échec (M8)
+    lancements: Travaux<Result<(), String>>,
 }
+
+/// La clé du lancement d'un programme de Windows : un à la fois (un double clic ne pose pas deux questions)
+const LANCEMENT: &str = "lancement";
 
 impl BlocPc {
     /// Le bloc sur un faux PC (tests), avec ce qu'il aurait lu
@@ -157,6 +163,37 @@ impl BlocPc {
         let mut p = systeme::PcWindows::nouveau(ctx);
         let r = f(self, &mut p);
         (r, p.annonces())
+    }
+
+    /// Un programme de Windows (« Tester la mémoire », « Test complet Windows », l'historique de fiabilité) : lancé
+    /// par ShellExecute dans un travail de fond, puisque la question de Windows attend l'utilisateur ; un échec est
+    /// dit (M8, audit du 08/11 : mdsched demande les droits, ne se lançait pas, et rien n'était dit).
+    fn lancer_programme(&mut self, ctx: &Contexte, args: Vec<String>, effets: &mut Effets) {
+        if self.lancements.en_cours(LANCEMENT) {
+            effets.ajouter(Effet::Annonce("Un programme attend encore ta réponse à la demande de Windows.".into()));
+            return;
+        }
+        let essai = self.essai.clone();
+        self.lancements.lancer(ctx, LANCEMENT, move |fond| {
+            let r = match essai {
+                Some(p) => p.lock().unwrap_or_else(|e| e.into_inner()).lancer(&args),
+                None => systeme::PcWindows::nouveau(fond.ctx).lancer(&args),
+            };
+            r.map_err(|e| session::message_lancement(&args, &e))
+        });
+        self.relever_lancements(effets);
+    }
+
+    /// La fin des lancements (sur le fil des blocs) : l'échec en bulle
+    fn relever_lancements(&mut self, effets: &mut Effets) {
+        for r in self.lancements.relever() {
+            match r {
+                Rendu::Effet(e) => effets.ajouter(e),
+                Rendu::Fini { resultat: Ok(Ok(())), .. } => {}
+                Rendu::Fini { resultat: Ok(Err(e)), .. } => effets.ajouter(Effet::Annonce(e)),
+                Rendu::Fini { resultat: Err(e), .. } => effets.ajouter(Effet::Annonce(session::message_erreur(&e))),
+            }
+        }
     }
 
     /// Un geste long sur la session (audit G3) : fait dans un travail de fond, sur une copie de la session et des
@@ -320,7 +357,7 @@ impl BlocPc {
                 Some((a, b)) => vec![a.into(), b.into()],
                 None => vec![r.into()],
             };
-            self.avec_pc(ctx, |_, pc| pc.lancer(&args));
+            self.lancer_programme(ctx, args, effets);
             return;
         }
         effets.ajouter(Effet::OuvrirAdresse(cible.into()));
@@ -438,16 +475,16 @@ impl BlocPc {
                     diffusion::lire_nettoyage(pc, &mut at.cases);
                 }))
             }
-            "nett-journal" => Some(Fait::Sur(
-                self.avec_pc(ctx, |_, pc| {
-                    if let Some(f) =
-                        pc.reglage("LastClean").map(|l| net::champ_texte(&l, "File")).filter(|f| !f.is_empty())
-                    {
-                        pc.lancer(&["notepad.exe".into(), f]);
-                    }
-                })
-                .1,
-            )),
+            "nett-journal" => {
+                let (f, annonces) = self.avec_pc(ctx, |_, pc| {
+                    pc.reglage("LastClean").map(|l| net::champ_texte(&l, "File")).filter(|f| !f.is_empty())
+                });
+                if let Some(f) = f {
+                    // (le chemin entre guillemets : il peut avoir des espaces)
+                    self.lancer_programme(ctx, vec!["notepad.exe".into(), format!("\"{f}\"")], effets);
+                }
+                Some(Fait::Sur(annonces))
+            }
             "clic:BtnRefreshStartup" => rien(),
             // (un programme de tout le PC passe par l'Aide)
             "clic:BtnDisableStartup" => {
@@ -561,18 +598,20 @@ impl Bloc for BlocPc {
         // (les tests des composants et leur panneau : tests_composants.rs ; ici seulement ce qui passe par le PC)
         if id.starts_with("test-b:") || id.starts_with("panneau:") {
             let Some(gestes) = self.tests.action(ctx, id, effets) else { return false };
+            let mut batterie = false;
+            for g in gestes {
+                match g {
+                    // (mdsched : par ShellExecute, dans un travail de fond, M8)
+                    tests_composants::Geste::Lancer(a) => self.lancer_programme(ctx, a, effets),
+                    tests_composants::Geste::Batterie => batterie = true,
+                    _ => {}
+                }
+            }
             let (_, annonces) = self.avec_pc(ctx, |_, pc| {
-                for g in gestes {
-                    match g {
-                        tests_composants::Geste::Lancer(a) => pc.lancer(&a),
-                        tests_composants::Geste::Batterie => {
-                            let f = format!("{}\\rapport-batterie.html", pc.dossier_temp());
-                            if pc.commande("powercfg.exe", &["/batteryreport".into(), "/output".into(), f.clone()]) == 0
-                            {
-                                pc.ouvrir(&f);
-                            }
-                        }
-                        _ => {}
+                if batterie {
+                    let f = format!("{}\\rapport-batterie.html", pc.dossier_temp());
+                    if pc.commande("powercfg.exe", &["/batteryreport".into(), "/output".into(), f.clone()]) == 0 {
+                        pc.ouvrir(&f);
                     }
                 }
             });
@@ -697,6 +736,7 @@ impl Bloc for BlocPc {
     }
 
     fn travaux_finis(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        self.relever_lancements(effets);
         self.relever_travaux(ctx, effets);
         self.diffuser_si_du(ctx, effets);
     }

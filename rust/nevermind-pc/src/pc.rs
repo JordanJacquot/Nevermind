@@ -143,8 +143,10 @@ pub trait Pc {
     fn souris_relire(&mut self, seuil1: i64, seuil2: i64, vitesse: i64);
     /// Un service : (démarrage « Automatic »/« Manual »/« Disabled », il tourne), `None` s'il n'existe pas.
     fn service(&self, nom: &str) -> Option<(String, bool)>;
-    /// Lancer un programme (`Start-Process`), sans fenêtre de console.
-    fn lancer(&mut self, args: &[String]);
+    /// Lancer un programme de Windows (`Start-Process` : ShellExecute, qui pose la question de Windows s'il demande
+    /// les droits, comme mdsched.exe). Attend la réponse à cette question : hors du fil des blocs. `Err` : pourquoi il
+    /// ne s'est pas ouvert (M8, audit du 08/11 : l'erreur était jetée, et le bouton ne faisait rien).
+    fn lancer(&mut self, args: &[String]) -> Result<(), String>;
     /// Ouvrir une adresse (`Open-Url`).
     fn ouvrir(&mut self, adresse: &str);
     /// Une commande (`shutdown.exe /r /fw /t 10`) : son code de sortie.

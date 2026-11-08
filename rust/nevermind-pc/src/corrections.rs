@@ -26,6 +26,9 @@ pub struct Sauvegarde {
     pub dns: Map<String, Value>,
     pub ecrans: Map<String, Value>,
     pub oublies: Vec<String>,
+    /// Le problème de la sauvegarde (`$script:BackupProbleme` : « abimee », « absente ») : « Tout restaurer » le dit
+    /// (M9, audit du 08/11 : une sauvegarde abîmée répondait « Il n'y a aucun changement à annuler »)
+    pub probleme: Option<String>,
 }
 
 impl Sauvegarde {
@@ -64,6 +67,7 @@ impl Sauvegarde {
                 .filter(|v| crate::net::vrai(v))
                 .map(crate::net::texte)
                 .collect(),
+            probleme: None,
         }
     }
 

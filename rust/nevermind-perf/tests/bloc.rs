@@ -178,3 +178,42 @@ fn le_profil_gpu_ecrit_dans_la_liste_fermee() {
         assert!(nevermind_noyau::registre::utilisateur_permis(p, n), "{p}|{n} hors de la liste");
     }
 }
+
+/// Petit de l'audit du 08/11 : Mindset arrête l'appli 6 s après lui avoir demandé de quitter (contrat, partie 5).
+/// Pendant une partie mesurée, la fermeture du bloc attendait l'arrêt des FPS par l'Aide (jusqu'à 8 s), puis le
+/// bilan (jusqu'à 10 s), et seulement ensuite relançait les applis fermées pour la partie : Mindset tuait Nevermind
+/// avant. Maintenant les applis sont relancées d'abord, et l'arrêt des FPS a un temps compté.
+#[test]
+fn la_fermeture_pendant_une_partie_mesuree_tient_dans_le_delai_de_mindset() {
+    use std::time::{Duration, Instant};
+    let ctx = contexte("fermeture").partage();
+    ctx.fausse_aide(std::sync::Arc::new(|a: &str, _p: &Value| {
+        if a == "fps.arreter" {
+            // (une Aide lente : PresentMon met longtemps à s'arrêter)
+            std::thread::sleep(Duration::from_secs(8));
+        }
+        Ok(if a == "fps.demarrer" { json!("nouvelle") } else { json!(1) })
+    }));
+    let _ = ctx.ecrire_reglage("FpsMeasure", json!(true), false);
+    let mut s = pc();
+    s.progs.push(Programme { pid: 77, nom: "OneDrive".into(), ..Default::default() });
+    s.chemins.insert(77, r"C:\Users\x\AppData\Local\Microsoft\OneDrive\OneDrive.exe".into());
+    s.progs.push(Programme { pid: 4242, nom: "RocketLeague".into(), ..Default::default() });
+    s.chemins.insert(4242, r"C:\Jeux\RocketLeague\Binaries\Win64\RocketLeague.exe".into());
+    s.fichiers.push(ctx.appli.join("outils-tiers").join("PresentMon.exe").to_string_lossy().to_string());
+    let mut b = BlocPerf::avec(Box::new(s), Box::new(FauxCompteur::default()));
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "modejeu", &json!(true), &mut e));
+    b.signal(&ctx, "jeux-liste", &json!([{ "nom": "Rocket League", "exes": [r"C:\Jeux\RocketLeague\Binaries\Win64\RocketLeague.exe"], "source": "Epic" }]), &mut e);
+    faire(&mut b, &ctx, true, 6.0, &mut e);
+    assert!(signaux(&e).iter().any(|(n, _)| n == "partie-commencee"), "la partie doit être vue");
+    let j = std::fs::read_to_string(ctx.donnees.join("journal.txt")).unwrap_or_default();
+    assert!(j.contains("Mesure des FPS: Rocket League"), "la mesure doit avoir commencé : {j}");
+    let mode_jeu = ctx.donnees.join("mode-jeu.json");
+    assert!(mode_jeu.exists(), "les applis fermées pour la partie sont notées");
+    let debut = Instant::now();
+    b.fermer(&ctx);
+    let duree = debut.elapsed();
+    assert!(!mode_jeu.exists(), "la partie n'est pas finie : les applis fermées ne sont pas relancées");
+    assert!(duree < Duration::from_secs(3), "la fermeture du bloc a pris {duree:?} (Mindset arrête l'appli à 6 s)");
+}

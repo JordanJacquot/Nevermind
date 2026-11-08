@@ -110,9 +110,14 @@ pub fn heure_locale() -> Moment {
     Moment::depuis(t.wYear as i64, t.wMonth as u32, t.wDay as u32, t.wHour as u32, t.wMinute as u32, t.wSecond as u32)
 }
 
-/// Lance un jeu dans son dossier, sans console (comme son icône). Les arguments sont passés tels quels.
+/// Lance un jeu (ou son désinstalleur) dans son dossier, sans console (comme son icône). Les arguments sont passés
+/// tels quels. Un programme qui demande les droits administrateur (beaucoup de désinstalleurs, certains jeux) ne peut
+/// pas être lancé ainsi (erreur 740) : il passe alors par ShellExecute, comme un double clic, et Windows pose sa
+/// question (M8, audit du 08/11 : l'échec n'allait qu'au journal). Attend la réponse : hors du fil des blocs.
 pub fn lancer(exe: &str, arguments: &str, dossier: &str) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
+    /// ERROR_ELEVATION_REQUIRED : « l'opération demandée nécessite une élévation »
+    const DROITS_DEMANDES: i32 = 740;
     let mut c = std::process::Command::new(exe);
     if !arguments.trim().is_empty() {
         c.raw_arg(arguments);
@@ -121,7 +126,13 @@ pub fn lancer(exe: &str, arguments: &str, dossier: &str) -> Result<(), String> {
         c.current_dir(dossier);
     }
     c.creation_flags(CREATE_NO_WINDOW);
-    c.spawn().map(|_| ()).map_err(|e| e.to_string())
+    match c.spawn() {
+        Ok(_) => Ok(()),
+        Err(e) if e.raw_os_error() == Some(DROITS_DEMANDES) => {
+            nevermind_noyau::windows::ouvrir_programme(exe, arguments.trim(), dossier)
+        }
+        Err(e) => Err(format!("Windows n'a pas pu le lancer ({e})")),
+    }
 }
 
 struct Com(bool);

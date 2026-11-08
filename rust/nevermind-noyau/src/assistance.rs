@@ -1119,8 +1119,19 @@ fn creer_zip(zip: &Path, fichiers: &[(String, String)]) -> Result<(), String> {
 }
 
 fn langues() -> String {
-    let l = std::env::var("NEVERMIND_LANGUE").ok();
-    l.unwrap_or_else(crate::windows::langues)
+    langue_imposee().unwrap_or_else(crate::windows::langues)
+}
+
+/// La langue imposée par NEVERMIND_LANGUE : seulement dans la construction d'essai (option cargo `essai`, jamais
+/// livrée), pour des signalements identiques d'un PC à l'autre. Dans l'appli livrée, la langue est celle de Windows.
+#[cfg(feature = "essai")]
+fn langue_imposee() -> Option<String> {
+    std::env::var("NEVERMIND_LANGUE").ok()
+}
+
+#[cfg(not(feature = "essai"))]
+fn langue_imposee() -> Option<String> {
+    None
 }
 
 fn ecran_principal() -> String {
@@ -1188,5 +1199,32 @@ impl Contexte {
     /// Des bulles attendent encore (l'hôte rappelle `envoyer_notification_suivante` toutes les secondes)
     pub fn bulles_en_attente(&self) -> bool {
         !verrou(&self.assistance).bulles.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod langue {
+    /// Petit de l'audit du 08/11 : NEVERMIND_LANGUE (la langue écrite dans « Signaler un problème ») n'est lue que
+    /// dans la construction d'essai ; dans l'appli livrée, une variable posée par n'importe qui ne change rien. Le test
+    /// se relance lui-même avec la variable posée (sans fenêtre), pour ne pas toucher l'environnement des autres tests.
+    #[test]
+    fn la_variable_de_langue_ne_change_rien_dans_l_appli_livree() {
+        const FAUSSE: &str = "xx-ESSAI, interface xx-ESSAI";
+        if std::env::var("NEVERMIND_LANGUE").is_ok() {
+            if cfg!(feature = "essai") {
+                return;
+            }
+            assert_ne!(super::langues(), FAUSSE, "la variable NEVERMIND_LANGUE est lue dans l'appli livrée");
+            return;
+        }
+        use std::os::windows::process::CommandExt;
+        let o = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "assistance::langue::la_variable_de_langue_ne_change_rien_dans_l_appli_livree"])
+            .env("NEVERMIND_LANGUE", FAUSSE)
+            .creation_flags(0x0800_0000)
+            .output()
+            .unwrap();
+        let sortie = String::from_utf8_lossy(&o.stdout);
+        assert!(o.status.success() && sortie.contains("1 passed"), "{sortie}");
     }
 }

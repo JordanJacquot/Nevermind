@@ -20,6 +20,9 @@ struct FausseSonde {
     pings: AtomicUsize,
     scans: AtomicUsize,
     caches_vides: AtomicUsize,
+    /// Le DNS fixé à la main avant Nevermind (NameServer), et le Bureau à distance activé (M9)
+    dns_avant: String,
+    rdp: bool,
 }
 
 fn net(bps: f64) -> Connexion {
@@ -93,7 +96,7 @@ impl Sonde for FausseSonde {
         assert!(!ips.iter().any(|i| i == "192.168.1.42"), "ce PC ne doit pas être audité");
         Ok(
             json!({ "Wifi": { "Ssid": "Essai", "Auth": "Ouvrir", "Cipher": "" }, "Profiles": [], "Ssdp": [], "Ports": ["192.168.1.50|23"],
-            "Dns": { "Servers": ["192.168.1.1"], "Redirect": [], "NxHijack": "" }, "Pc": { "FirewallOff": ["Public"], "Category": "Private" } }),
+            "Dns": { "Servers": ["192.168.1.1"], "Redirect": [], "NxHijack": "" }, "Pc": { "FirewallOff": ["Public"], "Category": "Private", "Rdp": self.rdp } }),
         )
     }
     fn ports(&self, _: &str, _: &[i64], _: u32) -> Vec<i64> {
@@ -104,7 +107,7 @@ impl Sonde for FausseSonde {
         Some(4.0)
     }
     fn dns_fixes(&self, _: &str) -> String {
-        String::new()
+        self.dns_avant.clone()
     }
     fn vider_cache_dns(&self) -> Result<(), String> {
         self.caches_vides.fetch_add(1, Ordering::Relaxed);
@@ -390,4 +393,177 @@ fn les_gestes_par_l_aide_ne_figent_pas() {
         std::thread::sleep(Duration::from_millis(10));
     }
     let _ = std::fs::remove_dir_all(&ctx.donnees);
+}
+
+/// M9 (audit du 08/11) : « Tout restaurer » et la désinstallation ne remettaient ni le DNS ni le Bureau à distance,
+/// parce que rien n'était noté dans la sauvegarde. Maintenant la valeur d'avant est notée dans sauvegarde.json AVANT
+/// que l'Aide ne change quoi que ce soit (Set-Dns, Set-Reg). Fausse Aide : rien sur le vrai PC.
+#[test]
+fn le_dns_et_le_bureau_a_distance_sont_notes_avant_d_etre_changes() {
+    use std::time::Instant;
+    let s = Arc::new(FausseSonde { dns_avant: "9.9.9.9,149.112.112.112".into(), rdp: true, ..Default::default() });
+    *s.bps.lock().unwrap() = 1e8;
+    let ctx = contexte("sauvegarde-dns").partage();
+    let fichier = ctx.donnees.join("sauvegarde.json");
+    // Ce que contient sauvegarde.json au moment où l'Aide est appelée
+    let vus = Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
+    let v = vus.clone();
+    let f = fichier.clone();
+    ctx.fausse_aide(Arc::new(move |a: &str, _p: &Value| {
+        let t = std::fs::read_to_string(&f).unwrap_or_default();
+        let j = serde_json::from_str::<Value>(t.trim_start_matches('\u{feff}')).unwrap_or(Value::Null);
+        v.lock().unwrap().push((a.to_string(), j));
+        Ok(json!("ok"))
+    }));
+    let mut b = BlocReseau::avec_sonde(s.clone());
+    let _ = page(&mut b, &ctx, "connexion");
+    let mut e = Effets::default();
+    b.tic(&ctx, false, &mut e);
+    let fin = Instant::now() + Duration::from_secs(10);
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "dns", &json!("1"), &mut e));
+    let mut tout = e.0;
+    while !tout.iter().any(|x| matches!(x, Effet::Annonce(t) if t == "DNS modifié.")) {
+        assert!(Instant::now() < fin, "le DNS ne finit pas : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    {
+        let v = vus.lock().unwrap();
+        assert_eq!(v[0].0, "dns.regler");
+        assert_eq!(
+            v[0].1["Dns"]["{ESSAI}"], "9.9.9.9,149.112.112.112",
+            "le DNS d'avant n'est pas noté avant : {:?}",
+            v[0].1
+        );
+    }
+    assert_eq!(ctx.sauvegarde().dns.get("{ESSAI}"), Some(&json!("9.9.9.9,149.112.112.112")));
+    // Un deuxième changement ne remplace pas le DNS d'avant Nevermind
+    let mut e = Effets::default();
+    b.action(&ctx, "dns", &json!("2"), &mut e);
+    let mut tout = e.0;
+    while vus.lock().unwrap().len() < 2 {
+        assert!(Instant::now() < fin + Duration::from_secs(10), "le deuxième DNS ne part pas : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(ctx.sauvegarde().dns.get("{ESSAI}"), Some(&json!("9.9.9.9,149.112.112.112")));
+
+    // Le Bureau à distance, depuis l'audit : « Désactiver », la question, puis l'Aide
+    let mut e = Effets::default();
+    for _ in 0..100 {
+        b.travaux_finis(&ctx, &mut e);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(b.action(&ctx, "clic:BtnNetAudit", &Value::Null, &mut e));
+    attendre(&mut b, &ctx, &mut e, |b, c| {
+        b.pages(c, "panneau").get("panneau").is_some_and(|p| p["module"]["titre"] == "Points à corriger")
+    });
+    let pan = page(&mut b, &ctx, "panneau");
+    let blocs = pan["blocs"].as_array().unwrap();
+    let i = blocs.iter().position(|x| x["texte"] == "Bureau à distance activé").expect("le point Bureau à distance");
+    let bouton = blocs[i..].iter().find(|x| x["texte"] == "Désactiver").cloned().expect("le bouton Désactiver");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, bouton["id"].as_str().unwrap(), &Value::Null, &mut e));
+    let q =
+        e.0.iter()
+            .find_map(|x| match x {
+                Effet::Signal { nom, donnees } if nom == "question" => Some(donnees.clone()),
+                _ => None,
+            })
+            .expect("la question");
+    assert!(q["texte"].as_str().unwrap().starts_with("Désactiver le Bureau à distance ?"), "{q}");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "reseau-question", &json!({ "id": q["id"], "valeur": "oui" }), &mut e));
+    let mut tout = e.0;
+    while !tout.iter().any(|x| matches!(x, Effet::Signal { nom, .. } if nom == "historique")) {
+        assert!(Instant::now() < fin + Duration::from_secs(20), "le Bureau à distance ne finit pas : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let cle = r"HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server|fDenyTSConnections";
+    let v = vus.lock().unwrap();
+    let (a, sv) = v.iter().find(|(a, _)| a == "reg.ecrire").expect("l'Aide écrit le registre");
+    assert_eq!(a, "reg.ecrire");
+    assert!(sv["Registry"].get(cle).is_some(), "le Bureau à distance n'est pas noté avant : {sv}");
+    assert!(ctx.sauvegarde().registre.contains_key(cle), "pas dans la sauvegarde");
+    let _ = std::fs::remove_dir_all(&ctx.donnees);
+}
+
+/// Petit de l'audit du 08/11 : un changement définitif de l'audit (pare-feu réactivé...) arrivait vide dans
+/// l'historique (« (définitif) » sans rien devant) : il était écrit sous `Detail`, alors que l'historique, « Tout
+/// restaurer » et la désinstallation lisent `Quoi` (Add-ChangementDefinitif : Type, Quoi, Retour).
+#[test]
+fn un_changement_definitif_de_l_audit_a_son_texte_dans_l_historique() {
+    use std::time::Instant;
+    let s = Arc::new(FausseSonde::default());
+    *s.bps.lock().unwrap() = 1e8;
+    let ctx = contexte("definitif").partage();
+    ctx.fausse_aide(Arc::new(|_: &str, _: &Value| Ok(json!("ok"))));
+    let mut b = BlocReseau::avec_sonde(s.clone());
+    let _ = page(&mut b, &ctx, "reseau");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnNetAudit", &Value::Null, &mut e));
+    attendre(&mut b, &ctx, &mut e, |b, c| {
+        b.pages(c, "panneau").get("panneau").is_some_and(|p| p["module"]["titre"] == "Points à corriger")
+    });
+    let pan = page(&mut b, &ctx, "panneau");
+    let bouton =
+        pan["blocs"].as_array().unwrap().iter().find(|x| x["texte"] == "Réactiver le pare-feu").cloned().unwrap();
+    let mut e = Effets::default();
+    b.action(&ctx, bouton["id"].as_str().unwrap(), &Value::Null, &mut e);
+    let q =
+        e.0.iter()
+            .find_map(|x| match x {
+                Effet::Signal { nom, donnees } if nom == "question" => Some(donnees.clone()),
+                _ => None,
+            })
+            .unwrap();
+    let mut e = Effets::default();
+    b.action(&ctx, "reseau-question", &json!({ "id": q["id"], "valeur": "oui" }), &mut e);
+    let mut tout = e.0;
+    let fin = Instant::now() + Duration::from_secs(10);
+    let h = loop {
+        if let Some(h) = tout.iter().find_map(|x| match x {
+            Effet::Signal { nom, donnees } if nom == "historique" => Some(donnees.clone()),
+            _ => None,
+        }) {
+            break h;
+        }
+        assert!(Instant::now() < fin, "pas d'historique : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert_eq!(h["log"][0]["Type"], "definitif");
+    assert_eq!(h["log"][0]["Quoi"], "Pare-feu réactivé sur tous les réseaux", "{h}");
+    assert!(h["log"][0]["Retour"].as_str().is_some_and(|r| r.starts_with("Sécurité Windows")), "{h}");
+    let _ = std::fs::remove_dir_all(&ctx.donnees);
+}
+
+/// Petit de l'audit du 08/11 : une page d'erreur (403, portail de Wi-Fi public) donnait un fabricants.txt vide, qui
+/// n'était plus jamais retéléchargé. Seule une vraie liste est gardée, et un fichier vide est retéléchargé.
+#[test]
+fn seule_une_vraie_liste_de_fabricants_est_gardee() {
+    use nevermind_reseau::appareil::{fabricants_complets, fabricants_depuis_csv, lire_fabricants};
+    assert_eq!(fabricants_depuis_csv(""), None);
+    assert_eq!(fabricants_depuis_csv("<html><body>403 Forbidden</body></html>"), None);
+    assert_eq!(fabricants_depuis_csv("Registry,Assignment,Organization Name\nMA-L,F0B429,\"Apple, Inc.\"\n"), None);
+    let mut csv = String::from("Registry,Assignment,Organization Name,Organization Address\n");
+    for i in 0..1200 {
+        csv.push_str(&format!("MA-L,{i:06X},\"Fabricant {i}, Inc.\",Adresse\n"));
+    }
+    let t = fabricants_depuis_csv(&csv).expect("une vraie liste");
+    assert!(t.starts_with('\u{feff}'));
+    assert_eq!(lire_fabricants(&t).get("00002A").map(String::as_str), Some("Fabricant 42, Inc."));
+    assert_eq!(lire_fabricants(&t).len(), 1200);
+    assert!(fabricants_complets(&t));
+    assert!(!fabricants_complets("\u{feff}"), "le fichier vide d'avant est retéléchargé");
 }
