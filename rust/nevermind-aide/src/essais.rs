@@ -59,6 +59,8 @@ pub(crate) struct FauxSysteme {
     /// s'est terminé entre-temps)
     pub(crate) redonne_apres_fiche: Mutex<HashMap<i64, FauxProcessus>>,
     redonnes: Mutex<HashMap<i64, FauxProcessus>>,
+    /// Les noms des sessions de mesure, une fois donnés
+    sessions: Mutex<Option<(String, String)>>,
     /// Les fausses mesures (PresentMon, trace réseau, tables TCP) : rejouées par essais_mesures
     pub(crate) mesures: Arc<Mutex<FaussesMesures>>,
 }
@@ -70,6 +72,10 @@ pub(crate) struct FaussesMesures {
     pub(crate) presentmon_refus: Option<String>,
     /// Ce qui est lancé, dans l'ordre : les arguments de chaque PresentMon, et ceux de la fermeture de sa session
     pub(crate) lancements: Vec<String>,
+    /// Le nom de session de chaque trace réseau démarrée
+    pub(crate) traces: Vec<String>,
+    /// Les traces restées ouvertes fermées au démarrage de l'Aide (leur nom)
+    pub(crate) traces_fermees: Vec<String>,
     /// Où parle le dernier PresentMon lancé
     pub(crate) rappel_pm: Option<RappelPm>,
     /// Ce que Windows répond au prochain démarrage de la trace (aucun : accepté)
@@ -212,6 +218,7 @@ impl FauxSysteme {
             mesures: Arc::default(),
             redonne_apres_fiche: Mutex::default(),
             redonnes: Mutex::default(),
+            sessions: Mutex::default(),
         }
     }
 
@@ -444,10 +451,25 @@ impl Systeme for FauxSysteme {
         Ok(Box::new(FauxLance))
     }
     fn fermer_session_presentmon(&self, _chemin: &str) {
-        self.mesures.lock().unwrap().lancements.push("--terminate_existing_session --session_name Nevermind".into());
+        let s = self.sessions().0;
+        self.mesures.lock().unwrap().lancements.push(format!("--terminate_existing_session --session_name {s}"));
+    }
+    fn nommer_sessions(&self, fps: &str, reseau: &str) {
+        *self.sessions.lock().unwrap() = Some((fps.into(), reseau.into()));
+    }
+    fn sessions(&self) -> (String, String) {
+        self.sessions.lock().unwrap().clone().unwrap_or_else(|| {
+            (aide_regles::canal::SESSION_FPS_COMMUNE.into(), aide_regles::canal::SESSION_RESEAU_COMMUNE.into())
+        })
+    }
+    fn fermer_trace_restee(&self) {
+        let s = self.sessions().1;
+        self.mesures.lock().unwrap().traces_fermees.push(s);
     }
     fn demarrer_trace(&self, rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace> {
+        let session = self.sessions().1;
         let mut m = self.mesures.lock().unwrap();
+        m.traces.push(session);
         if let Some(r) = m.trace_refus.take() {
             return Err(r);
         }

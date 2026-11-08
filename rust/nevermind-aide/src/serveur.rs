@@ -182,6 +182,14 @@ pub fn lancer<H: Hote>(h: Arc<H>, sid_recu: Option<&str>) {
         return;
     };
 
+    // Les sessions de mesure (FPS, réseau) de cette Aide : des noms propres à son compte et à sa copie, comme le canal ;
+    // sa trace restée ouverte (Aide d'avant tuée ou plantée) est fermée tout de suite, jamais celle d'une autre Aide
+    // (audit du 08/11)
+    s.nommer_sessions(&canal::nom_session_fps(&sid_servi, &suffixe), &canal::nom_session_reseau(&sid_servi, &suffixe));
+    if moi.admin {
+        s.fermer_trace_restee();
+    }
+
     let journal = Journal::default();
     let nom = canal::nom_canal(&sid_servi, &suffixe);
     let sddl = droits_canal(&sid_servi, moi.admin, en_systeme);

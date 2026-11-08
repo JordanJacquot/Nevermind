@@ -17,8 +17,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 /// Lignes gardées au plus, et rendues au plus par lecture
 const LIGNES_MAX: usize = 20000;
 const LIGNES_PAR_LECTURE: usize = 5000;
-/// Ce que PresentMon reçoit après la cible : sa sortie en texte, sans affichage, sous le nom de session de Nevermind
-const OPTIONS: &str = "--output_stdout --no_console_stats --stop_existing_session --session_name Nevermind";
+/// Ce que PresentMon reçoit après la cible : sa sortie en texte, sans affichage, puis le nom de la session de cette
+/// Aide (`--session_name`, propre à son compte et à sa copie : `Systeme::sessions`)
+const OPTIONS: &str = "--output_stdout --no_console_stats --stop_existing_session --session_name";
 
 #[derive(Default)]
 struct Etat {
@@ -109,7 +110,7 @@ impl Fps {
         let rappel = Arc::new(move |sortie: SortiePm| fps.recevoir(numero, sortie));
         // (le verrou n'est pas gardé pendant le lancement : les lignes de ce PresentMon attendent qu'il soit noté)
         let mut e = self.etat();
-        match s.lancer_presentmon(exe, &format!("{cible} {OPTIONS}"), rappel) {
+        match s.lancer_presentmon(exe, &format!("{cible} {OPTIONS} {}", s.sessions().0), rappel) {
             Ok(l) => {
                 e.en_cours = Some((numero, l));
                 Ok(())

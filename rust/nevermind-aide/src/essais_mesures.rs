@@ -7,7 +7,7 @@ use crate::actions::EtatAide;
 use crate::essais::{ELODIE, FauxSysteme, etat_aide, p};
 use crate::mesures::fps::Decoupeur;
 use crate::serveur::{self, Journal};
-use crate::systeme::{EvenementReseau, LigneTcp, RefusTrace, SortiePm};
+use crate::systeme::{EvenementReseau, LigneTcp, RefusTrace, SortiePm, Systeme};
 use serde_json::{Value, json};
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -274,6 +274,54 @@ fn echanges_bornes() {
         etat.mesures.flux.evenement(&EvenementReseau { id: 42, date: 1, donnees: Some(&d) });
     }
     assert_eq!(demander(&s, &etat, "flux.lire", &Value::Null)["r"].as_array().unwrap().len(), 20_001);
+}
+
+/// Audit du 08/11 : deux Aides (deux comptes ouverts en même temps, ou une copie d'essai à côté de la copie installée)
+/// ont chacune leurs sessions de mesure (FPS et réseau) : l'une n'arrête plus jamais celles de l'autre
+#[test]
+fn deux_aides_ont_chacune_leurs_sessions() {
+    use aide_regles::canal;
+    let bruno = "S-1-5-21-1111111111-2222222222-3333333333-1002";
+    let installee = canal::suffixe("C:\\Program Files\\Mindset\\Programmes\\Nevermind").unwrap();
+    let essai = canal::suffixe("D:\\Essai\\Nevermind").unwrap();
+    let mut vus = Vec::new();
+    for (sid, suffixe) in [(ELODIE, &installee), (bruno, &installee), (ELODIE, &essai)] {
+        let s = FauxSysteme::new();
+        let etat = etat_aide();
+        s.nommer_sessions(&canal::nom_session_fps(sid, suffixe), &canal::nom_session_reseau(sid, suffixe));
+        assert_eq!(demander(&s, &etat, "fps.veiller", &json!({ "Noms": ["bf6.exe"] }))["r"], "ok");
+        assert_eq!(demander(&s, &etat, "flux.demarrer", &Value::Null)["r"], "ok");
+        etat.mesures.arreter_tout(&s);
+        let m = s.mesures.lock().unwrap();
+        let fps = canal::nom_session_fps(sid, suffixe);
+        // PresentMon lancé et sa session fermée sous le nom de cette Aide, jamais sous le nom commun
+        assert!(
+            m.lancements[0].ends_with(&format!("--stop_existing_session --session_name {fps}")),
+            "{:?}",
+            m.lancements
+        );
+        assert_eq!(m.lancements.last().unwrap(), &format!("--terminate_existing_session --session_name {fps}"));
+        assert!(m.lancements.iter().all(|l| !l.ends_with("--session_name Nevermind")), "{:?}", m.lancements);
+        assert_eq!(m.traces, vec![canal::nom_session_reseau(sid, suffixe)]);
+        vus.push((fps, m.traces[0].clone()));
+    }
+    for (i, (f, r)) in vus.iter().enumerate() {
+        assert!(vus.iter().skip(i + 1).all(|(g, t)| g != f && t != r), "{vus:?}");
+    }
+}
+
+/// Au démarrage, l'Aide nomme ses sessions (compte servi et copie) et ferme seulement sa propre trace restée ouverte
+#[test]
+fn le_demarrage_nomme_les_sessions_et_ferme_la_trace_restee() {
+    let f = Arc::new(FauxSysteme::new());
+    serveur::lancer(Arc::clone(&f), Some(ELODIE));
+    let suffixe = aide_regles::canal::suffixe("C:\\Program Files\\Mindset\\Programmes\\Nevermind").unwrap();
+    let attendu = (
+        aide_regles::canal::nom_session_fps(ELODIE, &suffixe),
+        aide_regles::canal::nom_session_reseau(ELODIE, &suffixe),
+    );
+    assert_eq!(f.sessions(), attendu);
+    assert_eq!(f.mesures.lock().unwrap().traces_fermees, vec![attendu.1]);
 }
 
 /// L'Aide qui s'arrête arrête PresentMon (et ferme sa session) et la trace

@@ -240,14 +240,21 @@ pub trait Systeme: Pc + Send + Sync + 'static {
     fn tenir_processus(&self, pid: i64) -> Option<Box<dyn ProcessusTenu + '_>>;
 
     // --- Mesures continues (étape 1b)
+    /// Nomme les sessions de mesure de cette Aide (FPS, réseau), au démarrage : des noms propres à son compte et à sa
+    /// copie (`canal::nom_session_fps`, `canal::nom_session_reseau`), pour que deux Aides ne se coupent jamais
+    fn nommer_sessions(&self, fps: &str, reseau: &str);
+    /// Les noms des sessions de mesure (FPS, réseau) ; les noms communs tant qu'elles n'ont pas été nommées
+    fn sessions(&self) -> (String, String);
+    /// Ferme la trace réseau de cette Aide restée ouverte (Aide d'avant tuée ou plantée), au démarrage
+    fn fermer_trace_restee(&self);
     /// PresentMon du dossier de Nevermind, seulement s'il est bien signé par Intel (`Get-AidePresentMon`) : son
     /// chemin, ou le message d'erreur
     fn presentmon(&self) -> Result<String, String>;
     /// Lance PresentMon avec ces arguments, sans fenêtre ; ses lignes arrivent dans `rappel`, puis `SortiePm::Fin`
     fn lancer_presentmon(&self, chemin: &str, arguments: &str, rappel: RappelPm) -> Result<Box<dyn Lance>, String>;
-    /// Ferme la session de mesure que PresentMon arrêté de force laisse ouverte dans Windows (attend 3 s au plus)
+    /// Ferme la session de mesure des FPS que PresentMon arrêté de force laisse ouverte dans Windows (3 s au plus)
     fn fermer_session_presentmon(&self, chemin: &str);
-    /// Démarre la trace réseau (session « Nevermind-Reseau ») : la trace, ou la raison du refus de Windows
+    /// Démarre la trace réseau (la session réseau de cette Aide) : la trace, ou la raison du refus de Windows
     fn demarrer_trace(&self, rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace>;
     /// Les adresses de ce PC (toutes les cartes, bouclage compris)
     fn adresses_locales(&self) -> Vec<IpAddr>;

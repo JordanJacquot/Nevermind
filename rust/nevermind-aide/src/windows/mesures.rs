@@ -262,12 +262,12 @@ fn lancer_presentmon_dans(
     Ok(Box::new(PresentMonLance(enfant)))
 }
 
-/// Ferme la session de mesure « Nevermind » que PresentMon arrêté de force laisse ouverte (3 s au plus)
-pub fn fermer_session_presentmon(exe: &str, env: &[(String, String)]) {
+/// Ferme la session de mesure `session` que PresentMon arrêté de force laisse ouverte (3 s au plus)
+pub fn fermer_session_presentmon(exe: &str, session: &str, env: &[(String, String)]) {
     if exe.is_empty() {
         return;
     }
-    let mut c = commande(exe, "--terminate_existing_session --session_name Nevermind", env);
+    let mut c = commande(exe, &format!("--terminate_existing_session --session_name {session}"), env);
     c.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     let Ok(mut e) = c.spawn() else { return };
     let limite = Instant::now() + Duration::from_secs(3);
@@ -280,9 +280,15 @@ pub fn fermer_session_presentmon(exe: &str, env: &[(String, String)]) {
 // Trace réseau (ETW, fournisseur Microsoft-Windows-Kernel-Network)
 // ---------------------------------------------------------------------------------------------------------------
 
-const SESSION: &str = "Nevermind-Reseau";
 /// Nom d'avant la 1.3.7 : une session restée ouverte sous ce nom après une mise à jour est fermée au démarrage
 const ANCIENNE_SESSION: &str = "OptiGame-Reseau";
+
+/// Au démarrage de l'Aide : sa trace restée ouverte (l'Aide d'avant tuée ou plantée) est fermée, et celle d'avant la
+/// 1.3.7. Seulement la sienne (son nom est propre à son compte et à sa copie) : jamais celle d'une autre Aide.
+pub fn fermer_trace_restee(session: &str) {
+    arreter_session(ANCIENNE_SESSION);
+    arreter_session(session);
+}
 const FOURNISSEUR: GUID = GUID::from_u128(0x7DD42A49_5329_4832_8DFD_43D979153A88);
 /// Taille des réglages d'une session : la structure, puis la place du nom
 const TAILLE_PROPRIETES: usize = 120 + 1024;
@@ -342,6 +348,7 @@ struct TraceWindows {
     tourne: Arc<AtomicBool>,
     /// Le rappel (contexte des événements), le nom et la description de la lecture : gardés jusqu'à la fin
     contexte: *mut RappelTrace,
+    session: String,
     _nom: Vec<u16>,
     _lecture: Box<EVENT_TRACE_LOGFILEW>,
 }
@@ -355,7 +362,7 @@ impl Trace for TraceWindows {
     }
 
     fn arreter(&mut self) {
-        arreter_session(SESSION);
+        arreter_session(&self.session);
         if self.lecture.Value != 0 && self.lecture.Value != u64::MAX {
             // SAFETY : poignée de lecture ouverte par OpenTraceW, fermée une seule fois
             unsafe {
@@ -389,17 +396,19 @@ impl Drop for TraceWindows {
     }
 }
 
-/// Démarre la trace réseau ; sinon, l'appel de Windows qui a échoué et son code
-pub fn demarrer_trace(rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace> {
+/// Démarre la trace réseau dans la session `nom_session` (celle de cette Aide) ; sinon, l'appel de Windows qui a échoué
+/// et son code
+pub fn demarrer_trace(nom_session: &str, rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace> {
     arreter_session(ANCIENNE_SESSION);
     let mut session = CONTROLTRACE_HANDLE::default();
-    let nom = HSTRING::from(SESSION);
+    let nom = HSTRING::from(nom_session);
     let mut p = proprietes();
     // SAFETY : réglages dans un tampon aligné de la bonne taille, nom terminé par un zéro
     let mut r = unsafe { StartTraceW(&mut session, &nom, p.as_mut_ptr().cast()) };
     if r == ERROR_ALREADY_EXISTS {
-        // (une session restée ouverte, Aide arrêtée brutalement : on la remplace)
-        arreter_session(SESSION);
+        // (sa session restée ouverte, Aide arrêtée brutalement : on la remplace ; le nom est propre à cette Aide, ce
+        // n'est jamais celle d'une autre)
+        arreter_session(nom_session);
         p = proprietes();
         // SAFETY : comme plus haut
         r = unsafe { StartTraceW(&mut session, &nom, p.as_mut_ptr().cast()) };
@@ -411,12 +420,12 @@ pub fn demarrer_trace(rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace>
     // SAFETY : session ouverte juste avant, GUID local
     let r = unsafe { EnableTraceEx2(session, &FOURNISSEUR, 1, 5, 0x30, 0, 0, None) };
     if r.0 != 0 {
-        arreter_session(SESSION);
+        arreter_session(nom_session);
         return Err(RefusTrace::Fournisseur(r.0));
     }
 
     let contexte = Box::into_raw(Box::new(rappel));
-    let mut nom_lecture: Vec<u16> = SESSION.encode_utf16().chain([0]).collect();
+    let mut nom_lecture: Vec<u16> = nom_session.encode_utf16().chain([0]).collect();
     let mut lecture = Box::new(EVENT_TRACE_LOGFILEW {
         LoggerName: PWSTR(nom_lecture.as_mut_ptr()),
         Anonymous1: EVENT_TRACE_LOGFILEW_0 {
@@ -431,7 +440,7 @@ pub fn demarrer_trace(rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace>
     if h.Value == u64::MAX {
         // SAFETY : simple lecture de l'erreur de Windows
         let e = unsafe { GetLastError() };
-        arreter_session(SESSION);
+        arreter_session(nom_session);
         // SAFETY : créé juste avant, jamais donné à Windows (OpenTrace a échoué)
         drop(unsafe { Box::from_raw(contexte) });
         return Err(RefusTrace::Lecture(e.0));
@@ -446,7 +455,15 @@ pub fn demarrer_trace(rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace>
         }
         t2.store(false, Ordering::SeqCst);
     });
-    Ok(Box::new(TraceWindows { lecture: h, fil: Some(fil), tourne, contexte, _nom: nom_lecture, _lecture: lecture }))
+    Ok(Box::new(TraceWindows {
+        lecture: h,
+        fil: Some(fil),
+        tourne,
+        contexte,
+        session: nom_session.to_string(),
+        _nom: nom_lecture,
+        _lecture: lecture,
+    }))
 }
 
 /// Les adresses de ce PC (toutes les cartes, bouclage compris)
