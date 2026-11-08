@@ -1160,7 +1160,10 @@ impl Hote {
             return;
         }
         self.relever_hote(ecran);
-        let mut refaire = false;
+        // (« Signaler un problème » de l'assistance du noyau)
+        let mut eff = Effets::default();
+        self.ctx.relever_assistance(&mut eff);
+        let mut refaire = self.appliquer(None, eff, maintenant, ecran, 0);
         for i in 0..self.blocs.len() {
             let mut eff = Effets::default();
             let (b, ctx) = (&mut self.blocs[i], &self.ctx);

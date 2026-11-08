@@ -54,6 +54,12 @@ pub struct Travaux<R> {
     sur_place: VecDeque<Rendu<R>>,
 }
 
+impl<R> std::fmt::Debug for Travaux<R> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Travaux").field("en_cours", &self.en_cours).finish_non_exhaustive()
+    }
+}
+
 impl<R: Send + 'static> Default for Travaux<R> {
     fn default() -> Self {
         let (envoi, reception) = channel();
