@@ -53,13 +53,24 @@ pub fn decouper(url: &str) -> Result<(bool, String, u16, String), String> {
 
 /// GET : le code de réponse et le contenu. `delai_s` : comme `-TimeoutSec`.
 pub fn obtenir(url: &str, delai_s: u32) -> Result<(u16, Vec<u8>), String> {
+    demander(url, delai_s, "Nevermind", usize::MAX, false)
+}
+
+/// GET avec le nom du programme envoyé (`-UserAgent`), au plus `max` octets et `delai_s` secondes en tout (au-delà :
+/// une erreur, la réponse n'est pas gardée). Une redirection de https vers http est refusée par WinHTTP.
+pub fn obtenir_borne(url: &str, delai_s: u32, agent: &str, max: usize) -> Result<(u16, Vec<u8>), String> {
+    demander(url, delai_s, agent, max, true)
+}
+
+fn demander(url: &str, delai_s: u32, agent: &str, max: usize, en_tout: bool) -> Result<(u16, Vec<u8>), String> {
     let (securise, hote, port, chemin) = decouper(url)?;
     let local = hote == "127.0.0.1" || hote.eq_ignore_ascii_case("localhost");
     let acces = if local { WINHTTP_ACCESS_TYPE_NO_PROXY } else { WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY };
     let ms = (delai_s.max(1) * 1000) as i32;
+    let fin = std::time::Instant::now() + std::time::Duration::from_secs(u64::from(delai_s.max(1)));
     // SAFETY : des chaînes terminées par un zéro, vivantes pendant chaque appel ; les poignées sont refermées par P
     unsafe {
-        let session = P::de(WinHttpOpen(&HSTRING::from("Nevermind"), acces, PCWSTR::null(), PCWSTR::null(), 0))?;
+        let session = P::de(WinHttpOpen(&HSTRING::from(agent), acces, PCWSTR::null(), PCWSTR::null(), 0))?;
         WinHttpSetTimeouts(session.0, ms, ms, ms, ms).map_err(|e| super::message(&e))?;
         let connexion = P::de(WinHttpConnect(session.0, &HSTRING::from(hote), port, 0))?;
         let drapeaux = if securise { WINHTTP_FLAG_SECURE } else { WINHTTP_OPEN_REQUEST_FLAGS(0) };
@@ -93,6 +104,12 @@ pub fn obtenir(url: &str, delai_s: u32) -> Result<(u16, Vec<u8>), String> {
                 .map_err(|e| super::message(&e))?;
             if lu == 0 {
                 break;
+            }
+            if corps.len() + lu as usize > max {
+                return Err(format!("réponse trop grande (plus de {max} octets)"));
+            }
+            if en_tout && std::time::Instant::now() > fin {
+                return Err(format!("délai dépassé ({delai_s} s)"));
             }
             corps.extend_from_slice(&tampon[..lu as usize]);
         }

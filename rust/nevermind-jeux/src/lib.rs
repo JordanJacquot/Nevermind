@@ -7,6 +7,7 @@
 
 pub mod biblio;
 pub mod jaquettes;
+pub mod jaquettes_web;
 pub mod json;
 pub mod lancement;
 pub mod optim;
@@ -63,6 +64,8 @@ enum FinJeux {
     Choisi(Option<String>),
     /// « Fermer X » du diagnostic d'une partie, par l'Aide : le nom du programme et la réponse
     Ferme(String, Result<Value, String>),
+    /// Les jaquettes cherchées sur Internet ; `true` : lancé par un geste (les messages sont montrés)
+    Jaquettes(Vec<jaquettes_web::Trouvee>, bool),
 }
 
 /// Ce qui est dit quand la recherche des jeux est finie
@@ -74,6 +77,7 @@ enum ApresRecherche {
 
 const RECHERCHE: &str = "recherche";
 const FERMER: &str = "fermer-programme";
+const JAQUETTES: &str = "jaquettes";
 const CHOIX: &str = "choix";
 
 pub struct BlocJeux {
@@ -116,6 +120,9 @@ pub struct BlocJeux {
     applis: Option<Vec<(String, String)>>,
     /// L'heure des pages (les tests la fixent).
     pub heure: Option<Moment>,
+    /// Le réseau des jaquettes depuis Internet ; `internet_faux` : celui d'un test (le seul permis en mode test)
+    internet: Arc<dyn jaquettes_web::Internet>,
+    internet_faux: bool,
 }
 
 /// Le dernier jeu joué (Get-LastPlayedGame).
@@ -170,7 +177,14 @@ impl BlocJeux {
             dernier_jeu: None,
             applis: None,
             heure: None,
+            internet: Arc::new(jaquettes_web::InternetWindows),
+            internet_faux: false,
         }
+    }
+
+    /// Le bloc avec un faux Windows et un faux Internet (tests) : rien ne part sur le vrai réseau.
+    pub fn avec_internet(sys: Arc<dyn Systeme>, internet: Arc<dyn jaquettes_web::Internet>) -> Self {
+        BlocJeux { internet, internet_faux: true, ..Self::avec(sys) }
     }
 
     fn maintenant(&self) -> Moment {
@@ -405,6 +419,9 @@ impl BlocJeux {
                         self.ajouter_jeu(ctx, Some(e), None, effets);
                     }
                 }
+                Rendu::Fini { resultat: Ok(FinJeux::Jaquettes(l, par_geste)), .. } => {
+                    self.recevoir_jaquettes(ctx, &l, par_geste, effets)
+                }
                 Rendu::Fini { resultat: Ok(FinJeux::Ferme(nom, r)), .. } => match r {
                     Ok(_) => self.statut(effets, &format!("{nom} fermé.")),
                     Err(e) => {
@@ -463,6 +480,90 @@ impl BlocJeux {
         let connus: Vec<String> = self.jeux.iter().flatten().flat_map(|g| g.exes.clone()).collect();
         effets.ajouter(Effet::Signal { nom: "jeux-index".into(), donnees: json!({ "Exes": connus }) });
         effets.ajouter(Effet::Rafraichir);
+        // (la bibliothèque est à jour : les jaquettes qui manquent, comme Update-Library puis Start-CoverDownload)
+        self.lancer_jaquettes(ctx, false, effets);
+    }
+
+    /// `Start-CoverDownload` : les jeux sans image, cherchés sur Internet dans un travail de fond (seulement si le
+    /// réglage est allumé ; jamais le vrai réseau en mode test). Audit M10.
+    fn lancer_jaquettes(&mut self, ctx: &Contexte, par_geste: bool, effets: &mut Effets) {
+        if self.travaux.en_cours(JAQUETTES)
+            || !Self::reglage_bool(ctx, "LibCoversOnline", false)
+            || (ctx.essai && !self.internet_faux)
+        {
+            return;
+        }
+        let a_faire = self.jaquettes_a_chercher(ctx);
+        if a_faire.is_empty() {
+            return;
+        }
+        if par_geste {
+            let n = a_faire.len();
+            self.statut(effets, &format!("Recherche des jaquettes de {n} jeu{}...", if n > 1 { "x" } else { "" }));
+        }
+        let net = self.internet.clone();
+        let dir = jaquettes_web::dossier(&ctx.donnees);
+        self.travaux.lancer(ctx, JAQUETTES, move |_| {
+            FinJeux::Jaquettes(jaquettes_web::chercher(net.as_ref(), &dir, &a_faire), par_geste)
+        });
+        self.relever_travaux(ctx, effets);
+    }
+
+    /// Les jeux à chercher (le filtre de `Start-CoverDownload`) : aucune image de Steam ni du launcher, et pas encore
+    /// cherché, ou cherché sans succès il y a plus de 7 jours, ou son image a disparu, ou ses images officielles
+    /// sont connues
+    fn jaquettes_a_chercher(&mut self, ctx: &Contexte) -> Vec<jaquettes_web::ATrouver> {
+        let maintenant = self.maintenant();
+        let sys = self.sys.clone();
+        let index = self.jaquettes.index(&ctx.donnees).clone();
+        let mut l = Vec::new();
+        for g in self.bibliotheque() {
+            if self.jaquettes.art_steam(sys.as_ref(), &g, "library_600x900.jpg").is_some()
+                || self.jaquettes.art_steam(sys.as_ref(), &g, "library_capsule.jpg").is_some()
+                || g.art.as_ref().is_some_and(|a| !a.cover.is_empty())
+            {
+                continue;
+            }
+            let chercher = match index.get(&g.nom.to_lowercase()) {
+                None => true,
+                Some(c) => {
+                    let vieux = texte::lire_date(&c.date).is_some_and(|d| (maintenant.0 - d.0) as f64 / 86400.0 > 7.0);
+                    (c.cover.is_empty() && vieux)
+                        || (!c.cover.is_empty() && !std::path::Path::new(&c.cover).exists())
+                        || (c.cover.is_empty() && jaquettes_web::officielle(&g.nom).is_some())
+                }
+            };
+            if chercher {
+                l.push(jaquettes_web::ATrouver { nom: g.nom.clone(), appid: g.appid.clone() });
+            }
+        }
+        l
+    }
+
+    /// `Receive-Covers` : index.json mis à jour, puis la bibliothèque redessinée si une image a été trouvée
+    fn recevoir_jaquettes(
+        &mut self,
+        ctx: &Contexte,
+        l: &[jaquettes_web::Trouvee],
+        par_geste: bool,
+        effets: &mut Effets,
+    ) {
+        let n = match jaquettes_web::ranger(ctx, &ctx.donnees, l, &self.maintenant().iso()) {
+            Ok(n) => n,
+            Err(e) => {
+                ctx.journal(&format!("Jaquettes: {e}"));
+                return;
+            }
+        };
+        ctx.journal(&format!("Jaquettes: {n} trouvée(s) sur {}", l.len()));
+        if par_geste || n > 0 {
+            let s = if n > 1 { "s" } else { "" };
+            self.statut(effets, &format!("{n} jaquette{s} ajoutée{s} à ta bibliothèque."));
+        }
+        if n > 0 {
+            self.jaquettes.oublier();
+            effets.ajouter(Effet::Rafraichir);
+        }
     }
 
     fn jeux_pour_signal(&self) -> Value {
@@ -1224,7 +1325,9 @@ impl Bloc for BlocJeux {
                 if let Err(e) = ctx.ecrire_reglage("LibCoversOnline", Value::Bool(on), false) {
                     ctx.journal(&e);
                 }
-                if !on {
+                if on {
+                    self.lancer_jaquettes(ctx, true, effets);
+                } else {
                     self.statut(effets, "Jaquettes depuis Internet désactivées (celles déjà trouvées restent).");
                 }
             }
