@@ -252,6 +252,50 @@ pub fn demande_windows(exe: &str, arguments: &str, dossier: &str) -> Result<(), 
     Ok(())
 }
 
+/// Lance un programme comme un double clic (`Start-Process`, ShellExecute) : s'il demande les droits administrateur
+/// (mdsched.exe, un désinstalleur, certains jeux), Windows pose sa question normale, ce que `std::process::Command`
+/// ne sait pas faire (erreur 740). Attend la réponse de l'utilisateur à cette question : à appeler hors du fil des
+/// blocs. `Err` : le texte à montrer (refusé par l'utilisateur, ou impossible).
+pub fn ouvrir_programme(exe: &str, arguments: &str, dossier: &str) -> Result<(), String> {
+    use windows::Win32::Foundation::ERROR_CANCELLED;
+    use windows::Win32::System::Com::{
+        COINIT_APARTMENTTHREADED, COINIT_DISABLE_OLE1DDE, CoInitializeEx, CoUninitialize,
+    };
+    use windows::Win32::UI::Shell::{SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC};
+    let fichier = HSTRING::from(exe);
+    let args = HSTRING::from(arguments);
+    let dir = HSTRING::from(dossier);
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+        // (aucune boîte d'erreur de Windows : l'erreur revient ici, et Nevermind la dit avec ses mots)
+        fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC,
+        lpFile: PCWSTR(fichier.as_ptr()),
+        lpParameters: if arguments.is_empty() { PCWSTR::null() } else { PCWSTR(args.as_ptr()) },
+        lpDirectory: if dossier.is_empty() { PCWSTR::null() } else { PCWSTR(dir.as_ptr()) },
+        nShow: SW_SHOWNORMAL.0,
+        ..Default::default()
+    };
+    // SAFETY : COM ouvert et refermé sur ce fil (ShellExecuteEx le demande) ; structure remplie, textes vivants
+    // pendant l'appel ; la poignée du processus est refermée
+    unsafe {
+        let com = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE).is_ok();
+        let r = ShellExecuteExW(&mut info);
+        if r.is_ok() && !info.hProcess.is_invalid() && !info.hProcess.0.is_null() {
+            drop(Poignee(info.hProcess));
+        }
+        if com {
+            CoUninitialize();
+        }
+        r.map_err(|e| {
+            if e.code() == ERROR_CANCELLED.to_hresult() {
+                "tu as répondu « Non » à la demande de Windows".to_string()
+            } else {
+                message(&e)
+            }
+        })
+    }
+}
+
 /// Le dossier System32 (`[Environment]::GetFolderPath('System')`)
 pub fn dossier_systeme() -> String {
     let mut b = vec![0u16; 260];

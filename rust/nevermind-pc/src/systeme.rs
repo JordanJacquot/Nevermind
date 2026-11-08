@@ -334,12 +334,15 @@ impl Pc for PcWindows<'_> {
             None
         }
     }
-    fn lancer(&mut self, args: &[String]) {
+    fn lancer(&mut self, args: &[String]) -> Result<(), String> {
         if self.ctx.essai {
-            return;
+            self.ctx.journal(&format!("Mode test : {} n'est pas lancé", args.join(" ")));
+            return Ok(());
         }
         #[cfg(windows)]
-        crate::windows::lancer(args);
+        return crate::windows::lancer(args);
+        #[cfg(not(windows))]
+        Err("pas sous Windows".into())
     }
     fn ouvrir(&mut self, adresse: &str) {
         self.effets.push(Effet::OuvrirAdresse(adresse.into()));

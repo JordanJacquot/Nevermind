@@ -435,8 +435,8 @@ impl Pc for PcDesinstallation<'_> {
     fn service(&self, nom: &str) -> Option<(String, bool)> {
         self.pc.service(nom)
     }
-    fn lancer(&mut self, args: &[String]) {
-        self.pc.lancer(args);
+    fn lancer(&mut self, args: &[String]) -> Result<(), String> {
+        self.pc.lancer(args)
     }
     fn ouvrir(&mut self, adresse: &str) {
         self.pc.ouvrir(adresse);

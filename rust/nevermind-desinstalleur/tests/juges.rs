@@ -206,8 +206,9 @@ impl Pc for FauxPc {
     fn service(&self, nom: &str) -> Option<(String, bool)> {
         self.services.get(nom).map(|s| (net::champ_texte(s, "StartType"), net::champ_vrai(s, "Running")))
     }
-    fn lancer(&mut self, args: &[String]) {
+    fn lancer(&mut self, args: &[String]) -> Result<(), String> {
         self.geste("lancer", json!(args));
+        Ok(())
     }
     fn ouvrir(&mut self, a: &str) {
         self.geste("ouvrir", json!(a));

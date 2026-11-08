@@ -94,6 +94,17 @@ pub fn message_erreur(e: &str) -> String {
     format!("Oups, quelque chose s'est mal passé :\n\n{e}")
 }
 
+/// Un programme de Windows qui ne s'est pas ouvert (M8, audit du 08/11 : le bouton ne faisait rien, sans le dire)
+pub fn message_lancement(args: &[String], raison: &str) -> String {
+    let exe = args.first().map(|e| e.rsplit(['\\', '/']).next().unwrap_or(e).to_lowercase()).unwrap_or_default();
+    let quoi = match exe.as_str() {
+        "mdsched.exe" => "Le test de la mémoire de Windows".to_string(),
+        "perfmon.exe" => "L'historique de fiabilité de Windows".to_string(),
+        _ => format!("Le programme « {exe} »"),
+    };
+    format!("{quoi} ne s'est pas ouvert : {}.", raison.trim().trim_end_matches('.'))
+}
+
 impl Session {
     fn moteur<'a>(&'a mut self, pc: &'a mut dyn Pc) -> Moteur<'a> {
         let portable = self.analyse.as_ref().is_some_and(|a| a.portable);
@@ -805,8 +816,8 @@ pub fn executer_correction(
             Ok(())
         }
         Some(Execution::TestMemoire) => {
-            m.pc.lancer(&["mdsched.exe".into()]);
-            Ok(())
+            let a = ["mdsched.exe".to_string()];
+            m.pc.lancer(&a).map_err(|e| message_lancement(&a, &e))
         }
         Some(Execution::Bios) => {
             let code = m.pc.commande("shutdown.exe", &["/r".into(), "/fw".into(), "/t".into(), "10".into()]);

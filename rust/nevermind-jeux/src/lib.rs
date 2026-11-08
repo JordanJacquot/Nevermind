@@ -59,6 +59,8 @@ enum FinJeux {
     Recherche(Box<biblio::Decouverte>),
     /// La fenêtre « Choisis le programme du jeu (.exe) » : le programme choisi, ou rien
     Choisi(Option<String>),
+    /// Un jeu ou son désinstalleur lancé (après la demande de Windows s'il demande les droits)
+    Lance { jeu: Box<Jeu>, desinstalleur: bool, r: Result<(), String> },
 }
 
 /// Ce qui est dit quand la recherche des jeux est finie
@@ -70,6 +72,7 @@ enum ApresRecherche {
 
 const RECHERCHE: &str = "recherche";
 const CHOIX: &str = "choix";
+const LANCEMENT: &str = "lancement";
 
 pub struct BlocJeux {
     sys: Arc<dyn Systeme>,
@@ -291,6 +294,9 @@ impl BlocJeux {
                         self.ajouter_jeu(ctx, Some(e), None, effets);
                     }
                 }
+                Rendu::Fini { resultat: Ok(FinJeux::Lance { jeu, desinstalleur, r }), .. } => {
+                    self.fin_lancement(ctx, &jeu, desinstalleur, r, effets);
+                }
                 Rendu::Fini { cle, resultat: Err(e) } => {
                     ctx.journal(&format!("Bibliothèque : {cle} impossible ({e})"));
                     if cle == RECHERCHE {
@@ -469,8 +475,16 @@ impl BlocJeux {
 
     // ------------------------------------------------------------------ gestes
 
-    /// Lancer un jeu (Start-LibraryGame).
+    /// Lancer un jeu (Start-LibraryGame). Le même jeu n'est pas relancé pendant 20 s ($script:LibLaunching : le
+    /// bouton disait « Lancement... ») : un double clic ne le lance pas deux fois.
     fn lancer_jeu(&mut self, ctx: &Contexte, g: &Jeu, effets: &mut Effets) {
+        if let Some((n, t)) = &self.lancement_jeu
+            && *n == g.nom
+            && t.elapsed() < Duration::from_secs(20)
+        {
+            ctx.journal(&format!("Bibliothèque: {} est déjà en train de se lancer, pas relancé", g.nom));
+            return;
+        }
         let comment = self.comment_lancer(g);
         let (chemin, par_url) = match &comment {
             Lancement::Exe { chemin, .. } => (chemin.clone(), false),
@@ -489,10 +503,10 @@ impl BlocJeux {
         ctx.journal(&format!("Bibliothèque: lancement de {} ({chemin})", g.nom));
         match comment {
             Lancement::Exe { chemin, arguments } => {
-                if ctx.essai {
+                if ctx.essai && !self.sys.faux() {
                     ctx.journal("Bibliothèque: copie de test, le jeu n'est pas lancé");
-                } else if let Err(e) = self.sys.lancer(&chemin, &arguments, &texte::dossier_parent(&chemin)) {
-                    ctx.journal(&format!("Bibliothèque: lancement impossible ({e})"));
+                } else if !self.lancer_programme(ctx, g, false, chemin, arguments, effets) {
+                    return;
                 }
             }
             Lancement::Adresse(a) => effets.ajouter(Effet::OuvrirAdresse(a)),
@@ -500,6 +514,66 @@ impl BlocJeux {
         self.lancement_jeu = Some((g.nom.clone(), Instant::now()));
         let par = if !g.source.is_empty() && par_url { format!(" par {}", g.source) } else { String::new() };
         self.statut(effets, &format!("Lancement de {}{par}...", g.nom));
+        self.relever_travaux(ctx, effets);
+    }
+
+    /// Un jeu ou son désinstalleur lancé dans un travail de fond (M8, audit du 08/11) : s'il demande les droits,
+    /// Windows pose sa question et le lancement attend la réponse. Un échec est dit (`fin_lancement`), au lieu d'un
+    /// faux « Lancement de... » ou d'une surveillance de la désinstallation pour rien. `false` : un autre lancement
+    /// attend encore la réponse de l'utilisateur, rien n'est lancé.
+    fn lancer_programme(
+        &mut self,
+        ctx: &Contexte,
+        g: &Jeu,
+        desinstalleur: bool,
+        chemin: String,
+        arguments: String,
+        effets: &mut Effets,
+    ) -> bool {
+        if self.travaux.en_cours(LANCEMENT) {
+            self.message(effets, "Un autre programme attend encore ta réponse à la demande de Windows.");
+            return false;
+        }
+        let sys = self.sys.clone();
+        let jeu = Box::new(g.clone());
+        self.travaux.lancer(ctx, LANCEMENT, move |_| {
+            let r = sys.lancer(&chemin, &arguments, &texte::dossier_parent(&chemin));
+            FinJeux::Lance { jeu, desinstalleur, r }
+        })
+    }
+
+    /// La fin d'un lancement (sur le fil des blocs) : l'échec dit à l'utilisateur ; un désinstalleur ouvert est suivi
+    fn fin_lancement(
+        &mut self,
+        ctx: &Contexte,
+        g: &Jeu,
+        desinstalleur: bool,
+        r: Result<(), String>,
+        effets: &mut Effets,
+    ) {
+        match r {
+            Ok(()) if desinstalleur => self.apres_desinstallation(ctx, g, effets),
+            Ok(()) => {}
+            Err(e) => {
+                let quoi = if desinstalleur { "Désinstalleur" } else { "Lancement" };
+                ctx.journal(&format!("Bibliothèque: {quoi} de {} impossible ({e})", g.nom));
+                if !desinstalleur {
+                    self.lancement_jeu = None;
+                }
+                let e = e.trim_end_matches('.');
+                self.message(
+                    effets,
+                    &if desinstalleur {
+                        format!(
+                            "Le désinstalleur de « {} » ne s'est pas ouvert : {e}.\n\nRien n'a été désinstallé.",
+                            g.nom
+                        )
+                    } else {
+                        format!("« {} » ne s'est pas lancé : {e}.", g.nom)
+                    },
+                );
+            }
+        }
     }
 
     /// Désinstaller un jeu (Uninstall-LibraryGame) : la question d'abord, puis `desinstaller_confirme`.
@@ -539,10 +613,14 @@ impl BlocJeux {
                     );
                     return;
                 }
-                if ctx.essai {
+                if ctx.essai && !self.sys.faux() {
                     ctx.journal("Bibliothèque: copie de test, le désinstalleur n'est pas lancé");
-                } else if let Err(e) = self.sys.lancer(&chemin, &arguments, &texte::dossier_parent(&chemin)) {
-                    ctx.journal(&format!("Bibliothèque: désinstalleur impossible à lancer ({e})"));
+                } else {
+                    // (la suite, avec la surveillance de la désinstallation, seulement s'il s'est ouvert : fin_lancement)
+                    if self.lancer_programme(ctx, g, true, chemin, arguments, effets) {
+                        self.relever_travaux(ctx, effets);
+                    }
+                    return;
                 }
             }
             _ => return,
