@@ -39,7 +39,7 @@ enum Message {
 /// Ce que rend un geste par l'Aide, fait dans un travail de fond (audit G3)
 enum FinGeste {
     Audit { act: Box<crate::audit::ActionAudit>, titre: String, r: Result<Vec<Value>, String> },
-    Dns { log: Value, serveurs: Vec<String>, r: Result<Option<Connexion>, String> },
+    Dns { log: Value, serveurs: Vec<String>, r: Result<Option<Box<Connexion>>, String> },
     Carte { idx: i64, r: Result<(), String> },
 }
 
@@ -640,7 +640,7 @@ impl BlocReseau {
             let r = fond
                 .ctx
                 .aide("dns.regler", &json!({ "Index": net.if_index, "Serveurs": serveurs }), 30_000)
-                .map(|_| sonde.connexion());
+                .map(|_| sonde.connexion().map(Box::new));
             FinGeste::Dns { log, serveurs, r }
         });
         self.relever_travaux(ctx, effets);
@@ -651,14 +651,14 @@ impl BlocReseau {
         effets: &mut Effets,
         log: Value,
         serveurs: Vec<String>,
-        r: Result<Option<Connexion>, String>,
+        r: Result<Option<Box<Connexion>>, String>,
     ) {
         match r {
             Err(e) => {
                 effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")));
                 return;
             }
-            Ok(n) => self.net = n,
+            Ok(n) => self.net = n.map(|c| *c),
         }
         signal(effets, "sauvegarde-changee", json!({}));
         let titre = format!(
