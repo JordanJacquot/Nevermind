@@ -40,20 +40,36 @@ function Test-Artefact([string]$Id) {
     $noms = @(Invoke-Outil gh @('api', "repos/$Depot/actions/runs/$Id/artifacts", '--jq', '.artifacts[] | select(.expired == false) | .name'))
     $noms -ccontains $Artefact
 }
+# Le verdict des tests d'un commit : seule sa DERNIÈRE exécution compte. Un vert ancien ne couvre pas un rouge plus
+# récent (audit du 08/11 : ec176a4, vert à 17:08 puis rouge à 17:47). Une exécution relancée garde son numéro et prend
+# la conclusion de sa dernière tentative. Rend : absent, en cours, rouge, incomplet ou vert.
+function Get-VerdictTests($Executions, [scriptblock]$Complet) {
+    $t = @(@($Executions) | Where-Object { $_ } | Sort-Object createdAt -Descending)
+    if (-not $t.Count) { return 'absent' }
+    $d = $t[0]
+    if ($d.status -ne 'completed') { return 'en cours' }
+    if ($d.conclusion -ne 'success') { return 'rouge' }
+    if ($Complet -and -not (& $Complet ([string]$d.databaseId))) { return 'incomplet' }
+    'vert'
+}
 
 # 1. Les tests de GitHub de ce commit (60 minutes au plus)
 if (-not $SansTest) {
     $limite = (Get-Date).AddMinutes(60)
     while ($true) {
         $t = @(Get-Executions 'tests.yml')
-        if (@($t | Where-Object { $_.conclusion -eq 'success' }).Count) { Write-Host "Tests de GitHub du commit $commit : réussis ($(@($t | Where-Object { $_.conclusion -eq 'success' })[0].url))."; break }
-        $enCours = @($t | Where-Object { $_.status -ne 'completed' })
+        $v = Get-VerdictTests $t
+        if ($v -eq 'vert') { Write-Host "Tests de GitHub du commit $commit : réussis à la dernière exécution ($($t[0].url))."; break }
         if ($Essai) {
-            $etat = if ($enCours.Count) { 'en cours' } elseif ($t.Count) { "ratés ($($t[0].conclusion))" } else { 'pas lancés (commit pas envoyé ?)' }
+            $etat = switch ($v) {
+                'en cours' { 'en cours' }
+                'rouge' { "ratés à la dernière exécution ($($t[0].conclusion))" }
+                default { 'pas lancés (commit pas envoyé ?)' }
+            }
             Write-Host "Essai : tests de GitHub du commit $commit $etat. Une vraie publication attendrait qu'ils réussissent." -ForegroundColor Yellow
             break
         }
-        if ($t.Count -and -not $enCours.Count) { throw "Publication annulée : les tests de GitHub du commit $commit ont échoué ($($t[0].conclusion)) : $($t[0].url)" }
+        if ($v -eq 'rouge') { throw "Publication annulée : la dernière exécution des tests de GitHub du commit $commit a échoué ($($t[0].conclusion)) : $($t[0].url)" }
         if ((Get-Date) -gt $limite) { throw "Publication annulée : les tests de GitHub du commit $commit n'ont pas fini en 60 minutes." }
         Start-Sleep -Seconds 15
     }
