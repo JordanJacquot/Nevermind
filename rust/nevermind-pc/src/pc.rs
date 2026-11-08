@@ -124,6 +124,13 @@ pub trait Pc {
         self.aide(action, parametres, 60000).ok()
     }
 
+    // ---- La lecture lente du PC
+    /// Relire tout le PC (« Analyser » : `$AnalysisDataWork`), dans le travail de fond. Par défaut `None` : ce PC ne
+    /// se relit pas (les faux PC des juges : l'analyse est refaite sur ce qui a été lu au début).
+    fn relire(&mut self) -> Option<crate::lecture::Lu> {
+        None
+    }
+
     // ---- Alimentation, écrans, souris, programmes
     /// powercfg avec ses arguments : (code de sortie, texte écrit).
     fn powercfg(&mut self, args: &[String]) -> (i32, String);

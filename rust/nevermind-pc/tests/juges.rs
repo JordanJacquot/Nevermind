@@ -40,6 +40,10 @@ struct FauxPc {
     restauration_lente: Option<std::sync::mpsc::Receiver<()>>,
     /// Les points de restauration demandés
     restaurations: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    /// Ce que donne une nouvelle lecture du PC (« Analyser »), sans droits ; `None` : pas de relecture
+    relecture: Option<nevermind_pc::lecture::Lu>,
+    /// Ce que l'Aide lit (`lecture.pc` : Secure Boot, TPM, santé des disques) ; `None` : l'Aide répond « OK »
+    lecture_aide: Option<Value>,
 }
 
 impl FauxPc {
@@ -119,6 +123,7 @@ impl Pc for FauxPc {
                     json!({ "Running": net::champ_vrai(&p, "Lancer"), "StartType": net::champ_texte(&p, "Demarrage") }),
                 );
             }
+            "lecture.pc" if self.lecture_aide.is_some() => return Ok(self.lecture_aide.clone().unwrap_or_default()),
             "restauration.creer" => {
                 self.restaurations.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 if let Some(r) = self.restauration_lente.take() {
@@ -134,6 +139,9 @@ impl Pc for FauxPc {
             _ => {}
         }
         Ok(json!("OK"))
+    }
+    fn relire(&mut self) -> Option<nevermind_pc::lecture::Lu> {
+        self.relecture.clone()
     }
     fn powercfg(&mut self, args: &[String]) -> (i32, String) {
         let a0 = args.first().map(|s| s.as_str()).unwrap_or("");
@@ -877,6 +885,76 @@ fn lecture_du_pc_completee_sans_demande_de_windows() {
     nevermind_pc::systeme::completer_par_aide(&mut p, &mut e);
     assert_eq!(e.data["SecureBoot"], json!(true), "la lecture de l'Aide est prise");
     assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new(), "aucune demande de Windows pour une lecture");
+}
+
+/// Audit M10 (point 4) : la version PowerShell complète la lecture par l'Aide à chaque analyse (`Invoke-Analysis`
+/// appelle `Add-AideLecturePc`, analyse.ps1:195). « Analyser » relit le PC : Secure Boot, TPM et santé des disques
+/// (lus seulement par l'Aide) doivent rester, et l'analyse doit être la même quand rien n'a changé sur le PC.
+#[test]
+fn analyser_garde_secure_boot_tpm_et_sante_des_disques() {
+    use nevermind_noyau::{Bloc, Contexte, Effets};
+    let cas = lire("corrections.json");
+    let c = cas
+        .iter()
+        .find(|c| {
+            let d = &c["entree"]["data"];
+            !d["SecureBoot"].is_null() && net::liste(&d["Disks"]).iter().any(|x| net::champ_vrai(x, "Rel"))
+        })
+        .expect("un cas avec Secure Boot et la santé d'un disque");
+    let (mut pc, s, _) = charger(&c["entree"]);
+    let complet = s.entrees.data.clone();
+    // Ce que l'Aide lit : Secure Boot, la puce TPM et la santé de chaque disque
+    let mut fiabilite = Map::new();
+    for dd in net::liste(&complet["Disks"]) {
+        if net::champ_vrai(&dd, "Rel") {
+            fiabilite.insert(net::champ_texte(&dd["Disk"], "DeviceId"), dd["Rel"].clone());
+        }
+    }
+    pc.lecture_aide = Some(json!({ "SecureBoot": complet["SecureBoot"], "TpmOk": true,
+        "Tpm": { "SpecVersion": "2.0, 0, 1.59" }, "Fiabilite": fiabilite }));
+    // Ce que le PC donne sans droits (la lecture lente, au début et à chaque « Analyser ») : rien de tout ça
+    let mut sans_droits = s.entrees.clone();
+    sans_droits.data["SecureBoot"] = Value::Null;
+    sans_droits.data["TpmOk"] = json!(false);
+    sans_droits.data["Tpm"] = Value::Null;
+    if let Some(Value::Array(l)) = sans_droits.data.get_mut("Disks") {
+        for dd in l {
+            dd["Rel"] = Value::Null;
+        }
+    }
+    pc.relecture = Some(nevermind_pc::lecture::Lu { entrees: sans_droits.clone(), demarrage: s.demarrage.clone() });
+    // La première lecture, complétée par l'Aide comme au démarrage de Nevermind
+    let mut premiere = sans_droits.clone();
+    nevermind_pc::systeme::completer_par_aide(&mut pc, &mut premiere);
+    assert!(!premiere.data["SecureBoot"].is_null(), "la fausse Aide ne complète pas la première lecture");
+    let mut b = nevermind_pc::BlocPc::sur(
+        Box::new(pc),
+        nevermind_pc::lecture::Lu { entrees: premiere.clone(), demarrage: s.demarrage.clone() },
+    );
+    let d = nevermind_noyau::dossier_essai("pc-relecture-aide");
+    let _ = std::fs::remove_dir_all(&d);
+    let ctx = std::sync::Arc::new(Contexte::nouveau(d.clone(), d.clone(), false, true));
+    let _ = b.pages(&ctx, "pc");
+    let avant = b.session().analyse.clone().expect("la première analyse");
+    for _ in 0..2 {
+        let mut e = Effets::default();
+        assert!(b.action(&ctx, "analyser", &Value::Null, &mut e));
+        let fin = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while b.travail_en_cours() {
+            assert!(std::time::Instant::now() < fin, "l'analyse ne finit pas");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            b.travaux_finis(&ctx, &mut Effets::default());
+        }
+        let _ = b.pages(&ctx, "pc");
+        let data = &b.session().entrees.data;
+        assert_eq!(data["SecureBoot"], premiere.data["SecureBoot"], "Secure Boot a disparu après « Analyser »");
+        assert_eq!(data["TpmOk"], json!(true), "la puce TPM a disparu après « Analyser »");
+        assert_eq!(data["Disks"], premiere.data["Disks"], "la santé des disques a disparu après « Analyser »");
+        let apres = b.session().analyse.clone().expect("l'analyse refaite");
+        assert_eq!(apres.score, avant.score, "le score change alors que rien n'a changé sur le PC");
+        assert_eq!(apres, avant, "l'analyse change alors que rien n'a changé sur le PC");
+    }
+    let _ = std::fs::remove_dir_all(&d);
 }
 
 /// M5 (audit du 08/11) : sauvegarde.json est modifiable sans droits, et « Tout restaurer » tourne en administrateur

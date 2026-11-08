@@ -598,12 +598,15 @@ impl Bloc for BlocPc {
                 "analyser" => {
                     effets.ajouter(Effet::Annonce("Analyse de ton PC lancée".into()));
                     // (relire le PC : les données lentes aussi, comme $AnalysisDataWork ; WMI, dans le travail de fond)
-                    let relire = self.lu && self.essai.is_none() && !ctx.essai;
+                    // (pas en construction d'essai sur le vrai PC ; un faux PC décide lui-même, `Pc::relire`)
+                    let relire = self.lu && (self.essai.is_some() || !ctx.essai);
                     self.geste_fond(ctx, id, avant, move |at, pc| {
-                        if relire {
-                            let lu = lecture::lire();
+                        if relire && let Some(lu) = pc.relire() {
                             at.session.entrees = lu.entrees;
                             at.session.demarrage = lu.demarrage;
+                            // (et ce que seule l'Aide lit, à chaque analyse comme `Invoke-Analysis` :
+                            //  `Add-AideLecturePc`, analyse.ps1:195 ; audit M10)
+                            systeme::completer_par_aide(pc, &mut at.session.entrees);
                             at.relu = true;
                         }
                         at.session.analyser(pc);

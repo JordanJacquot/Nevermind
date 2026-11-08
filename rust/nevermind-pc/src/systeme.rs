@@ -252,6 +252,9 @@ impl Pc for PcWindows<'_> {
     fn aide_lecture(&mut self, action: &str, parametres: Value) -> Option<Value> {
         self.ctx.aide_lecture(action, &parametres)
     }
+    fn relire(&mut self) -> Option<crate::lecture::Lu> {
+        Some(crate::lecture::lire())
+    }
     fn powercfg(&mut self, args: &[String]) -> (i32, String) {
         let lecture = matches!(args.first().map(|s| s.as_str()), Some("/getactivescheme" | "/list" | "/q"));
         if !lecture && self.ctx.essai {
