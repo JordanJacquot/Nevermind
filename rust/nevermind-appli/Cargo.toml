@@ -1,7 +1,7 @@
 [package]
 name = "nevermind-appli"
 # La version de Nevermind (celle de Nevermind.ps1 : $AppVersion), la même que version.json et la fiche de l'exe
-version = "2.0.2"
+version = "2.1.0"
 description = "Nevermind en Rust : l'appli (fenêtre Tauri dans Mindset, kit, assemblage des blocs, vie avec Mindset)"
 edition.workspace = true
 license.workspace = true
