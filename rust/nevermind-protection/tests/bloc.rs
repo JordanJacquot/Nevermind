@@ -493,3 +493,65 @@ fn reactiver_le_pare_feu_ne_fige_pas() {
     assert_eq!(h["titre"], "Réactiver le pare-feu (Pare-feu désactivé)");
     assert_eq!(h["log"][0]["Quoi"], "Pare-feu réactivé sur tous les réseaux");
 }
+
+/// M11 (audit du 08/11) : le « Oui » d'une question retrouve le point par ce qu'il est, pas par son numéro. Une
+/// relecture pendant la question décale la liste (ici le pare-feu coupé passe devant) : le numéro 1, c'était les
+/// tâches ; maintenant c'est le contrôle des comptes. Le « Oui » désactive les tâches, jamais l'autre geste.
+#[test]
+fn le_oui_d_une_question_retrouve_son_point_apres_une_relecture() {
+    let ctx = contexte("question-decalee");
+    let mut s = EtatS::depuis(&json!({ "Mp": defender(), "Uac": false })).unwrap();
+    s.taches = vec![tache("Mise a jour", "\\")];
+    let f = Arc::new(faux_avec(s.clone()));
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    attendre(&mut b, &ctx);
+    b.pages(&ctx, "securite");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "sec:1:0", &Value::Null, &mut e));
+    let q = signal(&e.0, "question").expect("question posée").clone();
+    assert!(q["texte"].as_str().unwrap().starts_with("Désactiver ces tâches planifiées ?"), "{q}");
+    // Pendant la question : le pare-feu est coupé, la liste est relue
+    s.pare_feu_coupe = vec!["Public".into()];
+    f.lecture.lock().unwrap().s = s;
+    let mut e = Effets::default();
+    b.action(&ctx, "clic:BtnSecRefresh", &Value::Null, &mut e);
+    attendre(&mut b, &ctx);
+    b.pages(&ctx, "securite");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "sec:1:0", &json!({ "id": q["id"], "valeur": "oui" }), &mut e));
+    let mut tout = e.0;
+    tout.extend(attendre(&mut b, &ctx));
+    assert!(
+        !tout.iter().any(|x| matches!(x, Effet::Signal { nom, donnees } if nom == "registre-ecrire" && donnees["Name"] == "EnableLUA")),
+        "le Oui a fait le geste d'un autre point : {tout:?}"
+    );
+    assert!(f.gestes().contains(&r"désactiver \Mise a jour".to_string()), "{:?}", f.gestes());
+}
+
+/// M11 : le point de la question a disparu (déjà réglé ailleurs) : rien n'est fait, et c'est dit
+#[test]
+fn le_oui_d_une_question_dont_le_point_a_disparu_ne_fait_rien() {
+    let ctx = contexte("question-disparue");
+    let mut s = EtatS::depuis(&json!({ "Mp": defender(), "Uac": false })).unwrap();
+    s.taches = vec![tache("Mise a jour", "\\")];
+    let f = Arc::new(faux_avec(s.clone()));
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    attendre(&mut b, &ctx);
+    b.pages(&ctx, "securite");
+    let mut e = Effets::default();
+    b.action(&ctx, "sec:1:0", &Value::Null, &mut e);
+    let q = signal(&e.0, "question").expect("question posée").clone();
+    s.taches.clear();
+    s.pare_feu_coupe = vec!["Public".into()];
+    f.lecture.lock().unwrap().s = s;
+    b.action(&ctx, "clic:BtnSecRefresh", &Value::Null, &mut Effets::default());
+    attendre(&mut b, &ctx);
+    b.pages(&ctx, "securite");
+    let mut e = Effets::default();
+    b.action(&ctx, "sec:1:0", &json!({ "id": q["id"], "valeur": "oui" }), &mut e);
+    let mut tout = e.0;
+    tout.extend(attendre(&mut b, &ctx));
+    assert!(!tout.iter().any(|x| matches!(x, Effet::Signal { nom, .. } if nom == "registre-ecrire")), "{tout:?}");
+    assert!(!f.gestes().iter().any(|g| g.starts_with("désactiver")), "{:?}", f.gestes());
+    assert!(annonces(&tout).iter().any(|a| a.contains("a changé")), "{:?}", annonces(&tout));
+}

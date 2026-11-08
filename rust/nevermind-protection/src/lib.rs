@@ -112,15 +112,44 @@ fn confirme(valeur: &Value) -> bool {
 /// `Confirm-Action` : la question est posée par l'hôte (kit.question), qui renvoie l'action confirmée
 /// (`valeur` porte déjà une réponse autre que « oui » : l'utilisateur a dit non, rien n'est fait ni redemandé)
 fn question(effets: &mut Effets, id: &str, texte: &str, valeur: &Value) {
+    question_sur(effets, id, id, texte, valeur);
+}
+
+/// Une question sur un point de la liste : `cle` (rendue avec la réponse) dit quel point, par ce qu'il est
+/// ([`empreinte`]), pas par son numéro dans la liste (M11, audit du 08/11 : une relecture pendant la question décale la
+/// liste, et le « Oui » faisait le geste d'un autre point)
+fn question_sur(effets: &mut Effets, action: &str, cle: &str, texte: &str, valeur: &Value) {
     if valeur.get("valeur").is_some() {
         return;
     }
     effets.ajouter(Effet::Signal {
         nom: "question".into(),
-        donnees: json!({ "id": id, "titre": "Nevermind", "texte": texte, "action": id,
+        donnees: json!({ "id": cle, "titre": "Nevermind", "texte": texte, "action": action,
             "boutons": [{ "id": "oui", "texte": "Oui" }, { "id": "non", "texte": "Non", "style": "second" }] }),
     });
 }
+
+/// Ce qu'est un geste d'un point (son titre, le texte et le contenu exact du geste : les tâches, les exclusions...),
+/// en court : la question le garde, et le « Oui » ne fait le geste que si le même point est toujours là
+fn empreinte(c: &Constat, quoi: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    c.titre.hash(&mut h);
+    c.statut.hash(&mut h);
+    quoi.hash(&mut h);
+    format!("point-{:016x}", h.finish())
+}
+
+fn empreinte_geste(c: &Constat, a: &regles::Geste) -> String {
+    empreinte(c, &format!("geste|{}|{:?}", a.texte, a.sorte))
+}
+
+fn empreinte_confiance(c: &Constat) -> String {
+    empreinte(c, &format!("moi|{}", c.confiance.iter().map(|x| x.cle.as_str()).collect::<Vec<_>>().join("\n")))
+}
+
+/// Le point a changé pendant la question : rien n'est fait
+const POINT_CHANGE: &str = "La liste des points à vérifier a changé pendant la question : rien n'a été fait. Regarde la liste à jour et réessaie.";
 
 const OCCUPE: &str = "Un instant : Nevermind finit ce qu'il est en train de faire.";
 
@@ -648,35 +677,58 @@ impl Bloc for BlocProtection {
             let k = p.next().and_then(|x| x.parse::<usize>().ok());
             let j = p.next().and_then(|x| x.parse::<usize>().ok());
             let (Some(k), Some(j)) = (k, j) else { return false };
+            // (le « Oui » d'une question : le point retrouvé par ce qu'il est, où qu'il soit dans la liste à jour)
+            if confirme(valeur) {
+                let cle = valeur.get("id").and_then(Value::as_str).unwrap_or_default();
+                let trouve = self.points.iter().find_map(|c| {
+                    c.actions
+                        .iter()
+                        .position(|a| a.confirmer.is_some() && empreinte_geste(c, a) == cle)
+                        .map(|j| (c.clone(), j))
+                });
+                match trouve {
+                    Some((c, j)) => self.geste(ctx, &c, j, effets),
+                    None => {
+                        ctx.journal(&format!("Sécurité : {id} pas fait, le point a changé pendant la question"));
+                        effets.ajouter(Effet::Annonce(POINT_CHANGE.into()));
+                    }
+                }
+                return true;
+            }
             let Some(c) = self.points.get(k).cloned() else { return true };
             let Some(a) = c.actions.get(j) else { return true };
-            if let Some(t) = &a.confirmer
-                && !confirme(valeur)
-            {
-                question(effets, id, t, valeur);
+            if let Some(t) = &a.confirmer {
+                question_sur(effets, id, &empreinte_geste(&c, a), t, valeur);
                 return true;
             }
             self.geste(ctx, &c, j, effets);
             return true;
         }
         if let Some(k) = id.strip_prefix("sec-moi:").and_then(|x| x.parse::<usize>().ok()) {
+            if confirme(valeur) {
+                let cle = valeur.get("id").and_then(Value::as_str).unwrap_or_default();
+                match self.points.iter().find(|c| !c.confiance.is_empty() && empreinte_confiance(c) == cle).cloned() {
+                    Some(c) => self.approuver(ctx, &c.confiance, effets),
+                    None => {
+                        ctx.journal(&format!("Sécurité : {id} pas fait, le point a changé pendant la question"));
+                        effets.ajouter(Effet::Annonce(POINT_CHANGE.into()));
+                    }
+                }
+                return true;
+            }
             let Some(c) = self.points.get(k).cloned() else { return true };
             let n = c.confiance.len();
             if n == 0 {
                 return true;
             }
-            if !confirme(valeur) {
-                let t = if n > 1 {
-                    format!(
-                        "Marquer ces {n} éléments comme sûrs ? Ils ne compteront plus dans le niveau de protection. S'ils changent (autre commande, autre fichier), Nevermind les signalera de nouveau."
-                    )
-                } else {
-                    "Marquer cet élément comme sûr ? Il ne comptera plus dans le niveau de protection. S'il change (autre commande, autre fichier), Nevermind le signalera de nouveau.".to_string()
-                };
-                question(effets, id, &t, valeur);
-                return true;
-            }
-            self.approuver(ctx, &c.confiance, effets);
+            let t = if n > 1 {
+                format!(
+                    "Marquer ces {n} éléments comme sûrs ? Ils ne compteront plus dans le niveau de protection. S'ils changent (autre commande, autre fichier), Nevermind les signalera de nouveau."
+                )
+            } else {
+                "Marquer cet élément comme sûr ? Il ne comptera plus dans le niveau de protection. S'il change (autre commande, autre fichier), Nevermind le signalera de nouveau.".to_string()
+            };
+            question_sur(effets, id, &empreinte_confiance(&c), &t, valeur);
             return true;
         }
         if let Some(k) = id.strip_prefix("sec-retirer:").and_then(|x| x.parse::<usize>().ok()) {
