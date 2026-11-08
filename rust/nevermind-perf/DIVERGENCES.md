@@ -111,3 +111,10 @@ Réglages Windows (Build-GamingTab, Invoke-ApplyTweaks, `tweak`, `opti:recommand
 bloc), nettoyage (`nett`, `nett-voir`, `nett-journal`), connexion, sauvegarde : bloc pc / réseau. Carte réseau
 (Watch-CarteReseau dans Update-LiveUI) : bloc réseau. Pages FPS, compteur (réglages FpsMeasure, FpsOverlay,
 FpsOverlayStyle, FpsOverlayCorner) et fiche d'une partie : bloc jeux ; ce bloc relit ces réglages à chaque passage.
+
+## Dalles d'outils (08/11, choix de Jordan : le modèle « D »)
+- Chaque dalle de la page Performances a en plus `resume` (la ligne courte écrite sous le titre : « Réglages et mode
+  jeu », « Lancé avec le PC », « Fichiers inutiles », « Mémoire utilisée », « Ping et stabilité ») et, quand un
+  chiffre vrai existe, `niveau` (0 à 100, le remplissage de la barre du bas) : réglages faits sur réglages conseillés
+  pour Optimisation gaming, pourcentage de RAM utilisée pour RAM. `note` (la phrase d'avant) reste, en infobulle.
+  Ces deux champs n'existent pas en PowerShell : `tests/juges.rs` les retire de la sortie Rust avant de comparer.

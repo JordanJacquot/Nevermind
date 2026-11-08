@@ -56,6 +56,30 @@ pub fn difference(a: &Value, b: &Value, chemin: &str) -> Option<String> {
     }
 }
 
+/// Divergence voulue (DIVERGENCES.md, « Dalles d'outils ») : `resume` et `niveau` des dalles n'existent pas en
+/// PowerShell ; ils sont retirés de la sortie Rust avant la comparaison, tout le reste est comparé tel quel.
+pub fn sans_resume_ni_niveau(mut v: Value) -> Value {
+    fn retirer(v: &mut Value) {
+        match v {
+            Value::Array(a) => a.iter_mut().for_each(retirer),
+            Value::Object(o) => {
+                if o.get("type").and_then(Value::as_str) == Some("outils") {
+                    for x in o.get_mut("elements").and_then(Value::as_array_mut).into_iter().flatten() {
+                        if let Some(x) = x.as_object_mut() {
+                            x.remove("resume");
+                            x.remove("niveau");
+                        }
+                    }
+                }
+                o.values_mut().for_each(retirer);
+            }
+            _ => {}
+        }
+    }
+    retirer(&mut v);
+    v
+}
+
 fn verifier(nom: &str, cas: &[Value], min: usize, rejouer: impl Fn(&Value) -> Value) {
     assert!(cas.len() >= min, "{nom} : {} cas, au moins {min} attendus", cas.len());
     let mut echecs = Vec::new();
@@ -84,7 +108,7 @@ fn verifier(nom: &str, cas: &[Value], min: usize, rejouer: impl Fn(&Value) -> Va
 #[test]
 fn pages_comme_powershell() {
     let cas = juge("pages.json");
-    verifier("pages.json", &cas, 400, |e| Value::Object(pages::pages(e)));
+    verifier("pages.json", &cas, 400, |e| sans_resume_ni_niveau(Value::Object(pages::pages(e))));
 }
 
 #[test]
@@ -369,7 +393,7 @@ fn temperature_comme_powershell() {
 fn contre_epreuve() {
     let cas = juge("pages.json");
     let c = &cas[7];
-    let obtenu = Value::Object(pages::pages(&c["entree"]));
+    let obtenu = sans_resume_ni_niveau(Value::Object(pages::pages(&c["entree"])));
     assert!(difference(&obtenu, &c["attendu"], "").is_none());
     let mut faux = c["attendu"].clone();
     let t = faux["perf"]["titre"].as_str().unwrap_or("").replacen('P', "p", 1);
