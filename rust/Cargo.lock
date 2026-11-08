@@ -1961,6 +1961,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nevermind-stream"
+version = "0.1.0"
+dependencies = [
+ "nevermind-noyau",
+ "serde",
+ "serde_json",
+ "windows",
+ "windows-registry",
+]
+
+[[package]]
 name = "nevermind-trafic"
 version = "0.1.0"
 dependencies = [

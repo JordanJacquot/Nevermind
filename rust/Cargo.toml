@@ -3,7 +3,7 @@
 # Rien ici n'est livré aux utilisateurs tant que la version PowerShell n'est pas remplacée par une publication.
 [workspace]
 resolver = "3"
-members = ["aide-regles", "nevermind-aide", "nevermind-pont", "nevermind-noyau", "nevermind-appli", "nevermind-memoire", "nevermind-pc", "nevermind-perf", "nevermind-protection", "nevermind-jeux", "nevermind-reseau", "nevermind-trafic", "nevermind-divers", "nevermind-relais", "nevermind-desinstalleur"]
+members = ["aide-regles", "nevermind-aide", "nevermind-pont", "nevermind-noyau", "nevermind-appli", "nevermind-memoire", "nevermind-pc", "nevermind-perf", "nevermind-protection", "nevermind-jeux", "nevermind-reseau", "nevermind-trafic", "nevermind-divers", "nevermind-relais", "nevermind-desinstalleur", "nevermind-stream"]
 
 [workspace.package]
 edition = "2024"
