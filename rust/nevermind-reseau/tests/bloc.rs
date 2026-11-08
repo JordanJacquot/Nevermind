@@ -318,3 +318,76 @@ fn mesure_lecture() {
         .collect();
     println!("RUST µs {t:?}");
 }
+
+/// Audit G3 : changer le DNS ou redémarrer la carte passe par l'Aide (jusqu'à 60 s ; SMBv1 jusqu'à 15 min, par le
+/// même chemin) : dans un travail de fond. Le clic rend la main tout de suite, le texte d'attente est montré aussitôt,
+/// un deuxième clic ne refait rien, et la fin donne les mêmes messages qu'avant. Fausse Aide : rien sur le vrai PC.
+#[test]
+fn les_gestes_par_l_aide_ne_figent_pas() {
+    use std::time::Instant;
+    let s = Arc::new(FausseSonde::default());
+    *s.bps.lock().unwrap() = 1e8;
+    let ctx = contexte("fond").partage();
+    let (feu, attente) = std::sync::mpsc::channel::<()>();
+    let attente = Mutex::new(Some(attente));
+    let demandes = Arc::new(Mutex::new(Vec::<String>::new()));
+    let d = demandes.clone();
+    ctx.fausse_aide(Arc::new(move |a: &str, _p: &Value| {
+        d.lock().unwrap().push(a.to_string());
+        if let Some(r) = attente.lock().unwrap().take() {
+            let _ = r.recv_timeout(Duration::from_secs(60));
+        }
+        Ok(json!("ok"))
+    }));
+    let mut b = BlocReseau::avec_sonde(s.clone());
+    let _ = page(&mut b, &ctx, "connexion");
+    let mut e = Effets::default();
+    b.tic(&ctx, false, &mut e);
+    // DNS : la main rendue tout de suite, pendant que l'Aide attend
+    let mut e = Effets::default();
+    let debut = Instant::now();
+    assert!(b.action(&ctx, "dns", &json!("1"), &mut e));
+    assert!(
+        debut.elapsed() < Duration::from_secs(2),
+        "le DNS a pris {:?} : le fil des blocs était figé",
+        debut.elapsed()
+    );
+    let fin = Instant::now() + Duration::from_secs(10);
+    while demandes.lock().unwrap().is_empty() {
+        assert!(Instant::now() < fin, "l'Aide n'est pas appelée");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Un deuxième clic pendant ce temps : rien
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "dns", &json!("1"), &mut e));
+    assert!(e.0.is_empty(), "{:?}", e.0);
+    let p = page(&mut b, &ctx, "connexion");
+    assert!(p.to_string().contains("Redémarrer la carte réseau"), "la page ne répond pas");
+    feu.send(()).unwrap();
+    let mut tout = Vec::new();
+    while !tout.iter().any(|x| matches!(x, Effet::Annonce(t) if t == "DNS modifié.")) {
+        assert!(Instant::now() < fin, "le DNS ne finit pas : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(tout.iter().any(|x| matches!(x, Effet::Signal { nom, .. } if nom == "historique")));
+    assert_eq!(*demandes.lock().unwrap(), ["dns.regler"], "le DNS est reparti");
+    // La carte : « Redémarrage de la carte réseau... » tout de suite, puis « elle se reconnecte »
+    let mut e = Effets::default();
+    b.action(&ctx, "carte-relancer", &Value::Null, &mut e);
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "reseau-question", &json!({ "id": "carte", "valeur": "oui" }), &mut e));
+    let occupe = |t: &str| Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": t }) };
+    assert!(e.0.contains(&occupe("Redémarrage de la carte réseau...")), "{:?}", e.0);
+    let mut tout = Vec::new();
+    while !tout.contains(&occupe("Carte réseau redémarrée, elle se reconnecte...")) {
+        assert!(Instant::now() < fin + Duration::from_secs(10), "la carte ne finit pas : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let _ = std::fs::remove_dir_all(&ctx.donnees);
+}
