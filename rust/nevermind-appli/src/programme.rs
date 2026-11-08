@@ -230,6 +230,8 @@ pub fn lancer() -> ! {
     // (le noyau les attend avant la première demande à l'Aide)
     ctx.definir_version(VERSION);
     ctx.definir_racine(racine);
+    #[cfg(feature = "essai")]
+    crate::essai::aide_lente(&ctx);
     if let Some(n) = &l.note_donnees {
         ctx.journal(n);
     }

@@ -11,9 +11,29 @@
 //! levé, seul ce programme peut être relancé (windows\systeme.rs) ; `capture.demande` dans le dossier de données fait
 //! écrire l'image de la fenêtre dans `capture.png` ; `actions.demande` y fait jouer des messages de la page (un JSON
 //! par ligne) ; l'état envoyé est écrit dans `etat.json` (comme `$env:ESSAI_DOSSIER` de la version PowerShell) ;
-//! `NEVERMIND_ECRAN` ouvre cette page à l'arrivée de l'écran (comme la version PowerShell).
+//! `NEVERMIND_ECRAN` ouvre cette page à l'arrivée de l'écran (comme la version PowerShell) ;
+//! `NEVERMIND_ESSAI_AIDE_LENTE` (des secondes) donne une fausse Aide dont le point de restauration met ce temps
+//! (audit G3 : vérifier que Nevermind reste vivant pendant un geste long ; jamais la vraie Aide).
 
 use std::path::PathBuf;
+
+/// `NEVERMIND_ESSAI_AIDE_LENTE` : une fausse Aide (rien n'est fait sur le PC) dont le point de restauration attend
+/// ce nombre de secondes, puis réussit ; les écritures du registre de la machine « réussissent » sans rien écrire ;
+/// tout le reste est refusé, comme sans Aide.
+pub fn aide_lente(ctx: &nevermind_noyau::Contexte) {
+    let Some(s) = std::env::var("NEVERMIND_ESSAI_AIDE_LENTE").ok().and_then(|s| s.trim().parse::<u64>().ok()) else {
+        return;
+    };
+    ctx.journal(&format!("Essai : fausse Aide, point de restauration en {s} s"));
+    ctx.fausse_aide(std::sync::Arc::new(move |a: &str, _p: &serde_json::Value| match a {
+        "restauration.creer" => {
+            std::thread::sleep(std::time::Duration::from_secs(s));
+            Ok(serde_json::json!("OK"))
+        }
+        "reg.ecrire" => Ok(serde_json::json!("OK")),
+        _ => Err("mode test : l'Aide n'est pas appelée".into()),
+    }));
+}
 
 use crate::vie::demarrage::Noms;
 
