@@ -422,6 +422,9 @@ impl Systeme for FauxSysteme {
         }
         f
     }
+    fn compte_processus(&self, pid: i64) -> String {
+        self.processus.iter().find(|x| x.pid == pid).map(|x| x.compte.clone()).unwrap_or_default()
+    }
     fn tenir_processus(&self, pid: i64) -> Option<Box<dyn ProcessusTenu + '_>> {
         let actuel = self.redonnes.lock().unwrap().get(&pid).cloned();
         let x = actuel.or_else(|| self.processus.iter().find(|x| x.pid == pid).cloned())?;
@@ -754,6 +757,22 @@ fn nettoyage_sans_suivre_les_liens() {
     let effaces = s.etat().effaces.clone();
     assert!(!effaces.iter().any(|e| e.contains("recent") || e.contains("piege") || e.contains("lien")), "{effaces:?}");
     assert!(effaces.contains(&"C:\\Windows\\Minidump\\sous\\".to_string()));
+}
+
+/// Petit défaut de l'audit du 08/11 : un compte standard ne peut pas lire où sont les programmes des autres comptes ;
+/// l'Aide ne les lui donne pas non plus (seulement les siens et ceux des comptes du système)
+#[test]
+fn chemins_du_compte_seulement() {
+    let mut s = FauxSysteme::new();
+    s.processus.push(p(4242, "C:\\Windows\\System32\\svchost.exe", "S-1-5-19"));
+    s.processus.push(FauxProcessus { compte: String::new(), ..p(4343, "C:\\Illisible\\x.exe", "") });
+    let r =
+        demander(&s, NEVERMIND as u32, r#"{"a":"lecture.chemins","p":{"Pids":["800","801","4242","4343","9000"]}}"#);
+    let mut pids: Vec<&String> = r["r"].as_object().unwrap().keys().collect();
+    pids.sort();
+    assert_eq!(pids, vec!["4242", "800", "9000"], "{r}");
+    assert_eq!(r["r"]["800"], "C:\\Jeux\\chrome.exe");
+    assert_eq!(demander(&s, 0, r#"{"a":"lecture.chemins","p":{"Pids":["800"]}}"#)["ok"], false);
 }
 
 #[test]

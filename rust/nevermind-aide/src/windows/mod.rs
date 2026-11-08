@@ -520,6 +520,10 @@ impl Systeme for Windows {
         processus::fiche(pid, chemin)
     }
 
+    fn compte_processus(&self, pid: i64) -> String {
+        processus::compte(pid)
+    }
+
     fn tenir_processus(&self, pid: i64) -> Option<Box<dyn ProcessusTenu + '_>> {
         processus::tenir(pid).map(|t| Box::new(t) as Box<dyn ProcessusTenu>)
     }

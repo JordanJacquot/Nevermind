@@ -174,11 +174,27 @@ pub fn faire(d: Demande, s: &dyn Systeme, client: u32, etat: &EtatAide) -> Resul
         }
 
         Demande::LectureChemins { pids } => {
+            // (petit défaut de l'audit du 08/11) Seulement les programmes du compte qui demande et ceux des comptes du
+            // système, comme lecture.taches : un compte standard ne peut pas lire où sont ceux des autres comptes
+            if client == 0 {
+                return Err("Demande refusée : programme qui fait la demande inconnu.".into());
+            }
+            let sid_client = s.fiche(i64::from(client), "").compte;
+            if sid_client.is_empty() {
+                return Err("Demande refusée : compte du programme qui fait la demande illisible.".into());
+            }
             let mut r = serde_json::Map::new();
             for (pid, chemin) in s.chemins_processus() {
-                if pids.contains(&pid) && !chemin.is_empty() {
-                    r.insert(pid.to_string(), Value::String(chemin));
+                if !pids.contains(&pid) || chemin.is_empty() {
+                    continue;
                 }
+                let compte = s.compte_processus(pid);
+                if compte.is_empty()
+                    || !(texte::egal(&compte, &sid_client) || taches_compte::COMPTES_SYSTEME.contains(&compte.as_str()))
+                {
+                    continue;
+                }
+                r.insert(pid.to_string(), Value::String(chemin));
             }
             Ok(Value::Object(r))
         }

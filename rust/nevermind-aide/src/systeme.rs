@@ -234,6 +234,8 @@ pub trait Systeme: Pc + Send + Sync + 'static {
     fn chemin_processus(&self, pid: i64) -> String;
     /// Ce que Windows dit d'un processus (`Read-AideFiche` ; `chemin` : à défaut de le lire)
     fn fiche(&self, pid: i64, chemin: &str) -> Fiche;
+    /// Le compte (SID) d'un processus, vide si Windows ne le dit pas
+    fn compte_processus(&self, pid: i64) -> String;
     /// Ouvre le processus pour le lire puis peut-être le fermer, et garde sa poignée ; `None` s'il ne s'ouvre pas
     fn tenir_processus(&self, pid: i64) -> Option<Box<dyn ProcessusTenu + '_>>;
 
