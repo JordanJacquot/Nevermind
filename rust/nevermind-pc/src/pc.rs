@@ -130,6 +130,11 @@ pub trait Pc {
     fn relire(&mut self) -> Option<crate::lecture::Lu> {
         None
     }
+    /// La réponse de NVIDIA au « dernier pilote Game Ready » (le texte JSON de gfwsl.geforce.com), dans le travail de
+    /// fond ; `None` : pas de réponse (pas d'Internet, mode test, faux PC des juges).
+    fn reponse_pilote_nvidia(&mut self) -> Option<String> {
+        None
+    }
 
     // ---- Alimentation, écrans, souris, programmes
     /// powercfg avec ses arguments : (code de sortie, texte écrit).

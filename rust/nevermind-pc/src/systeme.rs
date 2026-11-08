@@ -142,6 +142,46 @@ pub fn completer_par_aide(pc: &mut dyn Pc, e: &mut crate::analyse::Entrees) {
     }
 }
 
+/// La question posée à NVIDIA (la même que la version PowerShell, interface.ps1) : le dernier pilote « Game Ready »
+/// WHQL de Windows 10 et 11 64 bits, le même pour toutes les GeForce récentes
+pub const ADRESSE_PILOTE_NVIDIA: &str = "https://gfwsl.geforce.com/services_toolkit/services/com/nvidia/services/AjaxDriverService.php?func=DriverManualLookup&psid=127&pfid=995&osID=57&languageCode=1033&beta=0&isWHQL=1&dltype=-1&dch=1&upCRD=0&qnf=0&sort1=0&numberOfResults=1";
+
+/// Le dernier pilote dans la réponse de NVIDIA (`IDS[0].downloadInfo`) : `{ Version, Date, Url }` comme la version
+/// PowerShell, `None` si la réponse n'en donne pas un lisible (page d'erreur, portail d'un Wi-Fi public)
+pub fn pilote_nvidia_depuis_reponse(texte: &str) -> Option<Value> {
+    let v: Value = serde_json::from_str(texte.trim_start_matches('\u{feff}').trim()).ok()?;
+    let info = v.get("IDS")?.get(0)?.get("downloadInfo")?;
+    let version = crate::net::champ_texte(info, "Version").trim().to_string();
+    let parties: Vec<&str> = version.split('.').collect();
+    if parties.len() != 2 || parties.iter().any(|p| p.is_empty() || !p.chars().all(|c| c.is_ascii_digit())) {
+        return None;
+    }
+    let url = crate::net::champ_texte(info, "DetailsURL");
+    let url =
+        if url.starts_with("https://www.nvidia.com/") { url } else { "https://www.nvidia.com/fr-fr/drivers/".into() };
+    Some(json!({ "Version": version, "Date": crate::net::champ_texte(info, "ReleaseDateTime"), "Url": url }))
+}
+
+/// Le dernier pilote NVIDIA (`$r.NvLatest` de `$AnalysisDataWork`) : demandé à NVIDIA seulement s'il y a une carte
+/// NVIDIA et si le réglage « Vérifier le pilote NVIDIA au lancement » est mis (par défaut). Sans réponse, rien ne
+/// change : l'analyse regarde l'âge du pilote installé. Avant, la version Rust ne le demandait jamais : un pilote de
+/// moins de 6 mois passait pour « à jour » même avec un plus récent sorti (PC de Jordan, 08/11 : 617.42 contre 621.14).
+pub fn completer_pilote_nvidia(pc: &mut dyn Pc, e: &mut crate::analyse::Entrees) {
+    if !pc.reglage("PiloteNvidia").is_none_or(|r| r.is_null() || crate::net::vrai(&r)) {
+        return;
+    }
+    let nvidia = crate::net::champ_liste(&e.data, "GPUs").iter().any(|g| {
+        let n = crate::net::champ_texte(g, "Name").to_lowercase();
+        n.contains("nvidia") || n.contains("geforce")
+    });
+    if !nvidia {
+        return;
+    }
+    if let Some(d) = pc.reponse_pilote_nvidia().as_deref().and_then(pilote_nvidia_depuis_reponse) {
+        e.data["NvLatest"] = d;
+    }
+}
+
 impl<'a> PcWindows<'a> {
     pub fn nouveau(ctx: &'a Contexte) -> Self {
         PcWindows { ctx, effets: Vec::new(), statut: String::new(), direct: None }
@@ -262,6 +302,28 @@ impl Pc for PcWindows<'_> {
     }
     fn relire(&mut self) -> Option<crate::lecture::Lu> {
         Some(crate::lecture::lire())
+    }
+    fn reponse_pilote_nvidia(&mut self) -> Option<String> {
+        // (en mode test, rien ne sort sur Internet)
+        if self.ctx.essai {
+            return None;
+        }
+        #[cfg(windows)]
+        {
+            // (le curl de Windows, sans fenêtre ; 6 secondes au plus comme la version PowerShell ; une réponse
+            //  d'erreur n'est pas lue, `--fail`)
+            let args: Vec<String> =
+                ["-s", "--fail", "-L", "-m", "6", "-A", "Mozilla/5.0 Nevermind", ADRESSE_PILOTE_NVIDIA]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+            let (code, texte) = crate::windows::commande("curl.exe", &args);
+            (code == 0 && !texte.trim().is_empty()).then_some(texte)
+        }
+        #[cfg(not(windows))]
+        {
+            None
+        }
     }
     fn powercfg(&mut self, args: &[String]) -> (i32, String) {
         let lecture = matches!(args.first().map(|s| s.as_str()), Some("/getactivescheme" | "/list" | "/q"));

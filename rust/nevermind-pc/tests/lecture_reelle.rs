@@ -46,3 +46,19 @@ fn lecture_du_vrai_pc() {
     println!("{}", serde_json::to_string_pretty(&serde_json::Value::Object(r)).unwrap());
     println!("lecture en {} ms", t.elapsed().as_millis());
 }
+
+/// Le dernier pilote NVIDIA demandé à NVIDIA (curl de Windows, sans fenêtre ; rien n'est écrit) : à lancer à la main
+/// (`cargo test -p nevermind-pc --test lecture_reelle dernier_pilote_nvidia -- --ignored --nocapture`)
+#[test]
+#[ignore]
+fn dernier_pilote_nvidia() {
+    use nevermind_pc::pc::Pc;
+    let d = nevermind_noyau::dossier_essai("pc-nvidia-reel");
+    let ctx = nevermind_noyau::Contexte::nouveau(d.clone(), d.clone(), false, false);
+    let mut pc = nevermind_pc::systeme::PcWindows::nouveau(&ctx);
+    let r = pc.reponse_pilote_nvidia();
+    let lu = r.as_deref().and_then(nevermind_pc::systeme::pilote_nvidia_depuis_reponse);
+    println!("{lu:?}");
+    assert!(lu.is_some(), "pas de réponse de NVIDIA : {r:?}");
+    let _ = std::fs::remove_dir_all(&d);
+}

@@ -334,6 +334,7 @@ impl BlocPc {
                 //  la diffusion suit sa fin)
                 self.en_fond(ctx, "fin de la lecture", Suite::Lecture, false, |at, pc| {
                     systeme::completer_par_aide(pc, &mut at.session.entrees);
+                    systeme::completer_pilote_nvidia(pc, &mut at.session.entrees);
                     at.session.analyser(pc);
                 });
                 let mut e = Effets::default();
@@ -646,6 +647,8 @@ impl Bloc for BlocPc {
                             // (et ce que seule l'Aide lit, à chaque analyse comme `Invoke-Analysis` :
                             //  `Add-AideLecturePc`, analyse.ps1:195 ; audit M10)
                             systeme::completer_par_aide(pc, &mut at.session.entrees);
+                            // (et le dernier pilote NVIDIA, demandé à chaque lecture comme `$AnalysisDataWork`)
+                            systeme::completer_pilote_nvidia(pc, &mut at.session.entrees);
                             at.relu = true;
                         }
                         at.session.analyser(pc);

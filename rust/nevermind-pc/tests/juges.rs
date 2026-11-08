@@ -44,6 +44,8 @@ struct FauxPc {
     relecture: Option<nevermind_pc::lecture::Lu>,
     /// Ce que l'Aide lit (`lecture.pc` : Secure Boot, TPM, santé des disques) ; `None` : l'Aide répond « OK »
     lecture_aide: Option<Value>,
+    /// La réponse de NVIDIA au dernier pilote « Game Ready » ; `None` : pas de réponse
+    reponse_nvidia: Option<String>,
     /// Un lancement refusé (M8) : le texte de l'erreur
     refus_lancement: Option<String>,
 }
@@ -144,6 +146,9 @@ impl Pc for FauxPc {
     }
     fn relire(&mut self) -> Option<nevermind_pc::lecture::Lu> {
         self.relecture.clone()
+    }
+    fn reponse_pilote_nvidia(&mut self) -> Option<String> {
+        self.reponse_nvidia.clone()
     }
     fn powercfg(&mut self, args: &[String]) -> (i32, String) {
         let a0 = args.first().map(|s| s.as_str()).unwrap_or("");
@@ -1121,4 +1126,73 @@ fn une_sauvegarde_abimee_est_dite_comme_telle() {
     s.restaurer_tout(&mut pc, &[]);
     assert_eq!(pc.gestes, vec![json!({ "geste": "message", "donnees": "Il n'y a aucun changement à annuler." })]);
     let _ = std::fs::remove_dir_all(&d);
+}
+
+/// La réponse de NVIDIA le 08/11/2026 (raccourcie) : le dernier pilote « Game Ready » est le 621.14
+const REPONSE_NVIDIA: &str = r#"{ "Success" : "1", "IDS" : [{ "downloadInfo": { "Success" : "1", "ID" : "283968", "Name" : "GeForce%20Game%20Ready%20Driver", "Release" : "620", "Version" : "621.14", "IsBeta" : "0", "IsWHQL" : "1", "ReleaseDateTime" : "Wed Nov 04, 2026", "DetailsURL" : "https://www.nvidia.com/en-us/drivers/details/283968/", "DownloadURL" : "https://us.download.nvidia.com/Windows/621.14/621.14-desktop-win10-win11-64bit-international-dch-whql.exe" } }] }"#;
+
+/// La réponse de NVIDIA lue comme `$r.NvLatest` ; une réponse illisible ou sans numéro n'en donne pas
+#[test]
+fn reponse_nvidia_lue() {
+    use nevermind_pc::systeme::pilote_nvidia_depuis_reponse as lire_reponse;
+    assert_eq!(
+        lire_reponse(REPONSE_NVIDIA),
+        Some(
+            json!({ "Version": "621.14", "Date": "Wed Nov 04, 2026", "Url": "https://www.nvidia.com/en-us/drivers/details/283968/" })
+        )
+    );
+    assert_eq!(lire_reponse(""), None);
+    assert_eq!(lire_reponse("<html>Connexion au Wi-Fi de la gare</html>"), None);
+    assert_eq!(lire_reponse(r#"{ "Success" : "0", "IDS" : [] }"#), None);
+    assert_eq!(lire_reponse(r#"{ "IDS" : [{ "downloadInfo": { "Version" : "" } }] }"#), None);
+    // (une adresse qui n'est pas chez NVIDIA n'est jamais ouverte : la page des pilotes à la place)
+    let autre =
+        REPONSE_NVIDIA.replace("https://www.nvidia.com/en-us/drivers/details/283968/", "https://ailleurs.example/");
+    assert_eq!(lire_reponse(&autre).unwrap()["Url"], json!("https://www.nvidia.com/fr-fr/drivers/"));
+}
+
+/// Le PC de Jordan le 08/11/2026 : GeForce RTX 4080, pilote 617.42 du 30/09/2026 (moins de 6 mois), le 621.14 sorti
+/// le 04/11. La version PowerShell demandait le dernier pilote à NVIDIA (réglage « Vérifier le pilote NVIDIA au
+/// lancement », mis par défaut) ; la version Rust ne le demandait jamais et disait « Pilote graphique à jour ».
+#[test]
+fn pilote_nvidia_ancien_alors_que_recent() {
+    use nevermind_noyau::{Bloc, Contexte, Effets};
+    let data = json!({ "GPUs": [{ "Name": "NVIDIA GeForce RTX 4080", "DriverVersion": "32.0.16.1742", "DriverDate": "2026-09-30T00:00:00" }], "NvLatest": null });
+    let titres = |reglage: Option<bool>| {
+        let lu = nevermind_pc::lecture::Lu {
+            entrees: Entrees { data: data.clone(), ..Default::default() },
+            demarrage: Vec::new(),
+        };
+        let mut pc = FauxPc {
+            reponse_question: true,
+            reponse_nvidia: Some(REPONSE_NVIDIA.into()),
+            relecture: Some(lu.clone()),
+            ..Default::default()
+        };
+        if let Some(r) = reglage {
+            pc.reglages.insert("PiloteNvidia".into(), json!(r));
+        }
+        let mut b = nevermind_pc::BlocPc::sur(Box::new(pc), lu);
+        let d = nevermind_noyau::dossier_essai("pc-pilote-nvidia");
+        let _ = std::fs::remove_dir_all(&d);
+        let ctx = std::sync::Arc::new(Contexte::nouveau(d.clone(), d.clone(), false, true));
+        let _ = b.pages(&ctx, "pc");
+        let mut e = Effets::default();
+        assert!(b.action(&ctx, "analyser", &Value::Null, &mut e));
+        let fin = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while b.travail_en_cours() {
+            assert!(std::time::Instant::now() < fin, "l'analyse ne finit pas");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            b.travaux_finis(&ctx, &mut Effets::default());
+        }
+        let _ = b.pages(&ctx, "pc");
+        let a = b.session().analyse.clone().expect("l'analyse");
+        let _ = std::fs::remove_dir_all(&d);
+        a.actifs.iter().filter(|c| c.id.starts_with("gpu-driver")).map(|c| c.titre.clone()).collect::<Vec<_>>()
+    };
+    let attendu = vec!["Nouveau pilote NVIDIA disponible (621.14)".to_string()];
+    assert_eq!(titres(None), attendu, "réglage par défaut : NVIDIA est demandé");
+    assert_eq!(titres(Some(true)), attendu);
+    // Réglage coupé : seulement l'âge du pilote (moins de 6 mois : à jour), comme la version PowerShell
+    assert_eq!(titres(Some(false)), vec!["Pilote graphique à jour (NVIDIA GeForce RTX 4080)".to_string()]);
 }
