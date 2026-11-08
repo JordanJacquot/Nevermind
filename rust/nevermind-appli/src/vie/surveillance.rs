@@ -124,7 +124,11 @@ impl Vie {
         &self.r
     }
 
-    /// Fait tous les tours dus jusqu'à `maintenant` (le temps depuis le début des surveillances).
+    /// Fait les tours dus jusqu'à `maintenant` (le temps depuis le début des surveillances) : un tour de chaque, au
+    /// plus. En retard de plus d'un tour (le PC sort de veille, une longue pause), les tours manqués ne sont pas
+    /// rattrapés un par un : chaque tour lit l'état actuel, un seul suffit, et le suivant repart de maintenant (petit
+    /// de l'audit du 08/11 : après une nuit en veille, des dizaines de milliers de tours d'un coup sur le fil de la
+    /// fenêtre).
     pub fn avancer(
         &mut self,
         maintenant: Duration,
@@ -132,17 +136,21 @@ impl Vie {
         s: &mut dyn Systeme,
         journal: &mut dyn FnMut(&str),
     ) -> Vec<Evenement> {
+        fn suivant(prochain: Duration, tour: Duration, maintenant: Duration) -> Duration {
+            let p = prochain + tour;
+            if p <= maintenant { maintenant + tour } else { p }
+        }
         let mut ev = Vec::new();
-        while !self.fin && maintenant >= self.prochain_veille {
-            self.prochain_veille += TOUR_VEILLE;
+        if !self.fin && maintenant >= self.prochain_veille {
+            self.prochain_veille = suivant(self.prochain_veille, TOUR_VEILLE, maintenant);
             self.veille(maintenant, f, journal, &mut ev);
         }
-        while !self.fin && maintenant >= self.prochain_demandes {
-            self.prochain_demandes += TOUR_DEMANDES;
+        if !self.fin && maintenant >= self.prochain_demandes {
+            self.prochain_demandes = suivant(self.prochain_demandes, TOUR_DEMANDES, maintenant);
             self.demandes(f, s, journal, &mut ev);
         }
-        while !self.fin && maintenant >= self.prochain_suite {
-            self.prochain_suite += TOUR_SUITE;
+        if !self.fin && maintenant >= self.prochain_suite {
+            self.prochain_suite = suivant(self.prochain_suite, TOUR_SUITE, maintenant);
             if self.r.gere {
                 self.suite(f, journal, &mut ev);
             }
@@ -364,12 +372,15 @@ mod tests {
         veille: Vec<bool>,
         montree: u32,
         activee: u32,
+        /// Les lectures de la fenêtre (une par tour de surveillance au moins)
+        lectures: std::cell::Cell<u32>,
     }
     impl Fenetre for FausseFenetre {
         fn existe(&self) -> bool {
             true
         }
         fn est_accrochee(&self) -> bool {
+            self.lectures.set(self.lectures.get() + 1);
             self.accrochee
         }
         fn est_visible(&self) -> bool {
@@ -470,6 +481,27 @@ mod tests {
             date_suite: None,
         };
         (Essai(d), r)
+    }
+
+    /// Petit de l'audit du 08/11 : au réveil du PC (une nuit en veille), les tours manqués étaient tous rattrapés d'un
+    /// coup sur le fil de la fenêtre (toutes les 400 ms, 600 ms et 2,5 s : des dizaines de milliers de tours, avec
+    /// des lectures de fichiers) : une pause visible. Un seul tour est fait, puis tout repart de maintenant.
+    #[test]
+    fn au_reveil_les_tours_manques_ne_sont_pas_rattrapes_un_par_un() {
+        let (_e, r) = reglages("reveil", true);
+        let mut v = Vie::nouvelle(r);
+        let (mut f, mut s) = (FausseFenetre::default(), FauxSysteme::default());
+        v.avancer(Duration::from_secs(1), &mut f, &mut s, &mut |_| {});
+        let avant = f.lectures.get();
+        // Huit heures plus tard
+        let nuit = Duration::from_secs(8 * 3600);
+        v.avancer(nuit, &mut f, &mut s, &mut |_| {});
+        let tours = f.lectures.get() - avant;
+        assert!(tours <= 3, "{tours} tours rattrapés d'un coup au réveil");
+        // Et la suite reprend au rythme normal
+        let avant = f.lectures.get();
+        v.avancer(nuit + Duration::from_millis(1200), &mut f, &mut s, &mut |_| {});
+        assert!((1..=3).contains(&(f.lectures.get() - avant)), "{}", f.lectures.get() - avant);
     }
 
     #[test]
