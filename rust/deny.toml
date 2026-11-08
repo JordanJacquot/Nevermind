@@ -50,6 +50,8 @@ allow = [
     "nevermind-noyau", "nevermind-appli", "nevermind-pc", "nevermind-perf", "nevermind-memoire", "nevermind-protection",
     "nevermind-jeux", "nevermind-reseau", "nevermind-trafic", "nevermind-divers", "nevermind-relais",
     "nevermind-desinstalleur",
+    # le mode streameur (08/11/2026) : réglages d'OBS et de Streamlabs, sans bibliothèque de plus
+    "nevermind-stream",
     # la bibliothèque commune de la suite (dépôt Mindset, révision épinglée), sans ses options par défaut ; elle n'apporte
     # que serde_json
     "suite-commun",
