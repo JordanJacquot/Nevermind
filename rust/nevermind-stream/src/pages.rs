@@ -258,7 +258,7 @@ pub fn carte_perf(disponible: bool, regle: bool) -> Value {
     if !disponible {
         return json!({ "id": "streameur", "nom": "Mode streameur", "note": SANS_LOGICIEL, "icone": "camera", "couleur": "doux", "inactif": true });
     }
-    json!({ "id": "streameur", "nom": "Mode streameur", "note": "Règle OBS ou Streamlabs pour streamer sans saccades", "icone": "camera", "couleur": "T",
+    json!({ "id": "streameur", "nom": "Mode streameur", "resume": "Réglages pour streamer", "note": "Règle OBS ou Streamlabs pour streamer sans saccades", "icone": "camera", "couleur": "T",
         "etiquette": if regle { json!("Réglé") } else { Value::Null }, "ton": if regle { "ok" } else { "" } })
 }
 

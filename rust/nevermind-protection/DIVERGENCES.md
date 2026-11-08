@@ -53,3 +53,9 @@ tourne derrière change :
 ## Câblage du contrat de la suite (06/11)
 - Chaque vérification jugée envoie aussi « etat-mindset » `{ "protection": <note> }` à l'hôte : la note de la carte de
   Nevermind dans Mindset (`$script:SecurityScore` de `Write-EtatMindset`, écrit dans etat.json).
+
+## Dalles d'outils (08/11, choix de Jordan : le modèle « D »)
+- Les dalles Sécurité et Sauvegarde ont en plus `resume` (« Virus et menaces », « Retour en arrière », écrits sous
+  le titre) et Sécurité a `niveau` (la note de protection sur 100, le remplissage de la barre du bas). `note` (la
+  phrase d'avant) reste, en infobulle. Ces champs n'existent pas en PowerShell : `tests/juges.rs` les retire de la
+  sortie Rust avant de comparer.

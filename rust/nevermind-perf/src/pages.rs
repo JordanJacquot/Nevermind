@@ -218,19 +218,21 @@ pub fn pages(e: &Value) -> Map<String, Value> {
         }
     };
     let elements = json!([
-        { "id": "optimisation", "nom": "Optimisation gaming", "note": "Réglages, Mode jeu, profils par jeu", "icone": "manette", "couleur": "P",
+        { "id": "optimisation", "nom": "Optimisation gaming", "resume": "Réglages et mode jeu", "note": "Réglages, Mode jeu, profils par jeu", "icone": "manette", "couleur": "P",
+          "niveau": if total > 0 { json!(ok_n * 100 / total) } else { Value::Null },
           "etiquette": if reste > 0 { json!(format!("{reste} à faire")) } else if total > 0 { json!("Optimisé") } else { Value::Null },
           "ton": if reste > 0 { "attention" } else if total > 0 { "ok" } else { "" } },
-        { "id": "demarrage", "nom": "Démarrage", "note": "Ce qui se lance avec le PC", "icone": "marche", "couleur": "S",
+        { "id": "demarrage", "nom": "Démarrage", "resume": "Lancé avec le PC", "note": "Ce qui se lance avec le PC", "icone": "marche", "couleur": "S",
           "etiquette": if !entrees.is_empty() { json!(format!("{on} programme{}", s(on))) } else { Value::Null },
           "ton": if conseil > 0 { "attention" } else { "" } },
-        { "id": "nettoyage", "nom": "Nettoyage", "note": "Les fichiers inutiles", "icone": "balai", "couleur": "T",
+        { "id": "nettoyage", "nom": "Nettoyage", "resume": "Fichiers inutiles", "note": "Les fichiers inutiles", "icone": "balai", "couleur": "T",
           "etiquette": if !c_rows.is_empty() { json!(taille(tout)) } else { Value::Null },
           "ton": if tout > 1073741824.0 { "attention" } else if !c_rows.is_empty() { "ok" } else { "" } },
-        { "id": "memoire", "nom": "RAM", "note": "Ce qui prend la mémoire", "icone": "memoire", "couleur": "P",
+        { "id": "memoire", "nom": "RAM", "resume": "Mémoire utilisée", "note": "Ce qui prend la mémoire", "icone": "memoire", "couleur": "P",
+          "niveau": match ram_p { Some(p) => json!(p.clamp(0, 100)), None => Value::Null },
           "etiquette": match ram_p { Some(p) => json!(format!("{p} %")), None => Value::Null },
           "ton": if ram_alerte || ram_p.is_some_and(|p| p >= 80) { "attention" } else { "" } },
-        { "id": "connexion", "nom": "Connexion", "note": "Temps de réponse (ping), stabilité, DNS", "icone": "ondes", "couleur": "P",
+        { "id": "connexion", "nom": "Connexion", "resume": "Ping et stabilité", "note": "Temps de réponse (ping), stabilité, DNS", "icone": "ondes", "couleur": "P",
           "etiquette": if bridage { json!("Carte trop lente") } else if let Some(i) = inter { json!(format!("{} ms", nombre_texte(i.get("moy")))) } else { json!("À tester") },
           "ton": if bridage { json!("attention") } else if let Some(i) = inter { ton_statut(&ch(i.get("statut"))) } else { json!("") } }
     ]);

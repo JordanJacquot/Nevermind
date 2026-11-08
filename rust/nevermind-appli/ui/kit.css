@@ -253,10 +253,19 @@ body.avec-3d .anneau { background: none; }
 .carte-choix { padding: 14px 16px; text-align: left; } .carte-choix b { display: block; font-size: 16px; } .carte-choix span { color: var(--doux); font-size: 13px; }
 /* Les cartes d'outils, les raccourcis */
 .outils { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-bottom: 22px; }
-.outil { padding: 16px; text-align: left; display: flex; flex-direction: column; gap: 2px; }
-.outil .haut-o { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.outil .ic { width: 44px; height: 44px; } .outil b { font-size: 17px; } .outil .n { color: var(--doux); font-size: 13.5px; }
-.outil.inactif { cursor: default; box-shadow: none; } .outil.inactif .haut-o, .outil.inactif b { opacity: .45; filter: grayscale(1); }
+/* (l'icône, le titre et le résumé centrés en hauteur, toutes les dalles de la même hauteur ; en bas, l'état écrit à droite
+   et une barre fine au ras du bord, coupée par l'arrondi de la dalle ; le bas de 22 px reste libre pour l'état) */
+.outil { box-sizing: border-box; min-height: 108px; padding: 14px 16px 22px; text-align: left; display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; align-content: center; column-gap: 14px; }
+.outil .ic { width: 44px; height: 44px; }
+.outil .texte-o { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.outil b { font-size: 15.5px; line-height: 1.25; } .outil .n { color: var(--doux); font-size: 12.5px; line-height: 1.35; }
+.outil .t-ok { --c-o: var(--vert); } .outil .t-attention { --c-o: var(--orange); } .outil .t-urgent { --c-o: var(--rouge); }
+.outil .t-info { --c-o: color-mix(in srgb, var(--texte) 70%, var(--doux)); }
+.outil .etat-o { position: absolute; right: 14px; bottom: 9px; font-size: 11px; font-weight: 700; line-height: 1; white-space: nowrap; color: var(--c-o); }
+.outil .barre-o { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.outil .barre { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,0.06); }
+.outil .barre i { display: block; height: 100%; border-radius: 0 4px 4px 0; background: var(--c-o); } .outil .barre i.t-info { background: var(--P); }
+.outil.inactif { cursor: default; box-shadow: none; } .outil.inactif .ic, .outil.inactif b { opacity: .45; filter: grayscale(1); }
 .raccourcis { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
 .raccourci { display: inline-flex; align-items: center; gap: 10px; padding: 7px 12px 7px 7px; border-radius: 99px; font-size: 14.5px; }
 .raccourci .ic { width: 32px; height: 32px; border-radius: 50%; } .raccourci .ic svg { width: 18px; height: 18px; } .raccourci .chev svg { width: 16px; height: 16px; }

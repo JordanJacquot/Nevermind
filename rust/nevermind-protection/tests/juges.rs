@@ -29,6 +29,26 @@ const LISTES: [&str; 17] = [
     "quand",
 ];
 
+/// Divergence voulue (DIVERGENCES.md, « Dalles d'outils ») : `resume` et `niveau` des dalles n'existent pas en
+/// PowerShell ; ils sont retirés de la sortie Rust avant la comparaison, tout le reste est comparé tel quel.
+fn sans_resume_ni_niveau(v: &mut Value) {
+    match v {
+        Value::Array(a) => a.iter_mut().for_each(sans_resume_ni_niveau),
+        Value::Object(o) => {
+            if o.get("type").and_then(Value::as_str) == Some("outils") {
+                for x in o.get_mut("elements").and_then(Value::as_array_mut).into_iter().flatten() {
+                    if let Some(x) = x.as_object_mut() {
+                        x.remove("resume");
+                        x.remove("niveau");
+                    }
+                }
+            }
+            o.values_mut().for_each(sans_resume_ni_niveau);
+        }
+        _ => {}
+    }
+}
+
 fn normaliser(v: &mut Value) {
     match v {
         Value::Array(a) => a.iter_mut().for_each(normaliser),
@@ -94,6 +114,7 @@ fn sortie_rust(e: &Value) -> (Value, Value, Value) {
         pages_pour(CasPages { s, env: &env, approuves: &approuves, sauvegarde: &sauve, historique: &hist });
     let mut p = Value::Object(pages);
     normaliser(&mut p);
+    sans_resume_ni_niveau(&mut p);
     let gestes: Vec<Value> = points
         .iter()
         .map(|c| {

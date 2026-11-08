@@ -97,10 +97,11 @@ pub fn pages(e: &EntreePages) -> (Map<String, Value>, Vec<Constat>) {
 
     // ---- Protection
     let mut blocs = vec![json!({ "type": "outils", "elements": [
-        { "id": "securite", "nom": "Sécurité", "note": "Virus et programmes dangereux", "icone": "bouclier", "couleur": "T",
+        { "id": "securite", "nom": "Sécurité", "resume": "Virus et menaces", "note": "Virus et programmes dangereux", "icone": "bouclier", "couleur": "T",
+          "niveau": match sec { Some(x) => json!(x.clamp(0, 100)), None => Value::Null },
           "etiquette": if n > 0 { json!(format!("{n} point{}", pluriel(n))) } else if d.is_some() { json!("Tout est propre") } else { Value::Null },
           "ton": if checks.iter().any(Constat::grave) { "urgent" } else if n > 0 { "attention" } else { "ok" } },
-        { "id": "sauvegarde", "nom": "Sauvegarde", "note": "Revenir en arrière à tout moment", "icone": "sauve", "couleur": "S",
+        { "id": "sauvegarde", "nom": "Sauvegarde", "resume": "Retour en arrière", "note": "Revenir en arrière à tout moment", "icone": "sauve", "couleur": "S",
           "etiquette": if nb > 0 { format!("{nb} réglage{}", pluriel(nb)) } else { "Rien de modifié".into() }, "ton": "ok" }
     ] })];
     if n > 0 {
