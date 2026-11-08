@@ -458,8 +458,10 @@ impl BlocReseau {
         self.travaux.lancer(ctx, GESTE, move |fond| {
             let ctx = fond.ctx;
             let mut log: Vec<Value> = Vec::new();
-            let definitif = |log: &mut Vec<Value>, t: &str, d: String, retour: &str| {
-                log.push(json!({ "Type": "definitif", "Titre": t, "Detail": d, "Retour": retour }));
+            // (Add-ChangementDefinitif : Type, Quoi, Retour ; le titre sert seulement hors d'une action. Jusqu'au
+            //  08/11, « Detail » au lieu de « Quoi » : l'historique montrait « (définitif) » sans rien devant)
+            let definitif = |log: &mut Vec<Value>, _titre: &str, quoi: String, retour: &str| {
+                log.push(json!({ "Type": "definitif", "Quoi": quoi, "Retour": retour }));
             };
             let r: Result<(), String> = match act.geste {
                 Geste::WifiManuel => {

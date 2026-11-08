@@ -91,6 +91,49 @@ pub fn lire_fabricants(texte: &str) -> Fabricants {
     m
 }
 
+/// La liste de l'IEEE a plus de 30 000 fabricants : en dessous de 1 000, ce n'est pas elle (une page d'erreur, un
+/// portail de Wi-Fi public, un téléchargement coupé)
+pub const FABRICANTS_MIN: usize = 1000;
+
+/// fabricants.txt est-il une vraie liste (et pas un fichier vide laissé par un téléchargement raté) ?
+pub fn fabricants_complets(texte: &str) -> bool {
+    lire_fabricants(texte).keys().filter(|k| k.len() == 6 && k.bytes().all(|b| b.is_ascii_hexdigit())).count()
+        >= FABRICANTS_MIN
+}
+
+/// oui.csv de l'IEEE (« Registry,Assignment,Organization Name,... ») en fabricants.txt (avec BOM) ; `None` si ce
+/// n'est pas la liste (Invoke-WebRequest levait une erreur et rien n'était écrit : reseau.ps1:33-38)
+pub fn fabricants_depuis_csv(csv: &str) -> Option<String> {
+    let mut sortie = String::from("\u{feff}");
+    for l in csv.lines().skip(1) {
+        let c = colonnes_csv(l);
+        if c.len() >= 3 {
+            sortie.push_str(&format!("{}|{}\r\n", c[1], c[2]));
+        }
+    }
+    fabricants_complets(&sortie).then_some(sortie)
+}
+
+fn colonnes_csv(l: &str) -> Vec<String> {
+    let mut r = Vec::new();
+    let mut cur = String::new();
+    let mut guillemets = false;
+    let mut it = l.chars().peekable();
+    while let Some(c) = it.next() {
+        match c {
+            '"' if guillemets && it.peek() == Some(&'"') => {
+                cur.push('"');
+                it.next();
+            }
+            '"' => guillemets = !guillemets,
+            ',' if !guillemets => r.push(std::mem::take(&mut cur)),
+            c => cur.push(c),
+        }
+    }
+    r.push(cur);
+    r
+}
+
 static SOCIETE: LazyLock<Regex> = LazyLock::new(|| {
     re(r"[,\s]+(inc|incorporated|co|ltd|corporation|corp|gmbh|s\.?a\.?s|sarl|s\.a|limited|llc|b\.v|ag|oy|ab)\b\.?")
 });

@@ -495,3 +495,75 @@ fn le_dns_et_le_bureau_a_distance_sont_notes_avant_d_etre_changes() {
     assert!(ctx.sauvegarde().registre.contains_key(cle), "pas dans la sauvegarde");
     let _ = std::fs::remove_dir_all(&ctx.donnees);
 }
+
+/// Petit de l'audit du 08/11 : un changement définitif de l'audit (pare-feu réactivé...) arrivait vide dans
+/// l'historique (« (définitif) » sans rien devant) : il était écrit sous `Detail`, alors que l'historique, « Tout
+/// restaurer » et la désinstallation lisent `Quoi` (Add-ChangementDefinitif : Type, Quoi, Retour).
+#[test]
+fn un_changement_definitif_de_l_audit_a_son_texte_dans_l_historique() {
+    use std::time::Instant;
+    let s = Arc::new(FausseSonde::default());
+    *s.bps.lock().unwrap() = 1e8;
+    let ctx = contexte("definitif").partage();
+    ctx.fausse_aide(Arc::new(|_: &str, _: &Value| Ok(json!("ok"))));
+    let mut b = BlocReseau::avec_sonde(s.clone());
+    let _ = page(&mut b, &ctx, "reseau");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnNetAudit", &Value::Null, &mut e));
+    attendre(&mut b, &ctx, &mut e, |b, c| {
+        b.pages(c, "panneau").get("panneau").is_some_and(|p| p["module"]["titre"] == "Points à corriger")
+    });
+    let pan = page(&mut b, &ctx, "panneau");
+    let bouton =
+        pan["blocs"].as_array().unwrap().iter().find(|x| x["texte"] == "Réactiver le pare-feu").cloned().unwrap();
+    let mut e = Effets::default();
+    b.action(&ctx, bouton["id"].as_str().unwrap(), &Value::Null, &mut e);
+    let q =
+        e.0.iter()
+            .find_map(|x| match x {
+                Effet::Signal { nom, donnees } if nom == "question" => Some(donnees.clone()),
+                _ => None,
+            })
+            .unwrap();
+    let mut e = Effets::default();
+    b.action(&ctx, "reseau-question", &json!({ "id": q["id"], "valeur": "oui" }), &mut e);
+    let mut tout = e.0;
+    let fin = Instant::now() + Duration::from_secs(10);
+    let h = loop {
+        if let Some(h) = tout.iter().find_map(|x| match x {
+            Effet::Signal { nom, donnees } if nom == "historique" => Some(donnees.clone()),
+            _ => None,
+        }) {
+            break h;
+        }
+        assert!(Instant::now() < fin, "pas d'historique : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert_eq!(h["log"][0]["Type"], "definitif");
+    assert_eq!(h["log"][0]["Quoi"], "Pare-feu réactivé sur tous les réseaux", "{h}");
+    assert!(h["log"][0]["Retour"].as_str().is_some_and(|r| r.starts_with("Sécurité Windows")), "{h}");
+    let _ = std::fs::remove_dir_all(&ctx.donnees);
+}
+
+/// Petit de l'audit du 08/11 : une page d'erreur (403, portail de Wi-Fi public) donnait un fabricants.txt vide, qui
+/// n'était plus jamais retéléchargé. Seule une vraie liste est gardée, et un fichier vide est retéléchargé.
+#[test]
+fn seule_une_vraie_liste_de_fabricants_est_gardee() {
+    use nevermind_reseau::appareil::{fabricants_complets, fabricants_depuis_csv, lire_fabricants};
+    assert_eq!(fabricants_depuis_csv(""), None);
+    assert_eq!(fabricants_depuis_csv("<html><body>403 Forbidden</body></html>"), None);
+    assert_eq!(fabricants_depuis_csv("Registry,Assignment,Organization Name\nMA-L,F0B429,\"Apple, Inc.\"\n"), None);
+    let mut csv = String::from("Registry,Assignment,Organization Name,Organization Address\n");
+    for i in 0..1200 {
+        csv.push_str(&format!("MA-L,{i:06X},\"Fabricant {i}, Inc.\",Adresse\n"));
+    }
+    let t = fabricants_depuis_csv(&csv).expect("une vraie liste");
+    assert!(t.starts_with('\u{feff}'));
+    assert_eq!(lire_fabricants(&t).get("00002A").map(String::as_str), Some("Fabricant 42, Inc."));
+    assert_eq!(lire_fabricants(&t).len(), 1200);
+    assert!(fabricants_complets(&t));
+    assert!(!fabricants_complets("\u{feff}"), "le fichier vide d'avant est retéléchargé");
+}
