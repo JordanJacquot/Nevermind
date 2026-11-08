@@ -147,11 +147,13 @@ pub fn adaptateurs() -> Vec<Adaptateur> {
     r
 }
 
-/// La route par défaut IPv4 de plus petite métrique : numéro de la carte et passerelle
+/// La route par défaut IPv4 que Windows prend vraiment : numéro de la carte et passerelle. Avant, la première au plus
+/// petit coût de route : une carte Wi-Fi débranchée qui garde sa route au même coût que le câble pouvait gagner (PC
+/// de Jordan, 08/11 : il n'était choisi juste que parce que Windows donnait le câble en premier).
 pub fn route_defaut() -> Option<(u32, String)> {
     let mut t: *mut MIB_IPFORWARD_TABLE2 = std::ptr::null_mut();
     // SAFETY : table donnée par Windows, lue dans ses limites puis rendue
-    unsafe {
+    let routes: Vec<(u32, u32, String)> = unsafe {
         if GetIpForwardTable2(AF_INET, &mut t).is_err() || t.is_null() {
             return None;
         }
@@ -159,11 +161,29 @@ pub fn route_defaut() -> Option<(u32, String)> {
         let r = lignes
             .iter()
             .filter(|l| l.DestinationPrefix.PrefixLength == 0)
-            .min_by_key(|l| l.Metric)
-            .map(|l| (l.InterfaceIndex, adresse_inet(&l.NextHop).map(|a| a.to_string()).unwrap_or_default()));
+            .map(|l| (l.InterfaceIndex, l.Metric, adresse_inet(&l.NextHop).map(|a| a.to_string()).unwrap_or_default()))
+            .collect();
         FreeMibTable(t.cast());
         r
-    }
+    };
+    let (interfaces, cartes) = nevermind_noyau::windows::route::etats_ipv4();
+    route_choisie(&routes, &interfaces, &cartes)
+}
+
+/// Le choix parmi les routes par défaut (carte, coût de la route, passerelle) lues dans la table de Windows (celle
+/// en service : GetIpForwardTable2 ne donne que l'ActiveStore)
+fn route_choisie(
+    routes: &[(u32, u32, String)],
+    interfaces: &[nevermind_noyau::route::InterfaceIp],
+    cartes: &[nevermind_noyau::route::EtatCarte],
+) -> Option<(u32, String)> {
+    use nevermind_noyau::route::{RouteDefaut, choisir_route};
+    let defauts: Vec<RouteDefaut> = routes
+        .iter()
+        .map(|(i, m, _)| RouteDefaut { index: i64::from(*i), metrique: i64::from(*m), active: true })
+        .collect();
+    let index = choisir_route(&defauts, interfaces, cartes)?;
+    routes.iter().find(|(i, _, _)| i64::from(*i) == index).map(|(i, _, p)| (*i, p.clone()))
 }
 
 fn etat(e: i32) -> &'static str {
@@ -527,3 +547,35 @@ pub fn vider_cache_dns() {
 
 #[allow(dead_code)]
 fn _pcwstr(_: PCWSTR) {}
+
+#[cfg(test)]
+mod essais {
+    /// Lecture seule de ce PC (lancé à la main : `cargo test -p nevermind-reseau route_de_ce_pc -- --ignored
+    /// --nocapture`) : la route par défaut choisie et sa carte, à comparer avec Get-NetRoute et Get-NetAdapter.
+    #[test]
+    #[ignore]
+    fn route_de_ce_pc() {
+        let r = super::route_defaut();
+        let carte = r.as_ref().and_then(|(i, _)| super::adaptateurs().into_iter().find(|a| a.index == *i));
+        eprintln!("route : {r:?} ; carte : {:?}", carte.map(|a| (a.nom, a.desc, a.wifi)));
+        let (interfaces, cartes) = nevermind_noyau::windows::route::etats_ipv4();
+        eprintln!("interfaces : {interfaces:?}\ncartes : {cartes:?}");
+    }
+
+    /// Le PC de Jordan le 08/11, le Wi-Fi débranché (12) lu avant le câble (6), au même coût de route (0) : avant, la
+    /// première route au plus petit coût gagnait ; la bonne n'était prise que si Windows donnait le câble en premier.
+    #[test]
+    fn jordan_cable_et_wifi_debranche() {
+        use nevermind_noyau::route::{EtatCarte, InterfaceIp};
+        let ip = |index, metrique, connectee| InterfaceIp { index, metrique, connectee };
+        let carte = |index, connectee, materielle| EtatCarte { index, connectee, materielle };
+        let interfaces = [ip(13, 25, true), ip(6, 25, true), ip(12, 65, false), ip(1, 75, true)];
+        let cartes = [carte(13, true, false), carte(12, false, true), carte(6, true, true)];
+        let routes = [(12, 0, "192.168.1.1".to_string()), (6, 0, "192.168.1.1".to_string())];
+        assert_eq!(super::route_choisie(&routes, &interfaces, &cartes), Some((6, "192.168.1.1".into())));
+        // (dans l'autre ordre aussi, et sans route : rien)
+        let routes = [(6, 0, "192.168.1.1".to_string()), (12, 0, "192.168.1.1".to_string())];
+        assert_eq!(super::route_choisie(&routes, &interfaces, &cartes), Some((6, "192.168.1.1".into())));
+        assert_eq!(super::route_choisie(&[], &interfaces, &cartes), None);
+    }
+}

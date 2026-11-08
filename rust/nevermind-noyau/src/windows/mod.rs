@@ -13,6 +13,7 @@
 
 pub mod canal;
 pub mod http;
+pub mod route;
 
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HLOCAL, LocalFree};
 use windows::Win32::Globalization::{CP_OEMCP, MULTI_BYTE_TO_WIDE_CHAR_FLAGS, MultiByteToWideChar};

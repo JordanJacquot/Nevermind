@@ -23,6 +23,7 @@ pub mod mises_a_jour;
 pub mod moment;
 pub mod pont;
 pub mod registre;
+pub mod route;
 pub mod sauvegarde;
 pub mod signaux;
 pub mod travaux;
