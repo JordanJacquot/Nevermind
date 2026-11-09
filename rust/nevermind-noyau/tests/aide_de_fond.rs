@@ -85,3 +85,48 @@ fn le_reveil_reussi_leve_la_pause() {
     drop(relancee.lock().unwrap().take());
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// Un réveil demandé pendant qu'un autre est en cours (et va échouer) n'est plus perdu : il est refait à la fin du
+/// premier. Avant, la demande était jetée et la pause de 60 s notée : rien ne relançait l'Aide pendant une minute (la
+/// mesure des FPS d'une partie qui commence ne reprenait pas).
+#[test]
+fn un_reveil_demande_pendant_un_autre_n_est_pas_perdu() {
+    let (ctx, d) = contexte("redemande");
+    let ctx = ctx.partage();
+    // (sans droits, comme Nevermind : en administrateur `mesures_aide` ne réveille jamais l'Aide)
+    ctx.regler_admin_essai(false).unwrap();
+    let canal = ctx.aide_config().canal.clone();
+    let repondre: Repondre = Arc::new(|_: &str| Some(fausse_aide::ok(json!([])).to_string()));
+    let relancee = Arc::new(Mutex::new(None::<FauxServeur>));
+    let reveils = Arc::new(AtomicUsize::new(0));
+    let (rl, rv, c, rep) = (relancee.clone(), reveils.clone(), canal.clone(), repondre.clone());
+    // (la tâche : son premier lancement ne donne rien ; le suivant relance l'Aide)
+    ctx.tache_aide_essai(Arc::new(move || {
+        if rv.fetch_add(1, Ordering::SeqCst) >= 1 {
+            *rl.lock().unwrap() = Some(FauxServeur::lancer(&c, rep.clone()).unwrap());
+        }
+        true
+    }))
+    .unwrap();
+    // Un premier réveil, qui va échouer (3 s d'attente de l'Aide)
+    assert!(ctx.aide_de_fond("flux.lire", &json!({}), 2000).is_err());
+    let fin = Instant::now() + Duration::from_secs(5);
+    while reveils.load(Ordering::SeqCst) == 0 {
+        assert!(Instant::now() < fin, "le premier réveil n'est pas lancé");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // Pendant ce temps, une partie commence : la mesure demande un réveil
+    assert!(!ctx.mesures_aide(), "l'Aide n'écoute pas encore");
+    let fin = Instant::now() + Duration::from_secs(15);
+    while !ctx.aide_joignable(1) || !ctx.mesures_aide() {
+        assert!(
+            Instant::now() < fin,
+            "la demande faite pendant le premier réveil est perdue ({} réveil(s))",
+            reveils.load(Ordering::SeqCst)
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(reveils.load(Ordering::SeqCst), 2);
+    drop(relancee.lock().unwrap().take());
+    let _ = std::fs::remove_dir_all(&d);
+}

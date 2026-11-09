@@ -112,6 +112,8 @@ pub struct EtatAide {
     config: OnceLock<Config>,
     etat: Mutex<Etat>,
     reveil: AtomicBool,
+    /// Un réveil a été demandé pendant qu'un autre, qui va peut-être échouer, était en cours : il est refait
+    reveil_redemande: AtomicBool,
     pub(crate) fausse: Mutex<Option<FausseAide>>,
     /// En test : les actions demandées par `aide` (celles qui peuvent proposer la demande de Windows)
     pub(crate) avec_demande: Mutex<Vec<String>>,
@@ -515,17 +517,29 @@ impl Contexte {
     /// Le réveil de l'Aide dans un fil à part (sa tâche SYSTEM seulement, jamais de demande de Windows), un seul à la
     /// fois ; réussi, il lève la pause des demandes de fond et des mesures.
     fn reveiller_en_fond(self: &Arc<Self>) {
+        // (un réveil déjà en cours : la demande est notée, pas perdue ; il sera refait s'il échoue)
         if self.aide.reveil.swap(true, Ordering::SeqCst) {
+            self.aide.reveil_redemande.store(true, Ordering::SeqCst);
             return;
         }
         let ctx = self.clone();
         let lance = std::thread::Builder::new().name("nevermind-reveil-aide".into()).spawn(move || {
-            let ok = ctx.aide_sans_demande("aide.bonjour", &json!({}), 10000).is_ok();
-            ctx.aide.reveil.store(false, Ordering::SeqCst);
-            if ok {
-                let mut e = verrou(&ctx.aide.etat);
-                e.fond_echec = None;
-                e.mesures_echec = None;
+            loop {
+                let ok = ctx.aide_sans_demande("aide.bonjour", &json!({}), 10000).is_ok();
+                if ok {
+                    ctx.aide.reveil_redemande.store(false, Ordering::SeqCst);
+                    let mut e = verrou(&ctx.aide.etat);
+                    e.fond_echec = None;
+                    e.mesures_echec = None;
+                }
+                ctx.aide.reveil.store(false, Ordering::SeqCst);
+                // (raté, et redemandé pendant ce temps : encore une fois, sauf si un autre réveil vient de partir)
+                if ok
+                    || !ctx.aide.reveil_redemande.swap(false, Ordering::SeqCst)
+                    || ctx.aide.reveil.swap(true, Ordering::SeqCst)
+                {
+                    break;
+                }
             }
         });
         if lance.is_err() {
