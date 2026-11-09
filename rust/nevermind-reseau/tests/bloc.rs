@@ -19,6 +19,7 @@ struct FausseSonde {
     bps: Mutex<f64>,
     pings: AtomicUsize,
     scans: AtomicUsize,
+    audits: AtomicUsize,
     caches_vides: AtomicUsize,
     /// Le DNS fixé à la main avant Nevermind (NameServer), et le Bureau à distance activé (M9)
     dns_avant: String,
@@ -93,6 +94,7 @@ impl Sonde for FausseSonde {
         })
     }
     fn audit(&self, _: &str, _: &str, _: i64, ips: &[String], _: &[i64], _: &Avancement) -> Result<Value, String> {
+        self.audits.fetch_add(1, Ordering::SeqCst);
         assert!(!ips.iter().any(|i| i == "192.168.1.42"), "ce PC ne doit pas être audité");
         Ok(
             json!({ "Wifi": { "Ssid": "Essai", "Auth": "Ouvrir", "Cipher": "" }, "Profiles": [], "Ssdp": [], "Ports": ["192.168.1.50|23"],
@@ -655,5 +657,79 @@ fn un_clic_pendant_le_geste_d_une_autre_page_est_refuse() {
         b.travaux_finis(&ctx, &mut e);
         std::thread::sleep(Duration::from_millis(10));
     }
+    let _ = std::fs::remove_dir_all(&ctx.donnees);
+}
+
+/// Lot B du second audit : la fin d'un geste de l'audit (SMBv1 peut durer 15 min) ne ramène plus l'utilisateur sur le
+/// panneau de l'audit quand il est parti ailleurs, et ne relance pas l'audit (balayage des appareils) : il est refait
+/// quand l'utilisateur revient sur son panneau, jamais pendant une partie. Fausse Aide : rien sur le vrai PC.
+#[test]
+fn la_fin_d_un_geste_ne_force_plus_l_ecran_de_l_audit() {
+    use std::time::Instant;
+    let s = Arc::new(FausseSonde::default());
+    *s.bps.lock().unwrap() = 1e8;
+    let ctx = contexte("audit-ailleurs").partage();
+    let (feu, attente) = std::sync::mpsc::channel::<()>();
+    let attente = Mutex::new(Some(attente));
+    ctx.fausse_aide(Arc::new(move |_: &str, _: &Value| {
+        if let Some(r) = attente.lock().unwrap().take() {
+            let _ = r.recv_timeout(Duration::from_secs(60));
+        }
+        Ok(json!("ok"))
+    }));
+    let mut b = BlocReseau::avec_sonde(s.clone());
+    let _ = page(&mut b, &ctx, "reseau");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnNetAudit", &Value::Null, &mut e));
+    attendre(&mut b, &ctx, &mut e, |b, c| {
+        b.pages(c, "panneau").get("panneau").is_some_and(|p| p["module"]["titre"] == "Points à corriger")
+    });
+    assert_eq!(s.audits.load(Ordering::SeqCst), 1);
+    let pan = page(&mut b, &ctx, "panneau");
+    let bouton =
+        pan["blocs"].as_array().unwrap().iter().find(|x| x["texte"] == "Réactiver le pare-feu").cloned().unwrap();
+    let mut e = Effets::default();
+    b.action(&ctx, bouton["id"].as_str().unwrap(), &Value::Null, &mut e);
+    let q =
+        e.0.iter()
+            .find_map(|x| match x {
+                Effet::Signal { nom, donnees } if nom == "question" => Some(donnees.clone()),
+                _ => None,
+            })
+            .unwrap();
+    let mut e = Effets::default();
+    b.action(&ctx, "reseau-question", &json!({ "id": q["id"], "valeur": "oui" }), &mut e);
+    // L'utilisateur part sur une autre page pendant le geste, puis le geste finit
+    let _ = page(&mut b, &ctx, "jeux");
+    feu.send(()).unwrap();
+    let mut tout = e.0;
+    let fin = Instant::now() + Duration::from_secs(10);
+    while !tout.iter().any(|x| matches!(x, Effet::Signal { nom, .. } if nom == "historique")) {
+        assert!(Instant::now() < fin, "le geste ne finit pas : {tout:?}");
+        let mut e = Effets::default();
+        b.tic(&ctx, false, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    for _ in 0..10 {
+        let mut e = Effets::default();
+        b.tic(&ctx, false, &mut e);
+        tout.extend(e.0);
+    }
+    assert!(!tout.contains(&Effet::OuvrirEcran("panneau".into())), "l'écran est forcé sur l'audit : {tout:?}");
+    assert_eq!(s.audits.load(Ordering::SeqCst), 1, "l'audit est relancé alors que l'utilisateur est ailleurs");
+    // Une partie commence ; il revient sur le panneau : toujours rien pendant la partie
+    let mut e = Effets::default();
+    b.signal(&ctx, "partie-commencee", &json!({}), &mut e);
+    let _ = page(&mut b, &ctx, "panneau");
+    let mut e = Effets::default();
+    b.tic(&ctx, false, &mut e);
+    assert_eq!(s.audits.load(Ordering::SeqCst), 1, "l'audit est relancé pendant une partie");
+    // La partie finie, sur le panneau : l'audit est refait
+    let mut e = Effets::default();
+    b.signal(&ctx, "partie-finie", &json!({}), &mut e);
+    let _ = page(&mut b, &ctx, "panneau");
+    let mut e = Effets::default();
+    attendre(&mut b, &ctx, &mut e, |_, _| s.audits.load(Ordering::SeqCst) == 2);
     let _ = std::fs::remove_dir_all(&ctx.donnees);
 }

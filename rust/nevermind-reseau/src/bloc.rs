@@ -117,6 +117,11 @@ pub struct BlocReseau {
     travaux: Travaux<FinGeste>,
     /// Le nom du geste en cours (le dernier lancé), pour dire en clair pourquoi un autre clic est refusé (lot B)
     geste_nom: Option<String>,
+    /// L'écran montré (le dernier demandé par l'hôte)
+    ecran: String,
+    /// Un geste de l'audit a fini pendant que l'utilisateur était ailleurs (ou en partie) : l'audit est refait quand il
+    /// revient sur son panneau, jamais en le forçant à y aller (lot B)
+    audit_a_refaire: bool,
 }
 
 impl Default for BlocReseau {
@@ -180,6 +185,8 @@ impl BlocReseau {
             signal_connexion: None,
             travaux: Travaux::default(),
             geste_nom: None,
+            ecran: String::new(),
+            audit_a_refaire: false,
         }
     }
 
@@ -220,6 +227,11 @@ impl BlocReseau {
             self.net_lu = true;
             self.net = self.sonde.connexion();
         }
+    }
+
+    /// Le panneau de l'audit est-il à l'écran, hors partie ? (le seul moment où l'audit peut être refait de lui-même)
+    fn audit_regarde(&self) -> bool {
+        !self.en_partie && self.ecran == "panneau" && matches!(self.panneau, Some(Panneau::Audit))
     }
 
     /// Un clic refusé parce qu'un geste de la page tourne encore : dit en clair (lot B ; avant, seulement le journal)
@@ -392,6 +404,7 @@ impl BlocReseau {
             effets.ajouter(Effet::Annonce("Aucune connexion réseau détectée.".into()));
             return;
         };
+        self.audit_a_refaire = false;
         self.audit_en_cours = true;
         self.av = Arc::new(Avancement::default());
         self.panneau = Some(Panneau::AuditEnCours);
@@ -554,8 +567,14 @@ impl BlocReseau {
             }
         };
         signal(effets, "historique", json!({ "titre": format!("{} ({titre})", act.label), "details": [], "log": log }));
+        // (l'audit refait seulement si son panneau est encore à l'écran, et jamais pendant une partie : avant, la fin de
+        //  SMBv1, jusqu'à 15 min plus tard, ramenait l'utilisateur sur le panneau de l'audit où qu'il soit ; lot B)
         if act.apres {
-            self.lancer_audit(ctx, effets);
+            if self.audit_regarde() {
+                self.lancer_audit(ctx, effets);
+            } else {
+                self.audit_a_refaire = true;
+            }
         }
     }
 
@@ -912,7 +931,8 @@ impl Bloc for BlocReseau {
         "reseau"
     }
 
-    fn pages(&mut self, ctx: &Contexte, _ecran: &str) -> Map<String, Value> {
+    fn pages(&mut self, ctx: &Contexte, ecran: &str) -> Map<String, Value> {
+        self.ecran = ecran.to_string();
         self.preparer(ctx);
         let (texte, trouves) = self.texte_scan();
         let etat = EtatReseau {
@@ -945,6 +965,11 @@ impl Bloc for BlocReseau {
             "clic:BtnNetScan" => self.lancer_scan(ctx, effets),
             "clic:BtnNetAudit" => self.lancer_audit(ctx, effets),
             "clic:BtnNetAuditView" => {
+                // (un geste a fini pendant que l'utilisateur était ailleurs : l'audit est refait, pas montré périmé)
+                if self.audit_a_refaire && !self.audit_en_cours && !self.en_partie {
+                    self.lancer_audit(ctx, effets);
+                    return true;
+                }
                 if self.audit.is_some() && !self.audit_en_cours {
                     self.panneau = Some(Panneau::Audit);
                     effets.ajouter(Effet::OuvrirEcran("panneau".into()));
@@ -1037,6 +1062,10 @@ impl Bloc for BlocReseau {
     fn tic(&mut self, ctx: &Contexte, cache: bool, effets: &mut Effets) -> Option<Duration> {
         self.recevoir(ctx, effets);
         self.relever_travaux(ctx, effets);
+        // (l'utilisateur revient sur le panneau de l'audit après un geste fini ailleurs : l'audit est refait maintenant)
+        if self.audit_a_refaire && !self.audit_en_cours && self.audit_regarde() {
+            self.lancer_audit(ctx, effets);
+        }
         if self.test_en_cours {
             let p = self.av.phase_actuelle();
             if !p.is_empty() {
