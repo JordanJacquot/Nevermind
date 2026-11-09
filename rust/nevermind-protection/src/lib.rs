@@ -71,6 +71,9 @@ pub struct BlocProtection {
     sys: Option<Arc<dyn Systeme>>,
     /// Les gestes longs des points à vérifier (Defender, l'Aide) : dans un fil à part (audit G3)
     travaux: Travaux<FinGeste>,
+    /// La fenêtre « Choisis le dossier à analyser » : elle attend l'utilisateur sans limite, dans un fil à part
+    /// (lot B du second audit, comme `CHOIX` du bloc Jeux) ; elle rend le dossier choisi, ou rien
+    choix: Travaux<Option<String>>,
     verif: Option<Verification>,
     /// La dernière lecture (pour rejuger sans tout relire quand seuls les éléments approuvés changent)
     lecture: Option<Lecture>,
@@ -172,6 +175,7 @@ impl BlocProtection {
             maj_base: None,
             occupe_texte: None,
             travaux: Travaux::default(),
+            choix: Travaux::default(),
             marque: None,
             panneau: None,
             numero_panneau: 0,
@@ -209,7 +213,11 @@ impl BlocProtection {
 
     /// Un travail de fond attend sa fin (lecture, analyse, mise à jour de la base)
     pub fn occupe(&self) -> bool {
-        self.lecture_en_cours.is_some() || self.analyse.is_some() || self.maj_base.is_some() || self.travaux.occupe()
+        self.lecture_en_cours.is_some()
+            || self.analyse.is_some()
+            || self.maj_base.is_some()
+            || self.travaux.occupe()
+            || self.choix.occupe()
     }
 
     /// `Update-SecurityTab` : la lecture lente part dans un fil à part ; la suite se fait au prochain tic
@@ -413,7 +421,7 @@ impl BlocProtection {
                 let (definitif, erreur, annonces) = geste_long(fond.ctx, sys.as_deref(), &sorte);
                 FinGeste { titre, definitif, erreur, annonces, rafraichir }
             });
-            self.relever_travaux(effets);
+            self.relever_travaux(ctx, effets);
             return;
         }
         match &a.sorte {
@@ -480,11 +488,24 @@ impl BlocProtection {
     }
 
     /// Ce que les gestes longs ont rendu (sur le fil des blocs)
-    fn relever_travaux(&mut self, effets: &mut Effets) {
+    fn relever_travaux(&mut self, ctx: &Contexte, effets: &mut Effets) {
         for r in self.travaux.relever() {
             match r {
                 Rendu::Effet(e) => effets.ajouter(e),
                 Rendu::Fini { resultat: Ok(f), .. } => self.fin_geste(effets, f),
+                Rendu::Fini { resultat: Err(e), .. } => {
+                    effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")))
+                }
+            }
+        }
+        // (le dossier choisi dans la fenêtre : son analyse, comme si l'utilisateur l'avait donné tout de suite)
+        for r in self.choix.relever() {
+            match r {
+                Rendu::Effet(e) => effets.ajouter(e),
+                Rendu::Fini { resultat: Ok(Some(d)), .. } => {
+                    self.action(ctx, "sec-analyser-dossier", &json!(d), effets);
+                }
+                Rendu::Fini { resultat: Ok(None), .. } => {}
                 Rendu::Fini { resultat: Err(e), .. } => {
                     effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")))
                 }
@@ -634,11 +655,16 @@ impl Bloc for BlocProtection {
                         }
                     }
                     // (Invoke-FolderScan : la fenêtre de Windows pour choisir le dossier, puis son analyse)
+                    // (la fenêtre attend l'utilisateur sans limite : dans un fil à part, jamais sur le fil des blocs ;
+                    //  la suite vient au relevé avec le dossier choisi. Déjà ouverte : pas une deuxième.)
                     "clic:BtnScanFolder" => {
-                        let d = self.sys.as_ref().and_then(|s| s.choisir_dossier("Choisis le dossier à analyser"));
-                        if let Some(d) = d {
-                            return self.action(ctx, "sec-analyser-dossier", &json!(d), effets);
+                        if self.choix.en_cours(CHOIX) {
+                            effets.ajouter(Effet::Annonce(CHOIX_OUVERT.into()));
+                            return true;
                         }
+                        let Some(sys) = self.sys.clone() else { return true };
+                        self.choix.lancer(ctx, CHOIX, move |_| sys.choisir_dossier("Choisis le dossier à analyser"));
+                        self.relever_travaux(ctx, effets);
                     }
                     _ => self.mettre_a_jour_base(),
                 }
@@ -767,12 +793,12 @@ impl Bloc for BlocProtection {
         false
     }
 
-    fn travaux_finis(&mut self, _ctx: &Contexte, effets: &mut Effets) {
-        self.relever_travaux(effets);
+    fn travaux_finis(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        self.relever_travaux(ctx, effets);
     }
 
     fn tic(&mut self, ctx: &Contexte, _cache: bool, effets: &mut Effets) -> Option<Duration> {
-        self.relever_travaux(effets);
+        self.relever_travaux(ctx, effets);
         if let Some(t) = self.occupe_texte.take() {
             effets.ajouter(Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": t }) });
         }
@@ -893,6 +919,13 @@ struct FinGeste {
 
 /// La clé des gestes longs : un seul à la fois
 const GESTE: &str = "geste";
+
+/// La clé de la fenêtre « Choisis le dossier à analyser »
+const CHOIX: &str = "choix-dossier";
+
+/// Un deuxième clic sur « Analyser un dossier » pendant que la fenêtre est ouverte
+const CHOIX_OUVERT: &str =
+    "La fenêtre pour choisir le dossier est déjà ouverte : choisis le dossier dedans, ou ferme-la.";
 
 /// La page, dans « Attends la fin de « Réactiver le pare-feu » (Protection) »
 const PAGE: &str = "Protection";

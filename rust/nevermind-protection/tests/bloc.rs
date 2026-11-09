@@ -555,3 +555,45 @@ fn le_oui_d_une_question_dont_le_point_a_disparu_ne_fait_rien() {
     assert!(!f.gestes().iter().any(|g| g.starts_with("désactiver")), "{:?}", f.gestes());
     assert!(annonces(&tout).iter().any(|a| a.contains("a changé")), "{:?}", annonces(&tout));
 }
+
+/// Lot B du second audit : « Analyser un dossier » n'attend plus la fenêtre de choix sur le fil des blocs (avant :
+/// `choisir_dossier` faisait `.join()` sur la fenêtre, tout Nevermind figé tant que l'utilisateur parcourait ses
+/// dossiers). Le clic rend la main tout de suite ; un deuxième clic pendant que la fenêtre est ouverte le dit en clair
+/// (et n'en ouvre pas une deuxième) ; le dossier choisi est analysé au relevé.
+#[test]
+fn analyser_un_dossier_n_attend_pas_la_fenetre_de_choix() {
+    let ctx = contexte("choix-dossier").partage();
+    let mut f = faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap());
+    f.admin = true;
+    let (choisi, attente) = std::sync::mpsc::channel::<Option<String>>();
+    *f.choix_dossier.lock().unwrap() = Some(attente);
+    let f = Arc::new(f);
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    attendre(&mut b, &ctx);
+    let mut e = Effets::default();
+    let debut = Instant::now();
+    assert!(b.action(&ctx, "clic:BtnScanFolder", &Value::Null, &mut e));
+    assert!(
+        debut.elapsed() < Duration::from_secs(2),
+        "le clic a pris {:?} : le fil des blocs attendait la fenêtre",
+        debut.elapsed()
+    );
+    // Un deuxième clic pendant que la fenêtre est ouverte : dit en clair, pas une deuxième fenêtre
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnScanFolder", &Value::Null, &mut e));
+    assert_eq!(
+        annonces(&e.0),
+        ["La fenêtre pour choisir le dossier est déjà ouverte : choisis le dossier dedans, ou ferme-la."]
+    );
+    choisi.send(Some(r"C:\Jeux".into())).unwrap();
+    let fin = Instant::now() + Duration::from_secs(10);
+    while !f.gestes().iter().any(|g| g == r"analyser Personnalisee C:\Jeux") {
+        assert!(Instant::now() < fin, "le dossier choisi n'est pas analysé : {:?}", f.gestes());
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        b.tic(&ctx, false, &mut e);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(b.panneau_donnees().unwrap()["titre"], "Analyse de Jeux");
+    assert_eq!(f.gestes().iter().filter(|g| *g == "choisir un dossier").count(), 1, "deux fenêtres ouvertes");
+}

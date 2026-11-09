@@ -76,6 +76,9 @@ pub struct Faux {
     pub noms: Vec<(String, String)>,
     pub heure: Mutex<Option<Date>>,
     pub analyse_en_cours: AtomicBool,
+    /// La fenêtre « Choisis le dossier à analyser » : elle attend la réponse donnée par l'essai (5 s au plus, comme
+    /// un utilisateur qui parcourt ses dossiers) ; sans réponse prévue, rien n'est choisi
+    pub choix_dossier: Mutex<Option<std::sync::mpsc::Receiver<Option<String>>>>,
 }
 
 impl Faux {
@@ -158,5 +161,10 @@ impl Systeme for Faux {
     }
     fn montrer(&self, chemin: &str) {
         self.noter(format!("montrer {chemin}"));
+    }
+    fn choisir_dossier(&self, _titre: &str) -> Option<String> {
+        self.noter("choisir un dossier".into());
+        let r = self.choix_dossier.lock().unwrap_or_else(|e| e.into_inner()).take()?;
+        r.recv_timeout(std::time::Duration::from_secs(5)).ok().flatten()
     }
 }
