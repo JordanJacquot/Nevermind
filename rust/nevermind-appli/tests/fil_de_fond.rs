@@ -640,6 +640,9 @@ fn une_aide_qui_ne_repond_plus_ne_fige_pas_les_tics() {
     // (l'Aide lancée par sa tâche met jusqu'à 4 s à répondre ici, 20 s en vrai)
     let moi = std::env::current_exe().unwrap().to_string_lossy().into_owned();
     ctx.regler_aide_essai(Some(moi), Some((Duration::from_secs(4), Duration::from_secs(1))));
+    // (Nevermind tourne sans droits ; les machines de GitHub font tourner les tests en administrateur, où
+    //  `mesures_aide` ne réveille jamais l'Aide : sans ce réglage, la reprise de la mesure n'y arrivait pas)
+    ctx.regler_admin_essai(false).unwrap();
     let canal = ctx.aide_config().canal.clone();
     let recues = Arc::new(Mutex::new(Vec::<String>::new()));
     let r = recues.clone();
@@ -717,7 +720,18 @@ fn une_aide_qui_ne_repond_plus_ne_fige_pas_les_tics() {
     let tourner = |hote: &mut Hote, quoi: &str, max: Duration, ok: &dyn Fn(&Hote) -> bool| {
         let fin = Instant::now() + max;
         while !ok(hote) {
-            assert!(Instant::now() < fin, "pas vu : {quoi}");
+            if Instant::now() >= fin {
+                // (de quoi comprendre : le journal de Nevermind, les demandes reçues par l'Aide, les réveils)
+                let j = std::fs::read_to_string(hote.ctx.fichier_journal()).unwrap_or_default();
+                panic!(
+                    "pas vu : {quoi} (à {:?} ; réveils : {} ; demandes reçues : {:?})
+--- journal ---
+{j}",
+                    debut.elapsed(),
+                    reveils.load(Ordering::SeqCst),
+                    recues.lock().unwrap()
+                );
+            }
             let d = Instant::now();
             let _ = hote.minuterie(debut.elapsed(), &mut EcranEssai(page.clone()));
             assert!(

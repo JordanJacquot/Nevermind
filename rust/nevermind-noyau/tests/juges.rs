@@ -456,6 +456,8 @@ fn fausse_aide_seulement_en_test() {
     let d = dossier("vraie");
     let ctx = Contexte::nouveau(d.join("appli"), d.clone(), false, false);
     assert!(nevermind_noyau::fausse_aide::lancer(&ctx, |_, _| None).is_err());
+    assert!(ctx.regler_admin_essai(false).is_err(), "le compte d'essai seulement en mode test");
+    assert!(ctx.tache_aide_essai(Arc::new(|| true)).is_err(), "la tâche simulée seulement en mode test");
     let ctx = contexte(&d);
     ctx.fausse_aide(Arc::new(|a, p| if a == "x" { Ok(json!({ "vu": p })) } else { Err("non".into()) }));
     assert_eq!(ctx.aide("x", &json!(1), 10).unwrap(), json!({ "vu": 1 }));

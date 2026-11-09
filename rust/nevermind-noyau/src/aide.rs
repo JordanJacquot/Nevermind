@@ -119,6 +119,8 @@ pub struct EtatAide {
     pub(crate) attentes: Mutex<Option<(Duration, Duration)>>,
     /// En test seulement : la tâche de l'Aide simulée ([`Contexte::tache_aide_essai`])
     pub(crate) tache_essai: Mutex<Option<FausseTache>>,
+    /// En test seulement : Nevermind tourne-t-il en administrateur ? ([`Contexte::regler_admin_essai`])
+    pub(crate) admin_essai: Mutex<Option<bool>>,
 }
 
 fn verrou<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -238,7 +240,10 @@ impl Contexte {
                 canal: aide_regles::canal::nom_canal(&sid, &suffixe),
                 sid,
                 schtasks: schtasks.to_string_lossy().into_owned(),
-                admin: crate::windows::est_admin(),
+                admin: match *verrou(&self.aide.admin_essai) {
+                    Some(a) if self.essai => a,
+                    _ => crate::windows::est_admin(),
+                },
             }
         })
     }
@@ -265,6 +270,17 @@ impl Contexte {
     pub fn regler_aide_essai(&self, exe_attendu: Option<String>, attentes: Option<(Duration, Duration)>) {
         *verrou(&self.aide.exe_attendu) = exe_attendu;
         *verrou(&self.aide.attentes) = attentes;
+    }
+
+    /// Tests : Nevermind tourne-t-il en administrateur ? Sans ce réglage, c'est le vrai compte du test : en
+    /// administrateur sur les machines de GitHub, sans droits chez Jordan ; le réveil des mesures n'est pas le même
+    /// (`mesures_aide`). À appeler avant la première demande. Refusé hors du mode test.
+    pub fn regler_admin_essai(&self, admin: bool) -> Result<(), String> {
+        if !self.essai {
+            return Err("le compte d'essai seulement en mode test".into());
+        }
+        *verrou(&self.aide.admin_essai) = Some(admin);
+        Ok(())
     }
 
     /// Tests : la tâche de l'Aide simulée. Le réveil de [`Contexte`] (`travail`) la « lance » au lieu de `schtasks`,
