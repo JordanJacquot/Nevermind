@@ -597,3 +597,52 @@ fn analyser_un_dossier_n_attend_pas_la_fenetre_de_choix() {
     assert_eq!(b.panneau_donnees().unwrap()["titre"], "Analyse de Jeux");
     assert_eq!(f.gestes().iter().filter(|g| *g == "choisir un dossier").count(), 1, "deux fenêtres ouvertes");
 }
+
+/// Lot B du second audit : les lectures de l'Aide de la page Protection (`lecture.securite` puis `lecture.taches`,
+/// jusqu'à 60 s chacune, au lancement, à chaque « Revérifier » et à la fin d'une analyse) ne sont plus attendues sur
+/// le fil des blocs : aucun tic ne dure, même quand l'Aide met longtemps à répondre ; la lecture complétée arrive
+/// ensuite comme avant.
+#[test]
+fn les_lectures_de_l_aide_ne_figent_pas_les_tics() {
+    let ctx = contexte("lectures-fond").partage();
+    let lentes = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let l = lentes.clone();
+    ctx.fausse_aide(Arc::new(move |a: &str, _p: &Value| {
+        l.lock().unwrap().push(a.to_string());
+        // (l'Aide lente : 3 s par lecture)
+        std::thread::sleep(Duration::from_secs(3));
+        Ok(match a {
+            "lecture.taches" => json!([]),
+            _ => json!({ "ExclusionsNombre": 0, "Menaces": [], "Detections": [], "DetectionsLues": true }),
+        })
+    }));
+    let f = Arc::new(faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap()));
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    // Les tics pendant la lecture du lancement, puis pendant une analyse et sa lecture de fin
+    let tics = |b: &mut BlocProtection| {
+        let fin = Instant::now() + Duration::from_secs(20);
+        let mut tout = Vec::new();
+        loop {
+            let mut e = Effets::default();
+            let d = Instant::now();
+            b.tic(&ctx, false, &mut e);
+            assert!(d.elapsed() < Duration::from_secs(1), "un tic a pris {:?} : il attendait l'Aide", d.elapsed());
+            tout.extend(e.0);
+            if !b.occupe() {
+                return tout;
+            }
+            assert!(Instant::now() < fin, "la lecture ne finit pas");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    tics(&mut b);
+    assert!(b.note().is_some(), "la lecture n'est pas jugée");
+    assert_eq!(*lentes.lock().unwrap(), ["lecture.securite", "lecture.taches"]);
+    let mut e = Effets::default();
+    b.signal(&ctx, "analyse-demandee", &json!({ "Sorte": "QuickScan", "Marque": "m" }), &mut e);
+    let e = tics(&mut b);
+    assert_eq!(signal(&e, "analyse-finie"), Some(&json!({ "Marque": "m", "Resultat": "clean" })));
+    // (la fin de l'analyse a lu les menaces par l'Aide, puis la protection est relue et complétée)
+    assert_eq!(lentes.lock().unwrap()[2], "lecture.securite");
+    assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new());
+}

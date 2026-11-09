@@ -41,10 +41,17 @@ pub fn systeme_windows() -> Arc<dyn Systeme> {
 
 /// Une analyse de Defender en cours
 struct AnalyseEnCours {
-    fin: Receiver<Result<(), String>>,
+    fin: Receiver<FinAnalyse>,
     arret: Arc<AtomicBool>,
     debut: Date,
     titre: String,
+}
+
+/// La fin d'une analyse, rendue par son fil : son résultat, et la lecture de l'Aide qui donne les menaces trouvées
+/// (`Some` : déjà lue dans le fil, lot B ; `None` : à lire au relevé, seulement sans contexte partagé)
+struct FinAnalyse {
+    r: Result<(), String>,
+    aide: Option<Option<Value>>,
 }
 
 /// Un fichier de données relu seulement quand il change
@@ -78,7 +85,7 @@ pub struct BlocProtection {
     /// La dernière lecture (pour rejuger sans tout relire quand seuls les éléments approuvés changent)
     lecture: Option<Lecture>,
     note_analyses: String,
-    lecture_en_cours: Option<Receiver<Lecture>>,
+    lecture_en_cours: Option<Receiver<(Lecture, bool)>>,
     demarre: bool,
     /// `$script:Kit.SecChecks` et `$script:Kit.SecApprouves` : ce que numérotent les boutons de la page
     points: Vec<Constat>,
@@ -220,46 +227,37 @@ impl BlocProtection {
             || self.choix.occupe()
     }
 
-    /// `Update-SecurityTab` : la lecture lente part dans un fil à part ; la suite se fait au prochain tic
-    fn relire(&mut self) {
+    /// `Update-SecurityTab` : la lecture lente part dans un fil à part, avec ce que l'Aide y ajoute (lot B du second
+    /// audit : `lecture.securite` et `lecture.taches`, jusqu'à 60 s chacune, ne sont plus attendues sur le fil des
+    /// blocs) ; la suite se fait au prochain tic
+    fn relire(&mut self, ctx: &Contexte) {
         if self.lecture_en_cours.is_some() {
             return;
         }
         let Some(sys) = self.sys.clone() else { return };
+        // (sans contexte partagé, seulement les tests d'un bloc seul et les juges : l'Aide est lue au tic, comme avant)
+        let partage = ctx.partage_actuel();
         let (tx, rx) = channel();
         let ok = std::thread::Builder::new().name("protection-lecture".into()).spawn(move || {
-            let _ = tx.send(sys.lire());
+            let mut l = sys.lire();
+            let complete = match &partage {
+                Some(c) => {
+                    completer_par_aide(c, sys.as_ref(), &mut l);
+                    true
+                }
+                None => false,
+            };
+            let _ = tx.send((l, complete));
         });
         if ok.is_ok() {
             self.lecture_en_cours = Some(rx);
         }
     }
 
-    /// Une lecture finie : l'Aide la complète (sans droits), puis elle est jugée
-    fn finir_lecture(&mut self, ctx: &Contexte, mut l: Lecture, effets: &mut Effets) {
-        if let Some(sys) = self.sys.clone()
-            && !sys.est_admin()
-        {
-            let lecture = ctx.aide_lecture("lecture.securite", &json!({}));
-            if lecture.is_some() {
-                let taches = ctx.aide_sans_demande("lecture.taches", &json!({}), 60_000);
-                if let Err(e) = &taches {
-                    ctx.journal(&format!("Aide : tâches planifiées non lues ({e})"));
-                }
-                let (temp, public) = (sys.temp(), sys.public());
-                let var = |n: &str| sys.variable(n);
-                let prot = |c: &str| sys.script_protege(c);
-                let existe = |c: &str| sys.existe(c);
-                let c = ContexteTaches {
-                    temp: &temp,
-                    public: &public,
-                    variable: &var,
-                    script_protege: &prot,
-                    existe: &existe,
-                    propre_tache: None,
-                };
-                regles::completer_par_aide(&mut l.s, lecture.as_ref(), taches.as_ref().map_err(|e| e.clone()), &c);
-            }
+    /// Une lecture finie (déjà complétée par l'Aide dans son fil, sauf sans contexte partagé), puis elle est jugée
+    fn finir_lecture(&mut self, ctx: &Contexte, mut l: Lecture, complete: bool, effets: &mut Effets) {
+        if !complete && let Some(sys) = self.sys.clone() {
+            completer_par_aide(ctx, sys.as_ref(), &mut l);
         }
         self.lecture = Some(l);
         self.juger(ctx, effets);
@@ -285,7 +283,14 @@ impl BlocProtection {
     }
 
     /// `Invoke-DefenderScan`
-    fn analyser(&mut self, effets: &mut Effets, sorte: TypeAnalyse, chemins: Vec<String>, titre: Option<String>) {
+    fn analyser(
+        &mut self,
+        ctx: &Contexte,
+        effets: &mut Effets,
+        sorte: TypeAnalyse,
+        chemins: Vec<String>,
+        titre: Option<String>,
+    ) {
         if self.analyse.is_some() {
             effets.ajouter(Effet::Annonce("Une analyse ou un test est déjà en cours.".into()));
             return;
@@ -310,8 +315,18 @@ impl BlocProtection {
         let (tx, rx) = channel();
         let a = arret.clone();
         let debut = sys.maintenant();
+        // (les menaces trouvées sont lues par l'Aide dans ce fil aussi, jusqu'à 60 s : pas sur le fil des blocs, lot B)
+        let partage = ctx.partage_actuel();
         let lance = std::thread::Builder::new().name("protection-analyse".into()).spawn(move || {
-            let _ = tx.send(sys.analyser(sorte, &chemins, &a));
+            let r = sys.analyser(sorte, &chemins, &a);
+            let aide = match &partage {
+                Some(c) if r.is_ok() && !a.load(Ordering::SeqCst) && !sys.est_admin() => {
+                    Some(c.aide_lecture("lecture.securite", &json!({})))
+                }
+                Some(_) => Some(None),
+                None => None,
+            };
+            let _ = tx.send(FinAnalyse { r, aide });
         });
         if lance.is_err() {
             return;
@@ -323,7 +338,8 @@ impl BlocProtection {
     }
 
     /// La fin d'une analyse : le verdict (jamais « Aucune menace » si le résultat n'a pas été lu)
-    fn finir_analyse(&mut self, ctx: &Contexte, a: AnalyseEnCours, r: Result<(), String>, effets: &mut Effets) {
+    fn finir_analyse(&mut self, ctx: &Contexte, a: AnalyseEnCours, fin: FinAnalyse, effets: &mut Effets) {
+        let FinAnalyse { r, aide: lue } = fin;
         let Some(sys) = self.sys.clone() else { return };
         let duree = (sys.maintenant().ticks() - a.debut.ticks()).max(0) / 10_000_000;
         let pluriel = |n: usize| if n > 1 { "s" } else { "" };
@@ -336,7 +352,11 @@ impl BlocProtection {
             ("echec", "Échec".into(), vec![format!("L'analyse n'a pas pu se faire : {e}")], Vec::new())
         } else {
             let admin = sys.est_admin();
-            let aide = if admin { None } else { ctx.aide_lecture("lecture.securite", &json!({})) };
+            let aide = match lue {
+                _ if admin => None,
+                Some(v) => v,
+                None => ctx.aide_lecture("lecture.securite", &json!({})),
+            };
             let (lu, journal) = regles::menaces_analyse(a.debut, admin, aide.as_ref(), &|| sys.detections());
             if let Some(j) = journal {
                 ctx.journal(&j);
@@ -384,7 +404,7 @@ impl BlocProtection {
         }
         // (une analyse qui a échoué ne relit pas la protection, comme la version PowerShell)
         if etat != "echec" {
-            self.relire();
+            self.relire(ctx);
         }
     }
 
@@ -447,7 +467,7 @@ impl BlocProtection {
                 }
             }
             Sorte::Analyser { chemins, titre } => {
-                self.analyser(effets, TypeAnalyse::Personnalisee, chemins.clone(), Some(titre.clone()));
+                self.analyser(ctx, effets, TypeAnalyse::Personnalisee, chemins.clone(), Some(titre.clone()));
                 rafraichir = false;
             }
             Sorte::DesactiverDemarrage(l) => effets.ajouter(Effet::Signal {
@@ -457,11 +477,15 @@ impl BlocProtection {
             }),
             Sorte::SupprimerMenaces | Sorte::RetirerExclusions(_) | Sorte::ReactiverPareFeu | Sorte::DesactiverTaches(_) => {}
         }
-        self.fin_geste(effets, FinGeste { titre, definitif: None, erreur: None, annonces: Vec::new(), rafraichir });
+        self.fin_geste(
+            ctx,
+            effets,
+            FinGeste { titre, definitif: None, erreur: None, annonces: Vec::new(), rafraichir },
+        );
     }
 
     /// La fin d'un geste (sur le fil des blocs) : le message d'erreur, ou l'historique ; puis la protection relue
-    fn fin_geste(&mut self, effets: &mut Effets, f: FinGeste) {
+    fn fin_geste(&mut self, ctx: &Contexte, effets: &mut Effets, f: FinGeste) {
         for a in f.annonces {
             effets.ajouter(a);
         }
@@ -483,7 +507,7 @@ impl BlocProtection {
             });
         }
         if f.rafraichir && self.analyse.is_none() {
-            self.relire();
+            self.relire(ctx);
         }
     }
 
@@ -492,7 +516,7 @@ impl BlocProtection {
         for r in self.travaux.relever() {
             match r {
                 Rendu::Effet(e) => effets.ajouter(e),
-                Rendu::Fini { resultat: Ok(f), .. } => self.fin_geste(effets, f),
+                Rendu::Fini { resultat: Ok(f), .. } => self.fin_geste(ctx, effets, f),
                 Rendu::Fini { resultat: Err(e), .. } => {
                     effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")))
                 }
@@ -631,7 +655,7 @@ impl Bloc for BlocProtection {
         }
         match id {
             "clic:BtnSecRefresh" => {
-                self.relire();
+                self.relire(ctx);
                 return true;
             }
             "clic:BtnScanQuick" | "clic:BtnScanFull" | "clic:BtnScanFolder" | "clic:BtnScanUpdate" => {
@@ -641,10 +665,10 @@ impl Bloc for BlocProtection {
                     return true;
                 }
                 match id {
-                    "clic:BtnScanQuick" => self.analyser(effets, TypeAnalyse::Rapide, Vec::new(), None),
+                    "clic:BtnScanQuick" => self.analyser(ctx, effets, TypeAnalyse::Rapide, Vec::new(), None),
                     "clic:BtnScanFull" => {
                         if confirme(valeur) {
-                            self.analyser(effets, TypeAnalyse::Complete, Vec::new(), None);
+                            self.analyser(ctx, effets, TypeAnalyse::Complete, Vec::new(), None);
                         } else {
                             question(
                                 effets,
@@ -675,6 +699,7 @@ impl Bloc for BlocProtection {
                 if !d.is_empty() && self.defender_ok() {
                     let nom = regles::nom_du_dossier(&d);
                     self.analyser(
+                        ctx,
                         effets,
                         TypeAnalyse::Personnalisee,
                         vec![d.clone()],
@@ -702,7 +727,7 @@ impl Bloc for BlocProtection {
                         Some(Err(e)) => effets.ajouter(Effet::Annonce(e)),
                         _ => {
                             effets.ajouter(Effet::Annonce("Menaces supprimées.".into()));
-                            self.relire();
+                            self.relire(ctx);
                         }
                     }
                 } else {
@@ -804,13 +829,13 @@ impl Bloc for BlocProtection {
         }
         if !self.demarre {
             self.demarre = true;
-            self.relire();
+            self.relire(ctx);
         }
         if let Some(rx) = &self.lecture_en_cours {
             match rx.try_recv() {
-                Ok(l) => {
+                Ok((l, complete)) => {
                     self.lecture_en_cours = None;
-                    self.finir_lecture(ctx, l, effets);
+                    self.finir_lecture(ctx, l, complete, effets);
                 }
                 Err(TryRecvError::Disconnected) => self.lecture_en_cours = None,
                 Err(TryRecvError::Empty) => {}
@@ -819,7 +844,9 @@ impl Bloc for BlocProtection {
         if let Some(a) = &self.analyse {
             let r = match a.fin.try_recv() {
                 Ok(r) => Some(r),
-                Err(TryRecvError::Disconnected) => Some(Err("l'analyse s'est arrêtée".into())),
+                Err(TryRecvError::Disconnected) => {
+                    Some(FinAnalyse { r: Err("l'analyse s'est arrêtée".into()), aide: None })
+                }
                 Err(TryRecvError::Empty) => None,
             };
             if let Some(r) = r
@@ -836,7 +863,7 @@ impl Bloc for BlocProtection {
                     if let Err(e) = r {
                         effets.ajouter(Effet::Annonce(format!("La mise à jour n'a pas pu se faire :\n\n{e}")));
                     }
-                    self.relire();
+                    self.relire(ctx);
                 }
                 Err(TryRecvError::Disconnected) => self.maj_base = None,
                 Err(TryRecvError::Empty) => {}
@@ -846,14 +873,14 @@ impl Bloc for BlocProtection {
         if self.occupe() { Some(Duration::from_millis(500)) } else { Some(Duration::from_secs(60)) }
     }
 
-    fn signal(&mut self, _ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
+    fn signal(&mut self, ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
         match nom {
             // (sauvegarde.json est relu quand il change ; ce signal commun redessine la page)
             "sauvegarde-changee" => {}
             "sauvegarde-nombre" => {
                 self.sauvegarde_nombre = donnees.get("n").unwrap_or(donnees).as_u64().map(|n| n as usize)
             }
-            "protection-relire" => self.relire(),
+            "protection-relire" => self.relire(ctx),
             // (Invoke-DefenderScan appelé par trafic.ps1 : une analyse personnalisée, sans vérifier Defender avant)
             "analyse-demandee" => {
                 let en_cours = self.analyse.is_some();
@@ -864,7 +891,7 @@ impl Bloc for BlocProtection {
                 };
                 let chemins = donnees.get("Chemins").map(ps::textes_vrais).unwrap_or_default();
                 let titre = donnees.get("Titre").and_then(Value::as_str).filter(|t| !t.is_empty()).map(str::to_string);
-                self.analyser(effets, sorte, chemins, titre);
+                self.analyser(ctx, effets, sorte, chemins, titre);
                 if !en_cours && self.analyse.is_some() {
                     self.marque = Some(donnees.get("Marque").cloned().unwrap_or(Value::Null));
                 }
@@ -939,6 +966,35 @@ fn nom_geste(s: &Sorte) -> &'static str {
         Sorte::DesactiverTaches(_) => "Désactiver les tâches",
         _ => "Un réglage de la sécurité",
     }
+}
+
+/// Ce que l'Aide ajoute à une lecture (sans droits) : `lecture.securite`, puis `lecture.taches`. Jusqu'à 60 s chacune
+/// (plus le réveil de sa tâche) : appelée dans le fil de la lecture, jamais sur le fil des blocs (lot B).
+fn completer_par_aide(ctx: &Contexte, sys: &dyn Systeme, l: &mut Lecture) {
+    if sys.est_admin() {
+        return;
+    }
+    let lecture = ctx.aide_lecture("lecture.securite", &json!({}));
+    if lecture.is_none() {
+        return;
+    }
+    let taches = ctx.aide_sans_demande("lecture.taches", &json!({}), 60_000);
+    if let Err(e) = &taches {
+        ctx.journal(&format!("Aide : tâches planifiées non lues ({e})"));
+    }
+    let (temp, public) = (sys.temp(), sys.public());
+    let var = |n: &str| sys.variable(n);
+    let prot = |c: &str| sys.script_protege(c);
+    let existe = |c: &str| sys.existe(c);
+    let c = ContexteTaches {
+        temp: &temp,
+        public: &public,
+        variable: &var,
+        script_protege: &prot,
+        existe: &existe,
+        propre_tache: None,
+    };
+    regles::completer_par_aide(&mut l.s, lecture.as_ref(), taches.as_ref().map_err(|e| e.clone()), &c);
 }
 
 /// Un geste long (Defender, l'Aide, le Planificateur), fait dans un travail de fond : le changement définitif,
