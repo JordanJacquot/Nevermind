@@ -146,6 +146,7 @@ impl<'a> Moteur<'a> {
 
     /// `Save-Backup`
     pub fn sauver(&mut self) -> Result<(), String> {
+        self.pc.exiger_geste()?;
         let j = self.sv.json();
         self.pc.sauvegarde_ecrire(&j)
     }
@@ -162,6 +163,7 @@ impl<'a> Moteur<'a> {
 
     /// `Save-Original` : la valeur d'origine notée avant la première modification
     pub fn noter_origine(&mut self, chemin: &str, nom: &str) -> Result<(), String> {
+        self.pc.exiger_geste()?;
         let cle = format!("{chemin}|{nom}");
         if self.sv.registre.contains_key(&cle) {
             return Ok(());
@@ -185,6 +187,7 @@ impl<'a> Moteur<'a> {
 
     /// `Write-RegValue` : le registre de la machine par l'Aide, celui de l'utilisateur par Nevermind
     pub fn ecrire_reg(&mut self, chemin: &str, nom: &str, v: &ValeurReg) -> Result<(), String> {
+        self.pc.exiger_geste()?;
         if !reg_utilisateur(chemin) {
             self.pc.aide(
                 "reg.ecrire",
@@ -204,6 +207,7 @@ impl<'a> Moteur<'a> {
 
     /// `Remove-RegValue`
     pub fn effacer_reg(&mut self, chemin: &str, nom: &str) -> Result<(), String> {
+        self.pc.exiger_geste()?;
         if !reg_utilisateur(chemin) {
             self.pc.aide("reg.effacer", parametres(&[("Cle", json!(chemin)), ("Nom", json!(nom))]), 120000)?;
             return Ok(());
@@ -214,6 +218,7 @@ impl<'a> Moteur<'a> {
 
     /// `Set-Reg`
     pub fn set_reg(&mut self, chemin: &str, nom: &str, v: &ValeurReg) -> Result<(), String> {
+        self.pc.exiger_geste()?;
         self.noter_origine(chemin, nom)?;
         if self.journal.is_some() {
             let st = self.pc.reg_lire(chemin, nom).map_err(erreur_reg)?;
@@ -228,6 +233,7 @@ impl<'a> Moteur<'a> {
 
     /// `Clear-Reg`
     pub fn clear_reg(&mut self, chemin: &str, nom: &str) -> Result<(), String> {
+        self.pc.exiger_geste()?;
         let Some(st) = self.pc.reg_lire(chemin, nom).map_err(erreur_reg)? else { return Ok(()) };
         self.noter_origine(chemin, nom)?;
         self.noter(json!({ "Type": "reg", "Path": chemin, "Name": nom, "Existed": true, "Value": st.json(), "Kind": st.sorte(), "Efface": true }));
@@ -236,6 +242,7 @@ impl<'a> Moteur<'a> {
 
     /// `Set-Declarations`
     pub fn appliquer(&mut self, liste: &[Declaration]) -> Result<(), String> {
+        self.pc.exiger_geste()?;
         for d in liste {
             match d.sorte.as_str() {
                 "reg" => {
@@ -276,6 +283,7 @@ impl<'a> Moteur<'a> {
 
     /// `Set-DisplayRate`
     pub fn set_frequence(&mut self, ecran: &str, hz: i64) -> Result<(), String> {
+        self.pc.exiger_geste()?;
         let actuel = self.pc.ecrans().into_iter().find(|d| d.split('|').next() == Some(ecran));
         let freq = actuel.as_ref().map(|d| d.split('|').nth(4).and_then(|x| x.trim().parse::<i64>().ok()).unwrap_or(0));
         if let Some(f) = freq
@@ -298,12 +306,16 @@ impl<'a> Moteur<'a> {
     }
 
     fn pc_args(&mut self, a: &[&str]) -> (i32, String) {
+        if let Err(e) = self.pc.exiger_geste() {
+            return (1, e);
+        }
         let v: Vec<String> = a.iter().map(|s| s.to_string()).collect();
         self.pc.powercfg(&v)
     }
 
     /// `Set-BatterySetting`
     pub fn set_batterie(&mut self, cle: &str, valeur: i64) -> Result<(), String> {
+        self.pc.exiger_geste()?;
         let guid = REGLAGES_BATTERIE.iter().find(|(k, _)| *k == cle).map(|(_, g)| *g).unwrap_or("");
         let p = analyse::reglages_batterie(self.pc);
         let cur = analyse::batterie_get(&p, cle);
@@ -336,6 +348,7 @@ impl<'a> Moteur<'a> {
 
     /// `Set-ServiceOff` : service arrêté et désactivé (ou passé en manuel), par l'Aide
     pub fn service_off(&mut self, nom: &str, demarrage: &str) -> Result<(), String> {
+        self.pc.exiger_geste()?;
         let Some((debut, tourne)) = self.pc.service(nom) else {
             return Err(format!("Impossible de trouver un service assorti du nom « {nom} »."));
         };
@@ -356,6 +369,7 @@ impl<'a> Moteur<'a> {
 
     /// `Set-BestPerfOverlay` : le curseur de Windows sur « Meilleures performances » (plan Utilisation normale)
     pub fn meilleur_curseur(&mut self) -> Result<bool, String> {
+        self.pc.exiger_geste()?;
         let s = reglages::plan_actif(self.pc);
         if !s.as_ref().is_some_and(|(g, _)| g == NORMAL) {
             return Ok(false);
@@ -374,6 +388,7 @@ impl<'a> Moteur<'a> {
 
     /// `Set-PowerPlan`
     pub fn set_plan(&mut self) -> Result<(), String> {
+        self.pc.exiger_geste()?;
         if self.portable && self.meilleur_curseur()? {
             return Ok(());
         }
@@ -418,6 +433,9 @@ impl<'a> Moteur<'a> {
 
     /// `Sync-Mouse` : Windows relit tout de suite les réglages de la souris
     pub fn sync_souris(&mut self) {
+        if self.pc.exiger_geste().is_err() {
+            return;
+        }
         let n = |pc: &dyn Pc, k: &str| reglages::valeur(pc, reglages::SOURIS, k).and_then(|v| v.entier()).unwrap_or(0);
         let (v, t1, t2) = (n(self.pc, "MouseSpeed"), n(self.pc, "MouseThreshold1"), n(self.pc, "MouseThreshold2"));
         self.pc.souris_relire(t1, t2, v);
@@ -438,13 +456,22 @@ impl<'a> Moteur<'a> {
     /// `New-RestorePoint` : `Ok(Some(true))` créé (ou un de moins de 24 h sert), `Ok(None)` : la question est posée à
     /// l'écran (continuer sans point de restauration ?), `Ok(Some(false))` : annulé.
     pub fn point_de_restauration(&mut self) -> Result<Option<bool>, String> {
+        self.pc.exiger_geste()?;
         self.pc.statut("Création du point de restauration (ça peut prendre une minute)...");
         self.set_reg(
             "HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SystemRestore",
             "SystemRestorePointCreationFrequency",
             &ValeurReg::DWord(0),
         )?;
-        let r = match self.pc.aide("restauration.creer", parametres(&[("Description", json!("Nevermind"))]), 600000) {
+        // (ajustement B du lot A : le verrou des gestes est rendu pendant la création du point de restauration, jusqu'à
+        //  10 min, qui ne change rien à la sauvegarde ; les autres pages restent utilisables. Il est repris ensuite, à
+        //  son tour, avant le moindre changement)
+        let suspendu = self.pc.suspendre_geste();
+        let creation = self.pc.aide("restauration.creer", parametres(&[("Description", json!("Nevermind"))]), 600000);
+        if let Some(id) = suspendu {
+            self.pc.reprendre_geste(id)?;
+        }
+        let r = match creation {
             Ok(v) => {
                 if crate::net::texte(&v).eq_ignore_ascii_case("recent") {
                     "RECENT".to_string()
@@ -495,6 +522,9 @@ fn reglage_liste(l: &[String]) -> Value {
 
 /// `Undo-RunLog` : les changements du journal annulés, du plus récent au plus ancien. Renvoie les erreurs.
 pub fn annuler_journal(m: &mut Moteur, journal: &[Value]) -> Vec<String> {
+    if let Err(e) = m.pc.exiger_geste() {
+        return vec![e];
+    }
     use crate::net::{champ_texte, champ_vrai};
     let mut erreurs = Vec::new();
     for e in journal.iter().rev() {
@@ -586,6 +616,9 @@ fn est_guid(s: &str) -> bool {
 /// `Restore-AllSettings` : tout ce qui est noté remis comme avant. Ce qui n'a pas pu l'être reste noté (pour
 /// « Réessayer »). Renvoie la liste de ce qui n'a pas pu être remis.
 pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
+    if let Err(e) = m.pc.exiger_geste() {
+        return vec![e];
+    }
     use crate::net::entier;
     let mut erreurs: Vec<String> = Vec::new();
     if m.pc.regles_pare_feu() > 0

@@ -265,9 +265,8 @@ pub struct Hote {
     mindset: Map<String, Value>,
     /// Le dernier etat.json écrit, sans sa date (`$script:EtatMindsetEcrit`)
     mindset_ecrit: String,
-    /// Les travaux de fond de l'hôte (`sauvegarde-appliquer`, audit G3), et les demandes qui attendent leur tour
+    /// Les travaux de fond de l'hôte (`sauvegarde-appliquer`, audit G3)
     travaux: nevermind_noyau::travaux::Travaux<communs::Appliquee>,
-    sauvegardes_en_attente: Vec<Value>,
 }
 
 #[path = "hote_communs.rs"]
@@ -397,7 +396,6 @@ impl Hote {
             notifications: Vec::new(),
             etat_service: std::sync::Arc::new(|_| None),
             travaux: Default::default(),
-            sauvegardes_en_attente: Vec::new(),
             mindset: Map::new(),
             mindset_ecrit: String::new(),
         }
@@ -1195,7 +1193,9 @@ impl Hote {
         self.tics.iter().flatten().min().copied()
     }
 
-    /// Nevermind se ferme : chaque bloc remet ce qui doit l'être (`Add_Closed`, evenements.ps1:184-202).
+    /// Nevermind se ferme : chaque bloc remet ce qui doit l'être (`Add_Closed`, evenements.ps1:184-202). La remise
+    /// en état de fin de partie passe en priorité, même si un geste tient encore le verrou ; puis le verrou des gestes
+    /// est rendu (lot A, ajustement C) : un geste coupé par la fermeture ne bloque rien.
     pub fn fermer(&mut self) {
         for i in 0..self.blocs.len() {
             let (b, ctx) = (&mut self.blocs[i], &self.ctx);
@@ -1204,6 +1204,7 @@ impl Hote {
                 self.ctx.journal(&format!("Fermeture de {n} : {e}"));
             }
         }
+        self.ctx.rendre_les_gestes();
     }
 }
 

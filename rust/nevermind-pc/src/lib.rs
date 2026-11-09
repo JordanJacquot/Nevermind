@@ -82,6 +82,21 @@ enum Fait {
 /// La clé du travail de fond du bloc : un seul geste sur la session à la fois
 const TRAVAIL: &str = "pc";
 
+/// La page, dans « Attends la fin de « Appliquer » (Ton PC) »
+const PAGE: &str = "Ton PC";
+
+/// Ce qu'un geste de la page fait du verrou commun des gestes (lot A du second audit)
+enum Verrou {
+    /// Rien ne change sur le PC (analyse, lecture des dossiers, ignorer un point)
+    Aucun,
+    /// Un clic qui change le PC : le verrou est pris, ou le clic est refusé
+    Clic(String),
+    /// Un geste automatique qui note dans la sauvegarde (un profil de jeu) : il attend son tour (nom, page)
+    Tour(String, String),
+    /// La réponse à « Tes écrans s'affichent bien ? » : jamais refusée, l'écran doit revenir
+    Priorite(String),
+}
+
 #[derive(Default)]
 pub struct BlocPc {
     session: Session,
@@ -199,23 +214,57 @@ impl BlocPc {
     /// Un geste long sur la session (audit G3) : fait dans un travail de fond, sur une copie de la session et des
     /// cases, que la fin remet en place (`relever_travaux`). `direct` : le texte d'attente du PC est montré tout de
     /// suite. `false` si un autre geste long est en cours (rien n'est lancé : un double clic ne refait rien).
+    ///
+    /// Lot A du second audit : un geste qui change le PC prend le verrou commun des gestes au moment du clic
+    /// (`verrou`) ; un autre geste le tient : le clic est refusé, « Attends la fin de ... » (rendu en `Err`), rien ne
+    /// part plus tard. Un profil de jeu (automatique) attend son tour dans le travail ; la réponse à « Tes écrans
+    /// s'affichent bien ? » passe en priorité.
     fn en_fond(
         &mut self,
         ctx: &Contexte,
         quoi: &str,
         suite: Suite,
         direct: bool,
+        verrou: Verrou,
         f: impl FnOnce(&mut Atelier, &mut dyn Pc) + Send + 'static,
-    ) -> bool {
+    ) -> Result<bool, String> {
         if self.travaux.occupe() {
             ctx.journal(&format!("Ton PC : {quoi} pas lancé, un geste est encore en cours"));
-            return false;
+            return Ok(false);
         }
+        let (geste, tour) = match verrou {
+            Verrou::Aucun => (None, None),
+            Verrou::Clic(nom) => (Some(ctx.prendre_geste(&nom, PAGE)?), None),
+            Verrou::Priorite(nom) => (Some(ctx.geste_prioritaire(&nom, PAGE)), None),
+            Verrou::Tour(nom, page) => (None, Some((nom, page))),
+        };
         let mut at =
             Atelier { session: self.session.clone(), cases: self.cases.clone(), annonces: Vec::new(), relu: false };
         let essai = self.essai.clone();
         self.suite = Some(suite);
-        self.travaux.lancer(ctx, TRAVAIL, move |fond| {
+        Ok(self.travaux.lancer(ctx, TRAVAIL, move |fond| {
+            // (le geste emporté par le travail : il rend le verrou à la fin, même après une panique)
+            if let Some(g) = &geste {
+                g.ici();
+            }
+            // (un geste automatique attend son tour, sans figer le fil des blocs)
+            let _tour = match tour {
+                None => None,
+                Some((nom, page)) => {
+                    if let Some((n, p)) = fond.ctx.geste_en_cours() {
+                        fond.effet(nevermind_noyau::signaux::occupe(&format!(
+                            "« {nom} » se fera juste après « {n} » ({p})..."
+                        )));
+                    }
+                    match fond.ctx.attendre_geste(&nom, &page, nevermind_noyau::gestes::ATTENTE_REPRISE) {
+                        Ok(g) => Some(g),
+                        Err(e) => {
+                            at.annonces.push(Effet::Annonce(format!("« {nom} » n'a pas été fait. {e}.")));
+                            return at;
+                        }
+                    }
+                }
+            };
             match essai {
                 Some(p) => {
                     let mut g = p.lock().unwrap_or_else(|e| e.into_inner());
@@ -228,11 +277,12 @@ impl BlocPc {
                         p = p.en_direct(&envoi);
                     }
                     f(&mut at, &mut p);
-                    at.annonces = p.annonces();
+                    at.annonces.extend(p.annonces());
                 }
             }
+            drop(geste);
             at
-        })
+        }))
     }
 
     /// Ce que le travail de fond a rendu (sur le fil des blocs) : le texte d'attente, puis à la fin la session mise
@@ -332,7 +382,7 @@ impl BlocPc {
                 }
                 // (l'Aide peut mettre jusqu'à 20 s à se réveiller pour sa lecture : dans un travail de fond, audit G3 ;
                 //  la diffusion suit sa fin)
-                self.en_fond(ctx, "fin de la lecture", Suite::Lecture, false, |at, pc| {
+                let _ = self.en_fond(ctx, "fin de la lecture", Suite::Lecture, false, Verrou::Aucun, |at, pc| {
                     systeme::completer_par_aide(pc, &mut at.session.entrees);
                     systeme::completer_pilote_nvidia(pc, &mut at.session.entrees);
                     at.session.analyser(pc);
@@ -533,8 +583,51 @@ impl BlocPc {
         avant: bool,
         f: impl FnOnce(&mut Atelier, &mut dyn Pc) + Send + 'static,
     ) -> Fait {
-        self.en_fond(ctx, id, Suite::Geste { avant }, true, f);
-        Fait::Fond
+        let verrou = self.verrou_du_geste(id);
+        match self.en_fond(ctx, id, Suite::Geste { avant }, true, verrou, f) {
+            Ok(_) => Fait::Fond,
+            // (un autre geste tient le verrou : le clic est refusé, et rien ne part plus tard)
+            Err(refus) => Fait::Sur(vec![Effet::Annonce(refus)]),
+        }
+    }
+
+    /// Ce que le geste `id` (ou la demande d'un autre bloc) fait du verrou des gestes, et son nom dans « Attends la fin
+    /// de ... »
+    fn verrou_du_geste(&self, id: &str) -> Verrou {
+        let clic = |n: &str| Verrou::Clic(n.to_string());
+        let ecran = Verrou::Priorite("Fréquence de l'écran".into());
+        let s = &self.session;
+        let attend_l_ecran = matches!(s.attente, Some(session::Attente::Ecran(_)));
+        let en_attente = s.geste_en_attente().unwrap_or("Tout corriger");
+        let fiche = s.fiche.as_ref();
+        let mode = fiche.map(|f| f.mode.as_str()).unwrap_or("");
+        match id {
+            "analyser" | "clic:BtnCleanScan" | "fiche:close" | "retour" => Verrou::Aucun,
+            "clic:BtnApply" => clic("Appliquer"),
+            "clic:BtnClean" => clic("Nettoyer"),
+            "clic:BtnDisableStartup" | "demarrage-desactiver" => clic("Désactiver au démarrage"),
+            "clic:BtnUndoAll" | "pc:tout-restaurer" => clic("Tout restaurer"),
+            "fiche:annuler" => clic("Revenir en arrière"),
+            "historique-annuler" => clic("Annuler"),
+            "registre-ecrire" => clic("Réactiver"),
+            "appliquer-reglages-windows" => clic("Régler Windows"),
+            "declarations" => Verrou::Tour("Profil de jeu".into(), "Jeux".into()),
+            "pc:reponse" if attend_l_ecran => ecran,
+            "pc:reponse" => clic(en_attente),
+            "fiche:run" => match mode {
+                "display" => ecran,
+                "question" => clic(en_attente),
+                _ if fiche.is_some_and(|f| f.items.len() > 1) => clic("Tout corriger"),
+                _ => clic("Corriger"),
+            },
+            "fiche:ignore" => match mode {
+                "display" => ecran,
+                "result" => clic("Revenir en arrière"),
+                _ => Verrou::Aucun,
+            },
+            _ if id.starts_with("dem:") => clic("Démarrage"),
+            _ => clic(id),
+        }
     }
 
     /// Les gestes de la page que ce bloc prend (pour ne pas en faire un deuxième pendant un geste long)
@@ -779,6 +872,8 @@ impl BlocPc {
         if let Some(fin) = self.fin_ecran.filter(|_| !self.travaux.occupe()) {
             let reste = fin.saturating_duration_since(Instant::now()).as_secs_f64().ceil() as i64;
             if reste <= 0 {
+                // (automatique : jamais refusé, l'écran doit revenir à l'ancienne fréquence ; ajustement A du lot A)
+                let _priorite = ctx.geste_prioritaire("Fréquence de l'écran", PAGE);
                 let (_, a) = self.avec_pc(ctx, |s, pc| s.session.repondre_ecran(pc, "timeout"));
                 self.apres(true, a, effets);
                 return None;
@@ -805,6 +900,17 @@ impl BlocPc {
                     self.sv_a_relire = true;
                     return;
                 }
+                // (le clic d'une autre page qui change le PC, pendant un geste de Ton PC qui tient le verrou : refusé,
+                //  « Attends la fin de ... », et rien ne part plus tard ; lot A du second audit)
+                "appliquer-reglages-windows" | "registre-ecrire" | "demarrage-desactiver" | "historique-annuler"
+                    if ctx.refus_geste().is_some() =>
+                {
+                    let refus = ctx.refus_geste().unwrap_or_default();
+                    ctx.journal(&format!("Ton PC : {nom} refusé ({refus})"));
+                    effets.ajouter(Effet::Annonce(refus));
+                    return;
+                }
+                // (un profil de jeu, automatique, n'est jamais refusé : il attend son tour)
                 "appliquer-reglages-windows"
                 | "declarations"
                 | "registre-ecrire"
@@ -881,7 +987,12 @@ impl BlocPc {
             }
             _ => None,
         };
-        if fond.is_some() {
+        if let Some(f) = fond {
+            if let Fait::Sur(annonces) = f {
+                for a in annonces {
+                    effets.ajouter(a);
+                }
+            }
             self.relever_travaux(ctx, effets);
             return;
         }

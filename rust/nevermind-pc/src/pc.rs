@@ -96,6 +96,21 @@ pub struct ResultatNettoyage {
 
 /// Une demande d'écriture du registre faite par Nevermind lui-même (réglages de l'utilisateur, HKCU).
 pub trait Pc {
+    // ---- Le verrou des gestes (lot A du second audit : un seul geste qui change le PC à la fois)
+    /// Ce geste tient-il le verrou sur ce fil ? Sinon rien n'est changé (le vrai PC : `Contexte::exiger_geste` ; les
+    /// faux PC des tests : toujours oui).
+    fn exiger_geste(&self) -> Result<(), String> {
+        Ok(())
+    }
+    /// Ajustement B : le verrou rendu le temps du point de restauration (rien n'est noté pendant ce temps)
+    fn suspendre_geste(&mut self) -> Option<u64> {
+        None
+    }
+    /// Le verrou repris après le point de restauration, à son tour
+    fn reprendre_geste(&mut self, _id: u64) -> Result<(), String> {
+        Ok(())
+    }
+
     // ---- Le registre
     /// L'état d'une valeur (`Get-RegState`) : `Ok(None)` si elle n'existe pas, `Err` si la clé est illisible.
     fn reg_lire(&self, chemin: &str, nom: &str) -> Result<Option<ValeurReg>, String>;
@@ -121,6 +136,10 @@ pub trait Pc {
     /// demande de Windows. Par défaut `aide` : seulement pour un Pc dont l'Aide ne demande jamais rien (le
     /// désinstalleur, déjà administrateur ; les faux PC des tests). Celui de Nevermind passe par `ctx.aide_lecture`.
     fn aide_lecture(&mut self, action: &str, parametres: Value) -> Option<Value> {
+        // (une lecture ; une action qui change le PC passerait par le verrou)
+        if nevermind_noyau::aide::change_le_pc(action) {
+            self.exiger_geste().ok()?;
+        }
         self.aide(action, parametres, 60000).ok()
     }
 

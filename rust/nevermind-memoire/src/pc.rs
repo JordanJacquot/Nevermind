@@ -52,6 +52,9 @@ pub struct AideDuContexte;
 
 impl Aide for AideDuContexte {
     fn demander(&self, ctx: &nevermind_noyau::Contexte, action: &str, parametres: &Value) -> Result<Value, String> {
+        if nevermind_noyau::aide::change_le_pc(action) {
+            ctx.exiger_geste()?;
+        }
         ctx.aide(action, parametres, 120_000)
     }
 }

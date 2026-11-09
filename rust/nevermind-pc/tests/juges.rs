@@ -856,6 +856,8 @@ fn le_texte_d_attente_du_vrai_pc_part_tout_de_suite() {
         Ok(json!("OK"))
     }));
     let envoi = |e: Effet| envoyes.lock().unwrap().push(e);
+    // (lot A : « Appliquer » tient le verrou des gestes ; il le rend pendant le point de restauration)
+    let _geste = ctx.prendre_geste("Appliquer", "Ton PC").unwrap();
     let mut p = nevermind_pc::systeme::PcWindows::nouveau(&ctx).en_direct(&envoi);
     let mut sv = Sauvegarde::default();
     let r = {

@@ -333,8 +333,16 @@ impl BlocJeux {
             self.message(effets, &format!("{nom} fait partie de la suite Mindset : Nevermind ne le ferme pas."));
             return;
         }
+        // (l'Aide ferme les programmes : le verrou commun des gestes, sinon le clic est refusé ; lot A du second audit)
+        let geste = match ctx.prendre_geste(&format!("Fermer {nom}"), "Jeux") {
+            Ok(g) => g,
+            Err(refus) => {
+                self.message(effets, &refus);
+                return;
+            }
+        };
         self.statut(effets, &format!("Fermeture de {nom}..."));
-        self.travaux.lancer(ctx, FERMER, move |f| {
+        self.travaux.lancer_geste(ctx, FERMER, geste, move |f| {
             let r = f.ctx.aide("processus.fermer", &json!({ "Nom": nom }), 15000);
             FinJeux::Ferme(nom, r)
         });

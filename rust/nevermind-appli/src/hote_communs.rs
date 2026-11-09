@@ -182,15 +182,27 @@ impl Hote {
     /// passe par la sauvegarde du noyau (`Set-Reg` : origine notée, changement noté, l'Aide pour un réglage du PC ;
     /// `Set-ServiceOff` : origine dans SvcOriginal, changement noté, `service.regler` par l'Aide), puis une ligne
     /// d'historique (`Add-History`) : c'est ce qui permet « Revenir en arrière » (microsoft.ps1:158-168, lag.ps1:497).
-    /// L'Aide peut mettre jusqu'à 2 min par écriture : dans un travail de fond (audit G3), une demande à la fois (les
-    /// suivantes attendent leur tour, dans l'ordre).
+    /// L'Aide peut mettre jusqu'à 2 min par écriture : dans un travail de fond (audit G3). Le geste prend le verrou
+    /// commun des gestes (lot A du second audit) : si un autre geste le tient, ou si celui-ci tourne encore, le clic est
+    /// refusé (« Attends la fin de ... ») et rien ne part plus tard. Son journal est le sien : le geste d'une autre
+    /// page ne peut plus y entrer (M-C).
     fn appliquer_sauvegarde(&mut self, d: &Value, ecran: &mut dyn Ecran) {
-        if self.travaux.occupe() {
-            self.sauvegardes_en_attente.push(d.clone());
-            return;
-        }
+        let nom = Some(texte(d, "Geste")).filter(|n| !n.is_empty()).unwrap_or_else(|| "Couper les envois".into());
+        let page = Some(texte(d, "Page")).filter(|n| !n.is_empty()).unwrap_or_else(|| "Trafic".into());
+        let geste = if self.travaux.occupe() {
+            Err(self.ctx.refus_geste().unwrap_or_else(|| nevermind_noyau::gestes::texte_refus(&nom, &page)))
+        } else {
+            self.ctx.prendre_geste(&nom, &page)
+        };
+        let geste = match geste {
+            Ok(g) => g,
+            Err(refus) => {
+                self.ordre(json!({ "kit": "message", "texte": refus, "bravo": false }), ecran);
+                return;
+            }
+        };
         let (d, etat_service, ctx) = (d.clone(), self.etat_service.clone(), self.ctx.clone());
-        self.travaux.lancer(&ctx, "sauvegarde-appliquer", move |fond| {
+        self.travaux.lancer_geste(&ctx, "sauvegarde-appliquer", geste, move |fond| {
             let ctx = fond.ctx;
             ctx.commencer_changements();
             let mut erreurs = Vec::new();
@@ -234,22 +246,18 @@ impl Hote {
         }
     }
 
-    /// Les travaux de fond de l'hôte lui-même, relevés ; puis la demande suivante qui attendait
+    /// Les travaux de fond de l'hôte lui-même, relevés
     pub(super) fn relever_hote(&mut self, ecran: &mut dyn Ecran) {
         for r in self.travaux.relever() {
             match r {
                 Rendu::Effet(_) => {}
                 Rendu::Fini { resultat: Ok(a), .. } => self.fin_sauvegarde(a, ecran),
+                // (le journal du geste est parti avec lui : rien à refermer ici)
                 Rendu::Fini { resultat: Err(e), .. } => {
-                    let _ = self.ctx.finir_changements();
                     let t = format!("Oups, quelque chose s'est mal passé :\n\n{e}");
                     self.ordre(json!({ "kit": "message", "texte": t, "bravo": false }), ecran);
                 }
             }
-        }
-        if !self.travaux.occupe() && !self.sauvegardes_en_attente.is_empty() {
-            let d = self.sauvegardes_en_attente.remove(0);
-            self.appliquer_sauvegarde(&d, ecran);
         }
     }
 }
@@ -268,6 +276,7 @@ fn couper_service(
     nom: &str,
     demarrage: &str,
 ) -> Result<(), String> {
+    ctx.exiger_geste()?;
     let demarrage = if demarrage.is_empty() { "Disabled" } else { demarrage };
     let (debut, tourne) = etat_service(nom).ok_or_else(|| format!("service {nom} introuvable"))?;
     let orig: Vec<Value> = match ctx.reglage("SvcOriginal") {

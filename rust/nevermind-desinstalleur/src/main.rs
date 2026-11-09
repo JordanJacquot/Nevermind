@@ -86,6 +86,12 @@ mod windows_main {
         let mut pc = PcDesinstallation { pc: PcWindows::nouveau(&ctx), aide: &aide };
         let mut sys = SystemeWindows { ctx: &ctx, aide: &aide, racine: racine.clone(), muet: impose.is_some() };
         let lieux = travail::Lieux { racine, donnees: dossier, suite: suite_donnees, pid: std::process::id() };
+        // (« Tout restaurer » du bloc pc ne change le PC que sous le verrou des gestes, lot A : le désinstalleur, seul
+        //  dans son processus, le prend pour toute la désinstallation)
+        let Ok(_geste) = ctx.prendre_geste("Désinstaller", "Désinstallation") else {
+            fenetre::avertissement("Nevermind n'a pas pu commencer la désinstallation : rien n'a été changé.");
+            return 1;
+        };
         let _ = travail::desinstaller(&mut pc, &mut sys, sv, probleme.as_deref(), &lieux, impose);
         0
     }

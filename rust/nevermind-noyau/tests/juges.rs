@@ -267,6 +267,8 @@ fn reglages() {
         let nom = s(&c["nom"]);
         poser_fichiers(&d, &c["avant"]);
         let ctx = contexte(&d);
+        // (lot A : SvcOriginal et PcfgOriginal ne s'écrivent que sous le verrou d'un geste, comme dans Nevermind)
+        let _geste = ctx.prendre_geste("Juge", "Essai").unwrap();
         let f = d.join("parametres.json");
         let mut verrou = None;
         for o in liste(&c["operations"]) {
@@ -411,6 +413,8 @@ fn invoke_aide_fausse_aide() {
         let nom = s(&c["nom"]);
         let d = dossier(&format!("aide-{i}"));
         let ctx = contexte(&d);
+        // (lot A : une action qui change le PC ne part que sous le verrou d'un geste, comme un clic dans Nevermind)
+        let _geste = ctx.prendre_geste("Juge", "Essai").unwrap();
         ctx.regler_aide_essai(Some(moi.clone()), None);
         let canal = ctx.aide_config().canal.clone();
         let recues = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -962,6 +966,8 @@ fn reglages_du_registre() {
         dm.lock().unwrap().push(format!("{a} {p}"));
         Ok(json!(true))
     }));
+    // (lot A : un geste tient le verrou, son journal est le sien)
+    let _geste = ctx.prendre_geste("Juge", "Essai").unwrap();
     ctx.commencer_changements();
     ctx.changer_registre("HKCU:\\Software\\NevermindEssai", "Valeur", &json!(5), "DWord").unwrap();
     ctx.changer_registre("HKLM:\\SOFTWARE\\NevermindEssai", "N", &json!("t"), "String").unwrap();

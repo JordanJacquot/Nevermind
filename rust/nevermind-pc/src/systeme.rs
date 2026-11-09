@@ -209,6 +209,15 @@ impl<'a> PcWindows<'a> {
 }
 
 impl Pc for PcWindows<'_> {
+    fn exiger_geste(&self) -> Result<(), String> {
+        self.ctx.exiger_geste()
+    }
+    fn suspendre_geste(&mut self) -> Option<u64> {
+        self.ctx.suspendre_geste()
+    }
+    fn reprendre_geste(&mut self, id: u64) -> Result<(), String> {
+        self.ctx.reprendre_geste(id)
+    }
     fn reg_lire(&self, chemin: &str, nom: &str) -> Result<Option<ValeurReg>, String> {
         #[cfg(windows)]
         {
@@ -233,6 +242,7 @@ impl Pc for PcWindows<'_> {
     }
     fn reg_utilisateur_ecrire(&mut self, chemin: &str, nom: &str, valeur: &ValeurReg) -> Result<(), String> {
         self.essai()?;
+        self.ctx.exiger_geste()?;
         #[cfg(windows)]
         {
             crate::windows::reg_utilisateur_ecrire(chemin, nom, valeur)
@@ -245,6 +255,7 @@ impl Pc for PcWindows<'_> {
     }
     fn reg_utilisateur_effacer(&mut self, chemin: &str, nom: &str) -> Result<(), String> {
         self.essai()?;
+        self.ctx.exiger_geste()?;
         #[cfg(windows)]
         {
             crate::windows::reg_utilisateur_effacer(chemin, nom)
@@ -256,7 +267,7 @@ impl Pc for PcWindows<'_> {
         }
     }
     fn origine_utilisateur(&mut self, cle: &str, json: &str) {
-        if self.ctx.essai {
+        if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return;
         }
         #[cfg(windows)]
@@ -269,7 +280,7 @@ impl Pc for PcWindows<'_> {
         let _ = (cle, json);
     }
     fn origine_utilisateur_oublier(&mut self, cle: &str) {
-        if self.ctx.essai {
+        if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return;
         }
         #[cfg(windows)]
@@ -280,7 +291,7 @@ impl Pc for PcWindows<'_> {
         let _ = cle;
     }
     fn origines_utilisateur_effacer(&mut self) {
-        if self.ctx.essai {
+        if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return;
         }
         #[cfg(windows)]
@@ -291,6 +302,10 @@ impl Pc for PcWindows<'_> {
         Err("droits administrateur".into())
     }
     fn aide(&mut self, action: &str, parametres: Value, delai_ms: u64) -> Result<Value, String> {
+        // (une action qui change le PC : seulement sous le verrou des gestes, lot A)
+        if nevermind_noyau::aide::change_le_pc(action) {
+            self.ctx.exiger_geste()?;
+        }
         // (en test, seulement une fausse Aide : jamais la vraie)
         if self.ctx.essai && !action.starts_with("lecture.") && !self.ctx.a_fausse_aide() {
             return Err("mode test : l'Aide n'est pas appelée".into());
@@ -327,7 +342,7 @@ impl Pc for PcWindows<'_> {
     }
     fn powercfg(&mut self, args: &[String]) -> (i32, String) {
         let lecture = matches!(args.first().map(|s| s.as_str()), Some("/getactivescheme" | "/list" | "/q"));
-        if !lecture && self.ctx.essai {
+        if !lecture && (self.ctx.essai || self.ctx.exiger_geste().is_err()) {
             return (1, String::new());
         }
         #[cfg(windows)]
@@ -350,7 +365,7 @@ impl Pc for PcWindows<'_> {
         }
     }
     fn curseur_ecrire(&mut self, guid: &str) -> i32 {
-        if self.ctx.essai {
+        if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return 1;
         }
         #[cfg(windows)]
@@ -374,7 +389,7 @@ impl Pc for PcWindows<'_> {
         }
     }
     fn ecran_frequence(&mut self, appareil: &str, hz: i64) -> i32 {
-        if self.ctx.essai {
+        if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return 1;
         }
         #[cfg(windows)]
@@ -388,7 +403,7 @@ impl Pc for PcWindows<'_> {
         }
     }
     fn souris_relire(&mut self, seuil1: i64, seuil2: i64, vitesse: i64) {
-        if self.ctx.essai {
+        if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return;
         }
         #[cfg(windows)]
@@ -421,7 +436,7 @@ impl Pc for PcWindows<'_> {
         self.effets.push(Effet::OuvrirAdresse(adresse.into()));
     }
     fn commande(&mut self, exe: &str, args: &[String]) -> i32 {
-        if self.ctx.essai {
+        if self.ctx.essai || (exe.eq_ignore_ascii_case("shutdown.exe") && self.ctx.exiger_geste().is_err()) {
             return 1;
         }
         #[cfg(windows)]
@@ -465,7 +480,7 @@ impl Pc for PcWindows<'_> {
         Path::new(&format!("{}\\hiberfil.sys", std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into()))).exists()
     }
     fn nettoyer_dossier(&mut self, _id: &str, chemins: &[String], exclus: &[String]) -> ResultatNettoyage {
-        if self.ctx.essai {
+        if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return ResultatNettoyage::default();
         }
         crate::nettoyage::nettoyer_chemins(chemins, exclus, std::time::SystemTime::now())
@@ -477,6 +492,7 @@ impl Pc for PcWindows<'_> {
         self.ctx.ecrire_reglage(nom, valeur, exiger)
     }
     fn sauvegarde_ecrire(&mut self, sauvegarde: &Value) -> Result<(), String> {
+        self.ctx.exiger_geste()?;
         let t = serde_json::to_string_pretty(sauvegarde).unwrap_or_default();
         ecrire_sur(&self.ctx.donnees.join("sauvegarde.json"), &t, true)?;
         // (le noyau garde aussi sauvegarde.json en mémoire, pour les écritures des autres blocs : il le relit)
@@ -485,6 +501,9 @@ impl Pc for PcWindows<'_> {
         Ok(())
     }
     fn sauvegarde_effacer(&mut self) {
+        if self.ctx.exiger_geste().is_err() {
+            return;
+        }
         for n in ["sauvegarde.json", "sauvegarde.json.bak", "sauvegarde.json.tmp"] {
             let _ = std::fs::remove_file(self.ctx.donnees.join(n));
         }

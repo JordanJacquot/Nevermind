@@ -42,6 +42,32 @@ pub const ATTENTE_TACHE: Duration = Duration::from_secs(20);
 /// Attente de l'Aide lancée par la demande de Windows (une fois « Oui » cliqué)
 pub const ATTENTE_WINDOWS: Duration = Duration::from_secs(30);
 
+/// Les actions de l'Aide qui changent le PC : seulement sous le verrou d'un geste (lot A du second audit). Le point
+/// de restauration (`restauration.creer`) n'y est pas : il ne change ni la sauvegarde ni un réglage, et « Appliquer »
+/// rend le verrou pendant qu'il se crée (ajustement B).
+pub const ACTIONS_QUI_CHANGENT: &[&str] = &[
+    "reg.ecrire",
+    "reg.effacer",
+    "service.regler",
+    "dns.regler",
+    "carte.relancer",
+    "pare-feu.bloquer",
+    "pare-feu.debloquer",
+    "pare-feu.debloquer-tout",
+    "pare-feu.activer",
+    "origines.oublier",
+    "antivirus.retirer-exclusions",
+    "wifi.manuel",
+    "smb1.couper",
+    "nettoyage.lancer",
+    "processus.fermer",
+];
+
+/// Cette action de l'Aide change-t-elle le PC ?
+pub fn change_le_pc(action: &str) -> bool {
+    ACTIONS_QUI_CHANGENT.contains(&action)
+}
+
 /// Une fausse Aide donnée au contexte (tests des blocs) : l'action et ses paramètres, la réponse (`r`) ou l'erreur.
 pub type FausseAide = Arc<dyn Fn(&str, &Value) -> Result<Value, String> + Send + Sync>;
 
@@ -318,6 +344,11 @@ impl Contexte {
         delai: Duration,
         sans_demande: bool,
     ) -> Result<Value, String> {
+        // (une action qui change le PC seulement sous le verrou d'un geste, lot A ; le point de restauration n'en a
+        //  pas besoin, ajustement B)
+        if change_le_pc(action) {
+            self.exiger_geste()?;
+        }
         let fausse = verrou(&self.aide.fausse).clone();
         if !sans_demande && (self.essai || fausse.is_some()) {
             verrou(&self.aide.avec_demande).push(action.to_string());
@@ -446,6 +477,9 @@ impl Contexte {
     /// `[AideClient]::Texte` : une demande dont la réponse est un texte (les lignes de PresentMon relayées par
     /// l'Aide), depuis n'importe quel fil, sans réveil. `parametres_json` : les paramètres déjà en JSON.
     pub fn aide_texte(&self, action: &str, parametres_json: &str, delai_ms: u64) -> Result<String, String> {
+        if change_le_pc(action) {
+            self.exiger_geste()?;
+        }
         let fausse = verrou(&self.aide.fausse).clone();
         if let Some(f) = fausse {
             let p: Value = serde_json::from_str(parametres_json).unwrap_or(Value::Null);

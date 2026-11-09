@@ -19,6 +19,10 @@ pub(crate) fn verrou<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 /// La clé (HKCU) où Nevermind garde lui-même une copie des valeurs d'origine des réglages de l'utilisateur
 pub const ORIGINES_UTILISATEUR: &str = "Software\\Mindset\\Nevermind\\Origines";
+/// Les réglages de Nevermind qui gardent l'état d'origine du PC (services, alimentation) : écrits seulement par un
+/// geste qui tient le verrou (lot A)
+pub const REGLAGES_D_ORIGINE: &[&str] = &["SvcOriginal", "PcfgOriginal"];
+
 /// La clé (HKLM) où l'Aide garde les valeurs d'origine des réglages du PC
 pub const ORIGINES_MACHINE: &str = "SOFTWARE\\Mindset\\Nevermind\\Aide\\Origines";
 
@@ -34,8 +38,6 @@ pub(crate) struct Interne {
     pub origines_factices: Vec<Value>,
     /// Les dernières erreurs (`$global:Error`), pour « Signaler un problème »
     pub erreurs: Vec<String>,
-    /// Les changements de l'action en cours (`$script:RunLog`), `None` hors d'une action
-    pub changements: Option<Vec<Value>>,
 }
 
 pub struct Contexte {
@@ -55,6 +57,8 @@ pub struct Contexte {
     pub(crate) ignores: Mutex<Option<Vec<String>>>,
     pub(crate) assistance: Mutex<crate::assistance::EtatAssistance>,
     pub(crate) maj: Mutex<crate::mises_a_jour::EtatMaj>,
+    /// Le verrou « un geste qui change le PC à la fois », avec le journal de chaque geste (lot A, G-A et M-C)
+    pub(crate) gestes: std::sync::Arc<crate::gestes::Verrou>,
     /// Lui-même, une fois partagé ([`Contexte::partage`]) : ce que reçoit un travail de fond
     soi: std::sync::OnceLock<std::sync::Weak<Contexte>>,
     /// Un travail de fond a rendu quelque chose (à relever sur le fil des blocs)
@@ -83,7 +87,6 @@ impl Contexte {
                 faux_registre: HashMap::new(),
                 origines_factices: Vec::new(),
                 erreurs: Vec::new(),
-                changements: None,
             }),
             aide: Default::default(),
             sauvegarde: Mutex::new(None),
@@ -91,6 +94,7 @@ impl Contexte {
             ignores: Mutex::new(None),
             assistance: Mutex::new(Default::default()),
             maj: Mutex::new(Default::default()),
+            gestes: Default::default(),
             soi: Default::default(),
             a_relever: Default::default(),
         }
@@ -281,6 +285,10 @@ impl Contexte {
 
     /// Écrire un réglage (`Set-Setting`). `exiger` : erreur si le fichier n'a pas pu être écrit (rien n'est changé).
     pub fn ecrire_reglage(&self, nom: &str, valeur: Value, exiger: bool) -> Result<(), String> {
+        // (l'état d'origine des services et de l'alimentation : noté seulement par un geste qui tient le verrou)
+        if REGLAGES_D_ORIGINE.contains(&nom) {
+            self.exiger_geste()?;
+        }
         self.charger_reglages();
         let erreur = {
             let mut r = verrou(&self.reglages);
@@ -373,8 +381,9 @@ impl Contexte {
     }
 
     /// `Write-RegValue` : un réglage de l'utilisateur (HKCU) est écrit par Nevermind ; un réglage du PC passe par
-    /// l'Aide (`reg.ecrire`). Mode test : le faux registre, jamais le vrai.
+    /// l'Aide (`reg.ecrire`). Mode test : le faux registre, jamais le vrai. Seulement sous le verrou d'un geste.
     pub fn ecrire_registre(&self, chemin: &str, nom: &str, valeur: &Value, kind: &str) -> Result<(), String> {
+        self.exiger_geste()?;
         if !crate::registre::utilisateur(chemin) {
             self.aide("reg.ecrire", &json!({ "Cle": chemin, "Nom": nom, "Valeur": valeur, "Type": kind }), 120000)?;
             return Ok(());
@@ -388,6 +397,7 @@ impl Contexte {
 
     /// `Remove-RegValue` : comme `ecrire_registre` (l'Aide pour le PC : `reg.effacer`)
     pub fn effacer_registre(&self, chemin: &str, nom: &str) -> Result<(), String> {
+        self.exiger_geste()?;
         if !crate::registre::utilisateur(chemin) {
             self.aide("reg.effacer", &json!({ "Cle": chemin, "Nom": nom }), 120000)?;
             return Ok(());
@@ -417,35 +427,7 @@ impl Contexte {
         crate::registre::origines(ORIGINES_MACHINE, &self.cle_origines_utilisateur())
     }
 
-    // -----------------------------------------------------------------------------------------------------------
-    // Les changements de l'action en cours (`$script:RunLog`)
-    // -----------------------------------------------------------------------------------------------------------
-
-    /// Une action commence : ses changements sont notés (`$script:RunLog = New-Object ArrayList`)
-    pub fn commencer_changements(&self) {
-        verrou(&self.interne).changements = Some(Vec::new());
-    }
-
-    /// Un changement de l'action en cours (`$script:RunLog.Add(...)`) ; rien hors d'une action
-    pub fn noter_changement(&self, e: Value) -> bool {
-        match verrou(&self.interne).changements.as_mut() {
-            Some(l) => {
-                l.push(e);
-                true
-            }
-            None => false,
-        }
-    }
-
-    /// Une action est en cours (`$null -ne $script:RunLog`)
-    pub fn changements_en_cours(&self) -> bool {
-        verrou(&self.interne).changements.is_some()
-    }
-
-    /// L'action est finie : ses changements (`$script:RunLog = $null`)
-    pub fn finir_changements(&self) -> Vec<Value> {
-        verrou(&self.interne).changements.take().unwrap_or_default()
-    }
+    // (les changements de l'action en cours, `$script:RunLog`, sont dans le journal de chaque geste : gestes.rs)
 }
 
 /// L'heure locale au format de `Get-Date -Format s` (« 2026-11-06T21:05:09 »).

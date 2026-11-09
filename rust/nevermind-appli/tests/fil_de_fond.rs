@@ -148,22 +148,64 @@ struct Essai {
     aide: Arc<AideLente>,
     feu: Option<Sender<()>>,
     dossier: PathBuf,
+    /// Les demandes faites à l'Aide du contexte (mode jeu, « Couper les envois »)
+    aide_ctx: Arc<Mutex<Vec<String>>>,
+}
+
+/// Le chemin de OneDrive sur le faux PC : fermé par le mode jeu, sa relance « ratée » est dite dans le journal
+const ONEDRIVE: &str = r"C:\Users\Essai\AppData\Local\Microsoft\OneDrive\OneDrive.exe";
+
+/// Un bloc « Trafic » d'essai : « Couper les envois » envoie `sauvegarde-appliquer` à l'hôte, comme le vrai
+struct TraficEssai;
+impl Bloc for TraficEssai {
+    fn nom(&self) -> &'static str {
+        "trafic"
+    }
+    fn pages(&mut self, _: &Contexte, _: &str) -> Map<String, Value> {
+        Map::new()
+    }
+    fn action(&mut self, _: &Contexte, id: &str, _: &Value, effets: &mut Effets) -> bool {
+        if id != "trafic:couper" {
+            return false;
+        }
+        effets.ajouter(nevermind_noyau::Effet::Signal {
+            nom: "sauvegarde-appliquer".into(),
+            donnees: json!({ "Geste": "Couper les envois", "Page": "Trafic", "Titre": "Envois à Microsoft réduits",
+                "Details": [], "Message": "",
+                "Ecritures": [{ "Type": "reg", "Path": r"HKLM:\SOFTWARE\MindsetEssaiLotA\DataCollection", "Name": "AllowTelemetry", "Value": 0 }] }),
+        });
+        true
+    }
 }
 
 impl Essai {
     fn nouveau(nom: &str) -> Essai {
+        Essai::nouveau_avec(nom, false)
+    }
+
+    /// `mode_jeu` : le mode jeu est activé (OneDrive fermé au début d'une partie, relancé à la fin)
+    fn nouveau_avec(nom: &str, mode_jeu: bool) -> Essai {
         let dossier = dossier_essai(&format!("fil-de-fond-{nom}"));
         let _ = std::fs::remove_dir_all(&dossier);
         std::fs::create_dir_all(dossier.join("donnees")).unwrap();
         let ctx = Contexte::nouveau(dossier.join("fichiers"), dossier.join("donnees"), false, true);
         // (l'Aide du bloc perf : la mesure des FPS, demandée dans les réglages ; chaque lecture comptée)
         ctx.ecrire_reglage("FpsMeasure", json!(true), false).unwrap();
+        if mode_jeu {
+            ctx.ecrire_reglage("GameMode", json!(true), false).unwrap();
+        }
         let fps_lus = Arc::new(AtomicUsize::new(0));
         let f = fps_lus.clone();
+        let aide_ctx = Arc::new(Mutex::new(Vec::new()));
+        let ac = aide_ctx.clone();
         ctx.fausse_aide(Arc::new(move |a: &str, _: &Value| {
             if a == "fps.lire" {
                 f.fetch_add(1, Ordering::SeqCst);
                 return Ok(json!(""));
+            }
+            ac.lock().unwrap().push(a.to_string());
+            if a == "processus.fermer" {
+                return Ok(json!(1));
             }
             Ok(json!("ok"))
         }));
@@ -171,12 +213,14 @@ impl Essai {
         let pm = ctx.appli.join("outils-tiers").join("PresentMon.exe").to_string_lossy().into_owned();
         let mut chemins = HashMap::new();
         chemins.insert(4242, r"C:\Jeux\RocketLeague\Binaries\Win64\RocketLeague.exe".to_string());
+        chemins.insert(77, ONEDRIVE.to_string());
         let sys = FauxSysteme {
             partage: Some(partage.clone()),
             chemins,
             fichiers: vec![pm],
             cpu: Some((100, 1000)),
             ram: Some((16e9, 8e9)),
+            lancements_rates: vec![ONEDRIVE.to_string()],
             ..Default::default()
         };
         let mut perf = BlocPerf::avec(Box::new(sys), Box::new(FauxCompteur::default()));
@@ -194,7 +238,7 @@ impl Essai {
         let memoire = BlocMemoire::avec(Arc::new(FauxPcMemoire(juge_memoire())), aide.clone());
         let tics = Arc::new(AtomicUsize::new(0));
         let hote = Hote::nouveau(
-            vec![Box::new(Compteur(tics.clone())), Box::new(perf), Box::new(memoire)],
+            vec![Box::new(Compteur(tics.clone())), Box::new(perf), Box::new(memoire), Box::new(TraficEssai)],
             ctx,
             Habillage::depuis(&suite_commun::themes::Theme::neon()),
             "Salut".into(),
@@ -212,6 +256,7 @@ impl Essai {
             aide,
             feu: Some(feu),
             dossier,
+            aide_ctx,
         };
         es.message(MessagePage::Pret);
         es
@@ -355,4 +400,122 @@ fn fermer_pendant_un_geste_long_ne_bloque_pas() {
     let d = Instant::now();
     es.hote.fermer();
     assert!(d.elapsed() < Duration::from_secs(2), "la fermeture a attendu le travail ({:?})", d.elapsed());
+}
+
+impl Essai {
+    /// Le journal de Nevermind (journal.txt du dossier d'essai)
+    fn journal(&self) -> String {
+        std::fs::read_to_string(self.hote.ctx.fichier_journal()).unwrap_or_default()
+    }
+
+    /// « Couper ce qui est sûr » lancé, et l'Aide lente atteinte : le geste de la page RAM tient le verrou
+    fn ram_tient_le_verrou(&mut self) {
+        let duree = self.couper();
+        assert!(duree < Duration::from_secs(2), "le « Oui » a pris {duree:?}");
+        let fin = Instant::now() + Duration::from_secs(5);
+        while self.aide.demandes.load(Ordering::SeqCst) == 0 {
+            assert!(Instant::now() < fin, "l'Aide n'est pas appelée");
+            self.tourner(Duration::from_millis(50));
+        }
+        assert_eq!(
+            self.hote.ctx.prendre_geste("Essai", "Essai").unwrap_err(),
+            "Attends la fin de « Couper ce qui est sûr » (RAM)"
+        );
+    }
+
+    /// Une partie de Rocket League commence, OneDrive ouvert (le mode jeu le ferme)
+    fn partie(&mut self) {
+        {
+            let mut p = self.partage.lock().unwrap();
+            p.progs.push(Programme { pid: 77, nom: "OneDrive".into(), ..Default::default() });
+            p.progs.push(Programme { pid: 4242, nom: "RocketLeague".into(), ..Default::default() });
+            p.premier_plan = 4242;
+        }
+        let fin = Instant::now() + Duration::from_secs(15);
+        while !self.hote.partie() {
+            assert!(Instant::now() < fin, "la partie n'est pas vue");
+            self.tourner(Duration::from_millis(100));
+        }
+        // (OneDrive a été fermé par l'Aide)
+        self.partage.lock().unwrap().progs.retain(|p| p.pid != 77);
+    }
+}
+
+/// Lot A du second audit : deux gestes de deux pages en même temps. Pendant « Couper ce qui est sûr » (page RAM, l'Aide
+/// lente), « Couper les envois » (Trafic) est REFUSÉ avec « Attends la fin de « Couper ce qui est sûr » (RAM) » ;
+/// rien ne part tout seul quand la RAM a fini ; ensuite, un nouveau clic passe.
+#[test]
+fn deux_gestes_de_deux_pages_le_second_est_refuse() {
+    let mut es = Essai::nouveau("deux-pages");
+    es.ram_tient_le_verrou();
+    es.page.lock().unwrap().ordres.clear();
+    es.message(MessagePage::Action { id: "trafic:couper".into(), valeur: Value::Null, ecran: "trafic".into() });
+    assert!(
+        es.ordres().contains(
+            &json!({ "kit": "message", "texte": "Attends la fin de « Couper ce qui est sûr » (RAM)", "bravo": false })
+        ),
+        "le clic n'est pas refusé avec le bon texte : {:?}",
+        es.ordres()
+    );
+    let _ = es.feu.take().unwrap().send(());
+    es.jusqu_a("la fiche de résultat de la RAM", |p| {
+        p.etats.last().is_some_and(|e| e.to_string().contains("C'est fait !"))
+    });
+    es.tourner(Duration::from_millis(500));
+    assert!(!es.aide_ctx.lock().unwrap().iter().any(|a| a == "reg.ecrire"), "le clic refusé est parti plus tard");
+    assert!(!es.hote.ctx.historique().iter().any(|h| h["Titre"] == "Envois à Microsoft réduits"));
+    // Un nouveau clic passe
+    es.message(MessagePage::Action { id: "trafic:couper".into(), valeur: Value::Null, ecran: "trafic".into() });
+    let fin = Instant::now() + Duration::from_secs(10);
+    while !es.hote.ctx.historique().iter().any(|h| h["Titre"] == "Envois à Microsoft réduits") {
+        assert!(Instant::now() < fin, "le nouveau clic ne passe pas");
+        es.tourner(Duration::from_millis(100));
+    }
+}
+
+/// Ajustement A du lot A : le mode jeu au début et à la fin d'une partie n'est jamais refusé ni retardé, même quand un
+/// geste de l'utilisateur tient le verrou (ici « Couper ce qui est sûr », l'Aide lente) : il passe en priorité.
+#[test]
+fn le_mode_jeu_passe_en_priorite_pendant_le_geste_d_une_autre_page() {
+    let mut es = Essai::nouveau_avec("mode-jeu", true);
+    es.ram_tient_le_verrou();
+    es.partie();
+    assert!(
+        es.aide_ctx.lock().unwrap().iter().any(|a| a == "processus.fermer"),
+        "le début de partie n'a pas fermé OneDrive : {:?}",
+        es.aide_ctx.lock().unwrap()
+    );
+    // La partie finit pendant que la RAM tient toujours le verrou : la remise en état est faite tout de suite
+    es.partage.lock().unwrap().progs.clear();
+    let fin = Instant::now() + Duration::from_secs(15);
+    while es.hote.partie() {
+        assert!(Instant::now() < fin, "la fin de partie n'est pas vue");
+        es.tourner(Duration::from_millis(100));
+    }
+    let j = es.journal();
+    assert!(j.contains("Mode jeu: fin de Rocket League"), "{j}");
+    assert!(j.contains("à relancer à la main: OneDrive"), "la relance de OneDrive n'a pas été tentée : {j}");
+    assert_eq!(
+        es.hote.ctx.prendre_geste("Essai", "Essai").unwrap_err(),
+        "Attends la fin de « Couper ce qui est sûr » (RAM)",
+        "la RAM tient toujours son verrou"
+    );
+}
+
+/// Ajustements A et C : Nevermind se ferme pendant une partie, alors qu'un geste de l'utilisateur tient le verrou (et
+/// attend l'Aide). La remise en état de fin de partie est faite avant de fermer, dans le délai ; le verrou est rendu :
+/// un NOUVEAU geste passe ensuite.
+#[test]
+fn la_fermeture_remet_le_mode_jeu_et_rend_le_verrou() {
+    let mut es = Essai::nouveau_avec("fermeture-mode-jeu", true);
+    es.ram_tient_le_verrou();
+    es.partie();
+    let d = Instant::now();
+    es.hote.fermer();
+    assert!(d.elapsed() < Duration::from_secs(6), "la fermeture a pris {:?}", d.elapsed());
+    let j = es.journal();
+    assert!(j.contains("Mode jeu: fin de Rocket League"), "la fin de partie n'est pas faite avant de fermer : {j}");
+    assert!(j.contains("à relancer à la main: OneDrive"), "la relance de OneDrive n'a pas été tentée : {j}");
+    let n = es.hote.ctx.prendre_geste("Nouveau geste", "Essai");
+    assert!(n.is_ok(), "après la fermeture, un nouveau geste ne passe pas : {n:?}");
 }

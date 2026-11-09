@@ -204,6 +204,7 @@ impl Contexte {
 
     /// `Save-Backup` : écrit sauvegarde.json (UTF-8 avec BOM ; l'ancien en copie de secours)
     pub fn enregistrer_sauvegarde(&self) -> Result<(), String> {
+        self.exiger_geste()?;
         let j = self.sauvegarde().en_json();
         crate::fichiers::ecrire_texte_sur(&self.fichier_sauvegarde(), &crate::json_ps::lisible(&j), true)
             .map_err(|e| e.to_string())
@@ -212,6 +213,7 @@ impl Contexte {
     /// `Save-BackupOuOublier` : l'état d'origine noté AVANT le changement ; s'il n'a pas pu être écrit, il est
     /// oublié (`oublier`) et l'erreur remonte, sans rien changer.
     pub fn enregistrer_sauvegarde_ou_oublier(&self, oublier: impl FnOnce(&mut Sauvegarde)) -> Result<(), String> {
+        self.exiger_geste()?;
         match self.enregistrer_sauvegarde() {
             Ok(()) => Ok(()),
             Err(e) => {
@@ -232,6 +234,7 @@ impl Contexte {
     /// `Save-Original` : mémorise la valeur d'origine avant la première modification (et une copie dans le
     /// registre de l'utilisateur pour un réglage de l'utilisateur ; jamais en mode test).
     pub fn noter_origine(&self, chemin: &str, nom: &str) -> Result<(), String> {
+        self.exiger_geste()?;
         let cle = format!("{chemin}|{nom}");
         if self.sauvegarde().registre.contains_key(&cle) {
             return Ok(());
@@ -257,6 +260,7 @@ impl Contexte {
 
     /// `Set-Reg` : note l'origine, le changement (action en cours), puis écrit (l'Aide pour un réglage du PC)
     pub fn changer_registre(&self, chemin: &str, nom: &str, valeur: &Value, kind: &str) -> Result<(), String> {
+        self.exiger_geste()?;
         self.noter_origine(chemin, nom)?;
         if self.changements_en_cours() {
             let st = self.registre_etat(chemin, nom);
@@ -267,6 +271,7 @@ impl Contexte {
 
     /// `Clear-Reg` : une valeur qui existe est effacée (origine et changement notés)
     pub fn vider_registre(&self, chemin: &str, nom: &str) -> Result<(), String> {
+        self.exiger_geste()?;
         let st = self.registre_etat(chemin, nom);
         if !vrai(&st["Existed"]) {
             return Ok(());

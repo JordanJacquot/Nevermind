@@ -490,10 +490,18 @@ impl BlocMemoire {
         if self.travaux.en_cours(COUPER) {
             return;
         }
+        // (des services du PC : le verrou commun des gestes, sinon le clic est refusé ; lot A du second audit)
+        let geste = match ctx.prendre_geste("Couper ce qui est sûr", "RAM") {
+            Ok(g) => g,
+            Err(refus) => {
+                effets.ajouter(Effet::Annonce(refus));
+                return;
+            }
+        };
         let pc = self.pc();
         let aide = self.aide.clone();
         Self::occupe(effets, "Un instant...");
-        self.travaux.lancer(ctx, COUPER, move |fond| {
+        self.travaux.lancer_geste(ctx, COUPER, geste, move |fond| {
             let ctx = fond.ctx;
             let mut faits = Vec::new();
             let mut rates = Vec::new();
@@ -567,6 +575,7 @@ fn service_manuel(
     demarrage: &str,
     log: &mut Vec<Value>,
 ) -> Result<(), String> {
+    ctx.exiger_geste()?;
     let (depart, tourne) =
         pc.service(nom).ok_or_else(|| format!("Impossible de trouver un service assorti du nom « {nom} »."))?;
     let mut orig: Vec<Value> = match ctx.reglage("SvcOriginal") {

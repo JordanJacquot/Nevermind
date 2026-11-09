@@ -567,3 +567,84 @@ fn seule_une_vraie_liste_de_fabricants_est_gardee() {
     assert!(fabricants_complets(&t));
     assert!(!fabricants_complets("\u{feff}"), "le fichier vide d'avant est retéléchargé");
 }
+
+/// Lot A du second audit (G-A, M-C) : un seul geste qui change le PC à la fois, toutes pages confondues. Pendant
+/// qu'un geste d'une autre page tient le verrou (« Appliquer » de Ton PC), « Changer le DNS » et « Couper le Bureau à
+/// distance » sont REFUSÉS avec « Attends la fin de « Appliquer » (Ton PC) » ; rien n'est noté ni demandé à l'Aide, et
+/// rien ne part tout seul quand le verrou est rendu. Ensuite, un nouveau clic passe. Fausse Aide : rien sur le vrai PC.
+#[test]
+fn un_clic_pendant_le_geste_d_une_autre_page_est_refuse() {
+    use std::time::Instant;
+    let s = Arc::new(FausseSonde { dns_avant: "9.9.9.9".into(), rdp: true, ..Default::default() });
+    *s.bps.lock().unwrap() = 1e8;
+    let ctx = contexte("refus").partage();
+    let demandes = Arc::new(Mutex::new(Vec::<String>::new()));
+    let dm = demandes.clone();
+    ctx.fausse_aide(Arc::new(move |a: &str, _p: &Value| {
+        dm.lock().unwrap().push(a.to_string());
+        Ok(json!("ok"))
+    }));
+    let mut b = BlocReseau::avec_sonde(s.clone());
+    let _ = page(&mut b, &ctx, "connexion");
+    let mut e = Effets::default();
+    b.tic(&ctx, false, &mut e);
+    let refus = Effet::Annonce("Attends la fin de « Appliquer » (Ton PC)".into());
+
+    // Le DNS pendant « Appliquer »
+    let appliquer = ctx.prendre_geste("Appliquer", "Ton PC").unwrap();
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "dns", &json!("1"), &mut e));
+    assert!(e.0.contains(&refus), "le clic n'est pas refusé avec le bon texte : {:?}", e.0);
+    assert!(ctx.sauvegarde().dns.is_empty(), "le DNS d'origine a été noté alors que rien ne change");
+
+    // Le Bureau à distance, depuis l'audit, pendant « Appliquer »
+    drop(appliquer);
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnNetAudit", &Value::Null, &mut e));
+    attendre(&mut b, &ctx, &mut e, |b, c| {
+        b.pages(c, "panneau").get("panneau").is_some_and(|p| p["module"]["titre"] == "Points à corriger")
+    });
+    let pan = page(&mut b, &ctx, "panneau");
+    let blocs = pan["blocs"].as_array().unwrap();
+    let i = blocs.iter().position(|x| x["texte"] == "Bureau à distance activé").expect("le point Bureau à distance");
+    let bouton = blocs[i..].iter().find(|x| x["texte"] == "Désactiver").cloned().expect("le bouton Désactiver");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, bouton["id"].as_str().unwrap(), &Value::Null, &mut e));
+    let q =
+        e.0.iter()
+            .find_map(|x| match x {
+                Effet::Signal { nom, donnees } if nom == "question" => Some(donnees.clone()),
+                _ => None,
+            })
+            .expect("la question");
+    let appliquer = ctx.prendre_geste("Appliquer", "Ton PC").unwrap();
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "reseau-question", &json!({ "id": q["id"], "valeur": "oui" }), &mut e));
+    assert!(e.0.contains(&refus), "le Bureau à distance n'est pas refusé avec le bon texte : {:?}", e.0);
+
+    // Le verrou rendu : rien ne part tout seul
+    drop(appliquer);
+    let fin = Instant::now() + Duration::from_millis(600);
+    while Instant::now() < fin {
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        b.tic(&ctx, false, &mut e);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(demandes.lock().unwrap().is_empty(), "un clic refusé est parti plus tard : {:?}", demandes.lock().unwrap());
+    let cle = r"HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server|fDenyTSConnections";
+    assert!(!ctx.sauvegarde().registre.contains_key(cle), "le Bureau à distance a été noté");
+
+    // Un nouveau clic passe
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "dns", &json!("1"), &mut e));
+    assert!(!e.0.contains(&refus));
+    let fin = Instant::now() + Duration::from_secs(10);
+    while !demandes.lock().unwrap().iter().any(|a| a == "dns.regler") {
+        assert!(Instant::now() < fin, "le nouveau DNS ne part pas");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let _ = std::fs::remove_dir_all(&ctx.donnees);
+}

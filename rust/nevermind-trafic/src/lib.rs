@@ -970,7 +970,15 @@ impl BlocTrafic {
             ctx.journal(&format!("Trafic : blocage de {titre} pas lancé, un geste est encore en cours"));
             return;
         }
-        self.fond.lancer(ctx, "bloquer", move |fond| {
+        // (une règle du pare-feu : le verrou commun des gestes, sinon le clic est refusé ; lot A du second audit)
+        let geste = match ctx.prendre_geste("Bloquer", "Trafic") {
+            Ok(g) => g,
+            Err(refus) => {
+                effets.ajouter(Effet::Annonce(refus));
+                return;
+            }
+        };
+        self.fond.lancer_geste(ctx, "bloquer", geste, move |fond| {
             let ctx = fond.ctx;
             let mut effets = Vec::new();
             let nom = format!("Nevermind : bloque {titre}");
@@ -1080,7 +1088,7 @@ impl BlocTrafic {
                 let cle = r"HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization";
                 effets.ajouter(Effet::Signal {
                     nom: signaux::SAUVEGARDE.into(),
-                    donnees: json!({ "Titre": format!("Limiter Windows Update ({titre})"), "Details": [],
+                    donnees: json!({ "Geste": "Limiter Windows Update", "Page": "Trafic", "Titre": format!("Limiter Windows Update ({titre})"), "Details": [],
                         "Ecritures": [
                             microsoft::Ecriture::Registre { chemin: cle.into(), nom: "DOPercentageMaxBackgroundBandwidth".into(), valeur: 10 }.json(),
                             microsoft::Ecriture::Registre { chemin: cle.into(), nom: "DODownloadMode".into(), valeur: 0 }.json(),
@@ -1118,7 +1126,7 @@ impl BlocTrafic {
         let ecritures: Vec<Value> = items.iter().flat_map(|i| i.couper.iter().map(|e| e.json())).collect();
         effets.ajouter(Effet::Signal {
             nom: signaux::SAUVEGARDE.into(),
-            donnees: json!({ "Titre": titre, "Details": items.iter().map(|i| i.titre).collect::<Vec<_>>(), "Ecritures": ecritures, "Historique": [],
+            donnees: json!({ "Geste": "Couper les envois", "Page": "Trafic", "Titre": titre, "Details": items.iter().map(|i| i.titre).collect::<Vec<_>>(), "Ecritures": ecritures, "Historique": [],
                 "Message": format!("{} réglage(s) coupé(s). Annulable depuis la page Sauvegarde, historique.", items.len()) }),
         });
         effets.ajouter(Effet::Rafraichir);

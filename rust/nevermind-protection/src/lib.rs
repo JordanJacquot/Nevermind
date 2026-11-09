@@ -400,8 +400,16 @@ impl BlocProtection {
                 ctx.journal(&format!("Sécurité : {titre} pas lancé, un geste est encore en cours"));
                 return;
             }
+            // (un geste qui change le PC : le verrou commun des gestes, sinon le clic est refusé ; lot A du second audit)
+            let geste = match ctx.prendre_geste(nom_geste(&a.sorte), PAGE) {
+                Ok(g) => g,
+                Err(refus) => {
+                    effets.ajouter(Effet::Annonce(refus));
+                    return;
+                }
+            };
             let sorte = a.sorte.clone();
-            self.travaux.lancer(ctx, GESTE, move |fond| {
+            self.travaux.lancer_geste(ctx, GESTE, geste, move |fond| {
                 let (definitif, erreur, annonces) = geste_long(fond.ctx, sys.as_deref(), &sorte);
                 FinGeste { titre, definitif, erreur, annonces, rafraichir }
             });
@@ -657,6 +665,13 @@ impl Bloc for BlocProtection {
             }
             "sec-supprimer-trouvees" => {
                 if confirme(valeur) {
+                    let _geste = match ctx.prendre_geste("Supprimer les menaces", PAGE) {
+                        Ok(g) => g,
+                        Err(refus) => {
+                            effets.ajouter(Effet::Annonce(refus));
+                            return true;
+                        }
+                    };
                     match self.sys.as_ref().map(|s| s.supprimer_menaces()) {
                         Some(Err(e)) => effets.ajouter(Effet::Annonce(e)),
                         _ => {
@@ -879,6 +894,20 @@ struct FinGeste {
 /// La clé des gestes longs : un seul à la fois
 const GESTE: &str = "geste";
 
+/// La page, dans « Attends la fin de « Réactiver le pare-feu » (Protection) »
+const PAGE: &str = "Protection";
+
+/// Le nom d'un geste long, dans « Attends la fin de ... »
+fn nom_geste(s: &Sorte) -> &'static str {
+    match s {
+        Sorte::SupprimerMenaces => "Supprimer les menaces",
+        Sorte::RetirerExclusions(_) => "Retirer les exclusions",
+        Sorte::ReactiverPareFeu => "Réactiver le pare-feu",
+        Sorte::DesactiverTaches(_) => "Désactiver les tâches",
+        _ => "Un réglage de la sécurité",
+    }
+}
+
 /// Un geste long (Defender, l'Aide, le Planificateur), fait dans un travail de fond : le changement définitif,
 /// l'erreur, les messages
 fn geste_long(
@@ -886,6 +915,9 @@ fn geste_long(
     sys: Option<&dyn Systeme>,
     sorte: &Sorte,
 ) -> (Option<(String, String)>, Option<String>, Vec<Effet>) {
+    if let Err(e) = ctx.exiger_geste() {
+        return (None, Some(e), Vec::new());
+    }
     let mut definitif: Option<(String, String)> = None;
     let mut erreur: Option<String> = None;
     let mut annonces = Vec::new();

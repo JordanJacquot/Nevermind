@@ -17,6 +17,7 @@ pub mod assistance;
 pub mod contexte;
 pub mod fausse_aide;
 pub mod fichiers;
+pub mod gestes;
 pub mod journal;
 pub mod json_ps;
 pub mod mises_a_jour;
@@ -30,6 +31,7 @@ pub mod travaux;
 pub mod windows;
 pub use assistance::pages_assistance;
 pub use contexte::{Contexte, horodatage};
+pub use gestes::Geste;
 
 /// Ce qu'un bloc demande à l'hôte (il ne touche jamais la fenêtre lui-même).
 #[derive(Debug, Clone, PartialEq)]

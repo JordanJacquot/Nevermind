@@ -106,6 +106,17 @@ pub fn message_lancement(args: &[String], raison: &str) -> String {
 }
 
 impl Session {
+    /// Le nom du geste qui attend une réponse (« Attends la fin de « Tout restaurer » (Ton PC) »)
+    pub fn geste_en_attente(&self) -> Option<&'static str> {
+        Some(match self.attente.as_ref()? {
+            Attente::Confirmer(_) | Attente::Restauration(_) => "Tout corriger",
+            Attente::Ecran(_) => "Fréquence de l'écran",
+            Attente::RestaurationReglages { .. } => "Appliquer",
+            Attente::ToutRestaurer | Attente::Reessayer => "Tout restaurer",
+            Attente::AnnulerEntree { .. } => "Annuler",
+        })
+    }
+
     fn moteur<'a>(&'a mut self, pc: &'a mut dyn Pc) -> Moteur<'a> {
         let portable = self.analyse.as_ref().is_some_and(|a| a.portable);
         Moteur::nouveau(pc, &mut self.sv, portable)
@@ -378,6 +389,11 @@ impl Session {
         // Pas de réponse, ou « Revenir en arrière » : l'ancienne fréquence revient, et le point est ignoré
         let mut revenus: Vec<String> = Vec::new();
         if choix != "keep" {
+            // (la réponse à « Tes écrans s'affichent bien ? » passe en priorité, jamais refusée : le bloc tient le
+            //  verrou des gestes pour elle)
+            if let Err(e) = pc.exiger_geste() {
+                pc.journal(&format!("Fréquence pas remise : {e}"));
+            }
             let ecrans: Vec<Value> = suite.journal.iter().filter(|e| e["Type"] == "display").cloned().collect();
             for d in ecrans {
                 let dev = crate::net::champ_texte(&d, "Device");
@@ -824,6 +840,7 @@ pub fn executer_correction(
             m.pc.lancer(&a).map_err(|e| message_lancement(&a, &e))
         }
         Some(Execution::Bios) => {
+            m.pc.exiger_geste()?;
             let code = m.pc.commande("shutdown.exe", &["/r".into(), "/fw".into(), "/t".into(), "10".into()]);
             if code != 0 {
                 return Err(format!(

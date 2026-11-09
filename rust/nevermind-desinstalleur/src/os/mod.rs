@@ -370,6 +370,9 @@ pub struct PcDesinstallation<'a> {
 }
 
 impl Pc for PcDesinstallation<'_> {
+    fn exiger_geste(&self) -> Result<(), String> {
+        self.pc.exiger_geste()
+    }
     fn reg_lire(&self, chemin: &str, nom: &str) -> Result<Option<ValeurReg>, String> {
         self.pc.reg_lire(chemin, nom)
     }
@@ -377,21 +380,30 @@ impl Pc for PcDesinstallation<'_> {
         self.pc.reg_noms(chemin)
     }
     fn reg_utilisateur_ecrire(&mut self, chemin: &str, nom: &str, valeur: &ValeurReg) -> Result<(), String> {
+        self.exiger_geste()?;
         self.pc.reg_utilisateur_ecrire(chemin, nom, valeur)
     }
     fn reg_utilisateur_effacer(&mut self, chemin: &str, nom: &str) -> Result<(), String> {
+        self.exiger_geste()?;
         self.pc.reg_utilisateur_effacer(chemin, nom)
     }
     fn origine_utilisateur(&mut self, cle: &str, json: &str) {
-        self.pc.origine_utilisateur(cle, json);
+        if self.exiger_geste().is_ok() {
+            self.pc.origine_utilisateur(cle, json);
+        }
     }
     fn origine_utilisateur_oublier(&mut self, cle: &str) {
-        self.pc.origine_utilisateur_oublier(cle);
+        if self.exiger_geste().is_ok() {
+            self.pc.origine_utilisateur_oublier(cle);
+        }
     }
     fn origines_utilisateur_effacer(&mut self) {
-        self.pc.origines_utilisateur_effacer();
+        if self.exiger_geste().is_ok() {
+            self.pc.origines_utilisateur_effacer();
+        }
     }
     fn origines_machine_effacer(&mut self) -> Result<(), String> {
+        self.exiger_geste()?;
         // (`[Microsoft.Win32.Registry]::LocalMachine.DeleteSubKeyTree($OriginesMachine, $false)` : en administrateur,
         // une clé absente n'est pas une erreur)
         let c = "SOFTWARE\\Mindset\\Nevermind\\Aide\\Origines";
@@ -401,9 +413,16 @@ impl Pc for PcDesinstallation<'_> {
         windows_registry::LOCAL_MACHINE.remove_tree(c).map_err(|e| e.message())
     }
     fn aide(&mut self, action: &str, parametres: Value, _delai_ms: u64) -> Result<Value, String> {
+        if nevermind_noyau::aide::change_le_pc(action) {
+            self.exiger_geste()?;
+        }
         self.aide.demander(action, &parametres)
     }
     fn powercfg(&mut self, args: &[String]) -> (i32, String) {
+        let lecture = matches!(args.first().map(|s| s.as_str()), Some("/getactivescheme" | "/list" | "/q"));
+        if !lecture && self.exiger_geste().is_err() {
+            return (1, String::new());
+        }
         // (pris dans System32 par son chemin complet, jamais cherché ailleurs : en administrateur, un « powercfg.exe »
         // posé dans le dossier de Nevermind ne doit jamais être lancé à sa place)
         match Command::new(format!("{}\\powercfg.exe", system32()))
@@ -421,16 +440,24 @@ impl Pc for PcDesinstallation<'_> {
         self.pc.curseur()
     }
     fn curseur_ecrire(&mut self, guid: &str) -> i32 {
+        if self.exiger_geste().is_err() {
+            return 1;
+        }
         self.pc.curseur_ecrire(guid)
     }
     fn ecrans(&self) -> Vec<String> {
         self.pc.ecrans()
     }
     fn ecran_frequence(&mut self, appareil: &str, hz: i64) -> i32 {
+        if self.exiger_geste().is_err() {
+            return 1;
+        }
         self.pc.ecran_frequence(appareil, hz)
     }
     fn souris_relire(&mut self, seuil1: i64, seuil2: i64, vitesse: i64) {
-        self.pc.souris_relire(seuil1, seuil2, vitesse);
+        if self.exiger_geste().is_ok() {
+            self.pc.souris_relire(seuil1, seuil2, vitesse);
+        }
     }
     fn service(&self, nom: &str) -> Option<(String, bool)> {
         self.pc.service(nom)
@@ -442,6 +469,9 @@ impl Pc for PcDesinstallation<'_> {
         self.pc.ouvrir(adresse);
     }
     fn commande(&mut self, exe: &str, args: &[String]) -> i32 {
+        if exe.eq_ignore_ascii_case("shutdown.exe") && self.exiger_geste().is_err() {
+            return 1;
+        }
         self.pc.commande(exe, args)
     }
     fn regles_pare_feu(&self) -> usize {
@@ -460,6 +490,9 @@ impl Pc for PcDesinstallation<'_> {
         self.pc.hiberfil()
     }
     fn nettoyer_dossier(&mut self, id: &str, chemins: &[String], exclus: &[String]) -> ResultatNettoyage {
+        if self.exiger_geste().is_err() {
+            return ResultatNettoyage::default();
+        }
         self.pc.nettoyer_dossier(id, chemins, exclus)
     }
     fn reglage(&self, nom: &str) -> Option<Value> {
@@ -469,10 +502,13 @@ impl Pc for PcDesinstallation<'_> {
         self.pc.ecrire_reglage(nom, valeur, exiger)
     }
     fn sauvegarde_ecrire(&mut self, sauvegarde: &Value) -> Result<(), String> {
+        self.exiger_geste()?;
         self.pc.sauvegarde_ecrire(sauvegarde)
     }
     fn sauvegarde_effacer(&mut self) {
-        self.pc.sauvegarde_effacer();
+        if self.exiger_geste().is_ok() {
+            self.pc.sauvegarde_effacer();
+        }
     }
     fn ignores_ecrire(&mut self, ignores: &[String]) {
         self.pc.ignores_ecrire(ignores);

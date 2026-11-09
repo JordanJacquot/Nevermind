@@ -35,6 +35,8 @@ use systeme::{Compteur, EtatCompteur, Programme, Systeme};
 
 /// Les jeux dont l'anti-triche refuse une mesure démarrée après eux, connus d'avance ($FpsVeilleConnus)
 const VEILLE_CONNUS: [&str; 1] = ["bf6.exe"];
+/// La page des gestes automatiques du mode jeu, dans « Attends la fin de « Début de partie » (Mode jeu) »
+const PAGE: &str = "Mode jeu";
 /// Couleurs du chiffre du compteur ($Colors : ok, warn, bad)
 const VERT: u32 = 0x22D37A;
 const ORANGE: u32 = 0xF5A524;
@@ -249,8 +251,10 @@ impl BlocPerf {
             self.session = Some(Session { jeu: ch(j.get("Game")), pid, proc_nom, debut: t, fermees });
             return;
         }
+        let geste = ctx.geste_prioritaire("Fin de partie", PAGE);
         let rates = self.relancer(&fermees);
         fichier::effacer(ctx, &f);
+        drop(geste);
         ctx.journal(&format!(
             "Mode jeu: applis de la partie de {} relancées au lancement de Nevermind{}",
             ch(j.get("Game")),
@@ -280,6 +284,8 @@ impl BlocPerf {
             }
         }
         // (la règle commune de fermeture, celle de la page RAM : l'Aide l'applique à chaque programme de ce nom)
+        // (automatique : passe en priorité, jamais refusé ni retardé par un geste de l'utilisateur ; ajustement A du lot A)
+        let geste = ctx.geste_prioritaire("Début de partie", PAGE);
         let fermees = jeu::fermer_pour_partie(mode_on, &sel, &ouverts, |a, procs| {
             let mut noms: Vec<&str> = Vec::new();
             for p in procs {
@@ -297,6 +303,7 @@ impl BlocPerf {
             }
             n
         });
+        drop(geste);
         let t = self.maintenant();
         let debut_iso = nevermind_noyau::contexte::horodatage();
         let f = Self::fichier_mode_jeu(ctx);
@@ -332,7 +339,10 @@ impl BlocPerf {
         }
         // (veille redemandée dès le prochain passage : un jeu relancé aussitôt la trouve prête)
         self.veille_demande = None;
+        // (la remise en état : en priorité, jamais refusée ni retardée, même à la fermeture ; ajustement A du lot A)
+        let geste = ctx.geste_prioritaire("Fin de partie", PAGE);
         let rates = self.relancer(&s.fermees);
+        drop(geste);
         fichier::effacer(ctx, &Self::fichier_mode_jeu(ctx));
         let t = self.maintenant();
         let secondes = (t - s.debut).max(0.0);

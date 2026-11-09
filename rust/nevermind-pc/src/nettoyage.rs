@@ -124,6 +124,9 @@ pub struct Total {
 
 /// `Invoke-CleanOne`
 fn nettoyer_une(pc: &mut dyn Pc, t: &Cible) -> ResultatNettoyage {
+    if let Err(e) = pc.exiger_geste() {
+        return ResultatNettoyage { refuses: 1, journal: vec![format!("[REFUSÉ]   {e}")], ..Default::default() };
+    }
     if !t.aide {
         return pc.nettoyer_dossier(t.id, &t.chemins, &t.exclus);
     }

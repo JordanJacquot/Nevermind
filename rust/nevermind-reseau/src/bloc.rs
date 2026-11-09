@@ -45,6 +45,8 @@ enum FinGeste {
 
 /// La clé des gestes par l'Aide : un seul à la fois
 const GESTE: &str = "geste";
+/// La page, dans « Attends la fin de « Changer le DNS » (Réseau) »
+const PAGE: &str = "Réseau";
 
 /// Le panneau ouvert par le bloc
 enum Panneau {
@@ -451,11 +453,27 @@ impl BlocReseau {
             ctx.journal(&format!("Réseau : {} pas lancé, un geste est encore en cours", act.label));
             return;
         }
+        // (un geste qui change le PC : le verrou commun des gestes, sinon le clic est refusé ; lot A du second audit)
+        let nom = match act.geste {
+            Geste::WifiManuel => "Wi-Fi en connexion manuelle",
+            Geste::PareFeu => "Réactiver le pare-feu",
+            Geste::Smb1 => "Désactiver SMBv1",
+            Geste::BureauDistance => "Couper le Bureau à distance",
+            Geste::Public => "Réseau public",
+            Geste::Ouvrir | Geste::ChangerDns | Geste::Partages => act.label.as_str(),
+        };
+        let geste = match ctx.prendre_geste(nom, PAGE) {
+            Ok(g) => g,
+            Err(refus) => {
+                effets.ajouter(Effet::Annonce(refus));
+                return;
+            }
+        };
         if act.geste == Geste::Smb1 {
             self.occuper(effets, "Désactivation de SMBv1...");
         }
         let sonde = self.sonde.clone();
-        self.travaux.lancer(ctx, GESTE, move |fond| {
+        self.travaux.lancer_geste(ctx, GESTE, geste, move |fond| {
             let ctx = fond.ctx;
             let mut log: Vec<Value> = Vec::new();
             // (Add-ChangementDefinitif : Type, Quoi, Retour ; le titre sert seulement hors d'une action. Jusqu'au
@@ -637,6 +655,13 @@ impl BlocReseau {
             ctx.journal("Réseau : DNS pas changé, un geste est encore en cours");
             return;
         }
+        let geste = match ctx.prendre_geste("Changer le DNS", PAGE) {
+            Ok(g) => g,
+            Err(refus) => {
+                effets.ajouter(Effet::Annonce(refus));
+                return;
+            }
+        };
         let avant = self.sonde.dns_fixes(&net.guid);
         // (Set-Dns, onglets.ps1:655-661 : le DNS d'avant Nevermind noté dans la sauvegarde AVANT le changement, une
         //  fois, sous l'identifiant de la carte ; « Tout restaurer » et la désinstallation le remettent. M9, audit du
@@ -658,7 +683,7 @@ impl BlocReseau {
         let log = json!([{ "Type": "dns", "IfIndex": net.if_index, "Guid": net.guid,
             "Servers": avant.split([',', ' ', '\t']).filter(|x| !x.is_empty()).collect::<Vec<_>>(), "Nouveau": serveurs }]);
         let sonde = self.sonde.clone();
-        self.travaux.lancer(ctx, GESTE, move |fond| {
+        self.travaux.lancer_geste(ctx, GESTE, geste, move |fond| {
             let r = fond
                 .ctx
                 .aide("dns.regler", &json!({ "Index": net.if_index, "Serveurs": serveurs }), 30_000)
@@ -701,10 +726,17 @@ impl BlocReseau {
             ctx.journal("Réseau : carte pas redémarrée, un geste est encore en cours");
             return;
         }
+        let geste = match ctx.prendre_geste("Redémarrer la carte réseau", PAGE) {
+            Ok(g) => g,
+            Err(refus) => {
+                effets.ajouter(Effet::Annonce(refus));
+                return;
+            }
+        };
         self.occuper(effets, "Redémarrage de la carte réseau...");
         ctx.journal(&format!("Carte réseau : redémarrage de {} (à {})", net.desc, format_vitesse(net.bps)));
         let idx = net.if_index;
-        self.travaux.lancer(ctx, GESTE, move |fond| FinGeste::Carte {
+        self.travaux.lancer_geste(ctx, GESTE, geste, move |fond| FinGeste::Carte {
             idx,
             r: fond.ctx.aide("carte.relancer", &json!({ "Index": idx }), 60_000).map(|_| ()),
         });

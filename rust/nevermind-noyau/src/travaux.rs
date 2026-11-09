@@ -16,7 +16,7 @@
 //! place, tout de suite, et son résultat attend le prochain [`Travaux::relever`] : le bloc se comporte alors
 //! exactement comme avant (le relevé fait juste après le lancement rend déjà le résultat).
 
-use crate::{Contexte, Effet};
+use crate::{Contexte, Effet, Geste};
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -137,6 +137,21 @@ impl<R: Send + 'static> Travaux<R> {
         true
     }
 
+    /// Lance un travail qui change le PC avec son geste (pris au clic, [`Contexte::prendre_geste`]) : le geste part
+    /// avec le travail sur son fil, et rend le verrou à la fin, même après une panique. `false` (clé déjà en cours) :
+    /// le geste est rendu tout de suite.
+    pub fn lancer_geste<F>(&mut self, ctx: &Contexte, cle: &str, geste: Geste, travail: F) -> bool
+    where
+        F: FnOnce(&Fond) -> R + Send + 'static,
+    {
+        self.lancer(ctx, cle, move |f| {
+            geste.ici();
+            let r = travail(f);
+            drop(geste);
+            r
+        })
+    }
+
     fn faire_sur_place<F>(&mut self, ctx: &Contexte, cle: &str, travail: F)
     where
         F: FnOnce(&Fond) -> R,
@@ -249,6 +264,54 @@ mod tests {
             }
             assert!(Instant::now() < fin);
             std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    /// Ajustement C du lot A : un geste dont le travail panique rend le verrou ; un NOUVEAU geste passe ensuite.
+    /// Pareil sans contexte partagé (fait sur place), et quand la clé est déjà prise (le geste est rendu tout de suite).
+    #[test]
+    fn un_geste_qui_panique_rend_le_verrou() {
+        for partage in [true, false] {
+            let c = std::sync::Arc::new(ctx(&format!("travaux-geste-{partage}")));
+            let c = if partage { std::sync::Arc::into_inner(c).unwrap().partage() } else { c };
+            let mut t: Travaux<u32> = Travaux::default();
+            let g = c.prendre_geste("Tout restaurer", "Ton PC").unwrap();
+            t.lancer_geste(&c, "p", g, |f| {
+                assert!(f.ctx.exiger_geste().is_ok(), "le travail tient le geste");
+                panic!("boum")
+            });
+            let fin = Instant::now() + Duration::from_secs(10);
+            loop {
+                if let Some(Rendu::Fini { resultat, .. }) = t.relever().pop() {
+                    assert_eq!(resultat, Err("erreur imprévue (boum)".into()));
+                    break;
+                }
+                assert!(Instant::now() < fin);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let n = c.prendre_geste("Changer le DNS", "Réseau");
+            assert!(n.is_ok(), "après la panique, un nouveau geste passe : {n:?}");
+            drop(n);
+            // (la clé déjà prise : rien n'est lancé, le geste est rendu)
+            let (feu, attente) = std::sync::mpsc::channel::<()>();
+            let g1 = c.prendre_geste("Un", "Essai").unwrap();
+            if !partage {
+                feu.send(()).unwrap();
+            }
+            t.lancer_geste(&c, "k", g1, move |_| {
+                let _ = attente.recv_timeout(Duration::from_secs(10));
+                1
+            });
+            if partage {
+                let g2 = c.prendre_geste("Deux", "Essai");
+                assert_eq!(g2.unwrap_err(), "Attends la fin de « Un » (Essai)");
+                feu.send(()).unwrap();
+            }
+            while t.occupe() {
+                t.relever();
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert!(c.prendre_geste("Trois", "Essai").is_ok());
         }
     }
 }
