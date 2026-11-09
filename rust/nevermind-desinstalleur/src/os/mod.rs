@@ -505,6 +505,10 @@ impl Pc for PcDesinstallation<'_> {
         self.exiger_geste()?;
         self.pc.sauvegarde_ecrire(sauvegarde)
     }
+    fn sauvegarde_fusionner(&mut self, base: &Value, voulue: &Value) -> Result<Option<Value>, String> {
+        self.exiger_geste()?;
+        self.pc.sauvegarde_fusionner(base, voulue)
+    }
     fn sauvegarde_effacer(&mut self) {
         if self.exiger_geste().is_ok() {
             self.pc.sauvegarde_effacer();

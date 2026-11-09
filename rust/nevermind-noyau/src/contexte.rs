@@ -59,6 +59,8 @@ pub struct Contexte {
     pub(crate) maj: Mutex<crate::mises_a_jour::EtatMaj>,
     /// Le verrou « un geste qui change le PC à la fois », avec le journal de chaque geste (lot A, G-A et M-C)
     pub(crate) gestes: std::sync::Arc<crate::gestes::Verrou>,
+    /// Un seul écrivain de sauvegarde.json à la fois (lot A, étape 2)
+    pub(crate) ecrivain_sauvegarde: Mutex<()>,
     /// Lui-même, une fois partagé ([`Contexte::partage`]) : ce que reçoit un travail de fond
     soi: std::sync::OnceLock<std::sync::Weak<Contexte>>,
     /// Un travail de fond a rendu quelque chose (à relever sur le fil des blocs)
@@ -95,6 +97,7 @@ impl Contexte {
             assistance: Mutex::new(Default::default()),
             maj: Mutex::new(Default::default()),
             gestes: Default::default(),
+            ecrivain_sauvegarde: Mutex::new(()),
             soi: Default::default(),
             a_relever: Default::default(),
         }

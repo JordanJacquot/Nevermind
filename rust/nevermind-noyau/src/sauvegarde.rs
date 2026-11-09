@@ -62,6 +62,116 @@ fn int_ps(v: &Value) -> i64 {
     }
 }
 
+/// La sauvegarde écrite dans un fichier (`Import-Backup`, la partie fichier), comme Nevermind la lit
+pub fn depuis_json(j: &Map<String, Value>) -> Sauvegarde {
+    let mut s = Sauvegarde::default();
+    if let Some(Value::Object(r)) = j.get("Registry") {
+        for (k, v) in r {
+            s.registre.insert(
+                k.clone(),
+                entree(
+                    &texte_ps(&v["Path"]),
+                    &texte_ps(&v["Name"]),
+                    vrai(&v["Existed"]),
+                    v["Value"].clone(),
+                    v["Kind"].clone(),
+                ),
+            );
+        }
+    }
+    let texte = |n: &str| j.get(n).filter(|v| vrai(v)).map(texte_ps);
+    s.plan = texte("PowerScheme");
+    s.plan_cree = texte("CreatedScheme");
+    if let Some(Value::Object(d)) = j.get("Dns") {
+        for (k, v) in d {
+            s.dns.insert(k.clone(), json!(texte_ps(v)));
+        }
+    }
+    if let Some(Value::Object(d)) = j.get("Displays") {
+        for (k, v) in d {
+            s.ecrans.insert(k.clone(), json!(int_ps(v)));
+        }
+    }
+    s.curseur = texte("Overlay");
+    if let Some(o) = j.get("Oublies") {
+        let l: Vec<Value> = match o {
+            Value::Array(a) => a.clone(),
+            Value::Null => Vec::new(),
+            autre => vec![autre.clone()],
+        };
+        s.oublies = l.iter().filter(|x| vrai(x)).map(texte_ps).collect();
+    }
+    s
+}
+
+/// Une sauvegarde donnée en JSON (celle de Ton PC)
+fn depuis_valeur(v: &Value) -> Sauvegarde {
+    match v {
+        Value::Object(m) => depuis_json(m),
+        _ => Sauvegarde::default(),
+    }
+}
+
+fn fusionner_carte(r: &mut Map<String, Value>, base: &Map<String, Value>, voulue: &Map<String, Value>) {
+    // (ajouté par le geste : seulement si rien n'est déjà noté, la plus ancienne valeur d'origine gagne)
+    for (k, v) in voulue {
+        if !base.contains_key(k) && !r.contains_key(k) {
+            r.insert(k.clone(), v.clone());
+        }
+    }
+    // (retiré par le geste : « Tout restaurer » l'a remis comme avant)
+    for k in base.keys() {
+        if !voulue.contains_key(k) {
+            r.remove(k);
+        }
+    }
+}
+
+fn fusionner_texte(r: &mut Option<String>, base: &Option<String>, voulue: &Option<String>) {
+    if base == voulue {
+        return;
+    }
+    match voulue {
+        Some(v) => {
+            if r.is_none() {
+                *r = Some(v.clone());
+            }
+        }
+        None => {
+            if r == base {
+                *r = None;
+            }
+        }
+    }
+}
+
+/// La fusion d'un seul écrivain (lot A, étape 2) : sur ce qui est noté (`disque`), seulement ce que le geste a changé
+/// depuis sa copie (`base` devenue `voulue`). Une valeur d'origine déjà notée n'est jamais remplacée (la plus ancienne
+/// gagne) ; ce que le geste a retiré (« Tout restaurer ») est retiré ; tout le reste (noté par un autre geste) reste.
+pub fn fusionner(disque: &Sauvegarde, base: &Sauvegarde, voulue: &Sauvegarde) -> Sauvegarde {
+    let mut r = disque.clone();
+    fusionner_carte(&mut r.registre, &base.registre, &voulue.registre);
+    fusionner_carte(&mut r.dns, &base.dns, &voulue.dns);
+    fusionner_carte(&mut r.ecrans, &base.ecrans, &voulue.ecrans);
+    fusionner_texte(&mut r.plan, &base.plan, &voulue.plan);
+    fusionner_texte(&mut r.plan_cree, &base.plan_cree, &voulue.plan_cree);
+    fusionner_texte(&mut r.curseur, &base.curseur, &voulue.curseur);
+    for o in &voulue.oublies {
+        if !base.oublies.contains(o) && !r.oublies.contains(o) {
+            r.oublies.push(o.clone());
+        }
+    }
+    r.oublies.retain(|o| !(base.oublies.contains(o) && !voulue.oublies.contains(o)));
+    r
+}
+
+/// Un nom de fichier temporaire propre à chaque écriture (jamais partagé entre deux écrivains)
+fn tmp_unique(fichier: &std::path::Path) -> PathBuf {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    crate::fichiers::a_cote(fichier, &format!(".{}-{n}.tmp", std::process::id()))
+}
+
 /// `Read-FichierSauvegarde` : `None` s'il n'existe pas ; une erreur s'il est abîmé ou n'a pas « Registry »
 fn lire_fichier(f: &std::path::Path) -> Result<Option<Map<String, Value>>, String> {
     if !f.exists() {
@@ -105,42 +215,9 @@ impl Contexte {
             j = Some(b);
         }
         if let Some(j) = &j {
-            if let Some(Value::Object(r)) = j.get("Registry") {
-                for (k, v) in r {
-                    s.registre.insert(
-                        k.clone(),
-                        entree(
-                            &texte_ps(&v["Path"]),
-                            &texte_ps(&v["Name"]),
-                            vrai(&v["Existed"]),
-                            v["Value"].clone(),
-                            v["Kind"].clone(),
-                        ),
-                    );
-                }
-            }
-            let texte = |n: &str| j.get(n).filter(|v| vrai(v)).map(texte_ps);
-            s.plan = texte("PowerScheme");
-            s.plan_cree = texte("CreatedScheme");
-            if let Some(Value::Object(d)) = j.get("Dns") {
-                for (k, v) in d {
-                    s.dns.insert(k.clone(), json!(texte_ps(v)));
-                }
-            }
-            if let Some(Value::Object(d)) = j.get("Displays") {
-                for (k, v) in d {
-                    s.ecrans.insert(k.clone(), json!(int_ps(v)));
-                }
-            }
-            s.curseur = texte("Overlay");
-            if let Some(o) = j.get("Oublies") {
-                let l: Vec<Value> = match o {
-                    Value::Array(a) => a.clone(),
-                    Value::Null => Vec::new(),
-                    autre => vec![autre.clone()],
-                };
-                s.oublies = l.iter().filter(|x| vrai(x)).map(texte_ps).collect();
-            }
+            let probleme = s.probleme.take();
+            s = depuis_json(j);
+            s.probleme = probleme;
         }
         // Les valeurs d'origine du registre complètent ce que le fichier n'a plus (fichier effacé, abîmé, ou plus ancien)
         let mut connues: std::collections::HashSet<String> = s
@@ -202,12 +279,71 @@ impl Contexte {
         f(g.get_or_insert_with(Sauvegarde::default))
     }
 
-    /// `Save-Backup` : écrit sauvegarde.json (UTF-8 avec BOM ; l'ancien en copie de secours)
+    /// `Save-Backup` : ce que la sauvegarde en mémoire a de plus que sauvegarde.json y est ajouté (jamais un retrait,
+    /// jamais une valeur d'origine remplacée), par l'écrivain unique ([`Contexte::ecrire_sauvegarde_fusion`])
     pub fn enregistrer_sauvegarde(&self) -> Result<(), String> {
         self.exiger_geste()?;
-        let j = self.sauvegarde().en_json();
-        crate::fichiers::ecrire_texte_sur(&self.fichier_sauvegarde(), &crate::json_ps::lisible(&j), true)
-            .map_err(|e| e.to_string())
+        let voulue = self.sauvegarde();
+        self.ecrire_sauvegarde_fusion(&Sauvegarde::default(), &voulue).map(|_| ())
+    }
+
+    /// L'écrivain unique de sauvegarde.json (lot A, étape 2) : sous le verrou du geste, et un seul à la fois, il relit
+    /// le fichier et y fusionne seulement ce que le geste a changé depuis sa copie (`base` devenue `voulue`), au lieu
+    /// d'écrire une copie prise au début du geste. Écrit par un fichier temporaire propre à cette écriture, remplacé
+    /// d'un coup (l'ancien en copie de secours). La sauvegarde en mémoire suit. Rend la copie à jour de l'écrivain :
+    /// sa `voulue`, avec ce qu'un autre geste a noté entre-temps.
+    pub fn ecrire_sauvegarde_fusion(&self, base: &Sauvegarde, voulue: &Sauvegarde) -> Result<Sauvegarde, String> {
+        self.exiger_geste()?;
+        let _seul = verrou(&self.ecrivain_sauvegarde);
+        let fichier = self.fichier_sauvegarde();
+        let disque = match lire_fichier(&fichier) {
+            Ok(Some(m)) => depuis_json(&m),
+            Ok(None) => Sauvegarde::default(),
+            // (illisible : ce que Nevermind en sait, jamais un fichier vide à la place)
+            Err(_) => self.sauvegarde(),
+        };
+        let fus = fusionner(&disque, base, voulue);
+        let texte = crate::json_ps::lisible(&fus.en_json());
+        let tmp = tmp_unique(&fichier);
+        if let Err(e) = crate::fichiers::ecrire_texte_sur_par(&fichier, &texte, true, &tmp) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(e.to_string());
+        }
+        // (la mémoire suit, d'un seul coup : ce qu'un autre fil y a noté entre-temps reste)
+        let _ = self.sauvegarde();
+        {
+            let mut g = verrou(&self.sauvegarde);
+            let memoire = g.clone().unwrap_or_default();
+            let mut m = fusionner(&memoire, base, voulue);
+            m.probleme = memoire.probleme;
+            *g = Some(m);
+        }
+        // (la copie de l'écrivain : le fichier, qui a toujours la plus ancienne valeur d'origine, et ce qu'elle seule
+        //  connaît, comme les valeurs reprises du registre)
+        let mut copie = fusionner(&fus, &Sauvegarde::default(), voulue);
+        copie.probleme = voulue.probleme.clone();
+        Ok(copie)
+    }
+
+    /// [`Contexte::ecrire_sauvegarde_fusion`] pour la sauvegarde de Ton PC, donnée en JSON : rend sa copie à jour
+    pub fn ecrire_sauvegarde_fusion_json(&self, base: &Value, voulue: &Value) -> Result<Value, String> {
+        self.exiger_geste()?;
+        self.ecrire_sauvegarde_fusion(&depuis_valeur(base), &depuis_valeur(voulue)).map(|s| s.en_json())
+    }
+
+    /// La fin de « Tout restaurer » : sauvegarde.json et ses copies effacés, par l'écrivain unique ; la sauvegarde
+    /// relue (les valeurs d'origine encore gardées dans le registre)
+    pub fn effacer_sauvegarde(&self) -> Result<(), String> {
+        self.exiger_geste()?;
+        {
+            let _seul = verrou(&self.ecrivain_sauvegarde);
+            let f = self.fichier_sauvegarde();
+            for fin in ["", ".bak", ".tmp"] {
+                let _ = std::fs::remove_file(crate::fichiers::a_cote(&f, fin));
+            }
+        }
+        self.importer_sauvegarde();
+        Ok(())
     }
 
     /// `Save-BackupOuOublier` : l'état d'origine noté AVANT le changement ; s'il n'a pas pu être écrit, il est
@@ -318,5 +454,55 @@ pub fn texte_probleme(probleme: Option<&str>) -> String {
                 "Le fichier qui garde les réglages d'origine a disparu"
             }
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sv(registre: &[(&str, i64)], dns: &[(&str, &str)], plan: Option<&str>, oublies: &[&str]) -> Sauvegarde {
+        let mut s = Sauvegarde::default();
+        for (k, v) in registre {
+            s.registre.insert((*k).into(), json!({ "Value": v }));
+        }
+        for (k, v) in dns {
+            s.dns.insert((*k).into(), json!(v));
+        }
+        s.plan = plan.map(str::to_string);
+        s.oublies = oublies.iter().map(|x| x.to_string()).collect();
+        s
+    }
+
+    /// La fusion de l'écrivain unique : seul ce que le geste a changé, la plus ancienne valeur d'origine gagne, ce
+    /// qu'un autre geste a noté reste, ce que le geste a retiré est retiré
+    #[test]
+    fn fusion_de_l_ecrivain_unique() {
+        // (le fichier : le DNS noté par le Réseau pendant le geste de Ton PC, et une valeur déjà là)
+        let disque = sv(&[("a", 1)], &[("carte", "192.168.1.1")], None, &[]);
+        // (la copie de Ton PC au début : « a » seulement ; puis il note « b », croit noter le DNS, retire « a »)
+        let base = sv(&[("a", 1)], &[], None, &[]);
+        let voulue = sv(&[("b", 2)], &[("carte", "1.1.1.1")], Some("plan"), &["a"]);
+        let f = fusionner(&disque, &base, &voulue);
+        assert_eq!(f, sv(&[("b", 2)], &[("carte", "192.168.1.1")], Some("plan"), &["a"]));
+        // La copie de Ton PC, à jour : avec le DNS noté par le Réseau
+        let copie = fusionner(&f, &Sauvegarde::default(), &voulue);
+        assert_eq!(
+            copie.dns.get("carte"),
+            Some(&json!("192.168.1.1")),
+            "la plus ancienne valeur d'origine, aussi dans sa copie"
+        );
+        assert!(copie.registre.contains_key("b") && !copie.registre.contains_key("a"));
+        // Un plan déjà noté n'est jamais remplacé ; retiré seulement s'il est celui que le geste a retiré
+        let disque = sv(&[], &[], Some("ancien"), &[]);
+        assert_eq!(
+            fusionner(&disque, &sv(&[], &[], None, &[]), &sv(&[], &[], Some("nouveau"), &[])).plan.as_deref(),
+            Some("ancien")
+        );
+        assert_eq!(fusionner(&disque, &sv(&[], &[], Some("ancien"), &[]), &sv(&[], &[], None, &[])).plan, None);
+        assert_eq!(
+            fusionner(&disque, &sv(&[], &[], Some("autre"), &[]), &sv(&[], &[], None, &[])).plan.as_deref(),
+            Some("ancien")
+        );
     }
 }

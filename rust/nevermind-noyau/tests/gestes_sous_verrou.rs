@@ -82,6 +82,7 @@ const APPELS: &[&str] = &[
     "sauvegarde_fusionner(",
     "enregistrer_sauvegarde",
     "ecrire_sauvegarde_fusion(",
+    "effacer_sauvegarde(",
     "ecrire_reglage(\"SvcOriginal\"",
     "ecrire_reglage(\"PcfgOriginal\"",
 ];

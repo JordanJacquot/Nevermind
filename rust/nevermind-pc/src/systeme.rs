@@ -492,22 +492,22 @@ impl Pc for PcWindows<'_> {
         self.ctx.ecrire_reglage(nom, valeur, exiger)
     }
     fn sauvegarde_ecrire(&mut self, sauvegarde: &Value) -> Result<(), String> {
+        // (sans la copie de départ du geste : seulement des ajouts, jamais un retrait)
         self.ctx.exiger_geste()?;
-        let t = serde_json::to_string_pretty(sauvegarde).unwrap_or_default();
-        ecrire_sur(&self.ctx.donnees.join("sauvegarde.json"), &t, true)?;
-        // (le noyau garde aussi sauvegarde.json en mémoire, pour les écritures des autres blocs : il le relit)
-        self.ctx.importer_sauvegarde();
+        self.sauvegarde_fusionner(&json!({}), sauvegarde).map(|_| ())
+    }
+    fn sauvegarde_fusionner(&mut self, base: &Value, voulue: &Value) -> Result<Option<Value>, String> {
+        // (l'écrivain unique du noyau, lot A étape 2 : le fichier relu, seul ce que ce geste a changé y est fusionné,
+        //  par un fichier temporaire propre à cette écriture ; la sauvegarde du noyau suit)
+        self.ctx.exiger_geste()?;
+        let copie = self.ctx.ecrire_sauvegarde_fusion_json(base, voulue)?;
         self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
-        Ok(())
+        Ok(Some(copie))
     }
     fn sauvegarde_effacer(&mut self) {
-        if self.ctx.exiger_geste().is_err() {
+        if self.ctx.exiger_geste().is_err() || self.ctx.effacer_sauvegarde().is_err() {
             return;
         }
-        for n in ["sauvegarde.json", "sauvegarde.json.bak", "sauvegarde.json.tmp"] {
-            let _ = std::fs::remove_file(self.ctx.donnees.join(n));
-        }
-        self.ctx.importer_sauvegarde();
         self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
     }
     fn ignores_ecrire(&mut self, ignores: &[String]) {

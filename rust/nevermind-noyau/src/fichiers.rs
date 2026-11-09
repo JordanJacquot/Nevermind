@@ -34,21 +34,26 @@ pub fn nom(p: &Path) -> String {
 /// `Save-TexteSur` : écrit le texte (UTF-8, avec ou sans BOM) à côté, puis remplace l'ancien d'un coup (copie de
 /// secours `.bak`). Disque qui ne sait pas remplacer d'un coup : copie de secours, puis copie par-dessus.
 pub fn ecrire_texte_sur(chemin: &Path, texte: &str, bom: bool) -> std::io::Result<()> {
-    let tmp = a_cote(chemin, ".tmp");
+    ecrire_texte_sur_par(chemin, texte, bom, &a_cote(chemin, ".tmp"))
+}
+
+/// `ecrire_texte_sur` par un fichier temporaire donné (un écrivain qui ne partage pas son fichier temporaire). Comme
+/// `Save-TexteSur`, un échec laisse le fichier temporaire : à celui qui l'a choisi de l'effacer.
+pub fn ecrire_texte_sur_par(chemin: &Path, texte: &str, bom: bool, tmp: &Path) -> std::io::Result<()> {
     let mut octets = Vec::with_capacity(texte.len() + 3);
     if bom {
         octets.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
     }
     octets.extend_from_slice(texte.as_bytes());
-    std::fs::write(&tmp, &octets)?;
+    std::fs::write(tmp, &octets)?;
     if !chemin.exists() {
-        return std::fs::rename(&tmp, chemin);
+        return std::fs::rename(tmp, chemin);
     }
     let bak = a_cote(chemin, ".bak");
-    if crate::windows::remplacer_fichier(&tmp, chemin, &bak).is_err() {
+    if crate::windows::remplacer_fichier(tmp, chemin, &bak).is_err() {
         std::fs::copy(chemin, &bak)?;
-        std::fs::copy(&tmp, chemin)?;
-        let _ = std::fs::remove_file(&tmp);
+        std::fs::copy(tmp, chemin)?;
+        let _ = std::fs::remove_file(tmp);
     }
     Ok(())
 }

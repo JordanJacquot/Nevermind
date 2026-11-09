@@ -196,6 +196,13 @@ pub trait Pc {
     fn ecrire_reglage(&mut self, nom: &str, valeur: Value, exiger: bool) -> Result<(), String>;
     /// sauvegarde.json (`Save-Backup`).
     fn sauvegarde_ecrire(&mut self, sauvegarde: &Value) -> Result<(), String>;
+    /// sauvegarde.json par l'écrivain unique (lot A, étape 2) : seulement ce que le geste a changé depuis sa copie
+    /// (`base` devenue `voulue`) est fusionné dans le fichier relu. Rend la copie à jour (`None` : ce PC écrit sa copie
+    /// telle quelle, les faux PC des tests).
+    fn sauvegarde_fusionner(&mut self, _base: &Value, voulue: &Value) -> Result<Option<Value>, String> {
+        self.exiger_geste()?;
+        self.sauvegarde_ecrire(voulue).map(|_| None)
+    }
     /// Effacer sauvegarde.json et ses copies (fin de « Tout restaurer »).
     fn sauvegarde_effacer(&mut self);
     /// ignores.json

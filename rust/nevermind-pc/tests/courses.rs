@@ -225,3 +225,173 @@ fn un_profil_de_jeu_attend_son_tour_sans_etre_refuse() {
     assert!(ctx.prendre_geste("Nouveau", "Essai").is_ok(), "le verrou est rendu");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+// -----------------------------------------------------------------------------------------------------------------
+// Étape 2 : un seul écrivain de sauvegarde.json, qui relit le fichier et y fusionne seulement ce que le geste a changé
+// -----------------------------------------------------------------------------------------------------------------
+
+/// Le contenu de sauvegarde.json
+fn fichier_sauvegarde(ctx: &Contexte) -> Value {
+    let t = std::fs::read_to_string(ctx.fichier_sauvegarde()).unwrap_or_default();
+    serde_json::from_str(t.trim_start_matches('\u{feff}')).unwrap_or(Value::Null)
+}
+
+/// G-A, le cas DNS de l'audit : Ton PC a pris sa copie de la sauvegarde au début d'« Appliquer » ; pendant le point de
+/// restauration (verrou rendu, ajustement B), le Réseau note le DNS d'origine ; Ton PC note ensuite sa valeur et
+/// écrit. Avant : sa copie écrasait le fichier, le DNS disparaissait pour toujours. Maintenant : le fichier relu, seul
+/// ce que Ton PC a changé y est ajouté ; le DNS reste, dans le fichier, dans le noyau et dans la copie de Ton PC.
+#[test]
+fn la_copie_de_ton_pc_n_efface_plus_le_dns_note_pendant_son_travail() {
+    let d = dossier("sauvegarde-dns");
+    let ctx = Contexte::nouveau(d.join("a"), d.join("d"), false, true);
+    let _ = fausse_aide(&ctx);
+    // Au début du travail de Ton PC : sa copie
+    let mut copie_pc = Sauvegarde::depuis(&fichier_sauvegarde(&ctx));
+    // Pendant le point de restauration : « Changer le DNS » (Réseau)
+    {
+        let _g = ctx.prendre_geste("Changer le DNS", "Réseau").unwrap();
+        ctx.changer_sauvegarde(|s| {
+            s.dns.insert("{GUID-CARTE}".into(), json!("192.168.1.1"));
+        });
+        ctx.enregistrer_sauvegarde().unwrap();
+    }
+    // La suite d'« Appliquer » : une valeur d'origine notée, puis l'écriture
+    let _g = ctx.prendre_geste("Appliquer", "Ton PC").unwrap();
+    let mut p = PcWindows::nouveau(&ctx);
+    {
+        let mut m = Moteur::nouveau(&mut p, &mut copie_pc, false);
+        m.noter_origine(r"HKLM:\SOFTWARE\MindsetEssaiLotA", "X").unwrap();
+    }
+    let f = fichier_sauvegarde(&ctx);
+    assert_eq!(f["Dns"]["{GUID-CARTE}"], "192.168.1.1", "le DNS d'origine a disparu du fichier : {f}");
+    assert!(f["Registry"].get(r"HKLM:\SOFTWARE\MindsetEssaiLotA|X").is_some(), "la valeur de Ton PC manque : {f}");
+    assert!(ctx.sauvegarde().dns.contains_key("{GUID-CARTE}"), "le DNS d'origine a disparu du noyau");
+    assert!(copie_pc.dns.contains_key("{GUID-CARTE}"), "la copie de Ton PC ne voit pas le DNS noté entre-temps");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// À la fusion, la valeur d'origine la plus ancienne gagne : une copie prise avant que le Réseau note le DNS d'origine
+/// (« 192.168.1.1 ») ne le remplace jamais par ce qu'elle croit être l'origine (le DNS déjà changé).
+#[test]
+fn la_valeur_d_origine_la_plus_ancienne_gagne() {
+    let d = dossier("sauvegarde-ancienne");
+    let ctx = Contexte::nouveau(d.join("a"), d.join("d"), false, true);
+    let _ = fausse_aide(&ctx);
+    let mut copie_pc = Sauvegarde::depuis(&fichier_sauvegarde(&ctx));
+    {
+        let _g = ctx.prendre_geste("Changer le DNS", "Réseau").unwrap();
+        ctx.changer_sauvegarde(|s| {
+            s.dns.insert("{GUID-CARTE}".into(), json!("192.168.1.1"));
+        });
+        ctx.enregistrer_sauvegarde().unwrap();
+    }
+    let _g = ctx.prendre_geste("Annuler", "Ton PC").unwrap();
+    let mut p = PcWindows::nouveau(&ctx);
+    {
+        let mut m = Moteur::nouveau(&mut p, &mut copie_pc, false);
+        m.sv.dns.insert("{GUID-CARTE}".into(), json!("1.1.1.1"));
+        m.sauver().unwrap();
+    }
+    let f = fichier_sauvegarde(&ctx);
+    assert_eq!(f["Dns"]["{GUID-CARTE}"], "192.168.1.1", "la plus ancienne valeur d'origine a été écrasée : {f}");
+    assert_eq!(ctx.sauvegarde().dns.get("{GUID-CARTE}"), Some(&json!("192.168.1.1")));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// G-A, le cas des services : « Tout restaurer » lit SvcOriginal au début, remet chaque service par l'Aide (jusqu'à
+/// 120 s chacun), puis écrivait SvcOriginal avec seulement ses échecs. Un service noté entre-temps disparaissait. La
+/// fausse Aide le note pendant que « Tout restaurer » attend (ce qui se passerait sans le verrou) : il reste noté.
+#[test]
+fn tout_restaurer_garde_un_service_note_pendant_son_travail() {
+    let d = dossier("sauvegarde-services");
+    let ctx = Contexte::nouveau(d.join("a"), d.join("d"), false, true).partage();
+    {
+        let _g = ctx.prendre_geste("Mise en place", "Essai").unwrap();
+        ctx.ecrire_reglage("SvcOriginal", json!(["ServiceA|Automatic|True"]), true).unwrap();
+    }
+    let c = Arc::downgrade(&ctx);
+    ctx.fausse_aide(Arc::new(move |a: &str, p: &Value| {
+        if a == "service.regler"
+            && p["Nom"] == "ServiceA"
+            && let Some(c) = c.upgrade()
+        {
+            // (pendant ce temps : « Couper ce qui est sûr » note un autre service)
+            let mut l = c.reglage("SvcOriginal").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+            l.push(json!("AdobeARMservice|Automatic|True"));
+            c.ecrire_reglage("SvcOriginal", Value::Array(l), true).unwrap();
+        }
+        Ok(json!("OK"))
+    }));
+    let _g = ctx.prendre_geste("Tout restaurer", "Ton PC").unwrap();
+    let mut p = PcWindows::nouveau(&ctx);
+    let mut sv = Sauvegarde::default();
+    let erreurs = {
+        let mut m = Moteur::nouveau(&mut p, &mut sv, false);
+        nevermind_pc::corrections::tout_restaurer(&mut m)
+    };
+    assert!(erreurs.is_empty(), "{erreurs:?}");
+    assert_eq!(
+        ctx.reglage("SvcOriginal"),
+        Some(json!(["AdobeARMservice|Automatic|True"])),
+        "le service remis est retiré, celui noté pendant ce temps est gardé"
+    );
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// Un seul écrivain : Ton PC et le noyau écrivent sauvegarde.json au même moment, chacun depuis ce qu'il sait. Avant,
+/// ils passaient par le même `sauvegarde.json.tmp` sans verrou (une écriture pouvait échouer) et la copie de Ton PC
+/// effaçait ce que le noyau venait de noter. Maintenant : aucune erreur, et tout ce qui a été noté est dans le fichier.
+#[test]
+fn deux_ecrivains_au_meme_moment_ne_perdent_rien() {
+    let d = dossier("sauvegarde-ecrivains");
+    let ctx = Contexte::nouveau(d.join("a"), d.join("d"), false, true).partage();
+    let _ = fausse_aide(&ctx);
+    const N: usize = 25;
+    let c1 = ctx.clone();
+    let pc = std::thread::spawn(move || {
+        let _g = c1.prendre_geste("Appliquer", "Ton PC").unwrap();
+        let mut copie = Sauvegarde::default();
+        let mut p = PcWindows::nouveau(&c1);
+        let mut m = Moteur::nouveau(&mut p, &mut copie, false);
+        let mut erreurs = Vec::new();
+        for i in 0..N {
+            let e = json!({ "Path": "HKLM:\\Essai", "Name": format!("pc{i}"), "Existed": false });
+            m.sv.registre.insert(format!("HKLM:\\Essai|pc{i}"), e);
+            if let Err(e) = m.sauver() {
+                erreurs.push(e);
+            }
+        }
+        erreurs
+    });
+    let c2 = ctx.clone();
+    let noyau = std::thread::spawn(move || {
+        let _g = c2.geste_prioritaire("Essai", "Essai");
+        let mut erreurs = Vec::new();
+        for i in 0..N {
+            c2.changer_sauvegarde(|s| {
+                s.dns.insert(format!("carte{i}"), json!("9.9.9.9"));
+            });
+            if let Err(e) = c2.enregistrer_sauvegarde() {
+                erreurs.push(e);
+            }
+        }
+        erreurs
+    });
+    let (e1, e2) = (pc.join().unwrap(), noyau.join().unwrap());
+    assert!(e1.is_empty() && e2.is_empty(), "des écritures ont échoué : {e1:?} {e2:?}");
+    let f = fichier_sauvegarde(&ctx);
+    let manquent: Vec<String> = (0..N)
+        .map(|i| format!("pc{i}"))
+        .filter(|k| f["Registry"].get(format!("HKLM:\\Essai|{k}")).is_none())
+        .chain((0..N).map(|i| format!("carte{i}")).filter(|k| f["Dns"].get(k).is_none()))
+        .collect();
+    assert!(manquent.is_empty(), "perdu dans sauvegarde.json : {manquent:?}");
+    let restes: Vec<String> = std::fs::read_dir(&ctx.donnees)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".tmp"))
+        .collect();
+    assert!(restes.is_empty(), "fichiers temporaires laissés : {restes:?}");
+    let _ = std::fs::remove_dir_all(&d);
+}

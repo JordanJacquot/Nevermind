@@ -127,6 +127,9 @@ pub struct Moteur<'a> {
     pub demarrage_a_relire: bool,
     /// La question à poser à l'écran quand `Pc::question` n'a pas pu répondre tout de suite
     pub question: Option<String>,
+    /// La sauvegarde telle qu'elle était à la dernière écriture (ou au début du geste) : ce que le geste a changé
+    /// depuis est seul fusionné dans sauvegarde.json (lot A, étape 2)
+    base: Sauvegarde,
 }
 
 fn erreur_reg(e: String) -> String {
@@ -135,7 +138,8 @@ fn erreur_reg(e: String) -> String {
 
 impl<'a> Moteur<'a> {
     pub fn nouveau(pc: &'a mut dyn Pc, sv: &'a mut Sauvegarde, portable: bool) -> Self {
-        Moteur { pc, sv, journal: None, portable, demarrage_a_relire: false, question: None }
+        let base = sv.clone();
+        Moteur { pc, sv, journal: None, portable, demarrage_a_relire: false, question: None, base }
     }
 
     fn noter(&mut self, e: Value) {
@@ -144,11 +148,19 @@ impl<'a> Moteur<'a> {
         }
     }
 
-    /// `Save-Backup`
+    /// `Save-Backup`, par l'écrivain unique (lot A, étape 2) : le fichier est relu, seul ce que ce geste a changé y
+    /// est fusionné (jamais une valeur d'origine déjà notée remplacée) ; la copie du geste reprend ce qu'un autre geste
+    /// a noté entre-temps.
     pub fn sauver(&mut self) -> Result<(), String> {
         self.pc.exiger_geste()?;
-        let j = self.sv.json();
-        self.pc.sauvegarde_ecrire(&j)
+        let (base, voulue) = (self.base.json(), self.sv.json());
+        if let Some(copie) = self.pc.sauvegarde_fusionner(&base, &voulue)? {
+            let probleme = self.sv.probleme.take();
+            *self.sv = Sauvegarde::depuis(&copie);
+            self.sv.probleme = probleme;
+        }
+        self.base = self.sv.clone();
+        Ok(())
     }
 
     fn sauver_ou(&mut self, oublier: impl FnOnce(&mut Sauvegarde)) -> Result<(), String> {
@@ -515,6 +527,12 @@ pub fn liste_textes(v: Option<Value>) -> Vec<String> {
     }
 }
 
+/// Une liste notée (SvcOriginal, PcfgOriginal) relue maintenant, moins ce que « Tout restaurer » a remis (`lue` au
+/// début, `reste` : pas remis) : ce qui a été noté pendant ce temps reste (lot A, étape 2)
+fn sans_les_remis(actuelle: Vec<String>, lue: &[String], reste: &[String]) -> Vec<String> {
+    actuelle.into_iter().filter(|l| !(lue.contains(l) && !reste.contains(l))).collect()
+}
+
 /// Une liste écrite dans les réglages (toujours une liste, comme `@($orig + ...)` dans parametres.json)
 fn reglage_liste(l: &[String]) -> Value {
     json!(l)
@@ -672,7 +690,9 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
         }
     }
     if !svc.is_empty() {
-        let _ = m.pc.ecrire_reglage("SvcOriginal", json!(svc_reste), false);
+        // (relu maintenant : seuls les services remis sont retirés, un service noté pendant ce temps reste ; lot A)
+        let garde = sans_les_remis(liste_textes(m.pc.reglage("SvcOriginal")), &svc, &svc_reste);
+        let _ = m.pc.ecrire_reglage("SvcOriginal", json!(garde), false);
     }
     // Le plan d'alimentation d'origine d'abord (les réglages « batterie » vont ensuite dans leur plan)
     if let Some(ps) = m.sv.plan.clone() {
@@ -732,7 +752,8 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
     }
     if !pcfg.is_empty() {
         m.pc_args(&["/setactive", "SCHEME_CURRENT"]);
-        let _ = m.pc.ecrire_reglage("PcfgOriginal", json!(pcfg_reste), false);
+        let garde = sans_les_remis(liste_textes(m.pc.reglage("PcfgOriginal")), &pcfg, &pcfg_reste);
+        let _ = m.pc.ecrire_reglage("PcfgOriginal", json!(garde), false);
     }
     if let Some(o) = m.sv.curseur.clone() {
         let r = m.pc.curseur_ecrire(&o);
@@ -786,7 +807,10 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
         }
     }
     let reste = m.sv.compte();
-    if reste == 0 && origines_oubliees {
+    // (tout est remis : sauvegarde.json est effacé, sauf si un autre geste y a noté quelque chose entre-temps ; le
+    //  fichier relu par l'écrivain unique le dit, lot A)
+    let garde_autre = reste == 0 && origines_oubliees && m.sauver().is_ok() && m.sv.compte() > 0;
+    if reste == 0 && origines_oubliees && !garde_autre {
         m.pc.sauvegarde_effacer();
     } else {
         let mut o = m.sv.oublies.clone();
