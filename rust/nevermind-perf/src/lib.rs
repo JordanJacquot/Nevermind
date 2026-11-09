@@ -107,6 +107,8 @@ pub struct BlocPerf {
     index: HashMap<String, EntreeIndex>,
     session: Option<Session>,
     cible: Option<Cible>,
+    /// La mesure des FPS de la partie attend l'Aide, réveillée dans un fil à part (lot B)
+    fps_a_reprendre: bool,
     bilans: Vec<BilanEnCours>,
     veille_demande: Option<f64>,
     veille_etat: String,
@@ -296,7 +298,7 @@ impl BlocPerf {
             let mut n = 0;
             for nom in noms {
                 // (jamais de demande de Windows : la partie commence, personne n'a cliqué ; audit G5)
-                match ctx.aide_sans_demande("processus.fermer", &json!({ "Nom": nom }), 15000) {
+                match ctx.aide_de_fond("processus.fermer", &json!({ "Nom": nom }), 15000) {
                     Ok(v) => n += nb(Some(&v)) as usize,
                     Err(e) => ctx.journal(&format!("Mode jeu : {} pas fermé ({e})", a.nom)),
                 }
@@ -333,6 +335,7 @@ impl BlocPerf {
     }
 
     fn fin_partie(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        self.fps_a_reprendre = false;
         let Some(s) = self.session.take() else { return };
         if self.cible.as_ref().is_some_and(|c| c.pid == s.pid) {
             self.arreter_cible(ctx, false);
@@ -510,8 +513,11 @@ impl BlocPerf {
         // [FrameMon]::StartRemote (`fps.demarrer` par [AideClient]::Texte). Le repli sur place n'est pas porté.
         if !ctx.mesures_aide() {
             ctx.journal("Mesure des FPS: l'Aide ne répond pas.");
+            // (pendant une partie : reprise quand l'Aide, réveillée en fond, écoute de nouveau)
+            self.fps_a_reprendre = self.session.as_ref().is_some_and(|s| s.pid == pid);
             return;
         }
+        self.fps_a_reprendre = false;
         let attache = match ctx.aide_texte("fps.demarrer", &format!("{{\"Pid\":{pid}}}"), 15000) {
             Ok(r) => r == "rattachee",
             Err(e) => {
@@ -1159,6 +1165,19 @@ impl Bloc for BlocPerf {
         self.mettre_raccourci(ctx);
         if self.raccourci_actif == Some(true) && self.compteur().raccourci_presse() {
             self.manuel(ctx, effets);
+        }
+        // La mesure des FPS de la partie n'a pas pu démarrer, l'Aide ne répondait pas (elle est réveillée dans un fil
+        // à part, lot B) : reprise dès qu'elle écoute, pendant la même partie
+        if self.fps_a_reprendre
+            && self.cible.is_none()
+            && let Some((pid, jeu, proc_nom)) =
+                self.session.as_ref().map(|s| (s.pid, s.jeu.clone(), s.proc_nom.clone()))
+            && ctx.aide_joignable(1)
+        {
+            self.fps_a_reprendre = false;
+            if Self::mesure_fps(ctx) {
+                self.demarrer_cible(ctx, pid, &jeu, &proc_nom, effets);
+            }
         }
         // La partie mesurée : lignes de PresentMon toutes les 250 ms, le reste toutes les 500 ms
         if let Some(c) = &self.cible {

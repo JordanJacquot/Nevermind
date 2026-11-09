@@ -217,7 +217,7 @@ struct EnvLag<'a> {
 impl Env for EnvLag<'_> {
     fn flux(&mut self) -> Vec<String> {
         // (Get-FluxReseau : Invoke-Aide -SansDemande, jamais de demande de Windows pendant une partie)
-        match self.ctx.aide_sans_demande("flux.lire", &json!({}), 15000) {
+        match self.ctx.aide_de_fond("flux.lire", &json!({}), 15000) {
             Ok(v) => valeur::liste(&v).iter().filter(|x| valeur::vrai(x)).map(valeur::texte).collect(),
             Err(_) => Vec::new(),
         }
@@ -378,7 +378,7 @@ impl BlocTrafic {
         let mut etw = false;
         let mut erreur = String::new();
         if ctx.mesures_aide() {
-            match ctx.aide_sans_demande("flux.demarrer", &json!({}), 20000) {
+            match ctx.aide_de_fond("flux.demarrer", &json!({}), 20000) {
                 Ok(_) => {
                     etw = true;
                     ctx.journal("Lag : trace réseau par l'Aide");
@@ -458,9 +458,10 @@ impl BlocTrafic {
         let Some(mut s) = self.lag.take() else { return };
         self.passage_lag = None;
         effets.ajouter(Effet::Signal { nom: signaux::MESURE_LAG.into(), donnees: json!({ "en_cours": false }) });
-        // (Stop-FluxReseau : Invoke-Aide -SansDemande)
+        // (Stop-FluxReseau : Invoke-Aide -SansDemande ; par le canal seul, sans réveil ni pause : la trace vit dans
+        //  l'Aide, une Aide qui ne répond pas n'en a plus ; lot B)
         if s.etw {
-            let _ = ctx.aide_sans_demande("flux.arreter", &json!({}), 15000);
+            let _ = ctx.aide_texte("flux.arreter", "{}", 15000);
         }
         self.recevoir_annuaire(ctx);
         self.recevoir_lieux(ctx);
@@ -667,7 +668,7 @@ impl BlocTrafic {
         let maintenant = self.maintenant();
         if self.aide_tcp_ko.is_none_or(|t| maintenant - t > 60.0) {
             // (une lecture de la minuterie : jamais de demande de Windows, comme Get-TrafficTcp ; audit G5)
-            match ctx.aide_sans_demande("trafic.tcp", &json!({}), 15000) {
+            match ctx.aide_de_fond("trafic.tcp", &json!({}), 15000) {
                 Ok(r) => {
                     self.aide_tcp_ko = None;
                     self.compteurs_ok = valeur::vrai(valeur::champ(&r, "CompteursOk"));
@@ -736,7 +737,7 @@ impl BlocTrafic {
                     r.chemins_aide.insert(*p, String::new());
                 }
                 let pids: Vec<String> = v.iter().map(|p| p.to_string()).collect();
-                if let Ok(x) = ctx.aide_sans_demande("lecture.chemins", &json!({ "Pids": pids }), 15000)
+                if let Ok(x) = ctx.aide_de_fond("lecture.chemins", &json!({ "Pids": pids }), 15000)
                     && let Some(o) = x.as_object()
                 {
                     for (k, c) in o {

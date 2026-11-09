@@ -544,3 +544,237 @@ fn la_fermeture_releve_les_travaux_finis() {
         "la ligne d'historique du travail fini est perdue à la fermeture : {h:?}"
     );
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Lot B du second audit : l'Aide qui ne répond plus alors que sa tâche existe
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Le faux Windows du bloc trafic : les programmes du faux PC du bloc perf, une connexion par câble, pas de réseau
+struct FauxReseau(Arc<Mutex<Partage>>);
+struct PasDePing;
+impl nevermind_trafic::lag::pings::Pingeur for PasDePing {
+    fn ping(&self, _: &str) -> Option<f64> {
+        Some(12.0)
+    }
+    fn trace(&self, _: &str, _: u8, _: u32) -> Vec<String> {
+        Vec::new()
+    }
+}
+impl nevermind_trafic::microsoft::LecturesWindows for FauxReseau {
+    fn reg_nombre(&self, _: &str, _: &str) -> Option<i64> {
+        None
+    }
+    fn reg_texte(&self, _: &str, _: &str) -> String {
+        String::new()
+    }
+    fn service(&self, _: &str) -> Option<(bool, String)> {
+        None
+    }
+    fn compte_microsoft(&self) -> bool {
+        false
+    }
+}
+impl nevermind_trafic::systeme::Systeme for FauxReseau {
+    fn tcp(&self) -> (Vec<String>, bool) {
+        (Vec::new(), false)
+    }
+    fn udp(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn processus(&self) -> Vec<(u32, u32, String)> {
+        self.0.lock().unwrap().progs.iter().map(|p| (p.pid, 1, p.nom.clone())).collect()
+    }
+    fn chemin(&self, _: u32) -> String {
+        String::new()
+    }
+    fn services(&self) -> HashMap<u32, Vec<nevermind_trafic::trafic::etat::Service>> {
+        HashMap::new()
+    }
+    fn cache_dns(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+    fn signature(&self, _: &str) -> (String, String) {
+        (String::new(), String::new())
+    }
+    fn description(&self, _: &str) -> String {
+        String::new()
+    }
+    fn reseau(&self) -> Option<nevermind_trafic::lag::session::Depart> {
+        Some(nevermind_trafic::lag::session::Depart {
+            passerelle: "192.168.1.254".into(),
+            wifi: false,
+            carte: "Ethernet".into(),
+        })
+    }
+    fn pingeur(&self) -> Arc<dyn nevermind_trafic::lag::pings::Pingeur> {
+        Arc::new(PasDePing)
+    }
+    fn wifi(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn http(&self, _: &str, _: &str) -> Result<String, String> {
+        Err("pas de réseau dans les tests".into())
+    }
+    fn nom_inverse(&self, _: &str) -> String {
+        String::new()
+    }
+}
+
+/// L'Aide ne répond plus (elle s'est arrêtée) alors que sa tâche existe : avant, chaque lecture des tics (`flux.lire`
+/// de la mesure du lag toutes les 2 s, `trafic.tcp` de la surveillance, `processus.fermer` du mode jeu au début d'une
+/// partie, le réveil des mesures) lançait la tâche puis attendait l'Aide (jusqu'à 20 s) SUR LE FIL DES BLOCS, à
+/// chaque fois. Maintenant aucune minuterie ne dure, la tâche n'est lancée qu'une fois (pause après un échec), dans un
+/// fil à part ; quand l'Aide revient, la mesure des FPS de la partie reprend.
+///
+/// La fausse Aide est sur le vrai canal de la copie d'essai (jamais celui de la vraie Aide) : Nevermind la joint par
+/// son vrai chemin (`travail()` : canal, tâche, attente). La tâche est simulée (`tache_aide_essai`) : jamais schtasks.
+#[test]
+fn une_aide_qui_ne_repond_plus_ne_fige_pas_les_tics() {
+    use nevermind_noyau::windows::canal::{FauxServeur, Repondre};
+    let dossier = dossier_essai("fil-de-fond-aide-muette");
+    let _ = std::fs::remove_dir_all(&dossier);
+    std::fs::create_dir_all(dossier.join("donnees")).unwrap();
+    let ctx = Contexte::nouveau(dossier.join("fichiers"), dossier.join("donnees"), false, true);
+    ctx.ecrire_reglage("GameMode", json!(true), false).unwrap();
+    ctx.ecrire_reglage("FpsMeasure", json!(true), false).unwrap();
+    // (l'Aide lancée par sa tâche met jusqu'à 4 s à répondre ici, 20 s en vrai)
+    let moi = std::env::current_exe().unwrap().to_string_lossy().into_owned();
+    ctx.regler_aide_essai(Some(moi), Some((Duration::from_secs(4), Duration::from_secs(1))));
+    let canal = ctx.aide_config().canal.clone();
+    let recues = Arc::new(Mutex::new(Vec::<String>::new()));
+    let r = recues.clone();
+    let repondre: Repondre = Arc::new(move |ligne: &str| {
+        let d: Value = serde_json::from_str(ligne).unwrap_or(Value::Null);
+        let a = d["a"].as_str().unwrap_or("").to_string();
+        let rep = match a.as_str() {
+            "trafic.tcp" => json!({ "CompteursOk": true, "Lignes": [] }),
+            "flux.lire" => json!([]),
+            "processus.fermer" => json!(1),
+            "fps.lire" | "fps.demarrer" => json!(""),
+            _ => json!("ok"),
+        };
+        r.lock().unwrap().push(a);
+        Some(nevermind_noyau::fausse_aide::ok(rep).to_string())
+    });
+    let serveur = Arc::new(Mutex::new(Some(FauxServeur::lancer(&canal, repondre.clone()).unwrap())));
+    // La tâche simulée : « lancée », elle relance la fausse Aide 2,5 s plus tard, seulement si l'essai le permet
+    let relancer = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let reveils = Arc::new(AtomicUsize::new(0));
+    {
+        let (s, rl, rv, c, rep) = (serveur.clone(), relancer.clone(), reveils.clone(), canal.clone(), repondre.clone());
+        ctx.tache_aide_essai(Arc::new(move || {
+            rv.fetch_add(1, Ordering::SeqCst);
+            if rl.load(Ordering::SeqCst) {
+                let (s, c, rep) = (s.clone(), c.clone(), rep.clone());
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_millis(2500));
+                    *s.lock().unwrap() = Some(FauxServeur::lancer(&c, rep).unwrap());
+                });
+            }
+            true
+        }))
+        .unwrap();
+    }
+    let partage = Arc::new(Mutex::new(Partage::default()));
+    let pm = ctx.appli.join("outils-tiers").join("PresentMon.exe").to_string_lossy().into_owned();
+    let mut chemins = HashMap::new();
+    for pid in [4242, 4243] {
+        chemins.insert(pid, r"C:\Jeux\RocketLeague\Binaries\Win64\RocketLeague.exe".to_string());
+    }
+    chemins.insert(77, ONEDRIVE.to_string());
+    let sys = FauxSysteme {
+        partage: Some(partage.clone()),
+        chemins,
+        fichiers: vec![pm],
+        cpu: Some((100, 1000)),
+        ram: Some((16e9, 8e9)),
+        ..Default::default()
+    };
+    let mut perf = BlocPerf::avec(Box::new(sys), Box::new(FauxCompteur::default()));
+    perf.horloge = None;
+    let mut e = Effets::default();
+    perf.signal(
+        &ctx,
+        "jeux-liste",
+        &json!([{ "nom": "Rocket League", "exes": [r"C:\Jeux\RocketLeague\Binaries\Win64\RocketLeague.exe"], "source": "Epic" }]),
+        &mut e,
+    );
+    let trafic = nevermind_trafic::BlocTrafic::avec_systeme(Arc::new(FauxReseau(partage.clone())));
+    let tics = Arc::new(AtomicUsize::new(0));
+    let mut hote = Hote::nouveau(
+        vec![Box::new(Compteur(tics.clone())), Box::new(perf), Box::new(trafic)],
+        ctx,
+        Habillage::depuis(&suite_commun::themes::Theme::neon()),
+        "Salut".into(),
+        "2.0.2",
+        Images::default(),
+        Box::new(|| "cable".into()),
+    );
+    let page = Arc::new(Mutex::new(Page::default()));
+    let debut = Instant::now();
+    let _ = hote.recevoir(MessagePage::Pret, debut.elapsed(), &mut EcranEssai(page.clone()));
+    // La minuterie de l'hôte jusqu'à `ok` (`max` au plus) : aucun passage ne doit durer
+    let tourner = |hote: &mut Hote, quoi: &str, max: Duration, ok: &dyn Fn(&Hote) -> bool| {
+        let fin = Instant::now() + max;
+        while !ok(hote) {
+            assert!(Instant::now() < fin, "pas vu : {quoi}");
+            let d = Instant::now();
+            let _ = hote.minuterie(debut.elapsed(), &mut EcranEssai(page.clone()));
+            assert!(
+                d.elapsed() < Duration::from_secs(1),
+                "un passage de la minuterie a pris {:?} ({quoi}) : le fil des blocs attendait l'Aide",
+                d.elapsed()
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    };
+    let vu = |a: &str| recues.lock().unwrap().iter().any(|x| x == a);
+    let jeu = |pid: u32| {
+        let mut p = partage.lock().unwrap();
+        p.progs.push(Programme { pid: 77, nom: "OneDrive".into(), ..Default::default() });
+        p.progs.push(Programme { pid, nom: "RocketLeague".into(), ..Default::default() });
+        p.premier_plan = pid;
+    };
+
+    // 1. L'Aide répond : surveillance du trafic, partie avec mode jeu, mesure des FPS et du lag
+    let _ = hote.recevoir(
+        MessagePage::Action { id: "clic:BtnTraffic".into(), valeur: Value::Null, ecran: "trafic".into() },
+        debut.elapsed(),
+        &mut EcranEssai(page.clone()),
+    );
+    jeu(4242);
+    tourner(&mut hote, "la partie et les lectures par l'Aide", Duration::from_secs(20), &|h: &Hote| {
+        h.partie()
+            && ["trafic.tcp", "processus.fermer", "fps.demarrer", "flux.demarrer", "flux.lire"].iter().all(|a| vu(a))
+    });
+    partage.lock().unwrap().progs.retain(|p| p.pid != 77);
+
+    // 2. L'Aide s'arrête ; sa tâche existe, mais l'Aide lancée ne répond pas : 8 s de tics, aucun ne dure, et la
+    //    tâche n'est lancée qu'une fois (pas à chaque lecture), hors du fil des blocs
+    drop(serveur.lock().unwrap().take());
+    recues.lock().unwrap().clear();
+    let fin = Instant::now() + Duration::from_secs(8);
+    let avant = tics.load(Ordering::SeqCst);
+    tourner(&mut hote, "8 s sans l'Aide", Duration::from_secs(9), &|_| Instant::now() >= fin);
+    let n = tics.load(Ordering::SeqCst) - avant;
+    assert!(n >= 40, "seulement {n} tics en 8 s sans l'Aide");
+    let r = reveils.load(Ordering::SeqCst);
+    assert_eq!(r, 1, "la tâche de l'Aide lancée {r} fois en 8 s : pas de pause après un échec");
+
+    // 3. Une nouvelle partie pendant la pause : le mode jeu n'attend pas l'Aide (OneDrive pas fermé, c'est dit au
+    //    journal) ; la tâche relance l'Aide en fond, et la mesure des FPS de la partie reprend quand elle répond
+    relancer.store(true, Ordering::SeqCst);
+    partage.lock().unwrap().progs.clear();
+    tourner(&mut hote, "la fin de la partie", Duration::from_secs(15), &|h: &Hote| !h.partie());
+    jeu(4243);
+    tourner(&mut hote, "la reprise de la mesure des FPS", Duration::from_secs(20), &|h: &Hote| {
+        h.partie() && vu("fps.demarrer")
+    });
+    assert!(vu("aide.bonjour"), "le réveil n'a pas joint l'Aide relancée : {:?}", recues.lock().unwrap());
+    let j = std::fs::read_to_string(hote.ctx.fichier_journal()).unwrap_or_default();
+    assert!(j.contains("pas fermé (l'Aide ne répondait pas, nouvel essai dans un moment)"), "{j}");
+    assert!(j.contains("Mesure des FPS: l'Aide ne répond pas."), "{j}");
+    assert_eq!(hote.ctx.aide_demandes_relevees(), Vec::<String>::new(), "une demande de Windows hors d'un clic");
+    hote.fermer();
+    let _ = std::fs::remove_dir_all(&dossier);
+}

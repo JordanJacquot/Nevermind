@@ -20,7 +20,8 @@ pub fn lancer(
         return Err("une fausse Aide seulement en mode test".into());
     }
     let moi = std::env::current_exe().map_err(|e| e.to_string())?.to_string_lossy().into_owned();
-    ctx.regler_aide_essai(Some(moi), None);
+    // (seulement le programme attendu : les attentes réglées par le test, tâche et demande de Windows, sont gardées)
+    *ctx.aide.exe_attendu.lock().unwrap_or_else(|e| e.into_inner()) = Some(moi);
     let canal = ctx.aide_config().canal.clone();
     let r: Repondre = Arc::new(move |ligne: &str| {
         let d: Value = serde_json::from_str(ligne).unwrap_or(Value::Null);

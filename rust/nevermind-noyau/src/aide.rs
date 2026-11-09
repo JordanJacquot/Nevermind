@@ -41,6 +41,11 @@ pub const DELAI_REFUS: Duration = Duration::from_secs(600);
 pub const ATTENTE_TACHE: Duration = Duration::from_secs(20);
 /// Attente de l'Aide lancée par la demande de Windows (une fois « Oui » cliqué)
 pub const ATTENTE_WINDOWS: Duration = Duration::from_secs(30);
+/// Une demande de fond ([`Contexte::aide_de_fond`]) n'a pas eu de réponse : pas de nouvel essai avant ce délai (sauf
+/// si le réveil de l'Aide réussit avant)
+pub const PAUSE_FOND: Duration = Duration::from_secs(60);
+/// Ce que rend une demande de fond pendant la pause qui suit un échec
+pub const ERREUR_PAUSE: &str = "l'Aide ne répondait pas, nouvel essai dans un moment";
 
 /// Les actions de l'Aide qui changent le PC : seulement sous le verrou d'un geste (lot A du second audit). Le point
 /// de restauration (`restauration.creer`) n'y est pas : il ne change ni la sauvegarde ni un réglage, et « Appliquer »
@@ -71,6 +76,10 @@ pub fn change_le_pc(action: &str) -> bool {
 /// Une fausse Aide donnée au contexte (tests des blocs) : l'action et ses paramètres, la réponse (`r`) ou l'erreur.
 pub type FausseAide = Arc<dyn Fn(&str, &Value) -> Result<Value, String> + Send + Sync>;
 
+/// En test seulement : la tâche de l'Aide simulée (`schtasks /Run`), pour essayer le vrai réveil de [`Contexte`] sans
+/// jamais toucher aux tâches du PC. Rend vrai si la tâche « a démarré ».
+pub type FausseTache = Arc<dyn Fn() -> bool + Send + Sync>;
+
 /// Ce qu'il faut pour joindre l'Aide de cette copie
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -93,6 +102,8 @@ struct Etat {
     refus: Option<Instant>,
     voie: Option<String>,
     mesures_echec: Option<Instant>,
+    /// La dernière demande de fond restée sans réponse ([`PAUSE_FOND`])
+    fond_echec: Option<Instant>,
 }
 
 /// L'état de l'Aide pour ce contexte
@@ -106,6 +117,8 @@ pub struct EtatAide {
     pub(crate) avec_demande: Mutex<Vec<String>>,
     pub(crate) exe_attendu: Mutex<Option<String>>,
     pub(crate) attentes: Mutex<Option<(Duration, Duration)>>,
+    /// En test seulement : la tâche de l'Aide simulée ([`Contexte::tache_aide_essai`])
+    pub(crate) tache_essai: Mutex<Option<FausseTache>>,
 }
 
 fn verrou<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -254,6 +267,16 @@ impl Contexte {
         *verrou(&self.aide.attentes) = attentes;
     }
 
+    /// Tests : la tâche de l'Aide simulée. Le réveil de [`Contexte`] (`travail`) la « lance » au lieu de `schtasks`,
+    /// puis attend l'Aide comme en vrai. Refusée hors du mode test : jamais d'effet sur la vraie tâche.
+    pub fn tache_aide_essai(&self, f: FausseTache) -> Result<(), String> {
+        if !self.essai {
+            return Err("une fausse tâche de l'Aide seulement en mode test".into());
+        }
+        *verrou(&self.aide.tache_essai) = Some(f);
+        Ok(())
+    }
+
     /// `[AideClient]::Joignable(ms)` : l'Aide écoute-t-elle ?
     pub fn aide_joignable(&self, ms: u32) -> bool {
         if verrou(&self.aide.fausse).is_some() {
@@ -271,8 +294,9 @@ impl Contexte {
     }
 
     /// `$AideTravail` (hors désinstallation) : réveille l'Aide si besoin (sa tâche SYSTEM, sinon la demande de
-    /// Windows si elle est permise), envoie la demande, rapporte la réponse.
-    fn travail(&self, texte_demande: &str, delai: Duration, demander: bool) -> Travail {
+    /// Windows si elle est permise), envoie la demande, rapporte la réponse. `reveiller` faux : jamais de réveil ici
+    /// (ni tâche ni attente : une demande de fond, lot B), seulement l'Aide qui écoute déjà.
+    fn travail(&self, texte_demande: &str, delai: Duration, demander: bool, reveiller: bool) -> Travail {
         let c = self.aide_config().clone();
         let (attente_tache, attente_windows) = verrou(&self.aide.attentes).unwrap_or((ATTENTE_TACHE, ATTENTE_WINDOWS));
         let joignable = |ms: u32| crate::windows::canal::joignable(&c.canal, ms);
@@ -282,13 +306,22 @@ impl Contexte {
                 std::thread::sleep(Duration::from_millis(150));
             }
         };
+        // (en test seulement : la tâche simulée, jamais schtasks)
+        let tache_essai = if self.essai { verrou(&self.aide.tache_essai).clone() } else { None };
         let mut t = Travail::default();
-        if !joignable(200) && !self.sans_tache() {
-            let etat = etat_tache(&lire_tache(TACHE, &c.schtasks), &c.exe, &c.sid);
+        if reveiller && !joignable(200) && (tache_essai.is_some() || !self.sans_tache()) {
+            let etat = match &tache_essai {
+                Some(_) => "systeme",
+                None => etat_tache(&lire_tache(TACHE, &c.schtasks), &c.exe, &c.sid),
+            };
             t.etat = Some(etat.to_string());
             match etat {
                 "systeme" => {
-                    if lancer_tache(TACHE, &c.schtasks) {
+                    let lancee = match &tache_essai {
+                        Some(f) => f(),
+                        None => lancer_tache(TACHE, &c.schtasks),
+                    };
+                    if lancee {
                         attendre(attente_tache);
                         if !joignable(1) {
                             t.erreur = "la tâche de l'Aide ne répond pas".into();
@@ -302,7 +335,7 @@ impl Contexte {
             }
         }
         // Repli : la demande normale de Windows (l'utilisateur clique « Oui »), jamais une autre tâche
-        if !joignable(1) && demander {
+        if reveiller && !joignable(1) && demander {
             match crate::windows::demande_windows(
                 &c.exe,
                 &format!("-Sid {}", c.sid),
@@ -344,6 +377,19 @@ impl Contexte {
         delai: Duration,
         sans_demande: bool,
     ) -> Result<Value, String> {
+        self.invoquer(action, parametres, delai, sans_demande, false)
+    }
+
+    /// `fond` : une demande de fond (lot B, [`Contexte::aide_de_fond`]) : jamais de réveil sur ce fil, une pause
+    /// après un échec, le réveil fait dans un fil à part.
+    fn invoquer(
+        &self,
+        action: &str,
+        parametres: &Value,
+        delai: Duration,
+        sans_demande: bool,
+        fond: bool,
+    ) -> Result<Value, String> {
         // (une action qui change le PC seulement sous le verrou d'un geste, lot A ; le point de restauration n'en a
         //  pas besoin, ajustement B)
         if change_le_pc(action) {
@@ -355,6 +401,11 @@ impl Contexte {
         }
         if let Some(f) = fausse {
             return f(action, parametres);
+        }
+        // (une demande de fond restée sans réponse il y a peu : pas de nouvel essai, rien n'attend ; lot B)
+        let partage = if fond { self.partage_actuel() } else { None };
+        if fond && verrou(&self.aide.etat).fond_echec.is_some_and(|t| t.elapsed() < PAUSE_FOND) {
+            return Err(ERREUR_PAUSE.into());
         }
         let mut demander = !sans_demande && !self.sans_demande_globale();
         if demander
@@ -373,7 +424,19 @@ impl Contexte {
                 danger.join(", ")
             ));
         }
-        let o = self.travail(&demande(action, parametres), delai, demander);
+        // (une demande de fond ne réveille jamais l'Aide sur ce fil : le réveil part dans un fil à part ; sans contexte
+        //  partagé, seulement les tests d'un bloc seul et les juges, il est fait sur place comme avant)
+        let o = self.travail(&demande(action, parametres), delai, demander, partage.is_none());
+        if fond {
+            let mut e = verrou(&self.aide.etat);
+            e.fond_echec = if o.reponse.is_some() { None } else { Some(Instant::now()) };
+            drop(e);
+            if o.reponse.is_none()
+                && let Some(p) = &partage
+            {
+                p.reveiller_en_fond();
+            }
+        }
         let changement = {
             let mut e = verrou(&self.aide.etat);
             // (tâche absente ou pas la bonne : plus de schtasks jusqu'au prochain lancement ; la demande de Windows reste)
@@ -423,6 +486,37 @@ impl Contexte {
         self.invoquer_aide(action, parametres, Duration::from_millis(delai_ms), true)
     }
 
+    /// Une demande faite depuis un tic ou un geste automatique (lectures du trafic, mesure du lag, mode jeu au début
+    /// d'une partie) : comme [`Contexte::aide_sans_demande`] (jamais de demande de Windows), mais elle n'attend
+    /// JAMAIS le réveil de l'Aide sur le fil qui l'appelle (lot B du second audit : `schtasks /Run` puis jusqu'à 20 s
+    /// d'attente figeaient le fil des blocs). L'Aide qui n'écoute pas est réveillée dans un fil à part ; après une
+    /// demande restée sans réponse, les suivantes renoncent tout de suite pendant [`PAUSE_FOND`] (ou jusqu'au réveil
+    /// réussi). Une Aide qui répond mais refuse ne compte pas comme un échec.
+    pub fn aide_de_fond(&self, action: &str, parametres: &Value, delai_ms: u64) -> Result<Value, String> {
+        self.invoquer(action, parametres, Duration::from_millis(delai_ms), true, true)
+    }
+
+    /// Le réveil de l'Aide dans un fil à part (sa tâche SYSTEM seulement, jamais de demande de Windows), un seul à la
+    /// fois ; réussi, il lève la pause des demandes de fond et des mesures.
+    fn reveiller_en_fond(self: &Arc<Self>) {
+        if self.aide.reveil.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let ctx = self.clone();
+        let lance = std::thread::Builder::new().name("nevermind-reveil-aide".into()).spawn(move || {
+            let ok = ctx.aide_sans_demande("aide.bonjour", &json!({}), 10000).is_ok();
+            ctx.aide.reveil.store(false, Ordering::SeqCst);
+            if ok {
+                let mut e = verrou(&ctx.aide.etat);
+                e.fond_echec = None;
+                e.mesures_echec = None;
+            }
+        });
+        if lance.is_err() {
+            self.aide.reveil.store(false, Ordering::SeqCst);
+        }
+    }
+
     /// `Start-AideFond` : réveille l'Aide au lancement, en arrière-plan, seulement par sa tâche SYSTEM si c'est bien
     /// elle (jamais de demande de Windows au lancement). Rien en mode test.
     pub fn aide_fond(&self) {
@@ -451,8 +545,8 @@ impl Contexte {
     }
 
     /// `Test-MesuresAide` : les mesures en continu (FPS, trafic, trace réseau) passent-elles par l'Aide ? Sans droits,
-    /// l'Aide est réveillée au besoin (au plus une fois par minute après un échec) ; en administrateur, Nevermind ne
-    /// l'attend pas.
+    /// l'Aide est réveillée au besoin (au plus une fois par minute après un échec ; dans un fil à part avec le contexte
+    /// partagé : rend faux sans attendre) ; en administrateur, Nevermind ne l'attend pas.
     pub fn mesures_aide(&self) -> bool {
         if self.aide_joignable(1) {
             return true;
@@ -461,6 +555,14 @@ impl Contexte {
             return false;
         }
         if verrou(&self.aide.etat).mesures_echec.is_some_and(|t| t.elapsed() < Duration::from_secs(60)) {
+            return false;
+        }
+        // (lot B : le réveil n'est jamais attendu ici, sur le fil des blocs au début d'une partie ; il part dans un fil
+        //  à part et la mesure reprend quand l'Aide écoute. Sans contexte partagé, seulement les tests d'un bloc seul
+        //  et les juges : sur place, comme avant.)
+        if let Some(p) = self.partage_actuel() {
+            verrou(&self.aide.etat).mesures_echec = Some(Instant::now());
+            p.reveiller_en_fond();
             return false;
         }
         // (un réveil déjà en cours : pas un deuxième schtasks ni une deuxième attente de 20 s)
@@ -490,6 +592,11 @@ impl Contexte {
             });
         }
         let c = self.aide_config();
+        // (lot B : une Aide arrêtée n'a plus de canal ; sans ce coup d'œil, la connexion l'attendait 2 s à chaque
+        //  demande, et `fps.lire` en fait une toutes les 250 ms sur le fil des blocs)
+        if !crate::windows::canal::joignable(&c.canal, 200) {
+            return Err("l'Aide ne répond pas".into());
+        }
         let rep = crate::windows::canal::appeler(
             &c.canal,
             &c.exe,
