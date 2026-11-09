@@ -130,6 +130,8 @@ pub struct BlocTrafic {
     travaux: Travaux,
     /// Les gestes longs par l'Aide (bloquer un programme) : dans un fil à part (audit G3)
     fond: nevermind_noyau::travaux::Travaux<Vec<Effet>>,
+    /// Le programme dont le blocage est en cours (pour dire en clair pourquoi un autre « Oui » est refusé)
+    bloque_en_cours: Option<String>,
     jeux_exes: Vec<String>,
     compteurs_ok: bool,
     aide_tcp_ko: Option<f64>,
@@ -160,6 +162,7 @@ impl Default for BlocTrafic {
             attente: None,
             travaux: Travaux::default(),
             fond: Default::default(),
+            bloque_en_cours: None,
             jeux_exes: Vec::new(),
             compteurs_ok: false,
             aide_tcp_ko: None,
@@ -969,6 +972,11 @@ impl BlocTrafic {
         let (titre, chemin, services) = (a.titre.clone(), a.chemin.clone(), a.services.clone());
         if self.fond.occupe() {
             ctx.journal(&format!("Trafic : blocage de {titre} pas lancé, un geste est encore en cours"));
+            // (dit en clair : le « Oui » n'est pas avalé sans un mot ; lot B)
+            let en_cours = self.bloque_en_cours.clone().unwrap_or_default();
+            effets.ajouter(Effet::Annonce(format!(
+                "« {titre} » n'est pas bloqué : attends la fin du blocage de « {en_cours} », puis réessaie."
+            )));
             return;
         }
         // (une règle du pare-feu : le verrou commun des gestes, sinon le clic est refusé ; lot A du second audit)
@@ -979,8 +987,11 @@ impl BlocTrafic {
                 return;
             }
         };
+        self.bloque_en_cours = Some(titre.clone());
         self.fond.lancer_geste(ctx, "bloquer", geste, move |fond| {
             let ctx = fond.ctx;
+            // (l'attente montrée tout de suite, retirée à la fin du travail ; lot B)
+            fond.effet(nevermind_noyau::signaux::occupe(&format!("Blocage de « {titre} »...")));
             let mut effets = Vec::new();
             let nom = format!("Nevermind : bloque {titre}");
             let svc: Vec<String> = services.iter().map(|s| s.nom.clone()).collect();

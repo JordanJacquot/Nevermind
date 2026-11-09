@@ -55,7 +55,7 @@ struct Etat {
     /// Un geste qui a rendu le verrou le temps du point de restauration (ajustement B) ; `attend` : il veut le reprendre
     suspendus: Vec<(Tenu, bool)>,
     /// Les gestes automatiques qui attendent leur tour (profils de jeux), dans l'ordre
-    file: Vec<u64>,
+    file: Vec<(u64, String, String)>,
     suivant: u64,
 }
 
@@ -68,6 +68,12 @@ impl Etat {
     /// Ce qui empêche un nouveau geste de l'utilisateur de partir : le geste en cours, un geste prioritaire, un geste
     /// qui reprend le verrou après son point de restauration, ou un geste automatique qui attend son tour
     fn refus(&self) -> Option<String> {
+        // (un geste automatique qui attend son tour : son nom, « Profil de jeu » (Jeux), plutôt que « un réglage » ; lot B)
+        self.tenu_par().or_else(|| self.file.first().map(|(_, nom, page)| texte_refus(nom, page)))
+    }
+
+    /// Ce qui tient le verrou (sans la file des gestes automatiques qui attendent leur tour)
+    fn tenu_par(&self) -> Option<String> {
         if let Some(t) = &self.tenu {
             return Some(t.texte());
         }
@@ -109,7 +115,7 @@ impl Verrou {
         }
         e.prioritaires.retain(|t| t.id != id);
         e.suspendus.retain(|(t, _)| t.id != id);
-        e.file.retain(|x| *x != id);
+        e.file.retain(|x| x.0 != id);
         drop(e);
         self.libre.notify_all();
     }
@@ -198,8 +204,7 @@ impl Contexte {
     pub fn prendre_geste(&self, nom: &str, page: &str) -> Result<Geste, String> {
         let v = self.verrou_gestes();
         let mut e = v.etat();
-        if let Some(refus) = e.refus().or_else(|| (!e.file.is_empty()).then(|| texte_refus("un réglage", "en attente")))
-        {
+        if let Some(refus) = e.refus() {
             drop(e);
             self.journal(&format!("Geste « {nom} » ({page}) refusé : {refus}"));
             return Err(refus);
@@ -233,11 +238,11 @@ impl Contexte {
         let fin = Instant::now() + delai;
         let mut e = v.etat();
         let id = e.nouvel_id();
-        e.file.push(id);
+        e.file.push((id, nom.to_string(), page.to_string()));
         loop {
-            let premier = e.file.first() == Some(&id);
-            if premier && e.refus().is_none() {
-                e.file.retain(|x| *x != id);
+            let premier = e.file.first().is_some_and(|x| x.0 == id);
+            if premier && e.tenu_par().is_none() {
+                e.file.retain(|x| x.0 != id);
                 e.tenu = Some(Tenu {
                     id,
                     nom: nom.into(),
@@ -250,7 +255,7 @@ impl Contexte {
             let reste = fin.saturating_duration_since(Instant::now());
             if reste.is_zero() {
                 let refus = e.refus().unwrap_or_default();
-                e.file.retain(|x| *x != id);
+                e.file.retain(|x| x.0 != id);
                 drop(e);
                 v.libre.notify_all();
                 return Err(refus);
@@ -262,7 +267,7 @@ impl Contexte {
     /// Ce que dirait un clic refusé maintenant (`None` : le verrou est libre)
     pub fn refus_geste(&self) -> Option<String> {
         let e = self.verrou_gestes().etat();
-        e.refus().or_else(|| (!e.file.is_empty()).then(|| texte_refus("un réglage", "en attente")))
+        e.refus()
     }
 
     /// Le geste en cours (« « Appliquer » (Ton PC) »), pour l'écran et le journal
@@ -538,6 +543,19 @@ mod tests {
         drop(g);
         assert_eq!(h.join().unwrap(), Ok(("Profil de jeu".to_string(), true)));
         assert!(c.prendre_geste("x", "y").is_ok());
+    }
+
+    /// Lot B (bonus) : un clic refusé parce qu'un profil de jeu attend son tour dit son nom, plus « un réglage »
+    #[test]
+    fn le_refus_nomme_le_geste_qui_attend_son_tour() {
+        let c = ctx("gestes-file-nommee");
+        // (le profil attend son tour pendant que le verrou se libère : l'instant où un clic peut tomber)
+        c.verrou_des_gestes().etat().file.push((99, "Profil de jeu".into(), "Jeux".into()));
+        assert_eq!(c.refus_geste().as_deref(), Some("Attends la fin de « Profil de jeu » (Jeux)"));
+        assert_eq!(c.prendre_geste("DNS", "Réseau").unwrap_err(), "Attends la fin de « Profil de jeu » (Jeux)");
+        c.verrou_des_gestes().rendre(99);
+        assert!(c.refus_geste().is_none());
+        assert!(c.prendre_geste("DNS", "Réseau").is_ok());
     }
 
     #[test]

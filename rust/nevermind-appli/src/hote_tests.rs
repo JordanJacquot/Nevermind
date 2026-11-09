@@ -755,6 +755,10 @@ fn sauvegarde_appliquer_notee_pour_revenir_en_arriere() {
     );
     assert!(o.iter().any(|x| x["texte"] == "1 réglage(s) coupé(s). Annulable depuis la page Sauvegarde, historique."));
     assert!(recus.borrow().iter().any(|r| r == "signal sauvegarde-changee {}"));
+    // Lot B : l'attente est montrée pendant le travail, puis retirée
+    let pastilles: Vec<Value> = o.iter().filter(|x| x["kit"] == "occupe").map(|x| x["texte"].clone()).collect();
+    assert!(pastilles.contains(&json!("« Couper les envois » en cours...")), "pas d'attente montrée : {pastilles:?}");
+    assert_eq!(pastilles.last(), Some(&json!("")), "l'attente reste à l'écran : {pastilles:?}");
 }
 
 /// Audit G3 : `sauvegarde-appliquer` coupe des services par l'Aide (jusqu'à 60 s chacun) : dans un travail de fond.

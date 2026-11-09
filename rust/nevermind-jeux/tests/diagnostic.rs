@@ -60,6 +60,11 @@ struct Essai {
 
 impl Essai {
     fn nouveau(nom: &str) -> Essai {
+        Essai::creer(nom, false)
+    }
+
+    /// `partage` : le contexte partagé, comme dans Nevermind (les travaux de fond sur un fil à part)
+    fn creer(nom: &str, partage: bool) -> Essai {
         let dossier = dossier_essai(nom);
         let _ = std::fs::remove_dir_all(&dossier);
         let donnees = dossier.join("donnees");
@@ -68,11 +73,16 @@ impl Essai {
             "Avg": 42.0, "Low1": 18.0, "Low01": 12.0, "Seconds": 900, "Frames": 37800,
             "Series": [40, 44, 38, 45, 41], "Diag": { "Path": EXE, "Display": ECRAN } }]);
         std::fs::write(donnees.join("fps.json"), partie.to_string()).unwrap();
-        let ctx = Arc::new(Contexte::nouveau(dossier.join("appli"), donnees, false, true));
+        let ctx = Contexte::nouveau(dossier.join("appli"), donnees, false, true);
+        let ctx = if partage { ctx.partage() } else { Arc::new(ctx) };
         let aide = Arc::new(Mutex::new(Vec::new()));
         let a = aide.clone();
         ctx.fausse_aide(Arc::new(move |action: &str, p: &Value| {
             a.lock().unwrap().push((action.to_string(), p.clone()));
+            // (contexte partagé : l'Aide met un instant à répondre, comme en vrai)
+            if partage {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
             Ok(json!(1))
         }));
         let mut b = BlocJeux::avec(Arc::new(SystemeEssai::default()));
@@ -278,4 +288,60 @@ fn chaque_bouton_du_diagnostic_fait_son_geste() {
             assert!(annonces(&e).contains(&format!("{nom} fermé.")), "{:?}", annonces(&e));
         }
     }
+}
+
+/// Lot B du second audit : « Fermer X » une deuxième fois alors que la première fermeture n'est pas encore relevée
+/// (son verrou déjà rendu) : avant, « Fermeture de X... » était montré puis rien n'était fait, sans un mot. Maintenant
+/// le refus est dit, rien ne part ; l'attente de la fermeture est montrée pendant le travail, puis retirée.
+#[test]
+fn fermer_pendant_une_fermeture_le_dit() {
+    let mut s = Essai::creer("jeux-diagnostic-fermer-deux", true);
+    let (d, id, a) = avec_bouton("fermer");
+    let nom = a["arg"].as_str().unwrap().to_string();
+    s.diagnostic(&d);
+    // (les clics passent droit au bloc, sans relevé entre eux : comme deux clics avant le passage suivant de la
+    //  minuterie de l'hôte)
+    let oui = |s: &mut Essai| {
+        let mut e = Effets::default();
+        assert!(s.b.action(&s.ctx, &id, &Value::Null, &mut e));
+        let q = signal(&e.0, "question").expect("pas de question avant de fermer").clone();
+        let mut e = Effets::default();
+        assert!(s.b.action(&s.ctx, "jeux-reponse", &json!({ "id": q["id"], "valeur": "oui" }), &mut e));
+        e.0
+    };
+    let mut tout = oui(&mut s);
+    // (la fausse Aide répond tout de suite : le travail finit, le verrou est rendu, la fin attend son relevé)
+    let fin = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while s.aide.lock().unwrap().is_empty() || s.ctx.refus_geste().is_some() {
+        assert!(std::time::Instant::now() < fin, "la première fermeture ne part pas");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let e = oui(&mut s);
+    assert!(
+        annonces(&e).contains(&format!(
+            "« {nom} » n'est pas fermé : attends la fin de la fermeture de « {nom} », puis réessaie."
+        )),
+        "le deuxième « Fermer » n'est pas dit : {:?}",
+        annonces(&e)
+    );
+    assert!(!annonces(&e).contains(&format!("Fermeture de {nom}...")), "{:?}", annonces(&e));
+    tout.extend(e);
+    assert_eq!(s.aide.lock().unwrap().len(), 1, "une deuxième fermeture est partie");
+    // L'attente : montrée, puis retirée à la fin
+    while !annonces(&tout).contains(&format!("{nom} fermé.")) {
+        assert!(std::time::Instant::now() < fin, "la fin de la fermeture n'est pas relevée");
+        let mut e = Effets::default();
+        s.b.travaux_finis(&s.ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let pastilles: Vec<Value> = tout
+        .iter()
+        .filter_map(|x| match x {
+            Effet::Signal { nom: n, donnees } if n == "occupe" => Some(donnees["texte"].clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pastilles, [json!(format!("Fermeture de {nom}...")), json!("")]);
 }

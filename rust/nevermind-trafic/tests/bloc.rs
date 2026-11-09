@@ -324,8 +324,34 @@ fn bloquer_un_programme_ne_fige_pas() {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert!(b.pages(&ctx, "trafic").contains_key("trafic"), "la page ne répond pas");
-    feu.send(()).unwrap();
+    // Lot B : l'attente est montrée tout de suite ; un deuxième « Oui » pendant le blocage le dit en clair
     let mut tout = Vec::new();
+    while !tout.iter().any(|x| matches!(x, Effet::Signal { nom, donnees } if nom == "occupe" && donnees["texte"].as_str().is_some_and(|t| t.starts_with("Blocage de « ")))) {
+        assert!(Instant::now() < fin, "pas d'attente montrée : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // (« Bloquer » redemandé pendant le blocage : nouvelle question, puis « Oui »)
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "trafic-al:0:2", &Value::Null, &mut e));
+    let q =
+        e.0.iter()
+            .find_map(|x| match x {
+                Effet::Signal { nom, donnees } if nom == "question" => Some(donnees.clone()),
+                _ => None,
+            })
+            .expect("deuxième question");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, q["action"].as_str().unwrap(), &json!({ "id": q["id"], "valeur": "oui" }), &mut e));
+    let refus: Vec<&Effet> = e.0.iter().filter(|x| matches!(x, Effet::Annonce(_))).collect();
+    assert!(
+        matches!(refus.as_slice(), [Effet::Annonce(t)] if t.contains("n'est pas bloqué : attends la fin du blocage de « ")),
+        "le deuxième « Oui » n'est pas dit : {:?}",
+        e.0
+    );
+    feu.send(()).unwrap();
     while !tout.iter().any(|x| matches!(x, Effet::Annonce(_))) {
         assert!(Instant::now() < fin, "le blocage ne finit pas");
         let mut e = Effets::default();
@@ -333,7 +359,14 @@ fn bloquer_un_programme_ne_fige_pas() {
         tout.extend(e.0);
         std::thread::sleep(Duration::from_millis(10));
     }
-    // (la fausse Aide refuse : le message de l'Aide, rien dans l'historique, comme avant)
-    assert_eq!(tout, vec![Effet::Annonce("pas dans ce test".into())]);
+    // (la fausse Aide refuse : le message de l'Aide, rien dans l'historique, comme avant ; l'attente est retirée)
+    let annonces: Vec<&Effet> =
+        tout.iter().filter(|x| !matches!(x, Effet::Signal { nom, .. } if nom == "occupe")).collect();
+    assert_eq!(annonces, vec![&Effet::Annonce("pas dans ce test".into())]);
+    let derniere = tout.iter().rev().find_map(|x| match x {
+        Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees["texte"].clone()),
+        _ => None,
+    });
+    assert_eq!(derniere, Some(json!("")), "l'attente reste à l'écran après la fin");
     assert_eq!(*demandes.lock().unwrap(), ["pare-feu.bloquer"]);
 }

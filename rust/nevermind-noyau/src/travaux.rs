@@ -52,6 +52,8 @@ pub struct Travaux<R> {
     en_cours: Vec<String>,
     /// Les rendus d'un travail fait sur place (sans contexte partagé)
     sur_place: VecDeque<Rendu<R>>,
+    /// Les travaux dont la pastille « en cours » est montrée (retirée à leur fin)
+    pastilles: Vec<String>,
 }
 
 impl<R> std::fmt::Debug for Travaux<R> {
@@ -63,7 +65,7 @@ impl<R> std::fmt::Debug for Travaux<R> {
 impl<R: Send + 'static> Default for Travaux<R> {
     fn default() -> Self {
         let (envoi, reception) = channel();
-        Travaux { envoi, reception, en_cours: Vec::new(), sur_place: VecDeque::new() }
+        Travaux { envoi, reception, en_cours: Vec::new(), sur_place: VecDeque::new(), pastilles: Vec::new() }
     }
 }
 
@@ -185,16 +187,36 @@ impl<R: Send + 'static> Travaux<R> {
     /// Ce que les travaux ont rendu depuis le dernier relevé, dans l'ordre (sur le fil des blocs). Un travail fini
     /// n'est plus « en cours ».
     pub fn relever(&mut self) -> Vec<Rendu<R>> {
-        let mut r: Vec<Rendu<R>> = self.sur_place.drain(..).collect();
+        let mut recus: Vec<Rendu<R>> = self.sur_place.drain(..).collect();
         while let Ok(x) = self.reception.try_recv() {
-            r.push(x);
+            recus.push(x);
         }
-        for x in &r {
-            if let Rendu::Fini { cle, .. } = x
-                && let Some(i) = self.en_cours.iter().position(|c| c == cle)
-            {
-                self.en_cours.remove(i);
+        let mut r = Vec::with_capacity(recus.len());
+        for x in recus {
+            match &x {
+                // (la pastille montrée par un travail est suivie : lot B)
+                Rendu::Effet(Effet::Signal { nom, donnees }) if nom == crate::signaux::OCCUPE => {
+                    let cle = donnees.get("travail").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+                    let texte = donnees.get("texte").and_then(serde_json::Value::as_str).unwrap_or("");
+                    self.pastilles.retain(|c| *c != cle);
+                    if !texte.is_empty() {
+                        self.pastilles.push(cle);
+                    }
+                }
+                Rendu::Fini { cle, .. } => {
+                    if let Some(i) = self.en_cours.iter().position(|c| c == cle) {
+                        self.en_cours.remove(i);
+                    }
+                    // (un travail fini retire toujours sa pastille, même après une panique : elle ne reste jamais à
+                    //  l'écran ; lot B)
+                    if let Some(i) = self.pastilles.iter().position(|c| c == cle) {
+                        self.pastilles.remove(i);
+                        r.push(Rendu::Effet(marquer_pastille(crate::signaux::occupe(""), cle)));
+                    }
+                }
+                _ => {}
             }
+            r.push(x);
         }
         r
     }
@@ -224,8 +246,48 @@ mod tests {
         }));
         let r = t.relever();
         assert!(matches!(&r[0], Rendu::Effet(Effet::Signal { nom, .. }) if nom == "occupe"));
-        assert!(matches!(&r[1], Rendu::Fini { cle, resultat: Ok(7) } if cle == "a"));
+        // (sa pastille est retirée à sa fin, lot B)
+        assert!(
+            matches!(&r[1], Rendu::Effet(Effet::Signal { nom, donnees }) if nom == "occupe" && donnees == &serde_json::json!({ "texte": "", "travail": "a" }))
+        );
+        assert!(matches!(&r[2], Rendu::Fini { cle, resultat: Ok(7) } if cle == "a"));
         assert!(!t.occupe());
+    }
+
+    /// Lot B : un travail qui montre une pastille et panique (ou l'oublie) la voit retirée à sa fin ; un travail qui
+    /// l'a déjà retirée lui-même n'en reçoit pas une deuxième ; un travail sans pastille n'en reçoit aucune.
+    #[test]
+    fn la_pastille_d_un_travail_fini_est_toujours_retiree() {
+        let c = ctx("travaux-pastille").partage();
+        let mut t: Travaux<u32> = Travaux::default();
+        t.lancer(&c, "p", |f| {
+            f.effet(crate::signaux::occupe("Réactivation du pare-feu..."));
+            panic!("boum")
+        });
+        t.lancer(&c, "q", |f| {
+            f.effet(crate::signaux::occupe("Un instant..."));
+            f.effet(crate::signaux::occupe(""));
+            1
+        });
+        t.lancer(&c, "r", |_| 2);
+        let fin = Instant::now() + Duration::from_secs(10);
+        let mut vus = Vec::new();
+        while t.occupe() {
+            assert!(Instant::now() < fin);
+            vus.extend(t.relever());
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let vides = |cle: &str| {
+            vus.iter()
+                .filter(|x| {
+                    matches!(x, Rendu::Effet(Effet::Signal { nom, donnees }) if nom == "occupe"
+                        && donnees["texte"] == "" && donnees["travail"] == cle)
+                })
+                .count()
+        };
+        assert_eq!(vides("p"), 1, "la pastille du travail qui a paniqué reste");
+        assert_eq!(vides("q"), 1);
+        assert_eq!(vides("r"), 0);
     }
 
     #[test]

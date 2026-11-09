@@ -360,10 +360,10 @@ fn les_gestes_par_l_aide_ne_figent_pas() {
         assert!(Instant::now() < fin, "l'Aide n'est pas appelée");
         std::thread::sleep(Duration::from_millis(10));
     }
-    // Un deuxième clic pendant ce temps : rien
+    // Un deuxième clic pendant ce temps : rien ne repart, et c'est dit en clair (lot B ; avant, seulement le journal)
     let mut e = Effets::default();
     assert!(b.action(&ctx, "dns", &json!("1"), &mut e));
-    assert!(e.0.is_empty(), "{:?}", e.0);
+    assert_eq!(e.0, [Effet::Annonce("Attends la fin de « Changer le DNS » (Réseau)".into())]);
     let p = page(&mut b, &ctx, "connexion");
     assert!(p.to_string().contains("Redémarrer la carte réseau"), "la page ne répond pas");
     feu.send(()).unwrap();
@@ -377,6 +377,15 @@ fn les_gestes_par_l_aide_ne_figent_pas() {
     }
     assert!(tout.iter().any(|x| matches!(x, Effet::Signal { nom, .. } if nom == "historique")));
     assert_eq!(*demandes.lock().unwrap(), ["dns.regler"], "le DNS est reparti");
+    // (l'attente du DNS montrée, puis retirée à la fin ; lot B)
+    let pastilles: Vec<Value> = tout
+        .iter()
+        .filter_map(|x| match x {
+            Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees["texte"].clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pastilles, [json!("Changement du DNS..."), json!("")]);
     // La carte : « Redémarrage de la carte réseau... » tout de suite, puis « elle se reconnecte »
     let mut e = Effets::default();
     b.action(&ctx, "carte-relancer", &Value::Null, &mut e);

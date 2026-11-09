@@ -94,6 +94,8 @@ pub struct BlocJeux {
     recherche_en_cours: Option<Resultat<biblio::Decouverte>>,
     /// La recherche des jeux demandée par un geste, et la fenêtre de choix du programme : dans un fil à part
     travaux: Travaux<FinJeux>,
+    /// Le programme dont la fermeture est en cours (pour dire en clair pourquoi une autre est refusée)
+    ferme_en_cours: Option<String>,
     apres_recherche: Vec<ApresRecherche>,
     /// La liste a encore changé pendant une recherche : une autre, ensuite
     relancer_recherche: bool,
@@ -156,6 +158,7 @@ impl BlocJeux {
             index: HashMap::new(),
             recherche_en_cours: None,
             travaux: Travaux::default(),
+            ferme_en_cours: None,
             apres_recherche: Vec::new(),
             relancer_recherche: false,
             filtre: String::new(),
@@ -333,6 +336,18 @@ impl BlocJeux {
             self.message(effets, &format!("{nom} fait partie de la suite Mindset : Nevermind ne le ferme pas."));
             return;
         }
+        // (une fermeture tourne encore, même si son verrou est déjà rendu : dit en clair, rien ne part ; lot B. Avant,
+        //  « Fermeture de B... » était montré puis rien n'était fait)
+        if self.travaux.en_cours(FERMER) {
+            let en_cours = self.ferme_en_cours.clone().unwrap_or_default();
+            self.message(
+                effets,
+                &format!(
+                    "« {nom} » n'est pas fermé : attends la fin de la fermeture de « {en_cours} », puis réessaie."
+                ),
+            );
+            return;
+        }
         // (l'Aide ferme les programmes : le verrou commun des gestes, sinon le clic est refusé ; lot A du second audit)
         let geste = match ctx.prendre_geste(&format!("Fermer {nom}"), "Jeux") {
             Ok(g) => g,
@@ -342,7 +357,10 @@ impl BlocJeux {
             }
         };
         self.statut(effets, &format!("Fermeture de {nom}..."));
+        self.ferme_en_cours = Some(nom.clone());
         self.travaux.lancer_geste(ctx, FERMER, geste, move |f| {
+            // (l'attente montrée pendant que l'Aide ferme, retirée à la fin du travail ; lot B)
+            f.effet(nevermind_noyau::signaux::occupe(&format!("Fermeture de {nom}...")));
             let r = f.ctx.aide("processus.fermer", &json!({ "Nom": nom }), 15000);
             FinJeux::Ferme(nom, r)
         });

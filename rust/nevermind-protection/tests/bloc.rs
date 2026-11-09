@@ -646,3 +646,56 @@ fn les_lectures_de_l_aide_ne_figent_pas_les_tics() {
     assert_eq!(lentes.lock().unwrap()[2], "lecture.securite");
     assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new());
 }
+
+/// Lot B du second audit : pendant « Réactiver le pare-feu » (l'Aide jusqu'à 60 s), l'attente est montrée tout de
+/// suite et retirée à la fin ; un deuxième « Oui » dans la même page le dit en clair (avant : seulement le journal).
+#[test]
+fn pare_feu_attente_montree_et_deuxieme_clic_dit() {
+    let ctx = contexte("pare-feu-attente").partage();
+    let (feu, attente) = std::sync::mpsc::channel::<()>();
+    let attente = std::sync::Mutex::new(Some(attente));
+    ctx.fausse_aide(Arc::new(move |a: &str, _p: &Value| {
+        if !a.starts_with("lecture.")
+            && let Some(r) = attente.lock().unwrap().take()
+        {
+            let _ = r.recv_timeout(Duration::from_secs(60));
+        }
+        Ok(json!("ok"))
+    }));
+    let s = EtatS::depuis(&json!({ "Mp": defender(), "Uac": true, "FirewallOff": ["Public"] })).unwrap();
+    let mut b = BlocProtection::avec_systeme(Some(Arc::new(faux_avec(s))));
+    attendre(&mut b, &ctx);
+    let _ = b.pages(&ctx, "securite");
+    let mut e = Effets::default();
+    b.action(&ctx, "sec:0:0", &Value::Null, &mut e);
+    let q = signal(&e.0, "question").expect("question posée").clone();
+    let oui = json!({ "id": q["id"], "valeur": "oui" });
+    let mut tout = Vec::new();
+    let mut e = Effets::default();
+    b.action(&ctx, "sec:0:0", &oui, &mut e);
+    tout.extend(e.0);
+    let fin = Instant::now() + Duration::from_secs(10);
+    while !tout.iter().any(|x| matches!(x, Effet::Signal { nom, donnees } if nom == "occupe" && donnees["texte"] == "Réactivation du pare-feu...")) {
+        assert!(Instant::now() < fin, "pas d'attente montrée : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let mut e = Effets::default();
+    b.action(&ctx, "sec:0:0", &oui, &mut e);
+    assert_eq!(annonces(&e.0), ["Attends la fin de « Réactiver le pare-feu » (Protection)"]);
+    feu.send(()).unwrap();
+    while signal(&tout, "historique").is_none() {
+        assert!(Instant::now() < fin, "le pare-feu ne finit pas : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let derniere = tout.iter().rev().find_map(|x| match x {
+        Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees["texte"].clone()),
+        _ => None,
+    });
+    assert_eq!(derniere, Some(json!("")), "l'attente reste à l'écran après la fin");
+}

@@ -85,6 +85,25 @@ const TRAVAIL: &str = "pc";
 /// La page, dans « Attends la fin de « Appliquer » (Ton PC) »
 const PAGE: &str = "Ton PC";
 
+/// Le nom d'un geste de la page qui ne prend pas le verrou des gestes, dans « Attends la fin de ... »
+fn nom_sans_verrou(id: &str) -> &str {
+    match id {
+        "analyser" | "clic:BtnCleanScan" => "Analyser",
+        "fiche:close" | "retour" => "Fermer la fiche",
+        "fiche:ignore" => "Ignorer",
+        autre => autre,
+    }
+}
+
+/// Le texte d'attente d'un geste long qui n'en montre pas d'autre (lot B : « Analyser » du Nettoyage passe par l'Aide,
+/// jusqu'à 2 min par catégorie)
+fn attente_du_geste(id: &str) -> Option<&'static str> {
+    match id {
+        "clic:BtnCleanScan" => Some("Recherche des fichiers à nettoyer..."),
+        _ => None,
+    }
+}
+
 /// Ce qu'un geste de la page fait du verrou commun des gestes (lot A du second audit)
 enum Verrou {
     /// Rien ne change sur le PC (analyse, lecture des dossiers, ignorer un point)
@@ -123,6 +142,8 @@ pub struct BlocPc {
     /// Les gestes longs sur la session (point de restauration, corrections, nettoyage, analyse) : dans un fil à
     /// part (audit G3), un à la fois
     travaux: Travaux<Atelier>,
+    /// Le nom du geste long en cours (`None` : la fin de la lecture), pour dire en clair pourquoi un clic est refusé
+    travail_nom: Option<String>,
     suite: Option<Suite>,
     /// Les demandes des autres blocs arrivées pendant un geste long : faites après, dans l'ordre
     signaux_en_attente: Vec<(String, Value)>,
@@ -155,6 +176,14 @@ impl BlocPc {
     pub fn faux_pc(&mut self) -> Option<&mut (dyn Pc + Send + 'static)> {
         let m = Arc::get_mut(self.essai.as_mut()?)?;
         Some(m.get_mut().unwrap_or_else(|e| e.into_inner()).as_mut())
+    }
+
+    /// Ce que dit un clic refusé parce qu'un geste de la page tourne encore (lot B)
+    fn refus_occupe(&self) -> String {
+        match &self.travail_nom {
+            Some(n) => nevermind_noyau::gestes::texte_refus(n, PAGE),
+            None => "Un instant : Nevermind finit de lire ton PC. Réessaie dans quelques secondes.".into(),
+        }
     }
 
     /// Un geste long est en cours (tests)
@@ -232,6 +261,12 @@ impl BlocPc {
             ctx.journal(&format!("Ton PC : {quoi} pas lancé, un geste est encore en cours"));
             return Ok(false);
         }
+        let nom = match (&suite, &verrou) {
+            (Suite::Lecture, _) => None,
+            (_, Verrou::Clic(n) | Verrou::Priorite(n) | Verrou::Tour(n, _)) => Some(n.clone()),
+            (_, Verrou::Aucun) => Some(nom_sans_verrou(quoi).to_string()),
+        };
+        let attente = attente_du_geste(quoi);
         let (geste, tour) = match verrou {
             Verrou::Aucun => (None, None),
             Verrou::Clic(nom) => (Some(ctx.prendre_geste(&nom, PAGE)?), None),
@@ -241,8 +276,13 @@ impl BlocPc {
         let mut at =
             Atelier { session: self.session.clone(), cases: self.cases.clone(), annonces: Vec::new(), relu: false };
         let essai = self.essai.clone();
+        self.travail_nom = nom;
         self.suite = Some(suite);
         Ok(self.travaux.lancer(ctx, TRAVAIL, move |fond| {
+            // (l'attente d'un geste qui n'en montre pas d'autre, retirée à la fin du travail ; lot B)
+            if let Some(t) = attente {
+                fond.effet(nevermind_noyau::signaux::occupe(t));
+            }
             // (le geste emporté par le travail : il rend le verrou à la fin, même après une panique)
             if let Some(g) = &geste {
                 g.ici();
@@ -596,7 +636,9 @@ impl BlocPc {
     ) -> Fait {
         let verrou = self.verrou_du_geste(id);
         match self.en_fond(ctx, id, Suite::Geste { avant }, true, verrou, f) {
-            Ok(_) => Fait::Fond,
+            Ok(true) => Fait::Fond,
+            // (un geste de la page tourne encore : dit en clair, rien ne part ; lot B)
+            Ok(false) => Fait::Sur(vec![Effet::Annonce(self.refus_occupe())]),
             // (un autre geste tient le verrou : le clic est refusé, et rien ne part plus tard)
             Err(refus) => Fait::Sur(vec![Effet::Annonce(refus)]),
         }
@@ -730,6 +772,9 @@ impl Bloc for BlocPc {
         //  refait rien ; la page montre l'attente)
         if self.travaux.occupe() && self.est_a_moi(id) {
             ctx.journal(&format!("Ton PC : geste {id} pas fait, un geste est encore en cours"));
+            // (dit en clair, et la page redessinée : une bascule revient à sa place avec une explication ; lot B)
+            effets.ajouter(Effet::Annonce(self.refus_occupe()));
+            effets.ajouter(Effet::Rafraichir);
             return true;
         }
         let avant = self.session.fiche.is_some();

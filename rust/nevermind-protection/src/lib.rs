@@ -78,6 +78,8 @@ pub struct BlocProtection {
     sys: Option<Arc<dyn Systeme>>,
     /// Les gestes longs des points à vérifier (Defender, l'Aide) : dans un fil à part (audit G3)
     travaux: Travaux<FinGeste>,
+    /// Le nom du geste long en cours (le dernier lancé), pour dire en clair pourquoi un autre clic est refusé
+    geste_nom: Option<&'static str>,
     /// La fenêtre « Choisis le dossier à analyser » : elle attend l'utilisateur sans limite, dans un fil à part
     /// (lot B du second audit, comme `CHOIX` du bloc Jeux) ; elle rend le dossier choisi, ou rien
     choix: Travaux<Option<String>>,
@@ -182,6 +184,7 @@ impl BlocProtection {
             maj_base: None,
             occupe_texte: None,
             travaux: Travaux::default(),
+            geste_nom: None,
             choix: Travaux::default(),
             marque: None,
             panneau: None,
@@ -426,6 +429,9 @@ impl BlocProtection {
         ) {
             if self.travaux.occupe() {
                 ctx.journal(&format!("Sécurité : {titre} pas lancé, un geste est encore en cours"));
+                // (dit en clair : le clic n'est pas avalé sans un mot ; lot B)
+                let nom = self.geste_nom.unwrap_or("un geste de la sécurité");
+                effets.ajouter(Effet::Annonce(nevermind_noyau::gestes::texte_refus(nom, PAGE)));
                 return;
             }
             // (un geste qui change le PC : le verrou commun des gestes, sinon le clic est refusé ; lot A du second audit)
@@ -437,7 +443,10 @@ impl BlocProtection {
                 }
             };
             let sorte = a.sorte.clone();
+            self.geste_nom = Some(nom_geste(&sorte));
             self.travaux.lancer_geste(ctx, GESTE, geste, move |fond| {
+                // (l'attente montrée tout de suite, retirée à la fin du travail ; lot B)
+                fond.effet(nevermind_noyau::signaux::occupe(attente_geste(&sorte)));
                 let (definitif, erreur, annonces) = geste_long(fond.ctx, sys.as_deref(), &sorte);
                 FinGeste { titre, definitif, erreur, annonces, rafraichir }
             });
@@ -965,6 +974,17 @@ fn nom_geste(s: &Sorte) -> &'static str {
         Sorte::ReactiverPareFeu => "Réactiver le pare-feu",
         Sorte::DesactiverTaches(_) => "Désactiver les tâches",
         _ => "Un réglage de la sécurité",
+    }
+}
+
+/// Le texte d'attente d'un geste long, montré pendant qu'il tourne (lot B)
+fn attente_geste(s: &Sorte) -> &'static str {
+    match s {
+        Sorte::SupprimerMenaces => "Suppression des menaces...",
+        Sorte::RetirerExclusions(_) => "Retrait des exclusions...",
+        Sorte::ReactiverPareFeu => "Réactivation du pare-feu...",
+        Sorte::DesactiverTaches(_) => "Désactivation des tâches...",
+        _ => "Un instant...",
     }
 }
 

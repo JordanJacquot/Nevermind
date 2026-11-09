@@ -115,6 +115,8 @@ pub struct BlocReseau {
     signal_connexion: Option<Value>,
     /// Les gestes par l'Aide (SMBv1 jusqu'à 15 min, DNS, carte, pare-feu...) : dans un fil à part (audit G3)
     travaux: Travaux<FinGeste>,
+    /// Le nom du geste en cours (le dernier lancé), pour dire en clair pourquoi un autre clic est refusé (lot B)
+    geste_nom: Option<String>,
 }
 
 impl Default for BlocReseau {
@@ -177,6 +179,7 @@ impl BlocReseau {
             occupe: String::new(),
             signal_connexion: None,
             travaux: Travaux::default(),
+            geste_nom: None,
         }
     }
 
@@ -217,6 +220,12 @@ impl BlocReseau {
             self.net_lu = true;
             self.net = self.sonde.connexion();
         }
+    }
+
+    /// Un clic refusé parce qu'un geste de la page tourne encore : dit en clair (lot B ; avant, seulement le journal)
+    fn refus_occupe(&self, effets: &mut Effets) {
+        let nom = self.geste_nom.as_deref().unwrap_or("un geste du réseau");
+        effets.ajouter(Effet::Annonce(nevermind_noyau::gestes::texte_refus(nom, PAGE)));
     }
 
     fn occuper(&mut self, effets: &mut Effets, texte: &str) {
@@ -451,6 +460,7 @@ impl BlocReseau {
     fn geste_audit_fond(&mut self, ctx: &Contexte, effets: &mut Effets, act: crate::audit::ActionAudit, titre: String) {
         if self.travaux.occupe() {
             ctx.journal(&format!("Réseau : {} pas lancé, un geste est encore en cours", act.label));
+            self.refus_occupe(effets);
             return;
         }
         // (un geste qui change le PC : le verrou commun des gestes, sinon le clic est refusé ; lot A du second audit)
@@ -473,8 +483,14 @@ impl BlocReseau {
             self.occuper(effets, "Désactivation de SMBv1...");
         }
         let sonde = self.sonde.clone();
+        self.geste_nom = Some(nom.to_string());
+        let attente = (act.geste != Geste::Smb1).then(|| format!("« {nom} » en cours..."));
         self.travaux.lancer_geste(ctx, GESTE, geste, move |fond| {
             let ctx = fond.ctx;
+            // (l'attente des autres gestes, retirée à la fin du travail ; SMBv1 a la sienne ; lot B)
+            if let Some(t) = &attente {
+                fond.effet(nevermind_noyau::signaux::occupe(t));
+            }
             let mut log: Vec<Value> = Vec::new();
             // (Add-ChangementDefinitif : Type, Quoi, Retour ; le titre sert seulement hors d'une action. Jusqu'au
             //  08/11, « Detail » au lieu de « Quoi » : l'historique montrait « (définitif) » sans rien devant)
@@ -653,6 +669,7 @@ impl BlocReseau {
         // (par l'Aide : dans un travail de fond, audit G3 ; un autre geste en cours : rien n'est lancé)
         if self.travaux.occupe() {
             ctx.journal("Réseau : DNS pas changé, un geste est encore en cours");
+            self.refus_occupe(effets);
             return;
         }
         let geste = match ctx.prendre_geste("Changer le DNS", PAGE) {
@@ -683,7 +700,10 @@ impl BlocReseau {
         let log = json!([{ "Type": "dns", "IfIndex": net.if_index, "Guid": net.guid,
             "Servers": avant.split([',', ' ', '\t']).filter(|x| !x.is_empty()).collect::<Vec<_>>(), "Nouveau": serveurs }]);
         let sonde = self.sonde.clone();
+        self.geste_nom = Some("Changer le DNS".into());
         self.travaux.lancer_geste(ctx, GESTE, geste, move |fond| {
+            // (l'attente, retirée à la fin du travail ; lot B)
+            fond.effet(nevermind_noyau::signaux::occupe("Changement du DNS..."));
             let r = fond
                 .ctx
                 .aide("dns.regler", &json!({ "Index": net.if_index, "Serveurs": serveurs }), 30_000)
@@ -724,6 +744,7 @@ impl BlocReseau {
         // (par l'Aide, jusqu'à 60 s : dans un travail de fond, audit G3)
         if self.travaux.occupe() {
             ctx.journal("Réseau : carte pas redémarrée, un geste est encore en cours");
+            self.refus_occupe(effets);
             return;
         }
         let geste = match ctx.prendre_geste("Redémarrer la carte réseau", PAGE) {
@@ -733,6 +754,7 @@ impl BlocReseau {
                 return;
             }
         };
+        self.geste_nom = Some("Redémarrer la carte réseau".into());
         self.occuper(effets, "Redémarrage de la carte réseau...");
         ctx.journal(&format!("Carte réseau : redémarrage de {} (à {})", net.desc, format_vitesse(net.bps)));
         let idx = net.if_index;

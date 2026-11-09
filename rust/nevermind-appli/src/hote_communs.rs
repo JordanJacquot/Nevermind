@@ -13,6 +13,7 @@
 //!   qui garde l'historique de tous les blocs), puis le signal `sauvegarde-changee` aux blocs (`Update-HistoryList`) ;
 //! - `sauvegarde-changee` : l'écran refait, et le signal passé aux autres blocs (hote.rs).
 
+use nevermind_noyau::Effet;
 use nevermind_noyau::travaux::Rendu;
 use serde_json::{Value, json};
 
@@ -200,6 +201,8 @@ impl Hote {
         let (d, etat_service, ctx) = (d.clone(), self.etat_service.clone(), self.ctx.clone());
         self.travaux.lancer_geste(&ctx, "sauvegarde-appliquer", geste, move |fond| {
             let ctx = fond.ctx;
+            // (l'attente montrée tout de suite, retirée à la fin du travail ; lot B : l'Aide peut mettre 2 min par écriture)
+            fond.effet(nevermind_noyau::signaux::occupe(&format!("« {nom} » en cours...")));
             ctx.commencer_changements();
             let mut erreurs = Vec::new();
             for e in d.get("Ecritures").and_then(Value::as_array).cloned().unwrap_or_default() {
@@ -246,6 +249,8 @@ impl Hote {
     pub(super) fn relever_hote(&mut self, ecran: &mut dyn Ecran) {
         for r in self.travaux.relever() {
             match r {
+                // (la pastille « en cours » du travail ; lot B)
+                Rendu::Effet(Effet::Signal { nom, donnees }) if nom == "occupe" => self.pastille(None, &donnees, ecran),
                 Rendu::Effet(_) => {}
                 Rendu::Fini { resultat: Ok(a), .. } => self.fin_sauvegarde(a, ecran),
                 // (le journal du geste est parti avec lui : rien à refermer ici)

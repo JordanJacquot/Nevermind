@@ -800,7 +800,8 @@ fn tout_corriger_ne_fige_pas_pendant_le_point_de_restauration() {
         if partage {
             assert!(duree < Duration::from_secs(2), "« Exécuter » a pris {duree:?} : le fil des blocs était figé");
             assert!(b.travail_en_cours(), "le geste n'est pas parti en fond");
-            // Pendant le point de restauration : les pages répondent, un deuxième clic ne refait rien
+            // Pendant le point de restauration : les pages répondent, un deuxième clic ne refait rien et le dit (lot B ;
+            // avant, il était avalé sans un mot)
             let fin = Instant::now() + Duration::from_secs(10);
             while restaurations.load(std::sync::atomic::Ordering::SeqCst) == 0 {
                 assert!(Instant::now() < fin, "le point de restauration n'est pas demandé");
@@ -811,7 +812,11 @@ fn tout_corriger_ne_fige_pas_pendant_le_point_de_restauration() {
             assert!(p.contains_key("fiche") && debut.elapsed() < Duration::from_secs(1), "la page ne répond pas");
             let mut e = Effets::default();
             assert!(b.action(&ctx, "fiche:run", &Value::Null, &mut e), "le deuxième clic est pris (sans rien faire)");
-            assert!(e.0.is_empty(), "le deuxième clic a fait quelque chose : {:?}", e.0);
+            assert_eq!(
+                e.0,
+                [Effet::Annonce("Attends la fin de « Tout corriger » (Ton PC)".into()), Effet::Rafraichir],
+                "le deuxième clic n'est pas dit en clair"
+            );
             feu.send(()).unwrap();
             while b.travail_en_cours() {
                 assert!(Instant::now() < fin, "le geste ne finit pas");
@@ -1197,4 +1202,42 @@ fn pilote_nvidia_ancien_alors_que_recent() {
     assert_eq!(titres(Some(true)), attendu);
     // Réglage coupé : seulement l'âge du pilote (moins de 6 mois : à jour), comme la version PowerShell
     assert_eq!(titres(Some(false)), vec!["Pilote graphique à jour (NVIDIA GeForce RTX 4080)".to_string()]);
+}
+
+/// Lot B du second audit : « Analyser » du Nettoyage passe par l'Aide (jusqu'à 2 min par catégorie) dans un travail de
+/// fond ; son attente est montrée pendant le travail, puis retirée (avant : aucun texte d'attente).
+#[test]
+fn analyser_le_nettoyage_montre_son_attente() {
+    use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
+    use std::time::{Duration, Instant};
+    let cas = lire("corrections.json");
+    let (pc, s, _) = charger(&cas[0]["entree"]);
+    let lu = nevermind_pc::lecture::Lu { entrees: s.entrees.clone(), demarrage: s.demarrage.clone() };
+    let mut b = nevermind_pc::BlocPc::sur(Box::new(pc), lu);
+    let d = nevermind_noyau::dossier_essai("pc-nettoyage-attente");
+    let _ = std::fs::remove_dir_all(&d);
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true).partage();
+    let _ = b.pages(&ctx, "pc");
+    let mut tout = Vec::new();
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnCleanScan", &Value::Null, &mut e));
+    tout.extend(e.0);
+    let fin = Instant::now() + Duration::from_secs(10);
+    while b.travail_en_cours() {
+        assert!(Instant::now() < fin, "l'analyse du nettoyage ne finit pas");
+        std::thread::sleep(Duration::from_millis(10));
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+    }
+    let pastilles: Vec<Value> = tout
+        .iter()
+        .filter_map(|x| match x {
+            Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees["texte"].clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pastilles.first(), Some(&json!("Recherche des fichiers à nettoyer...")), "{pastilles:?}");
+    assert_eq!(pastilles.last(), Some(&json!("")), "l'attente reste à l'écran : {pastilles:?}");
+    let _ = std::fs::remove_dir_all(&d);
 }
