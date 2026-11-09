@@ -227,8 +227,9 @@ pub trait Pc {
         None
     }
     /// « Tout restaurer » : les entrées de l'historique entièrement remises sont marquées annulées
-    /// (`Set-HistoryAllUndone`).
-    fn historique_tout_annule(&mut self, _sauvegarde: &crate::corrections::Sauvegarde) {}
+    /// (`Set-HistoryAllUndone`). `pare_feu_echoue` : le déblocage des règles du pare-feu a échoué, les
+    /// lignes « pare-feu » restent à annuler (lot A).
+    fn historique_tout_annule(&mut self, _sauvegarde: &crate::corrections::Sauvegarde, _pare_feu_echoue: bool) {}
     /// Les changements définitifs notés dans l'historique (« Tout restaurer » ne les annule pas)
     fn definitifs(&mut self) -> Vec<String> {
         Vec::new()

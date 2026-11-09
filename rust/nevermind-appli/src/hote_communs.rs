@@ -130,10 +130,6 @@ impl Hote {
     /// Un signal commun d'un bloc, exécuté ici. `true` : l'écran est à refaire.
     pub(super) fn signal_commun(&mut self, nom: &str, d: &Value, ecran: &mut dyn Ecran) -> bool {
         match nom {
-            "occupe" => {
-                self.ordre(json!({ "kit": "occupe", "texte": texte(d, "texte") }), ecran);
-                false
-            }
             "question" => {
                 self.poser_question(d, ecran);
                 false

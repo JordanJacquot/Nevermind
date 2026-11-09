@@ -251,12 +251,17 @@ impl BlocPc {
             let _tour = match tour {
                 None => None,
                 Some((nom, page)) => {
-                    if let Some((n, p)) = fond.ctx.geste_en_cours() {
+                    let attente = fond.ctx.geste_en_cours();
+                    if let Some((n, p)) = &attente {
                         fond.effet(nevermind_noyau::signaux::occupe(&format!(
                             "« {nom} » se fera juste après « {n} » ({p})..."
                         )));
                     }
-                    match fond.ctx.attendre_geste(&nom, &page, nevermind_noyau::gestes::ATTENTE_REPRISE) {
+                    let r = fond.ctx.attendre_geste(&nom, &page, nevermind_noyau::gestes::ATTENTE_REPRISE);
+                    if attente.is_some() {
+                        fond.effet(nevermind_noyau::signaux::occupe(""));
+                    }
+                    match r {
                         Ok(g) => Some(g),
                         Err(e) => {
                             at.annonces.push(Effet::Annonce(format!("« {nom} » n'a pas été fait. {e}.")));
@@ -322,6 +327,12 @@ impl BlocPc {
                     }
                     effets.ajouter(Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": "" }) });
                     effets.ajouter(Effet::Annonce(session::message_erreur(&e)));
+                    // (lot A : ce que le geste avait déjà noté avant l'erreur est dans sauvegarde.json ; la copie
+                    //  d'avant le geste n'est pas gardée, la sauvegarde est relue et les autres blocs le savent)
+                    if matches!(suite, Some(Suite::Geste { .. })) {
+                        self.session.sv = systeme::lire_sauvegarde(ctx);
+                        effets.ajouter(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
+                    }
                 }
             }
             if std::mem::take(&mut self.sv_a_relire) && self.session.attente.is_none() {

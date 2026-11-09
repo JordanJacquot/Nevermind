@@ -519,3 +519,28 @@ fn la_fermeture_remet_le_mode_jeu_et_rend_le_verrou() {
     let n = es.hote.ctx.prendre_geste("Nouveau geste", "Essai");
     assert!(n.is_ok(), "après la fermeture, un nouveau geste ne passe pas : {n:?}");
 }
+
+/// Petit du lot A : à la fermeture, ce qu'un travail a fini mais que personne n'a encore relevé est relevé avant de
+/// fermer (avant, la ligne d'historique de « Couper ce qui est sûr », écrite à la relève, était perdue : plus de
+/// « Annuler » pour ce geste).
+#[test]
+fn la_fermeture_releve_les_travaux_finis() {
+    let mut es = Essai::nouveau("fermeture-releve");
+    es.ram_tient_le_verrou();
+    let _ = std::fs::remove_file(es.hote.ctx.donnees.join("historique.json"));
+    // L'Aide répond, le travail finit ; Nevermind se ferme avant le passage suivant de la minuterie
+    let _ = es.feu.take().unwrap().send(());
+    let fin = Instant::now() + Duration::from_secs(10);
+    while es.hote.ctx.refus_geste().is_some() {
+        assert!(Instant::now() < fin, "le travail ne finit pas");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(es.hote.ctx.historique().is_empty(), "déjà relevé : l'essai ne prouve rien");
+    es.hote.fermer();
+    let h = es.hote.ctx.historique();
+    assert!(
+        h.iter().any(|x| x["Log"].as_array().is_some_and(|l| l.iter().any(|e| e["Type"] == "svc"))),
+        "la ligne d'historique du travail fini est perdue à la fermeture : {h:?}"
+    );
+}

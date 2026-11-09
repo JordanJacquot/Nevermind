@@ -267,6 +267,9 @@ pub struct Hote {
     mindset_ecrit: String,
     /// Les travaux de fond de l'hôte (`sauvegarde-appliquer`, audit G3)
     travaux: nevermind_noyau::travaux::Travaux<communs::Appliquee>,
+    /// Les pastilles « en cours » de chaque travail (« bloc/clé du travail », texte), la plus récente en dernier : la
+    /// page montre la plus récente, et plus rien quand aucun ne tourne (lot A)
+    occupes: Vec<(String, String)>,
 }
 
 #[path = "hote_communs.rs"]
@@ -396,6 +399,7 @@ impl Hote {
             notifications: Vec::new(),
             etat_service: std::sync::Arc::new(|_| None),
             travaux: Default::default(),
+            occupes: Vec::new(),
             mindset: Map::new(),
             mindset_ecrit: String::new(),
         }
@@ -772,13 +776,12 @@ impl Hote {
                             self.k.partie = false;
                             self.demandes.push(Demande::Partie(false));
                         }
-                        "question"
-                        | "occupe"
-                        | "resultat"
-                        | "historique"
-                        | "sauvegarde-appliquer"
-                        | "notification"
-                        | "bulle" => {
+                        // (une pastille par travail : celle d'un bloc ne s'efface pas quand un autre finit ; lot A)
+                        "occupe" => {
+                            self.pastille(source, &donnees, ecran);
+                            continue;
+                        }
+                        "question" | "resultat" | "historique" | "sauvegarde-appliquer" | "notification" | "bulle" => {
                             refaire |= self.signal_commun(&nom, &donnees, ecran);
                             continue;
                         }
@@ -810,6 +813,26 @@ impl Hote {
             }
         }
         refaire
+    }
+
+    /// La pastille « en cours » (signal `occupe` {texte, travail?}) : une par travail (le bloc qui l'envoie, et la clé
+    /// du travail de fond quand il vient d'un travail). Un texte vide retire celle de ce travail (sans clé : toutes
+    /// celles du bloc) ; la page montre la plus récente encore là, ou plus rien (lot A, petit du travail de fond).
+    fn pastille(&mut self, source: Option<usize>, d: &Value, ecran: &mut dyn Ecran) {
+        let bloc = source.map_or_else(|| "hote".to_string(), |i| i.to_string());
+        let travail = d.get("travail").and_then(Value::as_str).unwrap_or("");
+        let cle = format!("{bloc}/{travail}");
+        let t = d.get("texte").and_then(Value::as_str).unwrap_or("").to_string();
+        if t.is_empty() && travail.is_empty() {
+            self.occupes.retain(|(k, _)| !k.starts_with(&format!("{bloc}/")));
+        } else {
+            self.occupes.retain(|(k, _)| *k != cle);
+        }
+        if !t.is_empty() {
+            self.occupes.push((cle, t));
+        }
+        let montre = self.occupes.last().map(|(_, t)| t.clone()).unwrap_or_default();
+        self.ordre(json!({ "kit": "occupe", "texte": montre }), ecran);
     }
 
     /// Un signal donné à tous les blocs sauf celui qui l'envoie.
@@ -1197,6 +1220,21 @@ impl Hote {
     /// en état de fin de partie passe en priorité, même si un geste tient encore le verrou ; puis le verrou des gestes
     /// est rendu (lot A, ajustement C) : un geste coupé par la fermeture ne bloque rien.
     pub fn fermer(&mut self) {
+        // (ce qu'un travail a fini mais que la minuterie n'a pas encore relevé : relevé avant de fermer, ses lignes
+        //  d'historique comprises, sinon plus de « Annuler » pour ce geste ; lot A. La page est déjà cachée : plus
+        //  rien ne lui est envoyé)
+        self.k.pret = false;
+        let mut sans = SansEcran;
+        self.relever_hote(&mut sans);
+        for i in 0..self.blocs.len() {
+            let mut eff = Effets::default();
+            let (b, ctx) = (&mut self.blocs[i], &self.ctx);
+            let n = b.nom();
+            if let Err(e) = protege(|| b.travaux_finis(ctx, &mut eff)) {
+                self.ctx.journal(&format!("Fermeture, travail de fond de {n} : {e}"));
+            }
+            let _ = self.appliquer(Some(i), eff, Duration::ZERO, &mut sans, 0);
+        }
         for i in 0..self.blocs.len() {
             let (b, ctx) = (&mut self.blocs[i], &self.ctx);
             let n = b.nom();

@@ -67,6 +67,20 @@ impl<R: Send + 'static> Default for Travaux<R> {
     }
 }
 
+/// La pastille « en cours » d'un travail porte sa clé (`travail`) : l'hôte en garde une par travail, la fin d'un
+/// travail n'efface plus celle d'un autre qui tourne encore (lot A)
+fn marquer_pastille(e: Effet, cle: &str) -> Effet {
+    match e {
+        Effet::Signal { nom, mut donnees } if nom == crate::signaux::OCCUPE => {
+            if let Some(m) = donnees.as_object_mut() {
+                m.insert("travail".into(), serde_json::Value::String(cle.to_string()));
+            }
+            Effet::Signal { nom, donnees }
+        }
+        autre => autre,
+    }
+}
+
 /// Le texte d'une panique, comme le message d'une exception
 pub fn texte_panique(p: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = p.downcast_ref::<&str>() {
@@ -114,8 +128,9 @@ impl<R: Send + 'static> Travaux<R> {
             let envoi_effet = {
                 let envoi = envoi.clone();
                 let ctx = partage.clone();
+                let c = c.clone();
                 move |e: Effet| {
-                    let _ = envoi.send(Rendu::Effet(e));
+                    let _ = envoi.send(Rendu::Effet(marquer_pastille(e, &c)));
                     ctx.travail_a_relever();
                 }
             };
@@ -157,7 +172,7 @@ impl<R: Send + 'static> Travaux<R> {
         F: FnOnce(&Fond) -> R,
     {
         let effets = RefCell::new(Vec::new());
-        let envoi = |e: Effet| effets.borrow_mut().push(e);
+        let envoi = |e: Effet| effets.borrow_mut().push(marquer_pastille(e, cle));
         let fond = Fond { ctx, envoi: &envoi };
         let resultat = catch_unwind(AssertUnwindSafe(|| travail(&fond))).map_err(|p| texte_panique(p.as_ref()));
         if let Err(e) = &resultat {

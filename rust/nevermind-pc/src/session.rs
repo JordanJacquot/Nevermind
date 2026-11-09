@@ -579,7 +579,9 @@ impl Session {
                 let mut m = self.moteur(pc);
                 corrections::tout_restaurer(&mut m)
             };
-            pc.historique_tout_annule(&self.sv);
+            // (les lignes « pare-feu » ne sont marquées annulées que si le déblocage a réussi ; lot A)
+            let pare_feu_echoue = erreurs.iter().any(|e| e.starts_with("Pare-feu:"));
+            pc.historique_tout_annule(&self.sv, pare_feu_echoue);
             if erreurs.is_empty() {
                 pc.message(
                     "Les réglages ont été remis comme avant. Redémarre le PC pour que tout soit pris en compte.",

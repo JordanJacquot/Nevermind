@@ -614,6 +614,40 @@ fn pastille_occupe() {
     assert_eq!(p.borrow().ordres.last(), Some(&json!({ "kit": "occupe", "texte": "Analyse..." })));
 }
 
+/// Petit du lot A : une pastille « en cours » par travail, et non une seule. Le point de restauration de Ton PC tourne
+/// encore quand « Couper ce qui est sûr » (page RAM) finit : la pastille reste, avec le texte de ce qui tourne encore ;
+/// elle ne disparaît que quand plus rien ne tourne. Avant : la fin de la RAM l'effaçait (l'utilisateur croyait que
+/// c'était fini et pouvait quitter).
+#[test]
+fn une_pastille_par_travail() {
+    let pc = Factice { prend: vec!["pc".into()], ..Factice::default() };
+    let ram = Factice { prend: vec!["ram".into()], ..Factice::default() };
+    let (e_pc, e_ram) = (pc.effets.clone(), ram.effets.clone());
+    let mut h = hote(vec![Box::new(pc), Box::new(ram)], "pastilles");
+    let p = Rc::new(RefCell::new(Page::default()));
+    let mut e = EcranEssai(Rc::clone(&p));
+    h.recevoir(MessagePage::Pret, Duration::ZERO, &mut e);
+    let occupe = |t: &str| json!({ "kit": "occupe", "texte": t });
+    let derniere = |p: &Rc<RefCell<Page>>| p.borrow().ordres.iter().rev().find(|o| o["kit"] == "occupe").cloned();
+    // (le texte d'un travail de fond porte sa clé, comme ceux que rend `Travaux`)
+    let restauration = "Création du point de restauration (ça peut prendre une minute)...";
+    e_pc.borrow_mut().push(signal("occupe", json!({ "texte": restauration, "travail": "pc" })));
+    h.recevoir(action("pc", "optimisation"), Duration::ZERO, &mut e);
+    e_ram.borrow_mut().push(signal("occupe", json!({ "texte": "Un instant..." })));
+    h.recevoir(action("ram", "memoire"), Duration::ZERO, &mut e);
+    assert_eq!(derniere(&p), Some(occupe("Un instant...")), "le plus récent est montré");
+    e_ram.borrow_mut().push(signal("occupe", json!({ "texte": "" })));
+    h.recevoir(action("ram", "memoire"), Duration::ZERO, &mut e);
+    assert_eq!(
+        derniere(&p),
+        Some(occupe(restauration)),
+        "la fin de la RAM a effacé la pastille du point de restauration"
+    );
+    e_pc.borrow_mut().push(signal("occupe", json!({ "texte": "" })));
+    h.recevoir(action("pc", "optimisation"), Duration::ZERO, &mut e);
+    assert_eq!(derniere(&p), Some(occupe("")), "plus rien ne tourne : la pastille s'en va");
+}
+
 #[test]
 fn fiche_de_resultat_et_historique() {
     let b = Factice { prend: vec!["x".into(), "fiche:annuler".into()], ..Factice::default() };

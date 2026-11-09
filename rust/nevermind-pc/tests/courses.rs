@@ -193,11 +193,10 @@ fn un_profil_de_jeu_attend_son_tour_sans_etre_refuse() {
     assert!(!e.0.iter().any(|x| matches!(x, Effet::Annonce(_))), "le profil a été refusé : {:?}", e.0);
     let mut tout = e.0;
     let fin = Instant::now() + Duration::from_secs(10);
-    let attente = Effet::Signal {
-        nom: "occupe".into(),
-        donnees: json!({ "texte": "« Profil de jeu » se fera juste après « Couper ce qui est sûr » (RAM)..." }),
-    };
-    while !tout.contains(&attente) {
+    let attente = "« Profil de jeu » se fera juste après « Couper ce qui est sûr » (RAM)...";
+    let montre =
+        |x: &Effet| matches!(x, Effet::Signal { nom, donnees } if nom == "occupe" && donnees["texte"] == attente);
+    while !tout.iter().any(montre) {
         assert!(Instant::now() < fin, "l'attente n'est pas montrée : {tout:?}");
         let mut e = Effets::default();
         b.travaux_finis(&ctx, &mut e);
@@ -393,5 +392,96 @@ fn deux_ecrivains_au_meme_moment_ne_perdent_rien() {
         .filter(|n| n.ends_with(".tmp"))
         .collect();
     assert!(restes.is_empty(), "fichiers temporaires laissés : {restes:?}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+// -----------------------------------------------------------------------------------------------------------------
+// Étape 3 : les petits liés
+// -----------------------------------------------------------------------------------------------------------------
+
+/// Une panique dans un geste de Ton PC ne jette plus ce qu'il avait noté : la sauvegarde de Ton PC est relue (avant,
+/// elle gardait sa copie d'avant le geste, sans la valeur d'origine déjà notée) ; « sauvegarde-changee » est dit aux
+/// autres blocs ; et le verrou est rendu (ajustement C) : un NOUVEAU geste passe ensuite.
+#[test]
+fn une_panique_dans_un_geste_de_ton_pc_ne_jette_pas_ce_qu_il_a_note() {
+    let d = dossier("panique");
+    let ctx = Contexte::nouveau(d.join("a"), d.join("d"), false, true).partage();
+    ctx.fausse_aide(Arc::new(move |a: &str, p: &Value| {
+        if a == "reg.ecrire" && p["Nom"] == "Deux" {
+            panic!("erreur imprévue d'essai");
+        }
+        Ok(json!("OK"))
+    }));
+    let mut b = nevermind_pc::BlocPc::default();
+    let cle = r"HKLM:\SOFTWARE\MindsetEssaiLotA\Panique";
+    let mut e = Effets::default();
+    b.signal(
+        &ctx,
+        "declarations",
+        &json!({ "changements": [
+            { "Type": "reg", "Path": cle, "Name": "Un", "Value": 1 },
+            { "Type": "reg", "Path": cle, "Name": "Deux", "Value": 2 }
+        ], "historique": "Profil de Jeu : priorité haute activée" }),
+        &mut e,
+    );
+    let mut tout = e.0;
+    let fin = Instant::now() + Duration::from_secs(10);
+    while b.travail_en_cours() {
+        assert!(Instant::now() < fin, "le geste ne finit pas");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        tout.iter().any(|x| matches!(x, Effet::Annonce(t) if t.contains("erreur imprévue"))),
+        "la panique n'est pas dite : {tout:?}"
+    );
+    let k = format!("{cle}|Un");
+    assert!(ctx.sauvegarde().registre.contains_key(&k), "la valeur d'origine n'est pas dans sauvegarde.json");
+    assert!(b.session().sv.registre.contains_key(&k), "Ton PC a jeté ce que le geste avait noté");
+    assert!(
+        tout.iter().any(|x| matches!(x, Effet::Signal { nom, .. } if nom == "sauvegarde-changee")),
+        "les autres blocs ne savent pas que la sauvegarde a changé : {tout:?}"
+    );
+    assert!(ctx.prendre_geste("Nouveau", "Essai").is_ok(), "après la panique, un nouveau geste ne passe pas");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// Petit du lot A (reste de M9) : « Tout restaurer » marquait annulées les lignes « pare-feu » de l'historique même
+/// quand le déblocage avait échoué (systeme.rs:519) : plus de « Annuler » pour un programme toujours bloqué.
+/// Maintenant elles restent à annuler ; une ligne bien remise est marquée annulée.
+#[test]
+fn tout_restaurer_garde_les_lignes_pare_feu_si_le_deblocage_echoue() {
+    let d = dossier("pare-feu");
+    let ctx = Contexte::nouveau(d.join("a"), d.join("d"), false, true);
+    ctx.fausse_aide(Arc::new(|a: &str, _p: &Value| {
+        if a == "pare-feu.debloquer-tout" {
+            return Err("refusé par Windows".into());
+        }
+        Ok(json!("OK"))
+    }));
+    let _g = ctx.prendre_geste("Tout restaurer", "Ton PC").unwrap();
+    let cle = r"HKLM:\SOFTWARE\MindsetEssaiLotA";
+    ctx.changer_registre(cle, "X", &json!(1), "DWord").unwrap();
+    ctx.ajouter_historique(
+        "Réglage X",
+        &[],
+        vec![json!({ "Type": "reg", "Path": cle, "Name": "X", "Existed": false })],
+    );
+    ctx.ajouter_historique(
+        "Internet bloqué pour Jeu",
+        &[],
+        vec![json!({ "Type": "fw", "Name": "Nevermind : bloque Jeu" })],
+    );
+    let mut p = PcWindows::nouveau(&ctx).avec_regles_pare_feu_essai(1);
+    let mut s =
+        nevermind_pc::session::Session { sv: Sauvegarde::depuis(&fichier_sauvegarde(&ctx)), ..Default::default() };
+    s.restaurer_tout(&mut p, &[]);
+    s.repondre(&mut p, true);
+    let h = ctx.historique();
+    let ligne = |t: &str| h.iter().find(|x| x["Titre"] == t).cloned().unwrap_or(Value::Null);
+    assert_eq!(ligne("Internet bloqué pour Jeu")["Annule"], false, "la règle du pare-feu est toujours là : {h:?}");
+    assert_eq!(ligne("Réglage X")["Annule"], true, "la ligne bien remise est marquée annulée : {h:?}");
     let _ = std::fs::remove_dir_all(&d);
 }

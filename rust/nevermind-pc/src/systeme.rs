@@ -19,6 +19,8 @@ pub struct PcWindows<'a> {
     statut: String,
     /// Dans un travail de fond (audit G3) : le texte d'attente part tout de suite, sans attendre la fin du geste
     direct: Option<&'a (dyn Fn(Effet) + 'a)>,
+    /// Tests (mode test seulement) : le nombre de règles du pare-feu posées par Nevermind
+    regles_essai: Option<usize>,
 }
 
 /// Lire un fichier JSON de Nevermind (ou sa copie de secours)
@@ -184,12 +186,18 @@ pub fn completer_pilote_nvidia(pc: &mut dyn Pc, e: &mut crate::analyse::Entrees)
 
 impl<'a> PcWindows<'a> {
     pub fn nouveau(ctx: &'a Contexte) -> Self {
-        PcWindows { ctx, effets: Vec::new(), statut: String::new(), direct: None }
+        PcWindows { ctx, effets: Vec::new(), statut: String::new(), direct: None, regles_essai: None }
     }
 
     /// Le texte d'attente (`occupe`) envoyé tout de suite par `envoi` (un travail de fond), pas à la fin du geste
     pub fn en_direct(mut self, envoi: &'a (dyn Fn(Effet) + 'a)) -> Self {
         self.direct = Some(envoi);
+        self
+    }
+
+    /// Tests (mode test seulement) : le nombre de règles du pare-feu posées par Nevermind, au lieu de celles du PC
+    pub fn avec_regles_pare_feu_essai(mut self, n: usize) -> Self {
+        self.regles_essai = Some(n);
         self
     }
 
@@ -450,6 +458,11 @@ impl Pc for PcWindows<'_> {
         }
     }
     fn regles_pare_feu(&self) -> usize {
+        if self.ctx.essai
+            && let Some(n) = self.regles_essai
+        {
+            return n;
+        }
         #[cfg(windows)]
         {
             crate::windows::regles_pare_feu()
@@ -533,9 +546,10 @@ impl Pc for PcWindows<'_> {
         self.ctx.marquer_historique_annule(id);
         self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
     }
-    fn historique_tout_annule(&mut self, _sauvegarde: &crate::corrections::Sauvegarde) {
-        // (Set-HistoryAllUndone ; la remise du pare-feu n'est pas suivie ici : `pare_feu_echoue` faux)
-        self.ctx.marquer_historique_tout_annule(false);
+    fn historique_tout_annule(&mut self, _sauvegarde: &crate::corrections::Sauvegarde, pare_feu_echoue: bool) {
+        // (Set-HistoryAllUndone : les lignes « pare-feu » seulement si le déblocage a réussi ; lot A, avant c'était
+        //  toujours le cas, même quand l'Aide avait refusé)
+        self.ctx.marquer_historique_tout_annule(pare_feu_echoue);
         self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
     }
     fn journal_nettoyage(&mut self, nom: &str, lignes: &[String]) -> String {
