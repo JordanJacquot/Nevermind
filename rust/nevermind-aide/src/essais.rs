@@ -19,7 +19,7 @@ pub(crate) const ELODIE: &str = "S-1-5-21-1111111111-2222222222-3333333333-1001"
 const BRUNO: &str = "S-1-5-21-1111111111-2222222222-3333333333-1002";
 const RACINE: &str = "C:\\Program Files\\Mindset\\Programmes\\Nevermind";
 /// Nevermind (Mindset.exe de la copie), celui qui fait les demandes
-const NEVERMIND: i64 = 9000;
+pub(crate) const NEVERMIND: i64 = 9000;
 const MAINTENANT: i64 = 639_000_000_000_000_000;
 const JOUR: i64 = 864_000_000_000;
 
@@ -67,6 +67,8 @@ pub(crate) struct FauxSysteme {
     verrous: Mutex<Vec<String>>,
     /// Le canal est déjà pris par une autre Aide (le premier exemplaire est refusé par Windows)
     canal_pris: bool,
+    /// Le compte des processus que le faux PC ne liste pas (aucun : illisible), comme ceux des mesures rejouées
+    compte_par_defaut: Option<String>,
 }
 
 /// Ce que le faux PC répond pour les mesures continues
@@ -227,6 +229,7 @@ impl FauxSysteme {
             sessions: Mutex::default(),
             verrous: Mutex::default(),
             canal_pris: false,
+            compte_par_defaut: None,
         }
     }
 
@@ -237,6 +240,12 @@ impl FauxSysteme {
     /// Le canal est déjà pris par une autre Aide : son premier exemplaire est refusé
     pub(crate) fn avec_canal_pris(mut self) -> Self {
         self.canal_pris = true;
+        self
+    }
+
+    /// Les processus que le faux PC ne liste pas sont de ce compte
+    pub(crate) fn avec_compte_par_defaut(mut self, sid: &str) -> Self {
+        self.compte_par_defaut = Some(sid.into());
         self
     }
 
@@ -449,7 +458,12 @@ impl Systeme for FauxSysteme {
         f
     }
     fn compte_processus(&self, pid: i64) -> String {
-        self.processus.iter().find(|x| x.pid == pid).map(|x| x.compte.clone()).unwrap_or_default()
+        self.processus
+            .iter()
+            .find(|x| x.pid == pid)
+            .map(|x| x.compte.clone())
+            .or_else(|| self.compte_par_defaut.clone())
+            .unwrap_or_default()
     }
     fn tenir_processus(&self, pid: i64) -> Option<Box<dyn ProcessusTenu + '_>> {
         let actuel = self.redonnes.lock().unwrap().get(&pid).cloned();

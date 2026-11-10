@@ -4,7 +4,7 @@
 //! Les deux versions doivent donner exactement les réponses attendues.
 
 use crate::actions::EtatAide;
-use crate::essais::{ELODIE, FauxSysteme, etat_aide, p};
+use crate::essais::{ELODIE, FauxSysteme, NEVERMIND, etat_aide, p};
 use crate::mesures::fps::Decoupeur;
 use crate::serveur::{self, Journal};
 use crate::systeme::{EvenementReseau, LigneTcp, RefusTrace, SortiePm, Systeme};
@@ -29,7 +29,7 @@ fn corpus(nom: &str, minimum: usize) -> Vec<Value> {
 /// Une demande, comme sur le canal ; la réponse en JSON
 fn demander(s: &FauxSysteme, etat: &EtatAide, action: &str, p: &Value) -> Value {
     let ligne = json!({ "a": action, "p": p }).to_string();
-    let (r, _) = serveur::repondre(&ligne, s, 1, etat, &Journal::default());
+    let (r, _) = serveur::repondre(&ligne, s, NEVERMIND as u32, etat, &Journal::default());
     serde_json::from_str(&r).unwrap()
 }
 
@@ -128,7 +128,7 @@ fn donnees(v: &Value) -> Option<Vec<u8>> {
 fn corpus_trace_reseau() {
     let mut echecs = Vec::new();
     for c in corpus("trace-reseau.json", 4) {
-        let s = FauxSysteme::new();
+        let s = FauxSysteme::new().avec_compte_par_defaut(ELODIE);
         let base = c["entree"]["base"].as_i64().unwrap();
         s.mesures.lock().unwrap().locales =
             c["entree"]["locales"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().parse().unwrap()).collect();
@@ -198,7 +198,7 @@ fn adresse(t: &Value) -> [u8; 16] {
 fn corpus_tcp() {
     let mut echecs = Vec::new();
     for c in corpus("tcp.json", 3) {
-        let s = FauxSysteme::new();
+        let s = FauxSysteme::new().avec_compte_par_defaut(ELODIE);
         let etat = etat_aide();
         let mut reponses = Vec::new();
         for passage in c["entree"]["passages"].as_array().unwrap() {
@@ -248,7 +248,7 @@ fn contre_epreuve() {
 /// si l'heure système est très loin de zéro (avec un compteur QPC, l'âge vaudrait des milliards de ms : bug du 15/10)
 #[test]
 fn ages_en_heure_systeme() {
-    let s = FauxSysteme::new();
+    let s = FauxSysteme::new().avec_compte_par_defaut(ELODIE);
     let etat = etat_aide();
     let maintenant = 134_064_000_000_000_000;
     s.mesures.lock().unwrap().filetime = maintenant;
@@ -264,16 +264,60 @@ fn ages_en_heure_systeme() {
 /// Au delà de 20 000 échanges, plus aucun n'est ajouté (20 001 gardés, comme NetFlow : « Count > 20000 »)
 #[test]
 fn echanges_bornes() {
-    let s = FauxSysteme::new();
+    let s = FauxSysteme::new().avec_compte_par_defaut(ELODIE);
     let etat = etat_aide();
     assert_eq!(demander(&s, &etat, "flux.demarrer", &Value::Null)["r"], "ok");
     for i in 0..20_100u32 {
         let mut d = vec![0u8; 28];
-        d[..4].copy_from_slice(&i.to_le_bytes());
+        d[..4].copy_from_slice(&(100_000 + i).to_le_bytes()); // (des programmes du compte qui demande)
         d[8..12].copy_from_slice(&[52, 1, 2, 3]);
         etat.mesures.flux.evenement(&EvenementReseau { id: 42, date: 1, donnees: Some(&d) });
     }
     assert_eq!(demander(&s, &etat, "flux.lire", &Value::Null)["r"].as_array().unwrap().len(), 20_001);
+}
+
+/// Second audit du 09/11 (P2) : deux comptes ouverts en même temps. trafic.tcp et flux.lire ne rendent que les
+/// programmes du compte qui demande et ceux des comptes du système, comme lecture.chemins : jamais l'activité réseau
+/// d'un autre compte (800 : Élodie, qui demande ; 801 : Bruno ; 950 : un service ; 777 : compte illisible).
+#[test]
+fn trafic_et_trace_seulement_du_compte_qui_demande() {
+    let mut s = FauxSysteme::new();
+    s.processus.push(p(950, "C:\\Windows\\System32\\svchost.exe", "S-1-5-20"));
+    let etat = etat_aide();
+    // La trace : un échange de chacun
+    assert_eq!(demander(&s, &etat, "flux.demarrer", &Value::Null)["r"], "ok");
+    for pid in [800u32, 801, 950, 777] {
+        let mut d = vec![0u8; 28];
+        d[..4].copy_from_slice(&pid.to_le_bytes());
+        d[8..12].copy_from_slice(&[52, 1, 2, 3]);
+        etat.mesures.flux.evenement(&EvenementReseau { id: 42, date: 1, donnees: Some(&d) });
+    }
+    let r = demander(&s, &etat, "flux.lire", &Value::Null);
+    let mut pids: Vec<&str> =
+        r["r"].as_array().unwrap().iter().map(|l| l.as_str().unwrap().split('|').next().unwrap()).collect();
+    pids.sort_unstable();
+    assert_eq!(pids, ["800", "950"], "{r}");
+    // Les connexions TCP : une de chacun
+    let ligne = |pid: u32| LigneTcp {
+        v6: false,
+        etat: 5,
+        adresse_locale: [192, 168, 1, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        adresse_distante: [52, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        port_local: pid,
+        port_distant: 0xBB01,
+        zone_locale: 0,
+        zone_distante: 0,
+        pid,
+    };
+    s.mesures.lock().unwrap().tables[0] =
+        Some([800, 801, 950, 777].map(|pid| (ligne(pid), true, Some((10, 20)))).to_vec());
+    let r = demander(&s, &etat, "trafic.tcp", &Value::Null);
+    let pids: Vec<&str> =
+        r["r"]["Lignes"].as_array().unwrap().iter().map(|l| l.as_str().unwrap().split('|').next().unwrap()).collect();
+    assert_eq!(pids, ["800", "950"], "{r}");
+    // Un programme dont le compte ne se lit pas : refusé, comme lecture.chemins
+    let (r, _) = serveur::repondre(r#"{"a":"trafic.tcp"}"#, &s, 0, &etat, &Journal::default());
+    assert!(r.contains("Demande refusée"), "{r}");
 }
 
 /// Audit du 08/11 : deux Aides (deux comptes ouverts en même temps, ou une copie d'essai à côté de la copie installée)

@@ -176,22 +176,10 @@ pub fn faire(d: Demande, s: &dyn Systeme, client: u32, etat: &EtatAide) -> Resul
         Demande::LectureChemins { pids } => {
             // (petit défaut de l'audit du 08/11) Seulement les programmes du compte qui demande et ceux des comptes du
             // système, comme lecture.taches : un compte standard ne peut pas lire où sont ceux des autres comptes
-            if client == 0 {
-                return Err("Demande refusée : programme qui fait la demande inconnu.".into());
-            }
-            let sid_client = s.fiche(i64::from(client), "").compte;
-            if sid_client.is_empty() {
-                return Err("Demande refusée : compte du programme qui fait la demande illisible.".into());
-            }
+            let mut a_lui = DuCompte::du_client(s, client)?;
             let mut r = serde_json::Map::new();
             for (pid, chemin) in s.chemins_processus() {
-                if !pids.contains(&pid) || chemin.is_empty() {
-                    continue;
-                }
-                let compte = s.compte_processus(pid);
-                if compte.is_empty()
-                    || !(texte::egal(&compte, &sid_client) || taches_compte::COMPTES_SYSTEME.contains(&compte.as_str()))
-                {
+                if !pids.contains(&pid) || chemin.is_empty() || !a_lui.permis(s, pid) {
                     continue;
                 }
                 r.insert(pid.to_string(), Value::String(chemin));
@@ -246,9 +234,12 @@ pub fn faire(d: Demande, s: &dyn Systeme, client: u32, etat: &EtatAide) -> Resul
 
         // Connexions TCP avec les octets envoyés et reçus de chacune (Windows ne compte qu'à la demande d'un
         // administrateur)
+        // (second audit du 09/11) Seulement les connexions des programmes du compte qui demande et des comptes du système,
+        // comme lecture.chemins : Windows ne donne ces compteurs qu'aux administrateurs
         Demande::TraficTcp => {
+            let mut a_lui = DuCompte::du_client(s, client)?;
             let mut c = etat.mesures.tcp.lock().unwrap_or_else(|e| e.into_inner());
-            let lignes = c.lignes(s);
+            let lignes = a_lui.garder(s, c.lignes(s));
             Ok(json!({ "Lignes": lignes, "CompteursOk": c.ok }))
         }
 
@@ -268,12 +259,15 @@ pub fn faire(d: Demande, s: &dyn Systeme, client: u32, etat: &EtatAide) -> Resul
             }
             ok()
         }
+        // (second audit du 09/11) Seulement les échanges des programmes du compte qui demande et des comptes du système,
+        // comme trafic.tcp : la trace du noyau voit ceux de tous les comptes du PC
         Demande::FluxLire => {
             let f = &etat.mesures.flux;
             if !f.tourne() {
                 return Err("La trace réseau ne tourne pas.".into());
             }
-            Ok(json!(f.lignes(s)))
+            let mut a_lui = DuCompte::du_client(s, client)?;
+            Ok(json!(a_lui.garder(s, f.lignes(s))))
         }
         Demande::FluxArreter => {
             etat.mesures.flux.arreter();
@@ -285,6 +279,45 @@ pub fn faire(d: Demande, s: &dyn Systeme, client: u32, etat: &EtatAide) -> Resul
 /// Le refus de Windows de démarrer la trace, tel que Nevermind l'affiche
 fn trace_refusee(e: String) -> String {
     format!("Trace réseau refusée par Windows : {e}")
+}
+
+/// Ce qu'un compte peut voir des programmes du PC : les siens et ceux des comptes du système, jamais ceux des autres
+/// comptes (un compte standard ne peut pas les lire lui-même). Le compte de chaque processus n'est lu qu'une fois.
+struct DuCompte {
+    sid_client: String,
+    vus: std::collections::HashMap<i64, bool>,
+}
+
+impl DuCompte {
+    /// Le compte du programme qui fait la demande (lu par Windows sur le canal) ; refus s'il est inconnu ou illisible
+    fn du_client(s: &dyn Systeme, client: u32) -> Result<Self, String> {
+        if client == 0 {
+            return Err("Demande refusée : programme qui fait la demande inconnu.".into());
+        }
+        let sid_client = s.fiche(i64::from(client), "").compte;
+        if sid_client.is_empty() {
+            return Err("Demande refusée : compte du programme qui fait la demande illisible.".into());
+        }
+        Ok(DuCompte { sid_client, vus: Default::default() })
+    }
+
+    /// Ce processus est-il du compte qui demande, ou d'un compte du système ? (compte illisible : non)
+    fn permis(&mut self, s: &dyn Systeme, pid: i64) -> bool {
+        let sid = &self.sid_client;
+        *self.vus.entry(pid).or_insert_with(|| {
+            let compte = s.compte_processus(pid);
+            !compte.is_empty()
+                && (texte::egal(&compte, sid) || taches_compte::COMPTES_SYSTEME.contains(&compte.as_str()))
+        })
+    }
+
+    /// Les lignes « pid|... » des programmes permis seulement
+    fn garder(&mut self, s: &dyn Systeme, lignes: Vec<String>) -> Vec<String> {
+        lignes
+            .into_iter()
+            .filter(|l| l.split('|').next().and_then(|p| p.parse::<i64>().ok()).is_some_and(|pid| self.permis(s, pid)))
+            .collect()
+    }
 }
 
 /// Le nom d'un programme tel que .NET le donne pour un processus, plus « .exe » (« bf6.exe ») : `ProcessName` retire
