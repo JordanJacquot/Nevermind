@@ -6,8 +6,11 @@
 use super::outils::{MemoireLocale, Poignee, message};
 use super::processus::sid_texte;
 use crate::systeme::{Connexion, Ecoute, ErreurCanal};
+use std::sync::mpsc;
+use std::time::Duration;
 use windows::Win32::Foundation::{
-    ERROR_BROKEN_PIPE, ERROR_IO_PENDING, ERROR_PIPE_CONNECTED, HANDLE, WAIT_OBJECT_0, WIN32_ERROR,
+    DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_BROKEN_PIPE, ERROR_IO_PENDING, ERROR_PIPE_CONNECTED, HANDLE,
+    WAIT_OBJECT_0, WIN32_ERROR,
 };
 use windows::Win32::Security::Authorization::{
     ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo, SDDL_REVISION_1, SE_KERNEL_OBJECT,
@@ -18,10 +21,10 @@ use windows::Win32::Storage::FileSystem::{
 };
 use windows::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 use windows::Win32::System::Pipes::{
-    ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeClientProcessId, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS,
-    PIPE_TYPE_BYTE, PIPE_WAIT,
+    ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, GetNamedPipeClientProcessId, PIPE_READMODE_BYTE,
+    PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_WAIT,
 };
-use windows::Win32::System::Threading::{CreateEventW, ResetEvent, WaitForSingleObject};
+use windows::Win32::System::Threading::{CreateEventW, GetCurrentProcess, ResetEvent, WaitForSingleObject};
 use windows::core::HSTRING;
 
 const TAILLE: u32 = 65536;
@@ -196,9 +199,12 @@ impl Ecoute for EcouteWindows {
                 let _ = GetNamedPipeClientProcessId(t.0, &mut client);
             }
         }
-        ConnexionWindows { tuyau, client, op: Operation::nouvelle().ok() }
+        ConnexionWindows { tuyau, client, op: Operation::nouvelle().ok(), limite_vidage: LIMITE_VIDAGE }
     }
 }
+
+/// Le temps laissé au client pour lire la réponse, une fois écrite (Nevermind la lit tout de suite)
+const LIMITE_VIDAGE: Duration = Duration::from_secs(10);
 
 impl Drop for EcouteWindows {
     fn drop(&mut self) {
@@ -215,6 +221,8 @@ pub struct ConnexionWindows {
     tuyau: Option<Poignee>,
     client: u32,
     op: Option<Operation>,
+    /// Le temps laissé au client pour lire la réponse (`LIMITE_VIDAGE`, plus court dans les essais)
+    limite_vidage: Duration,
 }
 
 impl Connexion for ConnexionWindows {
@@ -269,8 +277,118 @@ impl Connexion for ConnexionWindows {
                 Err(e) => return Err(format!("erreur {} en écrivant la réponse", e.0)),
             }
         }
-        // Attend que le client ait tout lu (WaitForPipeDrain)
-        // SAFETY : notre canal
-        unsafe { FlushFileBuffers(h) }.map_err(|e| message(&e))
+        vider(h, self.limite_vidage)
+    }
+}
+
+/// Attend que le client ait tout lu (FlushFileBuffers, comme WaitForPipeDrain), mais pas plus de `limite` (second audit
+/// du 09/11, P3) : FlushFileBuffers n'a pas de délai, et un client qui envoie une demande puis ne lit jamais la réponse
+/// bloquait ce fil pour toujours (l'Aide en SYSTEM ne s'arrêtait plus, et 31 clients ainsi prenaient toutes les
+/// connexions). L'attente se fait dans un fil à part, sur une copie de la poignée ; passé le délai, le canal est
+/// déconnecté (la réponse non lue est perdue), ce qui finit aussi l'attente de ce fil.
+fn vider(h: HANDLE, limite: Duration) -> Result<(), String> {
+    let mut copie = HANDLE::default();
+    // SAFETY : copie de notre poignée dans notre propre processus, refermée par le fil qui attend (Poignee)
+    unsafe {
+        DuplicateHandle(GetCurrentProcess(), h, GetCurrentProcess(), &mut copie, 0, false, DUPLICATE_SAME_ACCESS)
+            .map_err(|e| message(&e))?;
+    }
+    // (une poignée n'est qu'un numéro : il passe au fil sous cette forme, et redevient la Poignee qui le referme)
+    let brut = copie.0 as usize;
+    let (fini, attente) = mpsc::channel();
+    let fil = std::thread::spawn(move || {
+        let p = Poignee(HANDLE(brut as *mut core::ffi::c_void));
+        // SAFETY : la copie appartient à ce fil
+        let r = unsafe { FlushFileBuffers(p.0) }.map_err(|e| message(&e));
+        let _ = fini.send(r);
+    });
+    match attente.recv_timeout(limite) {
+        Ok(r) => {
+            let _ = fil.join();
+            r
+        }
+        Err(_) => {
+            // SAFETY : notre canal ; déconnecté, il rend aussi la main à FlushFileBuffers
+            unsafe {
+                let _ = DisconnectNamedPipe(h);
+            }
+            // (le fil finit tout de suite ; s'il ne le faisait pas, il est laissé : cette connexion, elle, se termine)
+            if attente.recv_timeout(Duration::from_secs(5)).is_ok() {
+                let _ = fil.join();
+            }
+            Err("le client ne lit pas la réponse".into())
+        }
+    }
+}
+
+#[cfg(test)]
+mod essais {
+    use super::*;
+    use windows::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
+    use windows::Win32::Storage::FileSystem::{CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_NONE, OPEN_EXISTING};
+
+    /// Un canal de l'essai (nom à lui, pour le seul compte qui le lance) et son client connecté
+    fn canal_et_client(nom: &str) -> (ConnexionWindows, Poignee) {
+        let sddl = format!("D:P(A;;GA;;;{})", super::super::processus::moi().0);
+        let mut e = creer(nom, &sddl, true, None).map_err(|e| format!("{e:?}")).unwrap();
+        // SAFETY : ouverture du canal de l'essai, refermée par Poignee
+        let h = unsafe {
+            CreateFileW(
+                &HSTRING::from(format!(r"\\.\pipe\{nom}")),
+                (GENERIC_READ | GENERIC_WRITE).0,
+                FILE_SHARE_NONE,
+                None,
+                OPEN_EXISTING,
+                FILE_FLAGS_AND_ATTRIBUTES(0),
+                None,
+            )
+        }
+        .unwrap();
+        assert!(e.attendre(2000).unwrap(), "le client de l'essai ne s'est pas connecté");
+        (e.connexion(), Poignee(h))
+    }
+
+    /// Écrit la réponse dans un fil à part : ce qu'`ecrire` rend, s'il rend dans les `ms` millisecondes
+    fn ecrire_au_plus(mut c: ConnexionWindows, ms: u64) -> Option<Result<(), String>> {
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(c.ecrire(b"{\"ok\":true}\n"));
+        });
+        rx.recv_timeout(Duration::from_millis(ms)).ok()
+    }
+
+    /// Second audit du 09/11 (P3), sur un vrai canal de l'essai (rien de l'Aide, aucun droit) : un client qui envoie
+    /// une demande et ne lit jamais la réponse ne bloque plus le fil de sa connexion (avant : FlushFileBuffers attendait
+    /// pour toujours). Passé le délai, l'écriture rend une erreur et le canal est coupé.
+    #[test]
+    fn un_client_qui_ne_lit_pas_ne_bloque_plus_la_connexion() {
+        let nom = format!("Nevermind-Essai-Vidage-{}-{}", std::process::id(), line!());
+        let (mut c, client) = canal_et_client(&nom);
+        c.limite_vidage = Duration::from_millis(300);
+        let r = ecrire_au_plus(c, 5000).expect("l'écriture de la réponse ne rend pas la main");
+        assert_eq!(r, Err("le client ne lit pas la réponse".into()));
+        // (le canal est coupé : le client ne lit plus rien)
+        let mut b = [0u8; 64];
+        let mut n = 0u32;
+        // SAFETY : lecture sur la poignée du client de l'essai
+        assert!(unsafe { ReadFile(client.0, Some(&mut b), Some(&mut n), None) }.is_err());
+    }
+
+    /// Contre-épreuve : un client qui lit reçoit toute la réponse, et l'écriture rend « ok »
+    #[test]
+    fn un_client_qui_lit_recoit_la_reponse() {
+        let nom = format!("Nevermind-Essai-Vidage-{}-{}", std::process::id(), line!());
+        let (c, client) = canal_et_client(&nom);
+        let brut = client.0.0 as usize;
+        let lecteur = std::thread::spawn(move || {
+            let mut b = [0u8; 64];
+            let mut n = 0u32;
+            // SAFETY : lecture sur la poignée du client de l'essai, gardée ouverte jusqu'à la fin du test
+            let _ = unsafe { ReadFile(HANDLE(brut as *mut core::ffi::c_void), Some(&mut b), Some(&mut n), None) };
+            b[..n as usize].to_vec()
+        });
+        assert_eq!(ecrire_au_plus(c, 5000), Some(Ok(())));
+        assert_eq!(lecteur.join().unwrap(), b"{\"ok\":true}\n");
+        drop(client);
     }
 }
