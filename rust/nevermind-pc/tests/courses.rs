@@ -346,9 +346,14 @@ fn deux_ecrivains_au_meme_moment_ne_perdent_rien() {
     let ctx = Contexte::nouveau(d.join("a"), d.join("d"), false, true).partage();
     let _ = fausse_aide(&ctx);
     const N: usize = 25;
+    // (le geste de Ton PC est pris avant que le geste prioritaire du noyau commence : un clic pendant un geste
+    // prioritaire est refusé, c'est voulu. Sans cette attente, le noyau passait parfois le premier et le test échouait
+    // sur « Attends la fin de « Essai » », 2 fois sur 100 ; les écritures, elles, restent au même moment)
+    let (pris, attendre_pris) = std::sync::mpsc::channel();
     let c1 = ctx.clone();
     let pc = std::thread::spawn(move || {
         let _g = c1.prendre_geste("Appliquer", "Ton PC").unwrap();
+        let _ = pris.send(());
         let mut copie = Sauvegarde::default();
         let mut p = PcWindows::nouveau(&c1);
         let mut m = Moteur::nouveau(&mut p, &mut copie, false);
@@ -364,6 +369,7 @@ fn deux_ecrivains_au_meme_moment_ne_perdent_rien() {
     });
     let c2 = ctx.clone();
     let noyau = std::thread::spawn(move || {
+        attendre_pris.recv().expect("le geste de Ton PC n'a pas été pris");
         let _g = c2.geste_prioritaire("Essai", "Essai");
         let mut erreurs = Vec::new();
         for i in 0..N {
