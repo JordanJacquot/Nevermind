@@ -1111,7 +1111,7 @@ mod essais {
     fn jordan_cable_et_wifi_debranche() {
         use nevermind_noyau::route::{EtatCarte, InterfaceIp};
         let ip = |index, metrique, connectee| InterfaceIp { index, metrique, connectee };
-        let carte = |index, connectee, materielle| EtatCarte { index, connectee, materielle };
+        let carte = |index, connectee, materielle| EtatCarte { index, connectee, materielle, tunnel: false };
         let interfaces = [ip(13, 25, true), ip(6, 25, true), ip(12, 65, false), ip(1, 75, true)];
         let cartes = [carte(13, true, false), carte(12, false, true), carte(6, true, true)];
         let pa = [192, 168, 1, 1];

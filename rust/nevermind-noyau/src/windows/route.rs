@@ -35,6 +35,7 @@ pub fn etats_ipv4() -> (Vec<InterfaceIp>, Vec<EtatCarte>) {
                         && l.AdminStatus != NET_IF_ADMIN_STATUS_DOWN,
                     // (premier bit d'InterfaceAndOperStatusFlags : HardwareInterface)
                     materielle: l.InterfaceAndOperStatusFlags._bitfield & 1 != 0,
+                    tunnel: crate::route::est_tunnel(i64::from(l.Type), i64::from(l.TunnelType.0)),
                 });
             }
             FreeMibTable(t.cast());

@@ -30,12 +30,24 @@ pub struct EtatCarte {
     pub connectee: bool,
     /// Une vraie carte du PC (HardwareInterface) ; faux pour un VPN, VirtualBox, Hyper-V
     pub materielle: bool,
+    /// Un tunnel (VPN, PPP) : voir [`est_tunnel`]
+    pub tunnel: bool,
 }
 
-/// La carte de la connexion active : parmi les routes par défaut en service dont la carte est connectée, une vraie carte
-/// d'abord (un VPN ou une carte virtuelle seulement s'il n'y a qu'elle), puis le plus petit coût, route + interface,
-/// comme Windows ; à égalité, le plus petit numéro de carte. Une interface ou une carte que Windows n'a pas décrite
-/// n'est pas écartée (lecture ratée) : seul un « débranché » lu l'écarte. `None` : aucune route utilisable.
+/// Un tunnel d'après Windows : son type (IfType, ou InterfaceType de MSFT_NetAdapter) est PPP (23), « virtuel
+/// propriétaire » (53 : WireGuard, la plupart des VPN récents) ou tunnel (131), ou il a un type de tunnel (TunnelType).
+/// Une carte virtuelle Ethernet (Hyper-V vEthernet, Pont réseau, VirtualBox) n'en est pas un.
+pub fn est_tunnel(if_type: i64, tunnel_type: i64) -> bool {
+    matches!(if_type, 23 | 53 | 131) || tunnel_type != 0
+}
+
+/// La carte de la connexion active : parmi les routes par défaut en service dont la carte est connectée, pas un tunnel
+/// d'abord (un VPN seulement s'il n'y a que lui), puis le plus petit coût, route + interface, comme Windows ; à égalité,
+/// une vraie carte du PC, puis le plus petit numéro de carte. Une carte virtuelle qui n'est pas un tunnel passe devant
+/// une vraie carte plus chère : c'est elle que Windows prend (Hyper-V vEthernet d'un commutateur externe ou Pont réseau
+/// sur le câble, à côté d'un Wi-Fi connecté : second audit du 09/11). Une interface ou une carte que Windows n'a pas
+/// décrite n'est pas écartée (lecture ratée) : seul un « débranché » lu l'écarte, et une carte non décrite passe après
+/// les autres. `None` : aucune route utilisable.
 pub fn choisir_route(routes: &[RouteDefaut], interfaces: &[InterfaceIp], cartes: &[EtatCarte]) -> Option<i64> {
     routes
         .iter()
@@ -46,16 +58,17 @@ pub fn choisir_route(routes: &[RouteDefaut], interfaces: &[InterfaceIp], cartes:
             if ip.is_some_and(|i| !i.connectee) || carte.is_some_and(|c| !c.connectee) {
                 return None;
             }
+            let tunnel = carte.is_none_or(|c| c.tunnel);
             let virtuelle = !carte.is_some_and(|c| c.materielle);
-            Some((virtuelle, r.metrique.saturating_add(ip.map_or(0, |i| i.metrique)), r.index))
+            Some((tunnel, r.metrique.saturating_add(ip.map_or(0, |i| i.metrique)), virtuelle, r.index))
         })
         .min()
-        .map(|(_, _, index)| index)
+        .map(|(_, _, _, index)| index)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{EtatCarte, InterfaceIp, RouteDefaut, choisir_route};
+    use super::{EtatCarte, InterfaceIp, RouteDefaut, choisir_route, est_tunnel};
 
     fn route(index: i64, metrique: i64) -> RouteDefaut {
         RouteDefaut { index, metrique, active: true }
@@ -64,7 +77,11 @@ mod tests {
         InterfaceIp { index, metrique, connectee }
     }
     fn carte(index: i64, connectee: bool, materielle: bool) -> EtatCarte {
-        EtatCarte { index, connectee, materielle }
+        EtatCarte { index, connectee, materielle, tunnel: false }
+    }
+    /// Un VPN connecté (WireGuard : IfType 53)
+    fn vpn(index: i64) -> EtatCarte {
+        EtatCarte { index, connectee: true, materielle: false, tunnel: est_tunnel(53, 0) }
     }
 
     /// Le PC de Jordan le 08/11 : Wi-Fi (12) débranché, lu en premier, route au coût 0 comme le câble (6). Avant, la
@@ -139,15 +156,32 @@ mod tests {
         assert_eq!(choisir_route(&routes, &ips, &cartes), Some(12));
     }
 
-    /// Un VPN ou une carte VirtualBox Host-Only avec une route moins chère ne passe pas devant la vraie carte
+    /// Un VPN (un tunnel), ou une carte que Windows n'a pas décrite, avec une route moins chère ne passe pas devant la
+    /// vraie carte ; s'il n'y a que lui, il reste la connexion
     #[test]
-    fn vpn_et_virtualbox_ne_gagnent_pas() {
+    fn vpn_ne_gagne_pas() {
         let routes = [route(30, 0), route(13, 0), route(6, 0)];
         let ips = [ip(30, 1, true), ip(13, 5, true), ip(6, 25, true)];
-        let cartes = [carte(13, true, false), carte(6, true, true)];
+        let cartes = [vpn(13), carte(6, true, true)];
         assert_eq!(choisir_route(&routes, &ips, &cartes), Some(6));
-        // Mais s'il n'y a qu'elle, la carte virtuelle reste la connexion (Hyper-V, commutateur externe)
         assert_eq!(choisir_route(&[route(13, 0)], &ips, &cartes), Some(13));
+        // (les types de Windows : PPP, virtuel propriétaire, tunnel, ou un type de tunnel ; pas Ethernet ni Wi-Fi)
+        assert!(est_tunnel(23, 0) && est_tunnel(53, 0) && est_tunnel(131, 0) && est_tunnel(6, 2));
+        assert!(!est_tunnel(6, 0) && !est_tunnel(71, 0));
+    }
+
+    /// Second audit du 09/11 : un commutateur externe Hyper-V (ou un Pont réseau) sur le câble, et le Wi-Fi connecté.
+    /// Windows sort par la carte vEthernet (coût 15 contre 55) : c'est la connexion, même si elle n'est pas une carte
+    /// matérielle. Avant, toute carte non matérielle passait après le Wi-Fi : « Connexion en Wi-Fi ».
+    #[test]
+    fn carte_virtuelle_qui_porte_la_connexion() {
+        let routes = [route(12, 0), route(25, 0)];
+        let ips = [ip(12, 55, true), ip(25, 15, true)];
+        let cartes = [carte(12, true, true), carte(25, true, false)];
+        assert_eq!(choisir_route(&routes, &ips, &cartes), Some(25));
+        // À coût égal, la vraie carte du PC
+        let ips = [ip(12, 15, true), ip(25, 15, true)];
+        assert_eq!(choisir_route(&routes, &ips, &cartes), Some(12));
     }
 
     /// Une route seulement enregistrée (PersistentStore) ne compte pas ; une carte ou une interface non décrite

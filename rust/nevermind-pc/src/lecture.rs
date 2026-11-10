@@ -368,8 +368,8 @@ mod vrai {
         .collect();
         let cartes: Vec<EtatCarte> = objets(
             STD,
-            "SELECT InterfaceIndex, State, MediaConnectState, HardwareInterface FROM MSFT_NetAdapter",
-            &["InterfaceIndex", "State", "MediaConnectState", "HardwareInterface"],
+            "SELECT InterfaceIndex, State, MediaConnectState, HardwareInterface, InterfaceType FROM MSFT_NetAdapter",
+            &["InterfaceIndex", "State", "MediaConnectState", "HardwareInterface", "InterfaceType"],
             &[],
         )
         .iter()
@@ -377,6 +377,7 @@ mod vrai {
             index: champ_entier(c, "InterfaceIndex"),
             connectee: champ_entier(c, "MediaConnectState") != 2 && champ_entier(c, "State") != 3,
             materielle: champ_entier(c, "HardwareInterface") != 0,
+            tunnel: nevermind_noyau::route::est_tunnel(champ_entier(c, "InterfaceType"), 0),
         })
         .collect();
         let Some(idx) = super::choisir_route(&routes, &interfaces, &cartes) else {
