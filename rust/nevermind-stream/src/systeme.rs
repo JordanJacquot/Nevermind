@@ -38,6 +38,48 @@ pub trait Systeme: Send {
     fn cartes(&self) -> Vec<Carte>;
     /// La taille de l'écran principal (pixels)
     fn ecran(&self) -> Option<(u32, u32)>;
+    /// Un OBS que rien n'a installé (dézippé, portable), vu ouvert dans ce dossier : son installation s'il y est
+    /// encore. Par défaut : seulement un OBS en mode portable (ses réglages sont dans son dossier).
+    fn obs_vu(&self, dossier: &Path) -> Option<Installation> {
+        (exe_obs(dossier).is_file() && obs_portable(dossier)).then(|| Installation {
+            logiciel: Logiciel::Obs,
+            dossier: dossier.to_path_buf(),
+            reglages: dossier.join("config").join("obs-studio"),
+            version: None,
+        })
+    }
+}
+
+/// Les dossiers des OBS Studio ouverts qui ne sont pas dans les installations connues (un OBS portable, dézippé) :
+/// d'après le chemin de leur obs64.exe, sans le moteur de Streamlabs
+pub fn obs_ouverts_inconnus(processus: &[Processus], installations: &[Installation]) -> Vec<PathBuf> {
+    let mut l: Vec<PathBuf> = Vec::new();
+    for p in processus {
+        if !(p.nom.eq_ignore_ascii_case("obs64.exe") || p.nom.eq_ignore_ascii_case("obs32.exe")) {
+            continue;
+        }
+        let Some(c) = &p.chemin else { continue };
+        if moteur_streamlabs(c, installations) {
+            continue;
+        }
+        let Some(d) = dossier_obs(&c.to_string_lossy()) else { continue };
+        let connu = installations.iter().any(|i| i.logiciel == Logiciel::Obs && meme_dossier(&i.dossier, &d));
+        if !connu && !l.iter().any(|x| meme_dossier(x, &d)) {
+            l.push(d);
+        }
+    }
+    l
+}
+
+/// Le même dossier (sans tenir compte des majuscules ni de la barre finale)
+pub fn meme(a: &Path, b: &Path) -> bool {
+    meme_dossier(a, b)
+}
+
+/// Le chemin est celui du moteur de Streamlabs (un obs64.exe qui n'est pas OBS Studio)
+fn moteur_streamlabs(c: &Path, installations: &[Installation]) -> bool {
+    c.to_string_lossy().to_lowercase().contains("obs-studio-node")
+        || installations.iter().any(|s| s.logiciel == Logiciel::Streamlabs && sous(c, &s.dossier))
 }
 
 /// Les fichiers qui mettent OBS en mode portable (à la racine de son installation)
@@ -122,11 +164,8 @@ pub fn ajouter(l: &mut Vec<Installation>, i: Installation) {
 /// Streamlabs (ni dans son dossier, ni dans obs-studio-node) ; un chemin illisible compte pour OBS si Streamlabs
 /// n'est pas ouvert (dans le doute, on ne touche à rien). Streamlabs : « Streamlabs OBS.exe », ou son moteur.
 pub fn ouvert(logiciel: Logiciel, processus: &[Processus], installations: &[Installation]) -> bool {
-    let streamlabs: Vec<&Installation> = installations.iter().filter(|i| i.logiciel == Logiciel::Streamlabs).collect();
     let appli_streamlabs = processus.iter().any(|p| p.nom.eq_ignore_ascii_case("Streamlabs OBS.exe"));
-    let moteur_streamlabs = |c: &Path| {
-        c.to_string_lossy().to_lowercase().contains("obs-studio-node") || streamlabs.iter().any(|s| sous(c, &s.dossier))
-    };
+    let moteur_streamlabs = |c: &Path| moteur_streamlabs(c, installations);
     let obs: Vec<&Processus> = processus
         .iter()
         .filter(|p| p.nom.eq_ignore_ascii_case("obs64.exe") || p.nom.eq_ignore_ascii_case("obs32.exe"))
@@ -179,6 +218,10 @@ impl Systeme for SystemeEssai {
     }
     fn ecran(&self) -> Option<(u32, u32)> {
         crate::reel::ecran()
+    }
+    /// (essai : un vrai OBS ouvert sur le PC n'est jamais pris, même portable : seul le fichier d'essai compte)
+    fn obs_vu(&self, _dossier: &Path) -> Option<Installation> {
+        None
     }
 }
 

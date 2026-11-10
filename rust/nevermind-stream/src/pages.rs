@@ -191,7 +191,7 @@ fn blocs(v: &Vue, l: &VueLogiciel) -> Vec<Value> {
         b.push(json!({ "type": "ligne", "icone": "son", "couleur": "T", "texte": "Son", "valeur": format!("{} kb/s", p.son_kbps) }));
         if p.plateforme == Plateforme::Kick {
             let note = if l.logiciel == Logiciel::Obs {
-                "Kick le demande. Pour pouvoir le régler, Nevermind passe la sortie d'OBS en mode Avancé.".to_string()
+                "Kick le demande. Pour pouvoir le régler, Nevermind passe la sortie d'OBS en mode Avancé. Tes enregistrements restent dans le même dossier.".to_string()
             } else if l.etat.as_ref().is_ok_and(|e| e.actuel.avance) {
                 "Kick le demande.".to_string()
             } else {
@@ -224,7 +224,7 @@ fn blocs(v: &Vue, l: &VueLogiciel) -> Vec<Value> {
         }
         _ => String::new(),
     };
-    b.push(json!({ "type": "note", "texte": format!("Avant de changer quoi que ce soit, Nevermind garde une copie de tes réglages : « Remettre comme avant » les remet exactement comme ils étaient. Tes scènes, tes sources et ta clé de stream ne sont jamais touchées.{profil}") }));
+    b.push(json!({ "type": "note", "texte": format!("Avant de changer quoi que ce soit, Nevermind note tes anciens réglages : « Remettre comme avant » remet ce que Nevermind a changé, et garde ce que tu as changé toi-même dans {n} depuis. Tes scènes, tes sources et ta clé de stream ne sont jamais touchées.{profil}") }));
     b
 }
 
@@ -235,7 +235,7 @@ pub fn page(v: &Vue) -> Value {
     match v.logiciels.as_slice() {
         [] => {
             p["module"] = json!({ "icone": "camera", "couleur": "doux", "titre": "Aucun logiciel de stream", "texte": SANS_LOGICIEL });
-            p["blocs"] = json!([{ "type": "note", "texte": "Nevermind cherche OBS Studio et Streamlabs à chaque fois que tu ouvres cette page." }]);
+            p["blocs"] = json!([{ "type": "note", "texte": "Nevermind cherche OBS Studio et Streamlabs à chaque fois que tu ouvres cette page. Un OBS qui n'est pas installé (une version portable) est trouvé dès que tu l'ouvres." }]);
         }
         [l] => {
             p["module"] = module(v, l);
@@ -260,6 +260,34 @@ pub fn carte_perf(disponible: bool, regle: bool) -> Value {
     }
     json!({ "id": "streameur", "nom": "Mode streameur", "resume": "Réglages pour streamer", "note": "Règle OBS ou Streamlabs pour streamer sans saccades", "icone": "camera", "couleur": "T",
         "etiquette": if regle { json!("Réglé") } else { Value::Null }, "ton": if regle { "ok" } else { "" } })
+}
+
+/// La phrase de l'annonce après « Remettre comme avant »
+pub fn annonce_remise(l: Logiciel, b: &crate::sauvegarde::Bilan) -> String {
+    let n = l.court();
+    if b.remis == 0 && b.abimes > 0 {
+        return format!(
+            "La copie des anciens réglages est abîmée : Nevermind n'y touche pas, tes réglages {} restent comme ils sont.",
+            l.de()
+        );
+    }
+    if b.remis == 0 && b.disparus > 0 {
+        return match l {
+            Logiciel::Obs => "Le profil d'OBS réglé par Nevermind n'existe plus (il a été renommé ou supprimé) : il n'y a plus rien à remettre.".into(),
+            Logiciel::Streamlabs => "Les réglages de Streamlabs changés par Nevermind n'existent plus : il n'y a plus rien à remettre.".into(),
+        };
+    }
+    let mut t = if b.abimes > 0 {
+        format!(
+            "Une partie des réglages d'avant est revenue dans {n}. Le reste de la copie était abîmé : Nevermind n'y a pas touché."
+        )
+    } else {
+        format!("Les réglages d'avant sont revenus dans {n}.")
+    };
+    if b.gardes > 0 {
+        t.push_str(" Ce que tu as changé toi-même depuis est gardé.");
+    }
+    t
 }
 
 /// La phrase de l'annonce après « Optimiser »

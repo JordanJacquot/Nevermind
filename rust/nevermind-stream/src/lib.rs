@@ -4,7 +4,7 @@
 //!
 //! - [`calcul`] : le choix de la qualité (fonctions pures) ;
 //! - [`ini`], [`reglages`], [`service`] : les fichiers d'OBS et de Streamlabs, lus et changés sans rien perdre ;
-//! - [`sauvegarde`] : la copie des anciens fichiers et « Remettre comme avant » ;
+//! - [`sauvegarde`] : la copie des anciens réglages (seulement ce que Nevermind change) et « Remettre comme avant » ;
 //! - [`systeme`] (et `reel`, `windows`) : ce qui est lu du PC (logiciels installés, processus, cartes, écran) ;
 //! - [`pages`] : la page « Mode streameur » et sa carte dans Performances.
 //!
@@ -15,8 +15,8 @@
 //! test « Connexion Internet »). Signal attendu : `debit-mesure` {R:[ping, téléchargement, envoi...]} (bloc pc).
 //!
 //! Règles : Nevermind ne ferme jamais le logiciel (s'il est ouvert : « Ferme OBS puis reclique sur Optimiser ») ; la
-//! clé de stream n'est jamais lue dans une variable, ni écrite au journal, ni montrée ; une copie des anciens fichiers
-//! est faite avant tout changement.
+//! clé de stream n'est jamais lue dans une variable, ni écrite au journal, ni montrée ; les anciennes valeurs
+//! sont notées avant tout changement ; un OBS portable est trouvé quand il est ouvert.
 
 pub mod calcul;
 pub mod ini;
@@ -35,6 +35,7 @@ use pages::{Changement, Vue, VueLogiciel};
 use reglages::{Etat, Probleme};
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use systeme::{Installation, Systeme};
 
@@ -53,11 +54,16 @@ struct Memoire {
     envoi: Option<(u32, String)>,
     plateformes: HashMap<Logiciel, Plateforme>,
     changements: HashMap<Logiciel, Changement>,
+    /// Les dossiers des OBS que rien n'a installés (dézippés, portables), vus ouverts une fois
+    obs_vus: Vec<PathBuf>,
 }
 
 impl Memoire {
     fn lire(v: &Value) -> Memoire {
         let mut m = Memoire::default();
+        if let Some(l) = v["obs_vus"].as_array() {
+            m.obs_vus = l.iter().filter_map(|x| x.as_str().map(PathBuf::from)).collect();
+        }
         if let (Some(k), Some(d)) = (v["envoi"]["kbps"].as_u64(), v["envoi"]["date"].as_str()) {
             m.envoi = Some((k as u32, d.to_string()));
         }
@@ -91,6 +97,7 @@ impl Memoire {
             "envoi": self.envoi.as_ref().map(|(k, d)| json!({ "kbps": k, "date": d })),
             "plateformes": plateformes,
             "changements": changements,
+            "obs_vus": self.obs_vus.iter().map(|d| d.to_string_lossy().into_owned()).collect::<Vec<_>>(),
         })
     }
 }
@@ -120,6 +127,8 @@ pub struct BlocStream {
     carte_envoyee: Option<(bool, bool)>,
     suivi: Option<Instant>,
     en_partie: bool,
+    /// Les OBS ouverts à la dernière détection (pour voir s'ouvrir un OBS portable depuis Performances)
+    obs_ouverts: Vec<PathBuf>,
 }
 
 impl BlocStream {
@@ -164,10 +173,35 @@ impl BlocStream {
         let _ = self.memoire(ctx);
         let lire_cartes = self.cartes.is_none();
         let sys = self.sys(ctx);
-        let installations = sys.installations();
+        let mut installations = sys.installations();
         let processus = sys.processus();
         let ecran = sys.ecran();
         let cartes = if lire_cartes { Some(sys.cartes()) } else { None };
+        // Un OBS que rien n'a installé (dézippé, portable) : trouvé par le chemin de son obs64.exe quand il est ouvert,
+        // puis gardé (streameur.json) tant que son dossier existe
+        let mut vus = self.memoire.as_ref().map(|m| m.obs_vus.clone()).unwrap_or_default();
+        let avant = vus.clone();
+        for d in systeme::obs_ouverts_inconnus(&processus, &installations) {
+            if !vus.iter().any(|x| systeme::meme(x, &d)) {
+                vus.push(d);
+            }
+        }
+        let sys = self.sys(ctx);
+        let mut gardes = Vec::new();
+        for d in vus {
+            if let Some(i) = sys.obs_vu(&d) {
+                systeme::ajouter(&mut installations, i);
+                gardes.push(d);
+            }
+        }
+        self.obs_ouverts = systeme::obs_ouverts_inconnus(&processus, &[]);
+        if gardes != avant {
+            for d in gardes.iter().filter(|d| !avant.contains(d)) {
+                ctx.journal(&format!("Mode streameur : OBS trouvé ouvert dans {}", d.display()));
+            }
+            self.memoire(ctx).obs_vus = gardes;
+            self.garder(ctx);
+        }
         // (OBS d'abord, puis Streamlabs : un onglet par logiciel)
         let mut trouves: Vec<Trouve> = Vec::new();
         for l in [Logiciel::Obs, Logiciel::Streamlabs] {
@@ -350,12 +384,20 @@ impl BlocStream {
             return;
         }
         match Self::copie(ctx, l).remettre() {
-            Ok(n) => {
-                ctx.journal(&format!("Mode streameur : réglages d'avant remis dans {} ({n} fichier(s))", l.nom()));
+            Ok(b) => {
+                ctx.journal(&format!(
+                    "Mode streameur : réglages d'avant remis dans {} ({} fichier(s) remis, {} disparu(s), {} copie(s) abîmée(s), {} réglage(s) changé(s) depuis gardé(s))",
+                    l.nom(),
+                    b.remis,
+                    b.disparus,
+                    b.abimes,
+                    b.gardes
+                ));
+                // (la copie est effacée dans tous ces cas : réessayer ne changerait rien)
                 self.memoire(ctx).changements.remove(&l);
                 self.garder(ctx);
                 self.alertes.remove(&l);
-                effets.ajouter(Effet::Annonce(format!("Les réglages d'avant sont revenus dans {}.", l.court())));
+                effets.ajouter(Effet::Annonce(pages::annonce_remise(l, &b)));
             }
             Err(e) => {
                 ctx.noter_erreur(&format!("Mode streameur : réglages d'avant pas remis dans {} : {e}", l.nom()));
@@ -450,6 +492,20 @@ impl Bloc for BlocStream {
             self.detecter(ctx);
             let apres: Vec<(bool, bool)> = self.trouves.iter().map(|t| (t.ouvert, t.etat.is_ok())).collect();
             if avant != apres {
+                effets.ajouter(Effet::Rafraichir);
+            }
+        } else if !cache
+            && !self.en_partie
+            && self.dernier_ecran == "perf"
+            && self.trouves.is_empty()
+            && self.suivi.is_none_or(|t| t.elapsed() >= SUIVI)
+        {
+            // La carte grisée de Performances : un OBS portable qui s'ouvre la dégrise (seuls les processus sont
+            // relus, la détection entière seulement s'il y a un nouvel OBS ouvert)
+            self.suivi = Some(Instant::now());
+            let ouverts = systeme::obs_ouverts_inconnus(&self.sys(ctx).processus(), &[]);
+            if ouverts != self.obs_ouverts {
+                self.detecter(ctx);
                 effets.ajouter(Effet::Rafraichir);
             }
         }

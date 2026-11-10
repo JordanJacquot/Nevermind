@@ -148,6 +148,45 @@ impl Ini {
         true
     }
 
+    /// Retire une clé de la section (toutes ses lignes, si elle est en double). Rend `true` si le fichier change.
+    pub fn retirer(&mut self, section: &str, cle: &str) -> bool {
+        let mut a_retirer = Vec::new();
+        for (d, f) in self.plages(section) {
+            for i in d..f {
+                if cle_valeur(&self.lignes[i]).is_some_and(|(k, _)| k == cle) {
+                    a_retirer.push(i);
+                }
+            }
+        }
+        for i in a_retirer.iter().rev() {
+            self.lignes.remove(*i);
+        }
+        !a_retirer.is_empty()
+    }
+
+    /// Retire une section qui n'a plus aucune ligne (que des lignes vides), avec la ligne vide qui la précédait :
+    /// l'inverse de [`Ini::mettre`] quand il a dû l'ajouter. Rend `true` si le fichier change.
+    pub fn retirer_section_vide(&mut self, section: &str) -> bool {
+        let mut change = false;
+        while let Some((d, f)) = self
+            .plages(section)
+            .into_iter()
+            .rev()
+            .find(|(d, f)| self.lignes[*d..*f].iter().all(|l| l.trim().is_empty()))
+        {
+            // l'en-tête (d - 1) et la ligne vide juste avant lui
+            let mut debut = d - 1;
+            if debut > 0 && self.lignes[debut - 1].trim().is_empty() {
+                debut -= 1;
+            }
+            // à la fin du fichier, ses lignes vides partent aussi ; sinon elles séparent encore la section suivante
+            let fin = if f == self.lignes.len() { f } else { d };
+            self.lignes.drain(debut..fin);
+            change = true;
+        }
+        change
+    }
+
     /// Les octets à écrire : UTF-8 avec BOM, les fins de ligne du fichier
     pub fn octets(&self) -> Vec<u8> {
         let mut t = self.lignes.join(self.fin);
@@ -210,6 +249,23 @@ mod tests {
             t,
             "\u{feff}[General]\nName=Sans titre\n\n[Video]\nBaseCX=1920\nBaseCY=1080\nOutputCX=1920\nOutputCY=720\nFPSCommon=60\n\n[Panels]\nCookieId=ABCDEF\n\n[SimpleOutput]\nVBitrate=6000\n"
         );
+    }
+
+    #[test]
+    fn retirer_defait_mettre() {
+        let mut i = Ini::lire(OBS.as_bytes()).unwrap();
+        i.mettre("Video", "FPSCommon", "60");
+        i.mettre("SimpleOutput", "VBitrate", "6000");
+        assert!(i.retirer("Video", "FPSCommon"));
+        assert!(!i.retirer("Video", "FPSCommon"));
+        assert!(i.retirer("SimpleOutput", "VBitrate"));
+        assert!(i.retirer_section_vide("SimpleOutput"));
+        assert!(!i.retirer_section_vide("Video"), "une section qui a encore des valeurs reste");
+        assert_eq!(i.octets(), OBS.as_bytes());
+        // une section vide au milieu : la section suivante garde sa ligne vide
+        let mut j = Ini::lire(b"[A]\nx=1\n\n[S]\n\n[T]\ny=2\n").unwrap();
+        assert!(j.retirer_section_vide("S"));
+        assert_eq!(String::from_utf8_lossy(&j.octets()[3..]), "[A]\nx=1\n\n[T]\ny=2\n");
     }
 
     #[test]

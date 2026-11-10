@@ -110,6 +110,18 @@ impl Systeme for SystemeReel {
     fn processus(&self) -> Vec<Processus> {
         processus()
     }
+    /// Un OBS dézippé vu ouvert : ses réglages dans son dossier s'il est en mode portable, sinon ceux du compte
+    fn obs_vu(&self, dossier: &std::path::Path) -> Option<Installation> {
+        if !crate::systeme::exe_obs(dossier).is_file() {
+            return None;
+        }
+        #[cfg(windows)]
+        let appdata = crate::windows::appdata()?;
+        #[cfg(not(windows))]
+        let appdata = PathBuf::new();
+        let reglages = reglages_obs(dossier, &appdata);
+        Some(Installation { logiciel: Logiciel::Obs, dossier: dossier.to_path_buf(), reglages, version: None })
+    }
     fn cartes(&self) -> Vec<Carte> {
         cartes()
     }

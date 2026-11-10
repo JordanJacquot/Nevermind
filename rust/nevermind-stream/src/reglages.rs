@@ -13,13 +13,13 @@
 //! images par seconde ne sont plus lues dans basic.ini (stockage interne de l'appli) : Nevermind ne règle que
 //! l'encodeur, le débit et la vitesse de l'encodeur, et dit quoi choisir pour la résolution.
 //!
-//! Le changement : seulement les clés nécessaires, tout le reste du fichier intact (voir ini.rs), après une copie des
-//! anciens fichiers (sauvegarde.rs), en écrivant d'un coup chaque fichier. Si un fichier ne s'écrit pas, ceux déjà
-//! écrits sont remis comme ils étaient.
+//! Le changement : seulement les clés nécessaires, tout le reste du fichier intact (voir ini.rs), après avoir noté
+//! les anciennes valeurs des clés changées (sauvegarde.rs), en écrivant d'un coup chaque fichier. Si un fichier ne
+//! s'écrit pas, ceux déjà écrits sont remis comme ils étaient, et la copie revient comme elle était.
 
 use crate::calcul::{Encodeur, Logiciel, Plan, Version, nombre};
 use crate::ini::Ini;
-use crate::sauvegarde::{Copie, ecrire_sur};
+use crate::sauvegarde::{CleIni, CleJson, Copie, Modif, ecrire_sur};
 use crate::service::{self, Service};
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
@@ -151,7 +151,7 @@ fn ips(i: &Ini) -> Option<String> {
 }
 
 /// Le JSON d'un objet (streamEncoder.json), `None` : absent ou abîmé (OBS prend alors un objet vide)
-fn objet(o: Option<&[u8]>) -> Option<Map<String, Value>> {
+pub(crate) fn objet(o: Option<&[u8]>) -> Option<Map<String, Value>> {
     let o = o?;
     let o = o.strip_prefix(&[0xEF, 0xBB, 0xBF][..]).unwrap_or(o);
     match serde_json::from_slice::<Value>(o).ok()? {
@@ -203,6 +203,20 @@ pub struct Nouveau {
     pub encodeur: Option<Vec<u8>>,
     /// Le mode Avancé a été activé (pour l'image clé de Kick)
     pub passe_en_avance: bool,
+    /// Les clés de basic.ini changées (valeur d'avant, valeur écrite), pour la copie
+    pub cles: Vec<CleIni>,
+    /// Les sections de basic.ini ajoutées
+    pub sections: Vec<String>,
+    /// Les clés de streamEncoder.json changées
+    pub cles_json: Vec<CleJson>,
+}
+
+/// Pose une valeur et note la clé (pour savoir ensuite ce que Nevermind a changé)
+fn mettre(i: &mut Ini, touchees: &mut Vec<(String, String)>, section: &str, cle: &str, valeur: &str) {
+    if !touchees.iter().any(|(s, k)| s == section && k == cle) {
+        touchees.push((section.to_string(), cle.to_string()));
+    }
+    i.mettre(section, cle, valeur);
 }
 
 /// L'identifiant d'encodeur du mode Avancé pour Streamlabs : les anciens noms, reconnus par toutes ses versions
@@ -217,7 +231,7 @@ fn avance_streamlabs(e: Encodeur) -> &'static str {
 }
 
 /// JSON écrit comme OBS (sans BOM, retrait de 4 espaces)
-fn json_obs(m: &Map<String, Value>) -> Vec<u8> {
+pub(crate) fn json_obs(m: &Map<String, Value>) -> Vec<u8> {
     let mut o = Vec::new();
     let f = serde_json::ser::PrettyFormatter::with_indent(b"    ");
     let mut s = serde_json::Serializer::with_formatter(&mut o, f);
@@ -234,7 +248,9 @@ pub fn preparer(
     plan: &Plan,
     version: Option<Version>,
 ) -> Result<Nouveau, String> {
-    let mut i = Ini::lire(basic)?;
+    let origine = Ini::lire(basic)?;
+    let mut i = origine.clone();
+    let mut t = Vec::new();
     let mut avance = i.valeur("Output", "Mode") == Some("Advanced");
     let mut passe = false;
     let e = plan.encodeur;
@@ -242,17 +258,27 @@ pub fn preparer(
     // Kick : l'image clé à 2 s ne s'écrit qu'en mode Avancé (le mode Simple la laisse à OBS, qui ne la fixe pas pour
     // un serveur personnalisé). Streamlabs garde son mode.
     if obs && plan.plateforme.image_cle_a_ecrire() && !avance {
-        i.mettre("Output", "Mode", "Advanced");
+        mettre(&mut i, &mut t, "Output", "Mode", "Advanced");
         avance = true;
         passe = true;
+        // Les enregistrements restent où ils allaient : le mode Avancé a son propre dossier et son propre format
+        // (restés souvent ceux d'origine d'OBS), repris de ceux du mode Simple (« RecFormat » avant OBS 30)
+        for (simple, avance_cle) in
+            [("FilePath", "RecFilePath"), ("RecFormat2", "RecFormat2"), ("RecFormat", "RecFormat")]
+        {
+            if let Some(v) = i.valeur("SimpleOutput", simple).map(str::to_string) {
+                mettre(&mut i, &mut t, "AdvOut", avance_cle, &v);
+            }
+        }
     }
     if obs {
-        i.mettre("Video", "OutputCX", &plan.sortie.0.to_string());
-        i.mettre("Video", "OutputCY", &plan.sortie.1.to_string());
-        i.mettre("Video", "FPSType", "0");
-        i.mettre("Video", "FPSCommon", &plan.ips.to_string());
+        mettre(&mut i, &mut t, "Video", "OutputCX", &plan.sortie.0.to_string());
+        mettre(&mut i, &mut t, "Video", "OutputCY", &plan.sortie.1.to_string());
+        mettre(&mut i, &mut t, "Video", "FPSType", "0");
+        mettre(&mut i, &mut t, "Video", "FPSCommon", &plan.ips.to_string());
     }
     let mut encodeur = None;
+    let mut cles_json = Vec::new();
     if avance {
         let avant = i.valeur("AdvOut", "Encoder").unwrap_or("obs_x264").to_string();
         let id = if obs { e.avance(version) } else { avance_streamlabs(e) };
@@ -260,16 +286,16 @@ pub fn preparer(
         let garder = !obs && Encodeur::famille(&avant) == Some(e);
         let meme_famille = Encodeur::famille(&avant) == Some(e);
         if !garder {
-            i.mettre("AdvOut", "Encoder", id);
+            mettre(&mut i, &mut t, "AdvOut", "Encoder", id);
         }
         let piste = i.entier("AdvOut", "TrackIndex").filter(|t| (1..=6).contains(t)).unwrap_or(1);
-        i.mettre("AdvOut", &format!("Track{piste}Bitrate"), &plan.son_kbps.to_string());
+        mettre(&mut i, &mut t, "AdvOut", &format!("Track{piste}Bitrate"), &plan.son_kbps.to_string());
         // (la sortie du stream est déjà à la bonne taille : pas de seconde mise à l'échelle)
         if i.entier("AdvOut", "RescaleFilter").is_some_and(|f| f != 0) {
-            i.mettre("AdvOut", "RescaleFilter", "0");
+            mettre(&mut i, &mut t, "AdvOut", "RescaleFilter", "0");
         }
         if i.booleen("AdvOut", "Rescale") == Some(true) {
-            i.mettre("AdvOut", "Rescale", "false");
+            mettre(&mut i, &mut t, "AdvOut", "Rescale", "false");
         }
         // streamEncoder.json : repris tel quel si l'encodeur ne change pas de famille, sinon vidé (comme OBS quand on
         // change d'encodeur : les réglages d'un autre encodeur n'ont pas de sens pour celui-ci)
@@ -288,16 +314,28 @@ pub fn preparer(
         if let Some((k, v)) = preset {
             m.insert(k.into(), Value::from(v));
         }
+        cles_json = crate::sauvegarde::cles_json(&objet(encodeur_json).unwrap_or_default(), &m);
         encodeur = Some(json_obs(&m));
     } else {
-        i.mettre("SimpleOutput", "StreamEncoder", e.simple());
-        i.mettre("SimpleOutput", "VBitrate", &plan.video_kbps.to_string());
-        i.mettre("SimpleOutput", "ABitrate", &plan.son_kbps.to_string());
+        mettre(&mut i, &mut t, "SimpleOutput", "StreamEncoder", e.simple());
+        mettre(&mut i, &mut t, "SimpleOutput", "VBitrate", &plan.video_kbps.to_string());
+        mettre(&mut i, &mut t, "SimpleOutput", "ABitrate", &plan.son_kbps.to_string());
         if let Some((k, v)) = e.preset_simple() {
-            i.mettre("SimpleOutput", k, v);
+            mettre(&mut i, &mut t, "SimpleOutput", k, v);
         }
     }
-    Ok(Nouveau { basic: i.octets(), encodeur, passe_en_avance: passe })
+    let cles = t
+        .iter()
+        .filter_map(|(s, k)| {
+            let avant = origine.valeur(s, k).map(str::to_string);
+            let apres = i.valeur(s, k).map(str::to_string);
+            (avant != apres).then(|| CleIni { section: s.clone(), cle: k.clone(), avant, apres })
+        })
+        .collect();
+    let deja = origine.sections();
+    let mut sections: Vec<String> = i.sections().into_iter().filter(|s| !deja.contains(s)).collect();
+    sections.dedup();
+    Ok(Nouveau { basic: i.octets(), encodeur, passe_en_avance: passe, cles, sections, cles_json })
 }
 
 /// Ce qui a changé, en mots simples (pour la page)
@@ -328,24 +366,34 @@ pub fn changements(etat: &Etat, plan: &Plan, nouveau: &Nouveau) -> Vec<String> {
     l
 }
 
-/// Fait le changement : copie des anciens fichiers, puis écriture. Rend les nouveaux fichiers écrits.
+/// Fait le changement : les anciennes valeurs notées dans la copie, puis écriture. Rend les nouveaux fichiers écrits.
 pub fn appliquer(etat: &Etat, plan: &Plan, copie: &Copie, date: &str) -> Result<Nouveau, String> {
     let fb = etat.dossier.join("basic.ini");
     let fe = etat.dossier.join("streamEncoder.json");
     let basic = std::fs::read(&fb).map_err(|e| format!("basic.ini : {e}"))?;
     let enc = std::fs::read(&fe).ok();
     let n = preparer(etat.logiciel, &basic, enc.as_deref(), plan, etat.version)?;
-    let mut a_garder = vec![fb.clone()];
-    if n.encodeur.is_some() {
-        a_garder.push(fe.clone());
+    let mut modifs = vec![Modif::Ini { chemin: fb.clone(), cles: n.cles.clone(), sections: n.sections.clone() }];
+    if let Some(j) = &n.encodeur {
+        modifs.push(Modif::Json {
+            chemin: fe.clone(),
+            avant: enc.clone(),
+            apres: j.clone(),
+            cles: n.cles_json.clone(),
+        });
     }
-    copie.garder(&a_garder, date, &etat.profil)?;
-    ecrire_sur(&fb, &n.basic).map_err(|e| format!("basic.ini : {e}"))?;
+    let annulation = copie.garder(&modifs, date, &etat.profil)?;
+    // (rien n'a pu être écrit : la copie revient comme elle était, « Remettre comme avant » n'apparaît pas pour rien)
+    if let Err(e) = ecrire_sur(&fb, &n.basic) {
+        let _ = copie.annuler(annulation);
+        return Err(format!("basic.ini : {e}"));
+    }
     if let Some(j) = &n.encodeur
         && let Err(e) = ecrire_sur(&fe, j)
     {
         // (basic.ini est remis comme il était juste avant : rien n'est à moitié fait)
         let _ = ecrire_sur(&fb, &basic);
+        let _ = copie.annuler(annulation);
         return Err(format!("streamEncoder.json : {e}"));
     }
     Ok(n)
@@ -410,6 +458,32 @@ mod tests {
         assert!(String::from_utf8(n.basic).unwrap().contains("Encoder=obs_nvenc_h264_tex"));
         let j: Value = serde_json::from_slice(&n.encodeur.unwrap()).unwrap();
         assert_eq!(j["preset"], "p5");
+    }
+
+    #[test]
+    fn kick_les_enregistrements_restent_dans_le_meme_dossier() {
+        // mode Simple : l'utilisateur enregistre dans D:\Vidéos en MKV ; le mode Avancé garde encore les valeurs
+        // d'origine d'OBS (comme le basic.ini d'OBS 33)
+        let avant = "\u{feff}[Output]\nMode=Simple\n\n[SimpleOutput]\nFilePath=D:\\\\Vidéos\nRecFormat2=mkv\n\n[AdvOut]\nRecFilePath=C:\\\\Users\\\\Joueur\\\\Videos\nRecFormat2=hybrid_mp4\n";
+        let p = plan(Plateforme::Kick, 20_000, true);
+        let n = preparer(Logiciel::Obs, avant.as_bytes(), None, &p, Version::lire("33.0.1")).unwrap();
+        assert!(n.passe_en_avance);
+        let i = Ini::lire(&n.basic).unwrap();
+        assert_eq!(i.valeur("AdvOut", "RecFilePath"), Some("D:\\\\Vidéos"));
+        assert_eq!(i.valeur("AdvOut", "RecFormat2"), Some("mkv"));
+        // déjà en mode Avancé : ses réglages d'enregistrement ne sont pas touchés
+        let avance = avant.replace("Mode=Simple", "Mode=Advanced");
+        let n = preparer(Logiciel::Obs, avance.as_bytes(), None, &p, Version::lire("33.0.1")).unwrap();
+        let i = Ini::lire(&n.basic).unwrap();
+        assert_eq!(i.valeur("AdvOut", "RecFilePath"), Some("C:\\\\Users\\\\Joueur\\\\Videos"));
+        // OBS d'avant la 30 : « RecFormat »
+        let ancien = "[SimpleOutput]\nFilePath=E:\\\\Clips\nRecFormat=flv\n";
+        let n = preparer(Logiciel::Obs, ancien.as_bytes(), None, &p, Version::lire("28.1.2")).unwrap();
+        let i = Ini::lire(&n.basic).unwrap();
+        assert_eq!(
+            (i.valeur("AdvOut", "RecFilePath"), i.valeur("AdvOut", "RecFormat")),
+            (Some("E:\\\\Clips"), Some("flv"))
+        );
     }
 
     #[test]
