@@ -666,7 +666,8 @@ fn route_choisie(
         .map(|(i, m, _)| RouteDefaut { index: i64::from(*i), metrique: i64::from(*m), active: true })
         .collect();
     let index = choisir_route(&defauts, interfaces, cartes)?;
-    routes.iter().find(|(i, _, _)| i64::from(*i) == index).map(|(i, _, p)| (*i, *p))
+    // (deux passerelles sur cette carte : la moins chère, celle que Windows prend, pas la première lue)
+    routes.iter().filter(|(i, _, _)| i64::from(*i) == index).min_by_key(|(_, m, _)| *m).map(|(i, _, p)| (*i, *p))
 }
 
 /// La route par défaut que Windows prend vraiment et sa carte. Avant, la première au plus petit coût de route : une
@@ -1118,6 +1119,18 @@ mod essais {
         assert_eq!(route_choisie(&[(12, 0, pa), (6, 0, pa)], &interfaces, &cartes), Some((6, pa)));
         assert_eq!(route_choisie(&[(6, 0, pa), (12, 0, pa)], &interfaces, &cartes), Some((6, pa)));
         assert_eq!(route_choisie(&[], &interfaces, &cartes), None);
+    }
+
+    /// Second audit du 09/11 : deux passerelles sur la carte de la connexion, un ancien routeur (coût 100) lu avant la
+    /// box (coût 0). Windows sort par la box : c'est elle qui est suivie, pas la première lue.
+    #[test]
+    fn deux_passerelles_sur_la_meme_carte() {
+        use nevermind_noyau::route::{EtatCarte, InterfaceIp};
+        let interfaces = [InterfaceIp { index: 6, metrique: 25, connectee: true }];
+        let cartes = [EtatCarte { index: 6, connectee: true, materielle: true, tunnel: false }];
+        let (box_, ancien) = ([192, 168, 1, 254], [192, 168, 1, 1]);
+        assert_eq!(route_choisie(&[(6, 100, ancien), (6, 0, box_)], &interfaces, &cartes), Some((6, box_)));
+        assert_eq!(route_choisie(&[(6, 0, box_), (6, 100, ancien)], &interfaces, &cartes), Some((6, box_)));
     }
 
     #[test]

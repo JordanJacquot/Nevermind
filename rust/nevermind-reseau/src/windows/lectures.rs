@@ -183,7 +183,8 @@ fn route_choisie(
         .map(|(i, m, _)| RouteDefaut { index: i64::from(*i), metrique: i64::from(*m), active: true })
         .collect();
     let index = choisir_route(&defauts, interfaces, cartes)?;
-    routes.iter().find(|(i, _, _)| i64::from(*i) == index).map(|(i, _, p)| (*i, p.clone()))
+    // (deux passerelles sur cette carte : la moins chère, celle que Windows prend, pas la première lue)
+    routes.iter().filter(|(i, _, _)| i64::from(*i) == index).min_by_key(|(_, m, _)| *m).map(|(i, _, p)| (*i, p.clone()))
 }
 
 fn etat(e: i32) -> &'static str {
@@ -577,5 +578,18 @@ mod essais {
         let routes = [(6, 0, "192.168.1.1".to_string()), (12, 0, "192.168.1.1".to_string())];
         assert_eq!(super::route_choisie(&routes, &interfaces, &cartes), Some((6, "192.168.1.1".into())));
         assert_eq!(super::route_choisie(&[], &interfaces, &cartes), None);
+    }
+
+    /// Second audit du 09/11 : deux passerelles sur la carte de la connexion, un ancien routeur (coût 100) lu avant la
+    /// box (coût 0). Windows sort par la box : c'est elle que Connexion affiche et teste, pas la première lue.
+    #[test]
+    fn deux_passerelles_sur_la_meme_carte() {
+        use nevermind_noyau::route::{EtatCarte, InterfaceIp};
+        let interfaces = [InterfaceIp { index: 6, metrique: 25, connectee: true }];
+        let cartes = [EtatCarte { index: 6, connectee: true, materielle: true, tunnel: false }];
+        let routes = [(6, 100, "192.168.1.1".to_string()), (6, 0, "192.168.1.254".to_string())];
+        assert_eq!(super::route_choisie(&routes, &interfaces, &cartes), Some((6, "192.168.1.254".into())));
+        let routes = [(6, 0, "192.168.1.254".to_string()), (6, 100, "192.168.1.1".to_string())];
+        assert_eq!(super::route_choisie(&routes, &interfaces, &cartes), Some((6, "192.168.1.254".into())));
     }
 }
