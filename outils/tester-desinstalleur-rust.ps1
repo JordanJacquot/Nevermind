@@ -117,6 +117,12 @@ function Restore-Bureau($Note) {
 # Nevermind installé, géré par Mindset, son Aide en SYSTEM, puis « tout optimiser » : rend l'état d'origine relevé
 function Install-Nevermind {
     Get-AidesEnCours | ForEach-Object { try { $_.Kill(); [void]$_.WaitForExit(5000) } catch {} }
+    # La commande de fin d'une désinstallation précédente (cmd.exe : 3 s d'attente, puis del et rmdir dans $prog) ne
+    # doit pas tomber sur la copie qu'on installe ici : elle effacerait ses programmes (au cas 7, Start-Process ne
+    # trouvait plus « Désinstaller Nevermind.exe »). On attend qu'elle soit finie (30 s au plus).
+    if (-not (Wait-Jusque { -not @(Get-CimInstance Win32_Process -Filter "Name = 'cmd.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($prog, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count } 30)) {
+        throw 'la commande de fin de la désinstallation précédente ne finit pas'
+    }
     if (Test-Path -LiteralPath $base) { Remove-Item -LiteralPath $base -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $prog, $donnees | Out-Null
     Copy-Item -Path (Join-Path $Nouvelle '*') -Destination $prog -Recurse -Force
@@ -337,7 +343,7 @@ try {
 }
 catch {
     $script:Echecs += "Arrêt inattendu : $($_.Exception.Message) (ligne $($_.InvocationInfo.ScriptLineNumber))"
-    Write-Host "  ÉCHEC  Arrêt inattendu : $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "  ÉCHEC  Arrêt inattendu : $($_.Exception.Message) (ligne $($_.InvocationInfo.ScriptLineNumber))" -ForegroundColor Red
 }
 
 Write-Host ''
