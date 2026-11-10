@@ -74,3 +74,11 @@ Stop-ProgrammeChemin ferme d'abord lui-même les processus permis, puis demande 
   Test-MesuresAide et sans demande de Windows (avant : `ctx.aide`, qui pouvait montrer la demande de Windows en
   pleine partie). Le refus d'un anti-triche est reconnu comme Test-FpsRefus (accès refusé), et le jeu est ajouté à la
   veille tout de suite (Add-FpsVeilleJeu, même ordre au journal), le signal `veille-jeu-ajouter` restant pour l'hôte.
+
+## Ce que l'Aide rend des autres comptes (second audit du 09/11, essai réel du 10/11)
+- `trafic.tcp` rend toutes les connexions, comme la version PowerShell (cette liste, tout compte la lit lui-même, et
+  Nevermind la lit sans l'Aide) ; seuls les octets d'une connexion d'un autre compte (ni celui de Nevermind, ni un
+  compte du système) sont mis à 0 : Windows ne les compte que pour un administrateur. Une Aide sans droits ne compte
+  rien : sa réponse est celle de PowerShell.
+- `flux.lire` (la trace du noyau, réservée aux administrateurs) ne rend que les échanges des programmes du compte de
+  Nevermind et des comptes du système (services gardés) : « Lag en ligne » ne regarde que le jeu.

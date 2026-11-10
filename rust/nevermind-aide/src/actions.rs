@@ -234,12 +234,14 @@ pub fn faire(d: Demande, s: &dyn Systeme, client: u32, etat: &EtatAide) -> Resul
 
         // Connexions TCP avec les octets envoyés et reçus de chacune (Windows ne compte qu'à la demande d'un
         // administrateur)
-        // (second audit du 09/11) Seulement les connexions des programmes du compte qui demande et des comptes du système,
-        // comme lecture.chemins : Windows ne donne ces compteurs qu'aux administrateurs
+        // (second audit du 09/11) Ces octets, seulement pour les programmes du compte qui demande et des comptes du
+        // système, comme lecture.chemins : Windows ne donne ces compteurs qu'aux administrateurs
+        // (essai réel du 10/11 : toutes les connexions restent, comme la version PowerShell ; la liste, n'importe quel
+        // compte la lit lui-même, et Nevermind la lit sans l'Aide. Seuls les octets des autres comptes sont mis à 0)
         Demande::TraficTcp => {
             let mut a_lui = DuCompte::du_client(s, client)?;
             let mut c = etat.mesures.tcp.lock().unwrap_or_else(|e| e.into_inner());
-            let lignes = a_lui.garder(s, c.lignes(s));
+            let lignes = a_lui.sans_octets_des_autres(s, c.lignes(s));
             Ok(json!({ "Lignes": lignes, "CompteursOk": c.ok }))
         }
 
@@ -309,6 +311,27 @@ impl DuCompte {
             !compte.is_empty()
                 && (texte::egal(&compte, sid) || taches_compte::COMPTES_SYSTEME.contains(&compte.as_str()))
         })
+    }
+
+    /// Les connexions « pid|adresse|port|port local|état|octets envoyés|octets reçus », toutes, avec les octets mis à 0
+    /// pour celles d'un programme qui n'est pas permis
+    fn sans_octets_des_autres(&mut self, s: &dyn Systeme, lignes: Vec<String>) -> Vec<String> {
+        lignes
+            .into_iter()
+            .map(|l| {
+                let mut c: Vec<&str> = l.split('|').collect();
+                // (sans octets, rien à cacher : le compte n'est pas lu)
+                if c.len() != 7
+                    || (c[5] == "0" && c[6] == "0")
+                    || c[0].parse::<i64>().is_ok_and(|pid| self.permis(s, pid))
+                {
+                    return l;
+                }
+                c[5] = "0";
+                c[6] = "0";
+                c.join("|")
+            })
+            .collect()
     }
 
     /// Les lignes « pid|... » des programmes permis seulement

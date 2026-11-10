@@ -276,9 +276,11 @@ fn echanges_bornes() {
     assert_eq!(demander(&s, &etat, "flux.lire", &Value::Null)["r"].as_array().unwrap().len(), 20_001);
 }
 
-/// Second audit du 09/11 (P2) : deux comptes ouverts en même temps. trafic.tcp et flux.lire ne rendent que les
-/// programmes du compte qui demande et ceux des comptes du système, comme lecture.chemins : jamais l'activité réseau
-/// d'un autre compte (800 : Élodie, qui demande ; 801 : Bruno ; 950 : un service ; 777 : compte illisible).
+/// Second audit du 09/11 (P2) : deux comptes ouverts en même temps. flux.lire ne rend que les programmes du compte qui
+/// demande et ceux des comptes du système, comme lecture.chemins ; trafic.tcp rend toutes les connexions (n'importe quel
+/// compte lit cette liste lui-même, comme la version PowerShell : essai réel du 10/11), mais les octets, que Windows ne
+/// compte que pour un administrateur, seulement pour ceux-là : jamais le volume échangé par un autre compte
+/// (800 : Élodie, qui demande ; 801 : Bruno ; 950 : un service ; 777 : compte illisible).
 #[test]
 fn trafic_et_trace_seulement_du_compte_qui_demande() {
     let mut s = FauxSysteme::new();
@@ -309,12 +311,22 @@ fn trafic_et_trace_seulement_du_compte_qui_demande() {
         zone_distante: 0,
         pid,
     };
-    s.mesures.lock().unwrap().tables[0] =
-        Some([800, 801, 950, 777].map(|pid| (ligne(pid), true, Some((10, 20)))).to_vec());
+    let mut table: Vec<_> = [800, 801, 950, 777].map(|pid| (ligne(pid), true, Some((10, 20)))).to_vec();
+    // (une connexion fermée qui attend, TIME_WAIT, sans programme : gardée, comme la version PowerShell)
+    table.push((LigneTcp { etat: 11, ..ligne(0) }, false, None));
+    s.mesures.lock().unwrap().tables[0] = Some(table);
     let r = demander(&s, &etat, "trafic.tcp", &Value::Null);
-    let pids: Vec<&str> =
-        r["r"]["Lignes"].as_array().unwrap().iter().map(|l| l.as_str().unwrap().split('|').next().unwrap()).collect();
-    assert_eq!(pids, ["800", "950"], "{r}");
+    let fins: Vec<(&str, &str)> = r["r"]["Lignes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| {
+            let l = l.as_str().unwrap();
+            (l.split('|').next().unwrap(), l.rsplit('|').nth(1).unwrap())
+        })
+        .collect();
+    assert_eq!(fins, [("800", "10"), ("801", "0"), ("950", "10"), ("777", "0"), ("0", "0")], "{r}");
+    assert!(r["r"]["Lignes"][1].as_str().unwrap().ends_with("|0|0"), "{r}");
     // Un programme dont le compte ne se lit pas : refusé, comme lecture.chemins
     let (r, _) = serveur::repondre(r#"{"a":"trafic.tcp"}"#, &s, 0, &etat, &Journal::default());
     assert!(r.contains("Demande refusée"), "{r}");
