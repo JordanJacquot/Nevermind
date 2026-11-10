@@ -177,18 +177,14 @@ pub fn lancer<H: Hote>(h: Arc<H>, sid_recu: Option<&str>) {
         Err(_) => String::new(),
     };
 
-    // Une seule Aide à la fois
+    // Une seule Aide à la fois (verrou commun à toutes les sessions de Windows : voir canal::nom_verrou)
     let Some(_verrou) = s.verrou(&canal::nom_verrou(&sid_servi, &suffixe)) else {
         return;
     };
 
-    // Les sessions de mesure (FPS, réseau) de cette Aide : des noms propres à son compte et à sa copie, comme le canal ;
-    // sa trace restée ouverte (Aide d'avant tuée ou plantée) est fermée tout de suite, jamais celle d'une autre Aide
+    // Les sessions de mesure (FPS, réseau) de cette Aide : des noms propres à son compte et à sa copie, comme le canal
     // (audit du 08/11)
     s.nommer_sessions(&canal::nom_session_fps(&sid_servi, &suffixe), &canal::nom_session_reseau(&sid_servi, &suffixe));
-    if moi.admin {
-        s.fermer_trace_restee();
-    }
 
     let journal = Journal::default();
     let nom = canal::nom_canal(&sid_servi, &suffixe);
@@ -211,6 +207,11 @@ pub fn lancer<H: Hote>(h: Arc<H>, sid_recu: Option<&str>) {
         ""
     };
     journal.ecrire(s, &format!("Aide {} démarrée{mode} pour {sid_servi} (processus {})", demandes::VERSION, moi.pid));
+    // Sa trace restée ouverte (Aide d'avant tuée ou plantée) est fermée, seulement maintenant que cette Aide a le
+    // canal : une seconde Aide du même compte ne coupe jamais la trace de celle qui tourne (second audit du 09/11)
+    if moi.admin {
+        s.fermer_trace_restee();
+    }
     if moi.admin
         && let Err(e) = actions::renommer_anciennes_regles(s)
     {

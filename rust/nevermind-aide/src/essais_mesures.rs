@@ -324,6 +324,22 @@ fn le_demarrage_nomme_les_sessions_et_ferme_la_trace_restee() {
     assert_eq!(f.mesures.lock().unwrap().traces_fermees, vec![attendu.1]);
 }
 
+/// Second audit du 09/11 (P1) : l'Aide en SYSTEM (session 0) et l'Aide de secours (session de l'utilisateur) du même
+/// compte. Le verrou est dans `Global\`, commun aux deux sessions (`Local\` : un par session, la seconde passait). Et
+/// une seconde Aide qui n'a pas le canal (déjà pris par la première) s'arrête sans fermer la trace de la première.
+#[test]
+fn une_seconde_aide_ne_coupe_pas_la_trace_de_la_premiere() {
+    let suffixe = aide_regles::canal::suffixe("C:\\Program Files\\Mindset\\Programmes\\Nevermind").unwrap();
+    let f = Arc::new(FauxSysteme::new());
+    serveur::lancer(Arc::clone(&f), Some(ELODIE));
+    assert_eq!(f.verrous(), vec![format!("Global\\Nevermind-Aide-{ELODIE}-{suffixe}")]);
+    // Le canal déjà pris : rien n'est fermé
+    let seconde = Arc::new(FauxSysteme::new().avec_canal_pris());
+    serveur::lancer(Arc::clone(&seconde), Some(ELODIE));
+    assert!(seconde.mesures.lock().unwrap().traces_fermees.is_empty());
+    assert!(seconde.mesures.lock().unwrap().lancements.is_empty());
+}
+
 /// L'Aide qui s'arrête arrête PresentMon (et ferme sa session) et la trace
 #[test]
 fn arret_de_l_aide() {

@@ -63,6 +63,10 @@ pub(crate) struct FauxSysteme {
     sessions: Mutex<Option<(String, String)>>,
     /// Les fausses mesures (PresentMon, trace réseau, tables TCP) : rejouées par essais_mesures
     pub(crate) mesures: Arc<Mutex<FaussesMesures>>,
+    /// Les noms des verrous demandés au démarrage
+    verrous: Mutex<Vec<String>>,
+    /// Le canal est déjà pris par une autre Aide (le premier exemplaire est refusé par Windows)
+    canal_pris: bool,
 }
 
 /// Ce que le faux PC répond pour les mesures continues
@@ -219,11 +223,24 @@ impl FauxSysteme {
             redonne_apres_fiche: Mutex::default(),
             redonnes: Mutex::default(),
             sessions: Mutex::default(),
+            verrous: Mutex::default(),
+            canal_pris: false,
         }
     }
 
     fn etat(&self) -> std::sync::MutexGuard<'_, Etat> {
         self.etat.lock().unwrap()
+    }
+
+    /// Le canal est déjà pris par une autre Aide : son premier exemplaire est refusé
+    pub(crate) fn avec_canal_pris(mut self) -> Self {
+        self.canal_pris = true;
+        self
+    }
+
+    /// Les noms des verrous demandés
+    pub(crate) fn verrous(&self) -> Vec<String> {
+        self.verrous.lock().unwrap().clone()
     }
 }
 
@@ -561,7 +578,8 @@ impl Ecoute for FausseEcoute {
 
 impl Hote for FauxSysteme {
     type E = FausseEcoute;
-    fn verrou(&self, _nom: &str) -> Option<Box<dyn Send>> {
+    fn verrou(&self, nom: &str) -> Option<Box<dyn Send>> {
+        self.verrous.lock().unwrap().push(nom.into());
         Some(Box::new(()))
     }
     fn preparer_aide_temp(&self, _dossier: &str, _admin: bool) -> Result<(), String> {
@@ -575,6 +593,9 @@ impl Hote for FauxSysteme {
         proprietaire: Option<&str>,
     ) -> Result<FausseEcoute, ErreurCanal> {
         self.etat().appels.push(format!("canal {nom} {sddl} {premier} {proprietaire:?}"));
+        if premier && self.canal_pris {
+            return Err(ErreurCanal::Indisponible("Tous les canaux sont occupés.".into()));
+        }
         Ok(FausseEcoute(None, Arc::clone(&self.connexions)))
     }
 }

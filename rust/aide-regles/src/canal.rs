@@ -18,9 +18,11 @@ pub fn nom_canal(sid: &str, suffixe: &str) -> String {
     format!("Nevermind-Aide-{sid}-{suffixe}")
 }
 
-/// Le nom du verrou (une seule Aide à la fois) : `Local\Nevermind-Aide-<sid>-<suffixe>`
+/// Le nom du verrou (une seule Aide à la fois) : `Global\Nevermind-Aide-<sid>-<suffixe>`. Dans `Global\` (second audit
+/// du 09/11) : l'Aide en SYSTEM tourne dans la session 0 et l'Aide de secours (demande de Windows) dans celle de
+/// l'utilisateur ; avec `Local\`, chaque session a le sien, et la seconde Aide passait le verrou.
 pub fn nom_verrou(sid: &str, suffixe: &str) -> String {
-    format!("Local\\Nevermind-Aide-{sid}-{suffixe}")
+    format!("Global\\Nevermind-Aide-{sid}-{suffixe}")
 }
 
 /// Les noms communs des sessions de mesure, d'avant l'audit du 08/11 (toutes les Aides avaient les mêmes) : ceux d'une

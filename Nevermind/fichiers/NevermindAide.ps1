@@ -239,10 +239,11 @@ public static class AideFps
 }
 '@
 
-# Une seule Aide à la fois
+# Une seule Aide à la fois, dans Global\ : commun à la session de l'Aide en SYSTEM et à celle de l'utilisateur (un
+# verrou d'une autre Aide qu'on ne peut pas ouvrir : elle tourne)
 $creee = $false
 $Suffixe = Get-AideSuffixe $Racine
-$verrou = New-Object System.Threading.Mutex($true, "Local\Nevermind-Aide-$Sid-$Suffixe", [ref]$creee)
+try { $verrou = New-Object System.Threading.Mutex($true, "Global\Nevermind-Aide-$Sid-$Suffixe", [ref]$creee) } catch { exit }
 if (-not $creee) { exit }
 
 # Le canal porte le compte de l'utilisateur servi : Nevermind le retrouve avec le sien

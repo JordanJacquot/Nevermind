@@ -241,7 +241,7 @@ if ($codeAide -match 'Get-Process\s+-Name|GetProcessesByName|-ne \$Exe\b') { $ec
 #    nom composé comme le fait NevermindAide.ps1 (les deux noms y sont lus) ; natif.cs (Nevermind) compose le même.
 # ---------------------------------------------------------------------------
 $modeleCanal = if ($codeAide -match '(?m)^\$NomTuyau = "(Nevermind-Aide-\$Sid-\$Suffixe)"') { $Matches[1] } else { '' }
-$modeleVerrou = if ($codeAide -match 'Threading\.Mutex\(\$true, "(Local\\Nevermind-Aide-\$Sid-\$Suffixe)"') { $Matches[1] } else { '' }
+$modeleVerrou = if ($codeAide -match 'Threading\.Mutex\(\$true, "(Global\\Nevermind-Aide-\$Sid-\$Suffixe)"') { $Matches[1] } else { '' }
 $nbTests++
 if (-not $modeleCanal -or -not $modeleVerrou) { $echecs.Add('NevermindAide.ps1 : le nom du canal ou du verrou n''est plus « Nevermind-Aide-$Sid-$Suffixe » (mettre cas\aide\canal.json à jour)') }
 $codeNatif = [IO.File]::ReadAllText((Join-Path $AideDossierModules 'natif.cs'), [Text.Encoding]::UTF8)
