@@ -56,8 +56,9 @@ pub trait Systeme: Send + Sync {
     fn bloc_notes(&self, chemin: &str);
     /// L'Explorateur, l'élément sélectionné
     fn montrer(&self, chemin: &str);
-    /// La fenêtre « Choisis le dossier à analyser » (`Invoke-FolderScan`, FolderBrowserDialog) : le dossier, ou rien
-    fn choisir_dossier(&self, _titre: &str) -> Option<String> {
+    /// La fenêtre « Choisis le dossier à analyser » (`Invoke-FolderScan`, FolderBrowserDialog) : le dossier, ou rien.
+    /// `proprietaire` : la fenêtre principale de Nevermind (0 : aucune), devant laquelle elle reste
+    fn choisir_dossier(&self, _titre: &str, _proprietaire: usize) -> Option<String> {
         None
     }
 }
@@ -81,6 +82,8 @@ pub struct Faux {
     pub choix_dossier: Mutex<Option<std::sync::mpsc::Receiver<Option<String>>>>,
     /// « Supprimer les menaces » : Defender attend le feu donné par l'essai (10 s au plus) ; sans feu prévu, tout de suite
     pub suppression: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+    /// La fenêtre propriétaire donnée à la dernière fenêtre de choix d'un dossier
+    pub proprietaire_choix: Mutex<Option<usize>>,
 }
 
 impl Faux {
@@ -167,8 +170,9 @@ impl Systeme for Faux {
     fn montrer(&self, chemin: &str) {
         self.noter(format!("montrer {chemin}"));
     }
-    fn choisir_dossier(&self, _titre: &str) -> Option<String> {
+    fn choisir_dossier(&self, _titre: &str, proprietaire: usize) -> Option<String> {
         self.noter("choisir un dossier".into());
+        *self.proprietaire_choix.lock().unwrap_or_else(|e| e.into_inner()) = Some(proprietaire);
         let r = self.choix_dossier.lock().unwrap_or_else(|e| e.into_inner()).take()?;
         r.recv_timeout(std::time::Duration::from_secs(5)).ok().flatten()
     }

@@ -192,14 +192,37 @@ impl Systeme for Vrai {
             .spawn();
     }
 
-    fn choisir_dossier(&self, titre: &str) -> Option<String> {
-        choisir_dossier(titre)
+    fn choisir_dossier(&self, titre: &str, proprietaire: usize) -> Option<String> {
+        choisir_dossier(titre, proprietaire)
     }
 }
 
+/// La fenêtre propriétaire de la fenêtre de choix (lot F) : la fenêtre principale de Nevermind, pour que le choix
+/// reste devant elle, seulement si c'est encore une fenêtre à elle, de ce programme. Accrochée dans Mindset (elle est
+/// alors l'enfant d'une fenêtre d'un autre programme), aucune, comme avant : la fenêtre de Mindset serait bloquée
+/// pendant le choix.
+fn proprietaire(h: usize) -> Option<windows::Win32::Foundation::HWND> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor, GetWindowThreadProcessId, IsWindow};
+    if h == 0 {
+        return None;
+    }
+    let w = HWND(h as *mut core::ffi::c_void);
+    let mut pid = 0u32;
+    // SAFETY : lectures seules sur une poignée vérifiée par IsWindow
+    let a_elle = unsafe {
+        IsWindow(Some(w)).as_bool() && GetAncestor(w, GA_ROOT) == w && {
+            GetWindowThreadProcessId(w, Some(&mut pid));
+            pid == std::process::id()
+        }
+    };
+    a_elle.then_some(w)
+}
+
 /// La fenêtre de Windows pour choisir un dossier (FOS_PICKFOLDERS), dans un fil à elle (COM en appartement simple,
-/// ce qu'il faut à cette fenêtre), attendue jusqu'à la réponse comme la fenêtre de PowerShell (ShowDialog)
-fn choisir_dossier(titre: &str) -> Option<String> {
+/// ce qu'il faut à cette fenêtre), attendue jusqu'à la réponse comme la fenêtre de PowerShell (ShowDialog), devant
+/// la fenêtre principale de Nevermind quand elle peut en être la propriétaire ([`proprietaire`])
+fn choisir_dossier(titre: &str, fenetre: usize) -> Option<String> {
     use windows::Win32::System::Com::{
         CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize,
     };
@@ -216,7 +239,7 @@ fn choisir_dossier(titre: &str) -> Option<String> {
                 if let Ok(o) = d.GetOptions() {
                     let _ = d.SetOptions(o | FOS_PICKFOLDERS);
                 }
-                d.Show(None).ok()?;
+                d.Show(proprietaire(fenetre)).ok()?;
                 let it = d.GetResult().ok()?;
                 let p = it.GetDisplayName(SIGDN_FILESYSPATH).ok()?;
                 let s = p.to_string().ok();
@@ -232,4 +255,19 @@ fn choisir_dossier(titre: &str) -> Option<String> {
     .join()
     .ok()
     .flatten()
+}
+
+#[cfg(test)]
+mod essais {
+    /// La propriétaire de la fenêtre de choix n'est jamais une fenêtre d'un autre programme ni une poignée morte
+    /// (aucune fenêtre n'est créée ni montrée ici)
+    #[test]
+    fn proprietaire_seulement_une_fenetre_a_nous() {
+        use windows::Win32::UI::WindowsAndMessaging::GetDesktopWindow;
+        assert!(super::proprietaire(0).is_none());
+        assert!(super::proprietaire(0x7FFF_FFF0).is_none(), "une poignée morte prise");
+        // SAFETY : lecture seule
+        let bureau = unsafe { GetDesktopWindow() }.0 as usize;
+        assert!(bureau != 0 && super::proprietaire(bureau).is_none(), "la fenêtre d'un autre programme prise");
+    }
 }

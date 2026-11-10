@@ -715,7 +715,10 @@ impl Bloc for BlocProtection {
                             return true;
                         }
                         let Some(sys) = self.sys.clone() else { return true };
-                        self.choix.lancer(ctx, CHOIX, move |_| sys.choisir_dossier("Choisis le dossier à analyser"));
+                        // (devant la fenêtre de Nevermind, qui en est la propriétaire ; lot F)
+                        let fenetre = ctx.fenetre();
+                        self.choix
+                            .lancer(ctx, CHOIX, move |_| sys.choisir_dossier("Choisis le dossier à analyser", fenetre));
                         self.relever_travaux(ctx, effets);
                     }
                     _ => self.mettre_a_jour_base(),

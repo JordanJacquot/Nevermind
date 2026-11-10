@@ -406,6 +406,8 @@ fn ouvrir_fenetre(
         etat.app = Some(app.handle().clone());
         etat.debut = Instant::now();
         if let Some(hote) = etat.hote.take() {
+            // (la fenêtre principale : propriétaire de la fenêtre de choix d'un dossier, qui reste devant elle ; lot F)
+            hote.ctx.definir_fenetre(h);
             let (to, ro) = mpsc::channel();
             let (td, rd) = mpsc::channel();
             let _ = ORDRES.set(to);

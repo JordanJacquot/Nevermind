@@ -36,6 +36,9 @@ pub(crate) struct Interne {
     pub faux_registre: HashMap<String, (Value, String)>,
     /// Mode test : les valeurs d'origine « gardées dans le registre »
     pub origines_factices: Vec<Value>,
+    /// La fenêtre principale de Nevermind (sa poignée, 0 avant sa création) : propriétaire des fenêtres de Windows
+    /// qu'ouvre Nevermind (le choix d'un dossier), pour qu'elles restent devant elle (lot F)
+    pub fenetre: usize,
     /// Les dernières erreurs (`$global:Error`), pour « Signaler un problème »
     pub erreurs: Vec<String>,
 }
@@ -88,6 +91,7 @@ impl Contexte {
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 faux_registre: HashMap::new(),
                 origines_factices: Vec::new(),
+                fenetre: 0,
                 erreurs: Vec::new(),
             }),
             aide: Default::default(),
@@ -151,6 +155,17 @@ impl Contexte {
     /// L'hôte donne la version de Nevermind (`$AppVersion`)
     pub fn definir_version(&self, v: &str) {
         verrou(&self.interne).version = v.to_string();
+    }
+
+    /// L'hôte donne la fenêtre principale, une fois créée (sa poignée)
+    pub fn definir_fenetre(&self, h: usize) {
+        verrou(&self.interne).fenetre = h;
+    }
+
+    /// La fenêtre principale (sa poignée), 0 si elle n'existe pas encore (ou dans les tests) : propriétaire des
+    /// fenêtres de Windows qu'ouvre Nevermind
+    pub fn fenetre(&self) -> usize {
+        verrou(&self.interne).fenetre
     }
 
     /// Le dossier de cette copie de Nevermind (`Get-AppRoot`) : celui de NevermindAide.exe, du canal de l'Aide et

@@ -762,3 +762,25 @@ fn supprimer_les_menaces_du_panneau_ne_fige_pas() {
     attendre(&mut b, &ctx);
     assert!(f.gestes().iter().filter(|g| *g == "lire").count() > lectures, "la protection n'est pas relue");
 }
+
+/// Lot F : la fenêtre « Choisis le dossier à analyser » reçoit la fenêtre principale de Nevermind comme propriétaire
+/// (avant : aucune, elle pouvait passer derrière Nevermind). Le faux système note la propriétaire, sans rien montrer.
+#[test]
+fn la_fenetre_de_choix_a_nevermind_pour_proprietaire() {
+    let ctx = contexte("choix-proprietaire").partage();
+    ctx.definir_fenetre(0x1234);
+    let mut f = faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap());
+    f.admin = true;
+    let f = Arc::new(f);
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    attendre(&mut b, &ctx);
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnScanFolder", &Value::Null, &mut e));
+    let fin = Instant::now() + Duration::from_secs(10);
+    while f.proprietaire_choix.lock().unwrap().is_none() {
+        assert!(Instant::now() < fin, "la fenêtre de choix n'est pas demandée");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(*f.proprietaire_choix.lock().unwrap(), Some(0x1234));
+    attendre(&mut b, &ctx);
+}
