@@ -168,14 +168,15 @@ pub fn pilote_nvidia_depuis_reponse(texte: &str) -> Option<Value> {
 /// NVIDIA et si le réglage « Vérifier le pilote NVIDIA au lancement » est mis (par défaut). Sans réponse, rien ne
 /// change : l'analyse regarde l'âge du pilote installé. Avant, la version Rust ne le demandait jamais : un pilote de
 /// moins de 6 mois passait pour « à jour » même avec un plus récent sorti (PC de Jordan, 08/11 : 617.42 contre 621.14).
+/// Seulement pour une carte que ce pilote prend encore en charge (second audit du 09/11) : une GTX 1060 restait sinon
+/// sur « Nouveau pilote NVIDIA disponible » pour toujours, vers un pilote qui ne s'installe pas sur elle.
 pub fn completer_pilote_nvidia(pc: &mut dyn Pc, e: &mut crate::analyse::Entrees) {
     if !pc.reglage("PiloteNvidia").is_none_or(|r| r.is_null() || crate::net::vrai(&r)) {
         return;
     }
-    let nvidia = crate::net::champ_liste(&e.data, "GPUs").iter().any(|g| {
-        let n = crate::net::champ_texte(g, "Name").to_lowercase();
-        n.contains("nvidia") || n.contains("geforce")
-    });
+    let nvidia = crate::net::champ_liste(&e.data, "GPUs")
+        .iter()
+        .any(|g| crate::analyse::nvidia_suivie(&crate::net::champ_texte(g, "Name")));
     if !nvidia {
         return;
     }

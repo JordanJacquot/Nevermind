@@ -1213,45 +1213,100 @@ fn reponse_nvidia_lue() {
 /// lancement », mis par défaut) ; la version Rust ne le demandait jamais et disait « Pilote graphique à jour ».
 #[test]
 fn pilote_nvidia_ancien_alors_que_recent() {
-    use nevermind_noyau::{Bloc, Contexte, Effets};
     let data = json!({ "GPUs": [{ "Name": "NVIDIA GeForce RTX 4080", "DriverVersion": "32.0.16.1742", "DriverDate": "2026-09-30T00:00:00" }], "NvLatest": null });
-    let titres = |reglage: Option<bool>| {
-        let lu = nevermind_pc::lecture::Lu {
-            entrees: Entrees { data: data.clone(), ..Default::default() },
-            demarrage: Vec::new(),
-        };
-        let mut pc = FauxPc {
-            reponse_question: true,
-            reponse_nvidia: Some(REPONSE_NVIDIA.into()),
-            relecture: Some(lu.clone()),
-            ..Default::default()
-        };
-        if let Some(r) = reglage {
-            pc.reglages.insert("PiloteNvidia".into(), json!(r));
-        }
-        let mut b = nevermind_pc::BlocPc::sur(Box::new(pc), lu);
-        let d = nevermind_noyau::dossier_essai("pc-pilote-nvidia");
-        let _ = std::fs::remove_dir_all(&d);
-        let ctx = std::sync::Arc::new(Contexte::nouveau(d.clone(), d.clone(), false, true));
-        let _ = b.pages(&ctx, "pc");
-        let mut e = Effets::default();
-        assert!(b.action(&ctx, "analyser", &Value::Null, &mut e));
-        let fin = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while b.travail_en_cours() {
-            assert!(std::time::Instant::now() < fin, "l'analyse ne finit pas");
-            std::thread::sleep(std::time::Duration::from_millis(10));
-            b.travaux_finis(&ctx, &mut Effets::default());
-        }
-        let _ = b.pages(&ctx, "pc");
-        let a = b.session().analyse.clone().expect("l'analyse");
-        let _ = std::fs::remove_dir_all(&d);
-        a.actifs.iter().filter(|c| c.id.starts_with("gpu-driver")).map(|c| c.titre.clone()).collect::<Vec<_>>()
-    };
+    let titres = |reglage: Option<bool>| titres_du_pilote(&data, reglage, "pc-pilote-nvidia");
     let attendu = vec!["Nouveau pilote NVIDIA disponible (621.14)".to_string()];
     assert_eq!(titres(None), attendu, "réglage par défaut : NVIDIA est demandé");
     assert_eq!(titres(Some(true)), attendu);
     // Réglage coupé : seulement l'âge du pilote (moins de 6 mois : à jour), comme la version PowerShell
     assert_eq!(titres(Some(false)), vec!["Pilote graphique à jour (NVIDIA GeForce RTX 4080)".to_string()]);
+}
+
+/// Les titres des constats du pilote graphique après « Analyser », NVIDIA répondant le 621.14 (`reglage` : « Vérifier
+/// le pilote NVIDIA au lancement »)
+fn titres_du_pilote(data: &Value, reglage: Option<bool>, essai: &str) -> Vec<String> {
+    use nevermind_noyau::{Bloc, Contexte, Effets};
+    let lu = nevermind_pc::lecture::Lu {
+        entrees: Entrees { data: data.clone(), ..Default::default() },
+        demarrage: Vec::new(),
+    };
+    let mut pc = FauxPc {
+        reponse_question: true,
+        reponse_nvidia: Some(REPONSE_NVIDIA.into()),
+        relecture: Some(lu.clone()),
+        ..Default::default()
+    };
+    if let Some(r) = reglage {
+        pc.reglages.insert("PiloteNvidia".into(), json!(r));
+    }
+    let mut b = nevermind_pc::BlocPc::sur(Box::new(pc), lu);
+    let d = nevermind_noyau::dossier_essai(essai);
+    let _ = std::fs::remove_dir_all(&d);
+    let ctx = std::sync::Arc::new(Contexte::nouveau(d.clone(), d.clone(), false, true));
+    let _ = b.pages(&ctx, "pc");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "analyser", &Value::Null, &mut e));
+    let fin = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while b.travail_en_cours() {
+        assert!(std::time::Instant::now() < fin, "l'analyse ne finit pas");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        b.travaux_finis(&ctx, &mut Effets::default());
+    }
+    let _ = b.pages(&ctx, "pc");
+    let a = b.session().analyse.clone().expect("l'analyse");
+    let _ = std::fs::remove_dir_all(&d);
+    a.actifs.iter().filter(|c| c.id.starts_with("gpu-driver")).map(|c| c.titre.clone()).collect()
+}
+
+/// Second audit du 09/11 : une GeForce GTX 1060 (Pascal) avec le dernier pilote qu'elle accepte (581.57, branche 580),
+/// NVIDIA répondant 621.14. Avant : « Nouveau pilote NVIDIA disponible » à chaque analyse, vers un pilote qui ne
+/// s'installe pas sur elle. Maintenant : seulement l'âge du pilote installé, comme sans réponse de NVIDIA.
+#[test]
+fn vieille_carte_nvidia_sans_faux_nouveau_pilote() {
+    let gtx = json!({ "Name": "NVIDIA GeForce GTX 1060 6GB", "DriverVersion": "32.0.15.8157", "DriverDate": "2026-10-15T00:00:00" });
+    let data = json!({ "GPUs": [gtx], "NvLatest": null });
+    assert_eq!(
+        titres_du_pilote(&data, None, "pc-pilote-gtx-1060"),
+        vec!["Pilote graphique à jour (NVIDIA GeForce GTX 1060 6GB)".to_string()]
+    );
+    // Une RTX à côté (NVIDIA est alors demandé) : la RTX est comparée au dernier pilote, la GTX garde la règle de l'âge
+    let rtx = json!({ "Name": "NVIDIA GeForce RTX 3060", "DriverVersion": "32.0.16.1742", "DriverDate": "2026-09-30T00:00:00" });
+    let data = json!({ "GPUs": [gtx, rtx], "NvLatest": null });
+    let mut t = titres_du_pilote(&data, None, "pc-pilote-gtx-et-rtx");
+    t.sort();
+    assert_eq!(
+        t,
+        vec![
+            "Nouveau pilote NVIDIA disponible (621.14)".to_string(),
+            "Pilote graphique à jour (NVIDIA GeForce GTX 1060 6GB)".to_string()
+        ]
+    );
+    // Les cartes encore prises en charge par le dernier pilote, et celles qui ne le sont plus
+    use nevermind_pc::analyse::nvidia_suivie;
+    for n in [
+        "NVIDIA GeForce RTX 4080",
+        "NVIDIA GeForce RTX 2060 SUPER",
+        "NVIDIA GeForce GTX 1650 Ti",
+        "NVIDIA GeForce GTX 1660",
+        "NVIDIA GeForce MX450",
+        "NVIDIA RTX A2000 12GB",
+        "NVIDIA T1000",
+        "NVIDIA TITAN RTX",
+    ] {
+        assert!(nvidia_suivie(n), "{n}");
+    }
+    for n in [
+        "NVIDIA GeForce GTX 1060 6GB",
+        "NVIDIA GeForce GTX 1080 Ti",
+        "NVIDIA GeForce GTX 970",
+        "NVIDIA GeForce GT 1030",
+        "NVIDIA GeForce MX150",
+        "NVIDIA Quadro P2000",
+        "NVIDIA TITAN Xp",
+        "AMD Radeon RX 6700 XT",
+    ] {
+        assert!(!nvidia_suivie(n), "{n}");
+    }
 }
 
 /// Lot B du second audit : « Analyser » du Nettoyage passe par l'Aide (jusqu'à 2 min par catégorie) dans un travail de

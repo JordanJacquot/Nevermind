@@ -48,6 +48,11 @@ fn re(s: &str) -> Regex {
 static VIRTUELLE: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)Remote|Virtual|Parsec|Mirage|DisplayLink|Citrix|Meta"));
 static DEDIEE: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)NVIDIA|GeForce|Radeon RX|Radeon Pro|Arc"));
 static NVIDIA: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)NVIDIA|GeForce"));
+/// Les cartes NVIDIA que le dernier pilote « Game Ready » prend encore en charge : Turing et après (toutes les RTX, les
+/// GTX 16xx, les MX 4xx et 5xx, les T400 à T1200). Les GTX 10xx et avant (Pascal, Maxwell...) restent sur la branche
+/// 580 : le dernier pilote ne s'installe pas sur elles (second audit du 09/11).
+static NVIDIA_SUIVIE: LazyLock<Regex> =
+    LazyLock::new(|| re(r"(?i)\bRTX\b|\bGTX\s*16\d\d|\bMX\s*[45]\d\d\b|\bT(400|500|550|600|1000|1200)\b"));
 static AMD: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)AMD|Radeon"));
 static INTEL: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)Intel"));
 static BASIQUE: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)Microsoft Basic"));
@@ -83,6 +88,12 @@ pub fn version_nvidia(v: &str) -> Option<String> {
     }
     let d = &d[d.len() - 5..];
     Some(format!("{}.{}", d[..3].parse::<i64>().unwrap_or(0), &d[3..]))
+}
+
+/// Une carte NVIDIA encore prise en charge par le dernier pilote « Game Ready », celui que NVIDIA donne à Nevermind
+/// (`NvLatest`) : pour les autres, ce pilote n'est pas le leur, et seul l'âge du pilote installé compte
+pub fn nvidia_suivie(nom: &str) -> bool {
+    NVIDIA.is_match(nom) && NVIDIA_SUIVIE.is_match(nom)
 }
 
 /// `Get-DriverLink`
@@ -360,7 +371,7 @@ pub fn analyser(pc: &mut dyn Pc, e: &Entrees) -> Analyse {
         }
         let w = if a_dediee && !DEDIEE.is_match(&nom) { 1 } else { 2 };
         let version = champ_texte(g, "DriverVersion");
-        let nv_installe = if NVIDIA.is_match(&nom) { version_nvidia(&version) } else { None };
+        let nv_installe = if nvidia_suivie(&nom) { version_nvidia(&version) } else { None };
         let nv_dernier = data.get("NvLatest").filter(|v| net::vrai(v)).cloned();
         if let (Some(nvi), Some(nvl)) = (&nv_installe, &nv_dernier) {
             let derniere = champ_texte(nvl, "Version");

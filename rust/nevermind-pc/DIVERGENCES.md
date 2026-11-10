@@ -104,3 +104,9 @@ programmes au démarrage passaient pour activés. Corrigé dans le script (`retu
   le premier point de `Get-HubFindings`, important d'abord, urgent s'il est rouge).
 - La première diffusion (analyse-pc, reglages-jeu, etat-mindset...) part au tic qui suit la fin de la lecture lente,
   même quand c'est `pages` (écran regardé) qui l'a vue finir : avant, elle était alors perdue jusqu'au premier geste.
+
+## Pilote NVIDIA des vieilles cartes (second audit du 09/11)
+- Le dernier pilote « Game Ready » (`NvLatest`) n'est demandé et comparé que pour une carte qu'il prend encore en charge
+  (`analyse::nvidia_suivie` : RTX, GTX 16xx, MX 4xx et 5xx, T400 à T1200). En PowerShell, toute carte NVIDIA y était
+  comparée : une GTX 1060 restait sur « Nouveau pilote NVIDIA disponible » vers un pilote qui ne s'installe pas sur
+  elle. Pour les autres, la règle de l'âge du pilote installé, comme sans réponse de NVIDIA.
