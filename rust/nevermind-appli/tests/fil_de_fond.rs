@@ -785,7 +785,12 @@ fn une_aide_qui_ne_repond_plus_ne_fige_pas_les_tics() {
         h.partie() && vu("fps.demarrer")
     });
     assert!(vu("aide.bonjour"), "le réveil n'a pas joint l'Aide relancée : {:?}", recues.lock().unwrap());
+    // (et la trace réseau de la mesure du lag, partie sans elle au début : reprise pendant la même partie ; lot F)
+    tourner(&mut hote, "la reprise de la trace réseau du lag", Duration::from_secs(10), &|h: &Hote| {
+        h.partie() && vu("flux.demarrer") && vu("flux.lire")
+    });
     let j = std::fs::read_to_string(hote.ctx.fichier_journal()).unwrap_or_default();
+    assert!(j.contains("Lag : trace réseau par l'Aide, reprise pendant la partie"), "{j}");
     assert!(j.contains("pas fermé (l'Aide ne répondait pas, nouvel essai dans un moment)"), "{j}");
     assert!(j.contains("Mesure des FPS: l'Aide ne répond pas."), "{j}");
     assert_eq!(hote.ctx.aide_demandes_relevees(), Vec::<String>::new(), "une demande de Windows hors d'un clic");

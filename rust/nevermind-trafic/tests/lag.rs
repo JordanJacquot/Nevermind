@@ -48,6 +48,8 @@ impl Pingeur for PasDePing {
 
 struct FauxEnv {
     flux: Vec<String>,
+    /// Les connexions TCP (pid|adresse|port) : le repli sans la trace
+    tcp: Vec<String>,
     annuaire: Annuaire,
     lieux: HashMap<String, Lieu>,
     journal: Vec<String>,
@@ -58,7 +60,7 @@ impl Env for FauxEnv {
         self.flux.clone()
     }
     fn tcp(&mut self) -> Vec<String> {
-        Vec::new()
+        self.tcp.clone()
     }
     fn nom_processus(&mut self, pid: u32) -> String {
         format!("Programme {pid}")
@@ -117,7 +119,13 @@ fn passer(s: &mut Session, e: &mut FauxEnv, t: &mut f64, jusqua: bool) {
 fn serveurs_suivis_et_box_des_autres_joueurs() {
     let p = FauxPings::default();
     let mut s = session(&p);
-    let mut e = FauxEnv { flux: Vec::new(), annuaire: Annuaire::default(), lieux: HashMap::new(), journal: Vec::new() };
+    let mut e = FauxEnv {
+        flux: Vec::new(),
+        tcp: Vec::new(),
+        annuaire: Annuaire::default(),
+        lieux: HashMap::new(),
+        journal: Vec::new(),
+    };
     for x in [
         entree("35.207.0.0", "35.207.255.255", "Google LLC", "GOOGLE-CLOUD"),
         entree("63.176.0.0", "63.179.255.255", "Amazon.com, Inc.", "AMAZO-4"),
@@ -196,6 +204,7 @@ fn mesure_gardee_a_la_fin() {
     let mut s = session(&p);
     let mut e = FauxEnv {
         flux: vec![flux("35.207.176.221", 200)],
+        tcp: Vec::new(),
         annuaire: Annuaire::default(),
         lieux: HashMap::new(),
         journal: Vec::new(),
@@ -225,4 +234,48 @@ fn mesure_gardee_a_la_fin() {
     let s2 = session(&p2);
     assert!(s2.finir(&mut e, 59.0, "x", "y").is_none());
     let _: Value = rec;
+}
+
+/// Lot F : l'Aide dormait au début de la partie, la mesure part sans la trace (le serveur de connexion du jeu, en
+/// TCP, est suivi après 3 passages). La trace reprend en cours de partie (`reprendre_trace`) : dès le passage
+/// suivant, le serveur de la partie qu'elle montre (UDP) remplace le serveur de connexion, sans attendre le contrôle
+/// des 15 passages, et ses pertes sont suivies.
+#[test]
+fn la_trace_reprise_en_cours_de_partie_trouve_le_serveur_de_la_partie() {
+    let p = FauxPings::default();
+    let mut s = Session::demarrer(
+        "Jeu de test",
+        1234,
+        0.0,
+        0.0,
+        None,
+        false,
+        Box::new(p.clone()),
+        Arc::new(PasDePing),
+        Arc::new(Vec::new),
+    );
+    let mut e = FauxEnv {
+        flux: vec![flux("35.207.176.221", 200)],
+        tcp: vec!["1234|63.178.238.177|443".into()],
+        annuaire: Annuaire::default(),
+        lieux: HashMap::new(),
+        journal: Vec::new(),
+    };
+    let mut t = 0.0;
+    for _ in 0..3 {
+        passer(&mut s, &mut e, &mut t, false);
+    }
+    assert_eq!(s.serveur.as_ref().map(|x| (x.ip.as_str(), x.proto.as_str())), Some(("63.178.238.177", "tcp")));
+    assert_ne!(s.passages % 15, 14, "le passage suivant serait celui du contrôle des 15 passages");
+    s.reprendre_trace();
+    assert!(s.etw);
+    passer(&mut s, &mut e, &mut t, false);
+    assert_eq!(
+        s.serveur.as_ref().map(|x| (x.ip.as_str(), x.proto.as_str())),
+        Some(("35.207.176.221", "udp")),
+        "le serveur de la partie n'est pas pris dès la reprise de la trace"
+    );
+    // (puis il reste le serveur suivi, comme avant)
+    passer(&mut s, &mut e, &mut t, false);
+    assert_eq!(s.serveur.as_ref().unwrap().ip, "35.207.176.221");
 }

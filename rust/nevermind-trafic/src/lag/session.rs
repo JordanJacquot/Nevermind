@@ -73,6 +73,9 @@ pub struct Session {
     pub cibles: HashMap<&'static str, usize>,
     pub isp: String,
     pub serveur: Option<Serveur>,
+    /// La trace a repris en cours de partie (l'Aide dormait au début) : le serveur de connexion suivi jusque-là (TCP) est
+    /// remplacé dès que la trace montre celui de la partie, sans attendre le contrôle des 15 passages (lot F)
+    connexion_a_remplacer: bool,
     pub pairs: HashSet<String>,
     pub passages: u64,
     prev: HashMap<String, f64>,
@@ -148,6 +151,7 @@ impl Session {
             cibles,
             isp: String::new(),
             serveur: None,
+            connexion_a_remplacer: false,
             pairs: HashSet::new(),
             passages: 0,
             prev: HashMap::new(),
@@ -166,6 +170,13 @@ impl Session {
             pingeur,
             lire_wifi,
         }
+    }
+
+    /// La trace réseau de l'Aide a démarré en cours de partie (l'Aide dormait au début, lot F) : le serveur de la
+    /// partie est cherché par la trace (UDP) dès le prochain passage, à la place du serveur de connexion (TCP)
+    pub fn reprendre_trace(&mut self) {
+        self.etw = true;
+        self.connexion_a_remplacer = self.serveur.is_some();
     }
 
     /// `Test-AdresseParticulier`
@@ -286,7 +297,12 @@ impl Session {
             }
         }
         let quinze = self.passages.is_multiple_of(15);
-        let change = best.as_ref().is_some_and(|b| self.serveur.as_ref().is_none_or(|s| s.ip != b.ip && quinze));
+        // (la trace vient de reprendre : le serveur de connexion suivi jusque-là laisse la place au premier serveur
+        //  qu'elle montre, même à la même adresse, pour suivre ses pertes ; lot F)
+        let remplacer = self.connexion_a_remplacer && best.is_some();
+        let nouveau =
+            |s: &Option<Serveur>, b: &Meilleur| remplacer || s.as_ref().is_none_or(|s| s.ip != b.ip && quinze);
+        let change = best.as_ref().is_some_and(|b| nouveau(&self.serveur, b));
         if change && let Some(b) = &best {
             let ip = b.ip.clone();
             if Session::particulier(env, &ip) == Some(true) {
@@ -295,7 +311,8 @@ impl Session {
             }
         }
         if let Some(b) = best {
-            if self.serveur.as_ref().is_none_or(|s| s.ip != b.ip && quinze) {
+            if nouveau(&self.serveur, &b) {
+                self.connexion_a_remplacer = false;
                 self.retirer_serveur();
                 self.serveur =
                     Some(Serveur { ip: b.ip.clone(), port: b.port, proto: b.proto.clone(), ..Default::default() });

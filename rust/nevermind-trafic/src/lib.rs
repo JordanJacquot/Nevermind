@@ -116,6 +116,8 @@ pub struct BlocTrafic {
     annuaire: Annuaire,
     sessions: Option<Vec<Value>>,
     lag: Option<Session>,
+    /// La trace réseau de la mesure n'a pas pu démarrer, l'Aide dormait : reprise quand elle écoute (lot F)
+    trace_a_reprendre: bool,
     lieux: HashMap<String, Lieu>,
     releve: Option<Releve>,
     surveillance: bool,
@@ -149,6 +151,7 @@ impl Default for BlocTrafic {
             annuaire: Annuaire::default(),
             sessions: None,
             lag: None,
+            trace_a_reprendre: false,
             lieux: HashMap::new(),
             releve: None,
             surveillance: false,
@@ -380,7 +383,11 @@ impl BlocTrafic {
         //  d'avant le jeu, flux.veiller du bloc perf, est reprise telle quelle par l'Aide)
         let mut etw = false;
         let mut erreur = String::new();
-        if ctx.mesures_aide() {
+        let aide = ctx.mesures_aide();
+        // (l'Aide dort, réveillée en fond : la trace est demandée pendant la même partie quand elle écoute, comme la
+        //  mesure des FPS ; lot F)
+        self.trace_a_reprendre = !aide;
+        if aide {
             match ctx.aide_de_fond("flux.demarrer", &json!({}), 20000) {
                 Ok(_) => {
                     etw = true;
@@ -433,6 +440,18 @@ impl BlocTrafic {
         self.recevoir_annuaire(ctx);
         let maintenant = self.maintenant();
         let Some(mut s) = self.lag.take() else { return };
+        // La trace réseau n'a pas pu démarrer au début de la partie (l'Aide dormait, réveillée dans un fil à part) :
+        // demandée dès qu'elle écoute, pendant la même partie (lot F ; avant, le lag était mesuré sans elle jusqu'au bout)
+        if self.trace_a_reprendre && !s.etw && ctx.aide_joignable(1) {
+            self.trace_a_reprendre = false;
+            match ctx.aide_de_fond("flux.demarrer", &json!({}), 20000) {
+                Ok(_) => {
+                    s.reprendre_trace();
+                    ctx.journal("Lag : trace réseau par l'Aide, reprise pendant la partie");
+                }
+                Err(e) => ctx.journal(&format!("Lag : trace réseau par l'Aide impossible ({e})")),
+            }
+        }
         let mut env = EnvLag {
             ctx,
             sys: sys.as_ref(),
@@ -460,6 +479,7 @@ impl BlocTrafic {
     pub fn arreter_lag(&mut self, ctx: &Contexte, effets: &mut Effets) {
         let Some(mut s) = self.lag.take() else { return };
         self.passage_lag = None;
+        self.trace_a_reprendre = false;
         effets.ajouter(Effet::Signal { nom: signaux::MESURE_LAG.into(), donnees: json!({ "en_cours": false }) });
         // (Stop-FluxReseau : Invoke-Aide -SansDemande ; par le canal seul, sans réveil ni pause : la trace vit dans
         //  l'Aide, une Aide qui ne répond pas n'en a plus ; lot B)
