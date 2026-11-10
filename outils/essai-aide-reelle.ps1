@@ -1551,9 +1551,20 @@ function Test-Cas14 {
         $s3 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'veilleFps'; Action = 'fps.veiller'; P = @{ Noms = @('dormeur-absent.exe') } }) }
         $pm = { @(Get-Process -Name PresentMon -ErrorAction SilentlyContinue) }
         Test-Cas 'veille des FPS : PresentMon tourne' { $s3.R -and [string]$s3.R.veilleFps -eq 'ok' -and (Wait-Jusque { (& $pm).Count } 15) }
+        # (second audit du 09/11, P1) Le verrou « une seule Aide » de l'Aide en SYSTEM est dans Global\ : l'Aide de
+        # secours, dans la session de l'utilisateur, le voit aussi
+        $canal = Get-NomCanal $e.Sid $NevermindC
+        Test-Cas 'l''Aide en SYSTEM tient son verrou dans Global\ (commun à toutes les sessions)' { Test-Verrou "Global\$canal" }
         foreach ($a in @(Get-AidesEnCours)) { try { Stop-Process -Id $a.Id -Force -ErrorAction Stop } catch {} }
         Test-Cas 'l''Aide tuée de force : PresentMon est fermé avec elle (objet job)' { Wait-Jusque { -not (& $pm).Count } 15 }
         foreach ($x in (& $pm)) { try { $x.Kill() } catch {} }
+        # (second audit du 09/11) PresentMon tué laisse sa session ETW ouverte dans Windows ; l'Aide suivante la ferme
+        # dès qu'elle a son canal
+        $session = $canal -replace '^Nevermind-Aide-', 'Nevermind-'
+        $ouverte = { [bool](@(& "$env:SystemRoot\System32\logman.exe" query -ets 2>$null) | Where-Object { $_ -match "^\s*$([regex]::Escape($session))\s" }) }
+        Add-Note "session des FPS $session ouverte après l'Aide tuée : $(& $ouverte)"
+        $s4 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'bonjour'; Action = 'aide.bonjour'; P = @{} }) }
+        Test-Cas 'l''Aide relancée ferme la session des FPS que l''Aide tuée a laissée' { $s4.R -and (Wait-Jusque { -not (& $ouverte) } 15) }
     }
     foreach ($p in $jeu, $garde) { try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {} }
     Stop-Aides
