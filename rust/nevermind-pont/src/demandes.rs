@@ -204,7 +204,7 @@ mod tests {
         );
         assert_eq!(r["suffixe"], "4a8522ca5e0c");
         assert_eq!(r["canal"], "Nevermind-Aide-S-1-5-21-1-4a8522ca5e0c");
-        assert_eq!(r["verrou"], "Local\\Nevermind-Aide-S-1-5-21-1-4a8522ca5e0c");
+        assert_eq!(r["verrou"], "Global\\Nevermind-Aide-S-1-5-21-1-4a8522ca5e0c");
         let r = traiter(r#"{"action":"canal","dossier":"\\\\serveur\\partage","sid":"S-1-5-21-1"}"#);
         assert_eq!(r["ok"], true);
         assert!(r["suffixe"].is_null() && r["canal"].is_null());
