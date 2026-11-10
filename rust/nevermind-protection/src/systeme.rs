@@ -79,6 +79,8 @@ pub struct Faux {
     /// La fenêtre « Choisis le dossier à analyser » : elle attend la réponse donnée par l'essai (5 s au plus, comme
     /// un utilisateur qui parcourt ses dossiers) ; sans réponse prévue, rien n'est choisi
     pub choix_dossier: Mutex<Option<std::sync::mpsc::Receiver<Option<String>>>>,
+    /// « Supprimer les menaces » : Defender attend le feu donné par l'essai (10 s au plus) ; sans feu prévu, tout de suite
+    pub suppression: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
 }
 
 impl Faux {
@@ -143,6 +145,9 @@ impl Systeme for Faux {
     }
     fn supprimer_menaces(&self) -> Result<(), String> {
         self.noter("supprimer les menaces".into());
+        if let Some(r) = self.suppression.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            let _ = r.recv_timeout(std::time::Duration::from_secs(10));
+        }
         Ok(())
     }
     fn desactiver_tache(&self, nom: &str, chemin: &str) -> Result<bool, String> {

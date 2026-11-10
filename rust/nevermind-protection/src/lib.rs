@@ -427,30 +427,7 @@ impl BlocProtection {
                 | Sorte::ReactiverPareFeu
                 | Sorte::DesactiverTaches(_)
         ) {
-            if self.travaux.occupe() {
-                ctx.journal(&format!("Sécurité : {titre} pas lancé, un geste est encore en cours"));
-                // (dit en clair : le clic n'est pas avalé sans un mot ; lot B)
-                let nom = self.geste_nom.unwrap_or("un geste de la sécurité");
-                effets.ajouter(Effet::Annonce(nevermind_noyau::gestes::texte_refus(nom, PAGE)));
-                return;
-            }
-            // (un geste qui change le PC : le verrou commun des gestes, sinon le clic est refusé ; lot A du second audit)
-            let geste = match ctx.prendre_geste(nom_geste(&a.sorte), PAGE) {
-                Ok(g) => g,
-                Err(refus) => {
-                    effets.ajouter(Effet::Annonce(refus));
-                    return;
-                }
-            };
-            let sorte = a.sorte.clone();
-            self.geste_nom = Some(nom_geste(&sorte));
-            self.travaux.lancer_geste(ctx, GESTE, geste, move |fond| {
-                // (l'attente montrée tout de suite, retirée à la fin du travail ; lot B)
-                fond.effet(nevermind_noyau::signaux::occupe(attente_geste(&sorte)));
-                let (definitif, erreur, annonces) = geste_long(fond.ctx, sys.as_deref(), &sorte);
-                FinGeste { titre, definitif, erreur, annonces, rafraichir }
-            });
-            self.relever_travaux(ctx, effets);
+            self.lancer_geste_long(ctx, effets, a.sorte.clone(), titre, rafraichir, None);
             return;
         }
         match &a.sorte {
@@ -491,6 +468,48 @@ impl BlocProtection {
             effets,
             FinGeste { titre, definitif: None, erreur: None, annonces: Vec::new(), rafraichir },
         );
+    }
+
+    /// Un geste long (Defender, l'Aide, le Planificateur) lancé dans un travail de fond (audit G3), sous le verrou
+    /// commun des gestes (lot A du second audit) : un autre geste en cours, ici ou ailleurs, et le clic est refusé en
+    /// le disant ; l'attente est montrée tout de suite et retirée à la fin (lot B). `reussite` : la phrase dite quand
+    /// le geste a marché.
+    fn lancer_geste_long(
+        &mut self,
+        ctx: &Contexte,
+        effets: &mut Effets,
+        sorte: Sorte,
+        titre: String,
+        rafraichir: bool,
+        reussite: Option<&'static str>,
+    ) {
+        if self.travaux.occupe() {
+            ctx.journal(&format!("Sécurité : {titre} pas lancé, un geste est encore en cours"));
+            // (dit en clair : le clic n'est pas avalé sans un mot ; lot B)
+            let nom = self.geste_nom.unwrap_or("un geste de la sécurité");
+            effets.ajouter(Effet::Annonce(nevermind_noyau::gestes::texte_refus(nom, PAGE)));
+            return;
+        }
+        let geste = match ctx.prendre_geste(nom_geste(&sorte), PAGE) {
+            Ok(g) => g,
+            Err(refus) => {
+                effets.ajouter(Effet::Annonce(refus));
+                return;
+            }
+        };
+        let sys = self.sys.clone();
+        self.geste_nom = Some(nom_geste(&sorte));
+        self.travaux.lancer_geste(ctx, GESTE, geste, move |fond| {
+            fond.effet(nevermind_noyau::signaux::occupe(attente_geste(&sorte)));
+            let (definitif, erreur, mut annonces) = geste_long(fond.ctx, sys.as_deref(), &sorte);
+            if erreur.is_none()
+                && let Some(r) = reussite
+            {
+                annonces.push(Effet::Annonce(r.into()));
+            }
+            FinGeste { titre, definitif, erreur, annonces, rafraichir }
+        });
+        self.relever_travaux(ctx, effets);
     }
 
     /// La fin d'un geste (sur le fil des blocs) : le message d'erreur, ou l'historique ; puis la protection relue
@@ -725,20 +744,16 @@ impl Bloc for BlocProtection {
             }
             "sec-supprimer-trouvees" => {
                 if confirme(valeur) {
-                    let _geste = match ctx.prendre_geste("Supprimer les menaces", PAGE) {
-                        Ok(g) => g,
-                        Err(refus) => {
-                            effets.ajouter(Effet::Annonce(refus));
-                            return true;
-                        }
-                    };
-                    match self.sys.as_ref().map(|s| s.supprimer_menaces()) {
-                        Some(Err(e)) => effets.ajouter(Effet::Annonce(e)),
-                        _ => {
-                            effets.ajouter(Effet::Annonce("Menaces supprimées.".into()));
-                            self.relire(ctx);
-                        }
-                    }
+                    // (Defender peut prendre son temps : dans un travail de fond, sous le verrou des gestes, avec son
+                    //  attente, comme les gestes des points à vérifier ; avant, sur le fil des blocs ; lot F)
+                    self.lancer_geste_long(
+                        ctx,
+                        effets,
+                        Sorte::SupprimerMenaces,
+                        "Supprimer les menaces".into(),
+                        true,
+                        Some("Menaces supprimées."),
+                    );
                 } else {
                     question(effets, id, "Supprimer toutes les menaces trouvées par Microsoft Defender ?", valeur);
                 }

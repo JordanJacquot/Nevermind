@@ -699,3 +699,66 @@ fn pare_feu_attente_montree_et_deuxieme_clic_dit() {
     });
     assert_eq!(derniere, Some(json!("")), "l'attente reste à l'écran après la fin");
 }
+
+/// Lot F (reste du lot B) : « Supprimer les menaces » du panneau d'une analyse appelait Defender sur le fil des blocs
+/// (tout Nevermind figé tant que Defender travaillait), hors du verrou des gestes une fois lancé, sans attente montrée.
+/// Maintenant : un travail de fond, sous le verrou des gestes (un geste d'une autre page est refusé en le disant),
+/// avec son attente, un deuxième clic refusé en le disant, puis « Menaces supprimées. » et la protection relue.
+#[test]
+fn supprimer_les_menaces_du_panneau_ne_fige_pas() {
+    let ctx = contexte("supprimer-menaces").partage();
+    let mut f = faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap());
+    f.admin = true;
+    let (feu, attente) = std::sync::mpsc::channel::<()>();
+    *f.suppression.lock().unwrap() = Some(attente);
+    let f = Arc::new(f);
+    let mut b = BlocProtection::avec_systeme(Some(f.clone()));
+    attendre(&mut b, &ctx);
+    let lectures = f.gestes().iter().filter(|g| *g == "lire").count();
+    // La question d'abord
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "sec-supprimer-trouvees", &Value::Null, &mut e));
+    let q = signal(&e.0, "question").expect("question posée").clone();
+    assert!(q["texte"].as_str().unwrap().starts_with("Supprimer toutes les menaces"), "{q}");
+    let oui = json!({ "id": "sec-supprimer-trouvees", "valeur": "oui" });
+    let mut tout = Vec::new();
+    let mut e = Effets::default();
+    let debut = Instant::now();
+    assert!(b.action(&ctx, "sec-supprimer-trouvees", &oui, &mut e));
+    assert!(
+        debut.elapsed() < Duration::from_secs(2),
+        "le « Oui » a pris {:?} : le fil des blocs attendait Defender",
+        debut.elapsed()
+    );
+    tout.extend(e.0);
+    let fin = Instant::now() + Duration::from_secs(10);
+    while !tout.iter().any(|x| matches!(x, Effet::Signal { nom, donnees } if nom == "occupe" && donnees["texte"] == "Suppression des menaces...")) {
+        assert!(Instant::now() < fin, "pas d'attente montrée : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Pendant ce temps : un deuxième clic le dit, un geste d'une autre page est refusé (le verrou est tenu)
+    let mut e = Effets::default();
+    b.action(&ctx, "sec-supprimer-trouvees", &oui, &mut e);
+    assert_eq!(annonces(&e.0), ["Attends la fin de « Supprimer les menaces » (Protection)"]);
+    assert!(ctx.prendre_geste("Changer le DNS", "Réseau").is_err(), "le verrou des gestes n'est pas tenu");
+    assert_eq!(f.gestes().iter().filter(|g| *g == "supprimer les menaces").count(), 1, "le geste est reparti");
+    feu.send(()).unwrap();
+    while !annonces(&tout).iter().any(|a| a == "Menaces supprimées.") {
+        assert!(Instant::now() < fin, "la suppression ne finit pas : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let derniere = tout.iter().rev().find_map(|x| match x {
+        Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees["texte"].clone()),
+        _ => None,
+    });
+    assert_eq!(derniere, Some(json!("")), "l'attente reste à l'écran après la fin");
+    assert!(ctx.prendre_geste("Changer le DNS", "Réseau").is_ok(), "le verrou des gestes n'est pas rendu");
+    attendre(&mut b, &ctx);
+    assert!(f.gestes().iter().filter(|g| *g == "lire").count() > lectures, "la protection n'est pas relue");
+}
