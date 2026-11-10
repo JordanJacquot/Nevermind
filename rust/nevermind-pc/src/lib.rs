@@ -85,6 +85,15 @@ const TRAVAIL: &str = "pc";
 /// La page, dans « Attends la fin de « Appliquer » (Ton PC) »
 const PAGE: &str = "Ton PC";
 
+/// L'attente montrée pendant la lecture du démarrage (la lecture lente, puis ce que l'Aide y ajoute), et sa clé de
+/// pastille : avant, rien n'était montré, seul le refus d'un clic l'expliquait (lot F)
+const ATTENTE_LECTURE: &str = "Lecture de ton PC...";
+const PASTILLE_LECTURE: &str = "lecture";
+
+fn pastille_lecture(texte: &str) -> Effet {
+    Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": texte, "travail": PASTILLE_LECTURE }) }
+}
+
 /// Le nom d'un geste de la page qui ne prend pas le verrou des gestes, dans « Attends la fin de ... »
 fn nom_sans_verrou(id: &str) -> &str {
     match id {
@@ -154,6 +163,8 @@ pub struct BlocPc {
     /// Les programmes de Windows lancés (mdsched, perfmon) : la question de Windows attend l'utilisateur, dans un
     /// fil à part ; la fin dit un échec (M8)
     lancements: Travaux<Result<(), String>>,
+    /// La lecture lente d'un essai (tests) : à la place de celle du vrai PC
+    lire_essai: Option<Box<dyn FnOnce() -> lecture::Lu + Send>>,
 }
 
 /// La clé du lancement d'un programme de Windows : un à la fois (un double clic ne pose pas deux questions)
@@ -165,6 +176,16 @@ impl BlocPc {
         let mut b = BlocPc { essai: Some(Arc::new(Mutex::new(pc))), lu: true, charge: true, ..Default::default() };
         b.prendre(lu);
         b
+    }
+
+    /// Le bloc sur un faux PC (tests), au démarrage : la lecture lente reste à faire, par `lire` (jamais le vrai PC)
+    pub fn sur_lecture_lente(pc: Box<dyn Pc + Send>, lire: impl FnOnce() -> lecture::Lu + Send + 'static) -> Self {
+        BlocPc {
+            essai: Some(Arc::new(Mutex::new(pc))),
+            charge: true,
+            lire_essai: Some(Box::new(lire)),
+            ..Default::default()
+        }
     }
 
     /// La session (tests)
@@ -342,6 +363,10 @@ impl BlocPc {
                 Rendu::Fini { resultat, .. } => resultat,
             };
             let suite = self.suite.take();
+            // (la lecture du démarrage est finie, bien ou mal : son attente est retirée)
+            if matches!(suite, Some(Suite::Lecture)) {
+                effets.ajouter(pastille_lecture(""));
+            }
             match resultat {
                 Ok(at) => {
                     self.session = at.session;
@@ -423,7 +448,12 @@ impl BlocPc {
                 //  test, pour que Ton PC montre son analyse ; rien n'y est écrit : PcWindows refuse toute écriture en
                 //  test)
                 let _ = ctx;
-                self.lecture = Some(std::thread::spawn(lecture::lire));
+                self.lecture = Some(match self.lire_essai.take() {
+                    Some(lire) => std::thread::spawn(lire),
+                    None => std::thread::spawn(lecture::lire),
+                });
+                // (l'attente montrée jusqu'à la fin de la lecture complétée par l'Aide : `relever_travaux`)
+                self.en_attente.push(pastille_lecture(ATTENTE_LECTURE));
             }
             Some(h) if h.is_finished() => {
                 if let Some(h) = self.lecture.take()
@@ -912,6 +942,7 @@ impl BlocPc {
         self.charger(ctx);
         if !self.lu {
             self.suivre_lecture(ctx);
+            self.rendre_en_attente(effets);
             if !self.lu {
                 return Some(Duration::from_millis(250));
             }

@@ -510,6 +510,56 @@ fn analyse_json(m: &mut Moteur, a: &Analyse) -> Value {
         "Ignores": a.ignores.iter().map(|f| f.id.clone()).collect::<Vec<_>>(), "Portable": a.portable, "Onduleur": a.onduleur, "Build": a.build })
 }
 
+/// Lot F (reste du lot B) : pendant la lecture du démarrage de Ton PC (la lecture lente, puis ce que l'Aide y ajoute),
+/// une attente est montrée dès le premier tic, puis retirée à la fin (avant : rien, seul le refus d'un clic
+/// l'expliquait). La lecture est celle de l'essai, jamais celle du vrai PC.
+#[test]
+fn la_lecture_du_demarrage_montre_son_attente() {
+    use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
+    use std::time::{Duration, Instant};
+    let cas = lire("corrections.json");
+    let (pc, s, _) = charger(&cas[0]["entree"]);
+    let lu = nevermind_pc::lecture::Lu { entrees: s.entrees.clone(), demarrage: s.demarrage.clone() };
+    let (feu, attente) = std::sync::mpsc::channel::<()>();
+    let mut b = nevermind_pc::BlocPc::sur_lecture_lente(Box::new(pc), move || {
+        let _ = attente.recv_timeout(Duration::from_secs(10));
+        lu
+    });
+    let d = nevermind_noyau::dossier_essai("pc-lecture-attente");
+    let _ = std::fs::remove_dir_all(&d);
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true).partage();
+    let pastilles = |e: &[Effet]| -> Vec<Value> {
+        e.iter()
+            .filter_map(|x| match x {
+                Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    let mut e = Effets::default();
+    b.tic(&ctx, false, &mut e);
+    assert_eq!(
+        pastilles(&e.0),
+        [json!({ "texte": "Lecture de ton PC...", "travail": "lecture" })],
+        "pas d'attente montrée pendant la lecture"
+    );
+    feu.send(()).unwrap();
+    let mut tout = Vec::new();
+    let fin = Instant::now() + Duration::from_secs(10);
+    while b.session().analyse.is_none() || b.travail_en_cours() {
+        assert!(Instant::now() < fin, "la lecture ne finit pas : {tout:?}");
+        std::thread::sleep(Duration::from_millis(10));
+        let mut e = Effets::default();
+        b.tic(&ctx, false, &mut e);
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+    }
+    let lecture: Vec<Value> =
+        pastilles(&tout).into_iter().filter(|p| p["travail"] == "lecture").map(|p| p["texte"].clone()).collect();
+    assert_eq!(lecture, [json!("")], "l'attente n'est pas retirée une fois, à la fin de la lecture : {tout:?}");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
 fn lire(nom: &str) -> Vec<Value> {
     let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("juges").join(nom);
     let t = std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("{} : {e}", p.display()));
