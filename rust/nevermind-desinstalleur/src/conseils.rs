@@ -7,7 +7,6 @@
 //! 300 caractères ; rien à dire : pas de fichier (un ancien est effacé) ; copie non gérée : rien n'est écrit. Le
 //! fichier est écrit à côté puis renommé, sans jamais suivre un lien (le désinstalleur tourne en administrateur).
 
-use std::io::Write;
 use std::path::Path;
 
 /// Le nom du fichier, dans le dossier des données de la suite
@@ -36,17 +35,10 @@ where
         .collect()
 }
 
-/// Un lien (point de jonction, lien symbolique) : jamais suivi
+/// Un lien symbolique : jamais suivi
+#[cfg(not(windows))]
 fn est_lien(m: &std::fs::Metadata) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        m.file_attributes() & 0x400 != 0 // FILE_ATTRIBUTE_REPARSE_POINT
-    }
-    #[cfg(not(windows))]
-    {
-        m.file_type().is_symlink()
-    }
+    m.file_type().is_symlink()
 }
 
 /// Écrit les conseils (déjà [`preparer`]) dans `dossier_suite`, ou efface un ancien fichier s'il n'y a rien à dire.
@@ -55,6 +47,41 @@ fn est_lien(m: &std::fs::Metadata) -> bool {
 /// posé à la place du fichier est remplacé, ce qu'il vise n'est pas touché.
 pub fn ecrire(dossier_suite: Option<&Path>, lignes: &[String]) -> Result<(), String> {
     let Some(dossier) = dossier_suite else { return Ok(()) };
+    // (lot C : sous Windows, en administrateur, rien par un simple chemin. Le dossier de la suite est ouvert et vérifié,
+    //  le fichier écrit à côté puis renommé par rapport à sa poignée : `%LOCALAPPDATA%\Mindset`, lui, appartient au
+    //  compte, qui pourrait le remplacer par une jonction entre la vérification et l'écriture)
+    #[cfg(windows)]
+    {
+        use crate::os::effacement::{self, EtatDonnees};
+        let erreur = |e: std::io::Error| crate::donnees::message_erreur(&e);
+        let d = match effacement::ouvrir_donnees(dossier) {
+            Ok(EtatDonnees::Dossier(d)) => d,
+            // (dossier absent : il n'y a rien à effacer, et rien n'est créé)
+            Ok(EtatDonnees::Absent) => return Ok(()),
+            Ok(EtatDonnees::Lien) => return Err(format!("{} n'est pas un dossier", dossier.display())),
+            Err(e) => return Err(erreur(e)),
+        };
+        // (un lien posé à la place est retiré seul, jamais ce qu'il vise)
+        let effacer = |nom: &str| match d.effacer_fichier(nom) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(erreur(e)),
+            _ => Ok(()),
+        };
+        effacer(&format!("{NOM}.tmp"))?;
+        if lignes.is_empty() {
+            return effacer(NOM);
+        }
+        let mut texte = lignes.join("\r\n");
+        texte.push_str("\r\n");
+        d.remplacer(NOM, texte.as_bytes()).map_err(erreur)
+    }
+    #[cfg(not(windows))]
+    par_chemin(dossier, lignes)
+}
+
+/// Hors Windows (le désinstalleur n'y tourne pas) : le même travail par les chemins
+#[cfg(not(windows))]
+fn par_chemin(dossier: &Path, lignes: &[String]) -> Result<(), String> {
+    use std::io::Write;
     match std::fs::symlink_metadata(dossier) {
         Ok(m) if m.is_dir() && !est_lien(&m) => {}
         Ok(_) => return Err(format!("{} n'est pas un dossier", dossier.display())),
@@ -105,5 +132,29 @@ mod tests {
         let l = preparer(&n);
         assert_eq!(l.len(), MAX_LIGNES);
         assert_eq!(l[9], "ligne 9");
+    }
+
+    /// Lot C : le dossier de la suite atteint par une jonction (`%LOCALAPPDATA%\Mindset` appartient au compte) : rien
+    /// n'est écrit dans le dossier visé ; un vrai dossier, lui, reçoit les conseils (écrits à côté puis renommés)
+    #[cfg(windows)]
+    #[test]
+    fn un_dossier_de_la_suite_atteint_par_une_jonction_n_est_jamais_ecrit() {
+        let base = std::env::temp_dir().join(format!("nevermind-desinst-conseils-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let vrai = base.join("ailleurs").join("Mindset");
+        std::fs::create_dir_all(&vrai).unwrap();
+        crate::donnees::tests::jonction(&base.join("Local"), &base.join("ailleurs"));
+        let lignes = preparer([REDEMARRER]);
+        assert!(ecrire(Some(&base.join("Local").join("Mindset")), &lignes).is_err());
+        assert!(std::fs::read_dir(&vrai).unwrap().next().is_none(), "écrit à travers la jonction");
+        // Un vrai dossier
+        ecrire(Some(&vrai), &lignes).unwrap();
+        assert_eq!(std::fs::read_to_string(vrai.join(NOM)).unwrap(), format!("{REDEMARRER}\r\n"));
+        assert!(!vrai.join(format!("{NOM}.tmp")).exists());
+        // Rien à dire : l'ancien fichier part
+        ecrire(Some(&vrai), &[]).unwrap();
+        assert!(!vrai.join(NOM).exists());
+        let _ = std::fs::remove_dir(base.join("Local"));
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

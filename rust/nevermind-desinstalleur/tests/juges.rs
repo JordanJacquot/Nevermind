@@ -331,7 +331,7 @@ impl Systeme for FauxSysteme {
     fn processus(&mut self) -> Vec<(u32, String)> {
         self.processus.clone()
     }
-    fn fermer_processus(&mut self, pid: u32) {
+    fn fermer_processus(&mut self, pid: u32, _chemin: &Path) {
         self.geste("processus.fermer", json!(pid));
     }
     fn retirer_demarrage(&mut self) -> Result<(), String> {

@@ -82,6 +82,25 @@ registre. Tout est identique, sauf ce qui suit.
     suivre de lien ; écrit même si les données sont supprimées. Copie non gérée, ou sans option : jamais de fichier
     (src\conseils.rs ; tests `conseils_*` de tests\juges.rs).
 
+## Second audit, lot C (10/11) : en administrateur, rien par un simple chemin dans les dossiers du compte
+
+16. **Les données** : le compte peut remplacer son dossier des données (il a « Modification » sur `<X>:\Mindset\Donnees`)
+    par une jonction à tout moment. En administrateur, le dossier n'est plus créé, le journal n'est plus raccourci et une
+    sauvegarde abîmée n'est plus mise de côté (elle est seulement dite : « abimee » ; elle part de toute façon avec les
+    données). La sauvegarde, les réglages et l'historique sont lus dans le dossier ouvert et vérifié, chaque fichier
+    ouvert par rapport à lui sans suivre de lien (`os::contexte_administrateur`) ; un dossier qui est un lien, ou qui
+    passe par un lien, n'est pas lu (la sauvegarde est dite abîmée) ; « Tout restaurer » ne change la sauvegarde et
+    l'historique qu'en mémoire. Les lignes du journal sont gardées en mémoire, puis ajoutées à la fin, comme les
+    réglages changés (`SvcOriginal`, `PcfgOriginal`), de la même façon (`os::ecrire_donnees`). Les conseils pour Mindset
+    aussi. Lancé sans les droits, le désinstalleur met d'abord le journal au propre sous le compte (raccourci s'il
+    dépasse 1 Mo), avant la demande de Windows.
+17. **Les raccourcis** : le bureau et le menu Démarrer viennent de `HKCU\...\User Shell Folders`, que le compte peut
+    changer. En administrateur, chaque raccourci est ouvert par rapport à son dossier vérifié, relu, puis effacé par la
+    même poignée ; un bureau qui est une jonction, ou qui passe par une, n'est pas touché. Lancé sans les droits, le
+    désinstalleur repasse ensuite sous le compte et efface lui-même ceux qui lancent encore cette copie.
+18. **Les programmes fermés** (l'Aide, Nevermind) : ouverts une fois, leur chemin relu par cette poignée juste avant
+    de les fermer par elle (comme l'Aide, M6) ; un numéro redonné à un autre programme depuis la liste n'est pas fermé.
+
 ## La voie « sur place » (architecture, pas une différence)
 
 En administrateur, la version PowerShell faisait elle-même les demandes de la liste de l'Aide (aide-actions.ps1). Ici,

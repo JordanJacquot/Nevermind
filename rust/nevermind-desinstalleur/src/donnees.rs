@@ -391,7 +391,7 @@ pub(crate) mod tests {
 
     /// Un point de jonction `lien` vers `cible` (sans droits : mklink /J, sans fenêtre)
     #[cfg(windows)]
-    fn jonction(lien: &Path, cible: &Path) {
+    pub(crate) fn jonction(lien: &Path, cible: &Path) {
         use std::os::windows::process::CommandExt;
         let st = std::process::Command::new(format!("{}\\cmd.exe", nevermind_noyau::windows::dossier_systeme()))
             .raw_arg(format!("/d /c mklink /J \"{}\" \"{}\"", lien.display(), cible.display()))

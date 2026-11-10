@@ -35,6 +35,10 @@ windows-registry = "=0.6.1"
 [dependencies.windows]
 version = "=0.62.2"
 features = [
+    # (lot C : les fichiers des données et les raccourcis ouverts par rapport à la poignée de leur dossier vérifié,
+    # NtCreateFile avec RootDirectory, jamais par leur chemin)
+    "Wdk_Foundation",
+    "Wdk_Storage_FileSystem",
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Security",

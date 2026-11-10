@@ -49,8 +49,9 @@ pub trait Systeme {
     fn arreter_tache_aide(&mut self);
     /// Les programmes en cours : numéro et chemin complet (vide si illisible)
     fn processus(&mut self) -> Vec<(u32, String)>;
-    /// Ferme ce programme et attend sa fin (3 s au plus ; erreurs ignorées)
-    fn fermer_processus(&mut self, pid: u32);
+    /// Ferme ce programme et attend sa fin (3 s au plus ; erreurs ignorées), seulement s'il est bien `chemin` : relu par
+    /// la poignée qui le ferme (lot C : le numéro, lu dans la liste, a pu être redonné à un autre programme depuis)
+    fn fermer_processus(&mut self, pid: u32, chemin: &Path);
     /// `Set-AutoStart $false` : la tâche « Nevermind (démarrage) » retirée si elle existe
     fn retirer_demarrage(&mut self) -> Result<(), String>;
     /// Une tâche de ce nom existe (`Get-ScheduledTask -TaskName`)
@@ -279,15 +280,17 @@ pub fn desinstaller(
     sys.arreter_tache_aide();
     for (pid, chemin) in sys.processus() {
         if pid != lieux.pid && egal_chemin(&chemin, &exe_aide) {
-            sys.fermer_processus(pid);
+            sys.fermer_processus(pid, &exe_aide);
         }
     }
     // (DIVERGENCES.md, point 3 : Nevermind lui-même, s'il est ouvert depuis ce dossier, est fermé aussi : il tiendrait
     // ses programmes et ses données ouverts)
     let exes_appli = [dans(&lieux.racine, "Mindset.exe"), dans(&lieux.racine, "Nevermind.exe")];
     for (pid, chemin) in sys.processus() {
-        if pid != lieux.pid && exes_appli.iter().any(|e| egal_chemin(&chemin, e)) {
-            sys.fermer_processus(pid);
+        if pid != lieux.pid
+            && let Some(e) = exes_appli.iter().find(|e| egal_chemin(&chemin, e))
+        {
+            sys.fermer_processus(pid, e);
         }
     }
     if n > 0 {
