@@ -81,7 +81,14 @@ fn le_reveil_reussi_leve_la_pause() {
         assert!(Instant::now() < fin, "la pause n'est pas levée après le réveil");
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert_eq!(*recues.lock().unwrap(), ["aide.bonjour", "flux.lire"]);
+    // (lot G : la sonde rapide par le canal, toutes les 5 s pendant la pause, peut s'ajouter à celle du réveil)
+    let r = recues.lock().unwrap().clone();
+    assert!(
+        r.len() >= 2
+            && r.last().is_some_and(|x| x == "flux.lire")
+            && r[..r.len() - 1].iter().all(|x| x == "aide.bonjour"),
+        "{r:?}"
+    );
     drop(relancee.lock().unwrap().take());
     let _ = std::fs::remove_dir_all(&d);
 }

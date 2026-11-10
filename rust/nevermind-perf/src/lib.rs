@@ -26,6 +26,7 @@ pub mod windows;
 
 use jeu::{AlerteChaleur, EntreeIndex, Fermee};
 use mesures::{Besoin, Mesures};
+use nevermind_noyau::aide::Mesure;
 use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
 use pages::{ch, liste, nb, vrai};
 use serde_json::{Map, Value, json};
@@ -41,6 +42,9 @@ const PAGE: &str = "Mode jeu";
 const VERT: u32 = 0x22D37A;
 const ORANGE: u32 = 0xF5A524;
 const ROUGE: u32 = 0xF04438;
+/// Sans lecture réussie des FPS depuis tant de secondes, la mesure passe « à reprendre » (lot G : avant, 20 lectures
+/// ratées l'arrêtaient pour toute la partie, et les refus d'une Aide en pause les faisaient en 5 s)
+const SANS_LECTURE_MAX: f64 = 10.0;
 
 /// La partie en cours ($script:GameSession)
 #[derive(Debug, Clone)]
@@ -68,7 +72,12 @@ struct Cible {
     refus: bool,
     sans_image: u32,
     distant: bool,
-    rates: u32,
+    /// La dernière lecture réussie (`fps.lire`) : le temps sans réponse se compte depuis elle (lot G)
+    derniere_lecture: f64,
+    /// L'Aide n'a rien rendu depuis [`SANS_LECTURE_MAX`] : la mesure est redemandée (`fps.demarrer`, même jeu) dès
+    /// qu'elle répond de nouveau ; le compteur dit « en attente » pendant ce temps (lot G, ajustement D)
+    a_reprendre: bool,
+    prochaine_reprise: f64,
     prochaine_lecture: f64,
     prochain_tick: f64,
     compteur_vu: bool,
@@ -427,10 +436,16 @@ impl BlocPerf {
         if noms.iter().any(|n| progs.iter().any(|p| texte::egal(&format!("{}.exe", p.nom), n))) {
             return;
         }
-        self.veille_demande = Some(t);
-        if noms.is_empty() || !ctx.aide_prete() {
+        if noms.is_empty() {
+            self.veille_demande = Some(t);
             return;
         }
+        // (lot G : l'Aide pas prête, en pause après une absence de réponse, ne compte pas pour les 30 s : la veille
+        //  est redemandée au passage suivant, 5 s plus tard, et repart dès que l'Aide répond de nouveau)
+        if !ctx.aide_prete() {
+            return;
+        }
+        self.veille_demande = Some(t);
         let mut erreurs: Vec<String> = Vec::new();
         if fps && let Err(e) = ctx.aide_texte("fps.veiller", &json!({ "Noms": noms }).to_string(), 15000) {
             erreurs.push(format!("FPS : {e}"));
@@ -464,7 +479,8 @@ impl BlocPerf {
         } else if self.flux_veille && !self.lag_en_cours {
             self.flux_veille = false;
             ctx.journal("Lag : trace réseau en veille arrêtée (aucun jeu guetté installé, ou mesure du lag coupée)");
-            let _ = ctx.aide_texte("flux.arreter", "{}", 15000);
+            // (jamais attendu sur le fil des blocs ; gardé si l'Aide ne répond pas, lot G)
+            ctx.arreter_mesure(Mesure::Trace);
         }
         utile
     }
@@ -549,7 +565,9 @@ impl BlocPerf {
             refus: false,
             sans_image: 0,
             distant: true,
-            rates: 0,
+            derniere_lecture: t,
+            a_reprendre: false,
+            prochaine_reprise: t,
             prochaine_lecture: t + 0.25,
             prochain_tick: t + 0.5,
             compteur_vu: false,
@@ -560,13 +578,18 @@ impl BlocPerf {
 
     /// Les lignes de PresentMon gardées par l'Aide (toutes les 250 ms)
     fn lire_fps(&mut self, ctx: &Contexte) {
+        let maintenant = self.maintenant();
         let Some(c) = self.cible.as_mut() else { return };
+        if c.a_reprendre {
+            Self::reprendre_fps(ctx, c, maintenant);
+            return;
+        }
         if !c.distant {
             return;
         }
         match ctx.aide_texte("fps.lire", "{}", 5000) {
             Ok(t) => {
-                c.rates = 0;
+                c.derniere_lecture = maintenant;
                 for l in t.split('\n') {
                     let l = l.trim_end_matches('\r');
                     if l.is_empty() {
@@ -582,10 +605,49 @@ impl BlocPerf {
                 }
             }
             Err(e) => {
-                c.images.derniere_erreur = e;
-                c.rates += 1;
-                if c.rates >= 20 {
-                    c.distant = false;
+                // (un refus « en pause » n'est pas une lecture ratée : l'Aide n'a pas été jointe ; seul compte le temps
+                //  depuis la dernière lecture réussie. Lot G)
+                if e != nevermind_noyau::aide::ERREUR_PAUSE {
+                    c.images.derniere_erreur = e;
+                }
+                if maintenant - c.derniere_lecture >= SANS_LECTURE_MAX {
+                    c.a_reprendre = true;
+                    c.prochaine_reprise = maintenant;
+                    ctx.journal(&format!(
+                        "Mesure des FPS : l'Aide ne répond plus depuis {} s, la mesure reprendra quand elle répondra",
+                        texte::ps_int(maintenant - c.derniere_lecture)
+                    ));
+                }
+            }
+        }
+    }
+
+    /// La mesure « à reprendre » (lot G, ajustement D) : dès que l'Aide répond de nouveau (`mesures_aide` : réveillée
+    /// au besoin dans un fil à part, sans demande de Windows), la mesure est redemandée pour le même jeu (l'Aide a pu
+    /// redémarrer et la perdre). Au plus une fois par seconde.
+    fn reprendre_fps(ctx: &Contexte, c: &mut Cible, maintenant: f64) {
+        if maintenant < c.prochaine_reprise {
+            return;
+        }
+        c.prochaine_reprise = maintenant + 1.0;
+        if !ctx.mesures_aide() {
+            return;
+        }
+        match ctx.aide_texte("fps.demarrer", &format!("{{\"Pid\":{}}}", c.pid), 15000) {
+            Ok(r) => {
+                c.a_reprendre = false;
+                c.distant = true;
+                c.derniere_lecture = maintenant;
+                ctx.journal(&format!(
+                    "Mesure des FPS : reprise par l'Aide{}",
+                    if r == "rattachee" { ", sur la veille lancée avant le jeu" } else { "" }
+                ));
+            }
+            Err(e) => {
+                if e != nevermind_noyau::aide::ERREUR_PAUSE {
+                    c.images.derniere_erreur = e;
+                    // (l'Aide répond mais refuse : pas une demande par seconde)
+                    c.prochaine_reprise = maintenant + 5.0;
                 }
             }
         }
@@ -609,10 +671,11 @@ impl BlocPerf {
             c.images.en_pause = !devant;
             c.ticks += 1;
             let sans_image = c.images.nombre() == 0;
-            if devant && sans_image {
+            // (l'Aide qui ne répond pas n'est pas l'anti-triche qui bloque : ce temps-là ne compte pas ; lot G)
+            if devant && sans_image && !c.a_reprendre {
                 c.sans_image += 1;
             }
-            if !c.refus && sans_image {
+            if !c.refus && sans_image && !c.a_reprendre {
                 let refus = jeu::refus_mesure(&c.images.derniere_erreur);
                 if refus || (c.sans_image >= 60 && veille.contains(&format!("{}.exe", c.cle))) {
                     c.refus = true;
@@ -703,6 +766,16 @@ impl BlocPerf {
                         c.compteur_vu = false;
                         ordre = Some(None);
                     }
+                } else if c.a_reprendre {
+                    // (l'Aide ne répond plus : le compteur attend, la mesure reprendra ; lot G)
+                    c.compteur_vu = true;
+                    ordre = Some(Some(EtatCompteur {
+                        style: style.into(),
+                        coin,
+                        chiffre: "...".into(),
+                        sous: if style == "discret" { String::new() } else { "Mesure en attente".into() },
+                        couleur: ORANGE,
+                    }));
                 } else if let Some((chiffre, sous, fps_v)) = fps::texte_compteur(&c.images, c.refus, t - c.debut) {
                     let couleur = if c.images.nombre() == 0 || fps_v >= 60.0 {
                         VERT
@@ -748,33 +821,20 @@ impl BlocPerf {
 
     /// Stop-FpsTarget : le bilan est calculé dans un autre fil (millions d'images sur une longue partie)
     fn arreter_cible(&mut self, ctx: &Contexte, attendre: bool) {
-        self.arreter_cible_en(ctx, if attendre { Some(Duration::from_secs(10)) } else { None }, None);
+        self.arreter_cible_en(ctx, if attendre { Some(Duration::from_secs(10)) } else { None });
     }
 
-    /// `arreter_cible` avec un temps compté : `bilan` (le bilan attendu au plus tant), `aide` (l'arrêt par l'Aide
-    /// attendu au plus tant, dans un fil à part : la fermeture de Nevermind, que Mindset arrête au bout de 6 s)
-    fn arreter_cible_en(&mut self, ctx: &Contexte, bilan: Option<Duration>, aide: Option<Duration>) {
+    /// `arreter_cible` avec un temps compté : `bilan` (le bilan attendu au plus tant)
+    fn arreter_cible_en(&mut self, ctx: &Contexte, bilan: Option<Duration>) {
         let Some(c) = self.cible.take() else { return };
         if c.compteur_vu {
             self.compteur().cacher();
         }
         let copie = c.images.copie();
-        // ([FrameMon]::Stop : toujours, même après #FIN ou 20 lectures ratées, comme `remoteOn` en PowerShell)
-        match (aide, ctx.partage_actuel()) {
-            (Some(d), Some(partage)) => {
-                let (fini, attente) = std::sync::mpsc::channel();
-                std::thread::spawn(move || {
-                    let _ = partage.aide_texte("fps.arreter", "{}", 8000);
-                    let _ = fini.send(());
-                });
-                if attente.recv_timeout(d).is_err() {
-                    ctx.journal("Mesure des FPS : l'Aide n'a pas fini de s'arrêter avant la fermeture");
-                }
-            }
-            _ => {
-                let _ = ctx.aide_texte("fps.arreter", "{}", 8000);
-            }
-        }
+        // ([FrameMon]::Stop : toujours, même après #FIN ou une Aide muette, comme `remoteOn` en PowerShell. Lot G :
+        //  jamais attendu sur le fil des blocs, et gardé si l'Aide ne répond pas, envoyé dès qu'elle répond ; jeté si
+        //  une nouvelle mesure démarre avant)
+        ctx.arreter_mesure(Mesure::Fps);
         let fil = std::thread::spawn(move || copie.calculer());
         let b = BilanEnCours {
             nom: c.nom,
@@ -1334,8 +1394,11 @@ impl Bloc for BlocPerf {
         }
         if cible.is_some() {
             self.cible = cible;
-            self.arreter_cible_en(ctx, Some(Duration::from_secs(1)), Some(Duration::from_millis(1500)));
+            self.arreter_cible_en(ctx, Some(Duration::from_secs(1)));
         }
+        // (lot G : un arrêt encore gardé, celui-ci ou un d'avant que l'Aide n'a pas reçu, est tenté une dernière fois,
+        //  même pendant la pause, en 1,5 s au plus)
+        ctx.envoyer_arrets_gardes(Duration::from_millis(1500));
         if self.raccourci_actif == Some(true) {
             self.compteur().raccourci(false);
         }

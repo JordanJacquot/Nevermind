@@ -46,6 +46,48 @@ pub const ATTENTE_WINDOWS: Duration = Duration::from_secs(30);
 pub const PAUSE_FOND: Duration = Duration::from_secs(60);
 /// Ce que rend une demande de fond pendant la pause qui suit un échec
 pub const ERREUR_PAUSE: &str = "l'Aide ne répondait pas, nouvel essai dans un moment";
+/// Pendant la pause, l'Aide qui écoute est sondée de nouveau au plus toutes ces secondes, par le canal seulement
+/// (`aide.bonjour`, délai court ; jamais sa tâche, qui reste à une fois par minute au plus : lot G, ajustement C)
+pub const SONDE_RAPIDE: Duration = Duration::from_secs(5);
+/// Le délai de réponse de la sonde rapide
+const DELAI_SONDE_RAPIDE: u32 = 3000;
+/// Le délai de réponse d'un arrêt de mesure (`fps.arreter`, `flux.arreter` : PresentMon peut mettre 3 s à s'arrêter)
+const DELAI_ARRET: u32 = 8000;
+
+/// Les mesures en continu de l'Aide qu'un arrêt peut viser (lot G : un arrêt gardé par genre, jamais une file)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mesure {
+    /// PresentMon : `fps.demarrer`, `fps.veiller`, arrêtés par `fps.arreter`
+    Fps = 0,
+    /// La trace réseau : `flux.demarrer`, `flux.veiller`, arrêtés par `flux.arreter`
+    Trace = 1,
+}
+
+impl Mesure {
+    /// L'action de l'Aide qui l'arrête
+    pub fn arret(self) -> &'static str {
+        match self {
+            Mesure::Fps => "fps.arreter",
+            Mesure::Trace => "flux.arreter",
+        }
+    }
+
+    fn nom(self) -> &'static str {
+        match self {
+            Mesure::Fps => "la mesure des FPS",
+            Mesure::Trace => "la trace réseau",
+        }
+    }
+
+    /// La mesure que lance cette action, si c'est un départ
+    pub fn du_depart(action: &str) -> Option<Mesure> {
+        match action {
+            "fps.demarrer" | "fps.veiller" => Some(Mesure::Fps),
+            "flux.demarrer" | "flux.veiller" => Some(Mesure::Trace),
+            _ => None,
+        }
+    }
+}
 
 /// Les actions de l'Aide qui changent le PC : seulement sous le verrou d'un geste (lot A du second audit). Le point
 /// de restauration (`restauration.creer`) n'y est pas : il ne change ni la sauvegarde ni un réglage, et « Appliquer »
@@ -104,6 +146,8 @@ struct Etat {
     mesures_echec: Option<Instant>,
     /// La dernière demande de fond restée sans réponse ([`PAUSE_FOND`])
     fond_echec: Option<Instant>,
+    /// La dernière sonde rapide ([`SONDE_RAPIDE`])
+    sonde_rapide: Option<Instant>,
 }
 
 /// L'état de l'Aide pour ce contexte
@@ -114,6 +158,13 @@ pub struct EtatAide {
     reveil: AtomicBool,
     /// Un réveil a été demandé pendant qu'un autre, qui va peut-être échouer, était en cours : il est refait
     reveil_redemande: AtomicBool,
+    /// Une sonde rapide est en cours
+    sonde: AtomicBool,
+    /// Les arrêts gardés, un par genre de mesure ([`Mesure`]) : à envoyer dès que l'Aide répond, ou jetés par un
+    /// nouveau départ du même genre
+    arrets: Mutex<[bool; 2]>,
+    /// Tenu pendant l'envoi des arrêts gardés : un départ attend la fin d'un envoi (un arrêt part avant, jamais après)
+    envoi_arrets: Mutex<()>,
     pub(crate) fausse: Mutex<Option<FausseAide>>,
     /// En test : les actions demandées par `aide` (celles qui peuvent proposer la demande de Windows)
     pub(crate) avec_demande: Mutex<Vec<String>>,
@@ -307,10 +358,18 @@ impl Contexte {
     /// première demande après la pause était faite sur le fil appelant, et une Aide qui accepte la connexion sans
     /// jamais répondre coûtait son attente entière, 15 s, sur le fil des blocs à chaque minute). Sans contexte partagé
     /// (tests d'un bloc seul, juges), la demande part de nouveau, comme avant.
+    ///
+    /// Lot G (ajustement C) : pendant la pause, une sonde rapide par le canal seulement, au plus toutes les
+    /// [`SONDE_RAPIDE`] secondes ([`Contexte::sonder_vite`]) : une Aide muette quelques secondes en pleine partie est
+    /// reprise tout de suite, sans attendre la fin de la minute ni relancer sa tâche.
     fn en_pause_fond(&self, partage: Option<&Arc<Contexte>>) -> bool {
         let mut e = verrou(&self.aide.etat);
         let Some(t) = e.fond_echec else { return false };
         if t.elapsed() < self.pause_fond() {
+            drop(e);
+            if let Some(p) = partage {
+                p.sonder_vite();
+            }
             return true;
         }
         let Some(p) = partage else { return false };
@@ -318,6 +377,196 @@ impl Contexte {
         drop(e);
         p.reveiller_en_fond();
         true
+    }
+
+    /// La pause est-elle en cours ? (sans rien lancer)
+    fn pause_en_cours(&self) -> bool {
+        verrou(&self.aide.etat).fond_echec.is_some_and(|t| t.elapsed() < self.pause_fond())
+    }
+
+    /// Une réponse de l'Aide reçue : plus de pause. Si elle en levait une pendant que des arrêts étaient gardés (une
+    /// réponse qui ne vient pas de la sonde), ils partent dans un fil à part.
+    fn reponse_recue(&self) {
+        // (des arrêts gardés pendant la pause : ils partent d'abord, dans un fil à part, et la pause n'est levée
+        //  qu'après eux ; sans pause, un envoi est déjà en cours)
+        if verrou(&self.aide.arrets).iter().any(|x| *x)
+            && let Some(p) = self.partage_actuel()
+        {
+            if verrou(&self.aide.etat).fond_echec.is_some() {
+                let lance = std::thread::Builder::new()
+                    .name("nevermind-arrets-aide".into())
+                    .spawn(move || p.apres_sonde_reussie());
+                if lance.is_err() {
+                    self.journal(
+                        "Aide : arrêts gardés pas envoyés (fil impossible), nouvel essai à la prochaine réponse",
+                    );
+                }
+            }
+            return;
+        }
+        verrou(&self.aide.etat).fond_echec = None;
+    }
+
+    /// La sonde rapide (lot G, ajustement C) : dans un fil à part, une seule à la fois, au plus toutes les
+    /// [`SONDE_RAPIDE`] secondes, et seulement par le canal (`aide.bonjour`, délai court) : une Aide qui n'écoute pas
+    /// n'est jamais réveillée ici (sa tâche reste à une fois par minute au plus, [`Contexte::reveiller_en_fond`]).
+    fn sonder_vite(self: &Arc<Self>) {
+        {
+            let mut e = verrou(&self.aide.etat);
+            if e.sonde_rapide.is_some_and(|t| t.elapsed() < SONDE_RAPIDE) {
+                return;
+            }
+            e.sonde_rapide = Some(Instant::now());
+        }
+        if self.aide.sonde.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let ctx = self.clone();
+        let lance = std::thread::Builder::new().name("nevermind-sonde-aide".into()).spawn(move || {
+            let c = ctx.aide_config().clone();
+            let ok = crate::windows::canal::joignable(&c.canal, 200)
+                && crate::windows::canal::appeler(
+                    &c.canal,
+                    &c.exe,
+                    &demande("aide.bonjour", &json!({})),
+                    1000,
+                    DELAI_SONDE_RAPIDE,
+                )
+                .is_ok();
+            if ok {
+                ctx.apres_sonde_reussie();
+            }
+            ctx.aide.sonde.store(false, Ordering::SeqCst);
+        });
+        if lance.is_err() {
+            self.aide.sonde.store(false, Ordering::SeqCst);
+        }
+    }
+
+    /// L'Aide a répondu à une sonde (rapide ou réveil) : les arrêts gardés partent d'abord, puis la pause est levée.
+    /// Un nouveau départ (`fps.demarrer`, `flux.veiller`...) attend la pause levée : un arrêt gardé part donc avant
+    /// lui, jamais après (lot G, ajustement B).
+    fn apres_sonde_reussie(&self) {
+        if !self.envoyer_arrets(true) {
+            return;
+        }
+        let etait = {
+            let mut e = verrou(&self.aide.etat);
+            e.mesures_echec = None;
+            e.fond_echec.take().is_some()
+        };
+        if etait {
+            self.journal("Aide : elle répond de nouveau, les mesures reprennent");
+        }
+    }
+
+    /// Arrête une mesure de l'Aide (`fps.arreter`, `flux.arreter`) sans jamais l'attendre sur le fil des blocs (lot G).
+    /// L'Aide n'écoute plus ce qu'elle reçoit pendant la pause : l'arrêt est GARDÉ (un seul par genre), envoyé dès
+    /// qu'elle répond de nouveau, ou jeté si une nouvelle mesure du même genre démarre avant (elle remplace celle qui
+    /// tournait ; ajustement B). Sans contexte partagé (tests d'un bloc seul, juges) : envoyé sur place, comme avant.
+    pub fn arreter_mesure(&self, m: Mesure) {
+        let Some(p) = self.partage_actuel() else {
+            let _ = self.aide_texte(m.arret(), "{}", u64::from(DELAI_ARRET));
+            return;
+        };
+        verrou(&self.aide.arrets)[m as usize] = true;
+        if p.en_pause_fond(Some(&p)) {
+            self.journal(&format!(
+                "Aide : arrêt de {} gardé, il sera envoyé quand l'Aide répondra de nouveau",
+                m.nom()
+            ));
+            return;
+        }
+        p.envoyer_arrets_en_fond();
+    }
+
+    /// Les arrêts gardés, envoyés dans un fil à part (jamais sur le fil des blocs)
+    fn envoyer_arrets_en_fond(self: &Arc<Self>) {
+        let ctx = self.clone();
+        let lance = std::thread::Builder::new().name("nevermind-arrets-aide".into()).spawn(move || {
+            ctx.envoyer_arrets(false);
+        });
+        if lance.is_err() {
+            self.journal("Aide : arrêts gardés pas envoyés (fil impossible), nouvel essai à la prochaine réponse");
+        }
+    }
+
+    /// Envoie les arrêts gardés, sous `envoi_arrets` (un départ attend la fin de l'envoi). `pendant_la_pause` : même si
+    /// la pause est en cours (la sonde vient d'avoir une réponse, ou Nevermind se ferme). Rend vrai si plus rien n'est
+    /// gardé ; un arrêt resté sans réponse est gardé de nouveau et la pause repart.
+    fn envoyer_arrets(&self, pendant_la_pause: bool) -> bool {
+        let _ordre = verrou(&self.aide.envoi_arrets);
+        let fausse = verrou(&self.aide.fausse).clone();
+        let c = self.aide_config().clone();
+        for m in [Mesure::Fps, Mesure::Trace] {
+            if !verrou(&self.aide.arrets)[m as usize] {
+                continue;
+            }
+            // (une fausse Aide donnée au contexte, tests et construction d'essai : elle répond toujours)
+            if let Some(f) = &fausse {
+                verrou(&self.aide.arrets)[m as usize] = false;
+                if let Err(e) = f(m.arret(), &json!({})) {
+                    self.journal(&format!("Aide : {} refusé ou raté : {e}", m.arret()));
+                }
+                continue;
+            }
+            if !pendant_la_pause && self.pause_en_cours() {
+                // (la sonde l'enverra quand l'Aide répondra)
+                return false;
+            }
+            if !crate::windows::canal::joignable(&c.canal, 200) {
+                // (l'Aide ne tourne plus : ses mesures se sont arrêtées avec elle, nevermind-aide/src/serveur.rs)
+                verrou(&self.aide.arrets)[m as usize] = false;
+                self.journal(&format!("Aide : arrêt de {} plus utile, l'Aide ne tourne plus", m.nom()));
+                continue;
+            }
+            match crate::windows::canal::appeler(&c.canal, &c.exe, &demande(m.arret(), &json!({})), 2000, DELAI_ARRET) {
+                Ok(r) => {
+                    verrou(&self.aide.arrets)[m as usize] = false;
+                    if let Err(e) = reponse_texte(&r) {
+                        self.journal(&format!("Aide : {} refusé ou raté : {e}", m.arret()));
+                    }
+                }
+                Err(e) => {
+                    self.journal(&format!("Aide : arrêt de {} sans réponse, gardé ({e})", m.nom()));
+                    verrou(&self.aide.etat).fond_echec = Some(Instant::now());
+                    if !pendant_la_pause && let Some(p) = self.partage_actuel() {
+                        p.reveiller_en_fond();
+                    }
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    /// Une demande de départ d'une mesure (`fps.demarrer`, `fps.veiller`, `flux.demarrer`, `flux.veiller`) va partir
+    /// vers l'Aide : l'arrêt gardé du même genre est jeté (il couperait la nouvelle mesure, que l'Aide met à la place
+    /// de l'ancienne) ; un arrêt en cours d'envoi est attendu avant (lot G, ajustement B).
+    fn avant_depart(&self, action: &str) {
+        let Some(m) = Mesure::du_depart(action) else { return };
+        let _ordre = verrou(&self.aide.envoi_arrets);
+        if std::mem::take(&mut verrou(&self.aide.arrets)[m as usize]) {
+            self.journal(&format!("Aide : arrêt gardé de {} plus envoyé, une nouvelle mesure démarre", m.nom()));
+        }
+    }
+
+    /// La fermeture de Nevermind : un arrêt encore gardé est tenté une dernière fois, même pendant la pause, dans la
+    /// limite de temps (Mindset arrête l'appli au bout de 6 s). Sinon, l'Aide arrête ses mesures seule quand Nevermind
+    /// est fermé depuis 20 s (nevermind-aide/src/serveur.rs, `arreter_tout` en sortant de sa boucle).
+    pub fn envoyer_arrets_gardes(&self, limite: Duration) {
+        if !verrou(&self.aide.arrets).iter().any(|x| *x) {
+            return;
+        }
+        let Some(p) = self.partage_actuel() else { return };
+        let (fini, attente) = std::sync::mpsc::channel();
+        let lance = std::thread::Builder::new().name("nevermind-arrets-fermeture".into()).spawn(move || {
+            let _ = fini.send(p.envoyer_arrets(true));
+        });
+        let envoyes = lance.is_ok() && attente.recv_timeout(limite).unwrap_or(false);
+        if !envoyes {
+            self.journal("Aide : arrêts gardés pas envoyés avant la fermeture, l'Aide arrêtera ses mesures seule");
+        }
     }
 
     /// Une demande à l'Aide est restée sans réponse : la pause, et le réveil (la sonde) dans un fil à part
@@ -474,6 +723,7 @@ impl Contexte {
             verrou(&self.aide.avec_demande).push(action.to_string());
         }
         if let Some(f) = fausse {
+            self.avant_depart(action);
             return f(action, parametres);
         }
         // (une demande de fond restée sans réponse il y a peu : pas de nouvel essai, rien n'attend ; lot B)
@@ -481,6 +731,8 @@ impl Contexte {
         if fond && self.en_pause_fond(partage.as_ref()) {
             return Err(ERREUR_PAUSE.into());
         }
+        // (un départ de mesure : l'arrêt gardé du même genre est jeté, ou attendu s'il est en cours d'envoi ; lot G)
+        self.avant_depart(action);
         let mut demander = !sans_demande && !self.sans_demande_globale();
         if demander
             && let Some(r) = verrou(&self.aide.etat).refus
@@ -502,8 +754,8 @@ impl Contexte {
         //  partagé, seulement les tests d'un bloc seul et les juges, il est fait sur place comme avant)
         let o = self.travail(&demande(action, parametres), delai, demander, partage.is_none());
         if o.reponse.is_some() {
-            // (l'Aide a répondu, à n'importe quelle demande : plus de pause ; lot F)
-            verrou(&self.aide.etat).fond_echec = None;
+            // (l'Aide a répondu, à n'importe quelle demande : plus de pause ; lot F. Les arrêts gardés d'abord, lot G)
+            self.reponse_recue();
         } else if fond {
             self.noter_sans_reponse(partage.as_ref());
         }
@@ -580,9 +832,8 @@ impl Contexte {
                 let ok = ctx.aide_sans_demande("aide.bonjour", &json!({}), 10000).is_ok();
                 if ok {
                     ctx.aide.reveil_redemande.store(false, Ordering::SeqCst);
-                    let mut e = verrou(&ctx.aide.etat);
-                    e.fond_echec = None;
-                    e.mesures_echec = None;
+                    // (les arrêts gardés d'abord, puis la pause levée ; lot G)
+                    ctx.apres_sonde_reussie();
                 }
                 ctx.aide.reveil.store(false, Ordering::SeqCst);
                 // (raté, et redemandé pendant ce temps : encore une fois, sauf si un autre réveil vient de partir)
@@ -667,6 +918,7 @@ impl Contexte {
         }
         let fausse = verrou(&self.aide.fausse).clone();
         if let Some(f) = fausse {
+            self.avant_depart(action);
             let p: Value = serde_json::from_str(parametres_json).unwrap_or(Value::Null);
             return f(action, &p).map(|v| match v {
                 Value::String(s) => s,
@@ -686,6 +938,8 @@ impl Contexte {
         if partage.is_some() && self.en_pause_fond(partage.as_ref()) {
             return Err(ERREUR_PAUSE.into());
         }
+        // (un départ de mesure : l'arrêt gardé du même genre est jeté, ou attendu s'il est en cours d'envoi ; lot G)
+        self.avant_depart(action);
         let rep = match crate::windows::canal::appeler(
             &c.canal,
             &c.exe,
@@ -701,7 +955,7 @@ impl Contexte {
                 return Err(e);
             }
         };
-        verrou(&self.aide.etat).fond_echec = None;
+        self.reponse_recue();
         reponse_texte(&rep)
     }
 }

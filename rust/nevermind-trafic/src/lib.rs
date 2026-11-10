@@ -481,10 +481,10 @@ impl BlocTrafic {
         self.passage_lag = None;
         self.trace_a_reprendre = false;
         effets.ajouter(Effet::Signal { nom: signaux::MESURE_LAG.into(), donnees: json!({ "en_cours": false }) });
-        // (Stop-FluxReseau : Invoke-Aide -SansDemande ; par le canal seul, sans réveil ni pause : la trace vit dans
-        //  l'Aide, une Aide qui ne répond pas n'en a plus ; lot B)
+        // (Stop-FluxReseau : par le canal seul, sans réveil ; lot B. Lot G : jamais attendu sur le fil des blocs, gardé
+        //  si l'Aide ne répond pas et envoyé dès qu'elle répond, jeté si la trace ou sa veille redémarre avant)
         if s.etw {
-            let _ = ctx.aide_texte("flux.arreter", "{}", 15000);
+            ctx.arreter_mesure(nevermind_noyau::aide::Mesure::Trace);
         }
         self.recevoir_annuaire(ctx);
         self.recevoir_lieux(ctx);
@@ -1405,6 +1405,8 @@ impl Bloc for BlocTrafic {
         if self.lag.is_some() {
             self.arreter_lag(ctx, &mut e);
         }
+        // (lot G : un arrêt encore gardé est tenté une dernière fois, même pendant la pause, en 1,5 s au plus)
+        ctx.envoyer_arrets_gardes(Duration::from_millis(1500));
         self.surveillance = false;
     }
 }
