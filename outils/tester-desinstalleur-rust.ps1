@@ -21,7 +21,13 @@
 #      <tmp>\Mindset\Donnees\Nevermind.conseils-desinstallation.txt (UTF-8 sans BOM, au plus 10 lignes de 300
 #      caractères, « Redémarre le PC... » d'abord : des réglages ont été remis) ;
 #   4. de nouveau, avec « -SupprimerDonnees » : tout le dossier des données part, le fichier des conseils reste ;
-#   5. avec les deux options à la fois : la question s'affiche ; fermée (= Annuler), rien n'est touché, il rend 0.
+#   5. avec les deux options à la fois : la question s'affiche ; fermée (= Annuler), rien n'est touché, il rend 0 ;
+#   6. (lot C, M-A) le dossier des données remplacé par une jonction vers un dossier d'essai piégé (un journal de plus
+#      de 1 Mo et de 3000 lignes, une sauvegarde abîmée) : en administrateur, rien n'apparaît ni ne change dans le
+#      dossier visé (ni journal-ancien.txt, ni ligne ajoutée, ni sauvegarde renommée), la désinstallation va au bout ;
+#   7. (lot C, M1) le bureau redirigé (HKCU, User Shell Folders) vers une jonction qui vise un dossier d'essai où un
+#      raccourci lance bien cette copie : ce raccourci n'est jamais effacé ; puis le bureau redirigé vers un vrai
+#      dossier (comme OneDrive) : le raccourci de cette copie y est effacé, comme avant.
 # Code de sortie 1 si un cas échoue.
 param([Parameter(Mandatory = $true)][string]$Nouvelle)
 
@@ -81,6 +87,32 @@ function New-Raccourci([string]$Lien, [string]$Cible) {
 }
 $lienBureau = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Nevermind.lnk'
 $lienMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Mindset\Nevermind.lnk'
+# Ce que contient un dossier (noms, et empreinte de chaque fichier) : rien ne doit y changer
+function Get-Photo([string]$Dossier) {
+    @(Get-ChildItem -LiteralPath $Dossier -Force | Sort-Object Name | ForEach-Object {
+        if ($_.PSIsContainer) { "$($_.Name)=dossier" } else { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)" }
+    }) -join ';'
+}
+# Retire une jonction seule (jamais ce qu'elle vise : pas de Remove-Item -Recurse, qui pourrait la suivre)
+function Remove-Jonction([string]$Lien) { if (Test-Path -LiteralPath $Lien) { [IO.Directory]::Delete($Lien, $false) } }
+# Remet à la main les réglages que « tout optimiser » a changés (quand le désinstalleur ne pouvait pas les lire)
+function Restore-Origine($o) {
+    New-ItemProperty -LiteralPath $cleGraphiques -Name HwSchMode -Value $o.HwSchMode -PropertyType DWord -Force | Out-Null
+    New-ItemProperty -LiteralPath $cleGameDvr -Name HistoricalCaptureEnabled -Value 1 -PropertyType DWord -Force | Out-Null
+    Remove-ItemProperty -LiteralPath $cleGameBar -Name AutoGameModeEnabled -ErrorAction SilentlyContinue
+    try { Set-Service DiagTrack -StartupType $o.Svc } catch {}
+    if ($o.SvcRunning) { Start-Service DiagTrack -ErrorAction SilentlyContinue }
+    if ($o.Plan) { powercfg /setactive $o.Plan | Out-Null }
+    if ($o.Cree) { powercfg /delete $o.Cree | Out-Null }
+}
+# Le dossier « Bureau » du compte (HKCU, User Shell Folders), que le compte peut changer sans droits
+$cleDossiers = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders'
+function Get-BureauNote { $k = Get-Item -LiteralPath $cleDossiers; @{ Valeur = $k.GetValue('Desktop', $null, 'DoNotExpandEnvironmentNames'); Existe = ($k.GetValueNames() -contains 'Desktop') } }
+function Set-Bureau([string]$Dossier) { New-ItemProperty -LiteralPath $cleDossiers -Name Desktop -Value $Dossier -PropertyType ExpandString -Force | Out-Null }
+function Restore-Bureau($Note) {
+    if ($Note.Existe) { New-ItemProperty -LiteralPath $cleDossiers -Name Desktop -Value $Note.Valeur -PropertyType ExpandString -Force | Out-Null }
+    else { Remove-ItemProperty -LiteralPath $cleDossiers -Name Desktop -ErrorAction SilentlyContinue }
+}
 
 # Nevermind installé, géré par Mindset, son Aide en SYSTEM, puis « tout optimiser » : rend l'état d'origine relevé
 function Install-Nevermind {
@@ -232,6 +264,76 @@ try {
     Test-Cas 'sans choix imposé : pas de fichier des conseils' { -not (Test-Path -LiteralPath $conseils) }
     # (remis comme avant pour la suite du job)
     $null = Invoke-Desinstalleur '-SupprimerDonnees'
+
+    # =================================================================================================================
+    Write-Host '6. Le dossier des données remplacé par une jonction : rien n''apparaît ni ne change dans le dossier visé (lot C, M-A)'
+    $o = Install-Nevermind
+    # Le dossier visé, préparé par un programme sans droits : les données de l'essai, un journal de plus de 1 Mo et de
+    # 3000 lignes (l'ancien désinstalleur le raccourcissait en administrateur : journal-ancien.txt, journal réécrit),
+    # une sauvegarde abîmée (il la renommait) ; puis le dossier des données remplacé par une jonction vers lui
+    $vise = Join-Path $env:RUNNER_TEMP 'donnees-visees'
+    if (Test-Path -LiteralPath $vise) { Remove-Item -LiteralPath $vise -Recurse -Force }
+    Move-Item -LiteralPath $donnees -Destination $vise
+    [IO.File]::WriteAllText((Join-Path $vise 'journal.txt'), ((('x' * 300) + "`r`n") * 4000), $utf8)
+    [IO.File]::WriteAllText((Join-Path $vise 'sauvegarde.json'), '{ pas du JSON', $utf8)
+    New-Item -ItemType Junction -Path $donnees -Target $vise | Out-Null
+    $avant = Get-Photo $vise
+    try { $r = Invoke-Desinstalleur '-GarderDonnees' }
+    finally { $null = Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 15 }
+    Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
+    Test-Cas 'rien n''apparaît ni ne change dans le dossier visé par la jonction (ni journal-ancien.txt, ni ligne ajoutée au journal, ni sauvegarde renommée)' { (Get-Photo $vise) -eq $avant }
+    Test-Cas 'la jonction est restée à sa place (données gardées : rien n''est effacé à travers elle)' { ((Get-Item -LiteralPath $donnees -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }
+    Test-Cas 'la désinstallation va au bout : tâche de l''Aide retirée, Aide arrêtée, programmes partis' { -not (Get-ScheduledTask -TaskPath '\Mindset\' -TaskName 'Nevermind (aide)' -ErrorAction SilentlyContinue) -and -not (Get-AidesEnCours).Count -and -not (Test-Path -LiteralPath $prog) }
+    Test-Cas 'les conseils pour le bilan de Mindset disent que les données n''ont pas été touchées (elles passent par un lien)' { (Test-Path -LiteralPath $conseils -PathType Leaf) -and ([IO.File]::ReadAllText($conseils, $utf8) -match 'passe par un lien') }
+    # (remis comme avant pour la suite du job : la sauvegarde n'a pas pu être lue, les réglages sont remis à la main)
+    Remove-Jonction $donnees
+    Remove-Item -LiteralPath $vise -Recurse -Force -ErrorAction SilentlyContinue
+    Restore-Origine $o
+
+    # =================================================================================================================
+    Write-Host '7. Le bureau redirigé vers une jonction : le raccourci qu''elle vise n''est jamais effacé (lot C, M1)'
+    $o = Install-Nevermind
+    # Un dossier que le compte ne devrait pas pouvoir vider, avec un raccourci qui lance bien cette copie ; le bureau
+    # du compte redirigé vers une jonction qui le vise
+    $protege = Join-Path $env:RUNNER_TEMP 'bureau-protege'
+    $jonctionBureau = Join-Path $env:RUNNER_TEMP 'bureau-jonction'
+    Remove-Jonction $jonctionBureau
+    if (Test-Path -LiteralPath $protege) { Remove-Item -LiteralPath $protege -Recurse -Force }
+    New-Raccourci (Join-Path $protege 'Nevermind.lnk') "$prog\Mindset.exe"
+    New-Item -ItemType Junction -Path $jonctionBureau -Target $protege | Out-Null
+    $noteBureau = Get-BureauNote
+    try {
+        Set-Bureau $jonctionBureau
+        $r = Invoke-Desinstalleur '-GarderDonnees'
+        $null = Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 15
+    }
+    finally { Restore-Bureau $noteBureau }
+    Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
+    Test-Cas 'le raccourci visé par la jonction du bureau est intact (M1)' { Test-Path -LiteralPath (Join-Path $protege 'Nevermind.lnk') -PathType Leaf }
+    Test-Cas 'le désinstalleur a bien pris le bureau redirigé (le raccourci du vrai bureau, hors de lui, est resté)' { Test-Path -LiteralPath $lienBureau -PathType Leaf }
+    Test-Cas 'le raccourci du menu Démarrer (un vrai dossier) est retiré, avec le dossier Mindset vide' { -not (Test-Path -LiteralPath $lienMenu) -and -not (Test-Path -LiteralPath (Split-Path $lienMenu)) }
+    Test-Cas 'les réglages sont remis comme avant' { (Get-Valeur $cleGraphiques 'HwSchMode') -eq $o.HwSchMode -and "$((Get-Service DiagTrack).StartType)" -eq $o.Svc }
+    Remove-Jonction $jonctionBureau
+    Remove-Item -LiteralPath $protege -Recurse -Force -ErrorAction SilentlyContinue
+    # (le raccourci posé sur le vrai bureau par l'installation de l'essai n'était pas sur le bureau redirigé)
+    Remove-Item -LiteralPath $lienBureau -Force -ErrorAction SilentlyContinue
+
+    Write-Host '7 bis. Le bureau redirigé vers un vrai dossier (comme OneDrive) : le raccourci de cette copie y est effacé'
+    $o = Install-Nevermind
+    $bureauRedirige = Join-Path $env:RUNNER_TEMP 'bureau-redirige'
+    if (Test-Path -LiteralPath $bureauRedirige) { Remove-Item -LiteralPath $bureauRedirige -Recurse -Force }
+    New-Raccourci (Join-Path $bureauRedirige 'Nevermind.lnk') "$prog\Mindset.exe"
+    $noteBureau = Get-BureauNote
+    try {
+        Set-Bureau $bureauRedirige
+        $r = Invoke-Desinstalleur '-SupprimerDonnees'
+        $null = Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 15
+    }
+    finally { Restore-Bureau $noteBureau }
+    Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
+    Test-Cas 'le raccourci du bureau redirigé est retiré, le dossier du bureau reste' { -not (Test-Path -LiteralPath (Join-Path $bureauRedirige 'Nevermind.lnk')) -and (Test-Path -LiteralPath $bureauRedirige -PathType Container) }
+    Remove-Item -LiteralPath $bureauRedirige -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $lienBureau -Force -ErrorAction SilentlyContinue
 }
 catch {
     $script:Echecs += "Arrêt inattendu : $($_.Exception.Message) (ligne $($_.InvocationInfo.ScriptLineNumber))"
