@@ -428,7 +428,7 @@ impl BlocPerf {
             return;
         }
         self.veille_demande = Some(t);
-        if noms.is_empty() || !ctx.aide_joignable(1) {
+        if noms.is_empty() || !ctx.aide_prete() {
             return;
         }
         let mut erreurs: Vec<String> = Vec::new();
@@ -1172,7 +1172,7 @@ impl Bloc for BlocPerf {
             && self.cible.is_none()
             && let Some((pid, jeu, proc_nom)) =
                 self.session.as_ref().map(|s| (s.pid, s.jeu.clone(), s.proc_nom.clone()))
-            && ctx.aide_joignable(1)
+            && ctx.aide_prete()
         {
             self.fps_a_reprendre = false;
             if Self::mesure_fps(ctx) {

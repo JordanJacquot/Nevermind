@@ -123,6 +123,8 @@ pub struct EtatAide {
     pub(crate) tache_essai: Mutex<Option<FausseTache>>,
     /// En test seulement : Nevermind tourne-t-il en administrateur ? ([`Contexte::regler_admin_essai`])
     pub(crate) admin_essai: Mutex<Option<bool>>,
+    /// En test seulement : la pause après une demande restée sans réponse ([`Contexte::regler_pause_essai`])
+    pub(crate) pause_essai: Mutex<Option<Duration>>,
 }
 
 fn verrou<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -285,6 +287,60 @@ impl Contexte {
         Ok(())
     }
 
+    /// Tests : une pause plus courte que [`PAUSE_FOND`] après une demande restée sans réponse. Refusé hors du mode
+    /// test.
+    pub fn regler_pause_essai(&self, pause: Duration) -> Result<(), String> {
+        if !self.essai {
+            return Err("une autre pause seulement en mode test".into());
+        }
+        *verrou(&self.aide.pause_essai) = Some(pause);
+        Ok(())
+    }
+
+    fn pause_fond(&self) -> Duration {
+        if self.essai { verrou(&self.aide.pause_essai).unwrap_or(PAUSE_FOND) } else { PAUSE_FOND }
+    }
+
+    /// La dernière demande à l'Aide est restée sans réponse : les demandes de fond et les mesures renoncent tout de
+    /// suite pendant la pause. La pause finie, avec le contexte partagé, l'Aide est d'abord SONDÉE dans un fil à part
+    /// (le réveil, dont la réussite lève la pause) et la demande renonce encore : la pause repart (lot F ; avant, la
+    /// première demande après la pause était faite sur le fil appelant, et une Aide qui accepte la connexion sans
+    /// jamais répondre coûtait son attente entière, 15 s, sur le fil des blocs à chaque minute). Sans contexte partagé
+    /// (tests d'un bloc seul, juges), la demande part de nouveau, comme avant.
+    fn en_pause_fond(&self, partage: Option<&Arc<Contexte>>) -> bool {
+        let mut e = verrou(&self.aide.etat);
+        let Some(t) = e.fond_echec else { return false };
+        if t.elapsed() < self.pause_fond() {
+            return true;
+        }
+        let Some(p) = partage else { return false };
+        e.fond_echec = Some(Instant::now());
+        drop(e);
+        p.reveiller_en_fond();
+        true
+    }
+
+    /// Une demande à l'Aide est restée sans réponse : la pause, et le réveil (la sonde) dans un fil à part
+    fn noter_sans_reponse(&self, partage: Option<&Arc<Contexte>>) {
+        verrou(&self.aide.etat).fond_echec = Some(Instant::now());
+        if let Some(p) = partage {
+            p.reveiller_en_fond();
+        }
+    }
+
+    /// L'Aide écoute et a répondu à la dernière demande (ou la sonde l'a fait) : une mesure peut lui être demandée
+    /// sans risquer une longue attente sur le fil des blocs (lot F : une Aide qui accepte la connexion sans répondre
+    /// est « joignable », mais pas prête). Pendant la pause, la sonde part comme pour [`Contexte::aide_de_fond`].
+    pub fn aide_prete(&self) -> bool {
+        if !self.aide_joignable(1) {
+            return false;
+        }
+        match self.partage_actuel() {
+            Some(p) => !self.en_pause_fond(Some(&p)),
+            None => true,
+        }
+    }
+
     /// Tests : la tâche de l'Aide simulée. Le réveil de [`Contexte`] (`travail`) la « lance » au lieu de `schtasks`,
     /// puis attend l'Aide comme en vrai. Refusée hors du mode test : jamais d'effet sur la vraie tâche.
     pub fn tache_aide_essai(&self, f: FausseTache) -> Result<(), String> {
@@ -422,7 +478,7 @@ impl Contexte {
         }
         // (une demande de fond restée sans réponse il y a peu : pas de nouvel essai, rien n'attend ; lot B)
         let partage = if fond { self.partage_actuel() } else { None };
-        if fond && verrou(&self.aide.etat).fond_echec.is_some_and(|t| t.elapsed() < PAUSE_FOND) {
+        if fond && self.en_pause_fond(partage.as_ref()) {
             return Err(ERREUR_PAUSE.into());
         }
         let mut demander = !sans_demande && !self.sans_demande_globale();
@@ -445,15 +501,11 @@ impl Contexte {
         // (une demande de fond ne réveille jamais l'Aide sur ce fil : le réveil part dans un fil à part ; sans contexte
         //  partagé, seulement les tests d'un bloc seul et les juges, il est fait sur place comme avant)
         let o = self.travail(&demande(action, parametres), delai, demander, partage.is_none());
-        if fond {
-            let mut e = verrou(&self.aide.etat);
-            e.fond_echec = if o.reponse.is_some() { None } else { Some(Instant::now()) };
-            drop(e);
-            if o.reponse.is_none()
-                && let Some(p) = &partage
-            {
-                p.reveiller_en_fond();
-            }
+        if o.reponse.is_some() {
+            // (l'Aide a répondu, à n'importe quelle demande : plus de pause ; lot F)
+            verrou(&self.aide.etat).fond_echec = None;
+        } else if fond {
+            self.noter_sans_reponse(partage.as_ref());
         }
         let changement = {
             let mut e = verrou(&self.aide.etat);
@@ -579,7 +631,8 @@ impl Contexte {
     /// partagé : rend faux sans attendre) ; en administrateur, Nevermind ne l'attend pas.
     pub fn mesures_aide(&self) -> bool {
         if self.aide_joignable(1) {
-            return true;
+            // (lot F : joignable mais sans réponse à la dernière demande, elle n'est pas prête : la sonde part en fond)
+            return self.aide_prete();
         }
         if self.aide_config().admin {
             return false;
@@ -627,13 +680,28 @@ impl Contexte {
         if !crate::windows::canal::joignable(&c.canal, 200) {
             return Err("l'Aide ne répond pas".into());
         }
-        let rep = crate::windows::canal::appeler(
+        // (lot F : une Aide qui écoute mais n'a pas répondu à la dernière demande n'est pas attendue de nouveau tant
+        //  que la sonde, dans un fil à part, n'a pas eu de réponse ; avec le contexte partagé seulement)
+        let partage = self.partage_actuel();
+        if partage.is_some() && self.en_pause_fond(partage.as_ref()) {
+            return Err(ERREUR_PAUSE.into());
+        }
+        let rep = match crate::windows::canal::appeler(
             &c.canal,
             &c.exe,
             &format!("{{\"a\":\"{action}\",\"p\":{parametres_json}}}"),
             2000,
             delai_ms.min(u64::from(u32::MAX)) as u32,
-        )?;
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                if partage.is_some() {
+                    self.noter_sans_reponse(partage.as_ref());
+                }
+                return Err(e);
+            }
+        };
+        verrou(&self.aide.etat).fond_echec = None;
         reponse_texte(&rep)
     }
 }

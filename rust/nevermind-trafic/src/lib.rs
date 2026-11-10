@@ -442,7 +442,7 @@ impl BlocTrafic {
         let Some(mut s) = self.lag.take() else { return };
         // La trace réseau n'a pas pu démarrer au début de la partie (l'Aide dormait, réveillée dans un fil à part) :
         // demandée dès qu'elle écoute, pendant la même partie (lot F ; avant, le lag était mesuré sans elle jusqu'au bout)
-        if self.trace_a_reprendre && !s.etw && ctx.aide_joignable(1) {
+        if self.trace_a_reprendre && !s.etw && ctx.aide_prete() {
             self.trace_a_reprendre = false;
             match ctx.aide_de_fond("flux.demarrer", &json!({}), 20000) {
                 Ok(_) => {

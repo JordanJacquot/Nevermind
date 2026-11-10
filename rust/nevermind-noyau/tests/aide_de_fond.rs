@@ -130,3 +130,56 @@ fn un_reveil_demande_pendant_un_autre_n_est_pas_perdu() {
     drop(relancee.lock().unwrap().take());
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// Lot F : une Aide qui accepte la connexion mais ne répond jamais. Avant, après chaque pause (60 s), la demande de
+/// fond suivante l'attendait de nouveau en entier sur le fil des blocs (15 s par minute), et les demandes texte
+/// (`fps.lire`, la veille des FPS) ou la mesure (`mesures_aide`, vraie puisque l'Aide est joignable) l'attendaient à
+/// chaque fois. Maintenant elle n'est attendue qu'une fois : ensuite tout renonce tout de suite, la pause finie elle
+/// est sondée dans un fil à part, et la sonde réussie lève la pause quand l'Aide répond de nouveau.
+#[test]
+fn une_aide_muette_n_est_attendue_qu_une_fois() {
+    use std::sync::atomic::AtomicBool;
+    let (ctx, d) = contexte("muette");
+    let ctx = ctx.partage();
+    // (sans droits, comme Nevermind ; une pause courte pour l'essai, 60 s en vrai)
+    ctx.regler_admin_essai(false).unwrap();
+    ctx.regler_pause_essai(Duration::from_millis(500)).unwrap();
+    let parle = Arc::new(AtomicBool::new(false));
+    let recues = Arc::new(Mutex::new(Vec::<String>::new()));
+    let (p, r) = (parle.clone(), recues.clone());
+    let _serveur = fausse_aide::lancer(&ctx, move |a, _| {
+        r.lock().unwrap().push(a.to_string());
+        p.load(Ordering::SeqCst).then(|| fausse_aide::ok(json!([])))
+    })
+    .unwrap();
+    // La première demande attend son délai (rien ne dit d'avance que l'Aide est muette)
+    let t = Instant::now();
+    assert!(ctx.aide_de_fond("flux.lire", &json!({}), 1500).is_err());
+    assert!(t.elapsed() >= Duration::from_secs(1), "{:?}", t.elapsed());
+    // Puis 4 s de demandes, comme les tics (bien plus que la pause) : aucune n'attend l'Aide
+    let fin = Instant::now() + Duration::from_secs(4);
+    while Instant::now() < fin {
+        let t = Instant::now();
+        assert!(ctx.aide_de_fond("flux.lire", &json!({}), 1500).is_err());
+        assert!(ctx.aide_texte("fps.lire", "{}", 1500).is_err());
+        assert!(!ctx.mesures_aide(), "une Aide muette prise pour prête à mesurer");
+        assert!(!ctx.aide_prete());
+        assert!(t.elapsed() < Duration::from_millis(400), "une demande a attendu l'Aide muette ({:?})", t.elapsed());
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let n = |a: &str| recues.lock().unwrap().iter().filter(|x| *x == a).count();
+    assert_eq!(n("flux.lire"), 1, "l'Aide muette a été attendue plusieurs fois : {:?}", recues.lock().unwrap());
+    assert_eq!(n("fps.lire"), 0);
+    assert!(n("aide.bonjour") >= 1, "la sonde n'est pas partie : {:?}", recues.lock().unwrap());
+    // L'Aide répond de nouveau : la sonde lève la pause, les demandes et la mesure reprennent
+    parle.store(true, Ordering::SeqCst);
+    let fin = Instant::now() + Duration::from_secs(30);
+    while ctx.aide_de_fond("flux.lire", &json!({}), 1500).is_err() {
+        assert!(Instant::now() < fin, "la pause n'est pas levée : {:?}", recues.lock().unwrap());
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(ctx.mesures_aide());
+    assert_eq!(ctx.aide_texte("fps.lire", "{}", 1500), Ok(String::new()));
+    assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new());
+    let _ = std::fs::remove_dir_all(&d);
+}
