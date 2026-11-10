@@ -12,8 +12,12 @@
 //!   de proche en proche) : là, aucun de ces appels n'est permis, même avec un nom de la liste, ni aucune écriture du
 //!   registre (`changer_registre(`, `ecrire_registre(`, `effacer_registre(`, `vider_registre(` : un réglage du PC
 //!   passe par `reg.ecrire` ou `reg.effacer` avec la demande de Windows).
+//!
+//! Ce que suit le relevé (lot F : d'un fichier à l'autre du même paquet, jamais dans un autre paquet) : `self.nom(` et
+//! `Self::nom(` (dans le fichier, sinon dans le paquet), `module::nom(` (le fichier de ce module), `nom(` (dans le
+//! fichier). Il ne suit pas un appel sur une autre valeur (`x.nom(`) : trop de noms pareils d'un type à l'autre.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Les actions de l'Aide permises avec `aide(` : chacune ne part que d'un clic (ou du « Oui » qui le suit)
@@ -294,67 +298,108 @@ fn fonctions(code: &str, fichier: usize) -> Vec<Fonction> {
     r
 }
 
-/// Les méthodes appelées sur le bloc lui-même dans un corps (`self.nom(`, `Self::nom(`, même coupés par un retour à la
-/// ligne) : le chemin d'un tic vers ses aides
-fn appeles(corps: &str) -> HashSet<String> {
+/// Un appel relevé dans un corps, que le relevé sait suivre : sur le bloc lui-même (`self.nom(`, `Self::nom(`), ou
+/// par un module du même paquet (`module::nom(`, `crate::module::nom(`)
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum Appel {
+    Soi(String),
+    Module(String, String),
+    Nom(String),
+}
+
+/// Les appels d'un corps que le relevé peut suivre (même coupés par un retour à la ligne) : le chemin d'un tic vers
+/// ses aides
+fn appeles(corps: &str) -> HashSet<Appel> {
     let mut r = HashSet::new();
     let c: Vec<char> = corps.chars().collect();
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    // (le mot qui finit juste avant `k`, espaces sautés : son début et lui)
+    let mot_avant = |mut k: usize| -> (usize, String) {
+        while k > 0 && c[k - 1].is_whitespace() {
+            k -= 1;
+        }
+        let fin = k;
+        while k > 0 && ident(c[k - 1]) {
+            k -= 1;
+        }
+        (k, c[k..fin].iter().collect())
+    };
     let mut i = 0;
     while i < c.len() {
-        if c[i].is_alphabetic() || c[i] == '_' {
-            let debut = i;
-            while i < c.len() && (c[i].is_alphanumeric() || c[i] == '_') {
-                i += 1;
-            }
-            if c.get(i) != Some(&'(') {
-                continue;
-            }
-            // (ce qui précède, sans les espaces : « self. » ou « Self:: »)
-            let mut k = debut;
-            while k > 0 && c[k - 1].is_whitespace() {
-                k -= 1;
-            }
-            let avant: String = c[..k].iter().rev().take(6).collect::<Vec<_>>().into_iter().rev().collect();
-            let devant_self = |s: &str, sep: &str| {
-                avant.strip_suffix(sep).is_some_and(|a| {
-                    a.trim_end().ends_with(s)
-                        && !mot(a.trim_end().strip_suffix(s).and_then(|x| x.chars().last()).as_ref())
-                })
-            };
-            if devant_self("self", ".") || devant_self("Self", "::") {
-                r.insert(c[debut..i].iter().collect());
-            }
-        } else {
+        if !(c[i].is_alphabetic() || c[i] == '_') {
             i += 1;
+            continue;
+        }
+        let debut = i;
+        while i < c.len() && ident(c[i]) {
+            i += 1;
+        }
+        if c.get(i) != Some(&'(') {
+            continue;
+        }
+        let nom: String = c[debut..i].iter().collect();
+        // (ce qui précède, sans les espaces : « self. », « Self:: » ou « module:: »)
+        let mut k = debut;
+        while k > 0 && c[k - 1].is_whitespace() {
+            k -= 1;
+        }
+        if k > 0 && c[k - 1] == '.' {
+            let (d, m) = mot_avant(k - 1);
+            if m == "self" && !(d > 0 && (ident(c[d - 1]) || c[d - 1] == '.')) {
+                r.insert(Appel::Soi(nom));
+            }
+        } else if k > 1 && c[k - 1] == ':' && c[k - 2] == ':' {
+            let (_, m) = mot_avant(k - 2);
+            if m == "Self" {
+                r.insert(Appel::Soi(nom));
+            } else if !m.is_empty() {
+                r.insert(Appel::Module(m, nom));
+            }
+        } else if mot_avant(k).1 != "fn" {
+            r.insert(Appel::Nom(nom));
         }
     }
     r
 }
 
-/// Ce que le tic d'un bloc peut atteindre (lui-même et les méthodes du bloc qu'il appelle, de proche en proche, dans
-/// son fichier) et qui peut proposer la demande de Windows ou écrire le registre
+/// Ce que le tic d'un bloc peut atteindre (lui-même et les fonctions de son paquet qu'il appelle, de proche en
+/// proche, d'un fichier à l'autre) et qui peut proposer la demande de Windows ou écrire le registre
 fn depuis_les_tics(racine: &Path) -> Vec<String> {
     atteint_depuis_les_tics(racine).0
 }
 
-/// Le relevé, et les fonctions atteintes (« fichier::nom »)
+/// Le paquet d'un fichier (son premier dossier) et son module (le nom du fichier, ou de son dossier pour `mod.rs`)
+fn paquet_et_module(rel: &str) -> (&str, &str) {
+    let paquet = rel.split('/').next().unwrap_or("");
+    let mut parties = rel.trim_end_matches(".rs").rsplit('/');
+    let dernier = parties.next().unwrap_or("");
+    let module = if dernier == "mod" { parties.next().unwrap_or("") } else { dernier };
+    (paquet, module)
+}
+
+/// Le relevé, et les fonctions atteintes (« fichier::nom »). Un appel est suivi dans le même paquet seulement (lot F :
+/// avant, dans le même fichier seulement) : `self.nom(` d'abord dans le fichier, sinon dans les autres fichiers du
+/// paquet ; `module::nom(` dans le fichier de ce module ; `nom(` dans le fichier.
 fn atteint_depuis_les_tics(racine: &Path) -> (Vec<String>, Vec<String>) {
     let l = lus(racine);
+    let toutes: Vec<Vec<Fonction>> = l.iter().enumerate().map(|(k, lu)| fonctions(&lu.code, k)).collect();
+    let pm: Vec<(&str, &str)> = l.iter().map(|lu| paquet_et_module(&lu.rel)).collect();
+    // (les fonctions d'un fichier, par nom)
+    let nommees = |k: usize, n: &str| -> Vec<(usize, usize)> {
+        toutes[k].iter().enumerate().filter(|(_, f)| f.nom == n).map(|(j, _)| (k, j)).collect()
+    };
+    let du_paquet = |k: usize| -> Vec<usize> { (0..l.len()).filter(|&x| pm[x].0 == pm[k].0).collect() };
     let mut refus = Vec::new();
     let mut atteintes = Vec::new();
-    for (k, lu) in l.iter().enumerate() {
-        let du_fichier = fonctions(&lu.code, k);
-        let mut par_nom: HashMap<&str, Vec<&Fonction>> = HashMap::new();
-        for f in &du_fichier {
-            par_nom.entry(f.nom.as_str()).or_default().push(f);
-        }
-        let mut a_voir: Vec<(&Fonction, String)> =
-            du_fichier.iter().filter(|f| f.nom == "tic").map(|f| (f, "tic".to_string())).collect();
-        let mut vus: HashSet<usize> = HashSet::new();
-        while let Some((f, chemin)) = a_voir.pop() {
-            if !vus.insert(f.corps.0) {
+    let mut vus: HashSet<(usize, usize)> = HashSet::new();
+    for k in 0..l.len() {
+        let mut a_voir: Vec<((usize, usize), String)> =
+            nommees(k, "tic").into_iter().map(|x| (x, "tic".into())).collect();
+        while let Some(((kf, j), chemin)) = a_voir.pop() {
+            if !vus.insert((kf, j)) {
                 continue;
             }
+            let (lu, f) = (&l[kf], &toutes[kf][j]);
             atteintes.push(format!("{}::{}", lu.rel, f.nom));
             let corps = &lu.code[f.corps.0..f.corps.1];
             for m in APPELS.iter().chain(REGISTRE) {
@@ -367,17 +412,33 @@ fn atteint_depuis_les_tics(racine: &Path) -> (Vec<String>, Vec<String>) {
                     ));
                 }
             }
-            for n in appeles(corps) {
-                if SUITES_DE_CLIC.contains(&n.as_str()) {
-                    continue;
-                }
-                if let Some(v) = par_nom.get(n.as_str()) {
-                    a_voir.extend(v.iter().map(|g| (*g, format!("{chemin} > {}", g.nom))));
+            for a in appeles(corps) {
+                let cibles: Vec<(usize, usize)> = match &a {
+                    Appel::Soi(n) if SUITES_DE_CLIC.contains(&n.as_str()) => Vec::new(),
+                    Appel::Soi(n) => {
+                        let ici = nommees(kf, n);
+                        if ici.is_empty() {
+                            du_paquet(kf).into_iter().flat_map(|x| nommees(x, n)).collect()
+                        } else {
+                            ici
+                        }
+                    }
+                    Appel::Module(m, n) => {
+                        du_paquet(kf).into_iter().filter(|&x| pm[x].1 == m).flat_map(|x| nommees(x, n)).collect()
+                    }
+                    Appel::Nom(n) if SUITES_DE_CLIC.contains(&n.as_str()) => Vec::new(),
+                    Appel::Nom(n) => nommees(kf, n),
+                };
+                for (x, g) in cibles {
+                    let ou = if x == kf { String::new() } else { format!(" ({})", l[x].rel) };
+                    a_voir.push(((x, g), format!("{chemin} > {}{ou}", toutes[x][g].nom)));
                 }
             }
         }
     }
     refus.sort();
+    atteintes.sort();
+    atteintes.dedup();
     (refus, atteintes)
 }
 
@@ -425,10 +486,15 @@ fn rien_depuis_un_tic() {
         "nevermind-trafic/src/lib.rs::lignes_tcp",
         "nevermind-protection/src/lib.rs::finir_lecture",
         "nevermind-reseau/src/bloc.rs::fin_geste_audit",
+        // (d'un fichier à l'autre du même paquet, lot F : la fin de la lecture de Ton PC, le début d'une partie, la
+        //  fin d'une analyse)
+        "nevermind-pc/src/systeme.rs::completer_par_aide",
+        "nevermind-perf/src/jeu.rs::fermer_pour_partie",
+        "nevermind-protection/src/regles.rs::menaces_analyse",
     ] {
         assert!(atteintes.iter().any(|a| a == f), "le relevé n'atteint pas {f} depuis un tic");
     }
-    assert!(atteintes.len() >= 50, "seulement {} fonctions atteintes depuis les tics", atteintes.len());
+    assert!(atteintes.len() >= 300, "seulement {} fonctions atteintes depuis les tics", atteintes.len());
     assert!(
         refus.is_empty(),
         "depuis un tic, des appels qui peuvent proposer la demande de Windows :\n{}",
@@ -474,5 +540,48 @@ fn action(&mut self, ctx: &C) { ctx.ecrire_registre(r"HKLM:\SOFTWARE\Essai", "Y"
             "bloc/src/lib.rs:7 : « changer_registre » atteint depuis un tic (tic > passer)".to_string(),
         ]
     );
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// Lot F : le relevé suit un tic d'un fichier à l'autre du MÊME paquet (une méthode du bloc écrite dans un autre
+/// fichier, `module::nom(`), et une fonction appelée par son nom dans le même fichier ; jamais dans un autre paquet
+/// (un nom pareil ailleurs n'est pas suivi)
+#[test]
+fn le_releve_suit_les_tics_dans_le_paquet_seulement() {
+    let d = nevermind_noyau::dossier_essai("releve-aide-paquet");
+    let _ = std::fs::remove_dir_all(&d);
+    for x in ["bloc/src/outils", "autre/src/outils"] {
+        std::fs::create_dir_all(d.join(x)).unwrap();
+    }
+    let ecrire = |f: &str, t: &str| std::fs::write(d.join(f), t).unwrap();
+    ecrire(
+        "bloc/src/lib.rs",
+        "mod outils;\nmod suite;\nimpl Bloc for B {\n    fn tic(&mut self, ctx: &C) {\n        self.passer(ctx);\n        let _ = outils::lire(ctx);\n        let _ = autre::outils::ailleurs(ctx);\n        let _ = crate::outils::mesurer(ctx);\n        sonder(ctx);\n    }\n}\nfn sonder(ctx: &C) {\n    ctx.ecrire_registre(\"HKLM\", \"Y\", &json!(1), \"DWord\");\n}\n",
+    );
+    ecrire(
+        "bloc/src/suite.rs",
+        "impl B {\n    fn passer(&mut self, ctx: &C) {\n        ctx.changer_registre(\"HKLM\", \"X\", &json!(1), \"DWord\");\n    }\n}\n",
+    );
+    ecrire(
+        "bloc/src/outils/mod.rs",
+        "pub fn lire(ctx: &C) -> V {\n    ctx.aide(\"lecture.pc\", &json!({}), 1)\n}\npub fn mesurer(ctx: &C) -> V {\n    ctx.aide_de_fond(\"flux.lire\", &json!({}), 1)\n}\n",
+    );
+    ecrire(
+        "autre/src/outils.rs",
+        "pub fn ailleurs(ctx: &C) {\n    ctx.aide(\"processus.fermer\", &json!({}), 1);\n}\npub fn passer(ctx: &C) {\n    ctx.aide(\"reg.ecrire\", &json!({}), 1);\n}\npub fn sonder(ctx: &C) {\n    ctx.aide(\"reg.effacer\", &json!({}), 1);\n}\n",
+    );
+    let (refus, atteintes) = atteint_depuis_les_tics(&d);
+    assert_eq!(
+        refus,
+        vec![
+            "bloc/src/lib.rs:13 : « ecrire_registre » atteint depuis un tic (tic > sonder)".to_string(),
+            "bloc/src/outils/mod.rs:2 : « .aide » atteint depuis un tic (tic > lire (bloc/src/outils/mod.rs))"
+                .to_string(),
+            "bloc/src/suite.rs:3 : « changer_registre » atteint depuis un tic (tic > passer (bloc/src/suite.rs))"
+                .to_string(),
+        ]
+    );
+    assert!(atteintes.iter().any(|a| a == "bloc/src/outils/mod.rs::mesurer"), "{atteintes:?}");
+    assert!(!atteintes.iter().any(|a| a.starts_with("autre/")), "un autre paquet a été suivi : {atteintes:?}");
     let _ = std::fs::remove_dir_all(&d);
 }
