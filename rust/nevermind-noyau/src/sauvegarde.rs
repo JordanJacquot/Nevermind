@@ -178,10 +178,15 @@ fn lire_fichier(f: &std::path::Path) -> Result<Option<Map<String, Value>>, Strin
         return Ok(None);
     }
     let o = std::fs::read(f).map_err(|e| e.to_string())?;
-    let t = suite_commun::json_sur::texte_du_fichier(&o);
+    lire_octets(&o).map(Some)
+}
+
+/// Le contenu d'un fichier de sauvegarde : une erreur s'il est abîmé ou n'a pas « Registry »
+fn lire_octets(o: &[u8]) -> Result<Map<String, Value>, String> {
+    let t = suite_commun::json_sur::texte_du_fichier(o);
     let j: Value = serde_json::from_str(t.trim_start_matches('\u{feff}')).map_err(|e| e.to_string())?;
     match j {
-        Value::Object(m) if m.contains_key("Registry") => Ok(Some(m)),
+        Value::Object(m) if m.contains_key("Registry") => Ok(m),
         _ => Err("contenu inattendu".into()),
     }
 }
@@ -192,24 +197,61 @@ impl Contexte {
         self.donnees.join("sauvegarde.json")
     }
 
-    /// `Import-Backup` : relit la sauvegarde (fichier, copie de secours, valeurs d'origine du registre)
+    /// `Import-Backup` : relit la sauvegarde (fichier, copie de secours, valeurs d'origine du registre). Sans disque
+    /// ([`Contexte::sans_disque`]) : aucun fichier n'est lu, seules les valeurs d'origine du registre sont reprises.
     pub fn importer_sauvegarde(&self) {
+        if self.sans_disque {
+            self.importer_sauvegarde_de(Ok(None), None, false);
+            return;
+        }
+        let fichier = self.fichier_sauvegarde();
+        let principal = lire_fichier(&fichier);
+        let secours = if matches!(principal, Ok(Some(_))) {
+            None
+        } else {
+            lire_fichier(&crate::fichiers::a_cote(&fichier, ".bak")).ok().flatten()
+        };
+        self.importer_sauvegarde_de(principal, secours, true);
+    }
+
+    /// `Import-Backup` sur des fichiers lus ailleurs (lot C : le désinstalleur en administrateur les lit lui-même, sans
+    /// suivre de lien) : `principal`, le contenu de sauvegarde.json (`Ok(None)` s'il n'existe pas, une erreur s'il n'a
+    /// pas pu être lu), `secours` celui de sa copie de secours. Rien n'est lu ni écrit ici : un fichier abîmé n'est pas
+    /// mis de côté, il est seulement dit (« abimee »).
+    pub fn importer_sauvegarde_lue(&self, principal: Result<Option<Vec<u8>>, String>, secours: Option<Vec<u8>>) {
+        let principal = principal.and_then(|o| o.map(|o| lire_octets(&o)).transpose());
+        let secours = secours.and_then(|o| lire_octets(&o).ok());
+        self.importer_sauvegarde_de(principal, secours, false);
+    }
+
+    /// `Import-Backup`, une fois les fichiers lus. `mettre_de_cote` : une sauvegarde abîmée est renommée à côté
+    /// (jamais sans disque, jamais en administrateur).
+    fn importer_sauvegarde_de(
+        &self,
+        principal: Result<Option<Map<String, Value>>, String>,
+        secours: Option<Map<String, Value>>,
+        mettre_de_cote: bool,
+    ) {
         let mut s = Sauvegarde::default();
         let fichier = self.fichier_sauvegarde();
         let mut notes: Vec<String> = Vec::new();
-        let mut j = match lire_fichier(&fichier) {
+        let mut j = match principal {
             Ok(j) => j,
             Err(e) => {
-                notes.push(format!("Sauvegarde abîmée ({e}) : mise de côté"));
                 s.probleme = Some("abimee".into());
-                let dest =
-                    self.donnees.join(format!("sauvegarde-abimee-{}.json", moment::compacte(&self.maintenant())));
-                let _ = std::fs::rename(&fichier, dest);
+                if mettre_de_cote && !self.sans_disque {
+                    notes.push(format!("Sauvegarde abîmée ({e}) : mise de côté"));
+                    let dest =
+                        self.donnees.join(format!("sauvegarde-abimee-{}.json", moment::compacte(&self.maintenant())));
+                    let _ = std::fs::rename(&fichier, dest);
+                } else {
+                    notes.push(format!("Sauvegarde abîmée ({e})"));
+                }
                 None
             }
         };
         if j.is_none()
-            && let Ok(Some(b)) = lire_fichier(&crate::fichiers::a_cote(&fichier, ".bak"))
+            && let Some(b) = secours
         {
             notes.push("Sauvegarde reprise de sa copie de secours".into());
             j = Some(b);
@@ -294,6 +336,9 @@ impl Contexte {
     /// sa `voulue`, avec ce qu'un autre geste a noté entre-temps.
     pub fn ecrire_sauvegarde_fusion(&self, base: &Sauvegarde, voulue: &Sauvegarde) -> Result<Sauvegarde, String> {
         self.exiger_geste()?;
+        if self.sans_disque {
+            return Err(crate::contexte::SANS_DISQUE.into());
+        }
         let _seul = verrou(&self.ecrivain_sauvegarde);
         let fichier = self.fichier_sauvegarde();
         let disque = match lire_fichier(&fichier) {
@@ -335,7 +380,7 @@ impl Contexte {
     /// relue (les valeurs d'origine encore gardées dans le registre)
     pub fn effacer_sauvegarde(&self) -> Result<(), String> {
         self.exiger_geste()?;
-        {
+        if !self.sans_disque {
             let _seul = verrou(&self.ecrivain_sauvegarde);
             let f = self.fichier_sauvegarde();
             for fin in ["", ".bak", ".tmp"] {

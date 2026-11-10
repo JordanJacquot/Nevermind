@@ -41,7 +41,12 @@ pub(crate) struct Interne {
     pub fenetre: usize,
     /// Les dernières erreurs (`$global:Error`), pour « Signaler un problème »
     pub erreurs: Vec<String>,
+    /// Sans disque (lot C) : les lignes du journal gardées en mémoire (« horodatage message »)
+    pub journal_attente: Vec<String>,
 }
+
+/// L'erreur d'une écriture refusée par un contexte sans disque
+pub const SANS_DISQUE: &str = "rien n'est écrit dans le dossier des données en administrateur";
 
 pub struct Contexte {
     /// Le dossier de l'appli (fichiers livrés : ui, fichiers de données).
@@ -52,6 +57,8 @@ pub struct Contexte {
     pub geree: bool,
     /// Mode test (`$env:NEVERMIND_TEST`) : rien ne touche le PC.
     pub essai: bool,
+    /// Sans disque ([`Contexte::sans_disque`]) : rien n'est lu ni écrit dans le dossier des données
+    pub(crate) sans_disque: bool,
     reglages: Mutex<Option<Map<String, Value>>>,
     pub(crate) interne: Mutex<Interne>,
     pub(crate) aide: crate::aide::EtatAide,
@@ -76,12 +83,32 @@ impl Contexte {
     pub fn nouveau(appli: PathBuf, donnees: PathBuf, geree: bool, essai: bool) -> Self {
         let _ = std::fs::create_dir_all(&donnees);
         crate::journal::raccourcir(&donnees);
+        Self::construire(appli, donnees, geree, essai, false)
+    }
+
+    /// Le contexte du désinstalleur en administrateur (lot C du second audit, M-A) : RIEN n'est lu ni écrit dans le
+    /// dossier des données, que le compte peut remplacer par un lien à tout moment. Le dossier n'est pas créé, le
+    /// journal n'est jamais raccourci ; les lignes du journal restent en mémoire ([`Contexte::journal_en_attente`]) ;
+    /// les réglages, l'historique et la sauvegarde sont ceux que le désinstalleur a lus lui-même, sans suivre de lien
+    /// ([`Contexte::fournir_reglages`], [`Contexte::fournir_historique`], [`Contexte::importer_sauvegarde_lue`]) ; une
+    /// écriture de fichier est refusée ([`SANS_DISQUE`]), un réglage changé ne l'est qu'en mémoire.
+    pub fn sans_disque(appli: PathBuf, donnees: PathBuf, geree: bool) -> Self {
+        Self::construire(appli, donnees, geree, false, true)
+    }
+
+    /// Ce contexte ne lit ni n'écrit rien dans le dossier des données ([`Contexte::sans_disque`])
+    pub fn est_sans_disque(&self) -> bool {
+        self.sans_disque
+    }
+
+    fn construire(appli: PathBuf, donnees: PathBuf, geree: bool, essai: bool, sans_disque: bool) -> Self {
         let horloge = moment::horloge_du_pc();
         Self {
             appli,
             donnees,
             geree,
             essai,
+            sans_disque,
             reglages: Mutex::new(None),
             interne: Mutex::new(Interne {
                 fichiers: Fichiers::avec_horloge(horloge.clone()),
@@ -93,6 +120,7 @@ impl Contexte {
                 origines_factices: Vec::new(),
                 fenetre: 0,
                 erreurs: Vec::new(),
+                journal_attente: Vec::new(),
             }),
             aide: Default::default(),
             sauvegarde: Mutex::new(None),
@@ -200,6 +228,11 @@ impl Contexte {
     /// fois) dans les préférences (`LogError`), qui elles s'écrivent.
     pub fn journal(&self, message: &str) {
         let h = moment::iso(&self.maintenant());
+        // (sans disque : gardée en mémoire, jamais écrite par son chemin ; lot C)
+        if self.sans_disque {
+            verrou(&self.interne).journal_attente.push(format!("{h} {message}"));
+            return;
+        }
         if let Err(e) = crate::journal::ajouter(&self.fichier_journal(), &h, message) {
             let texte = {
                 let mut i = verrou(&self.interne);
@@ -212,6 +245,12 @@ impl Contexte {
             };
             let _ = self.ecrire_reglage("LogError", Value::String(texte), false);
         }
+    }
+
+    /// Sans disque : les lignes du journal gardées en mémoire depuis la dernière fois (« horodatage message »), dans
+    /// l'ordre ; elles sont retirées de la mémoire
+    pub fn journal_en_attente(&self) -> Vec<String> {
+        std::mem::take(&mut verrou(&self.interne).journal_attente)
     }
 
     /// Une erreur gardée pour « Signaler un problème » (`$global:Error`, les 80 dernières), et notée au journal
@@ -236,6 +275,9 @@ impl Contexte {
     /// `Read-JsonSur` : le contenu d'un fichier de données (ou de sa copie de secours), `None` s'il n'y en a pas.
     /// Abîmé : mis de côté et noté au journal. Pris par un autre programme : il ne sera pas réécrit avant d'être relu.
     pub fn lire_json(&self, chemin: &Path) -> Option<Value> {
+        if self.sans_disque {
+            return None;
+        }
         let notes = std::cell::RefCell::new(Vec::new());
         let r = verrou(&self.interne).fichiers.lire_json(chemin, &|m: &str| notes.borrow_mut().push(m.to_string()));
         for n in notes.into_inner() {
@@ -246,6 +288,9 @@ impl Contexte {
 
     /// `Save-JsonSur` (forme lisible ; `compact` pour `-Compress`, `bom` pour `-Bom`)
     pub fn ecrire_json(&self, chemin: &Path, valeur: &Value, compact: bool, bom: bool) -> Result<(), String> {
+        if self.sans_disque {
+            return Err(SANS_DISQUE.into());
+        }
         verrou(&self.interne).fichiers.ecrire_json(chemin, valeur, !compact, bom)
     }
 
@@ -261,6 +306,11 @@ impl Contexte {
     fn charger_reglages(&self) {
         let mut r = verrou(&self.reglages);
         if r.is_some() {
+            return;
+        }
+        // (sans disque : seulement ce qui a été fourni, jamais le fichier)
+        if self.sans_disque {
+            *r = Some(Map::new());
             return;
         }
         let notes = std::cell::RefCell::new(Vec::new());
@@ -313,7 +363,12 @@ impl Contexte {
             let m = r.get_or_insert_with(Map::new);
             let avant = m.insert(nom.to_string(), valeur);
             let copie = Value::Object(m.clone());
-            let ecrit = verrou(&self.interne).fichiers.ecrire_json(&self.fichier_reglages(), &copie, true, false);
+            // (sans disque : changé en mémoire seulement)
+            let ecrit = if self.sans_disque {
+                Ok(())
+            } else {
+                verrou(&self.interne).fichiers.ecrire_json(&self.fichier_reglages(), &copie, true, false)
+            };
             match ecrit {
                 Ok(()) => None,
                 Err(e) => {
@@ -338,6 +393,12 @@ impl Contexte {
             }
         }
         Ok(())
+    }
+
+    /// Les réglages, lus ailleurs (le désinstalleur en administrateur les lit sans suivre de lien) : ils remplacent ceux
+    /// en mémoire, sans rien lire ni écrire
+    pub fn fournir_reglages(&self, reglages: Map<String, Value>) {
+        *verrou(&self.reglages) = Some(reglages);
     }
 
     /// Les réglages sont relus du disque au prochain appel (après un changement fait par un autre programme)

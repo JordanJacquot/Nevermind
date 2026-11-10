@@ -392,7 +392,14 @@ impl Contexte {
 
     /// `Import-History` : relit historique.json
     pub fn importer_historique(&self) {
-        let l = match self.lire_json(&self.fichier_historique()) {
+        let v = self.lire_json(&self.fichier_historique());
+        self.fournir_historique(v);
+    }
+
+    /// `Import-History` sur le contenu de historique.json lu ailleurs (lot C : le désinstalleur en administrateur le
+    /// lit lui-même, sans suivre de lien) ; `None` s'il n'y en a pas. Rien n'est lu ni écrit ici.
+    pub fn fournir_historique(&self, contenu: Option<Value>) {
+        let l = match contenu {
             None => Vec::new(),
             Some(v) => liste(&v).iter().filter(|x| vrai(x)).map(ligne_historique).collect(),
         };
