@@ -245,8 +245,9 @@ pub trait Systeme: Pc + Send + Sync + 'static {
     fn nommer_sessions(&self, fps: &str, reseau: &str);
     /// Les noms des sessions de mesure (FPS, réseau) ; les noms communs tant qu'elles n'ont pas été nommées
     fn sessions(&self) -> (String, String);
-    /// Ferme la trace réseau de cette Aide restée ouverte (Aide d'avant tuée ou plantée), au démarrage
-    fn fermer_trace_restee(&self);
+    /// Ferme les sessions de mesure de cette Aide restées ouvertes (Aide d'avant tuée ou plantée), au démarrage : la
+    /// trace réseau, et la session des FPS que PresentMon tué laisse dans Windows
+    fn fermer_sessions_restees(&self);
     /// PresentMon du dossier de Nevermind, seulement s'il est bien signé par Intel (`Get-AidePresentMon`) : son
     /// chemin, ou le message d'erreur
     fn presentmon(&self) -> Result<String, String>;

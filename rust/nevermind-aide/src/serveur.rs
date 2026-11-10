@@ -207,10 +207,11 @@ pub fn lancer<H: Hote>(h: Arc<H>, sid_recu: Option<&str>) {
         ""
     };
     journal.ecrire(s, &format!("Aide {} démarrée{mode} pour {sid_servi} (processus {})", demandes::VERSION, moi.pid));
-    // Sa trace restée ouverte (Aide d'avant tuée ou plantée) est fermée, seulement maintenant que cette Aide a le
-    // canal : une seconde Aide du même compte ne coupe jamais la trace de celle qui tourne (second audit du 09/11)
+    // Ses sessions de mesure restées ouvertes (Aide d'avant tuée ou plantée : la trace réseau, et la session des FPS
+    // que PresentMon tué avec elle laisse dans Windows) sont fermées, seulement maintenant que cette Aide a le canal :
+    // une seconde Aide du même compte ne coupe jamais les mesures de celle qui tourne (second audit du 09/11)
     if moi.admin {
-        s.fermer_trace_restee();
+        s.fermer_sessions_restees();
     }
     if moi.admin
         && let Err(e) = actions::renommer_anciennes_regles(s)

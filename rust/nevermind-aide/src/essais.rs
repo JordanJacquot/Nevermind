@@ -80,6 +80,8 @@ pub(crate) struct FaussesMesures {
     pub(crate) traces: Vec<String>,
     /// Les traces restées ouvertes fermées au démarrage de l'Aide (leur nom)
     pub(crate) traces_fermees: Vec<String>,
+    /// Les sessions des FPS restées ouvertes fermées au démarrage de l'Aide (leur nom)
+    pub(crate) sessions_fps_fermees: Vec<String>,
     /// Où parle le dernier PresentMon lancé
     pub(crate) rappel_pm: Option<RappelPm>,
     /// Ce que Windows répond au prochain démarrage de la trace (aucun : accepté)
@@ -479,9 +481,11 @@ impl Systeme for FauxSysteme {
             (aide_regles::canal::SESSION_FPS_COMMUNE.into(), aide_regles::canal::SESSION_RESEAU_COMMUNE.into())
         })
     }
-    fn fermer_trace_restee(&self) {
-        let s = self.sessions().1;
-        self.mesures.lock().unwrap().traces_fermees.push(s);
+    fn fermer_sessions_restees(&self) {
+        let (fps, reseau) = self.sessions();
+        let mut m = self.mesures.lock().unwrap();
+        m.sessions_fps_fermees.push(fps);
+        m.traces_fermees.push(reseau);
     }
     fn demarrer_trace(&self, rappel: RappelTrace) -> Result<Box<dyn Trace>, RefusTrace> {
         let session = self.sessions().1;

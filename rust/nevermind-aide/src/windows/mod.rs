@@ -544,8 +544,9 @@ impl Systeme for Windows {
         })
     }
 
-    fn fermer_trace_restee(&self) {
-        mesures::fermer_trace_restee(&self.sessions().1);
+    fn fermer_sessions_restees(&self) {
+        let (fps, reseau) = self.sessions();
+        mesures::fermer_sessions_restees(&fps, &reseau);
     }
 
     fn presentmon(&self) -> Result<String, String> {

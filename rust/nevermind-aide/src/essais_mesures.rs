@@ -310,7 +310,9 @@ fn deux_aides_ont_chacune_leurs_sessions() {
     }
 }
 
-/// Au démarrage, l'Aide nomme ses sessions (compte servi et copie) et ferme seulement sa propre trace restée ouverte
+/// Au démarrage, l'Aide nomme ses sessions (compte servi et copie) et ferme seulement sa propre trace restée ouverte,
+/// et (second audit du 09/11) sa propre session des FPS : PresentMon tué avec une Aide tuée la laisse dans Windows, et
+/// la mesure suivante pouvait la trouver encore prise
 #[test]
 fn le_demarrage_nomme_les_sessions_et_ferme_la_trace_restee() {
     let f = Arc::new(FauxSysteme::new());
@@ -322,6 +324,7 @@ fn le_demarrage_nomme_les_sessions_et_ferme_la_trace_restee() {
     );
     assert_eq!(f.sessions(), attendu);
     assert_eq!(f.mesures.lock().unwrap().traces_fermees, vec![attendu.1]);
+    assert_eq!(f.mesures.lock().unwrap().sessions_fps_fermees, vec![attendu.0]);
 }
 
 /// Second audit du 09/11 (P1) : l'Aide en SYSTEM (session 0) et l'Aide de secours (session de l'utilisateur) du même
@@ -336,8 +339,8 @@ fn une_seconde_aide_ne_coupe_pas_la_trace_de_la_premiere() {
     // Le canal déjà pris : rien n'est fermé
     let seconde = Arc::new(FauxSysteme::new().avec_canal_pris());
     serveur::lancer(Arc::clone(&seconde), Some(ELODIE));
-    assert!(seconde.mesures.lock().unwrap().traces_fermees.is_empty());
-    assert!(seconde.mesures.lock().unwrap().lancements.is_empty());
+    let m = seconde.mesures.lock().unwrap();
+    assert!(m.traces_fermees.is_empty() && m.sessions_fps_fermees.is_empty() && m.lancements.is_empty());
 }
 
 /// L'Aide qui s'arrête arrête PresentMon (et ferme sa session) et la trace

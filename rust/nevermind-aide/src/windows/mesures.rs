@@ -283,11 +283,14 @@ pub fn fermer_session_presentmon(exe: &str, session: &str, env: &[(String, Strin
 /// Nom d'avant la 1.3.7 : une session restée ouverte sous ce nom après une mise à jour est fermée au démarrage
 const ANCIENNE_SESSION: &str = "OptiGame-Reseau";
 
-/// Au démarrage de l'Aide : sa trace restée ouverte (l'Aide d'avant tuée ou plantée) est fermée, et celle d'avant la
-/// 1.3.7. Seulement la sienne (son nom est propre à son compte et à sa copie) : jamais celle d'une autre Aide.
-pub fn fermer_trace_restee(session: &str) {
+/// Au démarrage de l'Aide : ses sessions restées ouvertes (l'Aide d'avant tuée ou plantée) sont fermées, la trace
+/// réseau `reseau` (et celle d'avant la 1.3.7) et la session des FPS `fps` (PresentMon tué avec l'Aide la laisse dans
+/// Windows : c'est une session ETW de ce nom, arrêtée comme le fait `--terminate_existing_session`). Seulement les
+/// siennes (leurs noms sont propres à son compte et à sa copie) : jamais celles d'une autre Aide.
+pub fn fermer_sessions_restees(fps: &str, reseau: &str) {
+    arreter_session(fps);
     arreter_session(ANCIENNE_SESSION);
-    arreter_session(session);
+    arreter_session(reseau);
 }
 const FOURNISSEUR: GUID = GUID::from_u128(0x7DD42A49_5329_4832_8DFD_43D979153A88);
 /// Taille des réglages d'une session : la structure, puis la place du nom
