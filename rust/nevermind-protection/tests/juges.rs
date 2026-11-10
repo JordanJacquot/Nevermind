@@ -29,8 +29,8 @@ const LISTES: [&str; 17] = [
     "quand",
 ];
 
-/// Divergence voulue (DIVERGENCES.md, « Dalles d'outils ») : `resume` et `niveau` des dalles n'existent pas en
-/// PowerShell ; ils sont retirés de la sortie Rust avant la comparaison, tout le reste est comparé tel quel.
+/// Divergence voulue (DIVERGENCES.md, « Dalles d'outils ») : `resume`, `niveau` et `jugement` des dalles n'existent
+/// pas en PowerShell ; ils sont retirés de la sortie Rust avant la comparaison, tout le reste est comparé tel quel.
 fn sans_resume_ni_niveau(v: &mut Value) {
     match v {
         Value::Array(a) => a.iter_mut().for_each(sans_resume_ni_niveau),
@@ -40,6 +40,7 @@ fn sans_resume_ni_niveau(v: &mut Value) {
                     if let Some(x) = x.as_object_mut() {
                         x.remove("resume");
                         x.remove("niveau");
+                        x.remove("jugement");
                     }
                 }
             }
@@ -102,16 +103,20 @@ fn juges(nom: &str) -> Vec<Value> {
     }
 }
 
-/// Ce que Rust rend pour l'entrée d'un juge : pages normalisées, note, gestes des points
-fn sortie_rust(e: &Value) -> (Value, Value, Value) {
+/// Ce que Rust rend pour l'entrée d'un juge, tel quel
+fn rust_brut(e: &Value) -> (serde_json::Map<String, Value>, Option<i64>, Vec<regles::Constat>) {
     let s = e.get("S").and_then(EtatS::depuis);
     let env = Environnement::depuis(e);
     let reglages = e.get("Reglages").cloned().unwrap_or(Value::Null);
     let approuves = etat::approuves(reglages.get("SecuriteApprouves"));
     let sauve = historique::sauvegarde(e.get("Sauvegarde"), reglages.get("SvcOriginal"), reglages.get("PcfgOriginal"));
     let hist = historique::importer(e.get("Historique"));
-    let (pages, note, points) =
-        pages_pour(CasPages { s, env: &env, approuves: &approuves, sauvegarde: &sauve, historique: &hist });
+    pages_pour(CasPages { s, env: &env, approuves: &approuves, sauvegarde: &sauve, historique: &hist })
+}
+
+/// Ce que Rust rend pour l'entrée d'un juge : pages normalisées, note, gestes des points
+fn sortie_rust(e: &Value) -> (Value, Value, Value) {
+    let (pages, note, points) = rust_brut(e);
     let mut p = Value::Object(pages);
     normaliser(&mut p);
     sans_resume_ni_niveau(&mut p);
@@ -171,6 +176,35 @@ fn pages_comme_powershell() {
         j.len(),
         echecs[..echecs.len().min(8)].join("\n")
     );
+}
+
+/// Second audit du 09/11 : la dalle Sécurité ne disait son jugement que par sa couleur (« 2 points » en orange ou en
+/// rouge). Il est maintenant aussi écrit (`jugement`, ajouté à l'état par kit.js), sur chaque juge : « à voir » en
+/// orange, « important(s) » ou « dont g important(s) » en rouge, rien quand tout est propre.
+#[test]
+fn securite_dit_son_jugement_en_mots() {
+    let mut vus = std::collections::BTreeMap::new();
+    for c in juges("pages.json") {
+        let (pages, _, _) = rust_brut(&c["entree"]);
+        let blocs = pages["protection"]["blocs"].as_array().cloned().unwrap_or_default();
+        let Some(x) = blocs
+            .iter()
+            .filter(|b| b["type"] == "outils")
+            .flat_map(|b| b["elements"].as_array().cloned().unwrap_or_default())
+            .find(|x| x["id"] == "securite")
+        else {
+            continue;
+        };
+        let (ton, j) = (x["ton"].as_str().unwrap_or_default(), x["jugement"].as_str().unwrap_or_default());
+        let juste = match ton {
+            "attention" => j == "à voir",
+            "urgent" => j.starts_with("important") || (j.starts_with("dont ") && j.contains(" important")),
+            _ => x["jugement"].is_null(),
+        };
+        assert!(juste, "{} : ton {ton}, jugement {:?}, état {}", c["nom"], x["jugement"], x["etiquette"]);
+        *vus.entry(ton.to_string()).or_insert(0) += 1;
+    }
+    assert!(["attention", "urgent", "ok"].iter().all(|t| vus.contains_key(*t)), "{vus:?}");
 }
 
 /// La contre-épreuve : un juge changé d'un caractère doit être vu

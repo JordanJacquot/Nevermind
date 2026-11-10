@@ -59,3 +59,6 @@ tourne derrière change :
   le titre) et Sécurité a `niveau` (la note de protection sur 100, le remplissage de la barre du bas). `note` (la
   phrase d'avant) reste, en infobulle. Ces champs n'existent pas en PowerShell : `tests/juges.rs` les retire de la
   sortie Rust avant de comparer.
+- (second audit du 09/11) La dalle Sécurité a aussi `jugement`, que kit.js écrit après l'état : « 2 points à voir »
+  (orange), « 1 point important », « 3 points dont 1 important » (rouge). Avant, seule la couleur disait s'il fallait
+  agir. Retiré lui aussi avant la comparaison.

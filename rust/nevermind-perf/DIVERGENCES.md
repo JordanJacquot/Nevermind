@@ -118,3 +118,6 @@ FpsOverlayStyle, FpsOverlayCorner) et fiche d'une partie : bloc jeux ; ce bloc r
   chiffre vrai existe, `niveau` (0 à 100, le remplissage de la barre du bas) : réglages faits sur réglages conseillés
   pour Optimisation gaming, pourcentage de RAM utilisée pour RAM. `note` (la phrase d'avant) reste, en infobulle.
   Ces deux champs n'existent pas en PowerShell : `tests/juges.rs` les retire de la sortie Rust avant de comparer.
+- (second audit du 09/11) La dalle Nettoyage a aussi `jugement` (« à nettoyer » au-delà de 1 Go, quand elle est
+  orange), que kit.js écrit après l'état : « 1,5 Go à nettoyer ». Avant, seule la couleur le disait. Retiré lui aussi
+  avant la comparaison.

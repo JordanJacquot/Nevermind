@@ -446,14 +446,18 @@
       case 'outils': return `<div class="outils">${(b.elements || []).map((x) => {
         // (l'icône, le titre et le résumé court ; l'état écrit en bas à droite, au-dessus d'une barre fine : voir .outil
         // dans kit.css. La barre : remplie au niveau (0 à 100) s'il est donné, sinon pleine pour un état ok, attention
-        // ou urgent, sinon vide. La note entière est l'infobulle ; une dalle grisée l'écrit sous le titre : elle dit pourquoi)
+        // ou urgent, sinon vide. La note entière est l'infobulle ; une dalle grisée l'écrit sous le titre : elle dit pourquoi.
+        // Au clavier ou à la manette (focus visible), la note s'affiche aussi dans une bulle sous la dalle : l'infobulle ne
+        // vient qu'à la souris. `jugement` : le jugement en mots après l'état (« 1,5 Go à nettoyer »), pas seulement la couleur)
         const ton = ['ok', 'attention', 'urgent'].includes(x.ton) ? x.ton : 'info';
         const texte = x.inactif ? x.note : (x.resume || x.note);
-        const etat = !x.inactif && x.etiquette ? `<span class="etat-o t-${ton}">${esc(x.etiquette)}</span>` : '';
+        const dit = x.etiquette && x.jugement ? `${x.etiquette} ${x.jugement}` : x.etiquette;
+        const etat = !x.inactif && x.etiquette ? `<span class="etat-o t-${ton}">${esc(dit)}</span>` : '';
         const niveau = x.niveau != null && x.niveau !== '' && Number.isFinite(+x.niveau) ? borne(+x.niveau, 0, 100) : null;
         const rempli = x.inactif ? 0 : niveau != null ? niveau : (x.etiquette && ton !== 'info' ? 100 : 0);
         const dedans = `${icone(x.icone || 'etoile', x.couleur)}<span class="texte-o"><b>${esc(x.nom)}</b>${texte ? `<span class="n">${esc(texte)}</span>` : ''}</span>${etat}`
-          + `<span class="barre-o" aria-hidden="true"><span class="barre"><i class="t-${ton}" style="width:${rempli}%"></i></span></span>`;
+          + `<span class="barre-o" aria-hidden="true"><span class="barre"><i class="t-${ton}" style="width:${rempli}%"></i></span></span>`
+          + (!x.inactif && x.note && x.note !== texte ? `<span class="bulle-o" aria-hidden="true">${esc(x.note)}</span>` : '');
         const bulle = x.note ? ` title="${esc(x.note)}"` : '';
         // (inactif : une carte grisée, ni choisissable ni cliquable)
         if (x.inactif) return `<div class="outil plaque inactif" aria-disabled="true"${bulle}>${dedans}</div>`;

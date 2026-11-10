@@ -56,8 +56,8 @@ pub fn difference(a: &Value, b: &Value, chemin: &str) -> Option<String> {
     }
 }
 
-/// Divergence voulue (DIVERGENCES.md, « Dalles d'outils ») : `resume` et `niveau` des dalles n'existent pas en
-/// PowerShell ; ils sont retirés de la sortie Rust avant la comparaison, tout le reste est comparé tel quel.
+/// Divergence voulue (DIVERGENCES.md, « Dalles d'outils ») : `resume`, `niveau` et `jugement` des dalles n'existent
+/// pas en PowerShell ; ils sont retirés de la sortie Rust avant la comparaison, tout le reste est comparé tel quel.
 pub fn sans_resume_ni_niveau(mut v: Value) -> Value {
     fn retirer(v: &mut Value) {
         match v {
@@ -68,6 +68,7 @@ pub fn sans_resume_ni_niveau(mut v: Value) -> Value {
                         if let Some(x) = x.as_object_mut() {
                             x.remove("resume");
                             x.remove("niveau");
+                            x.remove("jugement");
                         }
                     }
                 }
@@ -109,6 +110,38 @@ fn verifier(nom: &str, cas: &[Value], min: usize, rejouer: impl Fn(&Value) -> Va
 fn pages_comme_powershell() {
     let cas = juge("pages.json");
     verifier("pages.json", &cas, 400, |e| sans_resume_ni_niveau(Value::Object(pages::pages(e))));
+}
+
+/// Second audit du 09/11 : la dalle Nettoyage ne disait « à nettoyer » que par sa couleur (orange au-delà de 1 Go, vert
+/// sinon, barre toujours pleine). Son jugement est maintenant aussi écrit (`jugement`, ajouté à l'état par kit.js),
+/// sur chaque juge : « à nettoyer » quand elle est orange, rien quand elle est verte.
+#[test]
+fn nettoyage_dit_son_jugement_en_mots() {
+    let (mut orange, mut vert) = (0, 0);
+    for c in juge("pages.json") {
+        let p = Value::Object(pages::pages(&c["entree"]));
+        let blocs = p["perf"]["blocs"].as_array().cloned().unwrap_or_default();
+        for x in blocs
+            .iter()
+            .filter(|b| b["type"] == "outils")
+            .flat_map(|b| b["elements"].as_array().cloned().unwrap_or_default())
+        {
+            if x["id"] != "nettoyage" {
+                continue;
+            }
+            match x["ton"].as_str() {
+                Some("attention") => {
+                    orange += 1;
+                    assert_eq!(x["jugement"], "à nettoyer", "{}", c["nom"]);
+                }
+                _ => {
+                    vert += 1;
+                    assert!(x["jugement"].is_null(), "{}", c["nom"]);
+                }
+            }
+        }
+    }
+    assert!(orange > 0 && vert > 0, "juges sans dalle Nettoyage orange ou verte : {orange} {vert}");
 }
 
 #[test]

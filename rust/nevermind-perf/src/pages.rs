@@ -227,6 +227,8 @@ pub fn pages(e: &Value) -> Map<String, Value> {
           "ton": if conseil > 0 { "attention" } else { "" } },
         { "id": "nettoyage", "nom": "Nettoyage", "resume": "Fichiers inutiles", "note": "Les fichiers inutiles", "icone": "balai", "couleur": "T",
           "etiquette": if !c_rows.is_empty() { json!(taille(tout)) } else { Value::Null },
+          // (le jugement dit aussi en mots, pas seulement par la couleur : « 1,5 Go à nettoyer »)
+          "jugement": if tout > 1073741824.0 { json!("à nettoyer") } else { Value::Null },
           "ton": if tout > 1073741824.0 { "attention" } else if !c_rows.is_empty() { "ok" } else { "" } },
         { "id": "memoire", "nom": "RAM", "resume": "Mémoire utilisée", "note": "Ce qui prend la mémoire", "icone": "memoire", "couleur": "P",
           "niveau": match ram_p { Some(p) => json!(p.clamp(0, 100)), None => Value::Null },

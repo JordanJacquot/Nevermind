@@ -48,6 +48,17 @@ fn pluriel(n: usize) -> &'static str {
     if n > 1 { "s" } else { "" }
 }
 
+/// Ce que la dalle Sécurité ajoute après « n points », en mots (second audit du 09/11 : avant, seulement la couleur
+/// disait s'il fallait agir) : « à voir », « important(s) », ou « dont g important(s) » ; rien sans point à vérifier
+fn jugement_securite(n: usize, graves: usize) -> Value {
+    match (n, graves) {
+        (0, _) => Value::Null,
+        (_, 0) => json!("à voir"),
+        (n, g) if g >= n => json!(format!("important{}", pluriel(n))),
+        (_, g) => json!(format!("dont {g} important{}", pluriel(g))),
+    }
+}
+
 /// Les pages, et les points tels que numérotés dans les boutons (`$script:Kit.SecChecks`)
 pub fn pages(e: &EntreePages) -> (Map<String, Value>, Vec<Constat>) {
     let d = e.verif;
@@ -100,6 +111,8 @@ pub fn pages(e: &EntreePages) -> (Map<String, Value>, Vec<Constat>) {
         { "id": "securite", "nom": "Sécurité", "resume": "Virus et menaces", "note": "Virus et programmes dangereux", "icone": "bouclier", "couleur": "T",
           "niveau": match sec { Some(x) => json!(x.clamp(0, 100)), None => Value::Null },
           "etiquette": if n > 0 { json!(format!("{n} point{}", pluriel(n))) } else if d.is_some() { json!("Tout est propre") } else { Value::Null },
+          // (le jugement dit aussi en mots, pas seulement par la couleur : « 2 points à voir », « 1 point important »)
+          "jugement": jugement_securite(n, checks.iter().filter(|c| c.grave()).count()),
           "ton": if checks.iter().any(Constat::grave) { "urgent" } else if n > 0 { "attention" } else { "ok" } },
         { "id": "sauvegarde", "nom": "Sauvegarde", "resume": "Retour en arrière", "note": "Revenir en arrière à tout moment", "icone": "sauve", "couleur": "S",
           "etiquette": if nb > 0 { format!("{nb} réglage{}", pluriel(nb)) } else { "Rien de modifié".into() }, "ton": "ok" }
