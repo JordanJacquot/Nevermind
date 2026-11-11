@@ -47,11 +47,23 @@ struct AnalyseEnCours {
     titre: String,
 }
 
-/// La fin d'une analyse, rendue par son fil : son résultat, et la lecture de l'Aide qui donne les menaces trouvées
-/// (`Some` : déjà lue dans le fil, lot B ; `None` : à lire au relevé, seulement sans contexte partagé)
+/// La fin d'une analyse, rendue par son fil : son résultat, et les menaces trouvées, déjà lues dans le fil (l'Aide,
+/// puis Defender sur place par WMI : jusqu'à 60 s ; lots B et I). `None` : à lire au relevé, seulement sans contexte
+/// partagé (tests d'un bloc seul, juges)
 struct FinAnalyse {
     r: Result<(), String>,
-    aide: Option<Option<Value>>,
+    menaces: Option<Menaces>,
+}
+
+/// Les menaces lues à la fin d'une analyse, et la ligne du journal si la lecture a raté
+type Menaces = (regles::ResultatAnalyse, Option<String>);
+
+/// Les menaces trouvées par l'analyse commencée à `debut` : par l'Aide sans droits, sinon par Defender sur place (deux
+/// requêtes WMI). Lent : jamais sur le fil des blocs avec le contexte partagé.
+fn lire_menaces(ctx: &Contexte, sys: &dyn Systeme, debut: Date) -> Menaces {
+    let admin = sys.est_admin();
+    let aide = if admin { None } else { ctx.aide_lecture("lecture.securite", &json!({})) };
+    regles::menaces_analyse(debut, admin, aide.as_ref(), &|| sys.detections())
 }
 
 /// Un fichier de données relu seulement quand il change
@@ -318,18 +330,17 @@ impl BlocProtection {
         let (tx, rx) = channel();
         let a = arret.clone();
         let debut = sys.maintenant();
-        // (les menaces trouvées sont lues par l'Aide dans ce fil aussi, jusqu'à 60 s : pas sur le fil des blocs, lot B)
+        // (les menaces trouvées sont lues dans ce fil aussi : par l'Aide jusqu'à 60 s, lot B, puis par Defender sur
+        //  place, deux requêtes WMI jusqu'à 60 s, en administrateur ou quand l'Aide n'a rien rendu, lot I ; jamais sur
+        //  le fil des blocs. Le panneau dit « en cours » jusque-là)
         let partage = ctx.partage_actuel();
         let lance = std::thread::Builder::new().name("protection-analyse".into()).spawn(move || {
             let r = sys.analyser(sorte, &chemins, &a);
-            let aide = match &partage {
-                Some(c) if r.is_ok() && !a.load(Ordering::SeqCst) && !sys.est_admin() => {
-                    Some(c.aide_lecture("lecture.securite", &json!({})))
-                }
-                Some(_) => Some(None),
-                None => None,
+            let menaces = match &partage {
+                Some(c) if r.is_ok() && !a.load(Ordering::SeqCst) => Some(lire_menaces(c, sys.as_ref(), debut)),
+                _ => None,
             };
-            let _ = tx.send(FinAnalyse { r, aide });
+            let _ = tx.send(FinAnalyse { r, menaces });
         });
         if lance.is_err() {
             return;
@@ -342,7 +353,7 @@ impl BlocProtection {
 
     /// La fin d'une analyse : le verdict (jamais « Aucune menace » si le résultat n'a pas été lu)
     fn finir_analyse(&mut self, ctx: &Contexte, a: AnalyseEnCours, fin: FinAnalyse, effets: &mut Effets) {
-        let FinAnalyse { r, aide: lue } = fin;
+        let FinAnalyse { r, menaces } = fin;
         let Some(sys) = self.sys.clone() else { return };
         let duree = (sys.maintenant().ticks() - a.debut.ticks()).max(0) / 10_000_000;
         let pluriel = |n: usize| if n > 1 { "s" } else { "" };
@@ -354,13 +365,8 @@ impl BlocProtection {
         } else if let Err(e) = r {
             ("echec", "Échec".into(), vec![format!("L'analyse n'a pas pu se faire : {e}")], Vec::new())
         } else {
-            let admin = sys.est_admin();
-            let aide = match lue {
-                _ if admin => None,
-                Some(v) => v,
-                None => ctx.aide_lecture("lecture.securite", &json!({})),
-            };
-            let (lu, journal) = regles::menaces_analyse(a.debut, admin, aide.as_ref(), &|| sys.detections());
+            // (déjà lues dans le fil de l'analyse ; sur place seulement sans contexte partagé)
+            let (lu, journal) = menaces.unwrap_or_else(|| lire_menaces(ctx, sys.as_ref(), a.debut));
             if let Some(j) = journal {
                 ctx.journal(&j);
             }
@@ -872,7 +878,7 @@ impl Bloc for BlocProtection {
             let r = match a.fin.try_recv() {
                 Ok(r) => Some(r),
                 Err(TryRecvError::Disconnected) => {
-                    Some(FinAnalyse { r: Err("l'analyse s'est arrêtée".into()), aide: None })
+                    Some(FinAnalyse { r: Err("l'analyse s'est arrêtée".into()), menaces: None })
                 }
                 Err(TryRecvError::Empty) => None,
             };
