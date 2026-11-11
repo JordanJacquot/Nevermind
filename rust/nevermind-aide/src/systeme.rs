@@ -298,11 +298,22 @@ pub enum ErreurCanal {
     Indisponible(String),
 }
 
+/// Le verrou « une seule Aide à la fois » (lot K)
+pub enum Verrouillage {
+    /// Le verrou est pris, gardé tant que `garde` vit. `remarque` : à noter au journal (le nom public était déjà pris par
+    /// un autre programme, l'Aide continue avec son verrou protégé)
+    Pris { garde: Box<dyn Send>, remarque: Option<String> },
+    /// Une autre Aide tient déjà le verrou (ou, sans droits administrateur, un autre programme a pris son nom) : l'Aide
+    /// s'arrête, et dit pourquoi au journal
+    Occupe(String),
+}
+
 /// Ce dont le démarrage et l'écoute de l'Aide ont besoin, en plus des demandes
 pub trait Hote: Systeme {
     type E: Ecoute;
-    /// Prend le verrou de ce nom (une seule Aide à la fois) : `None` s'il est déjà pris. Gardé tant que la valeur vit.
-    fn verrou(&self, nom: &str) -> Option<Box<dyn Send>>;
+    /// Prend le verrou « une seule Aide à la fois » de ce nom (`Global\Nevermind-Aide-<sid>-<suffixe>`, voir
+    /// `aide_regles::canal::nom_verrou`) : voir [`Verrouillage`]
+    fn verrou(&self, nom: &str) -> Verrouillage;
     /// Prépare le dossier aide-temp (réservé au système et aux administrateurs quand l'Aide en a les droits)
     fn preparer_aide_temp(&self, dossier: &str, admin: bool) -> Result<(), String>;
     /// Un exemplaire du canal `nom`, avec les droits `sddl`. `premier` : le tout premier (refusé par Windows si un autre

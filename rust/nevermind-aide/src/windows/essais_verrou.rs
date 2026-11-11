@@ -3,8 +3,8 @@
 //! administrateur (le PC de développement), l'espace de noms privé ne peut pas être créé : l'Aide garde alors le nom
 //! public, comme avant. Avec les droits (la machine de GitHub), le verrou protégé est pris.
 
-use crate::systeme::Verrouillage;
 use super::verrou_aide;
+use crate::systeme::Verrouillage;
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::core::HSTRING;
