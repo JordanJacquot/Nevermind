@@ -18,6 +18,8 @@ pub struct AideSurPlace {
     systeme: Windows,
     etat: EtatAide,
     journal: Journal,
+    /// Tests : la lecture des règles du pare-feu échoue (le vrai pare-feu n'est pas lu ; lot J)
+    pare_feu_illisible: bool,
 }
 
 impl AideSurPlace {
@@ -32,7 +34,14 @@ impl AideSurPlace {
             temp: String::new(),
             mesures: Default::default(),
         };
-        AideSurPlace { systeme, etat, journal: Journal::default() }
+        AideSurPlace { systeme, etat, journal: Journal::default(), pare_feu_illisible: false }
+    }
+
+    /// Tests : la lecture des règles du pare-feu échoue (COM refusé, service arrêté...), sans lire le vrai pare-feu
+    #[doc(hidden)]
+    pub fn avec_pare_feu_illisible(mut self) -> Self {
+        self.pare_feu_illisible = true;
+        self
     }
 
     /// Une demande (`Invoke-AideAction <a> <p> -Client $PID`) : son résultat (`r`), ou le message d'erreur de l'Aide
@@ -67,14 +76,24 @@ impl AideSurPlace {
     /// Les règles du pare-feu posées par Nevermind (« Nevermind : bloque ... », ou l'ancien nom « OptiGame : bloque
     /// ... ») : `Get-NetFirewallRule -DisplayName` de Restore-AllSettings
     pub fn regles_pare_feu(&self) -> usize {
-        self.systeme
-            .pare_feu_regles()
+        self.regles_pare_feu_lues().unwrap_or(0)
+    }
+
+    /// [`AideSurPlace::regles_pare_feu`], `None` quand la lecture a échoué (lot J, comme Ton PC au lot K : « Tout
+    /// restaurer » tente alors le déblocage, au lieu de croire qu'il n'y a aucune règle)
+    pub fn regles_pare_feu_lues(&self) -> Option<usize> {
+        let regles = if self.pare_feu_illisible {
+            Err("lecture refusée (essai)".to_string())
+        } else {
+            self.systeme.pare_feu_regles()
+        };
+        regles
             .map(|l| {
                 l.iter()
                     .filter(|n| commence_par(n, "Nevermind : bloque ") || commence_par(n, "OptiGame : bloque "))
                     .count()
             })
-            .unwrap_or(0)
+            .ok()
     }
 }
 

@@ -784,6 +784,10 @@ impl Pc for PcDesinstallation<'_> {
     fn regles_pare_feu(&self) -> usize {
         self.aide.regles_pare_feu()
     }
+    // (lot J : une lecture ratée n'est pas « aucune règle » ; « Tout restaurer » tente alors le déblocage)
+    fn regles_pare_feu_lues(&self) -> Option<usize> {
+        self.aide.regles_pare_feu_lues()
+    }
     fn index_carte(&self, guid: &str) -> Option<i64> {
         index_carte(guid)
     }
