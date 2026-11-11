@@ -27,7 +27,13 @@
 #      dossier visé (ni journal-ancien.txt, ni ligne ajoutée, ni sauvegarde renommée), la désinstallation va au bout ;
 #   7. (lot C, M1) le bureau redirigé (HKCU, User Shell Folders) vers une jonction qui vise un dossier d'essai où un
 #      raccourci lance bien cette copie : ce raccourci n'est jamais effacé ; puis le bureau redirigé vers un vrai
-#      dossier (comme OneDrive) : le raccourci de cette copie y est effacé, comme avant.
+#      dossier (comme OneDrive) : le raccourci de cette copie y est effacé, comme avant ;
+#   8. (lot H) Nevermind réinstallé aussitôt après la désinstallation, sans attendre la commande de fin (cmd.exe : 3 s
+#      d'attente, puis l'effacement) : la nouvelle installation reste entière (avant, la commande de fin effaçait ses
+#      programmes par leur nom) ;
+#   9. (lot H) le dossier Local AppData du compte redirigé (HKCU, User Shell Folders, que le compte peut changer sans
+#      droits) vers un faux dossier qui contient un dossier OptiGame : avec -SupprimerDonnees, ce faux OptiGame reste
+#      intact ; c'est le dossier OptiGame du vrai Local AppData du compte qui part.
 # Code de sortie 1 si un cas échoue.
 param([Parameter(Mandatory = $true)][string]$Nouvelle)
 
@@ -113,14 +119,22 @@ function Restore-Bureau($Note) {
     if ($Note.Existe) { New-ItemProperty -LiteralPath $cleDossiers -Name Desktop -Value $Note.Valeur -PropertyType ExpandString -Force | Out-Null }
     else { Remove-ItemProperty -LiteralPath $cleDossiers -Name Desktop -ErrorAction SilentlyContinue }
 }
+# Le dossier « Local AppData » du compte (même clé), que le compte peut aussi changer sans droits (lot H)
+function Get-LocalNote { $k = Get-Item -LiteralPath $cleDossiers; @{ Valeur = $k.GetValue('Local AppData', $null, 'DoNotExpandEnvironmentNames'); Existe = ($k.GetValueNames() -contains 'Local AppData') } }
+function Set-Local([string]$Dossier) { New-ItemProperty -LiteralPath $cleDossiers -Name 'Local AppData' -Value $Dossier -PropertyType ExpandString -Force | Out-Null }
+function Restore-Local($Note) {
+    if ($Note.Existe) { New-ItemProperty -LiteralPath $cleDossiers -Name 'Local AppData' -Value $Note.Valeur -PropertyType ExpandString -Force | Out-Null }
+    else { Remove-ItemProperty -LiteralPath $cleDossiers -Name 'Local AppData' -ErrorAction SilentlyContinue }
+}
 
 # Nevermind installé, géré par Mindset, son Aide en SYSTEM, puis « tout optimiser » : rend l'état d'origine relevé
-function Install-Nevermind {
+function Install-Nevermind([switch]$SansAttendre) {
     Get-AidesEnCours | ForEach-Object { try { $_.Kill(); [void]$_.WaitForExit(5000) } catch {} }
     # La commande de fin d'une désinstallation précédente (cmd.exe : 3 s d'attente, puis del et rmdir dans $prog) ne
     # doit pas tomber sur la copie qu'on installe ici : elle effacerait ses programmes (au cas 7, Start-Process ne
-    # trouvait plus « Désinstaller Nevermind.exe »). On attend qu'elle soit finie (30 s au plus).
-    if (-not (Wait-Jusque { -not @(Get-CimInstance Win32_Process -Filter "Name = 'cmd.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($prog, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count } 30)) {
+    # trouvait plus « Désinstaller Nevermind.exe »). On attend qu'elle soit finie (30 s au plus). Sauf au cas 8, qui
+    # vérifie justement qu'une réinstallation faite aussitôt n'est plus effacée (lot H).
+    if (-not $SansAttendre -and -not (Wait-Jusque { -not @(Get-CimInstance Win32_Process -Filter "Name = 'cmd.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($prog, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count } 30)) {
         throw 'la commande de fin de la désinstallation précédente ne finit pas'
     }
     if (Test-Path -LiteralPath $base) { Remove-Item -LiteralPath $base -Recurse -Force }
@@ -340,6 +354,65 @@ try {
     Test-Cas 'le raccourci du bureau redirigé est retiré, le dossier du bureau reste' { -not (Test-Path -LiteralPath (Join-Path $bureauRedirige 'Nevermind.lnk')) -and (Test-Path -LiteralPath $bureauRedirige -PathType Container) }
     Remove-Item -LiteralPath $bureauRedirige -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $lienBureau -Force -ErrorAction SilentlyContinue
+
+    # =================================================================================================================
+    Write-Host '8. Réinstallé aussitôt, sans attendre la commande de fin : la nouvelle installation reste entière (lot H)'
+    $o = Install-Nevermind
+    # (les cmd.exe déjà là avant : seule la commande de fin de cette désinstallation est regardée ensuite)
+    $cmdAvant = @(Get-Process -Name cmd -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+    $r = Invoke-Desinstalleur '-GarderDonnees'
+    $cmdFin = @(Get-Process -Name cmd -ErrorAction SilentlyContinue | Where-Object { $cmdAvant -notcontains $_.Id })
+    # Réinstallé tout de suite (la commande de fin attend encore ses 3 s), comme Mindset pourrait le faire
+    $o = Install-Nevermind -SansAttendre
+    $encore = @($cmdFin | Where-Object { -not $_.HasExited }).Count
+    Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
+    Test-Cas "la commande de fin tournait encore quand la réinstallation a fini de copier (sinon ce cas ne prouve rien ; en cours : $encore)" { $encore -ge 1 }
+    $null = Wait-Jusque { -not @($cmdFin | Where-Object { -not $_.HasExited }).Count } 30
+    $source = (Resolve-Path -LiteralPath $Nouvelle).ProviderPath.TrimEnd('\')
+    $manquent = @(Get-ChildItem -LiteralPath $source -Recurse -File -Force | ForEach-Object { $_.FullName.Substring($source.Length).TrimStart('\') } | Where-Object { -not (Test-Path -LiteralPath (Join-Path $prog $_) -PathType Leaf) })
+    Test-Cas "la commande de fin finie, la nouvelle installation est entière (manquent : $($manquent -join ', '))" { -not $manquent.Count }
+    Test-Cas 'aucun dossier « à effacer » n''est resté' { -not @(Get-ChildItem -LiteralPath $prog -Directory -Force | Where-Object { $_.Name -like 'a-effacer*' }).Count }
+    Test-Cas 'la nouvelle installation se désinstalle (Désinstaller Nevermind.exe est là et rend 0)' { (Invoke-Desinstalleur '-SupprimerDonnees').Code -eq 0 }
+    $null = Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 15
+
+    # =================================================================================================================
+    Write-Host '9. Local AppData du compte redirigé vers un faux dossier avec un OptiGame : il reste intact (lot H)'
+    $o = Install-Nevermind
+    # Plus de données dans le dossier de la suite : le désinstalleur prend alors l'ancien dossier, <Local AppData>\OptiGame
+    Remove-Item -LiteralPath $donnees -Recurse -Force
+    # Le faux Local AppData, choisi par un programme sans droits : un vrai dossier (pas une jonction) avec un OptiGame
+    $fauxLocal = Join-Path $env:RUNNER_TEMP 'localappdata-redirige'
+    $fauxOpti = Join-Path $fauxLocal 'OptiGame'
+    if (Test-Path -LiteralPath $fauxLocal) { Remove-Item -LiteralPath $fauxLocal -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path (Join-Path $fauxOpti 'sous') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $fauxOpti 'precieux.txt'), 'ne pas toucher', $utf8)
+    [IO.File]::WriteAllText((Join-Path $fauxOpti 'jeux.json'), '{}', $utf8)
+    [IO.File]::WriteAllText((Join-Path $fauxOpti 'sous\b.txt'), 'b', $utf8)
+    $avantFaux = Get-Photo $fauxOpti
+    # Le vrai OptiGame du compte (dans le Local AppData que Windows donne par défaut) : c'est lui qui doit partir
+    # (celui qui existait déjà sur la machine est mis de côté, puis remis)
+    $vraiOpti = Join-Path $local 'OptiGame'
+    $vraiOptiGarde = Join-Path $local 'OptiGame.essai-lot-h'
+    if (Test-Path -LiteralPath $vraiOptiGarde) { Remove-Item -LiteralPath $vraiOptiGarde -Recurse -Force }
+    if (Test-Path -LiteralPath $vraiOpti) { Move-Item -LiteralPath $vraiOpti -Destination $vraiOptiGarde }
+    New-Item -ItemType Directory -Force -Path $vraiOpti | Out-Null
+    [IO.File]::WriteAllText((Join-Path $vraiOpti 'jeux.json'), '{}', $utf8)
+    $noteLocal = Get-LocalNote
+    try {
+        Set-Local $fauxLocal
+        $r = Invoke-Desinstalleur '-SupprimerDonnees'
+        $null = Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 15
+    }
+    finally { Restore-Local $noteLocal }
+    Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
+    Test-Cas 'le faux OptiGame du Local AppData redirigé est intact' { (Test-Path -LiteralPath $fauxOpti -PathType Container) -and (Get-Photo $fauxOpti) -eq $avantFaux -and (Get-Photo (Join-Path $fauxOpti 'sous')) -like 'b.txt=*' }
+    Test-Cas 'c''est l''OptiGame du vrai Local AppData du compte qui est parti (le désinstalleur a pris le dossier par défaut)' { -not (Test-Path -LiteralPath $vraiOpti) }
+    Test-Cas 'la désinstallation va au bout : tâche de l''Aide retirée, programmes partis' { -not (Get-ScheduledTask -TaskPath '\Mindset\' -TaskName 'Nevermind (aide)' -ErrorAction SilentlyContinue) -and -not (Test-Path -LiteralPath $prog) }
+    # (remis comme avant : les réglages n'avaient pas de sauvegarde à lire, ils sont remis à la main)
+    Remove-Item -LiteralPath $fauxLocal -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $vraiOpti -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $vraiOptiGarde) { Move-Item -LiteralPath $vraiOptiGarde -Destination $vraiOpti }
+    Restore-Origine $o
 }
 catch {
     $script:Echecs += "Arrêt inattendu : $($_.Exception.Message) (ligne $($_.InvocationInfo.ScriptLineNumber))"

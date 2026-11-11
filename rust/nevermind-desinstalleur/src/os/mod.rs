@@ -1000,4 +1000,185 @@ mod tests {
         assert!(menu.join("Evermind.lnk").exists());
         let _ = std::fs::remove_dir_all(&base);
     }
+
+    // -----------------------------------------------------------------------------------------------------------------
+    // Lot H, M2 : à la fin, parametres.json est relu ; seuls les états d'origine (services, alimentation) y changent
+    // -----------------------------------------------------------------------------------------------------------------
+
+    /// Une préférence écrite par Nevermind pendant la désinstallation (après la lecture du début) est gardée ; seuls
+    /// SvcOriginal et PcfgOriginal changent, et seulement s'ils ont été changés par la remise en état
+    #[test]
+    fn a_la_fin_seuls_les_etats_d_origine_changent_dans_les_reglages() {
+        let base = base_essai("reglages-fin");
+        let donnees = base.join("Donnees").join("Nevermind");
+        std::fs::create_dir_all(&donnees).unwrap();
+        std::fs::write(
+            donnees.join("parametres.json"),
+            r#"{ "SvcOriginal": ["DiagTrack|Automatic|True"], "PcfgOriginal": ["a|b|1|2"], "Theme": "neon" }"#,
+        )
+        .unwrap();
+        let (ctx, lus) = contexte_administrateur(&base.join("Programmes").join("Nevermind"), &donnees, true);
+        let _geste = ctx.prendre_geste("Désinstaller", "Désinstallation").unwrap();
+        // Nevermind, encore ouvert, écrit ses préférences pendant ce temps
+        std::fs::write(
+            donnees.join("parametres.json"),
+            r#"{ "SvcOriginal": ["DiagTrack|Automatic|True"], "PcfgOriginal": ["a|b|1|2"], "Theme": "clair", "Nouvelle": 7 }"#,
+        )
+        .unwrap();
+        // La remise en état : le service est remis (plus noté), l'alimentation ne change pas
+        ctx.ecrire_reglage("SvcOriginal", json!([]), false).unwrap();
+        ecrire_donnees(&donnees, &ctx, lus.as_ref());
+        let p: Value =
+            serde_json::from_str(&std::fs::read_to_string(donnees.join("parametres.json")).unwrap()).unwrap();
+        assert_eq!(
+            p.get("Nouvelle"),
+            Some(&json!(7)),
+            "la préférence écrite entre-temps par Nevermind est perdue : {p}"
+        );
+        assert_eq!(p["Theme"], json!("clair"), "la préférence changée entre-temps est remise à l'ancienne : {p}");
+        assert_eq!(p["SvcOriginal"], json!([]), "{p}");
+        assert_eq!(p["PcfgOriginal"], json!(["a|b|1|2"]), "{p}");
+        assert!(!donnees.join("parametres.json.tmp").exists());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    // -----------------------------------------------------------------------------------------------------------------
+    // Lot H, point 3 : une réinstallation faite juste après la désinstallation n'est pas effacée par la commande de fin
+    // -----------------------------------------------------------------------------------------------------------------
+
+    /// Le Systeme de la désinstallation, pour un essai (la commande de fin seulement)
+    fn systeme<'a>(ctx: &'a Contexte, aide: &'a AideSurPlace, racine: &Path) -> SystemeWindows<'a> {
+        SystemeWindows { ctx, aide, racine: racine.to_path_buf(), muet: true }
+    }
+
+    /// Une copie installée pour l'essai : ses programmes, ses dossiers, et un fichier qui n'est pas à elle
+    fn copie_installee(racine: &Path, quoi: &str) {
+        let ici = racine.join("fichiers");
+        std::fs::create_dir_all(ici.join("modules")).unwrap();
+        std::fs::create_dir_all(racine.join("aide-temp")).unwrap();
+        std::fs::write(ici.join("modules").join("m.ps1"), quoi).unwrap();
+        std::fs::write(racine.join("aide-temp").join("t.txt"), quoi).unwrap();
+        for f in ["Mindset.exe", "Nevermind.exe", "NevermindAide.exe", "version.json"] {
+            std::fs::write(racine.join(f), quoi).unwrap();
+        }
+    }
+
+    /// Ce que la désinstallation fait supprimer à la fin (comme `travail::desinstaller`)
+    fn suppression_de(racine: &Path) -> Suppression {
+        let ici = racine.join("fichiers");
+        Suppression {
+            fichiers: travail::fichiers_livres(racine).into_iter().filter(|f| f.exists()).collect(),
+            dossiers: vec![
+                ici.join("modules"),
+                ici.join("outils-tiers"),
+                ici.join("cles-publiques"),
+                racine.join("aide-temp"),
+            ],
+            vides: vec![ici, racine.to_path_buf()],
+        }
+    }
+
+    /// Attend que la commande de fin ait fini (PING.EXE 3 s, puis l'effacement) : elle n'est pas rendue par
+    /// `lancer_suppression`, on attend donc largement
+    fn attendre_la_commande_de_fin() {
+        std::thread::sleep(std::time::Duration::from_secs(8));
+    }
+
+    #[test]
+    fn une_reinstallation_juste_apres_n_est_pas_effacee() {
+        let base = base_essai("reinstallation");
+        let racine = base.join("Nevermind");
+        let donnees = base.join("donnees");
+        std::fs::create_dir_all(&donnees).unwrap();
+        copie_installee(&racine, "ancienne");
+        std::fs::write(racine.join("autre.txt"), "à garder").unwrap();
+        let ctx = Contexte::sans_disque(racine.clone(), donnees.clone(), false);
+        let aide = AideSurPlace::nouvelle();
+        let s = suppression_de(&racine);
+        systeme(&ctx, &aide, &racine).lancer_suppression(&travail::commande_suppression(&s), &s);
+        // Réinstallée aussitôt (bien avant la fin des 3 s d'attente de la commande de fin)
+        copie_installee(&racine, "nouvelle");
+        attendre_la_commande_de_fin();
+        for f in ["Mindset.exe", "Nevermind.exe", "NevermindAide.exe", "version.json"] {
+            assert_eq!(
+                std::fs::read_to_string(racine.join(f)).ok().as_deref(),
+                Some("nouvelle"),
+                "{f} de la nouvelle installation a été effacé par la commande de fin"
+            );
+        }
+        assert!(
+            racine.join("fichiers").join("modules").join("m.ps1").exists(),
+            "les modules réinstallés ont été effacés"
+        );
+        assert!(racine.join("aide-temp").join("t.txt").exists(), "aide-temp réinstallé a été effacé");
+        assert!(racine.join("autre.txt").exists(), "un fichier qui n'est pas de Nevermind est parti");
+        // (ce qui a été mis de côté pour être effacé est bien parti)
+        let restes: Vec<String> = std::fs::read_dir(&racine)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("a-effacer"))
+            .collect();
+        assert!(restes.is_empty(), "le dossier à effacer est resté : {restes:?}");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Sans réinstallation : tout ce qui est à Nevermind part, comme avant, le reste du dossier reste
+    #[test]
+    fn sans_reinstallation_la_commande_de_fin_efface_tout() {
+        let base = base_essai("fin-normale");
+        let racine = base.join("Nevermind");
+        let donnees = base.join("donnees");
+        std::fs::create_dir_all(&donnees).unwrap();
+        copie_installee(&racine, "x");
+        let ctx = Contexte::sans_disque(racine.clone(), donnees.clone(), false);
+        let aide = AideSurPlace::nouvelle();
+        let s = suppression_de(&racine);
+        systeme(&ctx, &aide, &racine).lancer_suppression(&travail::commande_suppression(&s), &s);
+        // (Nevermind.exe disparaît tout de suite : Mindset le voit aussitôt)
+        assert!(!racine.join("Nevermind.exe").exists(), "Nevermind.exe est encore là");
+        attendre_la_commande_de_fin();
+        assert!(!racine.exists(), "le dossier des programmes est resté");
+        // Avec un fichier qui n'est pas à Nevermind : il reste, et le dossier aussi
+        copie_installee(&racine, "x");
+        std::fs::write(racine.join("autre.txt"), "à garder").unwrap();
+        let s = suppression_de(&racine);
+        systeme(&ctx, &aide, &racine).lancer_suppression(&travail::commande_suppression(&s), &s);
+        attendre_la_commande_de_fin();
+        assert!(racine.join("autre.txt").exists());
+        let mut reste: Vec<String> =
+            std::fs::read_dir(&racine).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into()).collect();
+        reste.sort();
+        assert_eq!(reste, vec!["autre.txt"]);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Un dossier qui ne peut pas être mis de côté (tenu ouvert par un programme) : effacé par son nom, comme avant,
+    /// et c'est noté au journal
+    #[test]
+    fn un_dossier_tenu_ouvert_est_efface_par_son_nom() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let base = base_essai("fin-repli");
+        let racine = base.join("Nevermind");
+        let donnees = base.join("donnees");
+        std::fs::create_dir_all(&donnees).unwrap();
+        copie_installee(&racine, "x");
+        let ctx = Contexte::sans_disque(racine.clone(), donnees.clone(), false);
+        let aide = AideSurPlace::nouvelle();
+        let s = suppression_de(&racine);
+        // aide-temp ouvert sans permettre de l'effacer ni de le renommer (FILE_FLAG_BACKUP_SEMANTICS : un dossier)
+        let tenu = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1 | 2)
+            .custom_flags(0x0200_0000)
+            .open(racine.join("aide-temp"))
+            .unwrap();
+        systeme(&ctx, &aide, &racine).lancer_suppression(&travail::commande_suppression(&s), &s);
+        drop(tenu);
+        let j = ctx.journal_en_attente().join("\n");
+        assert!(j.contains("aide-temp"), "le repli n'est pas noté au journal : {j:?}");
+        attendre_la_commande_de_fin();
+        assert!(!racine.exists(), "le dossier des programmes est resté");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
