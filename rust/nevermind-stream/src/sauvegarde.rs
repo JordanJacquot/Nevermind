@@ -167,6 +167,9 @@ enum Lecture {
     Aucune,
     /// Le fichier est là mais ne se lit pas (coupé, contrôle faux, format inconnu)
     Abimee,
+    /// Windows ne laisse pas lire le fichier (pris par un autre programme, comme un antivirus qui l'analyse, ou accès
+    /// refusé) : il n'est jamais pris pour abîmé, ni effacé, ni remplacé (lot K)
+    Illisible(String),
     Bonne(Fiche),
 }
 
@@ -412,6 +415,15 @@ impl Fiche {
     }
 }
 
+/// Une erreur de partage est passagère (ERROR_SHARING_VIOLATION 32, ERROR_LOCK_VIOLATION 33) : réessayée, au plus
+/// [`ESSAIS_PARTAGE`] fois, toutes les [`PAUSE_PARTAGE`] (environ une seconde en tout)
+const ESSAIS_PARTAGE: u32 = 5;
+const PAUSE_PARTAGE: std::time::Duration = std::time::Duration::from_millis(200);
+
+fn erreur_de_partage(e: &std::io::Error) -> bool {
+    matches!(e.raw_os_error(), Some(32 | 33))
+}
+
 /// La copie d'un logiciel
 #[derive(Debug, Clone)]
 pub struct Copie {
@@ -427,13 +439,41 @@ impl Copie {
         self.dossier.join("copie.json")
     }
 
+    /// Les octets de copie.json (`None` : pas de copie). `attendre` : une erreur de partage (le fichier tenu un instant
+    /// par un antivirus ou une sauvegarde) est réessayée [`ESSAIS_PARTAGE`] fois, toutes les [`PAUSE_PARTAGE`], avant de
+    /// conclure ; jamais sur le fil des blocs pour un simple affichage (seulement au clic). Toute autre erreur (accès
+    /// refusé...) est rendue telle quelle : le fichier n'est pas lu, il n'est pas pour autant abîmé.
+    fn charger(&self, attendre: bool) -> Result<Option<Vec<u8>>, String> {
+        let mut reste = if attendre { ESSAIS_PARTAGE } else { 0 };
+        loop {
+            match std::fs::read(self.fiche()) {
+                Ok(o) => return Ok(Some(o)),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(e) if reste > 0 && erreur_de_partage(&e) => {
+                    reste -= 1;
+                    std::thread::sleep(PAUSE_PARTAGE);
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+    }
+
+    /// copie.json lu, sans attendre (pour l'affichage)
     fn lire(&self) -> Lecture {
-        let o = match std::fs::read(self.fiche()) {
-            Ok(o) => o,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Lecture::Aucune,
-            Err(_) => return Lecture::Abimee,
-        };
-        let Ok(v) = serde_json::from_slice::<Value>(&o) else { return Lecture::Abimee };
+        self.lire_avec(false)
+    }
+
+    fn lire_avec(&self, attendre: bool) -> Lecture {
+        match self.charger(attendre) {
+            Ok(o) => self.interpreter(o.as_deref()),
+            Err(e) => Lecture::Illisible(e),
+        }
+    }
+
+    /// Le contenu de copie.json (`None` : pas de copie)
+    fn interpreter(&self, o: Option<&[u8]>) -> Lecture {
+        let Some(o) = o else { return Lecture::Aucune };
+        let Ok(v) = serde_json::from_slice::<Value>(o) else { return Lecture::Abimee };
         let f = match v.get("version") {
             None => Fiche::lire_ancienne(&v, &self.dossier),
             Some(n) if n.as_u64() == Some(VERSION) => Fiche::lire(&v),
@@ -467,11 +507,13 @@ impl Copie {
     /// faite). Rend de quoi revenir à la copie d'avant si l'écriture rate ([`Copie::annuler`]).
     pub fn garder(&self, modifs: &[Modif], date: &str, profil: &str) -> Result<Annulation, String> {
         std::fs::create_dir_all(&self.dossier).map_err(|e| format!("dossier de la copie : {e}"))?;
-        let avant = std::fs::read(self.fiche()).ok();
-        let mut fiche = match self.lire() {
+        // (une copie que Windows ne laisse pas lire n'est jamais remplacée : elle garde les réglages d'origine ; lot K)
+        let avant =
+            self.charger(true).map_err(|e| format!("copie illisible pour l'instant ({e}), rien n'est changé"))?;
+        let mut fiche = match self.interpreter(avant.as_deref()) {
             Lecture::Bonne(f) => f,
             // (une copie abîmée ne se remettra jamais : elle est remplacée par l'état d'aujourd'hui)
-            Lecture::Aucune | Lecture::Abimee => {
+            Lecture::Aucune | Lecture::Abimee | Lecture::Illisible(_) => {
                 Fiche { date: date.to_string(), profil: profil.to_string(), fichiers: Vec::new() }
             }
         };
@@ -480,8 +522,8 @@ impl Copie {
         }
         let t = serde_json::to_vec_pretty(&fiche.valeur()).map_err(|e| e.to_string())?;
         ecrire_sur(&self.fiche(), &t).map_err(|e| format!("fiche de la copie : {e}"))?;
-        // (relue : la copie doit être bonne avant qu'on touche aux réglages)
-        if !matches!(self.lire(), Lecture::Bonne(_)) {
+        // (relue : la copie doit être bonne avant qu'on touche aux réglages ; un antivirus peut l'analyser juste après)
+        if !matches!(self.lire_avec(true), Lecture::Bonne(_)) {
             let _ = self.annuler(Annulation { fiche: avant });
             return Err("fiche de la copie : relue différente".into());
         }
@@ -507,8 +549,10 @@ impl Copie {
     /// Remet ce que Nevermind a changé, puis efface la copie. Erreur : un fichier n'a pas pu être écrit (la copie est
     /// gardée pour réessayer).
     pub fn remettre(&self) -> Result<Bilan, String> {
-        let fiche = match self.lire() {
+        let fiche = match self.lire_avec(true) {
             Lecture::Aucune => return Err("aucune copie des anciens réglages".into()),
+            // (pas lue : elle est gardée telle quelle pour réessayer, jamais effacée ; lot K)
+            Lecture::Illisible(e) => return Err(format!("copie illisible pour l'instant ({e}), gardée")),
             Lecture::Abimee => {
                 let _ = std::fs::remove_dir_all(&self.dossier);
                 return Ok(Bilan { abimes: 1, ..Bilan::default() });

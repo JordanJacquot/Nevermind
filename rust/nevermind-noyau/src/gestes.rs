@@ -56,6 +56,9 @@ struct Etat {
     suspendus: Vec<(Tenu, bool)>,
     /// Les gestes automatiques qui attendent leur tour (profils de jeux), dans l'ordre
     file: Vec<(u64, String, String)>,
+    /// Nevermind se ferme ([`Contexte::rendre_les_gestes`]) : un geste automatique qui attend son tour, ou qui arrive
+    /// ensuite, ne part plus (lot K)
+    ferme: bool,
     suivant: u64,
 }
 
@@ -191,6 +194,9 @@ impl Drop for Geste {
     }
 }
 
+/// Le refus d'un geste automatique pendant la fermeture de Nevermind
+pub const FERMETURE: &str = "Nevermind se ferme";
+
 /// L'attente la plus longue d'un geste qui reprend le verrou après son point de restauration (ou d'un profil de jeu)
 pub const ATTENTE_REPRISE: Duration = Duration::from_secs(30 * 60);
 
@@ -240,6 +246,13 @@ impl Contexte {
         let id = e.nouvel_id();
         e.file.push((id, nom.to_string(), page.to_string()));
         loop {
+            // (Nevermind se ferme : le profil qui attend son tour ne part pas, il ne prend pas le verrou rendu ; lot K)
+            if e.ferme {
+                e.file.retain(|x| x.0 != id);
+                drop(e);
+                v.libre.notify_all();
+                return Err(FERMETURE.into());
+            }
             let premier = e.file.first().is_some_and(|x| x.0 == id);
             if premier && e.tenu_par().is_none() {
                 e.file.retain(|x| x.0 != id);
@@ -352,6 +365,9 @@ impl Contexte {
 
     /// Fermeture de Nevermind (ajustement C) : le verrou est rendu, quel que soit le geste qui le tient encore (un
     /// travail de fond qui attend l'Aide). Un nouveau geste passe ensuite ; le geste coupé ne rend rien d'autre.
+    /// La file des gestes automatiques est vidée : un profil de jeu qui attendait son tour échoue au lieu de prendre
+    /// le verrou rendu, et un profil qui arrive ensuite aussi (lot K). Les gestes prioritaires (remise en état de fin
+    /// de partie) et les clics passent toujours.
     pub fn rendre_les_gestes(&self) {
         let v = self.verrou_gestes();
         let mut e = v.etat();
@@ -361,7 +377,10 @@ impl Contexte {
             .chain(e.prioritaires.iter())
             .chain(e.suspendus.iter().map(|(t, _)| t))
             .map(Tenu::texte)
+            .chain(e.file.iter().map(|(_, nom, page)| format!("« {nom} » ({page}) en attente, abandonné")))
             .collect();
+        e.ferme = true;
+        e.file.clear();
         e.tenu = None;
         e.prioritaires.clear();
         e.suspendus.clear();

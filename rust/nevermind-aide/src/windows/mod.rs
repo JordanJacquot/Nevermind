@@ -8,6 +8,8 @@
 
 mod canal;
 mod com;
+#[cfg(test)]
+mod essais_verrou;
 mod lectures;
 mod mesures;
 mod outils;
@@ -17,6 +19,11 @@ mod reseau;
 mod services;
 mod taches;
 mod temps;
+mod verrou;
+
+// (le verrou « une seule Aide à la fois », lot K : ses essais sur le vrai Windows)
+#[cfg(test)]
+use verrou::verrou_aide;
 
 use crate::systeme::{
     Entree, ErreurCanal, ErreurEffacement, Hote, Identite, Lance, LigneTcp, ProcessusTenu, ProcessusVu, RappelPm,
@@ -589,8 +596,8 @@ impl Systeme for Windows {
 impl Hote for Windows {
     type E = canal::EcouteWindows;
 
-    fn verrou(&self, nom: &str) -> Option<Box<dyn Send>> {
-        processus::verrou(nom).map(|v| Box::new(v) as Box<dyn Send>)
+    fn verrou(&self, nom: &str) -> crate::systeme::Verrouillage {
+        verrou::verrou_aide(nom)
     }
 
     fn preparer_aide_temp(&self, dossier: &str, admin: bool) -> Result<(), String> {

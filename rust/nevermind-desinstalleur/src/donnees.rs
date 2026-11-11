@@ -120,8 +120,16 @@ pub fn supprimer_dossier(d: &Path) -> Result<(), String> {
 }
 
 /// Ce qui part quand les données sont gardées (dans cet ordre), sans l'historique
-pub const PARTENT: [&str; 5] =
-    ["sauvegarde.json", "sauvegarde.json.bak", "sauvegarde.json.tmp", "sauvegarde-abimee-*.json", "*.demande"];
+/// (« sauvegarde.json.*.tmp » : les fichiers temporaires `sauvegarde.json.<pid>-<n>.tmp` laissés par un arrêt brutal de
+/// Nevermind ; lot K)
+pub const PARTENT: [&str; 6] = [
+    "sauvegarde.json",
+    "sauvegarde.json.bak",
+    "sauvegarde.json.tmp",
+    "sauvegarde.json.*.tmp",
+    "sauvegarde-abimee-*.json",
+    "*.demande",
+];
 /// L'historique (et sa copie de secours, qui serait reprise), quand tout a été remis comme avant
 pub const HISTORIQUE: [&str; 3] = ["historique.json", "historique.json.bak", "historique.json.tmp"];
 

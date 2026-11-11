@@ -4,7 +4,7 @@
 use super::outils::{MemoireLocale, Poignee, texte};
 use crate::systeme::ProcessusTenu;
 use aide_regles::fermeture::Fiche;
-use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, FILETIME, GetLastError, HANDLE, LUID, WAIT_TIMEOUT};
+use windows::Win32::Foundation::{FILETIME, GetLastError, HANDLE, LUID, WAIT_TIMEOUT};
 use windows::Win32::Security::Authorization::{ConvertSidToStringSidW, ConvertStringSidToSidW};
 use windows::Win32::Security::{
     AdjustTokenPrivileges, CheckTokenMembership, GetTokenInformation, LUID_AND_ATTRIBUTES, LookupAccountNameW,
@@ -16,10 +16,9 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 };
 use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows::Win32::System::Threading::{
-    CreateMutexW, GetCurrentProcess, GetProcessInformation, GetProcessTimes, OpenProcess, OpenProcessToken,
-    PROCESS_ACCESS_RIGHTS, PROCESS_NAME_WIN32, PROCESS_PROTECTION_LEVEL_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, ProcessProtectionLevelInfo, QueryFullProcessImageNameW, ReleaseMutex,
-    TerminateProcess, WaitForSingleObject,
+    GetCurrentProcess, GetProcessInformation, GetProcessTimes, OpenProcess, OpenProcessToken, PROCESS_ACCESS_RIGHTS,
+    PROCESS_NAME_WIN32, PROCESS_PROTECTION_LEVEL_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
+    PROCESS_TERMINATE, ProcessProtectionLevelInfo, QueryFullProcessImageNameW, TerminateProcess, WaitForSingleObject,
 };
 use windows::core::{BOOL, HSTRING, PCWSTR, PWSTR};
 
@@ -306,32 +305,6 @@ pub fn privilege(nom: &str) -> bool {
             Privileges: [LUID_AND_ATTRIBUTES { Luid: luid, Attributes: SE_PRIVILEGE_ENABLED }],
         };
         AdjustTokenPrivileges(j.0, false, Some(&tp), 0, None, None).is_ok() && GetLastError().0 == 0
-    }
-}
-
-/// Le verrou de l'Aide (une seule à la fois), relâché quand il n'est plus utilisé
-pub struct Verrou(Poignee);
-
-impl Drop for Verrou {
-    fn drop(&mut self) {
-        // SAFETY : verrou pris par ce processus
-        unsafe {
-            let _ = ReleaseMutex(self.0.0);
-        }
-    }
-}
-
-/// Prend le verrou de ce nom, `None` s'il existe déjà (une autre Aide tourne)
-pub fn verrou(nom: &str) -> Option<Verrou> {
-    // SAFETY : création d'un verrou nommé ; GetLastError lu juste après
-    unsafe {
-        let h = CreateMutexW(None, true, &HSTRING::from(nom)).ok()?;
-        let deja = GetLastError() == ERROR_ALREADY_EXISTS;
-        let v = Poignee(h);
-        if deja {
-            return None;
-        }
-        Some(Verrou(v))
     }
 }
 

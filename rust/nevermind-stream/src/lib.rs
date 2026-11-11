@@ -56,6 +56,9 @@ struct Memoire {
     changements: HashMap<Logiciel, Changement>,
     /// Les dossiers des OBS que rien n'a installés (dézippés, portables), vus ouverts une fois
     obs_vus: Vec<PathBuf>,
+    /// Le dossier du dernier OBS vu ouvert (installé ou portable) : celui qui est réglé quand il y en a plusieurs
+    /// et qu'aucun n'est ouvert (lot K)
+    obs_dernier: Option<PathBuf>,
 }
 
 impl Memoire {
@@ -64,6 +67,7 @@ impl Memoire {
         if let Some(l) = v["obs_vus"].as_array() {
             m.obs_vus = l.iter().filter_map(|x| x.as_str().map(PathBuf::from)).collect();
         }
+        m.obs_dernier = v["obs_dernier"].as_str().filter(|s| !s.is_empty()).map(PathBuf::from);
         if let (Some(k), Some(d)) = (v["envoi"]["kbps"].as_u64(), v["envoi"]["date"].as_str()) {
             m.envoi = Some((k as u32, d.to_string()));
         }
@@ -98,6 +102,7 @@ impl Memoire {
             "plateformes": plateformes,
             "changements": changements,
             "obs_vus": self.obs_vus.iter().map(|d| d.to_string_lossy().into_owned()).collect::<Vec<_>>(),
+            "obs_dernier": self.obs_dernier.as_ref().map(|d| d.to_string_lossy().into_owned()),
         })
     }
 }
@@ -202,10 +207,14 @@ impl BlocStream {
             self.memoire(ctx).obs_vus = gardes;
             self.garder(ctx);
         }
+        let obs = self.choisir_obs(ctx, &installations, &processus);
         // (OBS d'abord, puis Streamlabs : un onglet par logiciel)
         let mut trouves: Vec<Trouve> = Vec::new();
         for l in [Logiciel::Obs, Logiciel::Streamlabs] {
-            if let Some(i) = installations.iter().find(|i| i.logiciel == l) {
+            if let Some(i) = match l {
+                Logiciel::Obs => obs.as_ref(),
+                Logiciel::Streamlabs => installations.iter().find(|i| i.logiciel == l),
+            } {
                 let etat = reglages::lire(l, &i.reglages);
                 let ouvert = systeme::ouvert(l, &processus, &installations);
                 trouves.push(Trouve { installation: i.clone(), etat, ouvert });
@@ -228,6 +237,43 @@ impl BlocStream {
         self.trouves = trouves;
         self.detecte = true;
         self.signaler_carte();
+    }
+
+    /// L'OBS à régler quand le PC en a plusieurs (un installé et un portable, par exemple ; lot K) : celui qui est ouvert ;
+    /// sinon le dernier vu ouvert (gardé dans streameur.json) ; sans souvenir (streameur.json d'avant), le dernier OBS
+    /// portable vu ouvert, puisque l'utilisateur s'en est servi ; sinon le premier trouvé (l'installé), comme avant.
+    fn choisir_obs(
+        &mut self,
+        ctx: &Contexte,
+        installations: &[Installation],
+        processus: &[systeme::Processus],
+    ) -> Option<Installation> {
+        let candidats: Vec<&Installation> = installations.iter().filter(|i| i.logiciel == Logiciel::Obs).collect();
+        // (les OBS ouverts, sauf le moteur de Streamlabs : aucun OBS n'est « connu » dans cette liste)
+        let streamlabs: Vec<Installation> =
+            installations.iter().filter(|i| i.logiciel == Logiciel::Streamlabs).cloned().collect();
+        let ouverts = systeme::obs_ouverts_inconnus(processus, &streamlabs);
+        let ouvert = candidats.iter().find(|i| ouverts.iter().any(|d| systeme::meme(d, &i.dossier)));
+        if let Some(i) = ouvert {
+            let m = self.memoire(ctx);
+            if candidats.len() > 1 && !m.obs_dernier.as_ref().is_some_and(|d| systeme::meme(d, &i.dossier)) {
+                ctx.journal(&format!(
+                    "Mode streameur : plusieurs OBS, celui qui est ouvert compte ({})",
+                    i.dossier.display()
+                ));
+            }
+            if !m.obs_dernier.as_ref().is_some_and(|d| systeme::meme(d, &i.dossier)) {
+                m.obs_dernier = Some(i.dossier.clone());
+                self.garder(ctx);
+            }
+            return Some((*i).clone());
+        }
+        let m = self.memoire(ctx);
+        let souvenir = match &m.obs_dernier {
+            Some(d) => candidats.iter().find(|i| systeme::meme(d, &i.dossier)),
+            None => m.obs_vus.iter().rev().find_map(|d| candidats.iter().find(|i| systeme::meme(d, &i.dossier))),
+        };
+        souvenir.or(candidats.first()).map(|i| (*i).clone())
     }
 
     /// La carte de la page Performances (au bloc perf), si elle change

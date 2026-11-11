@@ -179,6 +179,11 @@ pub trait Pc {
     fn regles_pare_feu(&self) -> usize {
         0
     }
+    /// Les mêmes, `None` si la lecture a échoué (on ne sait pas s'il en reste ; lot K). Par défaut : celles de
+    /// [`Pc::regles_pare_feu`] (le PC du désinstalleur garde sa propre lecture).
+    fn regles_pare_feu_lues(&self) -> Option<usize> {
+        Some(self.regles_pare_feu())
+    }
     /// Le numéro actuel d'une carte réseau d'après son identifiant (il change après un redémarrage).
     fn index_carte(&self, _guid: &str) -> Option<i64> {
         None

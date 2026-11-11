@@ -172,6 +172,51 @@ fn tmp_unique(fichier: &std::path::Path) -> PathBuf {
     crate::fichiers::a_cote(fichier, &format!(".{}-{n}.tmp", std::process::id()))
 }
 
+/// Un nom de fichier temporaire laissé par une écriture de la sauvegarde : `sauvegarde.json.<pid>-<n>.tmp` (voir
+/// [`tmp_unique`]), sans tenir compte des majuscules
+fn est_tmp_de_sauvegarde(nom: &str) -> bool {
+    let n = nom.to_ascii_lowercase();
+    let Some(milieu) = n.strip_prefix("sauvegarde.json.").and_then(|r| r.strip_suffix(".tmp")) else { return false };
+    let Some((pid, rang)) = milieu.split_once('-') else { return false };
+    let chiffres = |s: &str| !s.is_empty() && s.bytes().all(|o| o.is_ascii_digit());
+    chiffres(pid) && chiffres(rang)
+}
+
+/// Une écriture de la sauvegarde dure quelques millisecondes : un fichier temporaire plus récent que cela peut être
+/// celui d'une écriture en cours (jamais effacé)
+const TMP_RESTE_APRES: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Lot K (audit3 du lot A, défaut 6) : efface les `sauvegarde.json.<pid>-<n>.tmp` laissés dans `dossier` par un arrêt
+/// brutal (Nevermind arrêté net entre l'écriture du fichier temporaire et le remplacement). Seulement les fichiers
+/// ordinaires à ce nom exact, vieux de plus de [`TMP_RESTE_APRES`] : jamais un dossier, un lien ou un point
+/// d'analyse (le type est lu sur l'entrée elle-même, rien n'est suivi ; un lien serait d'ailleurs retiré seul), jamais
+/// l'écriture en cours d'un autre fil. Rend le nombre de fichiers effacés.
+fn effacer_tmp_restes(dossier: &std::path::Path) -> usize {
+    #[cfg(windows)]
+    use std::os::windows::fs::MetadataExt;
+    let Ok(l) = std::fs::read_dir(dossier) else { return 0 };
+    let mut n = 0;
+    for e in l.flatten() {
+        if !est_tmp_de_sauvegarde(&e.file_name().to_string_lossy()) {
+            continue;
+        }
+        // (le type et l'heure de l'entrée elle-même, sans suivre de lien)
+        let Ok(m) = std::fs::symlink_metadata(e.path()) else { continue };
+        if !m.file_type().is_file() {
+            continue;
+        }
+        #[cfg(windows)]
+        if m.file_attributes() & 0x400 != 0 {
+            continue; // (FILE_ATTRIBUTE_REPARSE_POINT)
+        }
+        let vieux = m.modified().ok().and_then(|t| t.elapsed().ok()).is_some_and(|a| a >= TMP_RESTE_APRES);
+        if vieux && std::fs::remove_file(e.path()).is_ok() {
+            n += 1;
+        }
+    }
+    n
+}
+
 /// `Read-FichierSauvegarde` : `None` s'il n'existe pas ; une erreur s'il est abîmé ou n'a pas « Registry »
 fn lire_fichier(f: &std::path::Path) -> Result<Option<Map<String, Value>>, String> {
     if !f.exists() {
@@ -203,6 +248,13 @@ impl Contexte {
         if self.sans_disque {
             self.importer_sauvegarde_de(Ok(None), None, false);
             return;
+        }
+        // (au démarrage, la première lecture : les fichiers temporaires laissés par un arrêt brutal ; lot K)
+        let restes = effacer_tmp_restes(&self.donnees);
+        if restes > 0 {
+            self.journal(&format!(
+                "Sauvegarde : {restes} fichier(s) temporaire(s) laissé(s) par un arrêt brutal, effacé(s)"
+            ));
         }
         let fichier = self.fichier_sauvegarde();
         let principal = lire_fichier(&fichier);
@@ -386,6 +438,7 @@ impl Contexte {
             for fin in ["", ".bak", ".tmp"] {
                 let _ = std::fs::remove_file(crate::fichiers::a_cote(&f, fin));
             }
+            effacer_tmp_restes(&self.donnees);
         }
         self.importer_sauvegarde();
         Ok(())

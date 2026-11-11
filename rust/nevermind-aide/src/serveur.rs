@@ -7,7 +7,7 @@
 //! toute seule quand Nevermind n'est plus ouvert.
 
 use crate::actions::{self, EtatAide};
-use crate::systeme::{Connexion, Ecoute, ErreurCanal, Hote, Systeme};
+use crate::systeme::{Connexion, Ecoute, ErreurCanal, Hote, Systeme, Verrouillage};
 use aide_regles::{canal, chemin, client, demandes, sid};
 use serde_json::{Value, json};
 use std::collections::VecDeque;
@@ -177,16 +177,28 @@ pub fn lancer<H: Hote>(h: Arc<H>, sid_recu: Option<&str>) {
         Err(_) => String::new(),
     };
 
-    // Une seule Aide à la fois (verrou commun à toutes les sessions de Windows : voir canal::nom_verrou)
-    let Some(_verrou) = s.verrou(&canal::nom_verrou(&sid_servi, &suffixe)) else {
-        return;
+    // Une seule Aide à la fois (verrou commun à toutes les sessions de Windows : voir canal::nom_verrou). Avec les droits
+    // administrateur, dans un espace de noms réservé aux administrateurs et au système : un programme sans droits qui a
+    // pris le nom public avant l'Aide ne l'arrête plus, et c'est noté au journal (lot K)
+    let journal = Journal::default();
+    let _verrou = match s.verrou(&canal::nom_verrou(&sid_servi, &suffixe)) {
+        Verrouillage::Pris { garde, remarque } => {
+            if let Some(r) = remarque {
+                journal.ecrire(s, &r);
+            }
+            garde
+        }
+        Verrouillage::Occupe(pourquoi) => {
+            // (le journal de cette Aide disparaît avec elle : la ligne ne se voit que si elle est relue avant)
+            journal.ecrire(s, &pourquoi);
+            return;
+        }
     };
 
     // Les sessions de mesure (FPS, réseau) de cette Aide : des noms propres à son compte et à sa copie, comme le canal
     // (audit du 08/11)
     s.nommer_sessions(&canal::nom_session_fps(&sid_servi, &suffixe), &canal::nom_session_reseau(&sid_servi, &suffixe));
 
-    let journal = Journal::default();
     let nom = canal::nom_canal(&sid_servi, &suffixe);
     let sddl = droits_canal(&sid_servi, moi.admin, en_systeme);
     let proprietaire = moi.admin.then_some(if en_systeme { "S-1-5-18" } else { "S-1-5-32-544" });
