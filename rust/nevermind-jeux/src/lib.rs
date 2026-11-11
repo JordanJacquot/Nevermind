@@ -78,6 +78,8 @@ enum ApresRecherche {
 }
 
 const RECHERCHE: &str = "recherche";
+/// La pastille de la suppression des restes de jeux (lot I)
+const PASTILLE_RESTES: &str = "restes";
 const FERMER: &str = "fermer-programme";
 const JAQUETTES: &str = "jaquettes";
 const CHOIX: &str = "choix";
@@ -1164,7 +1166,9 @@ impl BlocJeux {
 
     /// Supprimer des restes (Remove-Leftovers) : garde-fous, question, puis suppression dans un fil séparé.
     fn supprimer_restes(&mut self, dossiers: Vec<String>, force: bool, effets: &mut Effets) {
+        // (une suppression tourne : le clic le dit, au lieu d'être jeté sans un mot ; lot I)
         if self.suppression.is_some() {
+            self.message(effets, "Attends la fin de la suppression en cours, puis réessaie.");
             return;
         }
         let installes: Vec<String> =
@@ -1207,9 +1211,19 @@ impl BlocJeux {
             *r2.lock().unwrap_or_else(|e| e.into_inner()) = Some(v);
         });
         self.suppression = Some(r);
+        // (plusieurs Go parfois : l'attente est montrée, retirée à la fin ; lot I)
+        effets.ajouter(Effet::Signal {
+            nom: "occupe".into(),
+            donnees: json!({ "texte": "Suppression des dossiers...", "travail": PASTILLE_RESTES }),
+        });
+        effets.ajouter(Effet::Rafraichir);
     }
 
     fn recevoir_suppression(&mut self, ctx: &Contexte, res: Vec<steam::Suppression>, effets: &mut Effets) {
+        effets.ajouter(Effet::Signal {
+            nom: "occupe".into(),
+            donnees: json!({ "texte": "", "travail": PASTILLE_RESTES }),
+        });
         let mut libere = 0.0;
         let mut echecs = Vec::new();
         for s in res {
