@@ -114,12 +114,17 @@ struct FausseAide {
     flux: Mutex<bool>,
     /// L'en-tête de PresentMon est-il déjà donné pour la mesure en cours ?
     entete: Mutex<bool>,
+    /// `flux.demarrer` coupé sans réponse (l'Aide répond au reste) : lot I
+    coupe_flux: AtomicBool,
 }
 
 impl FausseAide {
     fn repondre(&self, a: &str, p: &Value) -> Option<Value> {
         if !self.parle.load(Ordering::SeqCst) {
             return None;
+        }
+        if a == "flux.demarrer" && self.coupe_flux.load(Ordering::SeqCst) {
+            return Some(Value::Null);
         }
         self.traitees.lock().unwrap().push((a.to_string(), p.clone()));
         let r = match a {
@@ -232,6 +237,7 @@ impl Essai {
             fps: Mutex::new(Fps::Rien),
             flux: Mutex::new(false),
             entete: Mutex::new(false),
+            coupe_flux: AtomicBool::new(false),
         });
         let a = aide.clone();
         let serveur = fausse_aide::lancer(&ctx, move |action, p| a.repondre(action, p)).expect("fausse Aide");
@@ -483,5 +489,24 @@ fn un_arret_garde_est_tente_a_la_fermeture() {
         e.aide.depuis(n)
     );
     assert!(duree < Duration::from_secs(5), "la fermeture a pris {duree:?} (Mindset coupe à 6 s)");
+    e.finir();
+}
+
+/// Lot I, point 6 : la trace réseau du lag n'était retentée qu'une fois. Au début de la partie, l'Aide répond à tout
+/// sauf à `flux.demarrer` (coupé sans réponse) : avant, la trace n'était plus jamais redemandée pendant la partie (le
+/// drapeau « à reprendre » restait faux après un échec sans réponse). Maintenant elle est redemandée dès que l'Aide
+/// répond de nouveau, et la trace tourne.
+#[test]
+fn la_trace_du_lag_est_redemandee_apres_un_echec_sans_reponse() {
+    let mut e = Essai::nouveau("trace-redemandee", false);
+    e.aide.coupe_flux.store(true, Ordering::SeqCst);
+    e.lancer_jeu(7000201);
+    let ok = e.jusqu_a(Duration::from_secs(15), |a| *a.fps.lock().unwrap() == Fps::Partie(7000201));
+    assert!(ok, "la partie n'est pas mesurée : {:?}", e.aide.depuis(0));
+    e.tourner(Duration::from_secs(2));
+    assert!(!*e.aide.flux.lock().unwrap(), "la trace a démarré malgré la coupure");
+    e.aide.coupe_flux.store(false, Ordering::SeqCst);
+    let ok = e.jusqu_a(Duration::from_secs(30), |a| *a.flux.lock().unwrap());
+    assert!(ok, "la trace du lag n'est jamais redemandée : {:?}", e.aide.depuis(0));
     e.finir();
 }

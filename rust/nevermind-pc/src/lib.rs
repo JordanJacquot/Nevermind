@@ -165,6 +165,8 @@ pub struct BlocPc {
     lancements: Travaux<Result<(), String>>,
     /// La lecture lente d'un essai (tests) : à la place de celle du vrai PC
     lire_essai: Option<Box<dyn FnOnce() -> lecture::Lu + Send>>,
+    /// Tests : l'attente la plus longue d'un profil de jeu qui attend son tour (`None` : 30 minutes)
+    attente_tour_essai: Option<Duration>,
 }
 
 /// La clé du lancement d'un programme de Windows : un à la fois (un double clic ne pose pas deux questions)
@@ -205,6 +207,11 @@ impl BlocPc {
             Some(n) => nevermind_noyau::gestes::texte_refus(n, PAGE),
             None => "Un instant : Nevermind finit de lire ton PC. Réessaie dans quelques secondes.".into(),
         }
+    }
+
+    /// Tests : un profil de jeu attend son tour au plus tant (30 minutes en vrai)
+    pub fn regler_attente_tour_essai(&mut self, d: Duration) {
+        self.attente_tour_essai = Some(d);
     }
 
     /// Un geste long est en cours (tests)
@@ -296,6 +303,7 @@ impl BlocPc {
         };
         let mut at =
             Atelier { session: self.session.clone(), cases: self.cases.clone(), annonces: Vec::new(), relu: false };
+        let attente_tour = self.attente_tour_essai.unwrap_or(nevermind_noyau::gestes::ATTENTE_REPRISE);
         let essai = self.essai.clone();
         self.travail_nom = nom;
         self.suite = Some(suite);
@@ -318,7 +326,7 @@ impl BlocPc {
                             "« {nom} » se fera juste après « {n} » ({p})..."
                         )));
                     }
-                    let r = fond.ctx.attendre_geste(&nom, &page, nevermind_noyau::gestes::ATTENTE_REPRISE);
+                    let r = fond.ctx.attendre_geste(&nom, &page, attente_tour);
                     if attente.is_some() {
                         fond.effet(nevermind_noyau::signaux::occupe(""));
                     }

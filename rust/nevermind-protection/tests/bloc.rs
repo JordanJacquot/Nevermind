@@ -784,3 +784,217 @@ fn la_fenetre_de_choix_a_nevermind_pour_proprietaire() {
     assert_eq!(*f.proprietaire_choix.lock().unwrap(), Some(0x1234));
     attendre(&mut b, &ctx);
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Lot I : Nevermind ne se fige plus (fin des lots B et F)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// Le faux système, avec ce que l'essai veut lent : la lecture des menaces par WMI (`detections`, jusqu'à 60 s en
+/// vrai), et la lecture de la protection (`lire`), qui rend l'état du moment où elle COMMENCE puis attend le feu de
+/// l'essai (comme la vraie, qui lit Defender, les tâches, l'Aide : un geste fini pendant ce temps n'y est pas)
+struct Lent {
+    f: Arc<Faux>,
+    detections_attente: Duration,
+    lecture_feu: std::sync::Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+}
+
+impl Lent {
+    fn nouveau(f: Arc<Faux>) -> Lent {
+        Lent { f, detections_attente: Duration::ZERO, lecture_feu: std::sync::Mutex::new(None) }
+    }
+}
+
+impl nevermind_protection::systeme::Systeme for Lent {
+    fn lire(&self) -> Lecture {
+        let l = self.f.lire();
+        if let Some(r) = self.lecture_feu.lock().unwrap().take() {
+            let _ = r.recv_timeout(Duration::from_secs(20));
+        }
+        l
+    }
+    fn est_admin(&self) -> bool {
+        self.f.est_admin()
+    }
+    fn variable(&self, nom: &str) -> Option<String> {
+        self.f.variable(nom)
+    }
+    fn existe(&self, chemin: &str) -> bool {
+        self.f.existe(chemin)
+    }
+    fn script_protege(&self, chemin: &str) -> bool {
+        self.f.script_protege(chemin)
+    }
+    fn temp(&self) -> String {
+        self.f.temp()
+    }
+    fn public(&self) -> String {
+        self.f.public()
+    }
+    fn hosts(&self) -> String {
+        self.f.hosts()
+    }
+    fn maintenant(&self) -> Date {
+        self.f.maintenant()
+    }
+    fn analyser(
+        &self,
+        sorte: nevermind_protection::systeme::TypeAnalyse,
+        chemins: &[String],
+        arret: &std::sync::atomic::AtomicBool,
+    ) -> Result<(), String> {
+        self.f.analyser(sorte, chemins, arret)
+    }
+    fn mettre_a_jour_base(&self) -> Result<(), String> {
+        self.f.mettre_a_jour_base()
+    }
+    fn supprimer_menaces(&self) -> Result<(), String> {
+        self.f.supprimer_menaces()
+    }
+    fn desactiver_tache(&self, nom: &str, chemin: &str) -> Result<bool, String> {
+        self.f.desactiver_tache(nom, chemin)
+    }
+    fn detections(&self) -> regles::Detections {
+        std::thread::sleep(self.detections_attente);
+        self.f.detections()
+    }
+    fn bloc_notes(&self, chemin: &str) {
+        self.f.bloc_notes(chemin)
+    }
+    fn montrer(&self, chemin: &str) {
+        self.f.montrer(chemin)
+    }
+}
+
+/// Les tics jusqu'à ce que le bloc n'ait plus rien en cours (20 s au plus) ; aucun ne doit durer
+fn tics_sans_attente(b: &mut BlocProtection, ctx: &Contexte) -> Vec<Effet> {
+    let fin = Instant::now() + Duration::from_secs(20);
+    let mut tout = Vec::new();
+    loop {
+        let mut e = Effets::default();
+        let d = Instant::now();
+        b.tic(ctx, false, &mut e);
+        b.travaux_finis(ctx, &mut e);
+        assert!(d.elapsed() < Duration::from_secs(1), "un tic a pris {:?} : le fil des blocs attendait", d.elapsed());
+        tout.extend(e.0);
+        if !b.occupe() {
+            return tout;
+        }
+        assert!(Instant::now() < fin, "le travail ne finit pas : {tout:?}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn pastilles(tout: &[Effet]) -> Vec<Value> {
+    tout.iter()
+        .filter_map(|x| match x {
+            Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Lot I, point 1 : à la fin d'une analyse de Defender en administrateur (et sans droits quand l'Aide n'a rien rendu),
+/// les menaces sont lues sur place par WMI (deux requêtes, jusqu'à 60 s). Avant, cette lecture se faisait dans le tic,
+/// sur le fil des blocs : tout Nevermind figé (FPS, parties). Maintenant elle se fait dans le fil de l'analyse, pendant
+/// que le panneau dit encore « en cours » ; le verdict est le même.
+#[test]
+fn la_fin_d_une_analyse_ne_lit_pas_les_menaces_sur_le_fil_des_blocs() {
+    for admin in [true, false] {
+        let ctx = contexte(&format!("fin-analyse-{admin}")).partage();
+        // (sans droits : une Aide qui ne rend rien, la lecture sur place prend le relais)
+        ctx.fausse_aide(Arc::new(|_: &str, _: &Value| Err("l'Aide ne répond pas".into())));
+        let mut f = faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap());
+        f.admin = admin;
+        let mut lent = Lent::nouveau(Arc::new(f));
+        lent.detections_attente = Duration::from_secs(3);
+        let mut b = BlocProtection::avec_systeme(Some(Arc::new(lent)));
+        tics_sans_attente(&mut b, &ctx);
+        let mut e = Effets::default();
+        b.action(&ctx, "clic:BtnScanQuick", &Value::Null, &mut e);
+        assert_eq!(b.panneau_donnees().unwrap()["etat"], "en-cours");
+        tics_sans_attente(&mut b, &ctx);
+        let fin = b.panneau_donnees().cloned().expect("fin de l'analyse");
+        // (en administrateur, la lecture sur place fait foi ; sans droits, une liste vide ne prouve rien)
+        assert_eq!(fin["etat"], if admin { "aucune" } else { "inconnu" }, "{fin}");
+    }
+}
+
+/// Lot I, point 4 (M4) : une relecture demandée pendant une autre n'est plus perdue. La lecture du lancement est en
+/// cours (elle a lu le pare-feu coupé) ; « Réactiver le pare-feu » finit pendant ce temps et demande une relecture.
+/// Avant, elle était jetée : la page disait encore « pare-feu coupé » après « Pare-feu réactivé ». Maintenant elle est
+/// faite juste après celle en cours, et la page dit le pare-feu actif.
+#[test]
+fn une_relecture_demandee_pendant_une_autre_est_faite_apres() {
+    let ctx = contexte("relecture-gardee").partage();
+    let coupe = EtatS::depuis(&json!({ "Mp": defender(), "Uac": true, "FirewallOff": ["Public"] })).unwrap();
+    let actif = EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap();
+    let mut f = faux_avec(coupe);
+    f.admin = true;
+    let f = Arc::new(f);
+    let (feu, attente) = std::sync::mpsc::channel::<()>();
+    let lent =
+        Lent { f: f.clone(), detections_attente: Duration::ZERO, lecture_feu: std::sync::Mutex::new(Some(attente)) };
+    let mut b = BlocProtection::avec_systeme(Some(Arc::new(lent)));
+    // La lecture du lancement part (et a lu le pare-feu coupé)
+    let mut e = Effets::default();
+    b.tic(&ctx, false, &mut e);
+    let fin = Instant::now() + Duration::from_secs(5);
+    while !f.gestes().iter().any(|g| g == "lire") {
+        assert!(Instant::now() < fin, "la lecture ne part pas");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Pendant ce temps, le pare-feu est réactivé, et une relecture est demandée (fin d'un geste, autre bloc...)
+    f.lecture.lock().unwrap().s = actif;
+    b.signal(&ctx, "protection-relire", &json!({}), &mut Effets::default());
+    feu.send(()).unwrap();
+    tics_sans_attente(&mut b, &ctx);
+    assert_eq!(f.gestes().iter().filter(|g| *g == "lire").count(), 2, "la relecture demandée est perdue");
+    let p = Value::Object(b.pages(&ctx, "securite")).to_string();
+    assert!(!p.contains("Public"), "la page dit encore le pare-feu coupé : {p}");
+}
+
+/// Lot I, point 4 : « Revérifier » montre son attente pendant la lecture (avant : rien), et la retire à la fin. La
+/// pastille porte sa clé : elle n'efface pas celle d'un geste qui tourne encore.
+#[test]
+fn reverifier_montre_son_attente() {
+    let ctx = contexte("reverifier-attente").partage();
+    let mut f = faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap());
+    f.admin = true;
+    let mut b = BlocProtection::avec_systeme(Some(Arc::new(Lent::nouveau(Arc::new(f)))));
+    tics_sans_attente(&mut b, &ctx);
+    let mut tout = Vec::new();
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnSecRefresh", &Value::Null, &mut e));
+    tout.extend(e.0);
+    tout.extend(tics_sans_attente(&mut b, &ctx));
+    let p = pastilles(&tout);
+    assert!(
+        p.iter().any(|d| d["texte"] == "Vérification de la protection..."),
+        "« Revérifier » ne montre pas d'attente : {tout:?}"
+    );
+    assert!(p.iter().all(|d| d["travail"].as_str().is_some_and(|t| !t.is_empty())), "{p:?}");
+    assert_eq!(p.last().map(|d| d["texte"].clone()), Some(json!("")), "l'attente reste à l'écran");
+}
+
+/// Lot I, point 6 : la mise à jour de la base de virus envoyait sa pastille SANS clé ; sa fin (texte vide sans clé)
+/// effaçait alors toutes les pastilles du bloc, même celle d'un geste encore en cours (« Réactivation du pare-feu... »).
+/// Maintenant chaque pastille de la mise à jour porte sa clé.
+#[test]
+fn la_pastille_de_la_mise_a_jour_porte_sa_cle() {
+    let ctx = contexte("pastille-base").partage();
+    let mut f = faux_avec(EtatS::depuis(&json!({ "Mp": defender(), "Uac": true })).unwrap());
+    f.admin = true;
+    let mut b = BlocProtection::avec_systeme(Some(Arc::new(f)));
+    tics_sans_attente(&mut b, &ctx);
+    let mut tout = Vec::new();
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnScanUpdate", &Value::Null, &mut e));
+    tout.extend(e.0);
+    tout.extend(tics_sans_attente(&mut b, &ctx));
+    let p = pastilles(&tout);
+    assert!(p.iter().any(|d| d["texte"] == "Mise à jour de la base de virus..."), "{tout:?}");
+    assert!(
+        p.iter().all(|d| d["travail"].as_str().is_some_and(|t| !t.is_empty())),
+        "une pastille sans clé efface celles des autres gestes : {p:?}"
+    );
+}

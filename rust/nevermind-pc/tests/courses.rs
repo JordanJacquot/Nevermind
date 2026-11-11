@@ -491,3 +491,112 @@ fn tout_restaurer_garde_les_lignes_pare_feu_si_le_deblocage_echoue() {
     assert_eq!(ligne("Réglage X")["Annule"], true, "la ligne bien remise est marquée annulée : {h:?}");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+// -----------------------------------------------------------------------------------------------------------------
+// Lot I : attentes montrées et refus clairs
+// -----------------------------------------------------------------------------------------------------------------
+
+/// Lot I, point 7 (petit du lot A) : un profil de jeu qui a attendu son tour trop longtemps (30 minutes en vrai) est
+/// abandonné. Avant, il disait « Attends la fin de « X » (Page) » : un ordre d'attendre, alors qu'il ne se fera plus
+/// jamais tout seul. Maintenant il dit qu'il n'a pas été fait et qu'il faut le refaire.
+#[test]
+fn un_profil_abandonne_ne_dit_plus_attends_la_fin() {
+    let d = dossier("profil-abandonne");
+    let ctx = Contexte::nouveau(d.join("a"), d.join("d"), false, true).partage();
+    let demandes = fausse_aide(&ctx);
+    let mut b = nevermind_pc::BlocPc::default();
+    b.regler_attente_tour_essai(Duration::from_millis(300));
+    let ram = ctx.prendre_geste("Couper ce qui est sûr", "RAM").unwrap();
+    let ifeo = r"HKLM:\SOFTWARE\MindsetEssaiLotI\IFEO\jeu.exe\PerfOptions";
+    let mut e = Effets::default();
+    b.signal(
+        &ctx,
+        "declarations",
+        &json!({ "changements": [{ "Type": "reg", "Path": ifeo, "Name": "CpuPriorityClass", "Value": 3 }],
+                 "historique": "Profil de Jeu : priorité haute activée" }),
+        &mut e,
+    );
+    let mut tout = e.0;
+    let fin = Instant::now() + Duration::from_secs(10);
+    let annonce = |tout: &[Effet]| {
+        tout.iter().find_map(|x| match x {
+            Effet::Annonce(t) if t.contains("Profil de jeu") => Some(t.clone()),
+            _ => None,
+        })
+    };
+    while annonce(&tout).is_none() {
+        assert!(Instant::now() < fin, "le profil abandonné ne dit rien : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let a = annonce(&tout).unwrap();
+    assert!(!a.contains("Attends la fin"), "le profil abandonné dit encore d'attendre : {a}");
+    assert!(a.contains("n'a pas été fait"), "{a}");
+    assert!(demandes.lock().unwrap().is_empty(), "le profil est parti sans le verrou");
+    drop(ram);
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// Lot I, point 6 : « Réactiver » (le contrôle des comptes, demandé par la page Protection) écrit par l'Aide, jusqu'à
+/// 2 minutes plus 20 s de réveil. Avant, aucune attente n'était montrée avant la fin (le premier texte de Ton PC
+/// arrivait avec le résultat). Maintenant l'attente est montrée tout de suite, et retirée à la fin.
+#[test]
+fn un_reglage_demande_par_une_autre_page_montre_son_attente() {
+    let d = dossier("attente-registre");
+    let ctx = Contexte::nouveau(d.join("a"), d.join("d"), false, true).partage();
+    let (feu, attente) = channel::<()>();
+    let attente = Mutex::new(Some(attente));
+    let demandes: Demandes = Default::default();
+    let d2 = demandes.clone();
+    ctx.fausse_aide(Arc::new(move |a: &str, p: &Value| {
+        d2.lock().unwrap().push((a.to_string(), p.clone()));
+        if a == "reg.ecrire"
+            && let Some(r) = attente.lock().unwrap().take()
+        {
+            let _ = r.recv_timeout(Duration::from_secs(20));
+        }
+        Ok(json!("OK"))
+    }));
+    let mut b = nevermind_pc::BlocPc::default();
+    let mut e = Effets::default();
+    b.signal(
+        &ctx,
+        "registre-ecrire",
+        &json!({ "Path": r"HKLM:\SOFTWARE\MindsetEssaiLotI\System", "Name": "EnableLUA", "Value": 1, "Kind": "DWord",
+                 "titre": "Réactiver (Contrôle des comptes désactivé)" }),
+        &mut e,
+    );
+    let mut tout = e.0;
+    let fin = Instant::now() + Duration::from_secs(10);
+    while !demandes.lock().unwrap().iter().any(|(a, _)| a == "reg.ecrire") {
+        assert!(Instant::now() < fin, "l'Aide n'est pas appelée : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    std::thread::sleep(Duration::from_millis(100));
+    let mut e = Effets::default();
+    b.travaux_finis(&ctx, &mut e);
+    tout.extend(e.0);
+    let montre = tout.iter().any(|x| {
+        matches!(x, Effet::Signal { nom, donnees } if nom == "occupe" && donnees["texte"].as_str().is_some_and(|t| !t.is_empty()))
+    });
+    assert!(montre, "aucune attente montrée pendant que l'Aide écrit : {tout:?}");
+    feu.send(()).unwrap();
+    while b.travail_en_cours() {
+        assert!(Instant::now() < fin + Duration::from_secs(5), "le réglage ne finit pas");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let derniere = tout.iter().rev().find_map(|x| match x {
+        Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees["texte"].clone()),
+        _ => None,
+    });
+    assert_eq!(derniere, Some(json!("")), "l'attente reste à l'écran : {tout:?}");
+    let _ = std::fs::remove_dir_all(&d);
+}
