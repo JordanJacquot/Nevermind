@@ -46,6 +46,14 @@ pub const ATTENTE_WINDOWS: Duration = Duration::from_secs(30);
 pub const PAUSE_FOND: Duration = Duration::from_secs(60);
 /// Ce que rend une demande de fond pendant la pause qui suit un échec
 pub const ERREUR_PAUSE: &str = "l'Aide ne répondait pas, nouvel essai dans un moment";
+/// Le début de l'erreur d'une demande restée sans réponse (l'Aide n'a pas été jointe, ou n'a rien répondu)
+pub const SANS_REPONSE: &str = "Nevermind a besoin de son Aide pour ça, mais elle ne répond pas";
+
+/// Une demande a-t-elle échoué SANS réponse de l'Aide (pause, sonde muette, rien reçu), et pas par un refus de
+/// l'Aide ? Une telle demande est à refaire quand l'Aide répondra de nouveau (lot I).
+pub fn sans_reponse(erreur: &str) -> bool {
+    erreur == ERREUR_PAUSE || erreur.starts_with(SANS_REPONSE)
+}
 /// Pendant la pause, l'Aide qui écoute est sondée de nouveau au plus toutes ces secondes, par le canal seulement
 /// (`aide.bonjour`, délai court ; jamais sa tâche, qui reste à une fois par minute au plus : lot G, ajustement C)
 pub const SONDE_RAPIDE: Duration = Duration::from_secs(5);
@@ -389,12 +397,6 @@ impl Contexte {
     /// La pause est-elle en cours ? (sans rien lancer)
     fn pause_en_cours(&self) -> bool {
         verrou(&self.aide.etat).fond_echec.is_some_and(|t| t.elapsed() < self.pause_fond())
-    }
-
-    /// La dernière demande à l'Aide est-elle restée sans réponse (la pause est en cours) ? Sans rien lancer. Un échec
-    /// avec la pause en cours n'est pas un refus de l'Aide : la demande sera refaite quand elle répondra (lot I).
-    pub fn aide_en_pause(&self) -> bool {
-        self.pause_en_cours()
     }
 
     /// Une réponse de l'Aide reçue : plus de pause. Si elle en levait une pendant que des arrêts étaient gardés (une
@@ -869,10 +871,7 @@ impl Contexte {
                     "Par prudence, Nevermind ne demande pas les droits administrateur : un réglage caché de ton compte Windows ({d}) pourrait faire lancer un autre programme avec ces droits. Lance une analyse antivirus, puis ouvre Mindset pour réparer Nevermind."
                 ));
             }
-            return Err(format!(
-                "Nevermind a besoin de son Aide pour ça, mais elle ne répond pas ({}). Ouvre Mindset et mets Nevermind à jour.",
-                o.erreur
-            ));
+            return Err(format!("{SANS_REPONSE} ({}). Ouvre Mindset et mets Nevermind à jour.", o.erreur));
         };
         let j: Value = serde_json::from_str(&rep).map_err(|e| format!("Réponse de l'Aide illisible ({e})"))?;
         if !vrai(&j["ok"]) {

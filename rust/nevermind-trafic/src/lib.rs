@@ -186,8 +186,8 @@ pub fn date_o(d: chrono::DateTime<chrono::Local>) -> String {
 
 /// `flux.demarrer` a échoué SANS réponse de l'Aide (pause, sonde muette, demande restée sans réponse) : la trace est à
 /// redemander quand elle répondra. Un refus de l'Aide (elle a répondu « non ») ne l'est pas (lot I).
-fn trace_sans_reponse(ctx: &Contexte, erreur: &str) -> bool {
-    erreur == nevermind_noyau::aide::ERREUR_PAUSE || ctx.aide_en_pause()
+fn trace_sans_reponse(erreur: &str) -> bool {
+    nevermind_noyau::aide::sans_reponse(erreur)
 }
 
 fn id_aleatoire() -> String {
@@ -402,7 +402,7 @@ impl BlocTrafic {
                 Err(e) => {
                     ctx.journal(&format!("Lag : trace réseau par l'Aide impossible ({e})"));
                     // (sans réponse, pas un refus : redemandée quand l'Aide répondra ; lot I)
-                    self.trace_a_reprendre = trace_sans_reponse(ctx, &e);
+                    self.trace_a_reprendre = trace_sans_reponse(&e);
                     erreur = e;
                 }
             }
@@ -460,7 +460,7 @@ impl BlocTrafic {
                     ctx.journal("Lag : trace réseau par l'Aide, reprise pendant la partie");
                 }
                 Err(e) => {
-                    self.trace_a_reprendre = trace_sans_reponse(ctx, &e);
+                    self.trace_a_reprendre = trace_sans_reponse(&e);
                     if !self.trace_a_reprendre {
                         ctx.journal(&format!("Lag : trace réseau par l'Aide impossible ({e})"));
                     }
