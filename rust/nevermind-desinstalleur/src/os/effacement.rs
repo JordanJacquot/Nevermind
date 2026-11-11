@@ -18,23 +18,24 @@ use std::io;
 use std::path::Path;
 use windows::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows::Wdk::Storage::FileSystem::{
-    FILE_CREATE, FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_IF, FILE_OPEN_REPARSE_POINT, FILE_RENAME_INFORMATION,
-    FILE_SYNCHRONOUS_IO_NONALERT, FileRenameInformation, NTCREATEFILE_CREATE_DISPOSITION, NtCreateFile,
-    NtSetInformationFile,
+    FILE_CREATE, FILE_DIRECTORY_FILE, FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_IF, FILE_OPEN_REPARSE_POINT,
+    FILE_RENAME_INFORMATION, FILE_SYNCHRONOUS_IO_NONALERT, FileRenameInformation, NTCREATEFILE_CREATE_DISPOSITION,
+    NtCreateFile, NtSetInformationFile,
 };
 use windows::Win32::Foundation::{
     CloseHandle, ERROR_NO_MORE_FILES, HANDLE, NTSTATUS, OBJ_CASE_INSENSITIVE, RtlNtStatusToDosError, UNICODE_STRING,
 };
 use windows::Win32::Storage::FileSystem::{
-    CreateFileW, DELETE, FILE_ACCESS_RIGHTS, FILE_APPEND_DATA, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL,
-    FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_BASIC_INFO, FILE_DISPOSITION_FLAG_DELETE,
-    FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS, FILE_DISPOSITION_INFO,
-    FILE_DISPOSITION_INFO_EX, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FULL_DIR_INFO,
-    FILE_LIST_DIRECTORY, FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE,
-    FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FileBasicInfo,
-    FileDispositionInfo, FileDispositionInfoEx, FileFullDirectoryInfo, FileFullDirectoryRestartInfo, FileStandardInfo,
-    FlushFileBuffers, GETFINALPATHNAMEBYHANDLE_FLAGS, GetFileInformationByHandleEx, GetFinalPathNameByHandleW,
-    GetLongPathNameW, OPEN_EXISTING, ReadFile, SYNCHRONIZE, SetFileInformationByHandle, VOLUME_NAME_DOS, WriteFile,
+    CreateFileW, DELETE, FILE_ACCESS_RIGHTS, FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_APPEND_DATA,
+    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_BASIC_INFO, FILE_DISPOSITION_FLAG_DELETE, FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE,
+    FILE_DISPOSITION_FLAG_POSIX_SEMANTICS, FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FILE_FLAG_BACKUP_SEMANTICS,
+    FILE_FLAG_OPEN_REPARSE_POINT, FILE_FULL_DIR_INFO, FILE_LIST_DIRECTORY, FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES,
+    FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO, FILE_WRITE_ATTRIBUTES,
+    FILE_WRITE_DATA, FileBasicInfo, FileDispositionInfo, FileDispositionInfoEx, FileFullDirectoryInfo,
+    FileFullDirectoryRestartInfo, FileStandardInfo, FlushFileBuffers, GETFINALPATHNAMEBYHANDLE_FLAGS,
+    GetFileInformationByHandleEx, GetFinalPathNameByHandleW, GetLongPathNameW, OPEN_EXISTING, ReadFile, SYNCHRONIZE,
+    SetFileInformationByHandle, VOLUME_NAME_DOS, WriteFile,
 };
 use windows::Win32::System::IO::IO_STATUS_BLOCK;
 use windows::core::{HSTRING, PWSTR};
@@ -414,6 +415,23 @@ fn noms(h: HANDLE) -> io::Result<u32> {
 /// est celui qui a été vérifié, même s'il a été remplacé depuis par une jonction). Jamais un dossier ; un lien posé à
 /// ce nom est ouvert lui-même (FILE_OPEN_REPARSE_POINT), puis refusé, comme un fichier qui a un autre nom ailleurs.
 fn ouvrir_dans(d: &Ouvert, nom: &str, acces: u32, disposition: NTCREATEFILE_CREATE_DISPOSITION) -> io::Result<Ouvert> {
+    let h = nt_ouvrir_dans(d, nom, acces, disposition, FILE_NON_DIRECTORY_FILE)?;
+    let mut o = Ouvert { h, chemin: dans(d, nom), attributs: 0 };
+    o.attributs = attributs(o.h)?;
+    if o.lien() || noms(o.h)? > 1 {
+        return Err(io::Error::other(FICHIER_LIEN));
+    }
+    Ok(o)
+}
+
+/// NtCreateFile de `nom` par rapport à la poignée du dossier ouvert `d` (jamais un lien suivi), avec ces options en plus
+fn nt_ouvrir_dans(
+    d: &Ouvert,
+    nom: &str,
+    acces: u32,
+    disposition: NTCREATEFILE_CREATE_DISPOSITION,
+    options: windows::Wdk::Storage::FileSystem::NTCREATEFILE_CREATE_OPTIONS,
+) -> io::Result<HANDLE> {
     nom_simple(nom)?;
     let mut large: Vec<u16> = nom.encode_utf16().collect();
     let octets = (large.len() * 2) as u16;
@@ -439,18 +457,13 @@ fn ouvrir_dans(d: &Ouvert, nom: &str, acces: u32, disposition: NTCREATEFILE_CREA
             FILE_ATTRIBUTE_NORMAL,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             disposition,
-            FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_REPARSE_POINT,
+            options | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_REPARSE_POINT,
             None,
             0,
         )
     };
     ntstatus(st)?;
-    let mut o = Ouvert { h, chemin: dans(d, nom), attributs: 0 };
-    o.attributs = attributs(o.h)?;
-    if o.lien() || noms(o.h)? > 1 {
-        return Err(io::Error::other(FICHIER_LIEN));
-    }
-    Ok(o)
+    Ok(h)
 }
 
 /// Tout le contenu, lu par la poignée
@@ -569,6 +582,45 @@ impl Donnees {
             let _ = effacer(&o);
         }
         r
+    }
+
+    /// Où est ce dossier (vérifié à l'ouverture)
+    pub fn chemin(&self) -> std::path::PathBuf {
+        std::path::PathBuf::from(&self.0.chemin)
+    }
+
+    /// Lot H : un dossier neuf de ce nom dans ce dossier, créé par rapport à sa poignée (il ne doit pas exister : rien
+    /// de déjà là n'est repris), rendu ouvert
+    pub fn creer_dossier(&self, nom: &str) -> io::Result<Donnees> {
+        let h = nt_ouvrir_dans(
+            &self.0,
+            nom,
+            DELETE.0 | FILE_LIST_DIRECTORY.0 | FILE_ADD_FILE.0 | FILE_ADD_SUBDIRECTORY.0 | FILE_WRITE_ATTRIBUTES.0,
+            FILE_CREATE,
+            FILE_DIRECTORY_FILE,
+        )?;
+        let mut o = Ouvert { h, chemin: String::new(), attributs: 0 };
+        o.chemin = chemin_final(o.h)?;
+        o.attributs = attributs(o.h)?;
+        if o.lien() || !o.dossier() {
+            return Err(io::Error::other(PAR_UN_LIEN));
+        }
+        Ok(Donnees(o))
+    }
+
+    /// Lot H : déplace `source` (un fichier ou un dossier, sur le même disque) dans ce dossier, sous le nom `nom`.
+    /// `source` est ouvert sans suivre de lien et vérifié (il est bien là où il doit être, aucun dossier de son chemin
+    /// n'est une jonction), puis renommé par sa poignée : un lien posé à sa place est déplacé lui-même, ce qu'il vise
+    /// n'est jamais touché. Un programme en cours (ce désinstalleur) peut être déplacé ainsi.
+    pub fn deplacer_ici(&self, source: &Path, nom: &str) -> io::Result<()> {
+        let Some(attendu) = chemin_long(source) else {
+            return Err(match std::fs::symlink_metadata(source) {
+                Err(e) => e,
+                Ok(_) => io::Error::other(PAR_UN_LIEN),
+            });
+        };
+        let o = ouvrir_avec(&attendu, &attendu, DELETE.0 | FILE_READ_ATTRIBUTES.0)?;
+        renommer(&o, &self.0, nom)
     }
 
     /// Ce raccourci du dossier (`None` s'il n'existe pas), ouvert pour être lu puis peut-être effacé. Un lien est refusé.

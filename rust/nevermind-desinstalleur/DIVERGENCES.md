@@ -28,10 +28,11 @@ registre. Tout est identique, sauf ce qui suit.
    désinstalleur pour fermer l'hôte de l'appli (`Start-DesinstallAppli`, installations.ps1:866-868). Jamais
    ce programme lui-même, jamais un programme d'un autre dossier (test `nevermind_ouvert_est_ferme_avec_l_aide`). Les
    juges n'ont pas de tel programme ouvert : PowerShell ne le faisait pas.
-4. **Les fichiers** : ceux qui peuvent partir tout de suite partent tout de suite (Nevermind.exe disparaît donc avant la
-   fin de ce programme, et Mindset le voit aussitôt), puis la même commande que la version PowerShell (cmd.exe caché,
-   `ping ... & del ... & rmdir ...`) refait le tout 3 secondes après la fermeture. Même liste, même commande (comparée
-   aux juges caractère par caractère).
+4. **Les fichiers** : même liste que la version PowerShell, et sa commande (`ping ... & del ... & rmdir ...`) reste
+   celle que les juges comparent caractère par caractère. Mais le vrai lancement (lot H, point 21) déplace d'abord tout
+   dans un dossier « à effacer » neuf (Nevermind.exe disparaît donc aussitôt de sa place, et Mindset le voit), puis
+   cmd.exe caché efface ce dossier 3 secondes après la fermeture, avec ce qui n'a pas pu être déplacé et les dossiers
+   devenus vides.
 5. **« Supprimer mes données »** ne suit jamais un lien : un point de jonction ou un lien symbolique posé dans les
    données est retiré seul, ce qu'il vise n'est pas touché (le désinstalleur tourne en administrateur). La suppression
    continue après une erreur et dit la première. Le texte d'une erreur (fichier ouvert...) est celui de Windows (sans
@@ -56,7 +57,8 @@ registre. Tout est identique, sauf ce qui suit.
    `Get-Process`. Comparaison des chemins sans tenir compte des majuscules, comme `-eq`.
 11. **Le choix des données** ne vient que de la ligne de commande (comme le lanceur C#, qui effaçait toute variable
     NEVERMIND_DONNEES héritée) ; même règle pour les deux options à la fois (la question est posée).
-12. **%LOCALAPPDATA%** (dossier des données, suite.json) est lu chez Windows (dossier connu), pas dans la variable.
+12. **%LOCALAPPDATA%** (dossier des données, suite.json) est lu chez Windows (dossier connu), pas dans la variable, et
+    à son emplacement par défaut, jamais redirigé (lot H, point 20).
 13. Ce que Nevermind.ps1 faisait avant `Invoke-Uninstall` et qui ne sert pas à la désinstallation n'est pas repris
     (marque « téléchargé depuis Internet », anciens `.exe.old`, fichiers manquants du dossier modules).
 
@@ -100,6 +102,29 @@ registre. Tout est identique, sauf ce qui suit.
     désinstalleur repasse ensuite sous le compte et efface lui-même ceux qui lancent encore cette copie.
 18. **Les programmes fermés** (l'Aide, Nevermind) : ouverts une fois, leur chemin relu par cette poignée juste avant
     de les fermer par elle (comme l'Aide, M6) ; un numéro redonné à un autre programme depuis la liste n'est pas fermé.
+
+## Second audit, lot H (11/11) : le désinstalleur
+
+19. **Relu après la fermeture (M2)** : la sauvegarde, les réglages et l'historique lus au début servent à la question.
+    Une fois l'Aide et Nevermind fermés, juste avant « Tout restaurer », ils sont relus de la même façon (sans suivre de
+    lien, avec la copie de secours et les valeurs d'origine gardées au registre : `Systeme::relire_donnees`), et c'est
+    cette relecture qui est remise comme avant : un réglage fait dans Nevermind pendant la question est remis lui aussi.
+    Si le nombre de réglages diffère de celui de la question, le message de fin le dit. À la fin, parametres.json est
+    relu et seuls `SvcOriginal` et `PcfgOriginal` y changent (s'ils ont changé depuis la relecture) : une préférence
+    écrite entre-temps par Nevermind est gardée. Mindset ne ferme pas Nevermind avant de lancer ce désinstalleur et le
+    lance sans option : la question est posée, rien n'est à changer de son côté.
+20. **Local AppData** : le compte peut le rediriger sans droits (`HKCU\...\User Shell Folders`). En administrateur,
+    « Supprimer mes données » aurait effacé un vrai dossier choisi ainsi. Il est donc pris à son emplacement par défaut
+    (`KF_FLAG_DEFAULT_PATH`), vérifié dans le profil que Windows note pour le compte (`GetUserProfileDirectoryW`, dans
+    HKLM) ; puis ouvert par une poignée vérifiée, comme les autres données (point 16). Des données vraiment redirigées
+    ailleurs (rare) ne sont alors pas trouvées : elles restent, rien n'est effacé.
+21. **La commande de fin** : avant, elle effaçait les fichiers par leur nom 3 secondes après la fermeture, et donc une
+    réinstallation faite pendant ces 3 secondes. Maintenant chaque fichier et dossier à effacer est ouvert sans suivre
+    de lien, vérifié, puis déplacé par sa poignée dans `a-effacer-<numéro>-<heure>`, créé neuf dans le dossier des
+    programmes (même disque : un simple renommage, possible même pour ce programme en cours). La commande n'efface plus
+    que ce dossier, puis les dossiers vides (`rmdir` sans `/s` : un dossier réinstallé, non vide, reste). Ce qui ne peut
+    pas être déplacé (un dossier tenu ouvert par un autre programme, par exemple) est effacé par son nom comme avant, et
+    c'est noté au journal.
 
 ## La voie « sur place » (architecture, pas une différence)
 

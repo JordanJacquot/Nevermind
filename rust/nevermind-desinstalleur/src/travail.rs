@@ -2,7 +2,8 @@
 //!
 //! 1. ce qui va être fait (réglages à remettre, raccourci et lancement au démarrage, fichiers), les changements
 //!    définitifs qui restent (ils protègent le PC), et la question des données, sauf si le choix est imposé ;
-//! 2. l'Aide arrêtée (sa tâche, puis son programme, reconnu par son chemin) ;
+//! 2. l'Aide arrêtée (sa tâche, puis son programme, reconnu par son chemin), puis Nevermind s'il est ouvert ; la
+//!    sauvegarde, les réglages et l'historique relus ensuite (lot H, M2 : [`Systeme::relire_donnees`]) ;
 //! 3. « Tout restaurer » (`Restore-AllSettings`, repris du bloc pc : `nevermind_pc::corrections::tout_restaurer`) ;
 //! 4. les données (`Remove-DonneesDesinstallation`) ;
 //! 5. le lancement au démarrage, les anciennes tâches, la tâche de l'Aide et ce qu'elle retenait (HKLM), les
@@ -75,6 +76,22 @@ pub trait Systeme {
     /// Les fichiers supprimés après la fermeture de ce programme : la commande de la version PowerShell (cmd.exe
     /// caché), et ce qu'elle supprime
     fn lancer_suppression(&mut self, commande: &str, suppression: &Suppression);
+    /// Lot H (M2) : une fois l'Aide et Nevermind fermés, juste avant la remise en état, la sauvegarde (avec sa copie de
+    /// secours et les valeurs d'origine gardées au registre), les réglages et l'historique relus, comme au départ.
+    /// Pendant la question, Nevermind était encore ouvert : un réglage fait à ce moment est ainsi remis comme avant
+    /// lui aussi. `None` : rien de relu, la copie du début sert (les juges, qui n'ont pas de disque).
+    fn relire_donnees(&mut self) -> Option<Relue> {
+        None
+    }
+}
+
+/// Ce que [`Systeme::relire_donnees`] a relu
+#[derive(Debug, Clone)]
+pub struct Relue {
+    /// La sauvegarde des réglages d'origine
+    pub sauvegarde: Sauvegarde,
+    /// Son problème éventuel (« abimee », « absente »)
+    pub probleme: Option<String>,
 }
 
 /// Où est cette copie de Nevermind
@@ -209,12 +226,39 @@ pub fn commande_suppression_avec(s: &Suppression, ping: &str) -> String {
     cmd
 }
 
+/// Les changements de sécurité définitifs restent (ils protègent le PC) : ils sont dits, avec la façon de revenir en
+/// arrière. Même dans une entrée annulée (« Tout restaurer ») : sa part définitive, elle, est toujours en place. Rend
+/// le texte ajouté à la question (ou au message de fin) et les mêmes avertissements en une phrase d'une ligne chacun
+/// (les conseils passés à Mindset).
+fn avertissements(probleme: Option<&str>, historique: &[Value]) -> (String, Vec<String>) {
+    let restent = restent_en_place(historique);
+    let mut avertir = String::new();
+    let texte_probleme = nevermind_noyau::sauvegarde::texte_probleme(probleme);
+    if !texte_probleme.is_empty() {
+        avertir.push_str(&format!("\n\nAttention : {texte_probleme}"));
+    }
+    if !restent.is_empty() {
+        avertir
+            .push_str(&format!("\n\nCes changements protègent ton PC et restent en place :\n{}", restent.join("\n")));
+    }
+    let mut conseils_avertir: Vec<String> = Vec::new();
+    if !texte_probleme.is_empty() {
+        conseils_avertir.push(format!("Attention : {texte_probleme}"));
+    }
+    conseils_avertir.extend(restent.iter().map(|r| {
+        format!("Ce changement protège ton PC et reste en place : {}", r.trim_start().trim_start_matches("- "))
+    }));
+    (avertir, conseils_avertir)
+}
+
 /// La désinstallation. `sv` et `probleme` : la sauvegarde des réglages d'origine (`Import-Backup`) et son problème
-/// éventuel (« abimee », « absente »). `impose` : le choix venu de la ligne de commande (pas de question).
+/// éventuel (« abimee », « absente »), lus au début pour la question ; relus après la fermeture de l'Aide et de
+/// Nevermind ([`Systeme::relire_donnees`]) pour la remise en état. `impose` : le choix venu de la ligne de commande (pas
+/// de question).
 pub fn desinstaller(
     pc: &mut dyn Pc,
     sys: &mut dyn Systeme,
-    mut sv: Sauvegarde,
+    sv: Sauvegarde,
     probleme: Option<&str>,
     lieux: &Lieux,
     impose: Option<Choix>,
@@ -230,26 +274,7 @@ pub fn desinstaller(
         etapes.push("  - retirer son raccourci du bureau et son lancement au démarrage".into());
     }
     etapes.push("  - supprimer les fichiers de Nevermind de ce dossier".into());
-    // Les changements de sécurité définitifs restent (ils protègent le PC) : ils sont dits, avec la façon de revenir
-    // en arrière. Même dans une entrée annulée (« Tout restaurer ») : sa part définitive, elle, est toujours en place.
-    let restent = restent_en_place(&sys.historique());
-    let mut avertir = String::new();
-    let texte_probleme = nevermind_noyau::sauvegarde::texte_probleme(probleme);
-    if !texte_probleme.is_empty() {
-        avertir.push_str(&format!("\n\nAttention : {texte_probleme}"));
-    }
-    if !restent.is_empty() {
-        avertir
-            .push_str(&format!("\n\nCes changements protègent ton PC et restent en place :\n{}", restent.join("\n")));
-    }
-    // (les mêmes avertissements, une phrase d'une ligne chacun : les conseils passés à Mindset)
-    let mut conseils_avertir: Vec<String> = Vec::new();
-    if !texte_probleme.is_empty() {
-        conseils_avertir.push(format!("Attention : {texte_probleme}"));
-    }
-    conseils_avertir.extend(restent.iter().map(|r| {
-        format!("Ce changement protège ton PC et reste en place : {}", r.trim_start().trim_start_matches("- "))
-    }));
+    let (avertir, _) = avertissements(probleme, &sys.historique());
     let choix = match impose {
         Some(c) => {
             // Piloté par Mindset : pas de question (l'utilisateur a déjà choisi), ce qu'il faut savoir est dit à la fin
@@ -293,6 +318,21 @@ pub fn desinstaller(
             sys.fermer_processus(pid, e);
         }
     }
+    // Lot H (M2) : Nevermind était encore ouvert pendant la question (ou juste avant, piloté par Mindset) ; il a pu
+    // changer un réglage et le noter. Maintenant qu'il est fermé, tout est relu, et c'est cette relecture qui est remise
+    // comme avant (le nombre annoncé dans la question peut donc changer : le message de fin le dit).
+    let annonces = n;
+    let (mut sv, probleme, avertir, conseils_avertir) = match sys.relire_donnees() {
+        Some(r) => {
+            let (a, c) = avertissements(r.probleme.as_deref(), &sys.historique());
+            (r.sauvegarde, r.probleme, a, c)
+        }
+        None => {
+            let (a, c) = avertissements(probleme, &sys.historique());
+            (sv, probleme.map(String::from), a, c)
+        }
+    };
+    let n = corrections::compte_total(&sv, pc);
     if n > 0 {
         let mut m = Moteur::nouveau(pc, &mut sv, false);
         erreurs.extend(corrections::tout_restaurer(&mut m));
@@ -306,7 +346,7 @@ pub fn desinstaller(
     let err_donnees = donnees::retirer_donnees(
         &lieux.donnees,
         garder,
-        !erreurs.is_empty() || probleme.is_some_and(|p| !p.is_empty()),
+        !erreurs.is_empty() || probleme.as_deref().is_some_and(|p| !p.is_empty()),
     );
     erreurs.extend(err_donnees.iter().cloned());
     if let Err(e) = sys.retirer_demarrage() {
@@ -343,6 +383,13 @@ pub fn desinstaller(
     let fichiers: Vec<PathBuf> = fichiers_livres(&lieux.racine).into_iter().filter(|f| sys.existe(f)).collect();
 
     let mut msg = String::from("Nevermind est désinstallé.");
+    // (la question annonçait un autre nombre : des réglages ont changé pendant qu'elle était affichée, lot H)
+    if impose.is_none() && n != annonces {
+        let s = if n > 1 { "s" } else { "" };
+        msg.push_str(&format!(
+            "\n\nDes réglages ont changé pendant la question : {n} réglage{s} de Windows à remettre comme avant, au lieu de {annonces}."
+        ));
+    }
     if !garder {
         msg.push_str(&format!(
             "\n\nSes données sont supprimées{}.",

@@ -225,10 +225,24 @@ impl Systeme for FauxSysteme {
     }
 }
 
+/// Deux réglages que Nevermind change (la liste fermée de la remise en état, audit du 08/11, M5)
+const DVR: &str = "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR";
+const BAR: &str = "HKCU:\\Software\\Microsoft\\GameBar";
+
+/// Le geste « A remis comme avant » (la valeur d'origine réécrite)
+fn a_remis() -> String {
+    format!("écrit {DVR}|HistoricalCaptureEnabled=1")
+}
+
+/// Le geste « B remis comme avant » (il n'existait pas : effacé)
+fn b_remis() -> String {
+    format!("effacé {BAR}|AutoGameModeEnabled")
+}
+
 fn entree(cle: &str, nom: &str, existait: bool, valeur: Value) -> (String, Value) {
     (
-        format!("HKCU:\\Software\\Essai{cle}|{nom}"),
-        json!({ "Path": format!("HKCU:\\Software\\Essai{cle}"), "Name": nom, "Existed": existait, "Value": valeur,
+        format!("{cle}|{nom}"),
+        json!({ "Path": cle, "Name": nom, "Existed": existait, "Value": valeur,
                 "Kind": if existait { json!("DWord") } else { Value::Null } }),
     )
 }
@@ -249,8 +263,8 @@ struct Essai {
 /// n'existait pas) et coupe un service (noté dans SvcOriginal).
 fn essai(nom: &str) -> Essai {
     let racine = std::env::temp_dir().join(format!("nevermind-desinst-relecture-{nom}-{}", std::process::id()));
-    let a = entree("A", "Valeur", true, json!(1));
-    let b = entree("B", "Valeur", false, Value::Null);
+    let a = entree(DVR, "HistoricalCaptureEnabled", true, json!(1));
+    let b = entree(BAR, "AutoGameModeEnabled", false, Value::Null);
     let disque =
         Rc::new(RefCell::new(Disque { sauvegarde: sauvegarde(std::slice::from_ref(&a)), reglages: Map::new() }));
     let reglages: Reglages = Default::default();
@@ -282,11 +296,8 @@ fn un_reglage_change_pendant_la_question_est_remis() {
     assert!(erreurs.is_empty(), "{erreurs:?}");
     assert_eq!(e.sys.relectures, vec![false], "les données ne sont pas relues une fois, Nevermind fermé");
     let gestes = e.pc.gestes.borrow().clone();
-    assert!(gestes.iter().any(|g| g == "écrit HKCU:\\Software\\EssaiA|Valeur=1"), "A n'est pas remis : {gestes:?}");
-    assert!(
-        gestes.iter().any(|g| g == "effacé HKCU:\\Software\\EssaiB|Valeur"),
-        "le réglage changé pendant la question n'est pas remis : {gestes:?}"
-    );
+    assert!(gestes.contains(&a_remis()), "A n'est pas remis : {gestes:?}");
+    assert!(gestes.contains(&b_remis()), "le réglage changé pendant la question n'est pas remis : {gestes:?}");
     assert!(
         gestes.iter().any(|g| g == "aide service.regler DiagTrack"),
         "le service coupé pendant la question n'est pas remis : {gestes:?}"
@@ -308,12 +319,12 @@ fn rien_au_debut_un_reglage_pendant_la_question() {
     let mut e = essai("rien-au-debut");
     e.debut = Sauvegarde::default();
     *e.sys.disque.borrow_mut() = Disque::default();
-    e.pc.reg.remove("HKCU:\\Software\\EssaiA|Valeur");
-    let b = entree("B", "Valeur", false, Value::Null);
+    e.pc.reg.remove(&format!("{DVR}|HistoricalCaptureEnabled"));
+    let b = entree(BAR, "AutoGameModeEnabled", false, Value::Null);
     e.sys.pendant_la_question = Some(Disque { sauvegarde: sauvegarde(&[b]), reglages: Map::new() });
     let Fin::Faite { message, .. } = lancer(&mut e, None) else { panic!("annulée") };
     assert!(
-        e.pc.gestes.borrow().iter().any(|g| g == "effacé HKCU:\\Software\\EssaiB|Valeur"),
+        e.pc.gestes.borrow().contains(&b_remis()),
         "le réglage changé pendant la question n'est pas remis : {:?}",
         e.pc.gestes.borrow()
     );
@@ -329,7 +340,7 @@ fn pilote_par_mindset_les_donnees_sont_relues_apres_la_fermeture() {
     *e.sys.disque.borrow_mut() = d;
     let Fin::Faite { message, .. } = lancer(&mut e, Some(Choix::Garder)) else { panic!("annulée") };
     assert_eq!(e.sys.relectures, vec![false]);
-    assert!(e.pc.gestes.borrow().iter().any(|g| g == "effacé HKCU:\\Software\\EssaiB|Valeur"));
+    assert!(e.pc.gestes.borrow().contains(&b_remis()), "{:?}", e.pc.gestes.borrow());
     // (pas de question : le nombre annoncé n'a pas été montré, le message n'en parle pas)
     assert!(!message.contains("au lieu de"), "{message}");
 }
@@ -341,8 +352,8 @@ fn sans_relecture_la_copie_du_debut_sert() {
     e.sys.relit = false;
     let _ = lancer(&mut e, None);
     let gestes = e.pc.gestes.borrow().clone();
-    assert!(gestes.iter().any(|g| g == "écrit HKCU:\\Software\\EssaiA|Valeur=1"), "{gestes:?}");
-    assert!(!gestes.iter().any(|g| g.contains("EssaiB")), "{gestes:?}");
+    assert!(gestes.contains(&a_remis()), "{gestes:?}");
+    assert!(!gestes.iter().any(|g| g.contains("GameBar")), "{gestes:?}");
 }
 
 // ---------------------------------------------------------------------------

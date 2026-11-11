@@ -19,7 +19,7 @@ pub mod fenetre;
 
 use crate::choix::Choix;
 use crate::sur_place::AideSurPlace;
-use crate::travail::{self, Suppression, Systeme};
+use crate::travail::{self, Relue, Suppression, Systeme};
 use nevermind_noyau::Contexte;
 use nevermind_pc::pc::{Pc, ResultatNettoyage, ValeurReg};
 use nevermind_pc::systeme::PcWindows;
@@ -31,17 +31,22 @@ use std::process::{Command, Stdio};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0};
 use windows::Win32::NetworkManagement::IpHelper::{ConvertInterfaceGuidToLuid, ConvertInterfaceLuidToIndex};
 use windows::Win32::NetworkManagement::Ndis::NET_LUID_LH;
+use windows::Win32::Security::TOKEN_QUERY;
+use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile,
     IPersistStream, STGM_READ,
 };
-use windows::Win32::System::Threading::{GetExitCodeProcess, INFINITE, WaitForSingleObject};
+use windows::Win32::System::Threading::{
+    GetCurrentProcess, GetExitCodeProcess, INFINITE, OpenProcessToken, WaitForSingleObject,
+};
 use windows::Win32::UI::Shell::{
-    FOLDERID_LocalAppData, FOLDERID_Programs, IShellLinkW, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS,
-    SHCreateMemStream, SHELLEXECUTEINFOW, ShellExecuteExW, ShellLink,
+    FOLDERID_LocalAppData, FOLDERID_Programs, GetUserProfileDirectoryW, IShellLinkW, KF_FLAG_DEFAULT_PATH,
+    KF_FLAG_DONT_VERIFY, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHCreateMemStream, SHELLEXECUTEINFOW,
+    SHGetKnownFolderPath, ShellExecuteExW, ShellLink,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-use windows::core::{GUID, HSTRING, Interface, PCWSTR};
+use windows::core::{GUID, HSTRING, Interface, PCWSTR, PWSTR};
 
 /// CREATE_NO_WINDOW : aucun programme lancé n'ouvre de fenêtre
 const SANS_FENETRE: u32 = 0x0800_0000;
@@ -51,9 +56,65 @@ fn system32() -> String {
     nevermind_noyau::windows::dossier_systeme().trim_end_matches('\\').to_string()
 }
 
-/// `%LOCALAPPDATA%`, tel que Windows le donne
+/// `%LOCALAPPDATA%` du compte, à son emplacement par défaut (lot H) : jamais là où le compte l'a redirigé.
+///
+/// Le compte peut rediriger son dossier Local AppData sans aucun droit (`HKCU\...\User Shell Folders`). En
+/// administrateur, avec « Supprimer mes données », un vrai dossier à l'ancien nom des données de Nevermind, choisi
+/// ainsi par un programme sans droits, serait effacé. Donc :
+/// - `SHGetKnownFolderPath` avec `KF_FLAG_DEFAULT_PATH` : le chemin par défaut (`<profil>\AppData\Local`), qui ne lit pas
+///   la redirection (`KF_FLAG_DONT_VERIFY` : il est rendu même s'il n'existe pas, rien n'est créé) ;
+/// - et ce chemin doit être dans le profil du compte tel que Windows le note (`GetUserProfileDirectoryW`, lu dans
+///   `HKLM\...\ProfileList`, que le compte ne peut pas changer) ; sinon (une variable `USERPROFILE` changée par le
+///   compte, par exemple), c'est `<profil>\AppData\Local` qui est pris.
+///
+/// Le dossier lui-même est ensuite ouvert par une poignée vérifiée, qui refuse un lien ou une jonction sur son chemin
+/// (`effacement::ouvrir_donnees`), comme les autres données.
 pub fn localappdata() -> String {
-    nevermind_noyau::windows::dossier_connu(&FOLDERID_LocalAppData)
+    local_dans_le_profil(&dossier_par_defaut(&FOLDERID_LocalAppData), &profil_du_compte())
+}
+
+/// Le choix de [`localappdata`] : le chemin par défaut s'il est bien celui du profil, sinon `<profil>\AppData\Local`
+fn local_dans_le_profil(defaut: &str, profil: &str) -> String {
+    let profil = profil.trim_end_matches('\\');
+    if profil.is_empty() {
+        return defaut.to_string();
+    }
+    let attendu = format!("{profil}\\AppData\\Local");
+    if suite_commun::chemins::egal(defaut.trim_end_matches('\\'), &attendu) { defaut.to_string() } else { attendu }
+}
+
+/// Un dossier connu à son emplacement par défaut, jamais redirigé (vide s'il n'est pas connu)
+fn dossier_par_defaut(id: &GUID) -> String {
+    // SAFETY : texte rendu par Windows, libéré avec CoTaskMemFree
+    unsafe {
+        match SHGetKnownFolderPath(id, KF_FLAG_DEFAULT_PATH | KF_FLAG_DONT_VERIFY, None) {
+            Ok(p) => {
+                let t = p.to_string().unwrap_or_default();
+                CoTaskMemFree(Some(p.0 as *const _));
+                t
+            }
+            Err(_) => String::new(),
+        }
+    }
+}
+
+/// Le dossier du profil de ce compte, tel que Windows le note (`HKLM\...\ProfileList`) ; vide s'il est illisible
+fn profil_du_compte() -> String {
+    // SAFETY : poignée du jeton de ce programme, refermée ; tampon et taille cohérents
+    unsafe {
+        let mut jeton = HANDLE::default();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut jeton).is_err() {
+            return String::new();
+        }
+        let _j = Poignee(jeton);
+        let mut b = vec![0u16; 1024];
+        let mut n = b.len() as u32;
+        if GetUserProfileDirectoryW(jeton, Some(PWSTR(b.as_mut_ptr())), &mut n).is_err() {
+            return String::new();
+        }
+        let fin = b.iter().position(|&c| c == 0).unwrap_or(b.len());
+        String::from_utf16_lossy(&b[..fin])
+    }
 }
 
 /// schtasks.exe avec ces arguments, sans fenêtre : son code de sortie (`None` s'il n'a pas pu se lancer)
@@ -242,6 +303,9 @@ pub struct SystemeWindows<'a> {
     /// Piloté par Mindset (`-GarderDonnees` ou `-SupprimerDonnees`) : le message de fin n'est pas montré, il va au
     /// journal (le désinstalleur de Mindset attend la fin de celui-ci et montre son propre bilan ; DIVERGENCES.md)
     pub muet: bool,
+    /// Lot H (M2) : les réglages relus après la fermeture de l'Aide et de Nevermind (`Some(None)` : relus, mais
+    /// illisibles) ; `None` : pas encore relus. C'est la référence de [`ecrire_donnees`] à la fin.
+    pub reglages_relus: Option<Option<serde_json::Map<String, Value>>>,
 }
 
 /// Le raccourci de Nevermind dans ce dossier du compte (bureau, dossier Mindset du menu Démarrer), s'il lance la copie
@@ -345,21 +409,90 @@ impl Systeme for SystemeWindows<'_> {
         effacer_raccourci_de(&dossier_menu(), &self.racine, true);
     }
     fn lancer_suppression(&mut self, commande: &str, suppression: &Suppression) {
-        // Tout ce qui peut déjà partir part tout de suite (Nevermind.exe disparaît donc avant la fin de ce programme :
-        // Mindset le voit aussitôt) ; la commande refait le tout une fois ce programme fermé (DIVERGENCES.md, point 4)
+        // Lot H : tout ce qui est à effacer est d'abord déplacé dans un dossier « à effacer » neuf (même disque : un
+        // simple renommage, même pour ce programme en cours), et la commande de fin n'efface plus que lui. Une
+        // réinstallation faite pendant ses 3 s d'attente n'est donc plus effacée par les noms de ses fichiers.
+        // Nevermind.exe disparaît aussitôt de sa place (Mindset le voit tout de suite : DIVERGENCES.md, point 4).
+        let (reste, notes) = mettre_de_cote(&self.racine, suppression);
+        for n in &notes {
+            self.journal(n);
+        }
+        // Ce qui n'a pas pu être déplacé : comme avant, effacé par son nom (tout de suite si possible, puis par la
+        // commande de fin)
         let moi = std::env::current_exe().ok();
-        for f in &suppression.fichiers {
+        for f in &reste.fichiers {
             if moi.as_ref().is_none_or(|m| !suite_commun::chemins::egal(&m.to_string_lossy(), &f.to_string_lossy())) {
                 let _ = std::fs::remove_file(f);
             }
         }
-        // (`commande` est le texte de la version PowerShell, celui des juges : le vrai lancement refait la même
-        // commande, avec PING.EXE par son chemin complet)
+        // (`commande` est le texte de la version PowerShell, celui des juges : le vrai lancement efface le dossier « à
+        // effacer » et ce qui reste, avec PING.EXE par son chemin complet)
         let _ = commande;
-        if let Err(e) = commande_fin_de(suppression).spawn() {
+        if let Err(e) = commande_fin_de(&reste).spawn() {
             self.ctx.journal(&format!("Désinstallation : la suppression des fichiers n'a pas pu se lancer ({e})"));
         }
     }
+    fn relire_donnees(&mut self) -> Option<Relue> {
+        // (lot H, M2 : comme au départ, sans suivre de lien ; le contexte reçoit ce qui est relu)
+        self.reglages_relus = Some(relire_donnees(self.ctx, &self.ctx.donnees));
+        let s = self.ctx.sauvegarde();
+        Some(Relue {
+            probleme: s.probleme.clone(),
+            sauvegarde: nevermind_pc::corrections::Sauvegarde::depuis(&s.en_json()),
+        })
+    }
+}
+
+/// Le dossier « à effacer » de la commande de fin : neuf, dans le dossier des programmes, à un nom unique (le numéro de
+/// ce programme et l'heure)
+fn nom_a_effacer() -> String {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
+    format!("a-effacer-{}-{t}", std::process::id())
+}
+
+/// Lot H : déplace les fichiers et dossiers à effacer dans un dossier « à effacer » neuf, créé dans le dossier des
+/// programmes (`racine`) ouvert et vérifié ; chacun est ouvert sans suivre de lien, vérifié (là où il doit être, pas
+/// atteint par une jonction), puis renommé par sa poignée (`effacement::Donnees::deplacer_ici`). Rend ce que la
+/// commande de fin doit effacer : ce dossier, puis ce qui n'a pas pu être déplacé (par son nom, comme avant), puis les
+/// dossiers vides. Et les lignes du journal qui disent ce qui n'a pas pu être déplacé.
+fn mettre_de_cote(racine: &Path, s: &Suppression) -> (Suppression, Vec<String>) {
+    let mut notes = Vec::new();
+    let present = |p: &Path| std::fs::symlink_metadata(p).is_ok();
+    let a_deplacer: Vec<&PathBuf> = s.fichiers.iter().chain(&s.dossiers).filter(|p| present(p)).collect();
+    if a_deplacer.is_empty() {
+        return (s.clone(), notes);
+    }
+    let dossier = match effacement::ouvrir_donnees(racine) {
+        Ok(effacement::EtatDonnees::Dossier(d)) => d.creer_dossier(&nom_a_effacer()),
+        Ok(_) => Err(std::io::Error::other(effacement::PAR_UN_LIEN)),
+        Err(e) => Err(e),
+    };
+    let cible = match dossier {
+        Ok(c) => c,
+        Err(e) => {
+            notes.push(format!(
+                "Désinstallation : le dossier à effacer n'a pas pu être créé ({}) : les fichiers sont effacés par leur nom",
+                crate::donnees::message_erreur(&e)
+            ));
+            return (s.clone(), notes);
+        }
+    };
+    let mut reste = Suppression { fichiers: Vec::new(), dossiers: vec![cible.chemin()], vides: s.vides.clone() };
+    for (i, p) in a_deplacer.into_iter().enumerate() {
+        let nom = format!("{i}-{}", p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+        if let Err(e) = cible.deplacer_ici(p, &nom) {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                continue;
+            }
+            notes.push(format!(
+                "Désinstallation : {} n'a pas pu être mis de côté ({}) : il est effacé par son nom",
+                p.display(),
+                crate::donnees::message_erreur(&e)
+            ));
+            if s.fichiers.contains(p) { reste.fichiers.push(p.clone()) } else { reste.dossiers.push(p.clone()) }
+        }
+    }
+    (reste, notes)
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -423,20 +556,32 @@ pub fn contexte_administrateur(
 ) -> (Contexte, Option<serde_json::Map<String, Value>>) {
     let ctx = Contexte::sans_disque(racine.to_path_buf(), donnees.to_path_buf(), geree);
     ctx.definir_racine(racine.to_path_buf());
+    let reglages_lus = relire_donnees(&ctx, donnees);
+    (ctx, reglages_lus)
+}
+
+/// Lit (ou relit, lot H : après la fermeture de l'Aide et de Nevermind) la sauvegarde, les réglages et l'historique
+/// sans suivre de lien ([`lire_donnees`]), et les donne au contexte sans disque, exactement comme au départ. Rend les
+/// réglages lus (`None` : absents ou illisibles), la référence de [`ecrire_donnees`].
+pub fn relire_donnees(ctx: &Contexte, donnees: &Path) -> Option<serde_json::Map<String, Value>> {
     let lues = lire_donnees(donnees);
     let reglages_lus = lues.reglages.clone();
     ctx.fournir_reglages(lues.reglages.unwrap_or_default());
     ctx.fournir_historique(lues.historique);
     // (`Import-Backup` : le fichier, sa copie de secours, puis les valeurs d'origine gardées dans le registre)
     ctx.importer_sauvegarde_lue(lues.sauvegarde, lues.secours);
-    (ctx, reglages_lus)
+    reglages_lus
 }
 
-/// À la fin, en administrateur : les lignes du journal gardées en mémoire ajoutées à journal.txt, et les réglages
-/// changés par « Tout restaurer » (les services et l'alimentation remis ne sont plus notés) réécrits dans
+/// À la fin, en administrateur : les lignes du journal gardées en mémoire ajoutées à journal.txt, et les états
+/// d'origine changés par « Tout restaurer » (les services et l'alimentation remis ne sont plus notés) écrits dans
 /// parametres.json. Seulement si le dossier des données est encore là, ouvert et vérifié ; chaque fichier ouvert par
 /// rapport à lui, jamais par son chemin (un lien posé à leur place est refusé, ou remplacé lui-même). `reglages_lus` :
-/// les réglages lus au début (`None` : illisibles, rien n'est réécrit).
+/// les réglages relus juste avant la remise en état, la référence (`None` : illisibles, rien n'est réécrit).
+///
+/// Lot H (M2) : parametres.json est relu ici, et seuls `SvcOriginal` et `PcfgOriginal` y changent, s'ils ont changé
+/// depuis la référence ; tout le reste (une préférence écrite entre-temps par Nevermind) est gardé tel quel. Illisible
+/// à ce moment-là : il n'est pas touché.
 pub fn ecrire_donnees(dossier: &Path, ctx: &Contexte, reglages_lus: Option<&serde_json::Map<String, Value>>) {
     let lignes = ctx.journal_en_attente();
     let Ok(effacement::EtatDonnees::Dossier(d)) = effacement::ouvrir_donnees(dossier) else { return };
@@ -445,13 +590,29 @@ pub fn ecrire_donnees(dossier: &Path, ctx: &Contexte, reglages_lus: Option<&serd
         texte.push_str("\r\n");
         let _ = d.ajouter("journal.txt", texte.as_bytes());
     }
-    if let Some(avant) = reglages_lus {
-        let maintenant = ctx.reglages();
-        if &maintenant != avant {
-            let texte = nevermind_noyau::json_ps::lisible(&Value::Object(maintenant));
-            let _ = d.remplacer("parametres.json", texte.as_bytes());
+    let Some(avant) = reglages_lus else { return };
+    let maintenant = ctx.reglages();
+    let changes: Vec<&str> = nevermind_noyau::contexte::REGLAGES_D_ORIGINE
+        .iter()
+        .copied()
+        .filter(|k| maintenant.get(*k) != avant.get(*k))
+        .collect();
+    if changes.is_empty() {
+        return;
+    }
+    let Some(Value::Object(mut fichier)) = json_du_dossier(&d, "parametres.json") else { return };
+    for k in changes {
+        match maintenant.get(k) {
+            Some(v) => {
+                fichier.insert(k.to_string(), v.clone());
+            }
+            None => {
+                fichier.remove(k);
+            }
         }
     }
+    let texte = nevermind_noyau::json_ps::lisible(&Value::Object(fichier));
+    let _ = d.remplacer("parametres.json", texte.as_bytes());
 }
 
 /// Le dossier de Windows, tel que Windows le donne (jamais `%SystemRoot%`, que le compte peut changer)
@@ -704,6 +865,29 @@ mod tests {
 
     fn arguments(c: &Command) -> String {
         c.get_args().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>().join(" ")
+    }
+
+    /// Lot H : Local AppData est toujours celui du profil du compte, jamais un dossier choisi par une redirection (ni
+    /// par une variable USERPROFILE changée). Sur ce PC (rien n'y est redirigé ni changé), on vérifie seulement que
+    /// c'est bien `<profil>\AppData\Local` ; la redirection elle-même est essayée sur GitHub (cas 9 de
+    /// outils\tester-desinstalleur-rust.ps1).
+    #[test]
+    fn local_appdata_est_toujours_celui_du_profil() {
+        let a = "C:\\Users\\a\\AppData\\Local";
+        assert_eq!(local_dans_le_profil(a, "C:\\Users\\a"), a);
+        assert_eq!(
+            local_dans_le_profil("c:\\users\\a\\appdata\\local\\", "C:\\Users\\a\\"),
+            "c:\\users\\a\\appdata\\local\\"
+        );
+        assert_eq!(local_dans_le_profil("D:\\Piege\\Donnees\\..", "C:\\Users\\a"), a);
+        assert_eq!(local_dans_le_profil("D:\\Piege", "C:\\Users\\a"), a);
+        assert_eq!(local_dans_le_profil("", "C:\\Users\\a"), a);
+        // (profil illisible : le chemin par défaut de Windows, seul)
+        assert_eq!(local_dans_le_profil("C:\\Users\\a\\AppData\\Local", ""), a);
+        let profil = profil_du_compte();
+        assert!(!profil.is_empty(), "profil illisible");
+        let l = localappdata();
+        assert!(suite_commun::chemins::egal(&l, &format!("{profil}\\AppData\\Local")), "{l} n'est pas dans {profil}");
     }
 
     /// G2 (audit du 08/11) : en administrateur, cmd.exe ne doit rien prendre de l'utilisateur : ni son AutoRun (`/d`),
@@ -1048,7 +1232,7 @@ mod tests {
 
     /// Le Systeme de la désinstallation, pour un essai (la commande de fin seulement)
     fn systeme<'a>(ctx: &'a Contexte, aide: &'a AideSurPlace, racine: &Path) -> SystemeWindows<'a> {
-        SystemeWindows { ctx, aide, racine: racine.to_path_buf(), muet: true }
+        SystemeWindows { ctx, aide, racine: racine.to_path_buf(), muet: true, reglages_relus: None }
     }
 
     /// Une copie installée pour l'essai : ses programmes, ses dossiers, et un fichier qui n'est pas à elle
@@ -1177,6 +1361,41 @@ mod tests {
         drop(tenu);
         let j = ctx.journal_en_attente().join("\n");
         assert!(j.contains("aide-temp"), "le repli n'est pas noté au journal : {j:?}");
+        attendre_la_commande_de_fin();
+        assert!(!racine.exists(), "le dossier des programmes est resté");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Un programme en cours d'exécution (comme ce désinstalleur lui-même) est bien mis de côté : il quitte sa place
+    /// aussitôt, sans attendre la commande de fin
+    #[test]
+    fn un_programme_en_cours_est_mis_de_cote() {
+        let base = base_essai("en-cours");
+        let racine = base.join("Nevermind");
+        let donnees = base.join("donnees");
+        std::fs::create_dir_all(&donnees).unwrap();
+        copie_installee(&racine, "x");
+        // (une copie de PING.EXE sous le nom d'un programme de Nevermind, lancée sans fenêtre, qui attend 10 s)
+        let exe = racine.join("Nevermind.exe");
+        std::fs::copy(format!("{}\\PING.EXE", system32()), &exe).unwrap();
+        let mut enfant = Command::new(&exe)
+            .args(["127.0.0.1", "-n", "11"])
+            .creation_flags(SANS_FENETRE)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let ctx = Contexte::sans_disque(racine.clone(), donnees.clone(), false);
+        let aide = AideSurPlace::nouvelle();
+        let s = suppression_de(&racine);
+        systeme(&ctx, &aide, &racine).lancer_suppression(&travail::commande_suppression(&s), &s);
+        let deplace = !exe.exists();
+        let j = ctx.journal_en_attente().join("\n");
+        let _ = enfant.kill();
+        let _ = enfant.wait();
+        assert!(deplace, "le programme en cours n'a pas quitté sa place : {j:?}");
+        assert!(j.is_empty(), "rien ne devait être effacé par son nom : {j:?}");
         attendre_la_commande_de_fin();
         assert!(!racine.exists(), "le dossier des programmes est resté");
         let _ = std::fs::remove_dir_all(&base);

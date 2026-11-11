@@ -32,8 +32,8 @@
 #      d'attente, puis l'effacement) : la nouvelle installation reste entière (avant, la commande de fin effaçait ses
 #      programmes par leur nom) ;
 #   9. (lot H) le dossier Local AppData du compte redirigé (HKCU, User Shell Folders, que le compte peut changer sans
-#      droits) vers un faux dossier qui contient un dossier OptiGame : avec -SupprimerDonnees, ce faux OptiGame reste
-#      intact ; c'est le dossier OptiGame du vrai Local AppData du compte qui part.
+#      droits) vers un faux dossier qui contient un ancien dossier des données (son nom d'avant) : avec
+#      -SupprimerDonnees, ce faux dossier reste intact ; c'est celui du vrai Local AppData du compte qui part.
 # Code de sortie 1 si un cas échoue.
 param([Parameter(Mandatory = $true)][string]$Nouvelle)
 
@@ -376,23 +376,26 @@ try {
     $null = Wait-Jusque { -not (Test-Path -LiteralPath $prog) } 15
 
     # =================================================================================================================
-    Write-Host '9. Local AppData du compte redirigé vers un faux dossier avec un OptiGame : il reste intact (lot H)'
+    Write-Host '9. Local AppData du compte redirigé vers un faux dossier avec un ancien dossier des données : il reste intact (lot H)'
     $o = Install-Nevermind
-    # Plus de données dans le dossier de la suite : le désinstalleur prend alors l'ancien dossier, <Local AppData>\OptiGame
+    # Plus de données dans le dossier de la suite : le désinstalleur prend alors l'ancien dossier des données, celui de
+    # Local AppData, à son nom d'avant le changement de nom de Nevermind
     Remove-Item -LiteralPath $donnees -Recurse -Force
-    # Le faux Local AppData, choisi par un programme sans droits : un vrai dossier (pas une jonction) avec un OptiGame
+    # Le faux Local AppData, choisi par un programme sans droits : un vrai dossier (pas une jonction) avec un ancien
+    # dossier des données
     $fauxLocal = Join-Path $env:RUNNER_TEMP 'localappdata-redirige'
-    $fauxOpti = Join-Path $fauxLocal 'OptiGame'
+    $ancienNom = 'OptiGame'
+    $fauxOpti = Join-Path $fauxLocal $ancienNom
     if (Test-Path -LiteralPath $fauxLocal) { Remove-Item -LiteralPath $fauxLocal -Recurse -Force }
     New-Item -ItemType Directory -Force -Path (Join-Path $fauxOpti 'sous') | Out-Null
     [IO.File]::WriteAllText((Join-Path $fauxOpti 'precieux.txt'), 'ne pas toucher', $utf8)
     [IO.File]::WriteAllText((Join-Path $fauxOpti 'jeux.json'), '{}', $utf8)
     [IO.File]::WriteAllText((Join-Path $fauxOpti 'sous\b.txt'), 'b', $utf8)
     $avantFaux = Get-Photo $fauxOpti
-    # Le vrai OptiGame du compte (dans le Local AppData que Windows donne par défaut) : c'est lui qui doit partir
+    # L'ancien dossier des données du compte (dans le Local AppData que Windows donne par défaut) : c'est lui qui doit partir
     # (celui qui existait déjà sur la machine est mis de côté, puis remis)
-    $vraiOpti = Join-Path $local 'OptiGame'
-    $vraiOptiGarde = Join-Path $local 'OptiGame.essai-lot-h'
+    $vraiOpti = Join-Path $local $ancienNom
+    $vraiOptiGarde = Join-Path $local "$ancienNom.essai-lot-h"
     if (Test-Path -LiteralPath $vraiOptiGarde) { Remove-Item -LiteralPath $vraiOptiGarde -Recurse -Force }
     if (Test-Path -LiteralPath $vraiOpti) { Move-Item -LiteralPath $vraiOpti -Destination $vraiOptiGarde }
     New-Item -ItemType Directory -Force -Path $vraiOpti | Out-Null
@@ -405,8 +408,8 @@ try {
     }
     finally { Restore-Local $noteLocal }
     Test-Cas "il rend 0 (rendu : $($r.Code))" { $r.Code -eq 0 }
-    Test-Cas 'le faux OptiGame du Local AppData redirigé est intact' { (Test-Path -LiteralPath $fauxOpti -PathType Container) -and (Get-Photo $fauxOpti) -eq $avantFaux -and (Get-Photo (Join-Path $fauxOpti 'sous')) -like 'b.txt=*' }
-    Test-Cas 'c''est l''OptiGame du vrai Local AppData du compte qui est parti (le désinstalleur a pris le dossier par défaut)' { -not (Test-Path -LiteralPath $vraiOpti) }
+    Test-Cas 'l''ancien dossier des données du Local AppData redirigé est intact' { (Test-Path -LiteralPath $fauxOpti -PathType Container) -and (Get-Photo $fauxOpti) -eq $avantFaux -and (Get-Photo (Join-Path $fauxOpti 'sous')) -like 'b.txt=*' }
+    Test-Cas 'c''est l''ancien dossier des données du vrai Local AppData du compte qui est parti (le désinstalleur a pris le dossier par défaut)' { -not (Test-Path -LiteralPath $vraiOpti) }
     Test-Cas 'la désinstallation va au bout : tâche de l''Aide retirée, programmes partis' { -not (Get-ScheduledTask -TaskPath '\Mindset\' -TaskName 'Nevermind (aide)' -ErrorAction SilentlyContinue) -and -not (Test-Path -LiteralPath $prog) }
     # (remis comme avant : les réglages n'avaient pas de sauvegarde à lire, ils sont remis à la main)
     Remove-Item -LiteralPath $fauxLocal -Recurse -Force -ErrorAction SilentlyContinue

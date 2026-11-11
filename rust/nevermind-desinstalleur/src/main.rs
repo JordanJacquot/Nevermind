@@ -133,7 +133,13 @@ mod windows_main {
 
         let aide = AideSurPlace::nouvelle();
         let mut pc = PcDesinstallation { pc: PcWindows::nouveau(&ctx), aide: &aide, ctx: &ctx };
-        let mut sys = SystemeWindows { ctx: &ctx, aide: &aide, racine: l.racine.clone(), muet: impose.is_some() };
+        let mut sys = SystemeWindows {
+            ctx: &ctx,
+            aide: &aide,
+            racine: l.racine.clone(),
+            muet: impose.is_some(),
+            reglages_relus: None,
+        };
         let lieux =
             travail::Lieux { racine: l.racine, donnees: l.donnees.clone(), suite: l.suite, pid: std::process::id() };
         // (« Tout restaurer » du bloc pc ne change le PC que sous le verrou des gestes, lot A : le désinstalleur, seul
@@ -142,9 +148,13 @@ mod windows_main {
             fenetre::avertissement("Nevermind n'a pas pu commencer la désinstallation : rien n'a été changé.");
             return 1;
         };
+        // (la sauvegarde, les réglages et l'historique lus ici servent à la question ; ils sont relus après la fermeture
+        //  de l'Aide et de Nevermind, juste avant la remise en état : lot H, M2)
         let _ = travail::desinstaller(&mut pc, &mut sys, sv, probleme.as_deref(), &lieux, impose);
-        // Le journal et les réglages changés, à la fin, sans suivre de lien (si les données sont gardées)
-        os::ecrire_donnees(&l.donnees, &ctx, reglages_lus.as_ref());
+        // Le journal et les états d'origine changés, à la fin, sans suivre de lien (si les données sont gardées) ; la
+        // référence : les réglages relus juste avant la remise en état
+        let reference = sys.reglages_relus.take().unwrap_or(reglages_lus);
+        os::ecrire_donnees(&l.donnees, &ctx, reference.as_ref());
         0
     }
 }
