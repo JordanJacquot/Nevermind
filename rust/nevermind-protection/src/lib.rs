@@ -47,11 +47,23 @@ struct AnalyseEnCours {
     titre: String,
 }
 
-/// La fin d'une analyse, rendue par son fil : son résultat, et la lecture de l'Aide qui donne les menaces trouvées
-/// (`Some` : déjà lue dans le fil, lot B ; `None` : à lire au relevé, seulement sans contexte partagé)
+/// La fin d'une analyse, rendue par son fil : son résultat, et les menaces trouvées, déjà lues dans le fil (l'Aide,
+/// puis Defender sur place par WMI : jusqu'à 60 s ; lots B et I). `None` : à lire au relevé, seulement sans contexte
+/// partagé (tests d'un bloc seul, juges)
 struct FinAnalyse {
     r: Result<(), String>,
-    aide: Option<Option<Value>>,
+    menaces: Option<Menaces>,
+}
+
+/// Les menaces lues à la fin d'une analyse, et la ligne du journal si la lecture a raté
+type Menaces = (regles::ResultatAnalyse, Option<String>);
+
+/// Les menaces trouvées par l'analyse commencée à `debut` : par l'Aide sans droits, sinon par Defender sur place (deux
+/// requêtes WMI). Lent : jamais sur le fil des blocs avec le contexte partagé.
+fn lire_menaces(ctx: &Contexte, sys: &dyn Systeme, debut: Date) -> Menaces {
+    let admin = sys.est_admin();
+    let aide = if admin { None } else { ctx.aide_lecture("lecture.securite", &json!({})) };
+    regles::menaces_analyse(debut, admin, aide.as_ref(), &|| sys.detections())
 }
 
 /// Un fichier de données relu seulement quand il change
@@ -97,8 +109,11 @@ pub struct BlocProtection {
     sauvegarde: Cache,
     analyse: Option<AnalyseEnCours>,
     maj_base: Option<Receiver<Result<(), String>>>,
-    /// La pastille « en cours » à montrer au prochain tic (signal commun « occupe »)
-    occupe_texte: Option<String>,
+    /// Les pastilles « en cours » à montrer (signal commun « occupe »), chacune avec sa clé : la fin de l'une n'efface
+    /// jamais celle d'un geste qui tourne encore (lot I)
+    pastilles: Vec<Value>,
+    /// Une relecture demandée pendant une autre : faite juste après elle (lot I, M4 ; avant, elle était perdue)
+    relire_apres: bool,
     /// La marque de l'analyse demandée par un autre bloc (signal « analyse-demandee »), rendue à sa fin
     marque: Option<Value>,
     /// Le panneau de la dernière analyse de Defender (ouvert jusqu'à « Fermer »)
@@ -165,6 +180,12 @@ const POINT_CHANGE: &str = "La liste des points à vérifier a changé pendant l
 
 const OCCUPE: &str = "Un instant : Nevermind finit ce qu'il est en train de faire.";
 
+/// La pastille de la vérification de la protection (« Revérifier », la fin d'un geste) et son texte
+const PASTILLE_LECTURE: &str = "lecture";
+const ATTENTE_LECTURE: &str = "Vérification de la protection...";
+/// La pastille de la mise à jour de la base de virus
+const PASTILLE_BASE: &str = "base";
+
 impl BlocProtection {
     /// Le bloc avec un système donné (les essais passent un faux)
     pub fn avec_systeme(sys: Option<Arc<dyn Systeme>>) -> BlocProtection {
@@ -182,7 +203,8 @@ impl BlocProtection {
             sauvegarde: Cache::default(),
             analyse: None,
             maj_base: None,
-            occupe_texte: None,
+            pastilles: Vec::new(),
+            relire_apres: false,
             travaux: Travaux::default(),
             geste_nom: None,
             choix: Travaux::default(),
@@ -234,7 +256,10 @@ impl BlocProtection {
     /// audit : `lecture.securite` et `lecture.taches`, jusqu'à 60 s chacune, ne sont plus attendues sur le fil des
     /// blocs) ; la suite se fait au prochain tic
     fn relire(&mut self, ctx: &Contexte) {
+        // (une lecture tourne : elle a peut-être commencé avant le changement qui demande celle-ci, par exemple
+        //  « Réactiver le pare-feu » ; la demande est gardée et faite juste après elle, lot I)
         if self.lecture_en_cours.is_some() {
+            self.relire_apres = true;
             return;
         }
         let Some(sys) = self.sys.clone() else { return };
@@ -254,6 +279,32 @@ impl BlocProtection {
         });
         if ok.is_ok() {
             self.lecture_en_cours = Some(rx);
+            // (« Revérifier », la fin d'un geste : l'attente est montrée pendant la lecture, lot I)
+            self.pastille(PASTILLE_LECTURE, ATTENTE_LECTURE);
+        }
+    }
+
+    /// Une lecture est finie (ou son fil s'est arrêté) : la relecture demandée pendant elle part, sinon l'attente est
+    /// retirée
+    fn apres_lecture(&mut self, ctx: &Contexte) {
+        if std::mem::take(&mut self.relire_apres) {
+            self.relire(ctx);
+            if self.lecture_en_cours.is_some() {
+                return;
+            }
+        }
+        self.pastille(PASTILLE_LECTURE, "");
+    }
+
+    /// Une pastille « en cours » avec sa clé (texte vide : retirée)
+    fn pastille(&mut self, cle: &str, texte: &str) {
+        self.pastilles.push(json!({ "texte": texte, "travail": cle }));
+    }
+
+    /// Les pastilles à montrer, rendues à l'hôte
+    fn rendre_pastilles(&mut self, effets: &mut Effets) {
+        for d in self.pastilles.drain(..) {
+            effets.ajouter(Effet::Signal { nom: "occupe".into(), donnees: d });
         }
     }
 
@@ -318,18 +369,17 @@ impl BlocProtection {
         let (tx, rx) = channel();
         let a = arret.clone();
         let debut = sys.maintenant();
-        // (les menaces trouvées sont lues par l'Aide dans ce fil aussi, jusqu'à 60 s : pas sur le fil des blocs, lot B)
+        // (les menaces trouvées sont lues dans ce fil aussi : par l'Aide jusqu'à 60 s, lot B, puis par Defender sur
+        //  place, deux requêtes WMI jusqu'à 60 s, en administrateur ou quand l'Aide n'a rien rendu, lot I ; jamais sur
+        //  le fil des blocs. Le panneau dit « en cours » jusque-là)
         let partage = ctx.partage_actuel();
         let lance = std::thread::Builder::new().name("protection-analyse".into()).spawn(move || {
             let r = sys.analyser(sorte, &chemins, &a);
-            let aide = match &partage {
-                Some(c) if r.is_ok() && !a.load(Ordering::SeqCst) && !sys.est_admin() => {
-                    Some(c.aide_lecture("lecture.securite", &json!({})))
-                }
-                Some(_) => Some(None),
-                None => None,
+            let menaces = match &partage {
+                Some(c) if r.is_ok() && !a.load(Ordering::SeqCst) => Some(lire_menaces(c, sys.as_ref(), debut)),
+                _ => None,
             };
-            let _ = tx.send(FinAnalyse { r, aide });
+            let _ = tx.send(FinAnalyse { r, menaces });
         });
         if lance.is_err() {
             return;
@@ -342,7 +392,7 @@ impl BlocProtection {
 
     /// La fin d'une analyse : le verdict (jamais « Aucune menace » si le résultat n'a pas été lu)
     fn finir_analyse(&mut self, ctx: &Contexte, a: AnalyseEnCours, fin: FinAnalyse, effets: &mut Effets) {
-        let FinAnalyse { r, aide: lue } = fin;
+        let FinAnalyse { r, menaces } = fin;
         let Some(sys) = self.sys.clone() else { return };
         let duree = (sys.maintenant().ticks() - a.debut.ticks()).max(0) / 10_000_000;
         let pluriel = |n: usize| if n > 1 { "s" } else { "" };
@@ -354,13 +404,8 @@ impl BlocProtection {
         } else if let Err(e) = r {
             ("echec", "Échec".into(), vec![format!("L'analyse n'a pas pu se faire : {e}")], Vec::new())
         } else {
-            let admin = sys.est_admin();
-            let aide = match lue {
-                _ if admin => None,
-                Some(v) => v,
-                None => ctx.aide_lecture("lecture.securite", &json!({})),
-            };
-            let (lu, journal) = regles::menaces_analyse(a.debut, admin, aide.as_ref(), &|| sys.detections());
+            // (déjà lues dans le fil de l'analyse ; sur place seulement sans contexte partagé)
+            let (lu, journal) = menaces.unwrap_or_else(|| lire_menaces(ctx, sys.as_ref(), a.debut));
             if let Some(j) = journal {
                 ctx.journal(&j);
             }
@@ -563,6 +608,8 @@ impl BlocProtection {
                 }
             }
         }
+        // (la relecture demandée par la fin d'un geste : son attente tout de suite)
+        self.rendre_pastilles(effets);
     }
 
     /// `Update-Definitions`
@@ -572,7 +619,7 @@ impl BlocProtection {
         }
         let Some(sys) = self.sys.clone() else { return };
         let (tx, rx) = channel();
-        self.occupe_texte = Some("Mise à jour de la base de virus...".into());
+        self.pastille(PASTILLE_BASE, "Mise à jour de la base de virus...");
         if std::thread::Builder::new()
             .name("protection-base".into())
             .spawn(move || {
@@ -684,6 +731,7 @@ impl Bloc for BlocProtection {
         match id {
             "clic:BtnSecRefresh" => {
                 self.relire(ctx);
+                self.rendre_pastilles(effets);
                 return true;
             }
             "clic:BtnScanQuick" | "clic:BtnScanFull" | "clic:BtnScanFolder" | "clic:BtnScanUpdate" => {
@@ -721,7 +769,10 @@ impl Bloc for BlocProtection {
                             .lancer(ctx, CHOIX, move |_| sys.choisir_dossier("Choisis le dossier à analyser", fenetre));
                         self.relever_travaux(ctx, effets);
                     }
-                    _ => self.mettre_a_jour_base(),
+                    _ => {
+                        self.mettre_a_jour_base();
+                        self.rendre_pastilles(effets);
+                    }
                 }
                 return true;
             }
@@ -851,9 +902,6 @@ impl Bloc for BlocProtection {
 
     fn tic(&mut self, ctx: &Contexte, _cache: bool, effets: &mut Effets) -> Option<Duration> {
         self.relever_travaux(ctx, effets);
-        if let Some(t) = self.occupe_texte.take() {
-            effets.ajouter(Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": t }) });
-        }
         if !self.demarre {
             self.demarre = true;
             self.relire(ctx);
@@ -863,8 +911,12 @@ impl Bloc for BlocProtection {
                 Ok((l, complete)) => {
                     self.lecture_en_cours = None;
                     self.finir_lecture(ctx, l, complete, effets);
+                    self.apres_lecture(ctx);
                 }
-                Err(TryRecvError::Disconnected) => self.lecture_en_cours = None,
+                Err(TryRecvError::Disconnected) => {
+                    self.lecture_en_cours = None;
+                    self.apres_lecture(ctx);
+                }
                 Err(TryRecvError::Empty) => {}
             }
         }
@@ -872,7 +924,7 @@ impl Bloc for BlocProtection {
             let r = match a.fin.try_recv() {
                 Ok(r) => Some(r),
                 Err(TryRecvError::Disconnected) => {
-                    Some(FinAnalyse { r: Err("l'analyse s'est arrêtée".into()), aide: None })
+                    Some(FinAnalyse { r: Err("l'analyse s'est arrêtée".into()), menaces: None })
                 }
                 Err(TryRecvError::Empty) => None,
             };
@@ -886,7 +938,8 @@ impl Bloc for BlocProtection {
             match rx.try_recv() {
                 Ok(r) => {
                     self.maj_base = None;
-                    effets.ajouter(Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": "" }) });
+                    // (la pastille de la mise à jour seule : celle d'un geste en cours reste, lot I)
+                    self.pastille(PASTILLE_BASE, "");
                     if let Err(e) = r {
                         effets.ajouter(Effet::Annonce(format!("La mise à jour n'a pas pu se faire :\n\n{e}")));
                     }
@@ -896,6 +949,7 @@ impl Bloc for BlocProtection {
                 Err(TryRecvError::Empty) => {}
             }
         }
+        self.rendre_pastilles(effets);
         // (rien ne tourne en continu : un coup d'œil deux fois par seconde seulement quand un travail de fond attend)
         if self.occupe() { Some(Duration::from_millis(500)) } else { Some(Duration::from_secs(60)) }
     }
@@ -907,7 +961,10 @@ impl Bloc for BlocProtection {
             "sauvegarde-nombre" => {
                 self.sauvegarde_nombre = donnees.get("n").unwrap_or(donnees).as_u64().map(|n| n as usize)
             }
-            "protection-relire" => self.relire(ctx),
+            "protection-relire" => {
+                self.relire(ctx);
+                self.rendre_pastilles(effets);
+            }
             // (Invoke-DefenderScan appelé par trafic.ps1 : une analyse personnalisée, sans vérifier Defender avant)
             "analyse-demandee" => {
                 let en_cours = self.analyse.is_some();

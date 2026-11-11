@@ -121,3 +121,60 @@ fn ajouter_un_jeu_ne_fige_pas_pendant_la_fenetre_de_choix() {
     assert_eq!(annonces(&tout), ["Recherche de tes jeux...".to_string(), format!("{n} jeux trouvés.")]);
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// Lot I, point 6 : « Supprimer » des restes de jeux (plusieurs Go parfois) se fait dans un fil à part. Avant, rien
+/// ne montrait l'attente, et un nouveau clic pendant la suppression était jeté sans un mot. Maintenant l'attente est
+/// montrée (et retirée à la fin), et un clic pendant ce temps le dit en clair. Un dossier d'essai seulement.
+#[test]
+fn supprimer_des_restes_montre_son_attente_et_dit_le_clic_refuse() {
+    let d = dossier_essai("jeux-restes-attente");
+    let _ = std::fs::remove_dir_all(&d);
+    let reste = d.join("steamapps").join("common").join("VieuxJeu");
+    std::fs::create_dir_all(&reste).unwrap();
+    std::fs::write(reste.join("donnees.bin"), b"essai").unwrap();
+    let dossier = reste.to_string_lossy().into_owned();
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true).partage();
+    let mut b = BlocJeux::avec(Arc::new(SystemeEssai::default()));
+    let _ = b.essai_barre_restes(&[("Vieux Jeu".into(), dossier.clone(), 200.0 * 1024.0 * 1024.0, false)], false);
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "jeux-reste-supprimer:0", &Value::Null, &mut e));
+    let q =
+        e.0.iter()
+            .find_map(|x| match x {
+                Effet::Signal { nom, donnees } if nom == "question" => Some(donnees.clone()),
+                _ => None,
+            })
+            .expect("la question avant de supprimer");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "jeux-reponse", &serde_json::json!({ "id": q["id"], "valeur": "oui" }), &mut e));
+    let mut tout = e.0;
+    // Un deuxième clic pendant la suppression : dit en clair
+    let mut e = Effets::default();
+    b.action(&ctx, "jeux-restes-tout", &Value::Null, &mut e);
+    assert!(
+        annonces(&e.0).iter().any(|a| a.contains("suppression")),
+        "le clic pendant la suppression est jeté sans un mot : {:?}",
+        e.0
+    );
+    let fin = Instant::now() + Duration::from_secs(10);
+    while !tout.iter().any(|x| matches!(x, Effet::Signal { nom, .. } if nom == "resultat")) {
+        assert!(Instant::now() < fin, "la suppression ne finit pas : {tout:?}");
+        let mut e = Effets::default();
+        b.tic(&ctx, false, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let pastilles: Vec<Value> = tout
+        .iter()
+        .filter_map(|x| match x {
+            Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        pastilles.first().is_some_and(|p| p["texte"].as_str().is_some_and(|t| !t.is_empty())),
+        "pas d'attente montrée pendant la suppression : {tout:?}"
+    );
+    assert_eq!(pastilles.last().map(|p| p["texte"].clone()), Some(serde_json::json!("")), "l'attente reste");
+    let _ = std::fs::remove_dir_all(&d);
+}

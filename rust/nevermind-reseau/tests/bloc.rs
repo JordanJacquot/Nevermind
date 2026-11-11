@@ -393,7 +393,8 @@ fn les_gestes_par_l_aide_ne_figent_pas() {
     b.action(&ctx, "carte-relancer", &Value::Null, &mut e);
     let mut e = Effets::default();
     assert!(b.action(&ctx, "reseau-question", &json!({ "id": "carte", "valeur": "oui" }), &mut e));
-    let occupe = |t: &str| Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": t }) };
+    // (lot I : la pastille porte sa clé)
+    let occupe = |t: &str| Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": t, "travail": "carte" }) };
     assert!(e.0.contains(&occupe("Redémarrage de la carte réseau...")), "{:?}", e.0);
     let mut tout = Vec::new();
     while !tout.contains(&occupe("Carte réseau redémarrée, elle se reconnecte...")) {
@@ -731,5 +732,90 @@ fn la_fin_d_un_geste_ne_force_plus_l_ecran_de_l_audit() {
     let _ = page(&mut b, &ctx, "panneau");
     let mut e = Effets::default();
     attendre(&mut b, &ctx, &mut e, |_, _| s.audits.load(Ordering::SeqCst) == 2);
+    let _ = std::fs::remove_dir_all(&ctx.donnees);
+}
+
+/// Lot I, point 6 : « Audit » cliqué sans appareils connus lance d'abord un scan (une minute, plus le téléchargement
+/// des fabricants la première fois), puis l'audit. Avant, la fin du scan ouvrait le panneau de l'audit où que soit
+/// l'utilisateur. Maintenant, s'il est parti ailleurs (ou si une partie a commencé), l'écran ne saute pas : l'audit
+/// est à refaire, et un nouveau clic sur « Audit » le lance.
+#[test]
+fn l_audit_apres_un_scan_ne_force_pas_l_ecran() {
+    let s = Arc::new(FausseSonde::default());
+    *s.bps.lock().unwrap() = 1e8;
+    let ctx = contexte("audit-apres-scan");
+    let mut b = BlocReseau::avec_sonde(s.clone());
+    let _ = page(&mut b, &ctx, "reseau");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnNetAudit", &Value::Null, &mut e));
+    assert!(!e.0.contains(&Effet::OuvrirEcran("panneau".into())));
+    // L'utilisateur part sur une autre page pendant le scan
+    let fini = |b: &mut BlocReseau, c: &Contexte| {
+        b.pages(c, "jeux").get("reseau").is_some_and(|p| p["actions"][0]["texte"] == "Scanner de nouveau")
+    };
+    let mut tout = Vec::new();
+    for _ in 0..250 {
+        let mut e = Effets::default();
+        b.tic(&ctx, false, &mut e);
+        tout.extend(e.0);
+        if fini(&mut b, &ctx) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(fini(&mut b, &ctx), "le scan ne finit pas");
+    for _ in 0..10 {
+        let mut e = Effets::default();
+        b.tic(&ctx, false, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!tout.contains(&Effet::OuvrirEcran("panneau".into())), "l'écran est forcé sur l'audit : {tout:?}");
+    assert_eq!(s.audits.load(Ordering::SeqCst), 0, "l'audit est lancé alors que l'utilisateur est ailleurs");
+    // De retour sur la page Réseau : « Audit » le lance
+    let _ = page(&mut b, &ctx, "reseau");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnNetAudit", &Value::Null, &mut e));
+    assert!(e.0.contains(&Effet::OuvrirEcran("panneau".into())));
+    let mut e = Effets::default();
+    attendre(&mut b, &ctx, &mut e, |_, _| s.audits.load(Ordering::SeqCst) == 1);
+    let _ = std::fs::remove_dir_all(&ctx.donnees);
+}
+
+/// Lot I, point 6 : la pastille du test de connexion était envoyée SANS clé ; sa fin (texte vide sans clé) effaçait
+/// toutes les pastilles du bloc, même celle de SMBv1 qui tournait encore. Maintenant chaque pastille porte sa clé.
+#[test]
+fn les_pastilles_du_reseau_portent_leur_cle() {
+    let s = Arc::new(FausseSonde::default());
+    *s.bps.lock().unwrap() = 1e8;
+    let ctx = contexte("pastilles-cle");
+    let mut b = BlocReseau::avec_sonde(s.clone());
+    let _ = page(&mut b, &ctx, "connexion");
+    let mut tout = Vec::new();
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnPing", &Value::Null, &mut e));
+    tout.extend(e.0);
+    for _ in 0..400 {
+        let mut e = Effets::default();
+        b.tic(&ctx, false, &mut e);
+        tout.extend(e.0);
+        if page(&mut b, &ctx, "connexion")["module"]["titre"] == "Ping 4 ms" {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let p: Vec<Value> = tout
+        .iter()
+        .filter_map(|x| match x {
+            Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(p.iter().any(|d| d["texte"] == "Test de la connexion..."), "{tout:?}");
+    assert_eq!(p.last().map(|d| d["texte"].clone()), Some(json!("")), "l'attente reste à l'écran : {p:?}");
+    assert!(
+        p.iter().all(|d| d["travail"].as_str().is_some_and(|t| !t.is_empty())),
+        "une pastille sans clé efface celles des autres gestes : {p:?}"
+    );
     let _ = std::fs::remove_dir_all(&ctx.donnees);
 }

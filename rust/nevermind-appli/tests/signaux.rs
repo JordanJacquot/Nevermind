@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 const TABLE: &[(&str, &[&str], &[&str])] = &[
     // Les signaux communs (signaux-communs-nevermind-rust.md), exécutés par l'hôte
     ("question", &["pc", "memoire", "protection", "jeux", "reseau", "trafic", "divers"], &["hôte"]),
-    ("occupe", &["pc", "memoire", "protection", "reseau"], &["hôte"]),
+    ("occupe", &["pc", "memoire", "protection", "reseau", "jeux"], &["hôte"]),
     ("resultat", &["jeux", "memoire"], &["hôte"]),
     ("historique", &["memoire", "protection", "reseau", "trafic"], &["hôte"]),
     ("sauvegarde-changee", &["pc", "memoire", "reseau"], &["hôte", "pc", "protection"]),

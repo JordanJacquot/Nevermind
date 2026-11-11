@@ -23,6 +23,8 @@ struct FauxPc {
     gestes: Mutex<Vec<String>>,
     services: Mutex<HashMap<String, (String, bool)>>,
     repris: Mutex<HashSet<i64>>,
+    /// `etat_fermeture` lent (une appli occupée : jusqu'à 5 s par processus en vrai) ; lot I
+    etat_lent: Mutex<std::time::Duration>,
 }
 
 impl Pc for FauxPc {
@@ -79,6 +81,7 @@ impl Pc for FauxPc {
         i32::from(self.vivants.lock().unwrap().contains(&pid))
     }
     fn etat_fermeture(&self, _: &[Cible]) -> &'static str {
+        std::thread::sleep(*self.etat_lent.lock().unwrap());
         *self.etat.lock().unwrap()
     }
     fn service(&self, nom: &str) -> Option<(String, bool)> {
@@ -413,4 +416,31 @@ fn fermer_refus() {
     assert!(historique(&e).is_none());
     assert!(messages(&e)[0].contains("il a changé depuis que Nevermind a regardé la mémoire"), "{:?}", messages(&e));
     assert!(!es.pc.gestes.lock().unwrap().iter().any(|g| g.starts_with("poli")));
+}
+
+/// Lot I, point 5 : une appli qui ne se ferme pas au bout de 5 s. Savoir si elle pose une question, ne répond plus ou
+/// s'est rangée près de l'horloge demande à Windows jusqu'à 5 s par processus encore occupé. Avant, c'était dans le
+/// tic, sur le fil des blocs ; maintenant dans un fil à part, et la question arrive ensuite comme avant.
+#[test]
+fn fermer_une_appli_occupee_ne_fige_pas_les_tics() {
+    use std::time::{Duration, Instant};
+    let (mut es, i) = essai_chrome();
+    *es.pc.etat.lock().unwrap() = "bloquee";
+    *es.pc.etat_lent.lock().unwrap() = Duration::from_secs(3);
+    let q = questions(&es.action(&format!("memoire-fermer:{i}"), Value::Null))[0].clone();
+    repondre(&mut es, &q, "oui");
+    es.tics();
+    es.bloc.vieillir_fermeture(6);
+    let fin = Instant::now() + Duration::from_secs(15);
+    let mut tout = Vec::new();
+    while questions(&tout).is_empty() {
+        assert!(Instant::now() < fin, "la question ne vient pas : {tout:?}");
+        let mut e = Effets::default();
+        let d = Instant::now();
+        es.bloc.tic(&es.ctx, false, &mut e);
+        assert!(d.elapsed() < Duration::from_secs(1), "un tic a pris {:?} : le fil des blocs attendait", d.elapsed());
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(questions(&tout)[0]["boutons"][0]["texte"], "Forcer la fermeture");
 }

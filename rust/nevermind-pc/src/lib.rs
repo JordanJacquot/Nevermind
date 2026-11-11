@@ -106,9 +106,17 @@ fn nom_sans_verrou(id: &str) -> &str {
 
 /// Le texte d'attente d'un geste long qui n'en montre pas d'autre (lot B : « Analyser » du Nettoyage passe par l'Aide,
 /// jusqu'à 2 min par catégorie)
+///
+/// Lot I : aussi les réglages qui passent par l'Aide (jusqu'à 2 min, plus 20 s de réveil) et ne disaient rien avant la
+/// fin : les bascules du démarrage, les réglages de Windows demandés par la fiche d'un jeu, « Réactiver » de la page
+/// Protection, le profil d'un jeu.
 fn attente_du_geste(id: &str) -> Option<&'static str> {
     match id {
         "clic:BtnCleanScan" => Some("Recherche des fichiers à nettoyer..."),
+        "clic:BtnDisableStartup" | "demarrage-desactiver" => Some("Changement du démarrage..."),
+        _ if id.starts_with("dem:") => Some("Changement du démarrage..."),
+        "appliquer-reglages-windows" | "registre-ecrire" => Some("Réglage de Windows..."),
+        "declarations" => Some("Réglage du profil du jeu..."),
         _ => None,
     }
 }
@@ -165,10 +173,14 @@ pub struct BlocPc {
     lancements: Travaux<Result<(), String>>,
     /// La lecture lente d'un essai (tests) : à la place de celle du vrai PC
     lire_essai: Option<Box<dyn FnOnce() -> lecture::Lu + Send>>,
+    /// Tests : l'attente la plus longue d'un profil de jeu qui attend son tour (`None` : 30 minutes)
+    attente_tour_essai: Option<Duration>,
 }
 
 /// La clé du lancement d'un programme de Windows : un à la fois (un double clic ne pose pas deux questions)
 const LANCEMENT: &str = "lancement";
+/// La clé du rapport de la batterie (lot I)
+const BATTERIE: &str = "batterie";
 
 impl BlocPc {
     /// Le bloc sur un faux PC (tests), avec ce qu'il aurait lu
@@ -205,6 +217,11 @@ impl BlocPc {
             Some(n) => nevermind_noyau::gestes::texte_refus(n, PAGE),
             None => "Un instant : Nevermind finit de lire ton PC. Réessaie dans quelques secondes.".into(),
         }
+    }
+
+    /// Tests : un profil de jeu attend son tour au plus tant (30 minutes en vrai)
+    pub fn regler_attente_tour_essai(&mut self, d: Duration) {
+        self.attente_tour_essai = Some(d);
     }
 
     /// Un geste long est en cours (tests)
@@ -245,6 +262,34 @@ impl BlocPc {
                 None => systeme::PcWindows::nouveau(fond.ctx).lancer(&args),
             };
             r.map_err(|e| session::message_lancement(&args, &e))
+        });
+        self.relever_lancements(effets);
+    }
+
+    /// « Voir le rapport » de la batterie : powercfg /batteryreport (quelques secondes) dans un travail de fond, avec
+    /// son attente ; le rapport s'ouvre à la fin. Avant, attendu sur le fil des blocs (lot I).
+    fn rapport_batterie(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        if self.lancements.en_cours(BATTERIE) {
+            effets.ajouter(Effet::Annonce(
+                "Le rapport de la batterie est en préparation : il s'ouvre dans un instant.".into(),
+            ));
+            return;
+        }
+        let essai = self.essai.clone();
+        self.lancements.lancer(ctx, BATTERIE, move |fond| {
+            fond.effet(nevermind_noyau::signaux::occupe("Préparation du rapport de la batterie..."));
+            let rapport = |pc: &mut dyn Pc| {
+                let f = format!("{}\\rapport-batterie.html", pc.dossier_temp());
+                (pc.commande("powercfg.exe", &["/batteryreport".into(), "/output".into(), f.clone()]) == 0).then_some(f)
+            };
+            let f = match essai {
+                Some(p) => rapport(p.lock().unwrap_or_else(|e| e.into_inner()).as_mut()),
+                None => rapport(&mut systeme::PcWindows::nouveau(fond.ctx)),
+            };
+            if let Some(f) = f {
+                fond.effet(Effet::OuvrirAdresse(f));
+            }
+            Ok(())
         });
         self.relever_lancements(effets);
     }
@@ -296,6 +341,7 @@ impl BlocPc {
         };
         let mut at =
             Atelier { session: self.session.clone(), cases: self.cases.clone(), annonces: Vec::new(), relu: false };
+        let attente_tour = self.attente_tour_essai.unwrap_or(nevermind_noyau::gestes::ATTENTE_REPRISE);
         let essai = self.essai.clone();
         self.travail_nom = nom;
         self.suite = Some(suite);
@@ -312,20 +358,32 @@ impl BlocPc {
             let _tour = match tour {
                 None => None,
                 Some((nom, page)) => {
-                    let attente = fond.ctx.geste_en_cours();
-                    if let Some((n, p)) = &attente {
+                    let avant = fond.ctx.geste_en_cours();
+                    if let Some((n, p)) = &avant {
                         fond.effet(nevermind_noyau::signaux::occupe(&format!(
                             "« {nom} » se fera juste après « {n} » ({p})..."
                         )));
                     }
-                    let r = fond.ctx.attendre_geste(&nom, &page, nevermind_noyau::gestes::ATTENTE_REPRISE);
-                    if attente.is_some() {
-                        fond.effet(nevermind_noyau::signaux::occupe(""));
+                    let r = fond.ctx.attendre_geste(&nom, &page, attente_tour);
+                    // (son tour venu : l'attente du geste lui-même, lot I ; avant, plus rien jusqu'à la fin)
+                    if avant.is_some() {
+                        fond.effet(nevermind_noyau::signaux::occupe(attente.unwrap_or("")));
                     }
                     match r {
                         Ok(g) => Some(g),
+                        // (lot I : abandonné après une longue attente, il ne se fera plus tout seul ; ne plus dire
+                        //  « Attends la fin de... », mais qu'il faut le refaire)
                         Err(e) => {
-                            at.annonces.push(Effet::Annonce(format!("« {nom} » n'a pas été fait. {e}.")));
+                            fond.ctx.journal(&format!("Ton PC : « {nom} » abandonné après l'attente ({e})"));
+                            let qui = fond
+                                .ctx
+                                .geste_en_cours()
+                                .or(avant)
+                                .map(|(n, p)| format!("« {n} » ({p})"))
+                                .unwrap_or_else(|| "un autre réglage".into());
+                            at.annonces.push(Effet::Annonce(format!(
+                                "« {nom} » n'a pas été fait : {qui} a pris trop de temps. Refais-le quand ce sera fini."
+                            )));
                             return at;
                         }
                     }
@@ -775,25 +833,13 @@ impl Bloc for BlocPc {
         // (les tests des composants et leur panneau : tests_composants.rs ; ici seulement ce qui passe par le PC)
         if id.starts_with("test-b:") || id.starts_with("panneau:") {
             let Some(gestes) = self.tests.action(ctx, id, effets) else { return false };
-            let mut batterie = false;
             for g in gestes {
                 match g {
                     // (mdsched : par ShellExecute, dans un travail de fond, M8)
                     tests_composants::Geste::Lancer(a) => self.lancer_programme(ctx, a, effets),
-                    tests_composants::Geste::Batterie => batterie = true,
+                    tests_composants::Geste::Batterie => self.rapport_batterie(ctx, effets),
                     _ => {}
                 }
-            }
-            let (_, annonces) = self.avec_pc(ctx, |_, pc| {
-                if batterie {
-                    let f = format!("{}\\rapport-batterie.html", pc.dossier_temp());
-                    if pc.commande("powercfg.exe", &["/batteryreport".into(), "/output".into(), f.clone()]) == 0 {
-                        pc.ouvrir(&f);
-                    }
-                }
-            });
-            for a in annonces {
-                effets.ajouter(a);
             }
             return true;
         }
@@ -959,10 +1005,22 @@ impl BlocPc {
         if let Some(fin) = self.fin_ecran.filter(|_| !self.travaux.occupe()) {
             let reste = fin.saturating_duration_since(Instant::now()).as_secs_f64().ceil() as i64;
             if reste <= 0 {
-                // (automatique : jamais refusé, l'écran doit revenir à l'ancienne fréquence ; ajustement A du lot A)
-                let _priorite = ctx.geste_prioritaire("Fréquence de l'écran", PAGE);
-                let (_, a) = self.avec_pc(ctx, |s, pc| s.session.repondre_ecran(pc, "timeout"));
-                self.apres(true, a, effets);
+                // (automatique : jamais refusé, l'écran doit revenir à l'ancienne fréquence ; ajustement A du lot A.
+                //  Lot I : un changement de mode par écran, puis l'analyse, dans un travail de fond qui emporte le
+                //  geste prioritaire, et plus sur le fil des blocs ; la fin ferme la fiche comme avant)
+                self.fin_ecran = None;
+                let verrou = Verrou::Priorite("Fréquence de l'écran".into());
+                let r = self.en_fond(ctx, "ecran-timeout", Suite::Geste { avant: true }, true, verrou, |at, pc| {
+                    at.session.repondre_ecran(pc, "timeout")
+                });
+                if !matches!(r, Ok(true)) {
+                    // (le travail n'a pas pu partir : sur place, comme avant)
+                    let _priorite = ctx.geste_prioritaire("Fréquence de l'écran", PAGE);
+                    let (_, a) = self.avec_pc(ctx, |s, pc| s.session.repondre_ecran(pc, "timeout"));
+                    self.apres(true, a, effets);
+                    return None;
+                }
+                self.relever_travaux(ctx, effets);
                 return None;
             }
             if let Some(f) = self.session.fiche.as_mut() {

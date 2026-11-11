@@ -217,3 +217,86 @@ fn la_fermeture_pendant_une_partie_mesuree_tient_dans_le_delai_de_mindset() {
     assert!(!mode_jeu.exists(), "la partie n'est pas finie : les applis fermées ne sont pas relancées");
     assert!(duree < Duration::from_secs(3), "la fermeture du bloc a pris {duree:?} (Mindset arrête l'appli à 6 s)");
 }
+
+/// Lot I, point 3 : au début d'une partie, le mode jeu ferme les applis une par une par l'Aide (chaque demande lit le
+/// contexte de l'Aide par WMI). Avant, c'était dans le tic, sur le fil des blocs : Nevermind figé pendant que le jeu
+/// charge. Maintenant c'est un travail de fond, toujours sous le verrou des gestes (prioritaire : jamais refusé), avec
+/// son attente affichée ; la fin donne le même journal, le même fichier et la même bulle qu'avant.
+#[test]
+fn le_mode_jeu_ferme_les_applis_en_fond() {
+    use std::time::{Duration, Instant};
+    let ctx = contexte("mode-jeu-fond").partage();
+    let (feu, attente) = std::sync::mpsc::channel::<()>();
+    let attente = std::sync::Mutex::new(Some(attente));
+    ctx.fausse_aide(std::sync::Arc::new(move |a: &str, _p: &Value| {
+        if a == "processus.fermer" {
+            // (l'Aide lente : elle lit son contexte par WMI pour chaque appli ; ici, le feu de l'essai)
+            if let Some(r) = attente.lock().unwrap().take() {
+                let _ = r.recv_timeout(Duration::from_secs(20));
+            }
+        }
+        Ok(json!(1))
+    }));
+    let mut s = pc();
+    s.progs.push(Programme { pid: 77, nom: "OneDrive".into(), ..Default::default() });
+    s.chemins.insert(77, r"C:\Users\x\AppData\Local\Microsoft\OneDrive\OneDrive.exe".into());
+    s.progs.push(Programme { pid: 4242, nom: "RocketLeague".into(), ..Default::default() });
+    s.chemins.insert(4242, r"C:\Jeux\RocketLeague\Binaries\Win64\RocketLeague.exe".into());
+    let mut b = BlocPerf::avec(Box::new(s), Box::new(FauxCompteur::default()));
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "modejeu", &json!(true), &mut e));
+    b.signal(&ctx, "jeux-liste", &json!([{ "nom": "Rocket League", "exes": [r"C:\Jeux\RocketLeague\Binaries\Win64\RocketLeague.exe"], "source": "Epic" }]), &mut e);
+    // Les tics jusqu'au début de la partie : aucun n'attend l'Aide
+    let mut tout = Vec::new();
+    let pas = |b: &mut BlocPerf, tout: &mut Vec<Effet>| {
+        let mut e = Effets::default();
+        let d = Instant::now();
+        b.tic(&ctx, true, &mut e);
+        b.travaux_finis(&ctx, &mut e);
+        assert!(d.elapsed() < Duration::from_secs(1), "un tic a pris {:?} : le mode jeu attendait l'Aide", d.elapsed());
+        b.horloge = Some(b.horloge.unwrap_or(0.0) + 0.5);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let fin = Instant::now() + Duration::from_secs(10);
+    while !tout.iter().any(|x| matches!(x, Effet::Signal { nom, .. } if nom == "partie-commencee")) {
+        assert!(Instant::now() < fin, "la partie n'est pas vue");
+        pas(&mut b, &mut tout);
+    }
+    // Pendant la fermeture : l'attente est montrée, le verrou des gestes est tenu (un clic est refusé)
+    let fin = Instant::now() + Duration::from_secs(10);
+    let attente_montree = |tout: &[Effet]| {
+        tout.iter().any(|x| matches!(x, Effet::Signal { nom, donnees } if nom == "occupe" && donnees["texte"] == "Fermeture des applis pour ta partie..."))
+    };
+    while !attente_montree(&tout) {
+        assert!(Instant::now() < fin, "l'attente du mode jeu n'est pas montrée : {tout:?}");
+        pas(&mut b, &mut tout);
+    }
+    assert_eq!(
+        ctx.prendre_geste("Essai", "Essai").unwrap_err(),
+        "Attends la fin de « Début de partie » (Mode jeu)",
+        "le mode jeu ne tient pas le verrou des gestes"
+    );
+    feu.send(()).unwrap();
+    let journal = || std::fs::read_to_string(ctx.donnees.join("journal.txt")).unwrap_or_default();
+    let fin = Instant::now() + Duration::from_secs(10);
+    while !journal().contains("Mode jeu: Rocket League lancé, applis fermées: OneDrive") {
+        assert!(Instant::now() < fin, "la fermeture ne finit pas : {}", journal());
+        pas(&mut b, &mut tout);
+    }
+    for _ in 0..3 {
+        pas(&mut b, &mut tout);
+    }
+    assert!(ctx.donnees.join("mode-jeu.json").exists(), "les applis fermées ne sont pas notées");
+    assert!(
+        signaux(&Effets(tout.clone())).iter().any(|(n, d)| n == "notification" && d["titre"] == "Mode jeu activé"),
+        "pas de bulle du mode jeu"
+    );
+    let derniere = tout.iter().rev().find_map(|x| match x {
+        Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees["texte"].clone()),
+        _ => None,
+    });
+    assert_eq!(derniere, Some(json!("")), "l'attente reste à l'écran");
+    assert!(ctx.prendre_geste("Essai", "Essai").is_ok(), "le verrou des gestes n'est pas rendu");
+    assert_eq!(ctx.aide_demandes_relevees(), Vec::<String>::new(), "aucune demande de Windows au lancement d'un jeu");
+}
