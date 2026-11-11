@@ -175,9 +175,10 @@ pub trait Pc {
     fn ouvrir(&mut self, adresse: &str);
     /// Une commande (`shutdown.exe /r /fw /t 10`) : son code de sortie.
     fn commande(&mut self, exe: &str, args: &[String]) -> i32;
-    /// Les règles du pare-feu posées par Nevermind (« Nevermind : bloque ... », « OptiGame : bloque ... »).
-    fn regles_pare_feu(&self) -> usize {
-        0
+    /// Les règles du pare-feu posées par Nevermind (« Nevermind : bloque ... », « OptiGame : bloque ... »). `None` : la
+    /// lecture a échoué (on ne sait pas s'il en reste ; lot K).
+    fn regles_pare_feu(&self) -> Option<usize> {
+        Some(0)
     }
     /// Le numéro actuel d'une carte réseau d'après son identifiant (il change après un redémarrage).
     fn index_carte(&self, _guid: &str) -> Option<i64> {

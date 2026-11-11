@@ -639,7 +639,9 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
     }
     use crate::net::entier;
     let mut erreurs: Vec<String> = Vec::new();
-    if m.pc.regles_pare_feu() > 0
+    // (la lecture des règles a échoué : le déblocage est tenté quand même ; s'il échoue, les lignes « pare-feu » restent
+    //  à annuler, au lieu d'être marquées annulées alors que la règle est peut-être toujours là ; lot K)
+    if m.pc.regles_pare_feu() != Some(0)
         && let Err(e) = m.pc.aide("pare-feu.debloquer-tout", json!({}), 120000)
     {
         erreurs.push(format!("Pare-feu: {e}"));

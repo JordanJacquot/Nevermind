@@ -20,7 +20,8 @@ pub struct PcWindows<'a> {
     /// Dans un travail de fond (audit G3) : le texte d'attente part tout de suite, sans attendre la fin du geste
     direct: Option<&'a (dyn Fn(Effet) + 'a)>,
     /// Tests (mode test seulement) : le nombre de règles du pare-feu posées par Nevermind
-    regles_essai: Option<usize>,
+    /// (`Some(None)` : la lecture des règles échoue)
+    regles_essai: Option<Option<usize>>,
 }
 
 /// Lire un fichier JSON de Nevermind (ou sa copie de secours)
@@ -198,7 +199,13 @@ impl<'a> PcWindows<'a> {
 
     /// Tests (mode test seulement) : le nombre de règles du pare-feu posées par Nevermind, au lieu de celles du PC
     pub fn avec_regles_pare_feu_essai(mut self, n: usize) -> Self {
-        self.regles_essai = Some(n);
+        self.regles_essai = Some(Some(n));
+        self
+    }
+
+    /// Tests (mode test seulement) : la lecture des règles du pare-feu échoue (COM refusé, service arrêté...)
+    pub fn avec_regles_pare_feu_illisibles(mut self) -> Self {
+        self.regles_essai = Some(None);
         self
     }
 
@@ -458,7 +465,7 @@ impl Pc for PcWindows<'_> {
             1
         }
     }
-    fn regles_pare_feu(&self) -> usize {
+    fn regles_pare_feu(&self) -> Option<usize> {
         if self.ctx.essai
             && let Some(n) = self.regles_essai
         {
@@ -470,7 +477,7 @@ impl Pc for PcWindows<'_> {
         }
         #[cfg(not(windows))]
         {
-            0
+            Some(0)
         }
     }
     fn index_carte(&self, guid: &str) -> Option<i64> {

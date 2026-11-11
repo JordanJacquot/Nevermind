@@ -356,8 +356,9 @@ pub fn index_carte(guid: &str) -> Option<i64> {
 }
 
 /// Les règles du pare-feu posées par Nevermind (`Get-NetFirewallRule -DisplayName 'Nevermind : bloque *'`, et les
-/// anciennes « OptiGame : bloque ») : leur nombre, lu par l'interface COM du pare-feu (lecture, sans droits)
-pub fn regles_pare_feu() -> usize {
+/// anciennes « OptiGame : bloque ») : leur nombre, lu par l'interface COM du pare-feu (lecture, sans droits) ;
+/// `None` si cette lecture échoue (lot K : « Tout restaurer » tente alors le déblocage quand même)
+pub fn regles_pare_feu() -> Option<usize> {
     use windows::Win32::NetworkManagement::WindowsFirewall::{INetFwPolicy2, INetFwRule, NetFwPolicy2};
     use windows::Win32::System::Com::{
         CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize, IDispatch,
@@ -395,8 +396,7 @@ pub fn regles_pare_feu() -> usize {
                 let _ = VariantClear(&mut v[0]);
             }
             Some(n)
-        })()
-        .unwrap_or(0);
+        })();
         if pret {
             CoUninitialize();
         }
