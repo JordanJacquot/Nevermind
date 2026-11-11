@@ -397,7 +397,10 @@ impl Session {
             let ecrans: Vec<Value> = suite.journal.iter().filter(|e| e["Type"] == "display").cloned().collect();
             for d in ecrans {
                 let dev = crate::net::champ_texte(&d, "Device");
-                pc.ecran_frequence(&dev, crate::net::champ_entier(&d, "Hz"));
+                // (lot J : sans le verrou, rien n'est changé ; la suite est la même, le point est ignoré)
+                if pc.exiger_geste().is_ok() {
+                    pc.ecran_frequence(&dev, crate::net::champ_entier(&d, "Hz"));
+                }
                 if let Some(i) = suite.journal.iter().position(|e| *e == d) {
                     suite.journal.remove(i);
                 }

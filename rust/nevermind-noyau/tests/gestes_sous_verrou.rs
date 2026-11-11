@@ -5,6 +5,11 @@
 //! passe par le verrou des gestes : elle le prend (`prendre_geste`, `geste_prioritaire`, `attendre_geste`,
 //! `lancer_geste`) ou vérifie que son fil le tient (`exiger_geste`, qui refuse sinon).
 //!
+//! Lot J (audit du 10/11, M5) : un relais vers l'Aide est vu quel que soit le nom de sa variable ; `exiger_geste()` ne
+//! protège que si le refus arrête la fonction (`?`, un retour, ou l'écriture dans le bloc de `is_ok()`) et vient avant
+//! l'écriture ; un appel hors d'une fonction est relevé (jamais protégé) ; `fichier_sauvegarde(` est relevé dans une
+//! fonction qui écrit.
+//!
 //! Ne sont pas relevés : l'Aide elle-même et ses règles (elles font ce que Nevermind demande ; le verrou est côté
 //! Nevermind), le pont PowerShell, les tests et les exemples. Toute autre exception est écrite ci-dessous, avec sa
 //! raison, et le test vérifie qu'elle sert encore.
@@ -55,10 +60,6 @@ const APPELS: &[&str] = &[
     "clear_reg(",
     "ecrire_reg(",
     "effacer_reg(",
-    // les relais de l'Aide (l'action n'est pas écrite : celui qui relaie doit tenir le verrou ou le vérifier)
-    ".aide(action",
-    ".demander(action",
-    ".demander(ctx, action",
     // l'alimentation, les écrans, la souris, les commandes
     ".powercfg(",
     "pc_args(",
@@ -87,6 +88,31 @@ const APPELS: &[&str] = &[
     "ecrire_reglage(\"PcfgOriginal\"",
 ];
 
+/// Lot J : les relais vers l'Aide (l'action n'est pas écrite : celui qui relaie doit tenir le verrou ou le vérifier),
+/// quel que soit le nom de la variable qui porte l'action. `.demander(` : seulement sur l'Aide (`aide.demander(`).
+const RELAIS_AIDE: &[&str] =
+    &[".aide(", "::aide(", ".aide_sans_demande(", ".aide_de_fond(", ".aide_texte(", ".aide_lecture(", ".demander("];
+
+/// Lot J : le chemin de sauvegarde.json (relevé dans une fonction qui écrit un fichier : sauvegarde.json passe par
+/// l'écrivain unique, sous le verrou)
+const CHEMIN_SAUVEGARDE: &str = "fichier_sauvegarde(";
+
+/// Ce qui écrit, efface ou lance (pour un programme écrit dans un texte, ou le chemin de sauvegarde.json)
+const ECRITURES: &[&str] = &[
+    "Command::new",
+    "fs::write",
+    "fs::rename",
+    "remove_file",
+    "ecrire_sur(",
+    "ecrire_texte_sur(",
+    "fs::copy",
+    "File::create",
+    "OpenOptions",
+];
+
+/// Lot J : le nom donné à ce qui est relevé hors d'une fonction
+const HORS_FONCTION: &str = "(hors d'une fonction)";
+
 /// Dans un texte du code : un programme qui change le PC
 const DANS_TEXTE: &[&str] = &["powercfg.exe", "schtasks", "MpCmdRun", "Set-NetConnectionProfile", "sauvegarde.json"];
 
@@ -109,6 +135,27 @@ const EXCEPTIONS: &[(&str, &str, &str)] = &[
         "nevermind-desinstalleur/src/os/mod.rs",
         "effacer_cle_aide",
         "la désinstallation efface la clé de l'Aide : Nevermind est fermé, et le désinstalleur tient le verrou pendant tout son travail (main.rs)",
+    ),
+    // (lot J : les relais vers l'Aide dont l'action n'est pas écrite, et qui n'ont pas à tenir le verrou)
+    (
+        "nevermind-noyau/src/aide.rs",
+        "arreter_mesure",
+        "l'arrêt d'une mesure (fps.arreter, flux.arreter : `Mesure::arret`), qui ne change rien ; et aide_texte refuse d'elle-même une action qui change le PC sans le verrou",
+    ),
+    (
+        "nevermind-noyau/src/aide.rs",
+        "aide_lecture",
+        "un point d'entrée du noyau : il mène à `invoquer`, qui refuse une action qui change le PC sans le verrou (exiger_geste)",
+    ),
+    (
+        "nevermind-pc/src/systeme.rs",
+        "aide_lecture",
+        "la lecture de Ton PC passe à ctx.aide_lecture, qui mène à `invoquer` : une action qui change le PC y est refusée sans le verrou",
+    ),
+    (
+        "nevermind-noyau/src/sauvegarde.rs",
+        "importer_sauvegarde_de",
+        "la relecture de sauvegarde.json met de côté un fichier abîmé (renommé, jamais écrit) ; sa copie de secours, et les valeurs d'origine gardées dans le registre, sont reprises",
     ),
 ];
 
@@ -451,7 +498,8 @@ pub fn relever(racine: &Path) -> Vec<Endroit> {
             let rel = f.strip_prefix(racine).unwrap_or(&f).to_string_lossy().replace('\\', "/");
             let code = &s.code;
             let sq = &s.squelette;
-            let mut vus: Vec<(usize, String)> = Vec::new();
+            // (ce qui a été vu, et s'il compte aussi hors d'une fonction : un appel, pas une liste de noms)
+            let mut vus: Vec<(usize, String, bool)> = Vec::new();
             // Les appels (dans le code, hors texte) : pas leur définition (« fn nom(»)
             for a in APPELS {
                 let motif = a.as_bytes();
@@ -473,7 +521,34 @@ pub fn relever(racine: &Path) -> Vec<Endroit> {
                             continue;
                         }
                     }
-                    vus.push((i, a.trim_matches(['.', '(']).to_string()));
+                    vus.push((i, a.trim_matches(['.', '(']).to_string(), a.ends_with('(')));
+                }
+            }
+            // Lot J : les relais vers l'Aide, quel que soit le nom de la variable qui porte l'action (une action écrite
+            // est relevée plus bas si elle change le PC)
+            for a in RELAIS_AIDE {
+                let motif = a.as_bytes();
+                let mut d = 0;
+                while let Some(p) = find(&code[d..], motif) {
+                    let i = d + p;
+                    d = i + 1;
+                    if sq[i] != code[i] {
+                        continue;
+                    }
+                    // (`.demander(` : seulement sur l'Aide, `aide.demander(`)
+                    if *a == ".demander(" && !mot_avant(code, i).eq_ignore_ascii_case("aide") {
+                        continue;
+                    }
+                    let args = arguments_coupes(code, sq, i);
+                    let premier = args.first().map(|x| x.trim().trim_start_matches('&').trim().to_string());
+                    let action = match (premier, args.get(1)) {
+                        (Some(c), Some(x)) if *a == ".demander(" && c.ends_with("ctx") => Some(x.trim().to_string()),
+                        (p, _) => p,
+                    };
+                    if action.as_deref().is_none_or(|x| x.starts_with('"') || x.is_empty()) {
+                        continue;
+                    }
+                    vus.push((i, format!("relais vers l'Aide ({})", a.trim_matches(['.', ':', '('])), true));
                 }
             }
             // Les actions de l'Aide qui changent le PC, écrites telles quelles
@@ -486,7 +561,7 @@ pub fn relever(racine: &Path) -> Vec<Endroit> {
                     if sq[i + 1] == code[i + 1] {
                         continue;
                     }
-                    vus.push((i, format!("Aide {a}")));
+                    vus.push((i, format!("Aide {a}"), false));
                 }
             }
             // Les programmes qui changent le PC, dans un texte
@@ -498,38 +573,51 @@ pub fn relever(racine: &Path) -> Vec<Endroit> {
                     if sq[i] == code[i] {
                         continue;
                     }
-                    vus.push((i, (*a).to_string()));
+                    vus.push((i, (*a).to_string(), false));
                 }
             }
-            for (i, quoi) in vus {
+            // Lot J : sauvegarde.json pris par son chemin (`fichier_sauvegarde(`), pas par l'écrivain unique
+            let motif = CHEMIN_SAUVEGARDE.as_bytes();
+            let mut d = 0;
+            while let Some(p) = find(&code[d..], motif) {
+                let i = d + p;
+                d = i + 1;
+                let avant = String::from_utf8_lossy(&code[i.saturating_sub(4)..i]).into_owned();
+                if sq[i] != code[i] || (i > 0 && ident(code[i - 1])) || avant.ends_with("fn ") {
+                    continue;
+                }
+                vus.push((i, CHEMIN_SAUVEGARDE.trim_end_matches('(').to_string(), false));
+            }
+            for (i, quoi, appel) in vus {
                 if zones.iter().any(|(a, b)| i >= *a && i <= *b) {
                     continue;
                 }
-                // (la plus petite fonction qui le contient ; hors d'une fonction : une liste, pas un geste)
+                let ligne = code[..i].iter().filter(|c| **c == b'\n').count() + 1;
+                // (la plus petite fonction qui le contient ; hors d'une fonction, lot J : un appel compte, une valeur
+                //  calculée au premier usage par exemple, jamais protégé ; un nom dans une liste ne compte pas)
                 let Some(fct) = fonctions.iter().filter(|x| i > x.debut && i < x.fin).min_by_key(|x| x.fin - x.debut)
                 else {
+                    if appel {
+                        r.push(Endroit {
+                            fichier: rel.clone(),
+                            ligne,
+                            fonction: HORS_FONCTION.into(),
+                            quoi,
+                            protege: false,
+                        });
+                    }
                     continue;
                 };
-                // (pour un programme dans un texte : seulement s'il est lancé ou écrit, sauf une lecture)
+                // (pour un programme dans un texte ou le chemin de sauvegarde.json : seulement s'il est lancé ou écrit,
+                //  sauf une lecture)
                 let corps = String::from_utf8_lossy(&code[fct.debut..fct.fin]).into_owned();
-                if DANS_TEXTE.contains(&quoi.as_str()) {
-                    let ecrit = [
-                        "Command::new",
-                        "fs::write",
-                        "fs::rename",
-                        "remove_file",
-                        "ecrire_sur(",
-                        "ecrire_texte_sur(",
-                        "fs::copy",
-                    ]
-                    .iter()
-                    .any(|w| corps.contains(w));
+                if DANS_TEXTE.contains(&quoi.as_str()) || quoi == CHEMIN_SAUVEGARDE.trim_end_matches('(') {
+                    let ecrit = ECRITURES.iter().any(|w| corps.contains(w));
                     if !ecrit || LECTURES.iter().any(|l| corps.contains(l)) {
                         continue;
                     }
                 }
-                let protege = MARQUES.iter().any(|m| corps.contains(m));
-                let ligne = code[..i].iter().filter(|c| **c == b'\n').count() + 1;
+                let protege = protege_avant(&corps, i - fct.debut);
                 r.push(Endroit { fichier: rel.clone(), ligne, fonction: fct.nom.clone(), quoi, protege });
             }
         }
@@ -537,6 +625,133 @@ pub fn relever(racine: &Path) -> Vec<Endroit> {
     r.sort();
     r.dedup();
     r
+}
+
+/// Les arguments d'un appel commençant à `i`, coupés aux virgules du premier niveau (le texte du code)
+fn arguments_coupes(code: &[u8], sq: &[u8], i: usize) -> Vec<String> {
+    let Some(o) = sq[i..].iter().position(|c| *c == b'(').map(|o| o + i) else { return Vec::new() };
+    let mut r = Vec::new();
+    let mut prof = 0i32;
+    let mut debut = o + 1;
+    let mut k = o;
+    while k < sq.len() {
+        match sq[k] {
+            b'(' | b'[' | b'{' => prof += 1,
+            b')' | b']' | b'}' => {
+                prof -= 1;
+                if prof == 0 {
+                    break;
+                }
+            }
+            b',' if prof == 1 => {
+                r.push(String::from_utf8_lossy(&code[debut..k]).into_owned());
+                debut = k + 1;
+            }
+            _ => {}
+        }
+        k += 1;
+    }
+    let dernier = String::from_utf8_lossy(&code[debut..k.min(code.len())]).into_owned();
+    if !dernier.trim().is_empty() {
+        r.push(dernier);
+    }
+    r
+}
+
+/// Le mot juste avant le point qui est à `i` (`aide` dans `self.aide.demander(`)
+fn mot_avant(code: &[u8], i: usize) -> String {
+    let mut k = i;
+    while k > 0 && ident(code[k - 1]) {
+        k -= 1;
+    }
+    String::from_utf8_lossy(&code[k..i]).into_owned()
+}
+
+/// La fin du bloc entre accolades qui commence à `debut`
+fn fin_bloc(t: &str, debut: usize) -> usize {
+    let mut prof = 0i32;
+    for (k, c) in t[debut..].char_indices() {
+        match c {
+            '{' => prof += 1,
+            '}' => {
+                prof -= 1;
+                if prof == 0 {
+                    return debut + k;
+                }
+            }
+            _ => {}
+        }
+    }
+    t.len()
+}
+
+/// La fonction passe-t-elle par le verrou avant `pos` (position dans son corps) ? Elle le prend (`prendre_geste(`,
+/// `geste_prioritaire(`, `attendre_geste(`, `lancer_geste(`), ou elle le vérifie ET s'arrête sur un refus (lot J) :
+/// `exiger_geste()?`, `exiger_geste().ok()?`, `exiger_geste().map_err(..)?`, un refus suivi d'un bloc qui rend
+/// (`if ... exiger_geste().is_err() { return }`, `if let Err(_) = ...exiger_geste() { return }`), ou l'endroit dans le
+/// bloc d'un `if ... exiger_geste().is_ok() { }`. Un `exiger_geste()` dont le refus est oublié ne compte pas.
+fn protege_avant(corps: &str, pos: usize) -> bool {
+    if MARQUES.iter().filter(|m| **m != "exiger_geste(").any(|m| corps.contains(m)) {
+        return true;
+    }
+    let motif = "exiger_geste()";
+    let mut d = 0;
+    while let Some(p) = corps[d..].find(motif) {
+        let i = d + p;
+        d = i + 1;
+        if i > pos {
+            break;
+        }
+        let j = i + motif.len();
+        let apres = corps[j..].trim_start();
+        if apres.starts_with('?') || apres.starts_with(".ok()?") {
+            return true;
+        }
+        if let Some(m) = apres.strip_prefix(".map_err(") {
+            let fin = fin_parentheses(m);
+            if m[fin..].trim_start().starts_with('?') {
+                return true;
+            }
+        }
+        // (le bloc qui suit, dans la même instruction)
+        let Some(o) = corps[j..].find(['{', ';']).map(|o| j + o) else { continue };
+        if corps.as_bytes()[o] == b';' {
+            continue;
+        }
+        let entre = &corps[j..o];
+        let fin = fin_bloc(corps, o);
+        // (le début de l'instruction : `if let Ok(p) = ctx.exiger_geste() { ... }`)
+        let debut = corps[..i].rfind([';', '{', '}']).map(|x| x + 1).unwrap_or(0);
+        let si_permis = corps[debut..i].contains("let Ok(");
+        if entre.trim_start().starts_with(".is_ok()") || (si_permis && entre.trim().is_empty()) {
+            if pos > o && pos < fin {
+                return true;
+            }
+            continue;
+        }
+        if corps[o..fin].contains("return") {
+            return true;
+        }
+    }
+    false
+}
+
+/// La parenthèse fermante d'un texte qui commence juste après une parenthèse ouvrante (la position qui la suit)
+fn fin_parentheses(t: &str) -> usize {
+    let mut prof = 1i32;
+    for (k, c) in t.char_indices() {
+        match c {
+            '(' => prof += 1,
+            ')' => {
+                prof -= 1;
+                if prof == 0 {
+                    return k + 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    t.len()
 }
 
 fn find(h: &[u8], n: &[u8]) -> Option<usize> {
@@ -682,9 +897,10 @@ fn cas(nom: &str) -> PathBuf {
 }
 
 /// Lot J, étape 1 : quatre écritures sans le verrou que le relevé laissait passer (`tests/cas/verrou-angles-morts`).
-/// Avant le lot J, ce test échouait sur les quatre (lancé avec `--ignored`).
+/// Contre-épreuve : avant le lot J, ce test échouait sur les quatre (sortie gardée dans le rapport du lot J) ;
+/// maintenant le relevé les refuse, et voit protégées les lignes marquées « protégé » (le verrou vérifié et le refus
+/// suivi d'un retour, ou l'écriture dans le bloc d'un `is_ok()`), sans relever les lectures.
 #[test]
-#[ignore = "lot J, étape 1 : preuve des angles morts (cargo test --test gestes_sous_verrou -- --ignored)"]
 fn angles_morts_du_releve_des_gestes() {
     let d = cas("verrou-angles-morts");
     let l = relever(&d);
@@ -701,4 +917,25 @@ fn angles_morts_du_releve_des_gestes() {
         }
     }
     assert!(manques.is_empty(), "angles morts du garde-fou du verrou :\n{}\n(relevé : {l:#?})", manques.join("\n"));
+    // (rien d'autre : les refus sont les lignes « attendu », les lignes « protégé » sont vues protégées, et les
+    //  lectures ne sont pas relevées)
+    let marquees = |marque: &str| -> Vec<String> {
+        let t = std::fs::read_to_string(d.join("bloc/src/lib.rs")).unwrap();
+        t.lines()
+            .enumerate()
+            .filter(|(_, x)| x.contains(marque))
+            .map(|(n, _)| format!("bloc/src/lib.rs:{}", n + 1))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    };
+    let mut refuses = refuses;
+    refuses.sort();
+    refuses.dedup();
+    assert_eq!(refuses, marquees("// attendu"), "{l:#?}");
+    let mut proteges: Vec<String> =
+        l.iter().filter(|e| e.protege).map(|e| format!("{}:{}", e.fichier, e.ligne)).collect();
+    proteges.sort();
+    proteges.dedup();
+    assert_eq!(proteges, marquees("// protégé"), "{l:#?}");
 }
