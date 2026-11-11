@@ -27,6 +27,7 @@ pub mod windows;
 use jeu::{AlerteChaleur, EntreeIndex, Fermee};
 use mesures::{Besoin, Mesures};
 use nevermind_noyau::aide::Mesure;
+use nevermind_noyau::travaux::{Rendu, Travaux};
 use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
 use pages::{ch, liste, nb, vrai};
 use serde_json::{Map, Value, json};
@@ -38,6 +39,9 @@ use systeme::{Compteur, EtatCompteur, Programme, Systeme};
 const VEILLE_CONNUS: [&str; 1] = ["bf6.exe"];
 /// La page des gestes automatiques du mode jeu, dans « Attends la fin de « Début de partie » (Mode jeu) »
 const PAGE: &str = "Mode jeu";
+/// La clé du travail de fond du mode jeu, et son attente (lot I)
+const MODE_JEU: &str = "mode-jeu";
+const ATTENTE_MODE_JEU: &str = "Fermeture des applis pour ta partie...";
 /// Couleurs du chiffre du compteur ($Colors : ok, warn, bad)
 const VERT: u32 = 0x22D37A;
 const ORANGE: u32 = 0xF5A524;
@@ -53,6 +57,8 @@ struct Session {
     pid: u32,
     proc_nom: String,
     debut: f64,
+    /// Le début, pour mode-jeu.json (`Start`)
+    debut_iso: String,
     fermees: Vec<Fermee>,
 }
 
@@ -132,6 +138,9 @@ pub struct BlocPerf {
     procs: Option<(f64, Vec<String>)>,
     dernier: Option<(f64, Value)>,
     raccourci_actif: Option<bool>,
+    /// La fermeture des applis du mode jeu au début d'une partie, dans un fil à part (lot I) : la partie et les
+    /// applis fermées
+    travaux: Travaux<(u32, Vec<Fermee>)>,
 }
 
 impl BlocPerf {
@@ -259,7 +268,14 @@ impl BlocPerf {
                 noms.join(", ")
             ));
             let t = self.maintenant();
-            self.session = Some(Session { jeu: ch(j.get("Game")), pid, proc_nom, debut: t, fermees });
+            self.session = Some(Session {
+                jeu: ch(j.get("Game")),
+                pid,
+                proc_nom,
+                debut: t,
+                debut_iso: ch(j.get("Start")),
+                fermees,
+            });
             return;
         }
         let geste = ctx.geste_prioritaire("Fin de partie", PAGE);
@@ -294,31 +310,108 @@ impl BlocPerf {
                 }
             }
         }
+        let t = self.maintenant();
+        let debut_iso = nevermind_noyau::contexte::horodatage();
+        self.session = Some(Session {
+            jeu: jeu_nom.into(),
+            pid,
+            proc_nom: proc_nom.into(),
+            debut: t,
+            debut_iso: debut_iso.clone(),
+            fermees: Vec::new(),
+        });
         // (la règle commune de fermeture, celle de la page RAM : l'Aide l'applique à chaque programme de ce nom)
         // (automatique : passe en priorité, jamais refusé ni retardé par un geste de l'utilisateur ; ajustement A du lot A)
         let geste = ctx.geste_prioritaire("Début de partie", PAGE);
-        let fermees = jeu::fermer_pour_partie(mode_on, &sel, &ouverts, |a, procs| {
-            let mut noms: Vec<&str> = Vec::new();
-            for p in procs {
-                if !noms.iter().any(|n| texte::egal(n, &p.0)) {
-                    noms.push(&p.0);
+        let rien = !mode_on || sel.is_empty() || ouverts.is_empty();
+        let fermer = move |ctx: &Contexte| {
+            jeu::fermer_pour_partie(mode_on, &sel, &ouverts, |a, procs| {
+                let mut noms: Vec<&str> = Vec::new();
+                for p in procs {
+                    if !noms.iter().any(|n| texte::egal(n, &p.0)) {
+                        noms.push(&p.0);
+                    }
                 }
-            }
-            let mut n = 0;
-            for nom in noms {
-                // (jamais de demande de Windows : la partie commence, personne n'a cliqué ; audit G5)
-                match ctx.aide_de_fond("processus.fermer", &json!({ "Nom": nom }), 15000) {
-                    Ok(v) => n += nb(Some(&v)) as usize,
-                    Err(e) => ctx.journal(&format!("Mode jeu : {} pas fermé ({e})", a.nom)),
+                let mut n = 0;
+                for nom in noms {
+                    // (jamais de demande de Windows : la partie commence, personne n'a cliqué ; audit G5)
+                    match ctx.aide_de_fond("processus.fermer", &json!({ "Nom": nom }), 15000) {
+                        Ok(v) => n += nb(Some(&v)) as usize,
+                        Err(e) => ctx.journal(&format!("Mode jeu : {} pas fermé ({e})", a.nom)),
+                    }
                 }
+                n
+            })
+        };
+        // (lot I : une demande à l'Aide par appli, chacune lit son contexte par WMI, pendant que le jeu charge :
+        //  dans un travail de fond, qui emporte le geste prioritaire, avec son attente. Sans contexte partagé, tests
+        //  d'un bloc seul et juges, ou sans rien à fermer : sur place, comme avant)
+        let fermees_ici = if rien || ctx.partage_actuel().is_none() {
+            let f = fermer(ctx);
+            drop(geste);
+            Some(f)
+        } else {
+            let (jeu_f, proc_f, fichier_f) = (jeu_nom.to_string(), proc_nom.to_string(), Self::fichier_mode_jeu(ctx));
+            let lance = self.travaux.lancer_geste(ctx, MODE_JEU, geste, move |fond| {
+                fond.effet(nevermind_noyau::signaux::occupe(ATTENTE_MODE_JEU));
+                let f = fermer(fond.ctx);
+                // (noté tout de suite : Nevermind fermé avant le relevé relance quand même les applis au lancement)
+                if let Some(v) = jeu::fichier_partie(&jeu_f, pid, &proc_f, &debut_iso, &f)
+                    && let Err(e) = fichier::ecrire(&fichier_f, &v, false)
+                {
+                    fond.ctx.journal(&format!("Mode jeu : liste des applis fermées non enregistrée ({e})"));
+                }
+                (pid, f)
+            });
+            if !lance {
+                ctx.journal("Mode jeu : la fermeture des applis de la partie d'avant tourne encore, rien n'est fermé");
             }
-            n
+            None
+        };
+        if let Some(f) = &fermees_ici {
+            self.noter_fermees(ctx, pid, f.clone(), effets, false);
+        }
+        effets.ajouter(Effet::Signal {
+            nom: "partie-commencee".into(),
+            donnees: json!({ "jeu": jeu_nom, "exe": proc_nom, "pid": pid }),
         });
-        drop(geste);
-        let t = self.maintenant();
-        let debut_iso = nevermind_noyau::contexte::horodatage();
+        if Self::mesure_fps(ctx) && self.cible.is_none() {
+            self.demarrer_cible(ctx, pid, jeu_nom, proc_nom, effets);
+        }
+        if let Some(f) = &fermees_ici
+            && let Some((t, x)) = jeu::bulle_debut(jeu_nom, f)
+        {
+            Self::notifier(effets, &t, &x, Value::Null);
+        }
+        effets.ajouter(Effet::Rafraichir);
+    }
+
+    /// Les applis fermées pour la partie `pid` (sur place, ou à la fin du travail de fond) : notées dans la partie et
+    /// dans mode-jeu.json, dites au journal, et la bulle (`bulle` : pas sur place, où elle vient après le signal du
+    /// début de partie, comme avant). La partie est déjà finie (ou une autre a commencé) : relancées tout de suite.
+    fn noter_fermees(&mut self, ctx: &Contexte, pid: u32, fermees: Vec<Fermee>, effets: &mut Effets, bulle: bool) {
         let f = Self::fichier_mode_jeu(ctx);
-        match jeu::fichier_partie(jeu_nom, pid, proc_nom, &debut_iso, &fermees) {
+        let Some(s) = self.session.as_mut().filter(|s| s.pid == pid) else {
+            if !fermees.is_empty() {
+                // (la remise en état : en priorité, jamais refusée ni retardée ; ajustement A du lot A)
+                let geste = ctx.geste_prioritaire("Fin de partie", PAGE);
+                let rates = self.relancer(&fermees);
+                drop(geste);
+                fichier::effacer(ctx, &f);
+                ctx.journal(&format!(
+                    "Mode jeu : partie finie pendant la fermeture des applis, relancées{}",
+                    if rates.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", à relancer à la main: {}", rates.join(", "))
+                    }
+                ));
+            }
+            return;
+        };
+        s.fermees = fermees.clone();
+        let (jeu_nom, proc_nom, debut_iso) = (s.jeu.clone(), s.proc_nom.clone(), s.debut_iso.clone());
+        match jeu::fichier_partie(&jeu_nom, pid, &proc_nom, &debut_iso, &fermees) {
             Some(v) => {
                 if let Err(e) = fichier::ecrire(&f, &v, false) {
                     ctx.journal(&format!("Mode jeu : liste des applis fermées non enregistrée ({e})"));
@@ -328,19 +421,23 @@ impl BlocPerf {
         }
         let noms: Vec<&str> = fermees.iter().map(|x| x.nom.as_str()).collect();
         ctx.journal(&format!("Mode jeu: {jeu_nom} lancé, applis fermées: {}", noms.join(", ")));
-        effets.ajouter(Effet::Signal {
-            nom: "partie-commencee".into(),
-            donnees: json!({ "jeu": jeu_nom, "exe": proc_nom, "pid": pid }),
-        });
-        self.session =
-            Some(Session { jeu: jeu_nom.into(), pid, proc_nom: proc_nom.into(), debut: t, fermees: fermees.clone() });
-        if Self::mesure_fps(ctx) && self.cible.is_none() {
-            self.demarrer_cible(ctx, pid, jeu_nom, proc_nom, effets);
-        }
-        if let Some((t, x)) = jeu::bulle_debut(jeu_nom, &fermees) {
+        if bulle && let Some((t, x)) = jeu::bulle_debut(&jeu_nom, &fermees) {
             Self::notifier(effets, &t, &x, Value::Null);
         }
-        effets.ajouter(Effet::Rafraichir);
+    }
+
+    /// Ce que le travail du mode jeu a rendu (sur le fil des blocs) : son attente, puis les applis fermées
+    fn relever_travaux(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        for r in self.travaux.relever() {
+            match r {
+                Rendu::Effet(e) => effets.ajouter(e),
+                Rendu::Fini { resultat: Ok((pid, f)), .. } => {
+                    self.noter_fermees(ctx, pid, f, effets, true);
+                    effets.ajouter(Effet::Rafraichir);
+                }
+                Rendu::Fini { resultat: Err(e), .. } => ctx.journal(&format!("Mode jeu : fermeture des applis ({e})")),
+            }
+        }
     }
 
     fn fin_partie(&mut self, ctx: &Contexte, effets: &mut Effets) {
@@ -1230,6 +1327,7 @@ impl Bloc for BlocPerf {
     }
 
     fn tic(&mut self, ctx: &Contexte, cache: bool, effets: &mut Effets) -> Option<Duration> {
+        self.relever_travaux(ctx, effets);
         let t = self.maintenant();
         if !self.demarre {
             self.demarre = true;
@@ -1319,6 +1417,10 @@ impl Bloc for BlocPerf {
         Some(Duration::from_secs_f64((prochain - t).clamp(0.05, 10.0)))
     }
 
+    fn travaux_finis(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        self.relever_travaux(ctx, effets);
+    }
+
     fn signal(&mut self, ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
         match nom {
             // (un profil changé depuis la fiche d'un jeu, bloc jeux : les profils sont relus dans le registre)
@@ -1396,6 +1498,13 @@ impl Bloc for BlocPerf {
     }
 
     fn fermer(&mut self, ctx: &Contexte) {
+        // (lot I : la fermeture des applis du début de partie qui tourne encore est attendue un peu, pour que la fin de
+        //  partie les relance ; sinon mode-jeu.json, écrit par le travail, les fait relancer au prochain lancement)
+        let fin = Instant::now() + Duration::from_secs(2);
+        while self.travaux.occupe() && Instant::now() < fin {
+            std::thread::sleep(Duration::from_millis(20));
+            self.relever_travaux(ctx, &mut Effets::default());
+        }
         // (Mindset arrête l'appli 6 s après lui avoir demandé de quitter, contrat partie 5 ; le PowerShell laissait
         //  3,5 s à l'action en cours. D'abord ce qui compte pour l'utilisateur : les applis fermées pour la partie
         //  relancées ; puis l'arrêt de la mesure des FPS en temps compté, le bilan gardé s'il est prêt à temps. Petit
