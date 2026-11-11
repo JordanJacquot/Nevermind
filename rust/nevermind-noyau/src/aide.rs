@@ -53,6 +53,11 @@ pub const SONDE_RAPIDE: Duration = Duration::from_secs(5);
 const DELAI_SONDE_RAPIDE: u32 = 3000;
 /// Le délai de réponse d'un arrêt de mesure (`fps.arreter`, `flux.arreter` : PresentMon peut mettre 3 s à s'arrêter)
 const DELAI_ARRET: u32 = 8000;
+/// Lot I : une demande de fond (ou texte) faite quand l'Aide n'a rien répondu depuis ce délai passe d'abord par la
+/// sonde ([`DELAI_SONDE_AVANT`]) ; une Aide qui répond en continu (`fps.lire` toutes les 250 ms) n'est pas sondée
+const FRAICHEUR: Duration = Duration::from_secs(1);
+/// Le délai de réponse de la sonde faite avant une demande (l'Aide répond en quelques dizaines de ms en temps normal)
+const DELAI_SONDE_AVANT: u32 = 1500;
 
 /// Les mesures en continu de l'Aide qu'un arrêt peut viser (lot G : un arrêt gardé par genre, jamais une file)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,6 +153,8 @@ struct Etat {
     fond_echec: Option<Instant>,
     /// La dernière sonde rapide ([`SONDE_RAPIDE`])
     sonde_rapide: Option<Instant>,
+    /// La dernière réponse de l'Aide à une demande ou à la sonde d'avant une demande ([`FRAICHEUR`], lot I)
+    derniere_reponse: Option<Instant>,
 }
 
 /// L'état de l'Aide pour ce contexte
@@ -384,9 +391,16 @@ impl Contexte {
         verrou(&self.aide.etat).fond_echec.is_some_and(|t| t.elapsed() < self.pause_fond())
     }
 
+    /// La dernière demande à l'Aide est-elle restée sans réponse (la pause est en cours) ? Sans rien lancer. Un échec
+    /// avec la pause en cours n'est pas un refus de l'Aide : la demande sera refaite quand elle répondra (lot I).
+    pub fn aide_en_pause(&self) -> bool {
+        self.pause_en_cours()
+    }
+
     /// Une réponse de l'Aide reçue : plus de pause. Si elle en levait une pendant que des arrêts étaient gardés (une
     /// réponse qui ne vient pas de la sonde), ils partent dans un fil à part.
     fn reponse_recue(&self) {
+        verrou(&self.aide.etat).derniere_reponse = Some(Instant::now());
         // (des arrêts gardés pendant la pause : ils partent d'abord, dans un fil à part, et la pause n'est levée
         //  qu'après eux ; sans pause, un envoi est déjà en cours)
         if verrou(&self.aide.arrets).iter().any(|x| *x)
@@ -523,6 +537,7 @@ impl Contexte {
             match crate::windows::canal::appeler(&c.canal, &c.exe, &demande(m.arret(), &json!({})), 2000, DELAI_ARRET) {
                 Ok(r) => {
                     verrou(&self.aide.arrets)[m as usize] = false;
+                    verrou(&self.aide.etat).derniere_reponse = Some(Instant::now());
                     if let Err(e) = reponse_texte(&r) {
                         self.journal(&format!("Aide : {} refusé ou raté : {e}", m.arret()));
                     }
@@ -542,12 +557,68 @@ impl Contexte {
 
     /// Une demande de départ d'une mesure (`fps.demarrer`, `fps.veiller`, `flux.demarrer`, `flux.veiller`) va partir
     /// vers l'Aide : l'arrêt gardé du même genre est jeté (il couperait la nouvelle mesure, que l'Aide met à la place
-    /// de l'ancienne) ; un arrêt en cours d'envoi est attendu avant (lot G, ajustement B).
-    fn avant_depart(&self, action: &str) {
-        let Some(m) = Mesure::du_depart(action) else { return };
-        let _ordre = verrou(&self.aide.envoi_arrets);
+    /// de l'ancienne). Un arrêt en cours d'envoi part toujours avant (lot G, ajustement B) : `attendre` faux (le fil
+    /// des blocs, lot I), le départ n'attend pas cet envoi (jusqu'à 8 s), il renonce (`false`) et sera redemandé ;
+    /// `attendre` vrai (une fausse Aide du contexte, qui répond tout de suite), il l'attend comme avant.
+    fn avant_depart(&self, action: &str, attendre: bool) -> bool {
+        let Some(m) = Mesure::du_depart(action) else { return true };
+        let _ordre = if attendre {
+            verrou(&self.aide.envoi_arrets)
+        } else {
+            match self.aide.envoi_arrets.try_lock() {
+                Ok(g) => g,
+                Err(std::sync::TryLockError::Poisoned(p)) => p.into_inner(),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    self.journal(&format!(
+                        "Aide : départ de {} remis à plus tard, un arrêt est en train de partir",
+                        m.nom()
+                    ));
+                    return false;
+                }
+            }
+        };
         if std::mem::take(&mut verrou(&self.aide.arrets)[m as usize]) {
             self.journal(&format!("Aide : arrêt gardé de {} plus envoyé, une nouvelle mesure démarre", m.nom()));
+        }
+        true
+    }
+
+    /// Lot I : un arrêt est-il en train de partir pour la mesure que lance cette action ? (sans attendre)
+    fn arret_en_envoi(&self, action: &str) -> bool {
+        Mesure::du_depart(action).is_some()
+            && matches!(self.aide.envoi_arrets.try_lock(), Err(std::sync::TryLockError::WouldBlock))
+    }
+
+    /// Lot I : avant une demande de fond ou texte (faite depuis un tic, sur le fil des blocs), une Aide qui n'a rien
+    /// répondu depuis [`FRAICHEUR`] est d'abord sondée (`aide.bonjour`, [`DELAI_SONDE_AVANT`]). Une Aide qui accepte la
+    /// connexion sans répondre est ainsi reconnue en 1,5 s, et la vraie demande (15 à 20 s de délai) ne part pas : la
+    /// pause commence, comme après une demande restée sans réponse. Avant, la première demande de chaque épisode
+    /// attendait son délai entier. Rend faux si l'Aide n'a pas répondu à la sonde. Sans contexte partagé : rien.
+    fn sondee_avant(&self, action: &str, partage: Option<&Arc<Contexte>>) -> bool {
+        if partage.is_none() || verrou(&self.aide.etat).derniere_reponse.is_some_and(|t| t.elapsed() < FRAICHEUR) {
+            return true;
+        }
+        let c = self.aide_config().clone();
+        // (une Aide qui n'écoute pas : la demande le dira tout de suite)
+        if !crate::windows::canal::joignable(&c.canal, 200) {
+            return true;
+        }
+        match crate::windows::canal::appeler(
+            &c.canal,
+            &c.exe,
+            &demande("aide.bonjour", &json!({})),
+            1000,
+            DELAI_SONDE_AVANT,
+        ) {
+            Ok(_) => {
+                verrou(&self.aide.etat).derniere_reponse = Some(Instant::now());
+                true
+            }
+            Err(e) => {
+                self.journal(&format!("Aide : {action} pas envoyée, l'Aide ne répond pas à la sonde ({e})"));
+                self.noter_sans_reponse(partage);
+                false
+            }
         }
     }
 
@@ -723,7 +794,7 @@ impl Contexte {
             verrou(&self.aide.avec_demande).push(action.to_string());
         }
         if let Some(f) = fausse {
-            self.avant_depart(action);
+            self.avant_depart(action, true);
             return f(action, parametres);
         }
         // (une demande de fond restée sans réponse il y a peu : pas de nouvel essai, rien n'attend ; lot B)
@@ -731,8 +802,18 @@ impl Contexte {
         if fond && self.en_pause_fond(partage.as_ref()) {
             return Err(ERREUR_PAUSE.into());
         }
+        // (lot I : un départ de mesure pendant l'envoi d'un arrêt n'attend pas cet envoi, il sera redemandé ; puis une
+        //  Aide silencieuse depuis un moment est d'abord sondée, avec un délai court, avant la vraie demande)
+        if fond && self.arret_en_envoi(action) {
+            return Err(ERREUR_PAUSE.into());
+        }
+        if fond && !self.sondee_avant(action, partage.as_ref()) {
+            return Err(ERREUR_PAUSE.into());
+        }
         // (un départ de mesure : l'arrêt gardé du même genre est jeté, ou attendu s'il est en cours d'envoi ; lot G)
-        self.avant_depart(action);
+        if !self.avant_depart(action, partage.is_none()) {
+            return Err(ERREUR_PAUSE.into());
+        }
         let mut demander = !sans_demande && !self.sans_demande_globale();
         if demander
             && let Some(r) = verrou(&self.aide.etat).refus
@@ -918,7 +999,7 @@ impl Contexte {
         }
         let fausse = verrou(&self.aide.fausse).clone();
         if let Some(f) = fausse {
-            self.avant_depart(action);
+            self.avant_depart(action, true);
             let p: Value = serde_json::from_str(parametres_json).unwrap_or(Value::Null);
             return f(action, &p).map(|v| match v {
                 Value::String(s) => s,
@@ -938,8 +1019,18 @@ impl Contexte {
         if partage.is_some() && self.en_pause_fond(partage.as_ref()) {
             return Err(ERREUR_PAUSE.into());
         }
-        // (un départ de mesure : l'arrêt gardé du même genre est jeté, ou attendu s'il est en cours d'envoi ; lot G)
-        self.avant_depart(action);
+        // (lot I : un départ pendant l'envoi d'un arrêt ne l'attend pas ; une Aide silencieuse depuis un moment est
+        //  d'abord sondée, avec un délai court ; avec le contexte partagé seulement)
+        if partage.is_some() && self.arret_en_envoi(action) {
+            return Err(ERREUR_PAUSE.into());
+        }
+        if !self.sondee_avant(action, partage.as_ref()) {
+            return Err(ERREUR_PAUSE.into());
+        }
+        // (un départ de mesure : l'arrêt gardé du même genre est jeté ; un arrêt en cours d'envoi part avant, lot G)
+        if !self.avant_depart(action, partage.is_none()) {
+            return Err(ERREUR_PAUSE.into());
+        }
         let rep = match crate::windows::canal::appeler(
             &c.canal,
             &c.exe,

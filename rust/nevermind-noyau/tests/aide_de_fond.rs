@@ -31,7 +31,8 @@ fn un_refus_n_est_pas_un_echec_une_absence_de_reponse_si() {
     // Un refus : dit tel quel, et la demande suivante part (pas de pause)
     assert_eq!(ctx.aide_de_fond("trafic.tcp", &json!({}), 2000), Err("Pas maintenant.".into()));
     assert_eq!(ctx.aide_de_fond("flux.lire", &json!({}), 2000), Ok(json!("ok")));
-    assert_eq!(serveur.demandes().len(), 2);
+    // (lot I : la sonde d'avant la première demande, aide.bonjour, ne compte pas)
+    assert_eq!(serveur.demandes().iter().filter(|l| !l.contains("aide.bonjour")).count(), 2);
     // L'Aide s'arrête : la demande échoue sans attendre la tâche, puis les suivantes renoncent tout de suite
     let reveils = Arc::new(AtomicUsize::new(0));
     let r = reveils.clone();

@@ -447,11 +447,18 @@ impl BlocPerf {
         }
         self.veille_demande = Some(t);
         let mut erreurs: Vec<String> = Vec::new();
+        let mut a_refaire = false;
         if fps && let Err(e) = ctx.aide_texte("fps.veiller", &json!({ "Noms": noms }).to_string(), 15000) {
+            a_refaire |= e == nevermind_noyau::aide::ERREUR_PAUSE;
             erreurs.push(format!("FPS : {e}"));
         }
         if flux && let Err(e) = ctx.aide_texte("flux.veiller", "{}", 15000) {
+            a_refaire |= e == nevermind_noyau::aide::ERREUR_PAUSE;
             erreurs.push(format!("trace réseau : {e}"));
+        }
+        // (l'Aide pas jointe, ou un arrêt partait encore : la veille est redemandée au passage suivant ; lot I)
+        if a_refaire {
+            self.veille_demande = None;
         }
         let quoi: Vec<&str> = [(fps, "FPS"), (flux, "trace réseau")].iter().filter(|x| x.0).map(|x| x.1).collect();
         let etat = if erreurs.is_empty() {
@@ -536,6 +543,12 @@ impl BlocPerf {
         self.fps_a_reprendre = false;
         let attache = match ctx.aide_texte("fps.demarrer", &format!("{{\"Pid\":{pid}}}"), 15000) {
             Ok(r) => r == "rattachee",
+            // (l'Aide n'a pas été jointe, ou un arrêt partait encore : la mesure est redemandée pendant la même partie
+            //  dès qu'elle répond, sans une ligne du journal à chaque essai ; lot I)
+            Err(e) if e == nevermind_noyau::aide::ERREUR_PAUSE => {
+                self.fps_a_reprendre = self.session.as_ref().is_some_and(|s| s.pid == pid);
+                return;
+            }
             Err(e) => {
                 ctx.journal(&format!("Mesure des FPS par l'Aide impossible : {e}"));
                 ctx.journal(&format!("Mesure des FPS: {e}"));
