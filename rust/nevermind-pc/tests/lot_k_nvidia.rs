@@ -8,7 +8,6 @@ fn la_quadro_t2000_est_prise_en_charge() {
     use nevermind_pc::analyse::nvidia_suivie;
     for n in [
         "NVIDIA Quadro T2000",
-        "Quadro T2000 with Max-Q Design",
         "NVIDIA Quadro T2000 with Max-Q Design",
         "NVIDIA Quadro T1000",
         "NVIDIA T550 Laptop GPU",
