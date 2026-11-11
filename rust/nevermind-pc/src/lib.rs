@@ -179,6 +179,8 @@ pub struct BlocPc {
 
 /// La clé du lancement d'un programme de Windows : un à la fois (un double clic ne pose pas deux questions)
 const LANCEMENT: &str = "lancement";
+/// La clé du rapport de la batterie (lot I)
+const BATTERIE: &str = "batterie";
 
 impl BlocPc {
     /// Le bloc sur un faux PC (tests), avec ce qu'il aurait lu
@@ -260,6 +262,34 @@ impl BlocPc {
                 None => systeme::PcWindows::nouveau(fond.ctx).lancer(&args),
             };
             r.map_err(|e| session::message_lancement(&args, &e))
+        });
+        self.relever_lancements(effets);
+    }
+
+    /// « Voir le rapport » de la batterie : powercfg /batteryreport (quelques secondes) dans un travail de fond, avec
+    /// son attente ; le rapport s'ouvre à la fin. Avant, attendu sur le fil des blocs (lot I).
+    fn rapport_batterie(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        if self.lancements.en_cours(BATTERIE) {
+            effets.ajouter(Effet::Annonce(
+                "Le rapport de la batterie est en préparation : il s'ouvre dans un instant.".into(),
+            ));
+            return;
+        }
+        let essai = self.essai.clone();
+        self.lancements.lancer(ctx, BATTERIE, move |fond| {
+            fond.effet(nevermind_noyau::signaux::occupe("Préparation du rapport de la batterie..."));
+            let rapport = |pc: &mut dyn Pc| {
+                let f = format!("{}\\rapport-batterie.html", pc.dossier_temp());
+                (pc.commande("powercfg.exe", &["/batteryreport".into(), "/output".into(), f.clone()]) == 0).then_some(f)
+            };
+            let f = match essai {
+                Some(p) => rapport(p.lock().unwrap_or_else(|e| e.into_inner()).as_mut()),
+                None => rapport(&mut systeme::PcWindows::nouveau(fond.ctx)),
+            };
+            if let Some(f) = f {
+                fond.effet(Effet::OuvrirAdresse(f));
+            }
+            Ok(())
         });
         self.relever_lancements(effets);
     }
@@ -803,25 +833,13 @@ impl Bloc for BlocPc {
         // (les tests des composants et leur panneau : tests_composants.rs ; ici seulement ce qui passe par le PC)
         if id.starts_with("test-b:") || id.starts_with("panneau:") {
             let Some(gestes) = self.tests.action(ctx, id, effets) else { return false };
-            let mut batterie = false;
             for g in gestes {
                 match g {
                     // (mdsched : par ShellExecute, dans un travail de fond, M8)
                     tests_composants::Geste::Lancer(a) => self.lancer_programme(ctx, a, effets),
-                    tests_composants::Geste::Batterie => batterie = true,
+                    tests_composants::Geste::Batterie => self.rapport_batterie(ctx, effets),
                     _ => {}
                 }
-            }
-            let (_, annonces) = self.avec_pc(ctx, |_, pc| {
-                if batterie {
-                    let f = format!("{}\\rapport-batterie.html", pc.dossier_temp());
-                    if pc.commande("powercfg.exe", &["/batteryreport".into(), "/output".into(), f.clone()]) == 0 {
-                        pc.ouvrir(&f);
-                    }
-                }
-            });
-            for a in annonces {
-                effets.ajouter(a);
             }
             return true;
         }
