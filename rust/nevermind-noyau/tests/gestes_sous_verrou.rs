@@ -158,6 +158,28 @@ const EXCEPTIONS: &[(&str, &str, &str)] = &[
         "importer_sauvegarde_de",
         "la relecture de sauvegarde.json met de côté un fichier abîmé (renommé, jamais écrit) ; sa copie de secours, et les valeurs d'origine gardées dans le registre, sont reprises",
     ),
+    // (lot J, étape 3b : les voies sans permis du trait Pc ne servent plus qu'aux lectures ; un changement y est refusé,
+    //  il passe par la méthode qui demande le permis, aide_qui_change ou powercfg_changer)
+    (
+        "nevermind-pc/src/systeme.rs",
+        "aide",
+        "Pc::aide de Nevermind : ctx.aide refuse une action qui change le PC (elle passe par aide_qui_change, avec le permis)",
+    ),
+    (
+        "nevermind-pc/src/systeme.rs",
+        "powercfg",
+        "Pc::powercfg de Nevermind : seulement /getactivescheme, /list et /q ; un changement y est refusé (powercfg_changer, avec le permis)",
+    ),
+    (
+        "nevermind-desinstalleur/src/os/mod.rs",
+        "aide",
+        "Pc::aide de la désinstallation : une action qui change le PC y est refusée (aide_qui_change, avec le permis)",
+    ),
+    (
+        "nevermind-desinstalleur/src/os/mod.rs",
+        "powercfg_system32",
+        "la commande elle-même : appelée seulement par powercfg (lectures, un changement y est refusé) et powercfg_changer (avec le permis)",
+    ),
 ];
 
 /// Les primitives (le vrai appel à Windows) : elles ne vérifient pas le verrou elles-mêmes, mais leur nom est un motif
@@ -618,7 +640,7 @@ pub fn relever(racine: &Path) -> Vec<Endroit> {
                         continue;
                     }
                 }
-                let protege = protege_avant(&corps, i - fct.debut);
+                let protege = protege_avant(&corps, i - fct.debut) || demande_le_permis(code, fct);
                 r.push(Endroit { fichier: rel.clone(), ligne, fonction: fct.nom.clone(), quoi, protege });
             }
         }
@@ -695,6 +717,22 @@ fn protege_avant(corps: &str, pos: usize) -> bool {
     if MARQUES.iter().filter(|m| **m != "exiger_geste(").any(|m| corps.contains(m)) {
         return true;
     }
+    // (lot J : `let permis = ctx.exiger_geste();` puis l'endroit dans `if let Ok(p) = &permis { }`)
+    let mut d = 0;
+    while let Some(q) = corps[d..].find("if let Ok(") {
+        let i = d + q;
+        d = i + 1;
+        let Some(o) = corps[i..].find('{').map(|o| i + o) else { break };
+        let sujet = corps[i..o].rsplit('=').next().unwrap_or("").trim().trim_start_matches('&').trim();
+        let pris = !sujet.is_empty()
+            && sujet.chars().all(|c| c.is_alphanumeric() || c == '_')
+            && corps[..i].rfind(&format!("let {sujet} = ")).is_some_and(|l| {
+                corps[l..].split(';').next().is_some_and(|x| x.trim_end().ends_with("exiger_geste()"))
+            });
+        if pris && pos > o && pos < fin_bloc(corps, o) {
+            return true;
+        }
+    }
     let motif = "exiger_geste()";
     let mut d = 0;
     while let Some(p) = corps[d..].find(motif) {
@@ -736,6 +774,19 @@ fn protege_avant(corps: &str, pos: usize) -> bool {
         }
     }
     false
+}
+
+/// Lot J : la fonction demande le permis du verrou en paramètre (`p: &Permis`) : le compilateur refuse de l'appeler
+/// sans lui, et on ne l'obtient que du verrou
+fn demande_le_permis(code: &[u8], fct: &Fonction) -> bool {
+    let avant = String::from_utf8_lossy(&code[..fct.debut]).into_owned();
+    let Some(f) = avant.rfind(&format!("fn {}", fct.nom)) else { return false };
+    avant[f..].split([',', '(', ')']).any(|x| {
+        x.split_once(':').is_some_and(|(_, t)| {
+            let t = t.trim();
+            t == "&Permis" || t == "&crate::Permis" || t == "&nevermind_noyau::Permis"
+        })
+    })
 }
 
 /// La parenthèse fermante d'un texte qui commence juste après une parenthèse ouvrante (la position qui la suit)

@@ -53,3 +53,15 @@ pub fn lire_par_l_aide(ctx: &C) -> R {
 pub fn ecrire_avec_le_permis(ctx: &C) -> R {
     ctx.exiger_geste().and_then(|p| ctx.changer_registre(&p, "HKCU:\\Essai", "V", &json!(1), "DWord")) // protégé
 }
+
+pub fn ecrire_par_le_permis(ctx: &C, p: &Permis) -> R {
+    ctx.changer_registre(p, "HKCU:\\Essai", "U", &json!(1), "DWord") // protégé
+}
+
+pub fn ecrire_si_le_permis_puis_sans(ctx: &C) {
+    let permis = ctx.exiger_geste();
+    if let Ok(p) = &permis {
+        let _ = ctx.changer_registre(p, "HKCU:\\Essai", "T", &json!(1), "DWord"); // protégé
+    }
+    let _ = ctx.ecrire_registre("HKCU:\\Essai", "S", &json!(1), "DWord"); // attendu
+}

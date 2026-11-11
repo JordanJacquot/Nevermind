@@ -152,9 +152,9 @@ impl<'a> Moteur<'a> {
     /// est fusionné (jamais une valeur d'origine déjà notée remplacée) ; la copie du geste reprend ce qu'un autre geste
     /// a noté entre-temps.
     pub fn sauver(&mut self) -> Result<(), String> {
-        self.pc.exiger_geste()?;
+        let p = self.pc.exiger_geste()?;
         let (base, voulue) = (self.base.json(), self.sv.json());
-        if let Some(copie) = self.pc.sauvegarde_fusionner(&base, &voulue)? {
+        if let Some(copie) = self.pc.sauvegarde_fusionner(&p, &base, &voulue)? {
             let probleme = self.sv.probleme.take();
             *self.sv = Sauvegarde::depuis(&copie);
             self.sv.probleme = probleme;
@@ -175,7 +175,7 @@ impl<'a> Moteur<'a> {
 
     /// `Save-Original` : la valeur d'origine notée avant la première modification
     pub fn noter_origine(&mut self, chemin: &str, nom: &str) -> Result<(), String> {
-        self.pc.exiger_geste()?;
+        let p = self.pc.exiger_geste()?;
         let cle = format!("{chemin}|{nom}");
         if self.sv.registre.contains_key(&cle) {
             return Ok(());
@@ -192,16 +192,17 @@ impl<'a> Moteur<'a> {
             sv.registre.remove(&c2);
         })?;
         if reg_utilisateur(chemin) {
-            self.pc.origine_utilisateur(&cle, &serde_json::to_string(&e).unwrap_or_default());
+            self.pc.origine_utilisateur(&p, &cle, &serde_json::to_string(&e).unwrap_or_default());
         }
         Ok(())
     }
 
     /// `Write-RegValue` : le registre de la machine par l'Aide, celui de l'utilisateur par Nevermind
     pub fn ecrire_reg(&mut self, chemin: &str, nom: &str, v: &ValeurReg) -> Result<(), String> {
-        self.pc.exiger_geste()?;
+        let p = self.pc.exiger_geste()?;
         if !reg_utilisateur(chemin) {
-            self.pc.aide(
+            self.pc.aide_qui_change(
+                &p,
                 "reg.ecrire",
                 parametres(&[
                     ("Cle", json!(chemin)),
@@ -214,18 +215,23 @@ impl<'a> Moteur<'a> {
             return Ok(());
         }
         reglage_permis(chemin, nom)?;
-        self.pc.reg_utilisateur_ecrire(chemin, nom, v)
+        self.pc.reg_utilisateur_ecrire(&p, chemin, nom, v)
     }
 
     /// `Remove-RegValue`
     pub fn effacer_reg(&mut self, chemin: &str, nom: &str) -> Result<(), String> {
-        self.pc.exiger_geste()?;
+        let p = self.pc.exiger_geste()?;
         if !reg_utilisateur(chemin) {
-            self.pc.aide("reg.effacer", parametres(&[("Cle", json!(chemin)), ("Nom", json!(nom))]), 120000)?;
+            self.pc.aide_qui_change(
+                &p,
+                "reg.effacer",
+                parametres(&[("Cle", json!(chemin)), ("Nom", json!(nom))]),
+                120000,
+            )?;
             return Ok(());
         }
         reglage_permis(chemin, nom)?;
-        self.pc.reg_utilisateur_effacer(chemin, nom)
+        self.pc.reg_utilisateur_effacer(&p, chemin, nom)
     }
 
     /// `Set-Reg`
@@ -295,7 +301,7 @@ impl<'a> Moteur<'a> {
 
     /// `Set-DisplayRate`
     pub fn set_frequence(&mut self, ecran: &str, hz: i64) -> Result<(), String> {
-        self.pc.exiger_geste()?;
+        let p = self.pc.exiger_geste()?;
         let actuel = self.pc.ecrans().into_iter().find(|d| d.split('|').next() == Some(ecran));
         let freq = actuel.as_ref().map(|d| d.split('|').nth(4).and_then(|x| x.trim().parse::<i64>().ok()).unwrap_or(0));
         if let Some(f) = freq
@@ -307,7 +313,7 @@ impl<'a> Moteur<'a> {
                 sv.ecrans.remove(&e);
             })?;
         }
-        let r = self.pc.ecran_frequence(ecran, hz);
+        let r = self.pc.ecran_frequence(&p, ecran, hz);
         if r != 0 {
             return Err(format!("Windows a refusé le changement de fréquence (code {r})."));
         }
@@ -318,16 +324,17 @@ impl<'a> Moteur<'a> {
     }
 
     fn pc_args(&mut self, a: &[&str]) -> (i32, String) {
-        if let Err(e) = self.pc.exiger_geste() {
-            return (1, e);
-        }
+        let p = match self.pc.exiger_geste() {
+            Ok(p) => p,
+            Err(e) => return (1, e),
+        };
         let v: Vec<String> = a.iter().map(|s| s.to_string()).collect();
-        self.pc.powercfg(&v)
+        self.pc.powercfg_changer(&p, &v)
     }
 
     /// `Set-BatterySetting`
     pub fn set_batterie(&mut self, cle: &str, valeur: i64) -> Result<(), String> {
-        self.pc.exiger_geste()?;
+        let permis = self.pc.exiger_geste()?;
         let guid = REGLAGES_BATTERIE.iter().find(|(k, _)| *k == cle).map(|(_, g)| *g).unwrap_or("");
         let p = analyse::reglages_batterie(self.pc);
         let cur = analyse::batterie_get(&p, cle);
@@ -345,7 +352,7 @@ impl<'a> Moteur<'a> {
                 let mut n = orig.clone();
                 let t = |v: Option<i64>| v.map(|x| x.to_string()).unwrap_or_default();
                 n.push(format!("{guid}|{}|{}|{plan}", t(cur[0]), t(cur[1])));
-                self.pc.ecrire_reglage("PcfgOriginal", reglage_liste(&n), true)?;
+                self.pc.ecrire_reglage_d_origine(&permis, "PcfgOriginal", reglage_liste(&n), true)?;
             }
         }
         let v = valeur.to_string();
@@ -360,7 +367,7 @@ impl<'a> Moteur<'a> {
 
     /// `Set-ServiceOff` : service arrêté et désactivé (ou passé en manuel), par l'Aide
     pub fn service_off(&mut self, nom: &str, demarrage: &str) -> Result<(), String> {
-        self.pc.exiger_geste()?;
+        let p = self.pc.exiger_geste()?;
         let Some((debut, tourne)) = self.pc.service(nom) else {
             return Err(format!("Impossible de trouver un service assorti du nom « {nom} »."));
         };
@@ -368,10 +375,11 @@ impl<'a> Moteur<'a> {
         if !orig.iter().any(|l| l.split('|').next().is_some_and(|n| n.eq_ignore_ascii_case(nom))) {
             let mut n = orig.clone();
             n.push(format!("{nom}|{debut}|{}", if tourne { "True" } else { "False" }));
-            self.pc.ecrire_reglage("SvcOriginal", reglage_liste(&n), true)?;
+            self.pc.ecrire_reglage_d_origine(&p, "SvcOriginal", reglage_liste(&n), true)?;
         }
         self.noter(json!({ "Type": "svc", "Name": nom, "StartType": debut, "Running": tourne, "Nouveau": demarrage }));
-        self.pc.aide(
+        self.pc.aide_qui_change(
+            &p,
             "service.regler",
             parametres(&[("Nom", json!(nom)), ("Demarrage", json!(demarrage)), ("Arreter", json!(tourne))]),
             120000,
@@ -381,13 +389,13 @@ impl<'a> Moteur<'a> {
 
     /// `Set-BestPerfOverlay` : le curseur de Windows sur « Meilleures performances » (plan Utilisation normale)
     pub fn meilleur_curseur(&mut self) -> Result<bool, String> {
-        self.pc.exiger_geste()?;
+        let p = self.pc.exiger_geste()?;
         let s = reglages::plan_actif(self.pc);
         if !s.as_ref().is_some_and(|(g, _)| g == NORMAL) {
             return Ok(false);
         }
         let Some(avant) = self.pc.curseur().filter(|c| !c.is_empty()) else { return Ok(false) };
-        if self.pc.curseur_ecrire(BEST) != 0 {
+        if self.pc.curseur_ecrire(&p, BEST) != 0 {
             return Ok(false);
         }
         if self.sv.curseur.is_none() {
@@ -445,12 +453,10 @@ impl<'a> Moteur<'a> {
 
     /// `Sync-Mouse` : Windows relit tout de suite les réglages de la souris
     pub fn sync_souris(&mut self) {
-        if self.pc.exiger_geste().is_err() {
-            return;
-        }
+        let Ok(p) = self.pc.exiger_geste() else { return };
         let n = |pc: &dyn Pc, k: &str| reglages::valeur(pc, reglages::SOURIS, k).and_then(|v| v.entier()).unwrap_or(0);
         let (v, t1, t2) = (n(self.pc, "MouseSpeed"), n(self.pc, "MouseThreshold1"), n(self.pc, "MouseThreshold2"));
-        self.pc.souris_relire(t1, t2, v);
+        self.pc.souris_relire(&p, t1, t2, v);
     }
 
     /// `Invoke-TweakApply` : les changements déclarés, puis ce que le réglage fait en plus
@@ -540,9 +546,10 @@ fn reglage_liste(l: &[String]) -> Value {
 
 /// `Undo-RunLog` : les changements du journal annulés, du plus récent au plus ancien. Renvoie les erreurs.
 pub fn annuler_journal(m: &mut Moteur, journal: &[Value]) -> Vec<String> {
-    if let Err(e) = m.pc.exiger_geste() {
-        return vec![e];
-    }
+    let permis = match m.pc.exiger_geste() {
+        Ok(p) => p,
+        Err(e) => return vec![e],
+    };
     use crate::net::{champ_texte, champ_vrai};
     let mut erreurs = Vec::new();
     for e in journal.iter().rev() {
@@ -562,17 +569,22 @@ pub fn annuler_journal(m: &mut Moteur, journal: &[Value]) -> Vec<String> {
                     m.pc_args(&["/setactive", &g]);
                 }
                 "overlay" => {
-                    m.pc.curseur_ecrire(&champ_texte(e, "Guid"));
+                    m.pc.curseur_ecrire(&permis, &champ_texte(e, "Guid"));
                 }
                 "display" => {
                     let d = champ_texte(e, "Device");
-                    let r = m.pc.ecran_frequence(&d, crate::net::champ_entier(e, "Hz"));
+                    let r = m.pc.ecran_frequence(&permis, &d, crate::net::champ_entier(e, "Hz"));
                     if r != 0 {
                         return Err(format!("Écran {d}: fréquence non restaurée (code {r})"));
                     }
                 }
                 "fw" => {
-                    m.pc.aide("pare-feu.debloquer", parametres(&[("Nom", json!(champ_texte(e, "Name")))]), 120000)?;
+                    m.pc.aide_qui_change(
+                        &permis,
+                        "pare-feu.debloquer",
+                        parametres(&[("Nom", json!(champ_texte(e, "Name")))]),
+                        120000,
+                    )?;
                 }
                 "pcfg" => {
                     let plan = champ_texte(e, "Plan");
@@ -589,7 +601,8 @@ pub fn annuler_journal(m: &mut Moteur, journal: &[Value]) -> Vec<String> {
                     m.pc_args(&["/setactive", "SCHEME_CURRENT"]);
                 }
                 "svc" => {
-                    m.pc.aide(
+                    m.pc.aide_qui_change(
+                        &permis,
                         "service.regler",
                         parametres(&[
                             ("Nom", json!(champ_texte(e, "Name"))),
@@ -609,7 +622,8 @@ pub fn annuler_journal(m: &mut Moteur, journal: &[Value]) -> Vec<String> {
                     }
                     let serveurs: Vec<Value> =
                         crate::net::champ_liste(e, "Servers").into_iter().filter(crate::net::vrai).collect();
-                    m.pc.aide(
+                    m.pc.aide_qui_change(
+                        &permis,
                         "dns.regler",
                         parametres(&[("Index", json!(idx)), ("Serveurs", Value::Array(serveurs))]),
                         120000,
@@ -634,15 +648,16 @@ fn est_guid(s: &str) -> bool {
 /// `Restore-AllSettings` : tout ce qui est noté remis comme avant. Ce qui n'a pas pu l'être reste noté (pour
 /// « Réessayer »). Renvoie la liste de ce qui n'a pas pu être remis.
 pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
-    if let Err(e) = m.pc.exiger_geste() {
-        return vec![e];
-    }
+    let permis = match m.pc.exiger_geste() {
+        Ok(p) => p,
+        Err(e) => return vec![e],
+    };
     use crate::net::entier;
     let mut erreurs: Vec<String> = Vec::new();
     // (la lecture des règles a échoué : le déblocage est tenté quand même ; s'il échoue, les lignes « pare-feu » restent
     //  à annuler, au lieu d'être marquées annulées alors que la règle est peut-être toujours là ; lot K)
     if m.pc.regles_pare_feu_lues() != Some(0)
-        && let Err(e) = m.pc.aide("pare-feu.debloquer-tout", json!({}), 120000)
+        && let Err(e) = m.pc.aide_qui_change(&permis, "pare-feu.debloquer-tout", json!({}), 120000)
     {
         erreurs.push(format!("Pare-feu: {e}"));
     }
@@ -666,7 +681,7 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
                 m.sv.registre.remove(&cle);
                 oublies.push(format!("{}|{n}", cle_normale(&p)));
                 if reg_utilisateur(&p) {
-                    m.pc.origine_utilisateur_oublier(&cle);
+                    m.pc.origine_utilisateur_oublier(&permis, &cle);
                 }
             }
             Err(x) => erreurs.push(format!("{p}\\{n}: {x}")),
@@ -678,7 +693,8 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
     for l in &svc {
         let x: Vec<&str> = l.split('|').collect();
         let g = |i: usize| x.get(i).copied().unwrap_or("");
-        if let Err(e) = m.pc.aide(
+        if let Err(e) = m.pc.aide_qui_change(
+            &permis,
             "service.regler",
             parametres(&[
                 ("Nom", json!(g(0))),
@@ -694,7 +710,7 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
     if !svc.is_empty() {
         // (relu maintenant : seuls les services remis sont retirés, un service noté pendant ce temps reste ; lot A)
         let garde = sans_les_remis(liste_textes(m.pc.reglage("SvcOriginal")), &svc, &svc_reste);
-        let _ = m.pc.ecrire_reglage("SvcOriginal", json!(garde), false);
+        let _ = m.pc.ecrire_reglage_d_origine(&permis, "SvcOriginal", json!(garde), false);
     }
     // Le plan d'alimentation d'origine d'abord (les réglages « batterie » vont ensuite dans leur plan)
     if let Some(ps) = m.sv.plan.clone() {
@@ -755,10 +771,10 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
     if !pcfg.is_empty() {
         m.pc_args(&["/setactive", "SCHEME_CURRENT"]);
         let garde = sans_les_remis(liste_textes(m.pc.reglage("PcfgOriginal")), &pcfg, &pcfg_reste);
-        let _ = m.pc.ecrire_reglage("PcfgOriginal", json!(garde), false);
+        let _ = m.pc.ecrire_reglage_d_origine(&permis, "PcfgOriginal", json!(garde), false);
     }
     if let Some(o) = m.sv.curseur.clone() {
-        let r = m.pc.curseur_ecrire(&o);
+        let r = m.pc.curseur_ecrire(&permis, &o);
         if r != 0 {
             erreurs.push(format!("Mode d'alimentation: code {r}"));
         } else {
@@ -777,7 +793,8 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
             };
             let serveurs: Vec<Value> =
                 crate::net::texte(&v).split([',', ' ', '\t']).filter(|s| !s.is_empty()).map(Value::from).collect();
-            m.pc.aide(
+            m.pc.aide_qui_change(
+                &permis,
                 "dns.regler",
                 parametres(&[("Index", json!(idx)), ("Serveurs", Value::Array(serveurs))]),
                 120000,
@@ -793,7 +810,7 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
     }
     let ecrans: Vec<(String, Value)> = m.sv.ecrans.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     for (k, hz) in ecrans {
-        let r = m.pc.ecran_frequence(&k, entier(crate::net::nombre_de(&hz)));
+        let r = m.pc.ecran_frequence(&permis, &k, entier(crate::net::nombre_de(&hz)));
         if r != 0 {
             erreurs.push(format!("Écran {k}: fréquence non restaurée (code {r})"));
         } else {
@@ -803,8 +820,10 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
     m.sync_souris();
     let mut origines_oubliees = false;
     if m.sv.registre.is_empty() {
-        m.pc.origines_utilisateur_effacer();
-        if m.pc.aide("origines.oublier", json!({}), 120000).is_ok() || m.pc.origines_machine_effacer().is_ok() {
+        m.pc.origines_utilisateur_effacer(&permis);
+        if m.pc.aide_qui_change(&permis, "origines.oublier", json!({}), 120000).is_ok()
+            || m.pc.origines_machine_effacer(&permis).is_ok()
+        {
             origines_oubliees = true;
         }
     }
@@ -813,7 +832,7 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
     //  fichier relu par l'écrivain unique le dit, lot A)
     let garde_autre = reste == 0 && origines_oubliees && m.sauver().is_ok() && m.sv.compte() > 0;
     if reste == 0 && origines_oubliees && !garde_autre {
-        m.pc.sauvegarde_effacer();
+        m.pc.sauvegarde_effacer(&permis);
     } else {
         let mut o = m.sv.oublies.clone();
         for x in oublies {

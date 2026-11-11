@@ -6,7 +6,7 @@
 use crate::corrections::Sauvegarde;
 use crate::pc::{Pc, ResultatNettoyage, ValeurReg};
 use crate::temps::Moment;
-use nevermind_noyau::{Contexte, Effet};
+use nevermind_noyau::{Contexte, Effet, Permis};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
@@ -225,8 +225,8 @@ impl<'a> PcWindows<'a> {
 }
 
 impl Pc for PcWindows<'_> {
-    fn exiger_geste(&self) -> Result<(), String> {
-        self.ctx.exiger_geste().map(|_| ())
+    fn exiger_geste(&self) -> Result<Permis, String> {
+        self.ctx.exiger_geste()
     }
     fn suspendre_geste(&mut self) -> Option<u64> {
         self.ctx.suspendre_geste()
@@ -256,33 +256,39 @@ impl Pc for PcWindows<'_> {
             None
         }
     }
-    fn reg_utilisateur_ecrire(&mut self, chemin: &str, nom: &str, valeur: &ValeurReg) -> Result<(), String> {
+    fn reg_utilisateur_ecrire(
+        &mut self,
+        p: &Permis,
+        chemin: &str,
+        nom: &str,
+        valeur: &ValeurReg,
+    ) -> Result<(), String> {
         self.essai()?;
         self.ctx.exiger_geste()?;
         #[cfg(windows)]
         {
-            crate::windows::reg_utilisateur_ecrire(chemin, nom, valeur)
+            crate::windows::reg_utilisateur_ecrire(p, chemin, nom, valeur)
         }
         #[cfg(not(windows))]
         {
-            let _ = (chemin, nom, valeur);
+            let _ = (p, chemin, nom, valeur);
             Err("pas de registre".into())
         }
     }
-    fn reg_utilisateur_effacer(&mut self, chemin: &str, nom: &str) -> Result<(), String> {
+    fn reg_utilisateur_effacer(&mut self, p: &Permis, chemin: &str, nom: &str) -> Result<(), String> {
         self.essai()?;
         self.ctx.exiger_geste()?;
         #[cfg(windows)]
         {
-            crate::windows::reg_utilisateur_effacer(chemin, nom)
+            crate::windows::reg_utilisateur_effacer(p, chemin, nom)
         }
         #[cfg(not(windows))]
         {
-            let _ = (chemin, nom);
+            let _ = (p, chemin, nom);
             Ok(())
         }
     }
-    fn origine_utilisateur(&mut self, cle: &str, json: &str) {
+    fn origine_utilisateur(&mut self, _p: &Permis, cle: &str, json: &str) {
         if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return;
         }
@@ -295,7 +301,7 @@ impl Pc for PcWindows<'_> {
         #[cfg(not(windows))]
         let _ = (cle, json);
     }
-    fn origine_utilisateur_oublier(&mut self, cle: &str) {
+    fn origine_utilisateur_oublier(&mut self, _p: &Permis, cle: &str) {
         if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return;
         }
@@ -306,28 +312,34 @@ impl Pc for PcWindows<'_> {
         #[cfg(not(windows))]
         let _ = cle;
     }
-    fn origines_utilisateur_effacer(&mut self) {
+    fn origines_utilisateur_effacer(&mut self, p: &Permis) {
         if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return;
         }
         #[cfg(windows)]
-        crate::windows::reg_utilisateur_effacer_cle(ORIGINES);
+        crate::windows::reg_utilisateur_effacer_cle(p, ORIGINES);
+        #[cfg(not(windows))]
+        let _ = p;
     }
-    fn origines_machine_effacer(&mut self) -> Result<(), String> {
+    fn origines_machine_effacer(&mut self, _p: &Permis) -> Result<(), String> {
         // (la clé de la machine demande les droits : seule l'Aide l'efface)
         Err("droits administrateur".into())
     }
     fn aide(&mut self, action: &str, parametres: Value, delai_ms: u64) -> Result<Value, String> {
-        // (une action qui change le PC : seulement sous le verrou des gestes, lot A)
-        let permis = if nevermind_noyau::aide::change_le_pc(action) { Some(self.ctx.exiger_geste()?) } else { None };
         // (en test, seulement une fausse Aide : jamais la vraie)
         if self.ctx.essai && !action.starts_with("lecture.") && !self.ctx.a_fausse_aide() {
             return Err("mode test : l'Aide n'est pas appelée".into());
         }
-        match &permis {
-            Some(p) => self.ctx.aide_qui_change(p, action, &parametres, delai_ms),
-            None => self.ctx.aide(action, &parametres, delai_ms),
+        // (une action qui change le PC : par aide_qui_change, avec le permis ; ici, le noyau la refuse, lot J)
+        self.ctx.aide(action, &parametres, delai_ms)
+    }
+    fn aide_qui_change(&mut self, p: &Permis, action: &str, parametres: Value, delai_ms: u64) -> Result<Value, String> {
+        // (seulement sous le verrou des gestes, lot A : le permis le prouve, et le noyau le revérifie)
+        self.ctx.exiger_geste()?;
+        if self.ctx.essai && !self.ctx.a_fausse_aide() {
+            return Err("mode test : l'Aide n'est pas appelée".into());
         }
+        self.ctx.aide_qui_change(p, action, &parametres, delai_ms)
     }
     fn aide_lecture(&mut self, action: &str, parametres: Value) -> Option<Value> {
         self.ctx.aide_lecture(action, &parametres)
@@ -358,8 +370,24 @@ impl Pc for PcWindows<'_> {
         }
     }
     fn powercfg(&mut self, args: &[String]) -> (i32, String) {
+        // (lot J : seulement une lecture ; un changement passe par powercfg_changer, avec le permis)
         let lecture = matches!(args.first().map(|s| s.as_str()), Some("/getactivescheme" | "/list" | "/q"));
-        if !lecture && (self.ctx.essai || self.ctx.exiger_geste().is_err()) {
+        if !lecture {
+            self.ctx
+                .journal(&format!("powercfg {} refusé : un changement passe par le verrou des gestes", args.join(" ")));
+            return (1, String::new());
+        }
+        #[cfg(windows)]
+        {
+            crate::windows::powercfg(args)
+        }
+        #[cfg(not(windows))]
+        {
+            (1, String::new())
+        }
+    }
+    fn powercfg_changer(&mut self, _p: &Permis, args: &[String]) -> (i32, String) {
+        if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return (1, String::new());
         }
         #[cfg(windows)]
@@ -381,17 +409,17 @@ impl Pc for PcWindows<'_> {
             None
         }
     }
-    fn curseur_ecrire(&mut self, guid: &str) -> i32 {
+    fn curseur_ecrire(&mut self, p: &Permis, guid: &str) -> i32 {
         if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return 1;
         }
         #[cfg(windows)]
         {
-            crate::windows::curseur_ecrire(guid)
+            crate::windows::curseur_ecrire(p, guid)
         }
         #[cfg(not(windows))]
         {
-            let _ = guid;
+            let _ = (p, guid);
             1
         }
     }
@@ -405,28 +433,28 @@ impl Pc for PcWindows<'_> {
             Vec::new()
         }
     }
-    fn ecran_frequence(&mut self, appareil: &str, hz: i64) -> i32 {
+    fn ecran_frequence(&mut self, p: &Permis, appareil: &str, hz: i64) -> i32 {
         if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return 1;
         }
         #[cfg(windows)]
         {
-            crate::windows::ecran_frequence(appareil, hz)
+            crate::windows::ecran_frequence(p, appareil, hz)
         }
         #[cfg(not(windows))]
         {
-            let _ = (appareil, hz);
+            let _ = (p, appareil, hz);
             1
         }
     }
-    fn souris_relire(&mut self, seuil1: i64, seuil2: i64, vitesse: i64) {
+    fn souris_relire(&mut self, p: &Permis, seuil1: i64, seuil2: i64, vitesse: i64) {
         if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return;
         }
         #[cfg(windows)]
-        crate::windows::souris(seuil1, seuil2, vitesse);
+        crate::windows::souris(p, seuil1, seuil2, vitesse);
         #[cfg(not(windows))]
-        let _ = (seuil1, seuil2, vitesse);
+        let _ = (p, seuil1, seuil2, vitesse);
     }
     fn service(&self, nom: &str) -> Option<(String, bool)> {
         #[cfg(windows)]
@@ -504,7 +532,7 @@ impl Pc for PcWindows<'_> {
     fn hiberfil(&self) -> bool {
         Path::new(&format!("{}\\hiberfil.sys", std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into()))).exists()
     }
-    fn nettoyer_dossier(&mut self, _id: &str, chemins: &[String], exclus: &[String]) -> ResultatNettoyage {
+    fn nettoyer_dossier(&mut self, _p: &Permis, _id: &str, chemins: &[String], exclus: &[String]) -> ResultatNettoyage {
         if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return ResultatNettoyage::default();
         }
@@ -514,29 +542,26 @@ impl Pc for PcWindows<'_> {
         self.ctx.reglage(nom)
     }
     fn ecrire_reglage(&mut self, nom: &str, valeur: Value, exiger: bool) -> Result<(), String> {
-        // (l'état d'origine des services et de l'alimentation : avec le permis du verrou, lot J)
-        if nevermind_noyau::contexte::REGLAGES_D_ORIGINE.contains(&nom) {
-            let p = self.ctx.exiger_geste()?;
-            return self.ctx.ecrire_reglage_d_origine(&p, nom, valeur, exiger);
-        }
         self.ctx.ecrire_reglage(nom, valeur, exiger)
     }
-    fn sauvegarde_ecrire(&mut self, sauvegarde: &Value) -> Result<(), String> {
+    fn ecrire_reglage_d_origine(&mut self, p: &Permis, nom: &str, valeur: Value, exiger: bool) -> Result<(), String> {
+        self.ctx.ecrire_reglage_d_origine(p, nom, valeur, exiger)
+    }
+    fn sauvegarde_ecrire(&mut self, p: &Permis, sauvegarde: &Value) -> Result<(), String> {
         // (sans la copie de départ du geste : seulement des ajouts, jamais un retrait)
         self.ctx.exiger_geste()?;
-        self.sauvegarde_fusionner(&json!({}), sauvegarde).map(|_| ())
+        self.sauvegarde_fusionner(p, &json!({}), sauvegarde).map(|_| ())
     }
-    fn sauvegarde_fusionner(&mut self, base: &Value, voulue: &Value) -> Result<Option<Value>, String> {
+    fn sauvegarde_fusionner(&mut self, p: &Permis, base: &Value, voulue: &Value) -> Result<Option<Value>, String> {
         // (l'écrivain unique du noyau, lot A étape 2 : le fichier relu, seul ce que ce geste a changé y est fusionné,
         //  par un fichier temporaire propre à cette écriture ; la sauvegarde du noyau suit)
-        let p = self.ctx.exiger_geste()?;
-        let copie = self.ctx.ecrire_sauvegarde_fusion_json(&p, base, voulue)?;
+        self.ctx.exiger_geste()?;
+        let copie = self.ctx.ecrire_sauvegarde_fusion_json(p, base, voulue)?;
         self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
         Ok(Some(copie))
     }
-    fn sauvegarde_effacer(&mut self) {
-        let Ok(p) = self.ctx.exiger_geste() else { return };
-        if self.ctx.effacer_sauvegarde(&p).is_err() {
+    fn sauvegarde_effacer(&mut self, p: &Permis) {
+        if self.ctx.exiger_geste().is_err() || self.ctx.effacer_sauvegarde(p).is_err() {
             return;
         }
         self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });

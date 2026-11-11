@@ -124,13 +124,16 @@ pub struct Total {
 
 /// `Invoke-CleanOne`
 fn nettoyer_une(pc: &mut dyn Pc, t: &Cible) -> ResultatNettoyage {
-    if let Err(e) = pc.exiger_geste() {
-        return ResultatNettoyage { refuses: 1, journal: vec![format!("[REFUSÉ]   {e}")], ..Default::default() };
-    }
+    let p = match pc.exiger_geste() {
+        Ok(p) => p,
+        Err(e) => {
+            return ResultatNettoyage { refuses: 1, journal: vec![format!("[REFUSÉ]   {e}")], ..Default::default() };
+        }
+    };
     if !t.aide {
-        return pc.nettoyer_dossier(t.id, &t.chemins, &t.exclus);
+        return pc.nettoyer_dossier(&p, t.id, &t.chemins, &t.exclus);
     }
-    match pc.aide("nettoyage.lancer", parametres(&[("Id", json!(t.id))]), 900000) {
+    match pc.aide_qui_change(&p, "nettoyage.lancer", parametres(&[("Id", json!(t.id))]), 900000) {
         Ok(r) => ResultatNettoyage {
             libere: net::champ_nombre(&r, "Freed"),
             supprimes: net::champ_entier(&r, "Deleted"),

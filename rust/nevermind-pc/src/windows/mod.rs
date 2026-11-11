@@ -8,6 +8,7 @@ pub mod journal;
 pub mod wmi;
 
 use crate::pc::ValeurReg;
+use nevermind_noyau::Permis;
 use std::os::windows::process::CommandExt;
 use windows::Win32::Graphics::Gdi::{
     CDS_UPDATEREGISTRY, ChangeDisplaySettingsExW, DEVMODEW, DISPLAY_DEVICEW, DM_DISPLAYFREQUENCY, DM_PELSHEIGHT,
@@ -90,7 +91,7 @@ pub fn reg_noms(chemin: &str) -> Option<Vec<String>> {
 }
 
 /// Écrire une valeur du registre de l'utilisateur (jamais ailleurs : le reste passe par l'Aide)
-pub fn reg_utilisateur_ecrire(chemin: &str, nom: &str, v: &ValeurReg) -> Result<(), String> {
+pub fn reg_utilisateur_ecrire(_p: &Permis, chemin: &str, nom: &str, v: &ValeurReg) -> Result<(), String> {
     let Some((r, sous)) = ruche(chemin).filter(|(r, _)| std::ptr::eq(*r, windows_registry::CURRENT_USER)) else {
         return Err("Seul le registre de l'utilisateur est écrit par Nevermind.".into());
     };
@@ -106,7 +107,7 @@ pub fn reg_utilisateur_ecrire(chemin: &str, nom: &str, v: &ValeurReg) -> Result<
     r.map_err(|e| e.message())
 }
 
-pub fn reg_utilisateur_effacer(chemin: &str, nom: &str) -> Result<(), String> {
+pub fn reg_utilisateur_effacer(_p: &Permis, chemin: &str, nom: &str) -> Result<(), String> {
     let Some((r, sous)) = ruche(chemin).filter(|(r, _)| std::ptr::eq(*r, windows_registry::CURRENT_USER)) else {
         return Err("Seul le registre de l'utilisateur est écrit par Nevermind.".into());
     };
@@ -116,7 +117,7 @@ pub fn reg_utilisateur_effacer(chemin: &str, nom: &str) -> Result<(), String> {
 }
 
 /// Une clé entière du registre de l'utilisateur effacée (les copies d'origine, quand tout est remis)
-pub fn reg_utilisateur_effacer_cle(sous: &str) {
+pub fn reg_utilisateur_effacer_cle(_p: &Permis, sous: &str) {
     let _ = windows_registry::CURRENT_USER.remove_tree(sous);
 }
 
@@ -173,7 +174,7 @@ pub fn ecrans() -> Vec<String> {
 }
 
 /// `SetRefreshRate` : la fréquence d'un écran, même résolution (0 si réussi)
-pub fn ecran_frequence(appareil: &str, hz: i64) -> i32 {
+pub fn ecran_frequence(_p: &Permis, appareil: &str, hz: i64) -> i32 {
     let nom = HSTRING::from(appareil);
     let mut cur = DEVMODEW { dmSize: std::mem::size_of::<DEVMODEW>() as u16, ..Default::default() };
     // SAFETY : structure initialisée avec sa taille
@@ -210,7 +211,7 @@ pub fn curseur() -> Option<String> {
     Some(format!("{g:?}").to_lowercase())
 }
 
-pub fn curseur_ecrire(guid: &str) -> i32 {
+pub fn curseur_ecrire(_p: &Permis, guid: &str) -> i32 {
     let Some(f) = powrprof("PowerSetActiveOverlayScheme") else { return -1 };
     // SAFETY : signature de PowerSetActiveOverlayScheme(GUID) -> DWORD
     let f: unsafe extern "system" fn(GUID) -> u32 = unsafe { std::mem::transmute(f) };
@@ -220,7 +221,7 @@ pub fn curseur_ecrire(guid: &str) -> i32 {
 }
 
 /// `Sync-Mouse` : Windows relit les réglages de la souris (seuil 1, seuil 2, accélération)
-pub fn souris(t1: i64, t2: i64, v: i64) {
+pub fn souris(_p: &Permis, t1: i64, t2: i64, v: i64) {
     let mut p = [t1 as i32, t2 as i32, v as i32];
     // SAFETY : tableau de 3 entiers, comme SPI_SETMOUSE l'attend
     let _ = unsafe {
