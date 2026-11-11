@@ -1,6 +1,7 @@
 //! Les juges exportés de la version PowerShell (outils\exporter-juges-pc.ps1) rejoués sur le bloc Rust, avec un faux PC
 //! qui se comporte exactement comme celui du script : mêmes réponses, mêmes gestes notés. Rien ne touche le vrai PC.
 
+use nevermind_noyau::Permis;
 use nevermind_pc::analyse::{Entrees, Jeu};
 use nevermind_pc::corrections::{self, Moteur, Sauvegarde};
 use nevermind_pc::modele::{Analyse, Constat};
@@ -79,13 +80,16 @@ impl FauxPc {
 }
 
 impl Pc for FauxPc {
+    fn exiger_geste(&self) -> Result<Permis, String> {
+        permis_d_essai()
+    }
     fn reg_lire(&self, chemin: &str, nom: &str) -> Result<Option<ValeurReg>, String> {
         Ok(self
             .reg
             .get(&format!("{chemin}|{nom}"))
             .map(|e| ValeurReg::depuis(&e["Value"], &net::champ_texte(e, "Kind"))))
     }
-    fn reg_utilisateur_ecrire(&mut self, chemin: &str, nom: &str, v: &ValeurReg) -> Result<(), String> {
+    fn reg_utilisateur_ecrire(&mut self, _p: &Permis, chemin: &str, nom: &str, v: &ValeurReg) -> Result<(), String> {
         self.reg.insert(format!("{chemin}|{nom}"), json!({ "Kind": v.sorte(), "Value": v.json() }));
         self.geste(
             "reg.utilisateur.ecrire",
@@ -93,21 +97,21 @@ impl Pc for FauxPc {
         );
         Ok(())
     }
-    fn reg_utilisateur_effacer(&mut self, chemin: &str, nom: &str) -> Result<(), String> {
+    fn reg_utilisateur_effacer(&mut self, _p: &Permis, chemin: &str, nom: &str) -> Result<(), String> {
         self.reg.remove(&format!("{chemin}|{nom}"));
         self.geste("reg.utilisateur.effacer", json!({ "Cle": chemin, "Nom": nom }));
         Ok(())
     }
-    fn origine_utilisateur(&mut self, cle: &str, j: &str) {
+    fn origine_utilisateur(&mut self, _p: &Permis, cle: &str, j: &str) {
         self.geste("origine.utilisateur", json!({ "Cle": cle, "Json": j }));
     }
-    fn origine_utilisateur_oublier(&mut self, cle: &str) {
+    fn origine_utilisateur_oublier(&mut self, _p: &Permis, cle: &str) {
         self.geste("origine.utilisateur.oublier", json!(cle));
     }
-    fn origines_utilisateur_effacer(&mut self) {
+    fn origines_utilisateur_effacer(&mut self, _p: &Permis) {
         self.geste("origines.utilisateur.effacer", Value::Null);
     }
-    fn origines_machine_effacer(&mut self) -> Result<(), String> {
+    fn origines_machine_effacer(&mut self, _p: &Permis) -> Result<(), String> {
         self.geste("origines.machine.effacer", Value::Null);
         Ok(())
     }
@@ -217,7 +221,7 @@ impl Pc for FauxPc {
     fn curseur(&self) -> Option<String> {
         if self.curseur.is_empty() { None } else { Some(self.curseur.clone()) }
     }
-    fn curseur_ecrire(&mut self, g: &str) -> i32 {
+    fn curseur_ecrire(&mut self, _p: &Permis, g: &str) -> i32 {
         self.geste("curseur", json!(g));
         if self.curseur_refuse {
             return 5;
@@ -228,7 +232,7 @@ impl Pc for FauxPc {
     fn ecrans(&self) -> Vec<String> {
         self.ecrans.clone()
     }
-    fn ecran_frequence(&mut self, d: &str, hz: i64) -> i32 {
+    fn ecran_frequence(&mut self, _p: &Permis, d: &str, hz: i64) -> i32 {
         if let Some(t) = self.ecran_lent {
             std::thread::sleep(t);
         }
@@ -242,7 +246,7 @@ impl Pc for FauxPc {
         }
         0
     }
-    fn souris_relire(&mut self, t1: i64, t2: i64, v: i64) {
+    fn souris_relire(&mut self, _p: &Permis, t1: i64, t2: i64, v: i64) {
         self.geste("souris.relire", json!([t1, t2, v]));
     }
     fn service(&self, nom: &str) -> Option<(String, bool)> {
@@ -274,7 +278,7 @@ impl Pc for FauxPc {
     fn hiberfil(&self) -> bool {
         self.hiberfil
     }
-    fn nettoyer_dossier(&mut self, id: &str, chemins: &[String], _exclus: &[String]) -> ResultatNettoyage {
+    fn nettoyer_dossier(&mut self, _p: &Permis, id: &str, chemins: &[String], _exclus: &[String]) -> ResultatNettoyage {
         self.geste("nettoyage.dossier", json!(id));
         ResultatNettoyage {
             libere: 2048.0,
@@ -295,10 +299,10 @@ impl Pc for FauxPc {
         self.geste("reglage", json!({ "Nom": nom, "Valeur": v }));
         Ok(())
     }
-    fn sauvegarde_ecrire(&mut self, _s: &Value) -> Result<(), String> {
+    fn sauvegarde_ecrire(&mut self, _p: &Permis, _s: &Value) -> Result<(), String> {
         Ok(())
     }
-    fn sauvegarde_effacer(&mut self) {
+    fn sauvegarde_effacer(&mut self, _p: &Permis) {
         self.geste("fichier.effacer", json!(["sauvegarde.json", "sauvegarde.json.bak", "sauvegarde.json.tmp"]));
     }
     fn ignores_ecrire(&mut self, i: &[String]) {
@@ -1480,4 +1484,18 @@ fn le_retour_de_la_frequence_d_ecran_ne_fige_pas() {
         std::thread::sleep(Duration::from_millis(100));
     }
     let _ = std::fs::remove_dir_all(&d);
+}
+
+/// Lot J : le permis du verrou des gestes pour le faux PC. Un permis ne se fabrique pas hors du noyau : celui-ci vient
+/// d'un contexte d'essai à part, dont le fil du test tient le verrou (le geste est gardé jusqu'à la fin du fil).
+fn permis_d_essai() -> Result<Permis, String> {
+    thread_local! {
+        static CONTEXTE: nevermind_noyau::Contexte = {
+            let d = nevermind_noyau::dossier_essai("faux-pc-permis");
+            let c = nevermind_noyau::Contexte::nouveau(d.join("a"), d.join("d"), false, true);
+            std::mem::forget(c.prendre_geste("Faux PC", "Essai").expect("le verrou du faux PC"));
+            c
+        };
+    }
+    CONTEXTE.with(|c| c.exiger_geste())
 }

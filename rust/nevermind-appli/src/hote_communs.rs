@@ -209,12 +209,15 @@ impl Hote {
                 let r = match texte(&e, "Type").as_str() {
                     "reg" => {
                         let kind = texte(&e, "Kind");
-                        ctx.changer_registre(
-                            &texte(&e, "Path"),
-                            &texte(&e, "Name"),
-                            e.get("Value").unwrap_or(&Value::Null),
-                            if kind.is_empty() { "DWord" } else { &kind },
-                        )
+                        ctx.exiger_geste().and_then(|p| {
+                            ctx.changer_registre(
+                                &p,
+                                &texte(&e, "Path"),
+                                &texte(&e, "Name"),
+                                e.get("Value").unwrap_or(&Value::Null),
+                                if kind.is_empty() { "DWord" } else { &kind },
+                            )
+                        })
                     }
                     "svc" => couper_service(ctx, etat_service.as_ref(), &texte(&e, "Name"), &texte(&e, "Demarrage")),
                     t => Err(format!("écriture inconnue ({t})")),
@@ -277,7 +280,7 @@ fn couper_service(
     nom: &str,
     demarrage: &str,
 ) -> Result<(), String> {
-    ctx.exiger_geste()?;
+    let permis = ctx.exiger_geste()?;
     let demarrage = if demarrage.is_empty() { "Disabled" } else { demarrage };
     let (debut, tourne) = etat_service(nom).ok_or_else(|| format!("service {nom} introuvable"))?;
     let orig: Vec<Value> = match ctx.reglage("SvcOriginal") {
@@ -289,12 +292,18 @@ fn couper_service(
     if !deja {
         let mut n = orig.clone();
         n.push(json!(format!("{nom}|{debut}|{}", if tourne { "True" } else { "False" })));
-        ctx.ecrire_reglage("SvcOriginal", Value::Array(n), true)?;
+        ctx.ecrire_reglage_d_origine(&permis, "SvcOriginal", Value::Array(n), true)?;
     }
     ctx.noter_changement(
         json!({ "Type": "svc", "Name": nom, "StartType": debut, "Running": tourne, "Nouveau": demarrage }),
     );
-    ctx.aide("service.regler", &json!({ "Nom": nom, "Demarrage": demarrage, "Arreter": tourne }), 60_000).map(|_| ())
+    ctx.aide_qui_change(
+        &permis,
+        "service.regler",
+        &json!({ "Nom": nom, "Demarrage": demarrage, "Arreter": tourne }),
+        60_000,
+    )
+    .map(|_| ())
 }
 
 impl Hote {

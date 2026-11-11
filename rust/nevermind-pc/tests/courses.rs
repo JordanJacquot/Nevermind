@@ -72,7 +72,10 @@ fn le_journal_d_un_geste_ne_ramasse_plus_le_geste_d_une_autre_page() {
     let g = ctx.prendre_geste("Couper les envois", "Trafic").unwrap();
     hote.lancer_geste(&ctx, "sauvegarde-appliquer", g, move |f| {
         f.ctx.commencer_changements();
-        f.ctx.changer_registre(CLE_ENVOIS, "AllowTelemetry", &json!(0), "DWord").unwrap();
+        f.ctx
+            .exiger_geste()
+            .and_then(|p| f.ctx.changer_registre(&p, CLE_ENVOIS, "AllowTelemetry", &json!(0), "DWord"))
+            .unwrap();
         ouvert.send(()).unwrap();
         let _ = attente.recv_timeout(Duration::from_secs(15));
         f.ctx.finir_changements()
@@ -86,16 +89,18 @@ fn le_journal_d_un_geste_ne_ramasse_plus_le_geste_d_une_autre_page() {
     );
     // Un fil sans geste ne peut rien changer (la vérification de chaque écriture)
     let c2 = ctx.clone();
-    let r = std::thread::spawn(move || c2.changer_registre(CLE_RDP, "fDenyTSConnections", &json!(1), "DWord"))
-        .join()
-        .unwrap();
+    let r = std::thread::spawn(move || {
+        c2.exiger_geste().and_then(|p| c2.changer_registre(&p, CLE_RDP, "fDenyTSConnections", &json!(1), "DWord"))
+    })
+    .join()
+    .unwrap();
     assert!(r.is_err(), "un changement sans geste est passé");
     // Même un geste prioritaire, sur son fil, a son propre journal
     let mut prio: Travaux<Result<(), String>> = Travaux::default();
     let c3 = ctx.clone();
     prio.lancer(&ctx, "prio", move |_| {
         let _g = c3.geste_prioritaire("Essai prioritaire", "Mode jeu");
-        c3.changer_registre(CLE_RDP, "fDenyTSConnections", &json!(1), "DWord")
+        c3.exiger_geste().and_then(|p| c3.changer_registre(&p, CLE_RDP, "fDenyTSConnections", &json!(1), "DWord"))
     });
     attendre_fin(&mut prio).unwrap().unwrap();
 
@@ -159,7 +164,7 @@ fn le_point_de_restauration_laisse_les_autres_pages_utilisables() {
     ctx.changer_sauvegarde(|s| {
         s.dns.insert("{CARTE}".into(), json!("192.168.1.1"));
     });
-    ctx.enregistrer_sauvegarde().unwrap();
+    ctx.exiger_geste().and_then(|p| ctx.enregistrer_sauvegarde(&p)).unwrap();
     // Le point de restauration finit pendant que le DNS tient encore le verrou : « Appliquer » attend son tour
     feu.send(()).unwrap();
     std::thread::sleep(Duration::from_millis(300));
@@ -252,7 +257,7 @@ fn la_copie_de_ton_pc_n_efface_plus_le_dns_note_pendant_son_travail() {
         ctx.changer_sauvegarde(|s| {
             s.dns.insert("{GUID-CARTE}".into(), json!("192.168.1.1"));
         });
-        ctx.enregistrer_sauvegarde().unwrap();
+        ctx.exiger_geste().and_then(|p| ctx.enregistrer_sauvegarde(&p)).unwrap();
     }
     // La suite d'« Appliquer » : une valeur d'origine notée, puis l'écriture
     let _g = ctx.prendre_geste("Appliquer", "Ton PC").unwrap();
@@ -282,7 +287,7 @@ fn la_valeur_d_origine_la_plus_ancienne_gagne() {
         ctx.changer_sauvegarde(|s| {
             s.dns.insert("{GUID-CARTE}".into(), json!("192.168.1.1"));
         });
-        ctx.enregistrer_sauvegarde().unwrap();
+        ctx.exiger_geste().and_then(|p| ctx.enregistrer_sauvegarde(&p)).unwrap();
     }
     let _g = ctx.prendre_geste("Annuler", "Ton PC").unwrap();
     let mut p = PcWindows::nouveau(&ctx);
@@ -306,7 +311,9 @@ fn tout_restaurer_garde_un_service_note_pendant_son_travail() {
     let ctx = Contexte::nouveau(d.join("a"), d.join("d"), false, true).partage();
     {
         let _g = ctx.prendre_geste("Mise en place", "Essai").unwrap();
-        ctx.ecrire_reglage("SvcOriginal", json!(["ServiceA|Automatic|True"]), true).unwrap();
+        ctx.exiger_geste()
+            .and_then(|p| ctx.ecrire_reglage_d_origine(&p, "SvcOriginal", json!(["ServiceA|Automatic|True"]), true))
+            .unwrap();
     }
     let c = Arc::downgrade(&ctx);
     ctx.fausse_aide(Arc::new(move |a: &str, p: &Value| {
@@ -317,7 +324,9 @@ fn tout_restaurer_garde_un_service_note_pendant_son_travail() {
             // (pendant ce temps : « Couper ce qui est sûr » note un autre service)
             let mut l = c.reglage("SvcOriginal").and_then(|v| v.as_array().cloned()).unwrap_or_default();
             l.push(json!("AdobeARMservice|Automatic|True"));
-            c.ecrire_reglage("SvcOriginal", Value::Array(l), true).unwrap();
+            c.exiger_geste()
+                .and_then(|p| c.ecrire_reglage_d_origine(&p, "SvcOriginal", Value::Array(l), true))
+                .unwrap();
         }
         Ok(json!("OK"))
     }));
@@ -376,7 +385,7 @@ fn deux_ecrivains_au_meme_moment_ne_perdent_rien() {
             c2.changer_sauvegarde(|s| {
                 s.dns.insert(format!("carte{i}"), json!("9.9.9.9"));
             });
-            if let Err(e) = c2.enregistrer_sauvegarde() {
+            if let Err(e) = c2.exiger_geste().and_then(|p| c2.enregistrer_sauvegarde(&p)) {
                 erreurs.push(e);
             }
         }
@@ -469,7 +478,7 @@ fn tout_restaurer_garde_les_lignes_pare_feu_si_le_deblocage_echoue() {
     }));
     let _g = ctx.prendre_geste("Tout restaurer", "Ton PC").unwrap();
     let cle = r"HKLM:\SOFTWARE\MindsetEssaiLotA";
-    ctx.changer_registre(cle, "X", &json!(1), "DWord").unwrap();
+    ctx.exiger_geste().and_then(|p| ctx.changer_registre(&p, cle, "X", &json!(1), "DWord")).unwrap();
     ctx.ajouter_historique(
         "Réglage X",
         &[],

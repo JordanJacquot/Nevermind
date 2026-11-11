@@ -21,9 +21,13 @@
 //! Chaque écriture qui change le PC vérifie que son fil tient bien un geste ([`Contexte::exiger_geste`]) : un geste
 //! oublié échoue au lieu de passer en silence. Le garde-fou `tests/gestes_sous_verrou.rs` relève chaque endroit des
 //! sources qui change le PC et vérifie qu'il passe par le verrou.
+//!
+//! Lot J : le compilateur le vérifie aussi. Les écritures du noyau (registre, sauvegarde.json, état d'origine, demandes à
+//! l'Aide qui changent le PC) demandent un [`Permis`], qu'on n'obtient que par [`Contexte::exiger_geste`].
 
 use crate::Contexte;
 use serde_json::Value;
+use std::marker::PhantomData;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::ThreadId;
 use std::time::{Duration, Instant};
@@ -194,6 +198,51 @@ impl Drop for Geste {
     }
 }
 
+/// La preuve, vérifiée par le compilateur, que ce fil tient le verrou des gestes (lot J, M5 de l'audit du 10/11).
+///
+/// - On ne l'obtient que par [`Contexte::exiger_geste`], qui refuse sans le verrou : son champ est privé, aucun autre
+///   module ne peut en fabriquer une. Un refus ne donne pas de permis : une fonction qui continue après un refus n'a
+///   rien pour écrire.
+/// - Chaque écriture qui change le PC la demande en argument (`&Permis`) : le registre, sauvegarde.json, l'état
+///   d'origine des services et de l'alimentation, les demandes à l'Aide qui changent le PC
+///   ([`Contexte::aide_qui_change`]). Une écriture faite sans passer par le verrou ne compile plus.
+/// - Elle ne passe pas d'un fil à l'autre (ni `Send` ni `Sync`) : le verrou est tenu par un fil, le travail de fond
+///   qui emporte le geste ([`Geste::ici`]) demande son propre permis.
+///
+/// Chaque écriture vérifie encore elle-même que son fil tient le verrou (un permis gardé après la fin du geste ne
+/// change donc rien).
+///
+/// Avec le permis, l'écriture compile :
+/// ```no_run
+/// let ctx: nevermind_noyau::Contexte = todo!();
+/// let p = ctx.exiger_geste().unwrap();
+/// let _ = ctx.changer_registre(&p, "HKCU:\\Software\\X", "N", &serde_json::json!(1), "DWord");
+/// let _ = ctx.aide_qui_change(&p, "dns.regler", &serde_json::json!({}), 1000);
+/// ```
+/// Sans lui, elle ne compile pas :
+/// ```compile_fail
+/// let ctx: nevermind_noyau::Contexte = todo!();
+/// let _ = ctx.changer_registre("HKCU:\\Software\\X", "N", &serde_json::json!(1), "DWord");
+/// ```
+/// ```compile_fail
+/// let ctx: nevermind_noyau::Contexte = todo!();
+/// let _ = ctx.enregistrer_sauvegarde();
+/// ```
+/// On ne peut pas en fabriquer un hors du noyau :
+/// ```compile_fail
+/// let p = nevermind_noyau::Permis { _fil: std::marker::PhantomData };
+/// ```
+/// Ni l'envoyer à un autre fil :
+/// ```compile_fail
+/// fn envoyer<T: Send>(_: T) {}
+/// let ctx: nevermind_noyau::Contexte = todo!();
+/// envoyer(ctx.exiger_geste().unwrap());
+/// ```
+#[derive(Debug)]
+pub struct Permis {
+    _fil: PhantomData<*const ()>,
+}
+
 /// Le refus d'un geste automatique pendant la fermeture de Nevermind
 pub const FERMETURE: &str = "Nevermind se ferme";
 
@@ -290,12 +339,12 @@ impl Contexte {
     }
 
     /// Une écriture qui change le PC vérifie que son fil tient un geste (de l'utilisateur ou prioritaire) : sinon
-    /// elle est refusée, rien n'est changé.
-    pub fn exiger_geste(&self) -> Result<(), String> {
+    /// elle est refusée, rien n'est changé. Le [`Permis`] rendu est ce que demandent les écritures (lot J).
+    pub fn exiger_geste(&self) -> Result<Permis, String> {
         let fil = std::thread::current().id();
         let mut e = self.verrou_gestes().etat();
         if e.du_fil(fil).is_some() {
-            return Ok(());
+            return Ok(Permis { _fil: PhantomData });
         }
         let refus = e.refus();
         drop(e);
@@ -464,12 +513,12 @@ mod tests {
         let c = ctx("gestes-fil").partage();
         let g = c.prendre_geste("Couper les envois", "Trafic").unwrap();
         let c2 = c.clone();
-        let r = std::thread::spawn(move || c2.exiger_geste()).join().unwrap();
+        let r = std::thread::spawn(move || c2.exiger_geste().map(|_| ())).join().unwrap();
         assert!(r.is_err(), "un autre fil ne profite pas du verrou");
         let c3 = c.clone();
         let r = std::thread::spawn(move || {
             g.ici();
-            c3.exiger_geste()
+            c3.exiger_geste().map(|_| ())
         })
         .join()
         .unwrap();
@@ -575,6 +624,37 @@ mod tests {
         c.verrou_des_gestes().rendre(99);
         assert!(c.refus_geste().is_none());
         assert!(c.prendre_geste("DNS", "Réseau").is_ok());
+    }
+
+    /// Lot J : une demande à l'Aide qui change le PC ne part qu'avec le permis du verrou (`aide_qui_change`) ; par les
+    /// autres voies, elle est refusée avant de partir, même quand le fil tient le verrou. Une lecture passe sans permis.
+    /// L'état d'origine des services se note seulement avec le permis.
+    #[test]
+    fn une_action_qui_change_le_pc_passe_par_le_permis() {
+        let c = ctx("gestes-permis");
+        let parties: Arc<Mutex<Vec<String>>> = Arc::default();
+        let p2 = parties.clone();
+        c.fausse_aide(Arc::new(move |a: &str, _p: &Value| {
+            p2.lock().unwrap().push(a.to_string());
+            Ok(json!("OK"))
+        }));
+        let _g = c.prendre_geste("DNS", "Réseau").unwrap();
+        assert!(c.aide("dns.regler", &json!({}), 1000).is_err(), "sans le permis, par aide");
+        assert!(c.aide_sans_demande("dns.regler", &json!({}), 1000).is_err(), "sans le permis, sans demande");
+        assert!(c.aide_de_fond("dns.regler", &json!({}), 1000).is_err(), "sans le permis, de fond");
+        assert!(c.aide_texte("dns.regler", "{}", 1000).is_err(), "sans le permis, en texte");
+        assert!(parties.lock().unwrap().is_empty(), "une demande est partie sans permis");
+        let p = c.exiger_geste().unwrap();
+        assert_eq!(c.aide_qui_change(&p, "dns.regler", &json!({}), 1000), Ok(json!("OK")));
+        assert_eq!(
+            c.aide_sans_demande("lecture.pc", &json!({}), 1000),
+            Ok(json!("OK")),
+            "une lecture passe sans permis"
+        );
+        assert_eq!(*parties.lock().unwrap(), vec!["dns.regler".to_string(), "lecture.pc".to_string()]);
+        assert!(c.ecrire_reglage("SvcOriginal", json!([]), true).is_err(), "l'état d'origine sans permis");
+        assert!(c.ecrire_reglage_d_origine(&p, "SvcOriginal", json!(["a|b|True"]), true).is_ok());
+        assert_eq!(c.reglage("SvcOriginal"), Some(json!(["a|b|True"])));
     }
 
     #[test]

@@ -535,17 +535,17 @@ impl BlocReseau {
             let r: Result<(), String> = match act.geste {
                 Geste::WifiManuel => {
                     let noms = crate::texte::liste(Some(&act.arg));
-                    ctx.aide("wifi.manuel", &json!({ "Profils": noms }), 30_000).map(|_| {
+                    ctx.exiger_geste().and_then(|p| ctx.aide_qui_change(&p, "wifi.manuel", &json!({ "Profils": noms }), 30_000)).map(|_| {
                         definitif(&mut log, "Wi-Fi ouverts en connexion manuelle", format!("Connexion manuelle : {}", noms.join(", ")),
                             "Paramètres de Windows, Réseau et Internet, Wi-Fi, « Gérer les réseaux connus » : choisir le réseau et cocher « Se connecter automatiquement ».");
                     })
                 }
-                Geste::PareFeu => ctx.aide("pare-feu.activer", &json!({}), 30_000).map(|_| {
+                Geste::PareFeu => ctx.exiger_geste().and_then(|p| ctx.aide_qui_change(&p, "pare-feu.activer", &json!({}), 30_000)).map(|_| {
                     definitif(&mut log, "Pare-feu de Windows réactivé", "Pare-feu réactivé sur tous les réseaux".into(),
                         "Sécurité Windows, « Pare-feu et protection du réseau » : choisir le réseau et désactiver le pare-feu.");
                 }),
                 Geste::Smb1 => {
-                    ctx.aide("smb1.couper", &json!({ "Client": crate::texte::vrai(Some(&act.arg)) }), 900_000).map(|_| {
+                    ctx.exiger_geste().and_then(|p| ctx.aide_qui_change(&p, "smb1.couper", &json!({ "Client": crate::texte::vrai(Some(&act.arg)) }), 900_000)).map(|_| {
                         definitif(&mut log, "SMBv1 désactivé", "Ancien partage de fichiers SMBv1 désactivé".into(),
                             "Panneau de configuration, Programmes, « Activer ou désactiver des fonctionnalités Windows » : cocher « Support de partage de fichiers SMB 1.0/CIFS ».");
                     })
@@ -557,7 +557,7 @@ impl BlocReseau {
                     let cle = r"HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server";
                     let st = ctx.registre_etat(cle, "fDenyTSConnections");
                     log.push(json!({ "Type": "reg", "Path": cle, "Name": "fDenyTSConnections", "Existed": st["Existed"], "Value": st["Value"], "Kind": st["Kind"], "Nouveau": 1, "NouveauType": "DWord" }));
-                    ctx.changer_registre(cle, "fDenyTSConnections", &json!(1), "DWord")
+                    ctx.exiger_geste().and_then(|p| ctx.changer_registre(&p, cle, "fDenyTSConnections", &json!(1), "DWord"))
                 }
                 Geste::Public => sonde.passer_public(crate::texte::reel(Some(&act.arg)) as i64),
                 Geste::Ouvrir | Geste::ChangerDns | Geste::Partages => Ok(()),
@@ -730,8 +730,10 @@ impl BlocReseau {
             ctx.changer_sauvegarde(|s| {
                 s.dns.insert(cle.clone(), json!(avant));
             });
-            if let Err(e) = ctx.enregistrer_sauvegarde_ou_oublier(move |s| {
-                s.dns.remove(&cle);
+            if let Err(e) = ctx.exiger_geste().and_then(|p| {
+                ctx.enregistrer_sauvegarde_ou_oublier(&p, move |s| {
+                    s.dns.remove(&cle);
+                })
             }) {
                 effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")));
                 return;
@@ -747,7 +749,15 @@ impl BlocReseau {
             fond.effet(nevermind_noyau::signaux::occupe("Changement du DNS..."));
             let r = fond
                 .ctx
-                .aide("dns.regler", &json!({ "Index": net.if_index, "Serveurs": serveurs }), 30_000)
+                .exiger_geste()
+                .and_then(|p| {
+                    fond.ctx.aide_qui_change(
+                        &p,
+                        "dns.regler",
+                        &json!({ "Index": net.if_index, "Serveurs": serveurs }),
+                        30_000,
+                    )
+                })
                 .map(|_| sonde.connexion().map(Box::new));
             FinGeste::Dns { log, serveurs, r }
         });
@@ -801,7 +811,11 @@ impl BlocReseau {
         let idx = net.if_index;
         self.travaux.lancer_geste(ctx, GESTE, geste, move |fond| FinGeste::Carte {
             idx,
-            r: fond.ctx.aide("carte.relancer", &json!({ "Index": idx }), 60_000).map(|_| ()),
+            r: fond
+                .ctx
+                .exiger_geste()
+                .and_then(|p| fond.ctx.aide_qui_change(&p, "carte.relancer", &json!({ "Index": idx }), 60_000))
+                .map(|_| ()),
         });
         self.relever_travaux(ctx, effets);
     }

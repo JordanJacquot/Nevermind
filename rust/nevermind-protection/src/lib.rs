@@ -1114,7 +1114,10 @@ fn geste_long(
             }
         }
         Sorte::RetirerExclusions(l) => {
-            match ctx.aide("antivirus.retirer-exclusions", &json!({ "Elements": l }), 60_000) {
+            let r = ctx.exiger_geste().and_then(|p| {
+                ctx.aide_qui_change(&p, "antivirus.retirer-exclusions", &json!({ "Elements": l }), 60_000)
+            });
+            match r {
                 Ok(_) => {
                     definitif = Some((
                         format!("Exclusions retirées : {}", l.join(", ")),
@@ -1124,7 +1127,10 @@ fn geste_long(
                 Err(e) => erreur = Some(e),
             }
         }
-        Sorte::ReactiverPareFeu => match ctx.aide("pare-feu.activer", &json!({}), 60_000) {
+        Sorte::ReactiverPareFeu => match ctx
+            .exiger_geste()
+            .and_then(|p| ctx.aide_qui_change(&p, "pare-feu.activer", &json!({}), 60_000))
+        {
             Ok(_) => definitif = Some((
                 "Pare-feu réactivé sur tous les réseaux".into(),
                 "Sécurité Windows, « Pare-feu et protection du réseau » : choisir le réseau et désactiver le pare-feu."

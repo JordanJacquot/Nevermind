@@ -391,13 +391,17 @@ impl Session {
         if choix != "keep" {
             // (la réponse à « Tes écrans s'affichent bien ? » passe en priorité, jamais refusée : le bloc tient le
             //  verrou des gestes pour elle)
-            if let Err(e) = pc.exiger_geste() {
+            let permis = pc.exiger_geste();
+            if let Err(e) = &permis {
                 pc.journal(&format!("Fréquence pas remise : {e}"));
             }
             let ecrans: Vec<Value> = suite.journal.iter().filter(|e| e["Type"] == "display").cloned().collect();
             for d in ecrans {
                 let dev = crate::net::champ_texte(&d, "Device");
-                pc.ecran_frequence(&dev, crate::net::champ_entier(&d, "Hz"));
+                // (lot J : sans le permis du verrou, rien n'est changé ; la suite est la même, le point est ignoré)
+                if let Ok(p) = &permis {
+                    pc.ecran_frequence(p, &dev, crate::net::champ_entier(&d, "Hz"));
+                }
                 if let Some(i) = suite.journal.iter().position(|e| *e == d) {
                     suite.journal.remove(i);
                 }

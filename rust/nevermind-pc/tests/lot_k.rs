@@ -40,7 +40,7 @@ fn tout_restaurer_sans_lire_le_pare_feu(nom: &str, aide: Result<Value, String>) 
     }));
     let _g = ctx.prendre_geste("Tout restaurer", "Ton PC").unwrap();
     let cle = r"HKLM:\SOFTWARE\MindsetEssaiLotK";
-    ctx.changer_registre(cle, "X", &json!(1), "DWord").unwrap();
+    ctx.exiger_geste().and_then(|p| ctx.changer_registre(&p, cle, "X", &json!(1), "DWord")).unwrap();
     ctx.ajouter_historique(
         "Réglage X",
         &[],

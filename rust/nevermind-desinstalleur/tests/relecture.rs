@@ -8,6 +8,7 @@
 
 use nevermind_desinstalleur::choix::Choix;
 use nevermind_desinstalleur::travail::{self, Fin, Lieux, Relue, Suppression, Systeme};
+use nevermind_noyau::Permis;
 use nevermind_pc::corrections::Sauvegarde;
 use nevermind_pc::net;
 use nevermind_pc::pc::{Pc, ResultatNettoyage, ValeurReg};
@@ -29,26 +30,29 @@ struct FauxPc {
 }
 
 impl Pc for FauxPc {
+    fn exiger_geste(&self) -> Result<Permis, String> {
+        permis_d_essai()
+    }
     fn reg_lire(&self, chemin: &str, nom: &str) -> Result<Option<ValeurReg>, String> {
         Ok(self
             .reg
             .get(&format!("{chemin}|{nom}"))
             .map(|e| ValeurReg::depuis(&e["Value"], &net::champ_texte(e, "Kind"))))
     }
-    fn reg_utilisateur_ecrire(&mut self, chemin: &str, nom: &str, v: &ValeurReg) -> Result<(), String> {
+    fn reg_utilisateur_ecrire(&mut self, _p: &Permis, chemin: &str, nom: &str, v: &ValeurReg) -> Result<(), String> {
         self.reg.insert(format!("{chemin}|{nom}"), json!({ "Kind": v.sorte(), "Value": v.json() }));
         self.gestes.borrow_mut().push(format!("écrit {chemin}|{nom}={}", v.json()));
         Ok(())
     }
-    fn reg_utilisateur_effacer(&mut self, chemin: &str, nom: &str) -> Result<(), String> {
+    fn reg_utilisateur_effacer(&mut self, _p: &Permis, chemin: &str, nom: &str) -> Result<(), String> {
         self.reg.remove(&format!("{chemin}|{nom}"));
         self.gestes.borrow_mut().push(format!("effacé {chemin}|{nom}"));
         Ok(())
     }
-    fn origine_utilisateur(&mut self, _cle: &str, _json: &str) {}
-    fn origine_utilisateur_oublier(&mut self, _cle: &str) {}
-    fn origines_utilisateur_effacer(&mut self) {}
-    fn origines_machine_effacer(&mut self) -> Result<(), String> {
+    fn origine_utilisateur(&mut self, _p: &Permis, _cle: &str, _json: &str) {}
+    fn origine_utilisateur_oublier(&mut self, _p: &Permis, _cle: &str) {}
+    fn origines_utilisateur_effacer(&mut self, _p: &Permis) {}
+    fn origines_machine_effacer(&mut self, _p: &Permis) -> Result<(), String> {
         Ok(())
     }
     fn aide(&mut self, action: &str, p: Value, _delai: u64) -> Result<Value, String> {
@@ -61,16 +65,16 @@ impl Pc for FauxPc {
     fn curseur(&self) -> Option<String> {
         None
     }
-    fn curseur_ecrire(&mut self, _g: &str) -> i32 {
+    fn curseur_ecrire(&mut self, _p: &Permis, _g: &str) -> i32 {
         0
     }
     fn ecrans(&self) -> Vec<String> {
         Vec::new()
     }
-    fn ecran_frequence(&mut self, _d: &str, _hz: i64) -> i32 {
+    fn ecran_frequence(&mut self, _p: &Permis, _d: &str, _hz: i64) -> i32 {
         0
     }
-    fn souris_relire(&mut self, _a: i64, _b: i64, _c: i64) {}
+    fn souris_relire(&mut self, _p: &Permis, _a: i64, _b: i64, _c: i64) {}
     fn service(&self, _nom: &str) -> Option<(String, bool)> {
         None
     }
@@ -90,7 +94,7 @@ impl Pc for FauxPc {
     fn hiberfil(&self) -> bool {
         false
     }
-    fn nettoyer_dossier(&mut self, _id: &str, _c: &[String], _e: &[String]) -> ResultatNettoyage {
+    fn nettoyer_dossier(&mut self, _p: &Permis, _id: &str, _c: &[String], _e: &[String]) -> ResultatNettoyage {
         ResultatNettoyage::default()
     }
     fn reglage(&self, nom: &str) -> Option<Value> {
@@ -100,10 +104,10 @@ impl Pc for FauxPc {
         self.reglages.borrow_mut().insert(nom.into(), v);
         Ok(())
     }
-    fn sauvegarde_ecrire(&mut self, _s: &Value) -> Result<(), String> {
+    fn sauvegarde_ecrire(&mut self, _p: &Permis, _s: &Value) -> Result<(), String> {
         Ok(())
     }
-    fn sauvegarde_effacer(&mut self) {}
+    fn sauvegarde_effacer(&mut self, _p: &Permis) {}
     fn ignores_ecrire(&mut self, _i: &[String]) {}
     fn historique_ajouter(&mut self, _t: &str, _d: &[String], _j: &[Value]) -> Option<String> {
         None
@@ -439,7 +443,7 @@ mod sur_le_disque {
         );
         assert_eq!(ctx.historique().len(), 1, "l'historique n'est pas relu");
         // La remise en état, puis la fin : ce qui a été relu sert de référence
-        ctx.ecrire_reglage("SvcOriginal", json!([]), false).unwrap();
+        ctx.exiger_geste().and_then(|p| ctx.ecrire_reglage_d_origine(&p, "SvcOriginal", json!([]), false)).unwrap();
         let reference = sys.reglages_relus.clone().unwrap_or(lus);
         ecrire_donnees(&donnees, &ctx, reference.as_ref());
         let p: Value =
@@ -481,4 +485,18 @@ mod sur_le_disque {
         let _ = std::fs::remove_dir(&donnees);
         let _ = std::fs::remove_dir_all(&b);
     }
+}
+
+/// Lot J : le permis du verrou des gestes pour le faux PC. Un permis ne se fabrique pas hors du noyau : celui-ci vient
+/// d'un contexte d'essai à part, dont le fil du test tient le verrou (le geste est gardé jusqu'à la fin du fil).
+fn permis_d_essai() -> Result<Permis, String> {
+    thread_local! {
+        static CONTEXTE: nevermind_noyau::Contexte = {
+            let d = nevermind_noyau::dossier_essai("faux-pc-permis");
+            let c = nevermind_noyau::Contexte::nouveau(d.join("a"), d.join("d"), false, true);
+            std::mem::forget(c.prendre_geste("Faux PC", "Essai").expect("le verrou du faux PC"));
+            c
+        };
+    }
+    CONTEXTE.with(|c| c.exiger_geste())
 }

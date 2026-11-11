@@ -31,7 +31,7 @@ pub mod travaux;
 pub mod windows;
 pub use assistance::pages_assistance;
 pub use contexte::{Contexte, horodatage};
-pub use gestes::Geste;
+pub use gestes::{Geste, Permis};
 
 /// Ce qu'un bloc demande à l'hôte (il ne touche jamais la fenêtre lui-même).
 #[derive(Debug, Clone, PartialEq)]

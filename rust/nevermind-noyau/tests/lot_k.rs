@@ -99,7 +99,7 @@ fn les_fichiers_temporaires_laisses_sont_effaces_au_demarrage() {
     std::fs::write(donnees.join("sauvegarde.json.4242-7.tmp"), b"{}").unwrap();
     vieillir(&donnees.join("sauvegarde.json.4242-7.tmp"));
     let g = ctx.prendre_geste("Tout restaurer", "Ton PC").unwrap();
-    ctx.effacer_sauvegarde().unwrap();
+    ctx.exiger_geste().and_then(|p| ctx.effacer_sauvegarde(&p)).unwrap();
     drop(g);
     assert!(!donnees.join("sauvegarde.json.4242-7.tmp").exists(), "« Tout restaurer » a laissé le fichier temporaire");
     let _ = std::fs::remove_dir_all(&d);

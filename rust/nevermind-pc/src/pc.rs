@@ -5,6 +5,7 @@
 //! donnees.ps1, tout le reste par l'Aide). Les tests : un faux PC qui NOTE chaque geste au lieu de le faire, avec les
 //! mêmes noms que le faux PC de outils\exporter-juges-pc.ps1, pour comparer la suite exacte des gestes.
 
+use nevermind_noyau::Permis;
 use serde_json::{Map, Value, json};
 
 /// Une valeur du registre (`GetValue` de .NET : DWORD signé, QWORD, texte, liste de textes, octets).
@@ -97,11 +98,10 @@ pub struct ResultatNettoyage {
 /// Une demande d'écriture du registre faite par Nevermind lui-même (réglages de l'utilisateur, HKCU).
 pub trait Pc {
     // ---- Le verrou des gestes (lot A du second audit : un seul geste qui change le PC à la fois)
-    /// Ce geste tient-il le verrou sur ce fil ? Sinon rien n'est changé (le vrai PC : `Contexte::exiger_geste` ; les
-    /// faux PC des tests : toujours oui).
-    fn exiger_geste(&self) -> Result<(), String> {
-        Ok(())
-    }
+    /// Ce geste tient-il le verrou sur ce fil ? Sinon rien n'est changé (le vrai PC : `Contexte::exiger_geste`). Lot J :
+    /// le [`Permis`] rendu est ce que demande chaque méthode qui change le PC ; on ne l'obtient que du verrou des gestes
+    /// d'un contexte (les faux PC des tests prennent celui d'un contexte d'essai dont leur fil tient le verrou).
+    fn exiger_geste(&self) -> Result<Permis, String>;
     /// Ajustement B : le verrou rendu le temps du point de restauration (rien n'est noté pendant ce temps)
     fn suspendre_geste(&mut self) -> Option<u64> {
         None
@@ -119,26 +119,40 @@ pub trait Pc {
         None
     }
     /// Écrire une valeur du registre de l'utilisateur (HKCU) : Nevermind le fait lui-même (donnees.ps1).
-    fn reg_utilisateur_ecrire(&mut self, chemin: &str, nom: &str, valeur: &ValeurReg) -> Result<(), String>;
-    fn reg_utilisateur_effacer(&mut self, chemin: &str, nom: &str) -> Result<(), String>;
+    fn reg_utilisateur_ecrire(&mut self, p: &Permis, chemin: &str, nom: &str, valeur: &ValeurReg)
+    -> Result<(), String>;
+    fn reg_utilisateur_effacer(&mut self, p: &Permis, chemin: &str, nom: &str) -> Result<(), String>;
     /// La copie de la valeur d'origine dans le registre de l'utilisateur (`Software\Mindset\Nevermind\Origines`), si elle
     /// n'y est pas déjà.
-    fn origine_utilisateur(&mut self, cle: &str, json: &str);
-    fn origine_utilisateur_oublier(&mut self, cle: &str);
-    fn origines_utilisateur_effacer(&mut self);
+    fn origine_utilisateur(&mut self, p: &Permis, cle: &str, json: &str);
+    fn origine_utilisateur_oublier(&mut self, p: &Permis, cle: &str);
+    fn origines_utilisateur_effacer(&mut self, p: &Permis);
     /// (seulement si l'Aide n'a pas pu oublier les siennes : la clé de la machine, qui demande les droits)
-    fn origines_machine_effacer(&mut self) -> Result<(), String>;
+    fn origines_machine_effacer(&mut self, p: &Permis) -> Result<(), String>;
 
     // ---- L'Aide (tout ce qui demande les droits administrateur)
     /// Un geste demandé d'un clic : peut proposer la demande de Windows si l'Aide ne répond pas.
+    /// Lot J : une action qui change le PC passe par [`Pc::aide_qui_change`], avec le permis.
     fn aide(&mut self, action: &str, parametres: Value, delai_ms: u64) -> Result<Value, String>;
+    /// Une demande à l'Aide qui change le PC (`ACTIONS_QUI_CHANGENT`), avec le permis du verrou des gestes (lot J). Par
+    /// défaut `aide` : seulement les faux PC des tests ; ceux de Nevermind et du désinstalleur ont la leur.
+    fn aide_qui_change(
+        &mut self,
+        _p: &Permis,
+        action: &str,
+        parametres: Value,
+        delai_ms: u64,
+    ) -> Result<Value, String> {
+        self.aide(action, parametres, delai_ms)
+    }
     /// `Get-AideLecture` : une lecture réservée aux administrateurs (fin d'une lecture, pas un clic), jamais de
     /// demande de Windows. Par défaut `aide` : seulement pour un Pc dont l'Aide ne demande jamais rien (le
     /// désinstalleur, déjà administrateur ; les faux PC des tests). Celui de Nevermind passe par `ctx.aide_lecture`.
     fn aide_lecture(&mut self, action: &str, parametres: Value) -> Option<Value> {
-        // (une lecture ; une action qui change le PC passerait par le verrou)
+        // (une lecture ; une action qui change le PC passe par le verrou, avec son permis)
         if nevermind_noyau::aide::change_le_pc(action) {
-            self.exiger_geste().ok()?;
+            let p = self.exiger_geste().ok()?;
+            return self.aide_qui_change(&p, action, parametres, 60000).ok();
         }
         self.aide(action, parametres, 60000).ok()
     }
@@ -157,14 +171,20 @@ pub trait Pc {
 
     // ---- Alimentation, écrans, souris, programmes
     /// powercfg avec ses arguments : (code de sortie, texte écrit).
+    /// Lot J : une commande qui change l'alimentation passe par [`Pc::powercfg_changer`], avec le permis.
     fn powercfg(&mut self, args: &[String]) -> (i32, String);
+    /// powercfg qui change l'alimentation (un plan, une valeur), avec le permis du verrou des gestes (lot J). Par défaut
+    /// `powercfg` : seulement les faux PC des tests ; ceux de Nevermind et du désinstalleur ont le leur.
+    fn powercfg_changer(&mut self, _p: &Permis, args: &[String]) -> (i32, String) {
+        self.powercfg(args)
+    }
     /// Le curseur du mode d'alimentation de Windows (`None` : pas de curseur sur ce PC).
     fn curseur(&self) -> Option<String>;
-    fn curseur_ecrire(&mut self, guid: &str) -> i32;
+    fn curseur_ecrire(&mut self, p: &Permis, guid: &str) -> i32;
     /// Les écrans : « appareil|nom|largeur|hauteur|fréquence|fréquence max|principal ».
     fn ecrans(&self) -> Vec<String>;
-    fn ecran_frequence(&mut self, appareil: &str, hz: i64) -> i32;
-    fn souris_relire(&mut self, seuil1: i64, seuil2: i64, vitesse: i64);
+    fn ecran_frequence(&mut self, p: &Permis, appareil: &str, hz: i64) -> i32;
+    fn souris_relire(&mut self, p: &Permis, seuil1: i64, seuil2: i64, vitesse: i64);
     /// Un service : (démarrage « Automatic »/« Manual »/« Disabled », il tourne), `None` s'il n'existe pas.
     fn service(&self, nom: &str) -> Option<(String, bool)>;
     /// Lancer un programme de Windows (`Start-Process` : ShellExecute, qui pose la question de Windows s'il demande
@@ -194,22 +214,28 @@ pub trait Pc {
     /// Le fichier d'hibernation existe (`Test-HibernateOn`).
     fn hiberfil(&self) -> bool;
     /// Nettoyer une catégorie de l'utilisateur (fichiers temporaires), faite par Nevermind lui-même.
-    fn nettoyer_dossier(&mut self, id: &str, chemins: &[String], exclus: &[String]) -> ResultatNettoyage;
+    fn nettoyer_dossier(&mut self, p: &Permis, id: &str, chemins: &[String], exclus: &[String]) -> ResultatNettoyage;
 
     // ---- Les fichiers de Nevermind
     fn reglage(&self, nom: &str) -> Option<Value>;
+    /// Lot J : l'état d'origine des services et de l'alimentation passe par [`Pc::ecrire_reglage_d_origine`].
     fn ecrire_reglage(&mut self, nom: &str, valeur: Value, exiger: bool) -> Result<(), String>;
+    /// L'état d'origine des services et de l'alimentation (`SvcOriginal`, `PcfgOriginal`), avec le permis du verrou
+    /// des gestes (lot J). Par défaut `ecrire_reglage` : seulement les faux PC des tests ; celui de Nevermind a le sien.
+    fn ecrire_reglage_d_origine(&mut self, _p: &Permis, nom: &str, valeur: Value, exiger: bool) -> Result<(), String> {
+        self.ecrire_reglage(nom, valeur, exiger)
+    }
     /// sauvegarde.json (`Save-Backup`).
-    fn sauvegarde_ecrire(&mut self, sauvegarde: &Value) -> Result<(), String>;
+    fn sauvegarde_ecrire(&mut self, p: &Permis, sauvegarde: &Value) -> Result<(), String>;
     /// sauvegarde.json par l'écrivain unique (lot A, étape 2) : seulement ce que le geste a changé depuis sa copie
     /// (`base` devenue `voulue`) est fusionné dans le fichier relu. Rend la copie à jour (`None` : ce PC écrit sa copie
     /// telle quelle, les faux PC des tests).
-    fn sauvegarde_fusionner(&mut self, _base: &Value, voulue: &Value) -> Result<Option<Value>, String> {
+    fn sauvegarde_fusionner(&mut self, p: &Permis, _base: &Value, voulue: &Value) -> Result<Option<Value>, String> {
         self.exiger_geste()?;
-        self.sauvegarde_ecrire(voulue).map(|_| None)
+        self.sauvegarde_ecrire(p, voulue).map(|_| None)
     }
     /// Effacer sauvegarde.json et ses copies (fin de « Tout restaurer »).
-    fn sauvegarde_effacer(&mut self);
+    fn sauvegarde_effacer(&mut self, p: &Permis);
     /// ignores.json
     fn ignores_ecrire(&mut self, ignores: &[String]);
     /// Une entrée de l'historique (`Add-History`) : son identifiant, `None` si rien n'a changé.
