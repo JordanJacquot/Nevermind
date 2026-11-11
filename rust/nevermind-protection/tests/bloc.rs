@@ -694,7 +694,10 @@ fn pare_feu_attente_montree_et_deuxieme_clic_dit() {
         std::thread::sleep(Duration::from_millis(10));
     }
     let derniere = tout.iter().rev().find_map(|x| match x {
-        Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees["texte"].clone()),
+        // (la pastille du geste : la vérification qui suit montre la sienne, lot I)
+        Effet::Signal { nom, donnees } if nom == "occupe" && donnees["travail"] == "geste" => {
+            Some(donnees["texte"].clone())
+        }
         _ => None,
     });
     assert_eq!(derniere, Some(json!("")), "l'attente reste à l'écran après la fin");
@@ -754,7 +757,9 @@ fn supprimer_les_menaces_du_panneau_ne_fige_pas() {
         std::thread::sleep(Duration::from_millis(10));
     }
     let derniere = tout.iter().rev().find_map(|x| match x {
-        Effet::Signal { nom, donnees } if nom == "occupe" => Some(donnees["texte"].clone()),
+        Effet::Signal { nom, donnees } if nom == "occupe" && donnees["travail"] == "geste" => {
+            Some(donnees["texte"].clone())
+        }
         _ => None,
     });
     assert_eq!(derniere, Some(json!("")), "l'attente reste à l'écran après la fin");
