@@ -465,7 +465,10 @@ impl Pc for PcWindows<'_> {
             1
         }
     }
-    fn regles_pare_feu(&self) -> Option<usize> {
+    fn regles_pare_feu(&self) -> usize {
+        self.regles_pare_feu_lues().unwrap_or(0)
+    }
+    fn regles_pare_feu_lues(&self) -> Option<usize> {
         if self.ctx.essai
             && let Some(n) = self.regles_essai
         {

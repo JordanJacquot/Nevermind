@@ -508,7 +508,8 @@ impl Copie {
     pub fn garder(&self, modifs: &[Modif], date: &str, profil: &str) -> Result<Annulation, String> {
         std::fs::create_dir_all(&self.dossier).map_err(|e| format!("dossier de la copie : {e}"))?;
         // (une copie que Windows ne laisse pas lire n'est jamais remplacée : elle garde les réglages d'origine ; lot K)
-        let avant = self.charger(true).map_err(|e| format!("copie illisible pour l'instant ({e}), rien n'est changé"))?;
+        let avant =
+            self.charger(true).map_err(|e| format!("copie illisible pour l'instant ({e}), rien n'est changé"))?;
         let mut fiche = match self.interpreter(avant.as_deref()) {
             Lecture::Bonne(f) => f,
             // (une copie abîmée ne se remettra jamais : elle est remplacée par l'état d'aujourd'hui)

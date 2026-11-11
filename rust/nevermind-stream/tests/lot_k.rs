@@ -184,7 +184,11 @@ fn le_bon_obs_quand_il_y_en_a_deux() {
     pc.0.lock().unwrap().processus.clear();
     let mut b = bloc(&pc, &ctx);
     assert!(action(&mut b, &ctx, "stream:optimiser:obs")[0].starts_with("OBS est réglé"));
-    assert_eq!(sortie(&profil_portable.join("basic.ini")).as_deref(), Some("1920"), "le portable utilisé n'est pas réglé");
+    assert_eq!(
+        sortie(&profil_portable.join("basic.ini")).as_deref(),
+        Some("1920"),
+        "le portable utilisé n'est pas réglé"
+    );
     assert_eq!(sortie(&profil_installe.join("basic.ini")), avant_installe, "l'OBS installé, pas utilisé, a été réglé");
     // 2. Au prochain démarrage de Nevermind, c'est toujours lui : « Remettre comme avant » remet le portable
     let mut b = bloc(&pc, &ctx);
@@ -197,6 +201,10 @@ fn le_bon_obs_quand_il_y_en_a_deux() {
     pc.0.lock().unwrap().processus.clear();
     let mut b = bloc(&pc, &ctx);
     assert!(action(&mut b, &ctx, "stream:optimiser:obs")[0].starts_with("OBS est réglé"));
-    assert_eq!(sortie(&profil_installe.join("basic.ini")).as_deref(), Some("1920"), "le dernier OBS utilisé n'est pas réglé");
+    assert_eq!(
+        sortie(&profil_installe.join("basic.ini")).as_deref(),
+        Some("1920"),
+        "le dernier OBS utilisé n'est pas réglé"
+    );
     assert_ne!(sortie(&profil_portable.join("basic.ini")).as_deref(), Some("1920"), "le portable a été réglé");
 }

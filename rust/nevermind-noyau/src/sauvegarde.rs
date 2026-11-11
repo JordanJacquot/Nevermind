@@ -252,7 +252,9 @@ impl Contexte {
         // (au démarrage, la première lecture : les fichiers temporaires laissés par un arrêt brutal ; lot K)
         let restes = effacer_tmp_restes(&self.donnees);
         if restes > 0 {
-            self.journal(&format!("Sauvegarde : {restes} fichier(s) temporaire(s) laissé(s) par un arrêt brutal, effacé(s)"));
+            self.journal(&format!(
+                "Sauvegarde : {restes} fichier(s) temporaire(s) laissé(s) par un arrêt brutal, effacé(s)"
+            ));
         }
         let fichier = self.fichier_sauvegarde();
         let principal = lire_fichier(&fichier);

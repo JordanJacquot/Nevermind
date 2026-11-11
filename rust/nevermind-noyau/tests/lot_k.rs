@@ -64,7 +64,8 @@ fn les_fichiers_temporaires_laisses_sont_effaces_au_demarrage() {
         vieillir(&donnees.join(n));
     }
     // ce qui n'est pas à Nevermind, ou pas un fichier temporaire de sauvegarde : jamais touché
-    let gardes = ["autre.json.4242-0.tmp", "sauvegarde.json.abc.tmp", "sauvegarde.json.4242-0.tmp.txt", "sauvegarde.json"];
+    let gardes =
+        ["autre.json.4242-0.tmp", "sauvegarde.json.abc.tmp", "sauvegarde.json.4242-0.tmp.txt", "sauvegarde.json"];
     for n in gardes {
         std::fs::write(donnees.join(n), br#"{"Registry":{}}"#).unwrap();
         vieillir(&donnees.join(n));
@@ -103,4 +104,3 @@ fn les_fichiers_temporaires_laisses_sont_effaces_au_demarrage() {
     assert!(!donnees.join("sauvegarde.json.4242-7.tmp").exists(), "« Tout restaurer » a laissé le fichier temporaire");
     let _ = std::fs::remove_dir_all(&d);
 }
-

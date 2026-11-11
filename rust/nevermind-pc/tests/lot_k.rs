@@ -74,10 +74,7 @@ fn ligne(h: &[Value], titre: &str) -> Value {
 #[test]
 fn pare_feu_illisible_et_deblocage_refuse_la_ligne_reste_a_annuler() {
     let (h, demandes) = tout_restaurer_sans_lire_le_pare_feu("illisible-refuse", Err("refusé par Windows".into()));
-    assert!(
-        demandes.iter().any(|a| a == "pare-feu.debloquer-tout"),
-        "le déblocage n'a pas été tenté : {demandes:?}"
-    );
+    assert!(demandes.iter().any(|a| a == "pare-feu.debloquer-tout"), "le déblocage n'a pas été tenté : {demandes:?}");
     assert_eq!(ligne(&h, "Internet bloqué pour Jeu")["Annule"], false, "la règle est peut-être encore là : {h:?}");
     assert_eq!(ligne(&h, "Réglage X")["Annule"], true, "la ligne bien remise est marquée annulée : {h:?}");
 }
@@ -89,4 +86,3 @@ fn pare_feu_illisible_et_deblocage_fait_la_ligne_est_annulee() {
     assert!(demandes.iter().any(|a| a == "pare-feu.debloquer-tout"), "le déblocage n'a pas été tenté : {demandes:?}");
     assert_eq!(ligne(&h, "Internet bloqué pour Jeu")["Annule"], true, "{h:?}");
 }
-

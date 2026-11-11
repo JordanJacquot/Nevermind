@@ -257,7 +257,10 @@ impl BlocStream {
         if let Some(i) = ouvert {
             let m = self.memoire(ctx);
             if candidats.len() > 1 && !m.obs_dernier.as_ref().is_some_and(|d| systeme::meme(d, &i.dossier)) {
-                ctx.journal(&format!("Mode streameur : plusieurs OBS, celui qui est ouvert compte ({})", i.dossier.display()));
+                ctx.journal(&format!(
+                    "Mode streameur : plusieurs OBS, celui qui est ouvert compte ({})",
+                    i.dossier.display()
+                ));
             }
             if !m.obs_dernier.as_ref().is_some_and(|d| systeme::meme(d, &i.dossier)) {
                 m.obs_dernier = Some(i.dossier.clone());
