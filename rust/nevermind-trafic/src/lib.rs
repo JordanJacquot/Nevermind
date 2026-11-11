@@ -184,6 +184,12 @@ pub fn date_o(d: chrono::DateTime<chrono::Local>) -> String {
     format!("{}.{:07}{}", d.format("%Y-%m-%dT%H:%M:%S"), d.nanosecond() % 1_000_000_000 / 100, d.format("%:z"))
 }
 
+/// `flux.demarrer` a échoué SANS réponse de l'Aide (pause, sonde muette, demande restée sans réponse) : la trace est à
+/// redemander quand elle répondra. Un refus de l'Aide (elle a répondu « non ») ne l'est pas (lot I).
+fn trace_sans_reponse(ctx: &Contexte, erreur: &str) -> bool {
+    erreur == nevermind_noyau::aide::ERREUR_PAUSE || ctx.aide_en_pause()
+}
+
 fn id_aleatoire() -> String {
     use std::hash::{BuildHasher, Hasher};
     let mut h = std::collections::hash_map::RandomState::new().build_hasher();
@@ -395,6 +401,8 @@ impl BlocTrafic {
                 }
                 Err(e) => {
                     ctx.journal(&format!("Lag : trace réseau par l'Aide impossible ({e})"));
+                    // (sans réponse, pas un refus : redemandée quand l'Aide répondra ; lot I)
+                    self.trace_a_reprendre = trace_sans_reponse(ctx, &e);
                     erreur = e;
                 }
             }
@@ -442,14 +450,21 @@ impl BlocTrafic {
         let Some(mut s) = self.lag.take() else { return };
         // La trace réseau n'a pas pu démarrer au début de la partie (l'Aide dormait, réveillée dans un fil à part) :
         // demandée dès qu'elle écoute, pendant la même partie (lot F ; avant, le lag était mesuré sans elle jusqu'au bout)
+        // (lot I : seulement une réponse de l'Aide, réussie ou refusée, arrête les essais ; une demande restée sans
+        //  réponse est refaite quand l'Aide répond de nouveau. Avant, une seule fois)
         if self.trace_a_reprendre && !s.etw && ctx.aide_prete() {
-            self.trace_a_reprendre = false;
             match ctx.aide_de_fond("flux.demarrer", &json!({}), 20000) {
                 Ok(_) => {
+                    self.trace_a_reprendre = false;
                     s.reprendre_trace();
                     ctx.journal("Lag : trace réseau par l'Aide, reprise pendant la partie");
                 }
-                Err(e) => ctx.journal(&format!("Lag : trace réseau par l'Aide impossible ({e})")),
+                Err(e) => {
+                    self.trace_a_reprendre = trace_sans_reponse(ctx, &e);
+                    if !self.trace_a_reprendre {
+                        ctx.journal(&format!("Lag : trace réseau par l'Aide impossible ({e})"));
+                    }
+                }
             }
         }
         let mut env = EnvLag {
