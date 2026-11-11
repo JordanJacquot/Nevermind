@@ -106,9 +106,17 @@ fn nom_sans_verrou(id: &str) -> &str {
 
 /// Le texte d'attente d'un geste long qui n'en montre pas d'autre (lot B : « Analyser » du Nettoyage passe par l'Aide,
 /// jusqu'à 2 min par catégorie)
+///
+/// Lot I : aussi les réglages qui passent par l'Aide (jusqu'à 2 min, plus 20 s de réveil) et ne disaient rien avant la
+/// fin : les bascules du démarrage, les réglages de Windows demandés par la fiche d'un jeu, « Réactiver » de la page
+/// Protection, le profil d'un jeu.
 fn attente_du_geste(id: &str) -> Option<&'static str> {
     match id {
         "clic:BtnCleanScan" => Some("Recherche des fichiers à nettoyer..."),
+        "clic:BtnDisableStartup" | "demarrage-desactiver" => Some("Changement du démarrage..."),
+        _ if id.starts_with("dem:") => Some("Changement du démarrage..."),
+        "appliquer-reglages-windows" | "registre-ecrire" => Some("Réglage de Windows..."),
+        "declarations" => Some("Réglage du profil du jeu..."),
         _ => None,
     }
 }
@@ -320,20 +328,32 @@ impl BlocPc {
             let _tour = match tour {
                 None => None,
                 Some((nom, page)) => {
-                    let attente = fond.ctx.geste_en_cours();
-                    if let Some((n, p)) = &attente {
+                    let avant = fond.ctx.geste_en_cours();
+                    if let Some((n, p)) = &avant {
                         fond.effet(nevermind_noyau::signaux::occupe(&format!(
                             "« {nom} » se fera juste après « {n} » ({p})..."
                         )));
                     }
                     let r = fond.ctx.attendre_geste(&nom, &page, attente_tour);
-                    if attente.is_some() {
-                        fond.effet(nevermind_noyau::signaux::occupe(""));
+                    // (son tour venu : l'attente du geste lui-même, lot I ; avant, plus rien jusqu'à la fin)
+                    if avant.is_some() {
+                        fond.effet(nevermind_noyau::signaux::occupe(attente.unwrap_or("")));
                     }
                     match r {
                         Ok(g) => Some(g),
+                        // (lot I : abandonné après une longue attente, il ne se fera plus tout seul ; ne plus dire
+                        //  « Attends la fin de... », mais qu'il faut le refaire)
                         Err(e) => {
-                            at.annonces.push(Effet::Annonce(format!("« {nom} » n'a pas été fait. {e}.")));
+                            fond.ctx.journal(&format!("Ton PC : « {nom} » abandonné après l'attente ({e})"));
+                            let qui = fond
+                                .ctx
+                                .geste_en_cours()
+                                .or(avant)
+                                .map(|(n, p)| format!("« {n} » ({p})"))
+                                .unwrap_or_else(|| "un autre réglage".into());
+                            at.annonces.push(Effet::Annonce(format!(
+                                "« {nom} » n'a pas été fait : {qui} a pris trop de temps. Refais-le quand ce sera fini."
+                            )));
                             return at;
                         }
                     }
