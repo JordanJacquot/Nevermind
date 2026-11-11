@@ -50,6 +50,9 @@ struct FauxPc {
     refus_lancement: Option<String>,
     /// Une commande lente (powercfg /batteryreport : quelques secondes en vrai) ; lot I
     commande_lente: Option<std::time::Duration>,
+    /// « Tes écrans s'affichent bien ? » posée à l'écran (15 s), et le changement de fréquence lent ; lot I
+    ecran_a_l_ecran: bool,
+    ecran_lent: Option<std::time::Duration>,
 }
 
 impl FauxPc {
@@ -226,6 +229,9 @@ impl Pc for FauxPc {
         self.ecrans.clone()
     }
     fn ecran_frequence(&mut self, d: &str, hz: i64) -> i32 {
+        if let Some(t) = self.ecran_lent {
+            std::thread::sleep(t);
+        }
         self.geste("ecran.frequence", json!({ "Ecran": d, "Hz": hz }));
         for e in self.ecrans.iter_mut() {
             let mut p: Vec<String> = e.split('|').map(String::from).collect();
@@ -322,6 +328,9 @@ impl Pc for FauxPc {
         self.statut = t.into();
     }
     fn choix_ecran(&mut self) -> Option<String> {
+        if self.ecran_a_l_ecran {
+            return None;
+        }
         let c = self.choix_ecran.clone();
         self.geste("ecran.question", json!(c));
         Some(c)
@@ -1414,5 +1423,61 @@ fn le_rapport_de_batterie_ne_fige_pas() {
         tout.iter().any(|x| matches!(x, Effet::Signal { nom, donnees } if nom == "occupe" && donnees["texte"].as_str().is_some_and(|t| !t.is_empty()))),
         "pas d'attente montrée : {tout:?}"
     );
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// Lot I, point 5 : « Tes écrans s'affichent bien ? » restée sans réponse 15 s. L'ancienne fréquence revenait dans le
+/// tic, sur le fil des blocs (un changement de mode par écran, une à trois secondes chacun, puis l'analyse). Maintenant
+/// dans un travail de fond, toujours en priorité (jamais refusé) ; aucun tic n'attend, et l'écran revient. Faux PC.
+#[test]
+fn le_retour_de_la_frequence_d_ecran_ne_fige_pas() {
+    use nevermind_noyau::{Bloc, Contexte, Effets};
+    use std::time::{Duration, Instant};
+    let d = nevermind_noyau::dossier_essai("pc-retour-ecran");
+    let _ = std::fs::remove_dir_all(&d);
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true).partage();
+    // (un juge où « Tout corriger » change la fréquence d'un écran)
+    let mut trouve = None;
+    for c in lire("corrections.json") {
+        let (mut pc, s, _) = charger(&c["entree"]);
+        pc.choix_ecran = "keep".into();
+        pc.ecran_a_l_ecran = true;
+        pc.ecran_lent = Some(Duration::from_secs(2));
+        let lu = nevermind_pc::lecture::Lu { entrees: s.entrees.clone(), demarrage: s.demarrage.clone() };
+        let mut b = nevermind_pc::BlocPc::sur(Box::new(pc), lu);
+        let _ = b.pages(&ctx, "pc");
+        b.action(&ctx, "toutcorriger", &Value::Null, &mut Effets::default());
+        if b.session().fiche.is_none() {
+            continue;
+        }
+        b.action(&ctx, "fiche:run", &Value::Null, &mut Effets::default());
+        let fin = Instant::now() + Duration::from_secs(60);
+        while b.travail_en_cours() {
+            assert!(Instant::now() < fin, "« Tout corriger » ne finit pas");
+            b.travaux_finis(&ctx, &mut Effets::default());
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        b.travaux_finis(&ctx, &mut Effets::default());
+        if b.session().fiche.as_ref().is_some_and(|f| f.mode == "display") {
+            trouve = Some(b);
+            break;
+        }
+    }
+    let mut b = trouve.expect("aucun juge ne change la fréquence d'un écran");
+    // Les 15 s passent sans réponse, puis l'ancienne fréquence revient : aucun tic ne dure
+    let fin = Instant::now() + Duration::from_secs(40);
+    while b.session().fiche.as_ref().is_some_and(|f| f.mode == "display") || b.travail_en_cours() {
+        assert!(Instant::now() < fin, "l'écran ne revient pas");
+        let mut e = Effets::default();
+        let t = Instant::now();
+        b.tic(&ctx, false, &mut e);
+        b.travaux_finis(&ctx, &mut e);
+        assert!(
+            t.elapsed() < Duration::from_secs(1),
+            "un tic a pris {:?} : le fil des blocs attendait l'écran",
+            t.elapsed()
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
     let _ = std::fs::remove_dir_all(&d);
 }
