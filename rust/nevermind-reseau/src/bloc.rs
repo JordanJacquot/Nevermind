@@ -87,6 +87,9 @@ pub struct BlocReseau {
     fab: Option<Fabricants>,
     filtre: String,
     audit_apres_scan: bool,
+    /// L'écran d'où « Audit » a été cliqué avant le scan : l'audit ne s'ouvre à la fin du scan que si l'utilisateur y est
+    /// encore (lot I)
+    audit_ecran: String,
     // Audit
     audit_lu: bool,
     audit_sauve: Option<Value>,
@@ -111,7 +114,9 @@ pub struct BlocReseau {
     boutons: Vec<BoutonPanneau>,
     jeton: u64,
     attente: Vec<(String, Attente)>,
-    occupe: String,
+    /// Les pastilles « en cours » montrées, chacune avec sa clé (smb1, test, carte) : la fin de l'une n'efface plus
+    /// celle d'un geste qui tourne encore (lot I)
+    occupes: Vec<(String, String)>,
     signal_connexion: Option<Value>,
     /// Les gestes par l'Aide (SMBv1 jusqu'à 15 min, DNS, carte, pare-feu...) : dans un fil à part (audit G3)
     travaux: Travaux<FinGeste>,
@@ -161,6 +166,7 @@ impl BlocReseau {
             fab: None,
             filtre: String::new(),
             audit_apres_scan: false,
+            audit_ecran: String::new(),
             audit_lu: false,
             audit_sauve: None,
             audit: None,
@@ -181,7 +187,7 @@ impl BlocReseau {
             boutons: Vec::new(),
             jeton: 0,
             attente: Vec::new(),
-            occupe: String::new(),
+            occupes: Vec::new(),
             signal_connexion: None,
             travaux: Travaux::default(),
             geste_nom: None,
@@ -240,11 +246,18 @@ impl BlocReseau {
         effets.ajouter(Effet::Annonce(nevermind_noyau::gestes::texte_refus(nom, PAGE)));
     }
 
-    fn occuper(&mut self, effets: &mut Effets, texte: &str) {
-        if self.occupe != texte {
-            self.occupe = texte.to_string();
-            signal(effets, "occupe", json!({ "texte": texte }));
+    /// La pastille « en cours » d'un travail (`cle`), texte vide : retirée ; envoyée seulement si elle change
+    fn occuper(&mut self, effets: &mut Effets, cle: &str, texte: &str) {
+        if self.occupes.iter().any(|(c, t)| c == cle && t == texte)
+            || (texte.is_empty() && !self.occupes.iter().any(|(c, _)| c == cle))
+        {
+            return;
         }
+        self.occupes.retain(|(c, _)| c != cle);
+        if !texte.is_empty() {
+            self.occupes.push((cle.to_string(), texte.to_string()));
+        }
+        signal(effets, "occupe", json!({ "texte": texte, "travail": cle }));
     }
 
     fn question(&mut self, effets: &mut Effets, id: &str, texte: &str, attente: Attente) {
@@ -359,7 +372,15 @@ impl BlocReseau {
         effets.ajouter(Effet::Rafraichir);
         if self.audit_apres_scan {
             self.audit_apres_scan = false;
-            self.lancer_audit(ctx, effets);
+            // (lot I : le scan a pu durer une minute ou plus ; l'audit ne s'ouvre que si l'utilisateur est encore sur la
+            //  page d'où il l'a demandé (ou celles du réseau), hors partie. Sinon l'écran ne saute pas : « Audit » le relancera)
+            let ici = self.ecran == self.audit_ecran || matches!(self.ecran.as_str(), "reseau" | "panneau");
+            if !self.en_partie && ici {
+                self.lancer_audit(ctx, effets);
+            } else {
+                self.audit_a_refaire = true;
+                ctx.journal("Réseau : audit pas ouvert après le scan, l'utilisateur est parti ailleurs");
+            }
         }
     }
 
@@ -394,6 +415,7 @@ impl BlocReseau {
         }
         if self.liste.is_empty() {
             self.audit_apres_scan = true;
+            self.audit_ecran = self.ecran.clone();
             self.lancer_scan(ctx, effets);
             if !self.scan {
                 self.audit_apres_scan = false;
@@ -493,7 +515,7 @@ impl BlocReseau {
             }
         };
         if act.geste == Geste::Smb1 {
-            self.occuper(effets, "Désactivation de SMBv1...");
+            self.occuper(effets, "smb1", "Désactivation de SMBv1...");
         }
         let sonde = self.sonde.clone();
         self.geste_nom = Some(nom.to_string());
@@ -555,7 +577,7 @@ impl BlocReseau {
         r: Result<Vec<Value>, String>,
     ) {
         match act.geste {
-            Geste::Smb1 => self.occuper(effets, ""),
+            Geste::Smb1 => self.occuper(effets, "smb1", ""),
             Geste::BureauDistance => signal(effets, "sauvegarde-changee", json!({})),
             _ => {}
         }
@@ -677,7 +699,7 @@ impl BlocReseau {
             }
             let _ = tx.send(Message::Test(net, res));
         });
-        self.occuper(effets, "Test de la connexion...");
+        self.occuper(effets, "test", "Test de la connexion...");
     }
 
     fn regler_dns(&mut self, ctx: &Contexte, effets: &mut Effets, k: usize) {
@@ -774,7 +796,7 @@ impl BlocReseau {
             }
         };
         self.geste_nom = Some("Redémarrer la carte réseau".into());
-        self.occuper(effets, "Redémarrage de la carte réseau...");
+        self.occuper(effets, "carte", "Redémarrage de la carte réseau...");
         ctx.journal(&format!("Carte réseau : redémarrage de {} (à {})", net.desc, format_vitesse(net.bps)));
         let idx = net.if_index;
         self.travaux.lancer_geste(ctx, GESTE, geste, move |fond| FinGeste::Carte {
@@ -786,11 +808,11 @@ impl BlocReseau {
 
     fn fin_relance(&mut self, effets: &mut Effets, idx: i64, r: Result<(), String>) {
         if let Err(e) = r {
-            self.occuper(effets, "");
+            self.occuper(effets, "carte", "");
             effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")));
             return;
         }
-        self.occuper(effets, "Carte réseau redémarrée, elle se reconnecte...");
+        self.occuper(effets, "carte", "Carte réseau redémarrée, elle se reconnecte...");
         let (s, tx) = (self.sonde.clone(), self.tx.clone());
         std::thread::spawn(move || {
             s.attendre_carte(idx);
@@ -811,7 +833,8 @@ impl BlocReseau {
                 }
                 Rendu::Fini { resultat: Ok(FinGeste::Carte { idx, r }), .. } => self.fin_relance(effets, idx, r),
                 Rendu::Fini { resultat: Err(e), .. } => {
-                    self.occuper(effets, "");
+                    self.occuper(effets, "smb1", "");
+                    self.occuper(effets, "carte", "");
                     effets.ajouter(Effet::Annonce(format!("Oups, quelque chose s'est mal passé :\n\n{e}")));
                 }
             }
@@ -837,7 +860,7 @@ impl BlocReseau {
             (Some(n), None) => format!("Carte réseau redémarrée : elle est à {}.", format_vitesse(n.bps)),
         };
         ctx.journal(&format!("Carte réseau : {texte}"));
-        self.occuper(effets, "");
+        self.occuper(effets, "carte", "");
         effets.ajouter(Effet::Annonce(texte));
         effets.ajouter(Effet::Rafraichir);
     }
@@ -872,7 +895,7 @@ impl BlocReseau {
                     self.test_en_cours = false;
                     self.net = net;
                     self.pings = res;
-                    self.occuper(effets, "");
+                    self.occuper(effets, "test", "");
                     effets.ajouter(Effet::Annonce(
                         if self.net.is_some() { "Test réseau terminé." } else { "Pas de connexion." }.into(),
                     ));
@@ -1069,7 +1092,7 @@ impl Bloc for BlocReseau {
         if self.test_en_cours {
             let p = self.av.phase_actuelle();
             if !p.is_empty() {
-                self.occuper(effets, &p);
+                self.occuper(effets, "test", &p);
             }
         }
         // Le ping en direct de la fiche (toutes les 400 ms, seulement quand l'écran est regardé)

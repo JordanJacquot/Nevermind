@@ -393,7 +393,8 @@ fn les_gestes_par_l_aide_ne_figent_pas() {
     b.action(&ctx, "carte-relancer", &Value::Null, &mut e);
     let mut e = Effets::default();
     assert!(b.action(&ctx, "reseau-question", &json!({ "id": "carte", "valeur": "oui" }), &mut e));
-    let occupe = |t: &str| Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": t }) };
+    // (lot I : la pastille porte sa clé)
+    let occupe = |t: &str| Effet::Signal { nom: "occupe".into(), donnees: json!({ "texte": t, "travail": "carte" }) };
     assert!(e.0.contains(&occupe("Redémarrage de la carte réseau...")), "{:?}", e.0);
     let mut tout = Vec::new();
     while !tout.contains(&occupe("Carte réseau redémarrée, elle se reconnecte...")) {
