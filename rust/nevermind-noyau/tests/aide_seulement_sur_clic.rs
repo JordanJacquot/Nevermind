@@ -585,3 +585,78 @@ fn le_releve_suit_les_tics_dans_le_paquet_seulement() {
     assert!(!atteintes.iter().any(|a| a.starts_with("autre/")), "un autre paquet a été suivi : {atteintes:?}");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+// -----------------------------------------------------------------------------------------------------------------
+// Lot J : les angles morts du relevé (audit du 10/11, M5)
+// -----------------------------------------------------------------------------------------------------------------
+
+/// Un dossier de cas d'essai (`tests/cas/<nom>` : de faux blocs, jamais construits)
+fn cas(nom: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("cas").join(nom)
+}
+
+/// Les lignes d'un dossier de cas marquées « // attendu » (« fichier:ligne »)
+fn attendus(racine: &Path) -> Vec<String> {
+    fn tous(d: &Path, r: &mut Vec<PathBuf>) {
+        for e in std::fs::read_dir(d).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                tous(&p, r);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                r.push(p);
+            }
+        }
+    }
+    let mut fichiers = Vec::new();
+    tous(racine, &mut fichiers);
+    let mut r = Vec::new();
+    for f in fichiers {
+        let rel = f.strip_prefix(racine).unwrap().to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/");
+        for (n, l) in std::fs::read_to_string(&f).unwrap().lines().enumerate() {
+            if l.contains("// attendu") {
+                r.push(format!("{rel}:{}", n + 1));
+            }
+        }
+    }
+    r.sort();
+    r
+}
+
+/// Lot J, étape 1 : les quatre chemins vers une demande de Windows hors d'un clic que le relevé ne voyait pas
+/// (`tests/cas/g5-angles-morts`). Avant le lot J, ce test échouait sur les quatre (lancé avec `--ignored`).
+#[test]
+#[ignore = "lot J, étape 1 : preuve des angles morts (cargo test --test aide_seulement_sur_clic -- --ignored)"]
+fn angles_morts_du_releve_g5() {
+    let d = cas("g5-angles-morts");
+    let (refus, _) = atteint_depuis_les_tics(&d);
+    let mauvais = refus_des_appels(&d);
+    let vu = |ou: &str| refus.iter().any(|r| r.starts_with(&format!("{ou} ")));
+    let mut manques = Vec::new();
+    for (quoi, ou) in [
+        ("1. appel sur une autre valeur (self.session.repondre) non suivi", "bloc/src/lag/session.rs:6"),
+        ("2. fonction d'un type (Session::demarrer) non suivie", "bloc/src/lag/session.rs:10"),
+        ("3. src/tests/ de code livré jamais lu depuis un tic", "bloc/src/tests/mod.rs:4"),
+        ("4. signal envoyé par un tic : son traitement (signal) non suivi", "bloc/src/lib.rs:22"),
+    ] {
+        if !vu(ou) {
+            manques.push(format!("{quoi} ({ou})"));
+        }
+    }
+    if !mauvais.iter().any(|r| r.starts_with("bloc/src/tests/mod.rs:4 ")) {
+        manques.push(
+            "3. src/tests/ de code livré jamais lu par le relevé des appels (lecture.pc avec la demande de Windows)"
+                .into(),
+        );
+    }
+    assert_eq!(
+        attendus(&d),
+        vec![
+            "bloc/src/lag/session.rs:10",
+            "bloc/src/lag/session.rs:6",
+            "bloc/src/lib.rs:22",
+            "bloc/src/tests/mod.rs:4"
+        ],
+        "le cas d'essai a changé : mettre la liste à jour"
+    );
+    assert!(manques.is_empty(), "angles morts du garde-fou G5 :\n{}\n(refus vus : {refus:#?})", manques.join("\n"));
+}

@@ -671,3 +671,34 @@ fn le_releve_voit_un_geste_sans_verrou() {
     );
     let _ = std::fs::remove_dir_all(&d);
 }
+
+// -----------------------------------------------------------------------------------------------------------------
+// Lot J : les angles morts du relevé (audit du 10/11, M5)
+// -----------------------------------------------------------------------------------------------------------------
+
+/// Un dossier de cas d'essai (`tests/cas/<nom>` : de faux blocs, jamais construits)
+fn cas(nom: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("cas").join(nom)
+}
+
+/// Lot J, étape 1 : quatre écritures sans le verrou que le relevé laissait passer (`tests/cas/verrou-angles-morts`).
+/// Avant le lot J, ce test échouait sur les quatre (lancé avec `--ignored`).
+#[test]
+#[ignore = "lot J, étape 1 : preuve des angles morts (cargo test --test gestes_sous_verrou -- --ignored)"]
+fn angles_morts_du_releve_des_gestes() {
+    let d = cas("verrou-angles-morts");
+    let l = relever(&d);
+    let refuses: Vec<String> = l.iter().filter(|e| !e.protege).map(|e| format!("{}:{}", e.fichier, e.ligne)).collect();
+    let mut manques = Vec::new();
+    for (quoi, ou) in [
+        ("1. relais vers l'Aide dont la variable ne s'appelle pas `action`", "bloc/src/lib.rs:7"),
+        ("2. fonction qui continue après un refus de exiger_geste", "bloc/src/lib.rs:13"),
+        ("3. écriture hors d'une fonction", "bloc/src/lib.rs:18"),
+        ("4. sauvegarde.json écrit par fichier_sauvegarde(", "bloc/src/lib.rs:23"),
+    ] {
+        if !refuses.iter().any(|r| r == ou) {
+            manques.push(format!("{quoi} ({ou}) non refusé"));
+        }
+    }
+    assert!(manques.is_empty(), "angles morts du garde-fou du verrou :\n{}\n(relevé : {l:#?})", manques.join("\n"));
+}
