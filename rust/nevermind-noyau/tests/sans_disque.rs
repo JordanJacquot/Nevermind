@@ -50,8 +50,8 @@ fn le_contexte_sans_disque_ne_touche_jamais_au_dossier_des_donnees() {
     assert_eq!(ctx.historique().len(), 1);
     // Ce qu'il fait (sous le verrou des gestes, comme le désinstalleur) : rien sur le disque
     let _geste = ctx.prendre_geste("Désinstaller", "Désinstallation").unwrap();
-    ctx.ecrire_reglage("SvcOriginal", json!([]), true).unwrap();
-    assert!(ctx.enregistrer_sauvegarde().is_err());
+    ctx.exiger_geste().and_then(|p| ctx.ecrire_reglage_d_origine(&p, "SvcOriginal", json!([]), true)).unwrap();
+    assert!(ctx.exiger_geste().and_then(|p| ctx.enregistrer_sauvegarde(&p)).is_err());
     ctx.journal("Désinstallation : une ligne");
     ctx.noter_erreur("Désinstallation : une erreur");
     ctx.ecrire_reglage("Theme", json!("autre"), true).unwrap();
@@ -59,7 +59,7 @@ fn le_contexte_sans_disque_ne_touche_jamais_au_dossier_des_donnees() {
     assert!(ctx.ecrire_json(&donnees.join("ignores.json"), &json!([]), false, false).is_err());
     assert_eq!(ctx.lire_json(&donnees.join("parametres.json")), None);
     ctx.importer_sauvegarde();
-    let _ = ctx.effacer_sauvegarde();
+    let _ = ctx.exiger_geste().and_then(|p| ctx.effacer_sauvegarde(&p));
     assert!(photo(&donnees) == avant, "le dossier des données a changé");
     // Le journal est en mémoire, dans l'ordre, et rendu une seule fois
     let l = ctx.journal_en_attente();

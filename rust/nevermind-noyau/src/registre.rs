@@ -236,7 +236,13 @@ pub fn origines(machine: &str, utilisateur: &str) -> Vec<Value> {
 }
 
 /// Écrit une valeur de l'utilisateur (HKCU), noms spéciaux compris. `kind` : le nom .NET du type.
-pub fn ecrire_utilisateur(chemin: &str, nom: &str, valeur: &Value, kind: &str) -> Result<(), String> {
+pub fn ecrire_utilisateur(
+    _permis: &crate::Permis,
+    chemin: &str,
+    nom: &str,
+    valeur: &Value,
+    kind: &str,
+) -> Result<(), String> {
     let (ruche, cle) = decouper(chemin).ok_or_else(|| format!("Chemin de registre non pris en charge: {chemin}"))?;
     if ruche != Ruche::Utilisateur {
         return Err(format!("Chemin de registre non pris en charge: {chemin}"));
@@ -268,7 +274,7 @@ pub fn ecrire_utilisateur(chemin: &str, nom: &str, valeur: &Value, kind: &str) -
 }
 
 /// Efface une valeur de l'utilisateur (HKCU) ; rien si elle n'existe pas
-pub fn effacer_utilisateur(chemin: &str, nom: &str) -> Result<(), String> {
+pub fn effacer_utilisateur(_permis: &crate::Permis, chemin: &str, nom: &str) -> Result<(), String> {
     let (ruche, cle) = decouper(chemin).ok_or_else(|| format!("Chemin de registre non pris en charge: {chemin}"))?;
     if ruche != Ruche::Utilisateur {
         return Err(format!("Chemin de registre non pris en charge: {chemin}"));

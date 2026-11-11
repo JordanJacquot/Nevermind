@@ -439,7 +439,7 @@ mod sur_le_disque {
         );
         assert_eq!(ctx.historique().len(), 1, "l'historique n'est pas relu");
         // La remise en état, puis la fin : ce qui a été relu sert de référence
-        ctx.ecrire_reglage("SvcOriginal", json!([]), false).unwrap();
+        ctx.exiger_geste().and_then(|p| ctx.ecrire_reglage_d_origine(&p, "SvcOriginal", json!([]), false)).unwrap();
         let reference = sys.reglages_relus.clone().unwrap_or(lus);
         ecrire_donnees(&donnees, &ctx, reference.as_ref());
         let p: Value =

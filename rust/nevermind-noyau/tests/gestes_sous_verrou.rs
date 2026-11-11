@@ -8,7 +8,8 @@
 //! Lot J (audit du 10/11, M5) : un relais vers l'Aide est vu quel que soit le nom de sa variable ; `exiger_geste()` ne
 //! protège que si le refus arrête la fonction (`?`, un retour, ou l'écriture dans le bloc de `is_ok()`) et vient avant
 //! l'écriture ; un appel hors d'une fonction est relevé (jamais protégé) ; `fichier_sauvegarde(` est relevé dans une
-//! fonction qui écrit.
+//! fonction qui écrit. Le passage obligé par le compilateur (le `Permis` du noyau, lot J) vient en plus : ce relevé
+//! garde ce qu'il ne couvre pas encore (les écritures propres à chaque bloc, par exemple).
 //!
 //! Ne sont pas relevés : l'Aide elle-même et ses règles (elles font ce que Nevermind demande ; le verrou est côté
 //! Nevermind), le pont PowerShell, les tests et les exemples. Toute autre exception est écrite ci-dessous, avec sa
@@ -704,7 +705,8 @@ fn protege_avant(corps: &str, pos: usize) -> bool {
         }
         let j = i + motif.len();
         let apres = corps[j..].trim_start();
-        if apres.starts_with('?') || apres.starts_with(".ok()?") {
+        // (lot J : `exiger_geste().and_then(|p| ...)` : la suite n'a lieu qu'avec le permis)
+        if apres.starts_with('?') || apres.starts_with(".ok()?") || apres.starts_with(".and_then(") {
             return true;
         }
         if let Some(m) = apres.strip_prefix(".map_err(") {

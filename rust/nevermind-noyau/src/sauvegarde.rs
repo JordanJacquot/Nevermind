@@ -375,10 +375,10 @@ impl Contexte {
 
     /// `Save-Backup` : ce que la sauvegarde en mémoire a de plus que sauvegarde.json y est ajouté (jamais un retrait,
     /// jamais une valeur d'origine remplacée), par l'écrivain unique ([`Contexte::ecrire_sauvegarde_fusion`])
-    pub fn enregistrer_sauvegarde(&self) -> Result<(), String> {
+    pub fn enregistrer_sauvegarde(&self, permis: &crate::Permis) -> Result<(), String> {
         self.exiger_geste()?;
         let voulue = self.sauvegarde();
-        self.ecrire_sauvegarde_fusion(&Sauvegarde::default(), &voulue).map(|_| ())
+        self.ecrire_sauvegarde_fusion(permis, &Sauvegarde::default(), &voulue).map(|_| ())
     }
 
     /// L'écrivain unique de sauvegarde.json (lot A, étape 2) : sous le verrou du geste, et un seul à la fois, il relit
@@ -386,7 +386,12 @@ impl Contexte {
     /// d'écrire une copie prise au début du geste. Écrit par un fichier temporaire propre à cette écriture, remplacé
     /// d'un coup (l'ancien en copie de secours). La sauvegarde en mémoire suit. Rend la copie à jour de l'écrivain :
     /// sa `voulue`, avec ce qu'un autre geste a noté entre-temps.
-    pub fn ecrire_sauvegarde_fusion(&self, base: &Sauvegarde, voulue: &Sauvegarde) -> Result<Sauvegarde, String> {
+    pub fn ecrire_sauvegarde_fusion(
+        &self,
+        _permis: &crate::Permis,
+        base: &Sauvegarde,
+        voulue: &Sauvegarde,
+    ) -> Result<Sauvegarde, String> {
         self.exiger_geste()?;
         if self.sans_disque {
             return Err(crate::contexte::SANS_DISQUE.into());
@@ -423,14 +428,19 @@ impl Contexte {
     }
 
     /// [`Contexte::ecrire_sauvegarde_fusion`] pour la sauvegarde de Ton PC, donnée en JSON : rend sa copie à jour
-    pub fn ecrire_sauvegarde_fusion_json(&self, base: &Value, voulue: &Value) -> Result<Value, String> {
+    pub fn ecrire_sauvegarde_fusion_json(
+        &self,
+        permis: &crate::Permis,
+        base: &Value,
+        voulue: &Value,
+    ) -> Result<Value, String> {
         self.exiger_geste()?;
-        self.ecrire_sauvegarde_fusion(&depuis_valeur(base), &depuis_valeur(voulue)).map(|s| s.en_json())
+        self.ecrire_sauvegarde_fusion(permis, &depuis_valeur(base), &depuis_valeur(voulue)).map(|s| s.en_json())
     }
 
     /// La fin de « Tout restaurer » : sauvegarde.json et ses copies effacés, par l'écrivain unique ; la sauvegarde
     /// relue (les valeurs d'origine encore gardées dans le registre)
-    pub fn effacer_sauvegarde(&self) -> Result<(), String> {
+    pub fn effacer_sauvegarde(&self, _permis: &crate::Permis) -> Result<(), String> {
         self.exiger_geste()?;
         if !self.sans_disque {
             let _seul = verrou(&self.ecrivain_sauvegarde);
@@ -446,9 +456,13 @@ impl Contexte {
 
     /// `Save-BackupOuOublier` : l'état d'origine noté AVANT le changement ; s'il n'a pas pu être écrit, il est
     /// oublié (`oublier`) et l'erreur remonte, sans rien changer.
-    pub fn enregistrer_sauvegarde_ou_oublier(&self, oublier: impl FnOnce(&mut Sauvegarde)) -> Result<(), String> {
+    pub fn enregistrer_sauvegarde_ou_oublier(
+        &self,
+        permis: &crate::Permis,
+        oublier: impl FnOnce(&mut Sauvegarde),
+    ) -> Result<(), String> {
         self.exiger_geste()?;
-        match self.enregistrer_sauvegarde() {
+        match self.enregistrer_sauvegarde(permis) {
             Ok(()) => Ok(()),
             Err(e) => {
                 self.changer_sauvegarde(oublier);
@@ -467,7 +481,7 @@ impl Contexte {
 
     /// `Save-Original` : mémorise la valeur d'origine avant la première modification (et une copie dans le
     /// registre de l'utilisateur pour un réglage de l'utilisateur ; jamais en mode test).
-    pub fn noter_origine(&self, chemin: &str, nom: &str) -> Result<(), String> {
+    pub fn noter_origine(&self, permis: &crate::Permis, chemin: &str, nom: &str) -> Result<(), String> {
         self.exiger_geste()?;
         let cle = format!("{chemin}|{nom}");
         if self.sauvegarde().registre.contains_key(&cle) {
@@ -479,40 +493,52 @@ impl Contexte {
             s.registre.insert(cle.clone(), e.clone());
         });
         let k = cle.clone();
-        self.enregistrer_sauvegarde_ou_oublier(move |s| {
+        self.enregistrer_sauvegarde_ou_oublier(permis, move |s| {
             s.registre.remove(&k);
         })?;
         if registre::utilisateur(chemin) && !self.essai {
             let copie = format!("HKCU:\\{}", self.cle_origines_utilisateur());
             if crate::registre::valeur(&copie, &cle).is_none() {
-                let _ =
-                    crate::registre::ecrire_utilisateur(&copie, &cle, &json!(crate::json_ps::compact(&e)), "String");
+                let _ = crate::registre::ecrire_utilisateur(
+                    permis,
+                    &copie,
+                    &cle,
+                    &json!(crate::json_ps::compact(&e)),
+                    "String",
+                );
             }
         }
         Ok(())
     }
 
     /// `Set-Reg` : note l'origine, le changement (action en cours), puis écrit (l'Aide pour un réglage du PC)
-    pub fn changer_registre(&self, chemin: &str, nom: &str, valeur: &Value, kind: &str) -> Result<(), String> {
+    pub fn changer_registre(
+        &self,
+        permis: &crate::Permis,
+        chemin: &str,
+        nom: &str,
+        valeur: &Value,
+        kind: &str,
+    ) -> Result<(), String> {
         self.exiger_geste()?;
-        self.noter_origine(chemin, nom)?;
+        self.noter_origine(permis, chemin, nom)?;
         if self.changements_en_cours() {
             let st = self.registre_etat(chemin, nom);
             self.noter_changement(json!({ "Type": "reg", "Path": chemin, "Name": nom, "Existed": st["Existed"], "Value": st["Value"], "Kind": st["Kind"], "Nouveau": valeur, "NouveauType": kind }));
         }
-        self.ecrire_registre(chemin, nom, valeur, kind)
+        self.ecrire_registre(permis, chemin, nom, valeur, kind)
     }
 
     /// `Clear-Reg` : une valeur qui existe est effacée (origine et changement notés)
-    pub fn vider_registre(&self, chemin: &str, nom: &str) -> Result<(), String> {
+    pub fn vider_registre(&self, permis: &crate::Permis, chemin: &str, nom: &str) -> Result<(), String> {
         self.exiger_geste()?;
         let st = self.registre_etat(chemin, nom);
         if !vrai(&st["Existed"]) {
             return Ok(());
         }
-        self.noter_origine(chemin, nom)?;
+        self.noter_origine(permis, chemin, nom)?;
         self.noter_changement(json!({ "Type": "reg", "Path": chemin, "Name": nom, "Existed": true, "Value": st["Value"], "Kind": st["Kind"], "Efface": true }));
-        self.effacer_registre(chemin, nom)
+        self.effacer_registre(permis, chemin, nom)
     }
 
     // -----------------------------------------------------------------------------------------------------------

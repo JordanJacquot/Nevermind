@@ -226,7 +226,7 @@ impl<'a> PcWindows<'a> {
 
 impl Pc for PcWindows<'_> {
     fn exiger_geste(&self) -> Result<(), String> {
-        self.ctx.exiger_geste()
+        self.ctx.exiger_geste().map(|_| ())
     }
     fn suspendre_geste(&mut self) -> Option<u64> {
         self.ctx.suspendre_geste()
@@ -319,14 +319,15 @@ impl Pc for PcWindows<'_> {
     }
     fn aide(&mut self, action: &str, parametres: Value, delai_ms: u64) -> Result<Value, String> {
         // (une action qui change le PC : seulement sous le verrou des gestes, lot A)
-        if nevermind_noyau::aide::change_le_pc(action) {
-            self.ctx.exiger_geste()?;
-        }
+        let permis = if nevermind_noyau::aide::change_le_pc(action) { Some(self.ctx.exiger_geste()?) } else { None };
         // (en test, seulement une fausse Aide : jamais la vraie)
         if self.ctx.essai && !action.starts_with("lecture.") && !self.ctx.a_fausse_aide() {
             return Err("mode test : l'Aide n'est pas appelée".into());
         }
-        self.ctx.aide(action, &parametres, delai_ms)
+        match &permis {
+            Some(p) => self.ctx.aide_qui_change(p, action, &parametres, delai_ms),
+            None => self.ctx.aide(action, &parametres, delai_ms),
+        }
     }
     fn aide_lecture(&mut self, action: &str, parametres: Value) -> Option<Value> {
         self.ctx.aide_lecture(action, &parametres)
@@ -513,6 +514,11 @@ impl Pc for PcWindows<'_> {
         self.ctx.reglage(nom)
     }
     fn ecrire_reglage(&mut self, nom: &str, valeur: Value, exiger: bool) -> Result<(), String> {
+        // (l'état d'origine des services et de l'alimentation : avec le permis du verrou, lot J)
+        if nevermind_noyau::contexte::REGLAGES_D_ORIGINE.contains(&nom) {
+            let p = self.ctx.exiger_geste()?;
+            return self.ctx.ecrire_reglage_d_origine(&p, nom, valeur, exiger);
+        }
         self.ctx.ecrire_reglage(nom, valeur, exiger)
     }
     fn sauvegarde_ecrire(&mut self, sauvegarde: &Value) -> Result<(), String> {
@@ -523,13 +529,14 @@ impl Pc for PcWindows<'_> {
     fn sauvegarde_fusionner(&mut self, base: &Value, voulue: &Value) -> Result<Option<Value>, String> {
         // (l'écrivain unique du noyau, lot A étape 2 : le fichier relu, seul ce que ce geste a changé y est fusionné,
         //  par un fichier temporaire propre à cette écriture ; la sauvegarde du noyau suit)
-        self.ctx.exiger_geste()?;
-        let copie = self.ctx.ecrire_sauvegarde_fusion_json(base, voulue)?;
+        let p = self.ctx.exiger_geste()?;
+        let copie = self.ctx.ecrire_sauvegarde_fusion_json(&p, base, voulue)?;
         self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });
         Ok(Some(copie))
     }
     fn sauvegarde_effacer(&mut self) {
-        if self.ctx.exiger_geste().is_err() || self.ctx.effacer_sauvegarde().is_err() {
+        let Ok(p) = self.ctx.exiger_geste() else { return };
+        if self.ctx.effacer_sauvegarde(&p).is_err() {
             return;
         }
         self.effets.push(Effet::Signal { nom: "sauvegarde-changee".into(), donnees: json!({}) });

@@ -1008,7 +1008,7 @@ mod tests {
         let (ctx, lus) = contexte_administrateur(racine, donnees, true);
         let _geste = ctx.prendre_geste("Désinstaller", "Désinstallation").unwrap();
         ctx.journal("Désinstallation demandée par Mindset (données gardées)");
-        ctx.ecrire_reglage("SvcOriginal", json!([]), false).unwrap();
+        ctx.exiger_geste().and_then(|p| ctx.ecrire_reglage_d_origine(&p, "SvcOriginal", json!([]), false)).unwrap();
         let probleme = ctx.sauvegarde().probleme;
         ecrire_donnees(donnees, &ctx, lus.as_ref());
         probleme
@@ -1055,7 +1055,7 @@ mod tests {
         assert_eq!(ctx.sauvegarde().probleme.as_deref(), Some("abimee"));
         assert_eq!(ctx.reglage("SvcOriginal"), Some(json!(["DiagTrack|Automatic|True"])));
         ctx.journal("Désinstallation : essai");
-        ctx.ecrire_reglage("SvcOriginal", json!([]), false).unwrap();
+        ctx.exiger_geste().and_then(|p| ctx.ecrire_reglage_d_origine(&p, "SvcOriginal", json!([]), false)).unwrap();
         assert!(photo(&donnees) == avant, "écrit avant la fin (ou par son chemin)");
         ecrire_donnees(&donnees, &ctx, lus.as_ref());
         let journal = std::fs::read_to_string(donnees.join("journal.txt")).unwrap();
@@ -1214,7 +1214,7 @@ mod tests {
         )
         .unwrap();
         // La remise en état : le service est remis (plus noté), l'alimentation ne change pas
-        ctx.ecrire_reglage("SvcOriginal", json!([]), false).unwrap();
+        ctx.exiger_geste().and_then(|p| ctx.ecrire_reglage_d_origine(&p, "SvcOriginal", json!([]), false)).unwrap();
         ecrire_donnees(&donnees, &ctx, lus.as_ref());
         let p: Value =
             serde_json::from_str(&std::fs::read_to_string(donnees.join("parametres.json")).unwrap()).unwrap();

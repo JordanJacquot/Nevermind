@@ -49,3 +49,7 @@ pub fn lire_la_sauvegarde(ctx: &C) -> String {
 pub fn lire_par_l_aide(ctx: &C) -> R {
     ctx.aide_sans_demande("lecture.pc", &json!({}), 1)
 }
+
+pub fn ecrire_avec_le_permis(ctx: &C) -> R {
+    ctx.exiger_geste().and_then(|p| ctx.changer_registre(&p, "HKCU:\\Essai", "V", &json!(1), "DWord")) // protégé
+}

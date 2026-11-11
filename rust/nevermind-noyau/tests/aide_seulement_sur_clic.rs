@@ -45,7 +45,8 @@ const GESTES_SUR_CLIC: &[&str] = &[
 ];
 
 /// Les appels qui peuvent proposer la demande de Windows : l'action est la première chaîne écrite dans l'appel
-const APPELS: &[&str] = &[".aide(", "::aide(", "aide.demander("];
+/// (lot J : `aide_qui_change(` est `aide(` avec le permis du verrou des gestes ; l'action est la première chaîne)
+const APPELS: &[&str] = &[".aide(", "::aide(", "aide.demander(", ".aide_qui_change("];
 
 /// Les écritures du registre : un réglage du PC passe par l'Aide avec la demande de Windows (jamais depuis un tic)
 const REGISTRE: &[&str] = &["changer_registre(", "ecrire_registre(", "effacer_registre(", "vider_registre("];
@@ -576,7 +577,9 @@ fn noms_de_signaux(l: &[Lu], toutes: &[Vec<Fonction>]) -> (Noms, Noms) {
             let Some(g) = decl.find('"') else { continue };
             let debut = p + 6 + g + 1;
             let Some(n) = lu.brut[debut..].find('"') else { continue };
-            constantes.insert(nom, lu.brut[debut..debut + n].to_string());
+            if !nom.is_empty() {
+                constantes.insert(nom, lu.brut[debut..debut + n].to_string());
+            }
         }
     }
     let mut fabriques = HashMap::new();

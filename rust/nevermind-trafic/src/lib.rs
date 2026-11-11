@@ -1031,7 +1031,7 @@ impl BlocTrafic {
             let nom = format!("Nevermind : bloque {titre}");
             let svc: Vec<String> = services.iter().map(|s| s.nom.clone()).collect();
             if let Err(e) =
-                ctx.aide("pare-feu.bloquer", &json!({ "Nom": nom, "Programme": chemin, "Services": svc }), 15000)
+                ctx.exiger_geste().and_then(|p| ctx.aide_qui_change(&p, "pare-feu.bloquer", &json!({ "Nom": nom, "Programme": chemin, "Services": svc }), 15000))
             {
                 effets.push(Effet::Annonce(e));
                 return effets;
@@ -1045,7 +1045,9 @@ impl BlocTrafic {
             if !systeme {
                 // (la règle commune de fermeture est celle de l'Aide : jamais un service, Windows, la suite...)
                 // (l'Aide vient de poser la règle du pare-feu : jamais une deuxième demande de Windows pour la fermeture)
-                let _ = ctx.aide_sans_demande("processus.fermer", &json!({ "Chemin": chemin }), 15000);
+                let _ = ctx.exiger_geste().and_then(|p| {
+                    ctx.aide_sans_demande_qui_change(&p, "processus.fermer", &json!({ "Chemin": chemin }), 15000)
+                });
             }
             effets.push(Effet::Annonce(format!(
                 "« {titre} » est bloqué{}.\n\nPour annuler : page Sauvegarde, historique, « Annuler ».",

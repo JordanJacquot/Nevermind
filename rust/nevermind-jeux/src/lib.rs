@@ -363,7 +363,10 @@ impl BlocJeux {
         self.travaux.lancer_geste(ctx, FERMER, geste, move |f| {
             // (l'attente montrée pendant que l'Aide ferme, retirée à la fin du travail ; lot B)
             f.effet(nevermind_noyau::signaux::occupe(&format!("Fermeture de {nom}...")));
-            let r = f.ctx.aide("processus.fermer", &json!({ "Nom": nom }), 15000);
+            let r = f
+                .ctx
+                .exiger_geste()
+                .and_then(|p| f.ctx.aide_qui_change(&p, "processus.fermer", &json!({ "Nom": nom }), 15000));
             FinJeux::Ferme(nom, r)
         });
         self.relever_travaux(ctx, effets);

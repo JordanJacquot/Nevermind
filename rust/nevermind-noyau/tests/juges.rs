@@ -280,7 +280,13 @@ fn reglages() {
                 }
                 "ecrire" => {
                     let v: Value = serde_json::from_str(&s(&o["valeur"])).unwrap();
-                    let r = ctx.ecrire_reglage(&s(&o["nom"]), v, o["exiger"].as_bool().unwrap_or(false));
+                    // (lot J : l'état d'origine passe par le permis du verrou, comme dans Nevermind)
+                    let (n, exiger) = (s(&o["nom"]), o["exiger"].as_bool().unwrap_or(false));
+                    let r = if nevermind_noyau::contexte::REGLAGES_D_ORIGINE.contains(&n.as_str()) {
+                        ctx.exiger_geste().and_then(|p| ctx.ecrire_reglage_d_origine(&p, &n, v, exiger))
+                    } else {
+                        ctx.ecrire_reglage(&n, v, exiger)
+                    };
                     assert_eq!(
                         r.err(),
                         o["erreur"].as_str().map(str::to_string),
@@ -432,7 +438,13 @@ fn invoke_aide_fausse_aide() {
                 None
             };
             let p: Value = serde_json::from_str(&s(&e["parametres"])).unwrap();
-            let r = ctx.aide(&s(&e["action"]), &p, 300);
+            // (lot J : une action qui change le PC passe par le permis du verrou, comme dans Nevermind)
+            let action = s(&e["action"]);
+            let r = if nevermind_noyau::aide::change_le_pc(&action) {
+                ctx.exiger_geste().and_then(|permis| ctx.aide_qui_change(&permis, &action, &p, 300))
+            } else {
+                ctx.aide(&action, &p, 300)
+            };
             if let Some(sv) = serveur {
                 recues.lock().unwrap().extend(sv.demandes());
             }
@@ -971,8 +983,12 @@ fn reglages_du_registre() {
     // (lot A : un geste tient le verrou, son journal est le sien)
     let _geste = ctx.prendre_geste("Juge", "Essai").unwrap();
     ctx.commencer_changements();
-    ctx.changer_registre("HKCU:\\Software\\NevermindEssai", "Valeur", &json!(5), "DWord").unwrap();
-    ctx.changer_registre("HKLM:\\SOFTWARE\\NevermindEssai", "N", &json!("t"), "String").unwrap();
+    ctx.exiger_geste()
+        .and_then(|p| ctx.changer_registre(&p, "HKCU:\\Software\\NevermindEssai", "Valeur", &json!(5), "DWord"))
+        .unwrap();
+    ctx.exiger_geste()
+        .and_then(|p| ctx.changer_registre(&p, "HKLM:\\SOFTWARE\\NevermindEssai", "N", &json!("t"), "String"))
+        .unwrap();
     let ch = ctx.finir_changements();
     assert_eq!(ch.len(), 2);
     assert_eq!(ch[0]["Nouveau"], json!(5));
@@ -989,7 +1005,7 @@ fn reglages_du_registre() {
     let ctx2 = contexte(&d);
     assert_eq!(ctx2.sauvegarde().registre, sv.registre);
     // Clear-Reg : la valeur (du faux registre) est effacée
-    ctx.vider_registre("HKCU:\\Software\\NevermindEssai", "Valeur").unwrap();
+    ctx.exiger_geste().and_then(|p| ctx.vider_registre(&p, "HKCU:\\Software\\NevermindEssai", "Valeur")).unwrap();
     assert_eq!(ctx.registre_valeur("HKCU:\\Software\\NevermindEssai", "Valeur"), None);
     let _ = std::fs::remove_dir_all(&d);
 }

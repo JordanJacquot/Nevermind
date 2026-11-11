@@ -786,11 +786,45 @@ impl Contexte {
         sans_demande: bool,
         fond: bool,
     ) -> Result<Value, String> {
-        // (une action qui change le PC seulement sous le verrou d'un geste, lot A ; le point de restauration n'en a
-        //  pas besoin, ajustement B)
+        // (lot J : une action qui change le PC passe par le permis du verrou, `aide_qui_change` ; ici, elle est
+        //  refusée avant de partir)
+        if change_le_pc(action) {
+            return Err(self.refus_sans_permis(action));
+        }
+        self.invoquer_ici(action, parametres, delai, sans_demande, fond)
+    }
+
+    /// Une action qui change le PC demandée sans le permis du verrou : refusée, notée au journal
+    fn refus_sans_permis(&self, action: &str) -> String {
+        self.journal(&format!("Aide : {action} refusé, une action qui change le PC passe par le verrou des gestes"));
+        "Un autre réglage est en cours : rien n'a été changé. Réessaie dans un instant.".into()
+    }
+
+    /// Une demande avec le permis du verrou des gestes (lot J) : une action qui change le PC est permise, si ce fil
+    /// tient encore le verrou (lot A ; le point de restauration n'en a pas besoin, ajustement B)
+    pub(crate) fn invoquer_avec_permis(
+        &self,
+        _permis: &crate::Permis,
+        action: &str,
+        parametres: &Value,
+        delai: Duration,
+        sans_demande: bool,
+        fond: bool,
+    ) -> Result<Value, String> {
         if change_le_pc(action) {
             self.exiger_geste()?;
         }
+        self.invoquer_ici(action, parametres, delai, sans_demande, fond)
+    }
+
+    fn invoquer_ici(
+        &self,
+        action: &str,
+        parametres: &Value,
+        delai: Duration,
+        sans_demande: bool,
+        fond: bool,
+    ) -> Result<Value, String> {
         let fausse = verrou(&self.aide.fausse).clone();
         if !sans_demande && (self.essai || fausse.is_some()) {
             verrou(&self.aide.avec_demande).push(action.to_string());
@@ -898,6 +932,30 @@ impl Contexte {
         self.invoquer(action, parametres, Duration::from_millis(delai_ms), true, true)
     }
 
+    /// [`Contexte::aide_sans_demande`] pour une action qui change le PC (jamais de demande de Windows) : seulement avec
+    /// le permis du verrou des gestes (lot J)
+    pub fn aide_sans_demande_qui_change(
+        &self,
+        permis: &crate::Permis,
+        action: &str,
+        parametres: &Value,
+        delai_ms: u64,
+    ) -> Result<Value, String> {
+        self.invoquer_avec_permis(permis, action, parametres, Duration::from_millis(delai_ms), true, false)
+    }
+
+    /// [`Contexte::aide_de_fond`] pour une action qui change le PC (le mode jeu au début d'une partie) : seulement avec
+    /// le permis du verrou des gestes (lot J)
+    pub fn aide_de_fond_qui_change(
+        &self,
+        permis: &crate::Permis,
+        action: &str,
+        parametres: &Value,
+        delai_ms: u64,
+    ) -> Result<Value, String> {
+        self.invoquer_avec_permis(permis, action, parametres, Duration::from_millis(delai_ms), true, true)
+    }
+
     /// Le réveil de l'Aide dans un fil à part (sa tâche SYSTEM seulement, jamais de demande de Windows), un seul à la
     /// fois ; réussi, il lève la pause des demandes de fond et des mesures.
     fn reveiller_en_fond(self: &Arc<Self>) {
@@ -993,8 +1051,9 @@ impl Contexte {
     /// `[AideClient]::Texte` : une demande dont la réponse est un texte (les lignes de PresentMon relayées par
     /// l'Aide), depuis n'importe quel fil, sans réveil. `parametres_json` : les paramètres déjà en JSON.
     pub fn aide_texte(&self, action: &str, parametres_json: &str, delai_ms: u64) -> Result<String, String> {
+        // (lot J : une action qui change le PC passe par `aide_qui_change`)
         if change_le_pc(action) {
-            self.exiger_geste()?;
+            return Err(self.refus_sans_permis(action));
         }
         let fausse = verrou(&self.aide.fausse).clone();
         if let Some(f) = fausse {

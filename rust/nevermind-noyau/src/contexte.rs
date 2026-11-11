@@ -352,11 +352,30 @@ impl Contexte {
     }
 
     /// Écrire un réglage (`Set-Setting`). `exiger` : erreur si le fichier n'a pas pu être écrit (rien n'est changé).
+    /// L'état d'origine des services et de l'alimentation passe par [`Contexte::ecrire_reglage_d_origine`] (lot J) :
+    /// ici, il est refusé.
     pub fn ecrire_reglage(&self, nom: &str, valeur: Value, exiger: bool) -> Result<(), String> {
-        // (l'état d'origine des services et de l'alimentation : noté seulement par un geste qui tient le verrou)
         if REGLAGES_D_ORIGINE.contains(&nom) {
-            self.exiger_geste()?;
+            self.journal(&format!("Préférence {nom} refusée : elle se note sous le verrou des gestes"));
+            return Err("Un autre réglage est en cours : rien n'a été changé. Réessaie dans un instant.".into());
         }
+        self.ecrire_reglage_ici(nom, valeur, exiger)
+    }
+
+    /// L'état d'origine des services et de l'alimentation (`SvcOriginal`, `PcfgOriginal`) : seulement par un geste
+    /// qui tient le verrou (le permis le prouve au compilateur, lot J)
+    pub fn ecrire_reglage_d_origine(
+        &self,
+        _permis: &crate::Permis,
+        nom: &str,
+        valeur: Value,
+        exiger: bool,
+    ) -> Result<(), String> {
+        self.exiger_geste()?;
+        self.ecrire_reglage_ici(nom, valeur, exiger)
+    }
+
+    fn ecrire_reglage_ici(&self, nom: &str, valeur: Value, exiger: bool) -> Result<(), String> {
         self.charger_reglages();
         let erreur = {
             let mut r = verrou(&self.reglages);
@@ -413,8 +432,23 @@ impl Contexte {
     /// Une demande à l'Aide (`Invoke-Aide`) : sa réponse (`r`), ou l'erreur en français. `delai_ms` : l'attente de
     /// la réponse (120000 par défaut en PowerShell). Peut proposer la demande de Windows ; voir aussi
     /// `aide_sans_demande`.
+    /// Lot J : une action qui change le PC est refusée ici ; elle passe par [`Contexte::aide_qui_change`].
     pub fn aide(&self, action: &str, parametres: &Value, delai_ms: u64) -> Result<Value, String> {
         self.invoquer_aide(action, parametres, Duration::from_millis(delai_ms), false)
+    }
+
+    /// Une demande à l'Aide qui change le PC (`ACTIONS_QUI_CHANGENT`), sur un clic : seulement avec le [`Permis`] du
+    /// verrou des gestes (lot J). Comme [`Contexte::aide`], elle peut proposer la demande de Windows.
+    ///
+    /// [`Permis`]: crate::Permis
+    pub fn aide_qui_change(
+        &self,
+        permis: &crate::Permis,
+        action: &str,
+        parametres: &Value,
+        delai_ms: u64,
+    ) -> Result<Value, String> {
+        self.invoquer_avec_permis(permis, action, parametres, Duration::from_millis(delai_ms), false, false)
     }
 
     // -----------------------------------------------------------------------------------------------------------
@@ -461,31 +495,43 @@ impl Contexte {
 
     /// `Write-RegValue` : un réglage de l'utilisateur (HKCU) est écrit par Nevermind ; un réglage du PC passe par
     /// l'Aide (`reg.ecrire`). Mode test : le faux registre, jamais le vrai. Seulement sous le verrou d'un geste.
-    pub fn ecrire_registre(&self, chemin: &str, nom: &str, valeur: &Value, kind: &str) -> Result<(), String> {
+    pub fn ecrire_registre(
+        &self,
+        permis: &crate::Permis,
+        chemin: &str,
+        nom: &str,
+        valeur: &Value,
+        kind: &str,
+    ) -> Result<(), String> {
         self.exiger_geste()?;
         if !crate::registre::utilisateur(chemin) {
-            self.aide("reg.ecrire", &json!({ "Cle": chemin, "Nom": nom, "Valeur": valeur, "Type": kind }), 120000)?;
+            self.aide_qui_change(
+                permis,
+                "reg.ecrire",
+                &json!({ "Cle": chemin, "Nom": nom, "Valeur": valeur, "Type": kind }),
+                120000,
+            )?;
             return Ok(());
         }
         if self.essai {
             verrou(&self.interne).faux_registre.insert(Self::cle_faux(chemin, nom), (valeur.clone(), kind.to_string()));
             return Ok(());
         }
-        crate::registre::ecrire_utilisateur(chemin, nom, valeur, kind)
+        crate::registre::ecrire_utilisateur(permis, chemin, nom, valeur, kind)
     }
 
     /// `Remove-RegValue` : comme `ecrire_registre` (l'Aide pour le PC : `reg.effacer`)
-    pub fn effacer_registre(&self, chemin: &str, nom: &str) -> Result<(), String> {
+    pub fn effacer_registre(&self, permis: &crate::Permis, chemin: &str, nom: &str) -> Result<(), String> {
         self.exiger_geste()?;
         if !crate::registre::utilisateur(chemin) {
-            self.aide("reg.effacer", &json!({ "Cle": chemin, "Nom": nom }), 120000)?;
+            self.aide_qui_change(permis, "reg.effacer", &json!({ "Cle": chemin, "Nom": nom }), 120000)?;
             return Ok(());
         }
         if self.essai {
             verrou(&self.interne).faux_registre.insert(Self::cle_faux(chemin, nom), (Value::Null, String::new()));
             return Ok(());
         }
-        crate::registre::effacer_utilisateur(chemin, nom)
+        crate::registre::effacer_utilisateur(permis, chemin, nom)
     }
 
     /// Tests : le faux registre de l'utilisateur (« HKCU:\...|nom » : valeur, type ; une valeur nulle = effacée)

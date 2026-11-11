@@ -579,7 +579,7 @@ fn service_manuel(
     demarrage: &str,
     log: &mut Vec<Value>,
 ) -> Result<(), String> {
-    ctx.exiger_geste()?;
+    let permis = ctx.exiger_geste()?;
     let (depart, tourne) =
         pc.service(nom).ok_or_else(|| format!("Impossible de trouver un service assorti du nom « {nom} »."))?;
     let mut orig: Vec<Value> = match ctx.reglage("SvcOriginal") {
@@ -590,7 +590,7 @@ fn service_manuel(
     let deja = orig.iter().any(|x| x.as_str().unwrap_or("").split('|').next() == Some(nom));
     if !deja {
         orig.push(Value::String(format!("{nom}|{depart}|{}", if tourne { "True" } else { "False" })));
-        ctx.ecrire_reglage("SvcOriginal", Value::Array(orig), true)?;
+        ctx.ecrire_reglage_d_origine(&permis, "SvcOriginal", Value::Array(orig), true)?;
     }
     log.push(json!({ "Type": "svc", "Name": nom, "StartType": depart, "Running": tourne, "Nouveau": demarrage }));
     aide.demander(ctx, "service.regler", &json!({ "Nom": nom, "Demarrage": demarrage, "Arreter": tourne }))?;
