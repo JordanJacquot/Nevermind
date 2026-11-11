@@ -210,7 +210,15 @@ fn la_fermeture_pendant_une_partie_mesuree_tient_dans_le_delai_de_mindset() {
     let j = std::fs::read_to_string(ctx.donnees.join("journal.txt")).unwrap_or_default();
     assert!(j.contains("Mesure des FPS: Rocket League"), "la mesure doit avoir commencé : {j}");
     let mode_jeu = ctx.donnees.join("mode-jeu.json");
+    // (lot I : les applis sont fermées dans un travail de fond, qui écrit mode-jeu.json lui-même ; sur une machine
+    //  chargée, il peut finir après les tics simulés : attendu 10 s au plus)
+    let attente = Instant::now();
+    while !mode_jeu.exists() && attente.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
     assert!(mode_jeu.exists(), "les applis fermées pour la partie sont notées");
+    // (un tic de plus : le bloc reçoit le résultat du travail de fond, comme en vrai avant une fermeture)
+    faire(&mut b, &ctx, true, 1.0, &mut e);
     let debut = Instant::now();
     b.fermer(&ctx);
     let duree = debut.elapsed();
