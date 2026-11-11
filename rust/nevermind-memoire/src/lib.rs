@@ -64,7 +64,8 @@ struct Fermeture {
     chemins: Vec<String>,
     cibles: Vec<Cible>,
     mode: String,
-    /// « travail », « attente » ou « question » (on attend la réponse à « Forcer la fermeture ? »)
+    /// « travail », « attente », « etat » (l'état de l'appli est lu dans un fil à part, lot I) ou « question » (on attend
+    /// la réponse à « Forcer la fermeture ? »)
     etape: String,
     faits: Vec<Cible>,
     refuses: Vec<fermeture::Refuse>,
@@ -72,6 +73,8 @@ struct Fermeture {
     /// `None` : rien n'a été envoyé, pas d'attente (`[datetime]::MinValue`)
     debut: Option<Instant>,
     restants: Vec<Cible>,
+    /// La lecture de l'état de l'appli qui ne se ferme pas (`etat_fermeture`, jusqu'à 5 s par processus)
+    etat_fil: Option<JoinHandle<&'static str>>,
 }
 
 /// Une question posée à l'écran, en attente de sa réponse
@@ -186,6 +189,7 @@ impl BlocMemoire {
         let fini = || {
             self.travail.as_ref().is_none_or(|t| t.fil.is_finished())
                 && self.fermeture.as_ref().and_then(|f| f.fil.as_ref()).is_none_or(|f| f.is_finished())
+                && self.fermeture.as_ref().and_then(|f| f.etat_fil.as_ref()).is_none_or(|f| f.is_finished())
         };
         let limite = Instant::now() + Duration::from_secs(30);
         while !fini() && Instant::now() < limite {
@@ -673,6 +677,7 @@ impl BlocMemoire {
             fil,
             debut: Some(Instant::now()),
             restants: Vec::new(),
+            etat_fil: None,
         });
         effets.ajouter(Effet::Rafraichir);
     }
@@ -722,7 +727,6 @@ impl BlocMemoire {
                 let faits = f.faits.clone();
                 let mode = f.mode.clone();
                 let debut = f.debut;
-                let nom = f.nom.clone();
                 let restants: Vec<Cible> = faits.into_iter().filter(|c| self.vivant(c)).collect();
                 if restants.is_empty() {
                     self.finir_fermeture(ctx, effets);
@@ -736,7 +740,33 @@ impl BlocMemoire {
                     self.finir_fermeture(ctx, effets);
                     return;
                 }
-                let etat = self.pc().etat_fermeture(&restants);
+                // (lot I : savoir si l'appli pose une question, ne répond plus ou s'est rangée demande à Windows jusqu'à
+                //  5 s par processus encore occupé : dans un fil à part, jamais sur le fil des blocs ; la suite au
+                //  passage suivant, à l'étape « etat »)
+                let pc = self.pc();
+                let r = restants.clone();
+                let fil = std::thread::Builder::new()
+                    .name("memoire-etat-fermeture".into())
+                    .spawn(move || pc.etat_fermeture(&r))
+                    .ok();
+                if let Some(f) = &mut self.fermeture {
+                    f.etape = "etat".into();
+                    f.restants = restants;
+                    f.etat_fil = fil;
+                }
+            }
+            "etat" => {
+                if f.etat_fil.as_ref().is_some_and(|x| !x.is_finished()) {
+                    return;
+                }
+                let fil = f.etat_fil.take();
+                let restants = std::mem::take(&mut f.restants);
+                let nom = f.nom.clone();
+                let etat = match fil {
+                    Some(x) => x.join().unwrap_or("bloquee"),
+                    // (le fil n'a pas pu partir : sur place, comme avant)
+                    None => self.pc().etat_fermeture(&restants),
+                };
                 let (forcer, texte) = fermeture::message(&nom, etat);
                 ctx.journal(&format!(
                     "Mémoire : {nom} pas fermé au bout de 5 s ({} processus restent)",
