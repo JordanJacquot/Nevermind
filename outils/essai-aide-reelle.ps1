@@ -1565,6 +1565,22 @@ function Test-Cas14 {
         Add-Note "session des FPS $session ouverte après l'Aide tuée : $(& $ouverte)"
         $s4 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'bonjour'; Action = 'aide.bonjour'; P = @{} }) }
         Test-Cas 'l''Aide relancée ferme la session des FPS que l''Aide tuée a laissée' { $s4.R -and (Wait-Jusque { -not (& $ouverte) } 15) }
+        # (audit du 10/11, lot K) Un programme sans droits (sous Élodie) prend le nom public du verrou de l'Aide
+        # AVANT elle. Avant : l'Aide en SYSTEM s'arrêtait sans rien noter, et Nevermind restait sans Aide. Maintenant
+        # elle garde son verrou protégé (espace de noms privé, administrateurs et système seulement), répond, et le note.
+        # (le Nevermind gardé ouvert est fermé d'abord : il ne relance pas l'Aide avant le programme sans droits)
+        try { if ($garde -and -not $garde.HasExited) { $garde.Kill() } } catch {}
+        Stop-Aides
+        $null = Wait-Jusque { -not (Test-Verrou "Global\$canal") } 15
+        $squat = Join-Path $Sorties 'squat-verrou.ps1'
+        Write-Utf8 $squat "`$m = New-Object Threading.Mutex(`$false, 'Global\$canal'); Start-Sleep -Seconds 120; `$m.Dispose()"
+        $squatteur = Start-Process -FilePath $PowerShellExe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', $squat) -Credential $e.Cred -LoadUserProfile -WorkingDirectory $env:SystemRoot -PassThru
+        Test-Cas 'un programme sans droits (Élodie) tient le nom public du verrou de l''Aide' { Wait-Jusque { Test-Verrou "Global\$canal" } 30 }
+        $s5 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'bonjour'; Action = 'aide.bonjour'; P = @{} }, @{ Nom = 'journal'; Action = 'aide.journal'; P = @{} }) }
+        Test-Cas 'nom public du verrou pris : l''Aide en SYSTEM démarre quand même et répond' { [bool](Get-Bonjour $s5) }
+        Test-Cas 'nom public du verrou pris : l''Aide le note dans son journal' { $s5.R -and @(@($s5.R.journal) -match 'déjà pris par un autre programme').Count }
+        try { if ($squatteur -and -not $squatteur.HasExited) { $squatteur.Kill() } } catch {}
+        Stop-Aides
     }
     foreach ($p in $jeu, $garde) { try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {} }
     Stop-Aides

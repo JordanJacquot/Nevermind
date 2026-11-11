@@ -67,6 +67,10 @@ pub(crate) struct FauxSysteme {
     verrous: Mutex<Vec<String>>,
     /// Le canal est déjà pris par une autre Aide (le premier exemplaire est refusé par Windows)
     canal_pris: bool,
+    /// Le verrou « une seule Aide » : nom public pris par un autre programme (l'Aide continue et le note), ou tenu par
+    /// une autre Aide (elle s'arrête)
+    nom_du_verrou_pris: bool,
+    verrou_occupe: bool,
     /// Le compte des processus que le faux PC ne liste pas (aucun : illisible), comme ceux des mesures rejouées
     compte_par_defaut: Option<String>,
 }
@@ -229,6 +233,8 @@ impl FauxSysteme {
             sessions: Mutex::default(),
             verrous: Mutex::default(),
             canal_pris: false,
+            nom_du_verrou_pris: false,
+            verrou_occupe: false,
             compte_par_defaut: None,
         }
     }
@@ -240,6 +246,18 @@ impl FauxSysteme {
     /// Le canal est déjà pris par une autre Aide : son premier exemplaire est refusé
     pub(crate) fn avec_canal_pris(mut self) -> Self {
         self.canal_pris = true;
+        self
+    }
+
+    /// Le nom public du verrou est déjà pris par un programme sans droits : l'Aide garde son verrou protégé
+    pub(crate) fn avec_nom_du_verrou_pris(mut self) -> Self {
+        self.nom_du_verrou_pris = true;
+        self
+    }
+
+    /// Une autre Aide tient déjà le verrou
+    pub(crate) fn avec_verrou_occupe(mut self) -> Self {
+        self.verrou_occupe = true;
         self
     }
 
@@ -596,9 +614,15 @@ impl Ecoute for FausseEcoute {
 
 impl Hote for FauxSysteme {
     type E = FausseEcoute;
-    fn verrou(&self, nom: &str) -> Option<Box<dyn Send>> {
+    fn verrou(&self, nom: &str) -> Verrouillage {
         self.verrous.lock().unwrap().push(nom.into());
-        Some(Box::new(()))
+        if self.verrou_occupe {
+            return Verrouillage::Occupe(format!("Une autre Aide tient déjà le verrou ({nom}), l'Aide s'arrête"));
+        }
+        let remarque = self.nom_du_verrou_pris.then(|| {
+            format!("Le nom {nom} est déjà pris par un autre programme : l'Aide garde son verrou protégé et continue")
+        });
+        Verrouillage::Pris { garde: Box::new(()), remarque }
     }
     fn preparer_aide_temp(&self, _dossier: &str, _admin: bool) -> Result<(), String> {
         Ok(())
@@ -981,4 +1005,29 @@ fn dns_automatique_avec_une_liste_vide() {
     let s = FauxSysteme::new();
     let r = demander(&s, NEVERMIND as u32, r#"{"a":"dns.regler","p":{"Index":12,"Serveurs":{"a":"1.1.1.1"}}}"#);
     assert_eq!(r["ok"], false);
+}
+
+/// Lot K (audit du 10/11) : un programme sans droits a pris le nom public du verrou de l'Aide (`Global\Nevermind-Aide-...`)
+/// avant elle. Avant : l'Aide s'arrêtait sans rien noter, et Nevermind restait sans Aide. Maintenant l'Aide garde son
+/// verrou protégé (espace de noms privé, réservé aux administrateurs et au système), continue, et le note au journal.
+#[test]
+fn le_nom_du_verrou_pris_par_un_programme_sans_droits_est_note() {
+    let f = Arc::new(FauxSysteme::new().avec_nom_du_verrou_pris());
+    let rep = Arc::clone(&f.reponses);
+    f.connexions.lock().unwrap().push_back(connexion(NEVERMIND as u32, &[Some(b"{\"a\":\"aide.journal\"}\n")], &rep));
+    serveur::lancer(Arc::clone(&f), Some(ELODIE));
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let r = rep.lock().unwrap().join("");
+    assert!(r.contains("déjà pris par un autre programme"), "rien n'est noté au journal : {r}");
+    assert!(r.contains("démarrée"), "l'Aide ne démarre pas : {r}");
+}
+
+/// Lot E (gardé par le lot K) : une seconde Aide s'arrête au verrou, sans ouvrir de canal ni rien fermer
+#[test]
+fn une_seconde_aide_s_arrete_au_verrou() {
+    let f = Arc::new(FauxSysteme::new().avec_verrou_occupe());
+    serveur::lancer(Arc::clone(&f), Some(ELODIE));
+    assert!(f.etat().appels.is_empty(), "la seconde Aide a ouvert son canal : {:?}", f.etat().appels);
+    let m = f.mesures.lock().unwrap();
+    assert!(m.traces_fermees.is_empty() && m.sessions_fps_fermees.is_empty());
 }

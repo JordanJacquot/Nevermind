@@ -6,6 +6,8 @@
 
 #![allow(unsafe_code)]
 
+#[cfg(test)]
+mod essais_verrou;
 mod canal;
 mod com;
 mod lectures;
