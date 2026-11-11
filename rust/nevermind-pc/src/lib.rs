@@ -1005,10 +1005,22 @@ impl BlocPc {
         if let Some(fin) = self.fin_ecran.filter(|_| !self.travaux.occupe()) {
             let reste = fin.saturating_duration_since(Instant::now()).as_secs_f64().ceil() as i64;
             if reste <= 0 {
-                // (automatique : jamais refusé, l'écran doit revenir à l'ancienne fréquence ; ajustement A du lot A)
-                let _priorite = ctx.geste_prioritaire("Fréquence de l'écran", PAGE);
-                let (_, a) = self.avec_pc(ctx, |s, pc| s.session.repondre_ecran(pc, "timeout"));
-                self.apres(true, a, effets);
+                // (automatique : jamais refusé, l'écran doit revenir à l'ancienne fréquence ; ajustement A du lot A.
+                //  Lot I : un changement de mode par écran, puis l'analyse, dans un travail de fond qui emporte le
+                //  geste prioritaire, et plus sur le fil des blocs ; la fin ferme la fiche comme avant)
+                self.fin_ecran = None;
+                let verrou = Verrou::Priorite("Fréquence de l'écran".into());
+                let r = self.en_fond(ctx, "ecran-timeout", Suite::Geste { avant: true }, true, verrou, |at, pc| {
+                    at.session.repondre_ecran(pc, "timeout")
+                });
+                if !matches!(r, Ok(true)) {
+                    // (le travail n'a pas pu partir : sur place, comme avant)
+                    let _priorite = ctx.geste_prioritaire("Fréquence de l'écran", PAGE);
+                    let (_, a) = self.avec_pc(ctx, |s, pc| s.session.repondre_ecran(pc, "timeout"));
+                    self.apres(true, a, effets);
+                    return None;
+                }
+                self.relever_travaux(ctx, effets);
                 return None;
             }
             if let Some(f) = self.session.fiche.as_mut() {
