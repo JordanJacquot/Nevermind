@@ -347,6 +347,28 @@ impl Pc for PcWindows<'_> {
     fn relire(&mut self) -> Option<crate::lecture::Lu> {
         Some(crate::lecture::lire())
     }
+    fn peripheriques(&mut self) -> Vec<crate::peripheriques::Peripherique> {
+        // (en mode test, jamais les vrais appareils : des exemples)
+        if self.ctx.essai {
+            return crate::peripheriques::exemple();
+        }
+        #[cfg(windows)]
+        {
+            crate::peripheriques::ranger(crate::windows::peripheriques::lire())
+        }
+        #[cfg(not(windows))]
+        {
+            Vec::new()
+        }
+    }
+    fn logiciel_marque(&self, marque: &str) -> Option<crate::peripheriques::Logiciel> {
+        let dossiers: Vec<String> = ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
+            .iter()
+            .filter_map(|v| std::env::var(v).ok())
+            .chain(["C:\\Program Files".to_string()])
+            .collect();
+        crate::peripheriques::logiciel_installe(marque, &dossiers, |c| Path::new(c).is_file())
+    }
     fn reponse_pilote_nvidia(&mut self) -> Option<String> {
         // (en mode test, rien ne sort sur Internet)
         if self.ctx.essai {

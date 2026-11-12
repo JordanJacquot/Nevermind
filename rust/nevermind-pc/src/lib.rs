@@ -19,6 +19,7 @@ pub mod net;
 pub mod nettoyage;
 pub mod pages;
 pub mod pc;
+pub mod peripheriques;
 pub mod reglages;
 pub mod score;
 pub mod session;
@@ -197,7 +198,16 @@ pub struct BlocPc {
     diffusions: Travaux<Relu>,
     /// Une diffusion demandée pendant une relecture : refaite juste après, avec ce qui a changé entre-temps
     rediffuser: bool,
+    /// Les périphériques (casque, souris, clavier) de la dernière lecture
+    perif: Vec<peripheriques::Peripherique>,
+    /// Le début de la dernière lecture des périphériques (relue au plus une fois par minute, page regardée)
+    perif_lu: Option<Instant>,
+    /// La lecture des périphériques, dans un travail de fond
+    perif_lecture: Travaux<Vec<peripheriques::Peripherique>>,
 }
+
+/// La clé de la lecture des périphériques
+const PERIF: &str = "peripheriques";
 
 /// La clé du lancement d'un programme de Windows : un à la fois (un double clic ne pose pas deux questions)
 const LANCEMENT: &str = "lancement";
@@ -893,7 +903,17 @@ impl Bloc for BlocPc {
         self.charger(ctx);
         self.suivre_lecture(ctx);
         self.ecran = ecran.to_string();
+        self.suivre_peripheriques(ctx, false);
+        self.relever_peripheriques(ctx);
         let mut p = pages::pages_pc(self.session.analyse.as_ref(), &self.live, &mut self.kit);
+        // Les périphériques, juste après « Ton PC maintenant » (aucune section sans appareil), et leur page de détail
+        if let Some(b) = p.get_mut("pc").and_then(|x| x.get_mut("blocs")).and_then(Value::as_array_mut) {
+            let apres = b.iter().position(|x| x["type"] == "mesures").map_or(b.len(), |i| i + 1);
+            b.splice(apres..apres, peripheriques::blocs(&self.perif));
+        }
+        for x in &self.perif {
+            p.insert(x.page(), peripheriques::page_detail(x));
+        }
         p.insert("tests".into(), self.tests.page());
         if let Some(pa) = self.tests.panneau() {
             p.insert("panneau".into(), pa);
@@ -920,6 +940,11 @@ impl Bloc for BlocPc {
                     _ => {}
                 }
             }
+            return true;
+        }
+        // (« Ouvrir G Hub » : rien ne change sur le PC, jamais refusé)
+        if let Some(m) = id.strip_prefix("perif-logiciel:") {
+            self.ouvrir_logiciel(ctx, m, effets);
             return true;
         }
         self.rendre_en_attente(effets);
@@ -1038,6 +1063,10 @@ impl Bloc for BlocPc {
         self.rendre_en_attente(effets);
         self.relever_travaux(ctx, effets);
         self.relever_diffusions(ctx, effets);
+        self.suivre_peripheriques(ctx, cache);
+        if self.relever_peripheriques(ctx) {
+            effets.ajouter(Effet::Rafraichir);
+        }
         let t = self.tests.tic_bloc(ctx, effets);
         let r = self.tic_pc(ctx, cache, effets);
         Some(r.map_or(t, |r| r.min(t)))
@@ -1048,6 +1077,9 @@ impl Bloc for BlocPc {
         self.relever_travaux(ctx, effets);
         self.relever_diffusions(ctx, effets);
         self.diffuser_si_du(ctx, effets);
+        if self.relever_peripheriques(ctx) {
+            effets.ajouter(Effet::Rafraichir);
+        }
     }
 
     fn signal(&mut self, ctx: &Contexte, nom: &str, donnees: &Value, effets: &mut Effets) {
@@ -1252,6 +1284,64 @@ impl BlocPc {
         if fait {
             self.apres(avant, a, effets);
             self.diffuser(ctx, effets);
+        }
+    }
+
+    /// Les périphériques : lus quand la page « Ton PC » (ou le détail d'un appareil) est regardée, au plus une fois par
+    /// minute, dans un travail de fond (quelques secondes au plus) ; jamais quand la page est fermée ou l'écran caché.
+    /// Le faux PC des tests (ou les exemples du mode test) : jamais les vrais appareils.
+    fn suivre_peripheriques(&mut self, ctx: &Contexte, cache: bool) {
+        let regarde = !cache && (self.ecran == "pc" || self.ecran.starts_with("perif:"));
+        if !regarde
+            || self.perif_lecture.en_cours(PERIF)
+            || self.perif_lu.is_some_and(|t| t.elapsed() < peripheriques::RELECTURE)
+        {
+            return;
+        }
+        self.perif_lu = Some(Instant::now());
+        let essai = self.essai.clone();
+        self.perif_lecture.lancer(ctx, PERIF, move |fond| {
+            let lire = |pc: &mut dyn Pc| {
+                let mut l = pc.peripheriques();
+                for p in &mut l {
+                    p.logiciel = pc.logiciel_marque(&p.marque);
+                }
+                l
+            };
+            match essai {
+                Some(p) => lire(p.lock().unwrap_or_else(|e| e.into_inner()).as_mut()),
+                None => lire(&mut systeme::PcWindows::nouveau(fond.ctx)),
+            }
+        });
+    }
+
+    /// La fin de la lecture des périphériques : `true` si la liste a changé (la page est à redessiner)
+    fn relever_peripheriques(&mut self, ctx: &Contexte) -> bool {
+        let mut change = false;
+        for r in self.perif_lecture.relever() {
+            match r {
+                Rendu::Effet(_) => {}
+                Rendu::Fini { resultat: Ok(l), .. } => {
+                    if l != self.perif {
+                        self.perif = l;
+                        change = true;
+                    }
+                }
+                Rendu::Fini { resultat: Err(e), .. } => {
+                    ctx.journal(&format!("Ton PC : lecture des périphériques ratée ({e})"))
+                }
+            }
+        }
+        change
+    }
+
+    /// « Ouvrir G Hub » (le logiciel de la marque) : lancé comme les autres programmes, hors du fil des blocs
+    fn ouvrir_logiciel(&mut self, ctx: &Contexte, marque: &str, effets: &mut Effets) {
+        let chemin =
+            self.perif.iter().find(|p| p.marque == marque).and_then(|p| p.logiciel.as_ref()).map(|l| l.chemin.clone());
+        match chemin {
+            Some(c) => self.lancer_programme(ctx, vec![c], effets),
+            None => effets.ajouter(Effet::Annonce("Le logiciel de la marque n'est pas installé sur ce PC.".into())),
         }
     }
 

@@ -169,6 +169,17 @@ pub trait Pc {
         None
     }
 
+    // ---- Les périphériques (casque, souris, clavier ; nouveau, pas dans la version PowerShell)
+    /// Les périphériques et leur batterie, lus sans rien y changer (des questions HID, jamais un réglage), dans un
+    /// travail de fond. Par défaut aucun : les faux PC des tests et des juges n'en ont pas (la page reste la même).
+    fn peripheriques(&mut self) -> Vec<crate::peripheriques::Peripherique> {
+        Vec::new()
+    }
+    /// Le logiciel de la marque (G Hub...), s'il est installé. Par défaut aucun.
+    fn logiciel_marque(&self, _marque: &str) -> Option<crate::peripheriques::Logiciel> {
+        None
+    }
+
     // ---- Alimentation, écrans, souris, programmes
     /// powercfg avec ses arguments : (code de sortie, texte écrit).
     /// Lot J : une commande qui change l'alimentation passe par [`Pc::powercfg_changer`], avec le permis.

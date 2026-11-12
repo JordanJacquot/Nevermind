@@ -152,6 +152,9 @@
     enceinte: '<rect x="6" y="2" width="12" height="20" rx="3"/><circle cx="12" cy="14" r="3.5"/><path d="M12 6h.01"/>',
     ampoule: '<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.6 1 2.5h6c0-.9.2-1.7 1-2.5A6 6 0 0 0 12 3z"/>',
     repeteur: '<path d="M5 12a10 10 0 0 1 14 0M8 15a6 6 0 0 1 8 0"/><rect x="8" y="17" width="8" height="5" rx="1.5"/>',
+    casque: '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="7" rx="1.5"/><rect x="17" y="14" width="4" height="7" rx="1.5"/>',
+    clavier: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
+    souris: '<rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/>',
     inconnu: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01"/>',
     internet: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/>',
     fleche: '<path d="M9 5l7 7-7 7"/>',
@@ -431,6 +434,9 @@
         const fin = `${b.barre != null ? barre(b.barre, b.ton) : ''}${etiq(b.etiquette, b.ton)}${b.valeur != null && b.valeur !== '' ? `<span class="v${b.ton ? ` ${esc(b.ton)}` : ''}">${esc(b.valeur)}</span>` : ''}${b.bascule ? bascule(b.bascule.id, b.bascule.oui) : ''}${(b.bascules || []).map((x) => `<span class="bascule-l">${esc(x.texte)}${bascule(x.id, x.oui)}</span>`).join('')}${b.bouton ? btn(b.bouton, ' petit') : ''}`;
         const cls = `ligne plaque${b.fait ? ' fait' : ''}${b.boutons?.length ? ' avec-btns' : ''}`;
         if (b.id && !interne) return `<button type="button" class="${cls} f" data-k="l:${esc(b.id)}" data-action="${esc(b.id)}">${debut}${milieu}<span class="fin">${fin}${fleche()}</span></button>`;
+        // (un id et un seul petit bouton : la ligne reste cliquable et son bouton garde sa propre action. Pas de bouton
+        // dans un bouton : la ligne est un div qu'on peut choisir ; le clic et Entrée la valident comme les autres)
+        if (b.id && b.bouton && !b.bascule && !b.bascules?.length && !b.case && !b.boutons?.length) return `<div class="${cls} f" tabindex="0" role="button" data-k="l:${esc(b.id)}" data-action="${esc(b.id)}">${debut}${milieu}<span class="fin">${fin}${fleche()}</span></div>`;
         // (boutons : une rangée de petits boutons sous le texte, dans la même carte)
         const btns = b.boutons?.length ? `<span class="btns">${b.boutons.map((x) => btn(x, ' petit')).join('')}</span>` : '';
         return `<div class="${cls}">${debut}${milieu}<span class="fin">${fin}</span>${btns}</div>`;

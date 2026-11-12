@@ -62,3 +62,20 @@ fn dernier_pilote_nvidia() {
     assert!(lu.is_some(), "pas de réponse de NVIDIA : {r:?}");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// Les périphériques du vrai PC (casque, souris, clavier) et leur batterie, lus SANS rien y changer (des questions
+/// HID seulement) : `cargo test -p nevermind-pc --test lecture_reelle peripheriques_reels -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn peripheriques_reels() {
+    use nevermind_pc::pc::Pc;
+    let d = nevermind_noyau::dossier_essai("pc-perif-reel");
+    let ctx = nevermind_noyau::Contexte::nouveau(d.clone(), d.clone(), false, false);
+    let mut pc = nevermind_pc::systeme::PcWindows::nouveau(&ctx);
+    let t = std::time::Instant::now();
+    let l = pc.peripheriques();
+    println!("lu en {} ms", t.elapsed().as_millis());
+    for p in &l {
+        println!("{p:?} logiciel={:?}", pc.logiciel_marque(&p.marque));
+    }
+}

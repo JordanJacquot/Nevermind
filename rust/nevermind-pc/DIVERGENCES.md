@@ -110,3 +110,19 @@ programmes au démarrage passaient pour activés. Corrigé dans le script (`retu
   (`analyse::nvidia_suivie` : RTX, GTX 16xx, MX 4xx et 5xx, T400 à T1200). En PowerShell, toute carte NVIDIA y était
   comparée : une GTX 1060 restait sur « Nouveau pilote NVIDIA disponible » vers un pilote qui ne s'installe pas sur
   elle. Pour les autres, la règle de l'âge du pilote installé, comme sans réponse de NVIDIA.
+
+## Mes périphériques (nouveau, 13/11 ; pas dans la version PowerShell)
+- Page « Ton PC », juste après « Ton PC maintenant » : « Mes périphériques », une ligne par casque, souris ou clavier
+  (nom du produit, « Casque · En charge », barre et %, ou « Filaire » ; vert en charge, rouge sous 20 %, orange sous
+  35 %), puis « Ouvrir G Hub » (un bouton par logiciel de marque installé : Logitech G Hub ; iCUE, Synapse et GG sont
+  reconnus, mais seuls les appareils Logitech sont lus). La ligne mène à la page de détail de l'appareil
+  (`perif:<sorte>-<nom>`, parent « pc » : anneau de la batterie, Batterie, Connexion, Marque, Logiciel). Aucune
+  section sans appareil.
+- Lecture (`Pc::peripheriques`, module Windows `windows::peripheriques`) : des questions HID seulement, identifiant de
+  logiciel 0x0C (G Hub peut rester ouvert), jamais un réglage ni les notifications. Souris et claviers : HID++ 2.0
+  (0x1004 batterie, 0x0005 nom et sorte), cases 1 à 6 d'un récepteur, 0xFF branché directement (fonction de batterie
+  absente : « Filaire »). Casques PRO X 2 : protocole « Centurion » (pont, puis 0x0104). Dans un travail de fond,
+  2 à 3 s au plus par appareil ; relue au plus une fois par minute, seulement page « Ton PC » ou détail regardés,
+  jamais écran caché. « Ouvrir G Hub » : `Pc::lancer` (ShellExecute), comme les autres programmes.
+- Mode test (`ctx.essai`) : des appareils d'exemple, jamais les vrais. Faux PC des tests et des juges : aucun
+  appareil par défaut (la page « pc » des juges ne change pas : la section est ajoutée par le bloc après `pages_pc`).

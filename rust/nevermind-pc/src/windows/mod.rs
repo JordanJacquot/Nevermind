@@ -5,6 +5,7 @@
 #![allow(unsafe_code)]
 
 pub mod journal;
+pub mod peripheriques;
 pub mod wmi;
 
 use crate::pc::ValeurReg;
