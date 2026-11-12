@@ -153,3 +153,122 @@ fn un_desinstalleur_refuse_par_windows_le_dit() {
     assert!(!a.iter().any(|x| x.starts_with("Désinstallation de Hades")), "un faux « en cours » : {a:?}");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// Le faux Windows dont la liste des applis du menu Démarrer est lente (tout AppsFolder parcouru par COM en vrai)
+struct AppsLentes {
+    sys: SystemeEssai,
+    lecture: Duration,
+    lectures: std::sync::atomic::AtomicUsize,
+}
+impl nevermind_jeux::systeme::Systeme for AppsLentes {
+    fn reg_texte(&self, r: Ruche, c: &str, n: &str) -> Option<String> {
+        self.sys.reg_texte(r, c, n)
+    }
+    fn reg_nombre(&self, r: Ruche, c: &str, n: &str) -> Option<u32> {
+        self.sys.reg_nombre(r, c, n)
+    }
+    fn reg_sous_cles(&self, r: Ruche, c: &str) -> Vec<String> {
+        self.sys.reg_sous_cles(r, c)
+    }
+    fn variable(&self, n: &str) -> Option<String> {
+        self.sys.variable(n)
+    }
+    fn disques_fixes(&self) -> Vec<String> {
+        self.sys.disques_fixes()
+    }
+    fn applis_demarrer(&self) -> Vec<(String, String)> {
+        self.lectures.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        std::thread::sleep(self.lecture);
+        self.sys.applis_demarrer()
+    }
+    fn maintenant(&self) -> nevermind_jeux::texte::Moment {
+        self.sys.maintenant()
+    }
+    fn lancer(&self, e: &str, a: &str, d: &str) -> Result<(), String> {
+        self.sys.lancer(e, a, d)
+    }
+    fn faux(&self) -> bool {
+        true
+    }
+    fn choisir_exe(&self) -> Option<String> {
+        None
+    }
+    fn infos_programme(&self, e: &str) -> (String, String) {
+        self.sys.infos_programme(e)
+    }
+}
+
+/// Gels (audit du 10/11, M3) : un jeu Xbox ou Game Pass se lance par son appli du menu Démarrer, cherchée dans toute la
+/// liste des applis de Windows (tout AppsFolder par COM, lent quand il y a beaucoup d'applis). Cette liste était lue
+/// sur le fil des blocs à la première fiche d'un jeu Xbox et au lancement, et oubliée à chaque recherche des jeux.
+/// Maintenant elle est lue dans un travail de fond : la fiche s'affiche et « Lancer » rend la main tout de suite, puis
+/// le jeu se lance par son appli. Faux Windows à la lecture lente (3 s) : rien n'est lancé.
+#[test]
+fn un_jeu_xbox_ne_fige_pas_nevermind() {
+    let d = dossier_essai("jeux-xbox-lent");
+    let _ = std::fs::remove_dir_all(&d);
+    let contenu = d.join("XboxGames").join("Forza Horizon 5").join("Content");
+    std::fs::create_dir_all(&contenu).unwrap();
+    // (pas un vrai programme, jamais lancé ; plus de 200 Ko, comme le programme d'un jeu)
+    std::fs::write(contenu.join("ForzaHorizon5.exe"), vec![0u8; 300 * 1024]).unwrap();
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true).partage();
+    let sys = Arc::new(AppsLentes {
+        sys: SystemeEssai {
+            disques: vec![format!("{}\\", d.display())],
+            applis: vec![(
+                "Forza Horizon 5".into(),
+                "Microsoft.SunriseBaseGame_8wekyb3d8bbwe!SunriseReleaseFinal".into(),
+            )],
+            ..Default::default()
+        },
+        lecture: Duration::from_secs(3),
+        lectures: Default::default(),
+    });
+    let mut b = BlocJeux::avec(sys.clone());
+    // La recherche des jeux trouve le jeu Xbox
+    let mut e = Effets::default();
+    b.rechercher_maintenant(&ctx, &mut e);
+    let vu = |t: &[Effet]| {
+        t.iter().any(|x| {
+            matches!(x, Effet::Signal { nom, donnees } if nom == "jeux-liste"
+                && donnees.to_string().contains("Forza Horizon 5"))
+        })
+    };
+    let tout = attendre(&mut b, &ctx, e.0, vu);
+    assert!(vu(&tout), "le jeu Xbox n'est pas trouvé : {tout:?}");
+    b.choisir("Forza Horizon 5");
+    // Sa fiche s'affiche sans attendre la liste des applis
+    let t = Instant::now();
+    let p = b.pages(&ctx, "jeu");
+    let duree = t.elapsed();
+    assert!(p.contains_key("jeu"), "{:?}", p.keys().collect::<Vec<_>>());
+    assert!(
+        duree < Duration::from_secs(1),
+        "la fiche du jeu a pris {duree:?} : la liste des applis lue sur le fil des blocs"
+    );
+    // « Lancer » rend la main tout de suite, puis le jeu se lance par son appli
+    let mut e = Effets::default();
+    let t = Instant::now();
+    assert!(b.action(&ctx, "jeu-lancer", &Value::Null, &mut e));
+    let duree = t.elapsed();
+    assert!(
+        duree < Duration::from_secs(1),
+        "« Lancer » a pris {duree:?} : la liste des applis lue sur le fil des blocs"
+    );
+    let adresse = r"shell:AppsFolder\Microsoft.SunriseBaseGame_8wekyb3d8bbwe!SunriseReleaseFinal";
+    let lance = |t: &[Effet]| t.iter().any(|x| matches!(x, Effet::OuvrirAdresse(a) if a == adresse));
+    let tout = attendre(&mut b, &ctx, e.0, lance);
+    assert!(lance(&tout), "le jeu ne se lance pas par son appli : {tout:?}");
+    // (l'attente dite au clic, puis le lancement)
+    let dites = annonces(&tout);
+    let i = dites.iter().position(|a| a == "Préparation du lancement de Forza Horizon 5...");
+    let j = dites.iter().position(|a| a == "Lancement de Forza Horizon 5 par Xbox...");
+    assert!(i.is_some() && j.is_some() && i < j, "{dites:?}");
+    // Un deuxième clic ne le relance pas (20 s)
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "jeu-lancer", &Value::Null, &mut e));
+    let tout = attendre(&mut b, &ctx, e.0, |_| true);
+    assert!(!lance(&tout), "relancé : {tout:?}");
+    assert!(sys.lectures.load(std::sync::atomic::Ordering::SeqCst) <= 2, "la liste des applis est relue sans cesse");
+    let _ = std::fs::remove_dir_all(&d);
+}

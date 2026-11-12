@@ -414,3 +414,35 @@ fn arret_de_l_aide() {
         "--terminate_existing_session --session_name Nevermind"
     );
 }
+
+/// Gels (audit du 10/11, M3) : quand un nouveau PresentMon prend la place de celui qui tourne (la veille de bf6, guetté
+/// d'office, puis un autre jeu qui démarre), l'Aide fermait d'abord la session de l'ancien (`--terminate_existing_session`,
+/// jusqu'à 3 s) avant de répondre, et Nevermind attendait sur le fil des blocs. Le nouveau PresentMon ferme lui-même
+/// cette session (`--stop_existing_session`) : l'ancien est coupé sans cette attente. Un vrai arrêt (`fps.arreter`)
+/// ferme toujours la session. Faux PC à la fermeture lente (3 s).
+#[test]
+fn un_nouveau_presentmon_n_attend_pas_la_fermeture_de_l_ancien() {
+    use std::time::{Duration, Instant};
+    let mut s = FauxSysteme::new().avec_compte_par_defaut(ELODIE);
+    s.processus.push(p(4242, r"C:\Jeux\Hades\Hades.exe", ELODIE));
+    let etat = etat_aide();
+    assert_eq!(demander(&s, &etat, "fps.veiller", &json!({ "Noms": ["bf6.exe"] }))["r"], "ok");
+    s.mesures.lock().unwrap().fermeture_lente = Some(Duration::from_secs(3));
+    // Un autre jeu démarre : sa mesure remplace la veille
+    let t = Instant::now();
+    assert_eq!(demander(&s, &etat, "fps.demarrer", &json!({ "Pid": 4242 }))["r"], "ok");
+    let duree = t.elapsed();
+    assert!(
+        duree < Duration::from_secs(1),
+        "fps.demarrer a pris {duree:?} : la fermeture de l'ancienne session attendue"
+    );
+    let lancements = s.mesures.lock().unwrap().lancements.clone();
+    assert_eq!(lancements.len(), 2, "{lancements:?}");
+    assert!(lancements[1].starts_with("--process_id 4242 "), "{lancements:?}");
+    assert!(lancements[1].contains("--stop_existing_session --session_name "), "{lancements:?}");
+    // La partie finie : l'arrêt ferme bien la session
+    s.mesures.lock().unwrap().fermeture_lente = None;
+    assert_eq!(demander(&s, &etat, "fps.arreter", &Value::Null)["r"], "ok");
+    let lancements = s.mesures.lock().unwrap().lancements.clone();
+    assert!(lancements.last().unwrap().starts_with("--terminate_existing_session --session_name "), "{lancements:?}");
+}

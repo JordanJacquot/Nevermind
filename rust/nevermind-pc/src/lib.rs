@@ -65,6 +65,19 @@ struct Atelier {
     relu: bool,
 }
 
+/// Ce que relit la diffusion aux autres blocs (gels : dans un travail de fond, deux powercfg et les écrans)
+struct Relu {
+    /// (id du réglage, fait)
+    faits: Vec<(String, bool)>,
+    demarrage: Vec<(reglages::Demarrage, String, &'static str)>,
+    ecrans: Vec<String>,
+    plan_ok: bool,
+    nombre: usize,
+}
+
+/// La clé de la relecture faite pour la diffusion (une à la fois ; une demandée pendant ce temps est faite après)
+const DIFFUSION: &str = "diffusion";
+
 /// Ce qui suit la fin d'un travail de fond
 enum Suite {
     /// Un geste : la fiche (ouverte avant le geste ou non), l'écran, les autres blocs à jour
@@ -175,6 +188,12 @@ pub struct BlocPc {
     lire_essai: Option<Box<dyn FnOnce() -> lecture::Lu + Send>>,
     /// Tests : l'attente la plus longue d'un profil de jeu qui attend son tour (`None` : 30 minutes)
     attente_tour_essai: Option<Duration>,
+    /// La relecture des réglages, du plan d'alimentation et des écrans pour les autres blocs (`diffuser`) : dans un
+    /// fil à part, jamais sur le fil des blocs (powercfg à chaque clic ; gels). À part des gestes : aucun clic n'est
+    /// refusé pendant qu'elle tourne.
+    diffusions: Travaux<Relu>,
+    /// Une diffusion demandée pendant une relecture : refaite juste après, avec ce qui a changé entre-temps
+    rediffuser: bool,
 }
 
 /// La clé du lancement d'un programme de Windows : un à la fois (un double clic ne pose pas deux questions)
@@ -224,9 +243,9 @@ impl BlocPc {
         self.attente_tour_essai = Some(d);
     }
 
-    /// Un geste long est en cours (tests)
+    /// Un geste long est en cours, ou la relecture pour les autres blocs qui le suit (tests)
     pub fn travail_en_cours(&self) -> bool {
-        self.travaux.occupe()
+        self.travaux.occupe() || self.diffusions.occupe()
     }
 
     fn prendre(&mut self, lu: lecture::Lu) {
@@ -583,18 +602,67 @@ impl BlocPc {
 }
 
 impl BlocPc {
-    /// Les données des pages des autres blocs (perf, mémoire), relues après une analyse ou un changement
+    /// Les données des pages des autres blocs (perf, mémoire), relues après une analyse ou un changement. Gels : la
+    /// relecture (deux powercfg, les écrans, le démarrage) se fait dans un travail de fond, et les signaux partent à sa
+    /// fin (`relever_diffusions`) ; avant, sur le fil des blocs à chaque clic. Sans contexte partagé (tests d'un bloc
+    /// seul, juges) : faite sur place, les signaux partent tout de suite, comme avant.
     fn diffuser(&mut self, ctx: &Contexte, effets: &mut Effets) {
-        let Some(a) = self.session.analyse.clone() else { return };
-        let build = a.build;
-        let ((plan_ok, nombre), _) = self.avec_pc(ctx, |s, pc| {
-            let cree = s.session.sv.plan_cree.clone();
-            diffusion::lire_reglages(pc, build, cree.as_deref(), &mut s.cases);
-            diffusion::lire_demarrage(pc, &s.session.demarrage, &mut s.cases);
-            s.tests.ecrans = pc.ecrans();
-            (reglages::test_plan(pc, cree.as_deref()), corrections::compte_total(&s.session.sv, pc))
+        let Some((build, portable)) = self.session.analyse.as_ref().map(|a| (a.build, a.portable)) else { return };
+        // (la page des tests sait tout de suite si c'est un portable : rien à lire sur le PC)
+        self.tests.portable = portable;
+        if self.diffusions.en_cours(DIFFUSION) {
+            self.rediffuser = true;
+            return;
+        }
+        let cree = self.session.sv.plan_cree.clone();
+        let brut = self.session.demarrage.clone();
+        let sv = self.session.sv.clone();
+        let essai = self.essai.clone();
+        self.diffusions.lancer(ctx, DIFFUSION, move |fond| {
+            let relire = |pc: &mut dyn Pc| {
+                let faits = diffusion::faits_reglages(pc, build, cree.as_deref());
+                let mut c = diffusion::Cases::default();
+                diffusion::lire_demarrage(pc, &brut, &mut c);
+                Relu {
+                    faits,
+                    demarrage: c.demarrage,
+                    ecrans: pc.ecrans(),
+                    plan_ok: reglages::test_plan(pc, cree.as_deref()),
+                    nombre: corrections::compte_total(&sv, pc),
+                }
+            };
+            match essai {
+                Some(p) => relire(p.lock().unwrap_or_else(|e| e.into_inner()).as_mut()),
+                None => relire(&mut systeme::PcWindows::nouveau(fond.ctx)),
+            }
         });
-        self.tests.portable = a.portable;
+        self.relever_diffusions(ctx, effets);
+    }
+
+    /// La fin de la relecture (sur le fil des blocs) : les cases et les signaux aux autres blocs ; puis la diffusion
+    /// demandée pendant ce temps
+    fn relever_diffusions(&mut self, ctx: &Contexte, effets: &mut Effets) {
+        for r in self.diffusions.relever() {
+            match r {
+                Rendu::Effet(e) => effets.ajouter(e),
+                Rendu::Fini { resultat: Ok(relu), .. } => self.diffuser_relu(relu, effets),
+                Rendu::Fini { resultat: Err(e), .. } => {
+                    ctx.journal(&format!("Ton PC : relecture pour les autres blocs ratée ({e})"))
+                }
+            }
+        }
+        if !self.diffusions.occupe() && std::mem::take(&mut self.rediffuser) {
+            self.diffuser(ctx, effets);
+        }
+    }
+
+    /// Les signaux aux autres blocs, avec ce que la relecture a lu
+    fn diffuser_relu(&mut self, relu: Relu, effets: &mut Effets) {
+        let Some(a) = self.session.analyse.clone() else { return };
+        let Relu { faits, demarrage, ecrans, plan_ok, nombre } = relu;
+        diffusion::prendre_reglages(faits, &mut self.cases);
+        self.cases.demarrage = demarrage;
+        self.tests.ecrans = ecrans;
         let sig = |n: &str, d: Value| Effet::Signal { nom: n.into(), donnees: d };
         effets.ajouter(sig("analyse-pc", diffusion::signal_analyse(&a, &self.session.entrees.data, plan_ok)));
         effets.ajouter(sig("reglages-jeu", diffusion::signal_reglages(&self.cases)));
@@ -958,6 +1026,7 @@ impl Bloc for BlocPc {
         //  lire, pour qu'un test lancé par un bouton soit suivi : l'hôte ne rappelle pas un bloc qui a dit « plus besoin »)
         self.rendre_en_attente(effets);
         self.relever_travaux(ctx, effets);
+        self.relever_diffusions(ctx, effets);
         let t = self.tests.tic_bloc(ctx, effets);
         let r = self.tic_pc(ctx, cache, effets);
         Some(r.map_or(t, |r| r.min(t)))
@@ -966,6 +1035,7 @@ impl Bloc for BlocPc {
     fn travaux_finis(&mut self, ctx: &Contexte, effets: &mut Effets) {
         self.relever_lancements(effets);
         self.relever_travaux(ctx, effets);
+        self.relever_diffusions(ctx, effets);
         self.diffuser_si_du(ctx, effets);
     }
 

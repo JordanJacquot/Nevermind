@@ -96,7 +96,9 @@ impl Fps {
     }
 
     fn lancer(&self, s: &dyn Systeme, exe: &str, cible: &str) -> Result<(), String> {
-        self.arreter(s);
+        // (gels : l'ancien PresentMon est coupé sans fermer sa session, jusqu'à 3 s que Nevermind attendait sur le fil
+        //  des blocs ; le nouveau la ferme lui-même, `--stop_existing_session`. S'il ne se lance pas, elle est fermée)
+        let ancien = self.couper();
         let numero = {
             let mut e = self.etat();
             e.lignes.clear();
@@ -115,7 +117,13 @@ impl Fps {
                 e.en_cours = Some((numero, l));
                 Ok(())
             }
-            Err(m) => Err(m),
+            Err(m) => {
+                drop(e);
+                if let Some(x) = ancien {
+                    s.fermer_session_presentmon(&x);
+                }
+                Err(m)
+            }
         }
     }
 
@@ -174,15 +182,22 @@ impl Fps {
 
     /// Arrête PresentMon (et la veille), et ferme sa session dans Windows. Les lignes déjà reçues restent à lire.
     pub fn arreter(&self, s: &dyn Systeme) {
+        if let Some(exe) = self.couper() {
+            s.fermer_session_presentmon(&exe);
+        }
+    }
+
+    /// Arrête PresentMon (et la veille) sans fermer sa session : le chemin du PresentMon qui tournait, s'il y en avait un
+    fn couper(&self) -> Option<String> {
         let (lance, exe) = {
             let mut e = self.etat();
             e.veille.clear();
             (e.en_cours.take(), e.exe.clone())
         };
-        let Some((_, mut l)) = lance else { return };
+        let (_, mut l) = lance?;
         l.arreter();
         drop(l);
-        s.fermer_session_presentmon(&exe);
+        Some(exe)
     }
 }
 
