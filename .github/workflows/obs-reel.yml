@@ -8,9 +8,6 @@ name: OBS en vrai
 
 on:
   workflow_dispatch:
-  # À RETIRER à la fusion : l'essai tourne à chaque envoi de la branche de travail
-  push:
-    branches: [obs-reel]
 
 permissions:
   contents: read
