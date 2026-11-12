@@ -2,7 +2,7 @@
 //! (ui\kit.js) avec les mêmes blocs que les autres pages : module à gauche, lignes, choix en pastilles, notes.
 //! Français simple, aucun tiret long.
 
-use crate::calcul::{Carte, Encodeur, Logiciel, Plan, Plateforme, mbps, nombre};
+use crate::calcul::{Carte, Encodeur, Logiciel, Plan, Plateforme, mbps};
 use crate::reglages::{Etat, Probleme};
 use serde_json::{Value, json};
 
@@ -13,6 +13,19 @@ pub const SANS_LOGICIEL: &str = "Pour utiliser le mode streameur, il faut avoir 
 pub fn ferme_puis(l: Logiciel, bouton: &str) -> String {
     format!("Ferme {} puis reclique sur {bouton}", l.court())
 }
+
+/// Le message quand Streamlabs est fermé au moment d'« Optimiser » (il se règle ouvert, par son API)
+pub fn ouvre_puis(l: Logiciel, bouton: &str) -> String {
+    format!("Ouvre {} puis reclique sur {bouton}", l.court())
+}
+
+/// Streamlabs est ouvert mais son API ne répond pas (il finit de s'ouvrir, ou elle est coupée dans ses Paramètres)
+pub const STREAMLABS_SANS_API: &str =
+    "Streamlabs ne répond pas encore. Attends qu'il ait fini de s'ouvrir, puis reclique sur Optimiser.";
+
+/// Streamlabs streame ou enregistre : ses réglages de sortie sont bloqués
+pub const STREAMLABS_OCCUPE: &str =
+    "Streamlabs est en train de streamer ou d'enregistrer. Arrête, puis reclique sur Optimiser.";
 
 /// Ce qui a été changé la dernière fois (gardé par Nevermind)
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,8 +111,7 @@ fn module(v: &Vue, l: &VueLogiciel) -> Value {
                 format!("Prêt à régler {n}")
             };
             let texte = match &l.plan {
-                Some(p) if l.logiciel == Logiciel::Obs => format!("Réglage conseillé : {}.", p.phrase()),
-                Some(p) => format!("Réglage conseillé : encodé par {}, {}.", p.encodeur.par(), p.debit()),
+                Some(p) => format!("Réglage conseillé : {}.", p.phrase()),
                 None if v.mesure_en_cours => "Nevermind mesure d'abord ta connexion (environ 30 secondes).".into(),
                 None => {
                     "Nevermind a besoin de connaître la vitesse d'envoi de ta connexion pour choisir la qualité.".into()
@@ -138,13 +150,20 @@ fn module(v: &Vue, l: &VueLogiciel) -> Value {
 fn blocs(v: &Vue, l: &VueLogiciel) -> Vec<Value> {
     let n = l.logiciel.court();
     let mut b = Vec::new();
-    if l.ouvert {
+    // (OBS se règle fermé, par ses fichiers ; Streamlabs se règle ouvert, par sa porte officielle)
+    let a_ouvrir = l.logiciel == Logiciel::Streamlabs;
+    if l.ouvert && !a_ouvrir {
         b.push(json!({ "type": "ligne", "icone": "alerte", "couleur": "orange", "texte": format!("{n} est ouvert"),
             "note": "Ferme-le avant de cliquer sur Optimiser : pendant qu'il est ouvert, il ne relit pas ses réglages et remettrait les siens. Nevermind ne le ferme jamais lui-même.",
             "etiquette": "À fermer", "ton": "attention" }));
     }
+    if !l.ouvert && a_ouvrir && l.etat.is_ok() {
+        b.push(json!({ "type": "ligne", "icone": "alerte", "couleur": "orange", "texte": format!("{n} est fermé"),
+            "note": "Ouvre-le avant de cliquer sur Optimiser : Nevermind le règle pendant qu'il est ouvert, et tu vois tout de suite le changement dans ses Paramètres.",
+            "etiquette": "À ouvrir", "ton": "attention" }));
+    }
     if let Some(a) = &l.alerte
-        && !l.ouvert
+        && l.ouvert == a_ouvrir
     {
         b.push(json!({ "type": "ligne", "icone": "alerte", "couleur": "orange", "texte": a, "ton": "attention" }));
     }
@@ -172,12 +191,7 @@ fn blocs(v: &Vue, l: &VueLogiciel) -> Vec<Value> {
                 "etiquette": "Déconseillé", "ton": "urgent" }));
         }
         b.push(json!({ "type": "titre", "texte": "Ce que Nevermind va régler" }));
-        if l.logiciel == Logiciel::Obs {
-            b.push(json!({ "type": "ligne", "icone": "ecran", "couleur": "T", "texte": "Qualité de l'image", "note": "La taille de l'image envoyée et sa fluidité.", "valeur": p.qualite() }));
-        } else {
-            b.push(json!({ "type": "ligne", "icone": "ecran", "couleur": "T", "texte": "Qualité de l'image", "valeur": p.qualite(),
-                "note": format!("À choisir toi-même dans Streamlabs : ouvre les Paramètres, puis Vidéo, et choisis {}x{} pour la résolution de sortie et {} images par seconde.", p.sortie.0, p.sortie.1, p.ips) }));
-        }
+        b.push(json!({ "type": "ligne", "icone": "ecran", "couleur": "T", "texte": "Qualité de l'image", "note": "La taille de l'image envoyée et sa fluidité.", "valeur": p.qualite() }));
         let limite =
             if p.plafonne { format!(", sans dépasser la limite de {}", p.plateforme.nom()) } else { String::new() };
         b.push(json!({ "type": "ligne", "icone": "ondes", "couleur": "T", "texte": "Débit vidéo", "valeur": p.debit(),
@@ -195,7 +209,7 @@ fn blocs(v: &Vue, l: &VueLogiciel) -> Vec<Value> {
             } else if l.etat.as_ref().is_ok_and(|e| e.actuel.avance) {
                 "Kick le demande.".to_string()
             } else {
-                "Kick le demande. Dans Streamlabs, ouvre les Paramètres, puis Sortie, passe en mode Avancé et mets 2 pour l'intervalle d'images clés.".to_string()
+                "Kick le demande. Pour pouvoir le régler, Nevermind passe la sortie de Streamlabs en mode Avancé. Tes enregistrements restent dans le même dossier.".to_string()
             };
             b.push(json!({ "type": "ligne", "icone": "horloge", "couleur": "T", "texte": "Image clé", "valeur": "Toutes les 2 secondes", "note": note }));
         }
@@ -294,13 +308,7 @@ pub fn annonce_remise(l: Logiciel, b: &crate::sauvegarde::Bilan) -> String {
 pub fn annonce_reglee(l: Logiciel, plan: &Plan) -> String {
     match l {
         Logiciel::Obs => format!("OBS est réglé : {}.", plan.phrase()),
-        Logiciel::Streamlabs => format!(
-            "Streamlabs est réglé : encodé par {}, {} kb/s. Choisis {}x{} dans ses Paramètres, Vidéo.",
-            plan.encodeur.par(),
-            nombre(plan.video_kbps),
-            plan.sortie.0,
-            plan.sortie.1
-        ),
+        Logiciel::Streamlabs => format!("Streamlabs est réglé : {}.", plan.phrase()),
     }
 }
 

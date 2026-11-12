@@ -330,6 +330,14 @@ fn obs_et_streamlabs_deux_onglets() {
     let racine = ctx.donnees.join("pc");
     let (i, _) = obs(&racine, "{}");
     let s = streamlabs(&racine);
+    // (le basic.ini d'un Streamlabs neuf, essai réel du 12/11/2026 : son [Video] est celui de la sortie verticale)
+    let ini = s.reglages.join("basic.ini");
+    std::fs::write(
+        &ini,
+        "\u{feff}[SimpleOutput]\nStreamEncoder=x264\nVBitrate=2500\n[Video]\nBaseCX=720\nBaseCY=1280\n",
+    )
+    .unwrap();
+    let avant = std::fs::read(&ini).unwrap();
     let pc = FauxPc::default();
     {
         let mut x = pc.0.lock().unwrap();
@@ -343,17 +351,17 @@ fn obs_et_streamlabs_deux_onglets() {
     assert_eq!((o[0]["nom"].as_str(), o[1]["nom"].as_str()), (Some("OBS Studio"), Some("Streamlabs")));
     let t = o[1].to_string();
     assert!(t.contains("Trouvée dans les réglages de Streamlabs : YouTube."), "{t}");
-    assert!(t.contains("À choisir toi-même dans Streamlabs : ouvre les Paramètres, puis Vidéo, et choisis 1920x1080 pour la résolution de sortie et 60 images par seconde."), "{t}");
+    // Nevermind règle lui-même la résolution et les images par seconde : plus rien à choisir soi-même ; et pas sur le
+    // 720x1280 de basic.ini (l'écran, 1920x1080, tant que Streamlabs ne donne pas sa vraie image de base)
+    assert!(!t.contains("À choisir toi-même"), "{t}");
+    assert!(t.contains("1080p à 60 images par seconde"), "{t}");
+    assert!(t.contains("Streamlabs est fermé") && t.contains("Ouvre-le avant de cliquer sur Optimiser"), "{t}");
+    // Streamlabs fermé : il se règle ouvert, par son API ; ses fichiers ne sont plus touchés
     let mut e = Effets::default();
     b.action(&ctx, "stream:optimiser:streamlabs", &Value::Null, &mut e);
-    assert!(
-        annonces(&e)[0].starts_with("Streamlabs est réglé : encodé par ta carte NVIDIA, 12\u{202f}000 kb/s."),
-        "{:?}",
-        annonces(&e)
-    );
-    let ini = std::fs::read_to_string(s.reglages.join("basic.ini")).unwrap();
-    assert!(ini.contains("StreamEncoder=nvenc") && ini.contains("VBitrate=12000") && !ini.contains("OutputCX"));
-    // Streamlabs ouvert : « Remettre comme avant » attend aussi qu'il soit fermé
+    assert_eq!(annonces(&e), ["Ouvre Streamlabs puis reclique sur Optimiser"]);
+    assert_eq!(std::fs::read(&ini).unwrap(), avant);
+    assert!(!ctx.donnees.join("streameur").join("streamlabs").join("copie.json").exists());
     sans_tiret_long(&page(&mut b, &ctx));
 }
 

@@ -9,9 +9,11 @@
 //! - les fichiers d'un profil : basic.ini (sorties, vidéo), service.json (plateforme, lue sans la clé),
 //!   streamEncoder.json (réglages de l'encodeur en mode Avancé).
 //!
-//! Streamlabs (recherche, partie 2) : tout est dans `%APPDATA%\slobs-client\` (pas de profils) ; sa résolution et ses
-//! images par seconde ne sont plus lues dans basic.ini (stockage interne de l'appli) : Nevermind ne règle que
-//! l'encodeur, le débit et la vitesse de l'encodeur, et dit quoi choisir pour la résolution.
+//! Streamlabs (recherche, partie 2) : ses fichiers sont dans `%APPDATA%\slobs-client\` (pas de profils) ; ils servent
+//! seulement à le trouver et à lire sa plateforme (service.json). Sa résolution et ses images par seconde ne sont plus
+//! dans basic.ini (stockage interne de l'appli ; essai réel du 12/11/2026) : désormais, Nevermind règle tout
+//! Streamlabs par son API, pendant qu'il est ouvert (streamlabs.rs). Les fonctions de ce fichier ne changent plus que
+//! OBS.
 //!
 //! Le changement : seulement les clés nécessaires, tout le reste du fichier intact (voir ini.rs), après avoir noté
 //! les anciennes valeurs des clés changées (sauvegarde.rs), en écrivant d'un coup chaque fichier. Si un fichier ne
@@ -188,7 +190,9 @@ pub fn lire(logiciel: Logiciel, racine: &Path) -> Result<Etat, Probleme> {
         logiciel,
         profil,
         service: service::lire(&dossier),
-        base: taille(&basic, "Video", "BaseCX", "BaseCY"),
+        // (Streamlabs : le [Video] de basic.ini n'est plus le sien depuis la sortie double ; essai réel du 12/11/2026,
+        // sur un Streamlabs neuf il vaut 720x1280, la sortie verticale. Sa vraie image de base vient de son API)
+        base: (logiciel == Logiciel::Obs).then(|| taille(&basic, "Video", "BaseCX", "BaseCY")).flatten(),
         actuel: actuel(&basic, enc.as_deref()),
         dossier,
         nb_profils: nb,

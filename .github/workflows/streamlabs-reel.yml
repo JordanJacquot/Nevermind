@@ -1,0 +1,62 @@
+# Le mode streameur de Nevermind essayé sur un VRAI Streamlabs Desktop, sur la machine jetable de GitHub : le dernier
+# installateur officiel (streamlabs.com, signature vérifiée), installé en silence ; « Optimiser » et « Remettre comme
+# avant » de Nevermind (le bloc stream, rust\nevermind-stream\examples\essai-streamlabs.rs) ; puis ce que Streamlabs a
+# vraiment pris, lu par son API (\\.\pipe\slobs). Tout le code est dans outils\essai-streamlabs-reel.ps1.
+#   gh workflow run streamlabs-reel.yml
+name: Streamlabs en vrai
+
+on:
+  workflow_dispatch:
+  # À RETIRER à la fusion de la branche streamlabs dans main (workflow_dispatch ne marche que pour un fichier présent
+  # sur main : en attendant, l'essai part à chaque envoi de cette branche).
+  push:
+    branches: [streamlabs]
+
+permissions:
+  contents: read
+
+jobs:
+  essai:
+    name: "Streamlabs Desktop en vrai (${{ matrix.source }})"
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # installateur : le bouton « Télécharger » de streamlabs.com ; mise-a-jour : la version que la mise à jour
+        # automatique de Streamlabs installe chez ses utilisateurs
+        source: [installateur, mise-a-jour]
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: powershell
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Rust, la version figée par rust/rust-toolchain.toml"
+        working-directory: rust
+        run: |
+          rustup toolchain install
+          if ($LASTEXITCODE) { rustup show; if ($LASTEXITCODE) { exit 1 } }
+          rustc --version
+
+      - name: "Construire l'essai (exemple essai-streamlabs du bloc stream, --locked)"
+        working-directory: rust
+        run: |
+          cargo build --locked -p nevermind-stream --example essai-streamlabs
+          if ($LASTEXITCODE) { exit 1 }
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "EXEMPLE=$((Resolve-Path 'target\debug\examples\essai-streamlabs.exe').Path)`n")
+
+      - name: "Streamlabs Desktop : installé, Optimiser, relancé, Remettre comme avant"
+        run: .\outils\essai-streamlabs-reel.ps1 -Exemple $env:EXEMPLE -Source ${{ matrix.source }}
+
+      - name: "Captures d'écran de l'essai"
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: captures-streamlabs-${{ matrix.source }}
+          path: C:\essai-sl\captures\
+          if-no-files-found: ignore
+          retention-days: 7
