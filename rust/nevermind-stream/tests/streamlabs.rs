@@ -24,6 +24,8 @@ struct Etat {
     demandes: Vec<String>,
     /// Une valeur que Streamlabs refuse de prendre (il la remet comme elle était)
     refuse: Option<String>,
+    /// Le débit le plus haut de la plateforme de Streamlabs (il l'applique lui-même)
+    limite: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -146,7 +148,14 @@ impl Systeme for Faux {
                     g["parameters"].as_array().unwrap().iter().any(|p| p["name"].as_str() == Some(nom.as_str()))
                 });
                 if existe && e.refuse.as_deref() != Some(&format!("Output/{nom}")) {
-                    e.sortie.insert(nom, args[2].clone());
+                    let mut v = args[2].clone();
+                    // (« appliquer les réglages du service » : le débit limité à celui de sa plateforme)
+                    if let Some(l) =
+                        e.limite.filter(|l| (nom == "bitrate" || nom == "VBitrate") && v.as_u64() > Some(*l))
+                    {
+                        v = json!(l);
+                    }
+                    e.sortie.insert(nom, v);
                 }
                 Ok(Value::Null)
             }
@@ -185,6 +194,7 @@ fn faux(ctx: &Contexte) -> Faux {
             sortie: sortie.as_object().unwrap().clone(),
             demandes: Vec::new(),
             refuse: None,
+            limite: None,
         })),
         r,
     )
@@ -407,4 +417,24 @@ fn ancienne_copie_de_fichiers_remise_streamlabs_ferme() {
     let a = agir(&mut b, &ctx, "stream:remettre:streamlabs", Value::Null);
     assert_eq!(a, ["Les réglages d'avant sont revenus dans Streamlabs."]);
     assert!(std::fs::read_to_string(&basic).unwrap().contains("VBitrate=4500"));
+}
+
+/// Streamlabs limite lui-même le débit à celui de sa plateforme (« appliquer les réglages du service ») : le débit qu'il
+/// a pris est gardé, dit tel quel, et « Remettre comme avant » le reconnaît comme celui de Nevermind
+#[test]
+fn le_debit_limite_par_la_plateforme_est_accepte() {
+    let ctx = contexte("limite");
+    let f = faux(&ctx);
+    f.0.lock().unwrap().limite = Some(6000);
+    let mut b = bloc(&ctx, &f, 20.0);
+    agir(&mut b, &ctx, "stream:plateforme:streamlabs", json!("kick"));
+    let a = agir(&mut b, &ctx, "stream:optimiser:streamlabs", Value::Null);
+    assert!(a[0].starts_with("Streamlabs est réglé") && a[0].ends_with("6\u{202f}000 kb/s."), "{a:?}");
+    assert_eq!(
+        (sortie(&f, "Mode"), sortie(&f, "bitrate"), sortie(&f, "keyint_sec")),
+        (json!("Advanced"), json!(6000), json!(2))
+    );
+    let a = agir(&mut b, &ctx, "stream:remettre:streamlabs", Value::Null);
+    assert_eq!(a, ["Les réglages d'avant sont revenus dans Streamlabs."]);
+    assert_eq!((sortie(&f, "Mode"), sortie(&f, "bitrate")), (json!("Simple"), json!(2500)));
 }

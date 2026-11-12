@@ -403,7 +403,7 @@ New-Item -ItemType Directory -Force -Path $monDossier | Out-Null
 Show-Api 'setSettingValue' 'SettingsService' @('Output', 'FilePath', $monDossier)
 Start-Sleep -Seconds 1
 $AvantKick = Get-Pris
-$j = Invoke-Nevermind @('regler', '20', 'kick', $Base)
+$j = Invoke-Nevermind @('regler', '8', 'kick', $Base)
 $PlanK = $j.plan
 Start-Sleep -Seconds 2
 $pk = Get-Pris
@@ -421,6 +421,11 @@ Start-Sleep -Seconds 2
 $d = @(Get-Differences $AvantKick (Get-Pris))
 foreach ($x in $d) { Write-Detail "différent d'avant : $x" }
 Test-Cas 'Kick : tout est revenu comme avant (mode Simple, vidéo, débit)' { $d.Count -eq 0 }
+# (relevé : Streamlabs limite-t-il le débit à celui de sa plateforme, Twitch ici, en mode Avancé ?)
+Show-Api 'setSettingValue' 'SettingsService' @('Output', 'Mode', 'Advanced')
+Show-Api 'setSettingValue' 'SettingsService' @('Output', 'bitrate', 8000)
+Write-Detail "débit en mode Avancé après avoir demandé 8000 : $((Get-Pris -Muet)['Output.bitrate'])"
+Show-Api 'setSettingValue' 'SettingsService' @('Output', 'Mode', 'Simple')
 [void](Stop-Streamlabs 'fin')
 
 Write-Partie 'Bilan'

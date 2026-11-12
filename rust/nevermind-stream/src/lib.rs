@@ -484,6 +484,14 @@ impl BlocStream {
         let porte = PorteSys(self.sys(ctx));
         match streamlabs::appliquer(&porte, &lu, &plan, &copie, &date) {
             Ok(fait) => {
+                // (le débit que Streamlabs a pris : plus bas si sa plateforme le limite)
+                let mut plan = plan;
+                if let Some(d) = fait.debit().filter(|d| *d < plan.video_kbps) {
+                    ctx.journal(&format!(
+                        "Mode streameur : Streamlabs limite le débit à {d} kb/s (réglages de sa plateforme)"
+                    ));
+                    plan.video_kbps = d;
+                }
                 ctx.journal(&format!(
                     "Mode streameur : Streamlabs réglé par son API : {}x{} à {} i/s, {} kb/s, encodeur {}, {} ({} réglage(s) changé(s))",
                     plan.sortie.0,

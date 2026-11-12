@@ -243,6 +243,17 @@ pub struct Fait {
     pub passe_en_avance: bool,
 }
 
+impl Fait {
+    /// Le débit vidéo que Streamlabs a pris (plus bas que celui de Nevermind s'il applique la limite de sa plateforme)
+    pub fn debit(&self) -> Option<u32> {
+        self.reglages
+            .iter()
+            .find(|r| r.cible.ends_with("/bitrate") || r.cible.ends_with("/VBitrate"))
+            .and_then(|r| nombre(&r.apres))
+            .map(|v| v as u32)
+    }
+}
+
 /// Ajoute des réglages à ceux déjà faits : la valeur d'avant reste la première notée
 fn fusionner(fait: &mut Vec<Reglage>, l: &[Reglage]) {
     for r in l {
@@ -293,8 +304,31 @@ pub fn appliquer(p: &dyn Porte, lu: &Lu, plan: &Plan, copie: &Copie, date: &str)
         Ok(())
     })()
     .and_then(|()| {
-        let rate = pas_pris(p, &fait.reglages)?;
-        if rate.is_empty() { Ok(()) } else { Err(format!("pas pris par Streamlabs : {}", rate.join(", "))) }
+        let maintenant = lire(p)?;
+        let mut rate = Vec::new();
+        let mut limites = Vec::new();
+        for r in fait.reglages.iter_mut() {
+            let v = actuelle(&maintenant, &r.cible);
+            if !existe(&maintenant, &r.cible) || meme(&v, &r.apres) {
+                continue;
+            }
+            // (Streamlabs applique la limite de débit de la plateforme où il streame, « appliquer les réglages du
+            // service » : le débit qu'il a pris, plus bas, est gardé et noté comme celui de Nevermind)
+            let debit = r.cible.ends_with("/bitrate") || r.cible.ends_with("/VBitrate");
+            if debit && matches!((nombre(&v), nombre(&r.apres)), (Some(x), Some(y)) if x > 0 && x < y) {
+                r.apres = v;
+                limites.push(r.clone());
+                continue;
+            }
+            rate.push(r.cible.clone());
+        }
+        if !rate.is_empty() {
+            return Err(format!("pas pris par Streamlabs : {}", rate.join(", ")));
+        }
+        if !limites.is_empty() {
+            copie.garder(&[Modif::Api { cles: limites }], date, "")?;
+        }
+        Ok(())
     });
     if let Err(e) = r {
         // (rien n'est à moitié fait : Streamlabs et la copie reviennent comme avant)
