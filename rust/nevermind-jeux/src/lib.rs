@@ -68,6 +68,8 @@ enum FinJeux {
     Jaquettes(Vec<jaquettes_web::Trouvee>, bool),
     /// Un jeu ou son désinstalleur lancé (après la demande de Windows s'il demande les droits)
     Lance { jeu: Box<Jeu>, desinstalleur: bool, r: Result<(), String> },
+    /// Les applis du menu Démarrer (jeux Xbox), lues hors du fil des blocs (gels)
+    Applis(Vec<(String, String)>),
 }
 
 /// Ce qui est dit quand la recherche des jeux est finie
@@ -84,6 +86,8 @@ const FERMER: &str = "fermer-programme";
 const JAQUETTES: &str = "jaquettes";
 const CHOIX: &str = "choix";
 const LANCEMENT: &str = "lancement";
+/// La lecture des applis du menu Démarrer (tout AppsFolder par COM : lent quand il y a beaucoup d'applis ; gels)
+const APPLIS: &str = "applis";
 
 pub struct BlocJeux {
     sys: Arc<dyn Systeme>,
@@ -125,6 +129,8 @@ pub struct BlocJeux {
     lancement_jeu: Option<(String, Instant)>,
     dernier_jeu: Option<(Instant, Option<DernierJeu>)>,
     applis: Option<Vec<(String, String)>>,
+    /// Un jeu Xbox à lancer dès que les applis du menu Démarrer sont lues (gels)
+    lancer_apres_applis: Option<Jeu>,
     /// L'heure des pages (les tests la fixent).
     pub heure: Option<Moment>,
     /// Le réseau des jaquettes depuis Internet ; `internet_faux` : celui d'un test (le seul permis en mode test)
@@ -184,6 +190,7 @@ impl BlocJeux {
             lancement_jeu: None,
             dernier_jeu: None,
             applis: None,
+            lancer_apres_applis: None,
             heure: None,
             internet: Arc::new(jaquettes_web::InternetWindows),
             internet_faux: false,
@@ -466,13 +473,28 @@ impl BlocJeux {
                 Rendu::Fini { resultat: Ok(FinJeux::Lance { jeu, desinstalleur, r }), .. } => {
                     self.fin_lancement(ctx, &jeu, desinstalleur, r, effets);
                 }
+                Rendu::Fini { resultat: Ok(FinJeux::Applis(l)), .. } => self.recevoir_applis(ctx, l, effets),
                 Rendu::Fini { cle, resultat: Err(e) } => {
                     ctx.journal(&format!("Bibliothèque : {cle} impossible ({e})"));
                     if cle == RECHERCHE {
                         self.apres_recherche.clear();
                     }
+                    // (les applis illisibles : un jeu Xbox en attente part quand même, par son programme)
+                    if cle == APPLIS {
+                        self.recevoir_applis(ctx, Vec::new(), effets);
+                    }
                 }
             }
+        }
+    }
+
+    /// Les applis du menu Démarrer lues (sur le fil des blocs) : la fiche d'un jeu Xbox à jour, et le jeu Xbox dont le
+    /// lancement les attendait part
+    fn recevoir_applis(&mut self, ctx: &Contexte, l: Vec<(String, String)>, effets: &mut Effets) {
+        self.applis = Some(l);
+        effets.ajouter(Effet::Rafraichir);
+        if let Some(g) = self.lancer_apres_applis.take() {
+            self.lancer_jeu(ctx, &g, effets);
         }
     }
 
@@ -506,6 +528,13 @@ impl BlocJeux {
         self.jeux = Some(tous);
         self.jaquettes.oublier();
         self.applis = None;
+        // (gels : un jeu Xbox trouvé, les applis du menu Démarrer sont lues tout de suite en fond, prêtes pour sa fiche
+        //  et son lancement)
+        if ctx.partage_actuel().is_some()
+            && self.jeux.iter().flatten().any(|g| g.lancement.to_lowercase().starts_with("xbox:"))
+        {
+            let _ = self.applis(ctx);
+        }
         self.dernier_jeu = None;
         self.tailles_restes.retain(|k, _| self.restes.iter().any(|r| &r.dossier == k));
         // Les autres blocs (mode jeu, FPS, profils) apprennent la liste
@@ -616,19 +645,27 @@ impl BlocJeux {
         json!({ "jeux": l })
     }
 
-    fn applis(&mut self) -> Vec<(String, String)> {
-        if self.applis.is_none() {
+    /// Les applis du menu Démarrer (jeux Xbox). Gels : lues dans un travail de fond, jamais sur le fil des blocs (tout
+    /// AppsFolder par COM) ; `None` tant qu'elles ne sont pas lues, et la lecture est lancée. Sans contexte partagé
+    /// (tests d'un bloc seul, juges) : lues sur place, comme avant.
+    fn applis(&mut self, ctx: &Contexte) -> Option<Vec<(String, String)>> {
+        if self.applis.is_none() && ctx.partage_actuel().is_none() {
             self.applis = Some(self.sys.applis_demarrer());
         }
-        self.applis.clone().unwrap_or_default()
+        if self.applis.is_none() && !self.travaux.en_cours(APPLIS) {
+            let sys = self.sys.clone();
+            self.travaux.lancer(ctx, APPLIS, move |_| FinJeux::Applis(sys.applis_demarrer()));
+        }
+        self.applis.clone()
     }
 
-    fn comment_lancer(&mut self, g: &Jeu) -> Lancement {
+    /// Comment lancer ce jeu ; `None` pour un jeu Xbox tant que les applis du menu Démarrer ne sont pas lues
+    fn comment_lancer(&mut self, ctx: &Contexte, g: &Jeu) -> Option<Lancement> {
         if g.lancement.to_lowercase().starts_with("xbox:") {
-            let a = self.applis();
-            lancement::lancement(g, &|| a.clone())
+            let a = self.applis(ctx)?;
+            Some(lancement::lancement(g, &|| a.clone()))
         } else {
-            lancement::lancement(g, &Vec::new)
+            Some(lancement::lancement(g, &Vec::new))
         }
     }
 
@@ -738,7 +775,15 @@ impl BlocJeux {
             ctx.journal(&format!("Bibliothèque: {} est déjà en train de se lancer, pas relancé", g.nom));
             return;
         }
-        let comment = self.comment_lancer(g);
+        // (gels : un jeu Xbox attend la liste des applis du menu Démarrer, lue en fond ; il part à sa fin)
+        let Some(comment) = self.comment_lancer(ctx, g) else {
+            if self.lancer_apres_applis.as_ref().is_none_or(|x| x.nom != g.nom) {
+                self.lancer_apres_applis = Some(g.clone());
+                self.statut(effets, &format!("Préparation du lancement de {}...", g.nom));
+            }
+            self.relever_travaux(ctx, effets);
+            return;
+        };
         let (chemin, par_url) = match &comment {
             Lancement::Exe { chemin, .. } => (chemin.clone(), false),
             Lancement::Adresse(a) => (a.clone(), true),

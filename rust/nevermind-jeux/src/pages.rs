@@ -281,7 +281,8 @@ pub fn pages(b: &mut BlocJeux, ctx: &Contexte, ecran: &str) -> Map<String, Value
             .collect();
         let dern = fsess.first().copied();
         let en_cours = en_jeu.as_deref() == Some(g.nom.as_str());
-        let comment = b.comment_lancer(&g);
+        // (`None` : un jeu Xbox dont les applis du menu Démarrer sont encore lues en fond ; gels)
+        let comment = b.comment_lancer(ctx, &g);
         let sys = b.sys.clone();
         let opt = optim::points(sys.as_ref(), &b.connu, &g, mesure, BlocJeux::reglage_bool(ctx, "GameMode", false));
         b.optims = opt.clone();
@@ -334,7 +335,7 @@ pub fn pages(b: &mut BlocJeux, ctx: &Contexte, ecran: &str) -> Map<String, Value
         } else {
             json!({ "type": "bouton", "id": "jeu-desinstaller", "texte": "Désinstaller", "style": "danger" })
         });
-        let texte_l = if matches!(comment, Lancement::Adresse(_)) && !g.source.is_empty() {
+        let texte_l = if comment.as_ref().is_none_or(|c| matches!(c, Lancement::Adresse(_))) && !g.source.is_empty() {
             format!("Lancé par {} (connexion, mises à jour et anti-triche comme d'habitude).", g.source)
         } else {
             "Lancé directement depuis son dossier.".into()

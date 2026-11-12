@@ -259,7 +259,16 @@ fn un_jeu_xbox_ne_fige_pas_nevermind() {
     let lance = |t: &[Effet]| t.iter().any(|x| matches!(x, Effet::OuvrirAdresse(a) if a == adresse));
     let tout = attendre(&mut b, &ctx, e.0, lance);
     assert!(lance(&tout), "le jeu ne se lance pas par son appli : {tout:?}");
-    assert!(annonces(&tout).iter().any(|a| a == "Lancement de Forza Horizon 5 par Xbox..."), "{:?}", annonces(&tout));
+    // (l'attente dite au clic, puis le lancement)
+    let dites = annonces(&tout);
+    let i = dites.iter().position(|a| a == "Préparation du lancement de Forza Horizon 5...");
+    let j = dites.iter().position(|a| a == "Lancement de Forza Horizon 5 par Xbox...");
+    assert!(i.is_some() && j.is_some() && i < j, "{dites:?}");
+    // Un deuxième clic ne le relance pas (20 s)
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "jeu-lancer", &Value::Null, &mut e));
+    let tout = attendre(&mut b, &ctx, e.0, |_| true);
+    assert!(!lance(&tout), "relancé : {tout:?}");
     assert!(sys.lectures.load(std::sync::atomic::Ordering::SeqCst) <= 2, "la liste des applis est relue sans cesse");
     let _ = std::fs::remove_dir_all(&d);
 }
