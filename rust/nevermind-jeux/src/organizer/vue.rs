@@ -2,7 +2,7 @@
 //! textes et les mêmes boutons que la version PowerShell, sans le dessin (fait par `windows::organizer_vue`).
 
 use super::veille::Veille;
-use super::{MAX_TOUCHES, Perso, couleur, en_ligne, id_classe, initiale, nom_touche};
+use super::{MAX_SIMULEES, MAX_TOUCHES, Perso, couleur, en_ligne, envoi, id_classe, initiale, nom_touche};
 
 pub const TITRE: &str = "Organizer Dofus";
 pub const SOUS_TITRE: &str = "Passe d'un perso à l'autre au clavier ou avec la barre flottante.";
@@ -27,7 +27,10 @@ pub const TOUJOURS_SOUS: &str = "Même quand tu es sur une autre fenêtre que Do
 pub const PLEIN_ECRAN: &str = "Elle n'apparaît pas par-dessus Dofus ? Mets le jeu en mode fenêtré ou plein écran fenêtré (sans bordure) : le vrai plein écran cache tout ce qui est par-dessus, y compris Discord.";
 pub const REMETTRE: &str = "Remettre la barre en haut au centre";
 pub const REMISE: &str = "Barre flottante remise en haut au centre.";
-pub const NOTE_BAS: &str = "Nevermind ne fait que changer de fenêtre : il n'envoie aucune touche ni aucun clic au jeu et ne lit rien dedans, à part le titre de la fenêtre.";
+pub const SIMULEES: &str = "Un bouton qui appuie sur une touche";
+pub const SIMULEES_NOTE: &str = "Pour une touche du jeu que tu veux sur ta souris (suivre le chef, par exemple) : choisis le bouton, puis la touche qu'il fait. Elle part seulement dans la fenêtre du perso affiché.";
+pub const ENVOI_AIDE: &str = "Clique puis appuie sur la touche du jeu que ce bouton doit faire (par exemple A). Échap : annuler, Retour arrière : aucune touche";
+pub const NOTE_BAS: &str = "Nevermind change seulement de fenêtre. Il appuie sur une touche à ta place seulement avec un bouton que tu as réglé pour ça, et dans la fenêtre devant. Il ne lit rien dans le jeu, à part le titre de la fenêtre.";
 pub const RETIRER_AIDE: &str = "Enlever ce perso de la liste (il reviendra s'il se reconnecte)";
 pub const GLISSER_BARRE: &str = "Glisse pour déplacer la barre";
 pub const AUCUN_CONNECTE: &str = "Aucun perso connecté";
@@ -90,6 +93,10 @@ pub struct LigneTouche {
     pub vide: bool,
     /// Refusée par Windows : « Déjà prise par un autre programme ».
     pub refusee: bool,
+    /// Le petit titre (et sa note) au-dessus de la ligne : « Une touche par perso »...
+    pub titre_avant: Option<(&'static str, Option<&'static str>)>,
+    /// L'infobulle du bouton.
+    pub aide: &'static str,
 }
 
 /// Toute la vue.
@@ -141,23 +148,30 @@ pub fn modele(v: &Veille, list: &[Perso]) -> Modele {
     let lignes: Vec<Ligne> = list.iter().map(|ch| ligne(ch, &mut n)).collect();
     let on = en_ligne(list);
     let mut touches = Vec::new();
-    let mut ajouter = |libelle: String, action: &str| {
+    let mut ajouter = |libelle: String, action: &str, titre_avant: Option<(&'static str, Option<&'static str>)>| {
         let en_choix = v.capture.as_deref() == Some(action);
-        let t = v.config.touche(action);
+        // (« E1 » : la touche faite dans le jeu par la touche simulée « S1 »)
+        let t = if envoi(action) { v.config.envoi(&format!("S{}", &action[1..])) } else { v.config.touche(action) };
         touches.push(LigneTouche {
             action: action.to_string(),
             libelle,
             bouton: if en_choix { APPUIE.to_string() } else { nom_touche(&t) },
             en_choix,
             vide: t.is_empty() && !en_choix,
-            refusee: v.refusee(action),
+            refusee: !envoi(action) && v.refusee(action),
+            titre_avant,
+            aide: if envoi(action) { ENVOI_AIDE } else { TOUCHE_AIDE },
         });
     };
-    ajouter("Perso suivant".into(), "Next");
-    ajouter("Perso précédent".into(), "Prev");
+    ajouter("Perso suivant".into(), "Next", None);
+    ajouter("Perso précédent".into(), "Prev", None);
     for i in 1..=MAX_TOUCHES {
         let lib = if i <= on.len() { format!("{i}.  {}", on[i - 1].nom) } else { format!("Perso {i}") };
-        ajouter(lib, &format!("P{i}"));
+        ajouter(lib, &format!("P{i}"), (i == 1).then_some((UNE_TOUCHE, None)));
+    }
+    for i in 1..=MAX_SIMULEES {
+        ajouter(format!("Bouton {i}"), &format!("S{i}"), (i == 1).then_some((SIMULEES, Some(SIMULEES_NOTE))));
+        ajouter("    appuie sur".into(), &format!("E{i}"), None);
     }
     Modele {
         on: v.config.on,
@@ -192,5 +206,22 @@ mod tests {
         assert_eq!(m.touches[3].bouton, APPUIE);
         assert_eq!(m.touches[4].libelle, "Perso 3");
         assert_eq!(m.touches[0].bouton, "Ctrl + Tab");
+        // (les touches simulées : le bouton, puis la touche qu'il fait dans le jeu)
+        assert_eq!(m.touches[10].libelle, "Bouton 1");
+        assert_eq!(m.touches[10].titre_avant.map(|t| t.0), Some(SIMULEES));
+        assert_eq!(m.touches[11].action, "E1");
+        assert_eq!(m.touches[11].bouton, "Aucune");
+        assert_eq!(m.touches.len(), 16);
+    }
+
+    #[test]
+    fn touche_simulee_choisie() {
+        let mut v = Veille::nouvelle(Config::default());
+        v.config.envois.push(("S1".into(), "A".into()));
+        v.config.touches.push(("S1".into(), "Souris5".into()));
+        let m = modele(&v, &[]);
+        assert_eq!(m.touches[10].bouton, "Souris 5 (avant)");
+        assert_eq!(m.touches[11].bouton, "A");
+        assert!(!m.touches[11].vide);
     }
 }

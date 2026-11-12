@@ -41,8 +41,8 @@ mod essai {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetForegroundWindow, GetMessageW, MSG,
-        PostMessageW, RegisterClassExW, WINDOW_EX_STYLE, WM_HOTKEY, WM_KEYDOWN, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
-        WS_VISIBLE,
+        PostMessageW, RegisterClassExW, WINDOW_EX_STYLE, WM_HOTKEY, WM_KEYDOWN, WM_XBUTTONDOWN, WNDCLASSEXW,
+        WS_OVERLAPPEDWINDOW, WS_VISIBLE,
     };
     use windows::core::{HSTRING, PCWSTR, w};
 
@@ -364,6 +364,65 @@ mod essai {
             String::new()
         });
         let _ = writeln!(r, "P5 remise à : {:?}", e::geste(|x| x.veille.config.touche("P5")));
+        // Une touche simulée : le bouton latéral avant (choisi comme dans la vue), puis la touche A choisie au clavier
+        // dans la vue (un bouton de souris pendant ce choix ne compte pas). Dans un essai, rien n'est envoyé pour de
+        // vrai : la touche est seulement notée.
+        let _ = e::geste(|x| {
+            x.veille.capture = Some("S1".into());
+            let nevermind_jeux::organizer::fil::essai::Etat { veille, bureau, .. } = x;
+            veille.choisir_touche(bureau, "Souris5");
+            veille.capture = Some("E1".into());
+            veille.montrer_vue(bureau, true);
+            String::new()
+        });
+        if let Ok(hv) = vue.parse::<isize>() {
+            unsafe {
+                let _ = PostMessageW(Some(HWND(hv as *mut _)), WM_XBUTTONDOWN, WPARAM(2 << 16), LPARAM(0));
+            }
+            std::thread::sleep(Duration::from_millis(300));
+            let _ = writeln!(
+                r,
+                "touche simulée, après un bouton de souris pendant le choix : {:?} (en choix : {})",
+                e::geste(|x| x.veille.config.envoi("S1")),
+                e::geste(|x| format!("{:?}", x.veille.capture))
+            );
+            unsafe {
+                let _ = PostMessageW(Some(HWND(hv as *mut _)), WM_KEYDOWN, WPARAM(0x41), LPARAM(0));
+            }
+        }
+        std::thread::sleep(Duration::from_millis(400));
+        let _ = writeln!(
+            r,
+            "touche simulée choisie : bouton {:?}, touche {:?}",
+            e::geste(|x| x.veille.config.touche("S1")),
+            e::geste(|x| x.veille.config.envoi("S1"))
+        );
+        let _ = std::fs::create_dir_all(sortie.join("4"));
+        let _ = writeln!(r, "captures 4 (touche simulée réglée) : {:?}", e::captures(&sortie.join("4")));
+        devant.store(bob, Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(800));
+        let _ = e::poster(e::WM_SOURIS, 7131);
+        std::thread::sleep(Duration::from_millis(400));
+        let d = devant.load(Ordering::Relaxed);
+        let _ = writeln!(
+            r,
+            "bouton de la touche simulée appuyé, Bob devant : envoyées {:?}, toujours Bob devant : {}",
+            e::envois(),
+            d == bob
+        );
+        devant.store(0, Ordering::Relaxed);
+        std::thread::sleep(Duration::from_millis(600));
+        let _ = e::poster(e::WM_SOURIS, 7131);
+        std::thread::sleep(Duration::from_millis(300));
+        let _ = writeln!(r, "même bouton, jeu plus devant : envoyées {:?}", e::envois());
+        let _ = e::geste(|x| {
+            let nevermind_jeux::organizer::fil::essai::Etat { veille, bureau, .. } = x;
+            veille.capture = Some("S1".into());
+            veille.choisir_touche(bureau, "");
+            veille.capture = Some("E1".into());
+            veille.choisir_touche(bureau, "");
+            String::new()
+        });
         // Rien devant : raccourcis rendus, barre cachée
         devant.store(0, Ordering::Relaxed);
         std::thread::sleep(Duration::from_millis(600));

@@ -344,12 +344,18 @@ impl FenetreVue {
         let mut cy = haut + 18.0 * s;
         let mut corps = Vec::new();
         cy = self.entete_carte(&mut corps, cx, cy, cl, v::RACCOURCIS_TITRE, v::RACCOURCIS_NOTE, self.theme.s);
-        for (i, k) in m.touches.iter().enumerate() {
-            if i == 2 {
+        for k in &m.touches {
+            if let Some((titre, note)) = k.titre_avant {
                 let f = self.police(12.0, 600);
                 cy += 8.0 * s;
-                corps.push(Dessin::Texte(v::UNE_TOUCHE.into(), f, gris, cx, cy, cl, 16.0 * s, Mise::Ligne));
+                corps.push(Dessin::Texte(titre.into(), f, gris, cx, cy, cl, 16.0 * s, Mise::Ligne));
                 cy += 16.0 * s + 8.0 * s;
+                if let Some(note) = note {
+                    let fnote = self.police(11.5, 400);
+                    let (_, nh) = dessin::mesurer(note, &fnote, Some(cl as i32));
+                    corps.push(Dessin::Texte(note.into(), fnote, gris, cx, cy, cl, nh as f32, Mise::Lignes));
+                    cy += nh as f32 + 8.0 * s;
+                }
             }
             let fm = Police { familles: "Cascadia Code, Consolas", taille: (12.0 * s).round() as i32, graisse: 700 };
             let (tl, th) = dessin::mesurer(&k.bouton, &fm, None);
@@ -386,7 +392,7 @@ impl FenetreVue {
             }
             let bb = (cx + cl - bw, cy + (rh - bh) / 2.0, bw, bh);
             corps.push(Dessin::Touche(k.bouton.clone(), bb, k.en_choix, k.vide));
-            infobulles.push((bb, v::TOUCHE_AIDE));
+            infobulles.push((bb, k.aide));
             self.zones.push((bb, Zone::Touche(k.action.clone())));
             cy += rh + 8.0 * s;
         }
@@ -892,7 +898,10 @@ fn evenement(e: &mut Etat, m: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
             } else {
                 5
             };
-            if let Some(t) = souris_capturee(b, modificateurs()) {
+            // (la touche faite dans le jeu par une touche simulée se choisit au clavier : le bouton ne compte pas)
+            if e.veille.capture_souris()
+                && let Some(t) = souris_capturee(b, modificateurs())
+            {
                 let Etat { veille, bureau, .. } = e;
                 veille.choisir_touche(bureau, &t);
             }

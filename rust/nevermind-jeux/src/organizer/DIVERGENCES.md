@@ -50,6 +50,12 @@ New-OrgKeyRow, New-OrgKeyButton ; WinFocus (Focus, Foreground, Pid, KeepOnTop, N
 10. **Le fil.** Il démarre au premier tic du bloc si l'Organizer était allumé (version PowerShell : au repos de la
     fenêtre, juste après le démarrage), et s'arrête dès que l'Organizer est coupé et sa vue fermée : rien ne tourne
     alors. Mode test (`ctx.essai`) : il ne démarre jamais.
+11. **Les touches simulées** (12/11, nouveau, pas dans la version PowerShell). Trois lignes « Bouton 1 à 3 » : un
+    raccourci (un bouton de souris le plus souvent : S1 à S3 dans « Hotkeys », identifiants 7131 à 7133) et la touche
+    qu'il fait dans le jeu (« Sends », choisie au clavier seulement). Le raccourci n'est pris que jeu devant, comme les
+    autres ; la touche part dans la fenêtre devant seulement (SendInput, appuyée 60 ms, avec le code de la touche
+    physique), jamais vers plusieurs fenêtres. Une touche qui est déjà un raccourci de l'Organizer n'est pas envoyée.
+    « Sends » n'est écrit dans organizer.json que s'il y en a. Essai (`p.essai`) : la touche est notée, jamais envoyée.
 
 ## Signaux
 

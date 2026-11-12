@@ -205,6 +205,10 @@ impl Bureau for Faux {
     fn souris_arreter(&mut self) {
         self.ev.push("souris-arreter".into());
     }
+    fn envoyer_touche(&mut self, mods: u32, vk: u32) -> bool {
+        self.ev.push(format!("envoyer {mods} {vk}"));
+        true
+    }
     fn survol_barre(&mut self) -> bool {
         self.survol
     }
@@ -405,6 +409,56 @@ fn veille() {
         l.len(),
         faux[..faux.len().min(5)].join("\n")
     );
+}
+
+/// Les touches simulées (propres à la version Rust) : le bouton choisi appuie sur la touche choisie, seulement quand le
+/// jeu est devant, sans changer de perso ; la touche se choisit au clavier, pas à la souris.
+#[test]
+fn touche_simulee() {
+    let mut b = Faux { focus_ok: true, souris_ok: true, ..Default::default() };
+    b.fenetres = vec![Fenetre::depuis_titre("Bob - Iop - 3.0 - Release", 1, 10)];
+    b.pids.insert(10, 1);
+    b.fg = 10;
+    let mut v = Veille::nouvelle(Config::default());
+    v.config.on = true;
+    // (le bouton : clic latéral avant ; la touche : A)
+    v.capture = Some("S1".into());
+    assert!(v.capture_souris());
+    v.choisir_touche(&mut b, "Souris5");
+    v.capture = Some("E1".into());
+    assert!(!v.capture_souris(), "la touche faite dans le jeu se choisit au clavier");
+    v.choisir_touche(&mut b, "A");
+    assert_eq!(v.config.envoi("S1"), "A");
+    assert_eq!(v.config.touche("S1"), "Souris5");
+    // (une autre action ne perd pas sa touche : « A » n'est pas un raccourci)
+    assert_eq!(v.config.touche("P1"), "F1");
+    v.demarrer(&mut b);
+    assert!(b.ev.iter().any(|e| e == "souris-lier 0 5 7131"), "{:?}", b.ev);
+    b.ev.clear();
+    v.touche(&mut b, 7131);
+    assert_eq!(b.ev, vec!["envoyer 0 65".to_string()], "A, et rien d'autre (pas de changement de perso)");
+    // (enregistré, puis relu)
+    let (relu, e) = Config::depuis(Some(&v.config.vers_json()));
+    assert!(e.is_none());
+    assert_eq!(relu.envoi("S1"), "A");
+    // (une touche que l'organizer prend lui-même n'est pas envoyée)
+    v.config.envois.clear();
+    v.config.envois.push(("S1".into(), "F1".into()));
+    b.ev.clear();
+    v.touche(&mut b, 7131);
+    assert!(!b.ev.iter().any(|e| e.starts_with("envoyer")), "{:?}", b.ev);
+    // (jeu plus devant : les raccourcis sont rendus, plus rien n'est écouté)
+    b.fg = 99;
+    v.passe(&mut b, false);
+    b.ev.clear();
+    v.touche(&mut b, 7131);
+    assert!(b.ev.is_empty(), "{:?}", b.ev);
+}
+
+/// Sans touche simulée, le fichier des réglages reste celui de la version PowerShell (pas de « Sends »).
+#[test]
+fn reglages_sans_touche_simulee() {
+    assert!(Config::default().vers_json().get("Sends").is_none());
 }
 
 /// La contre-épreuve : un événement changé dans un scénario doit être vu.

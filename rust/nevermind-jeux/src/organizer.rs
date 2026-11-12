@@ -18,18 +18,32 @@ use serde_json::{Map, Value, json};
 use std::path::Path;
 
 pub const MAX_TOUCHES: usize = 8;
-/// Les identifiants des raccourcis ($OrgHotkeyBase) : 7100 suivant, 7101 précédent, 7111 à 7118 perso 1 à 8.
+/// Le nombre de « touches simulées » : un bouton de souris (ou un raccourci) qui appuie sur une touche dans le jeu.
+pub const MAX_SIMULEES: usize = 3;
+/// Les identifiants des raccourcis ($OrgHotkeyBase) : 7100 suivant, 7101 précédent, 7111 à 7118 perso 1 à 8,
+/// 7131 à 7133 touches simulées 1 à 3.
 pub const BASE_TOUCHES: i32 = 7100;
-/// Les actions, dans l'ordre de Register-OrgHotkeys.
-pub const ACTIONS: [&str; 10] = ["Next", "Prev", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"];
+/// Les actions, dans l'ordre de Register-OrgHotkeys (puis les touches simulées, propres à la version Rust).
+pub const ACTIONS: [&str; 13] = ["Next", "Prev", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "S1", "S2", "S3"];
 
 /// L'identifiant du raccourci d'une action.
 pub fn id_action(a: &str) -> i32 {
     match a {
         "Next" => BASE_TOUCHES,
         "Prev" => BASE_TOUCHES + 1,
+        _ if simulee(a) => BASE_TOUCHES + 30 + a[1..].parse::<i32>().unwrap_or(0),
         _ => BASE_TOUCHES + 10 + a[1..].parse::<i32>().unwrap_or(0),
     }
+}
+
+/// Une touche simulée (« S1 » à « S3 ») : son raccourci appuie sur une touche dans le jeu au lieu de changer de perso.
+pub fn simulee(a: &str) -> bool {
+    a.len() == 2 && a.starts_with('S') && a.as_bytes()[1].is_ascii_digit()
+}
+
+/// La touche envoyée par une touche simulée (« E1 » à « E3 », choisie dans la vue) : seulement au clavier.
+pub fn envoi(a: &str) -> bool {
+    a.len() == 2 && a.starts_with('E') && a.as_bytes()[1].is_ascii_digit()
 }
 
 /// Deux noms égaux pour PowerShell (-eq, -contains, clés d'une table) : sans tenir compte de la casse.
@@ -48,8 +62,10 @@ pub struct Config {
     pub barre_y: Option<f64>,
     /// La classe retenue de chaque perso.
     pub classes: Vec<(String, String)>,
-    /// Les touches : Next, Prev, P1 à P8.
+    /// Les touches : Next, Prev, P1 à P8 (et S1 à S3 : le raccourci des touches simulées).
     pub touches: Vec<(String, String)>,
+    /// La touche que chaque touche simulée fait dans le jeu : S1 à S3 (« Sends » dans organizer.json).
+    pub envois: Vec<(String, String)>,
 }
 
 impl Default for Config {
@@ -67,6 +83,7 @@ impl Default for Config {
             barre_y: None,
             classes: Vec::new(),
             touches,
+            envois: Vec::new(),
         }
     }
 }
@@ -175,6 +192,11 @@ impl Config {
                     mettre(&mut c.classes, &k, v);
                 }
             }
+            if let Some(h) = j.get("Sends").filter(|h| vrai(h)) {
+                for (k, v) in proprietes(h) {
+                    mettre(&mut c.envois, &k, v);
+                }
+            }
             Ok(())
         })();
         (c, r.err())
@@ -189,8 +211,17 @@ impl Config {
         for (k, v) in &self.classes {
             cl.insert(k.clone(), Value::String(v.clone()));
         }
-        json!({ "On": self.on, "Order": self.ordre, "Bar": self.barre, "BarAlways": self.barre_toujours,
-            "BarX": self.barre_x, "BarY": self.barre_y, "Classes": cl, "Hotkeys": h })
+        let mut j = json!({ "On": self.on, "Order": self.ordre, "Bar": self.barre, "BarAlways": self.barre_toujours,
+            "BarX": self.barre_x, "BarY": self.barre_y, "Classes": cl, "Hotkeys": h });
+        // (« Sends » seulement s'il y en a : le fichier reste celui de la version PowerShell sinon)
+        if !self.envois.is_empty() {
+            let mut e = Map::new();
+            for (k, v) in &self.envois {
+                e.insert(k.clone(), Value::String(v.clone()));
+            }
+            j["Sends"] = Value::Object(e);
+        }
+        j
     }
 
     /// Enregistre (Save-OrgConfig).
@@ -210,6 +241,11 @@ impl Config {
     /// La touche d'une action (`$c.Hotkeys[$a]`), « » si aucune.
     pub fn touche(&self, action: &str) -> String {
         lire_table(&self.touches, action)
+    }
+
+    /// La touche faite dans le jeu par une touche simulée (« S1 »), « » si aucune.
+    pub fn envoi(&self, simulee: &str) -> String {
+        lire_table(&self.envois, simulee)
     }
 }
 

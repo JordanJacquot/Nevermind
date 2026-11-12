@@ -46,6 +46,71 @@ pub const WM_SOURIS: u32 = 0x804E;
 const WM_REVEIL: u32 = WM_APP + 1;
 /// La minuterie de la veille (250 ms, comme $script:OrgTimer).
 const MINUTERIE: usize = 1;
+/// La minuterie qui relâche la touche d'une touche simulée.
+const RELACHE: usize = 2;
+/// Combien de temps la touche simulée reste appuyée : comme un appui au clavier (un jeu qui regarde le clavier une
+/// fois par image la voit).
+const DUREE_APPUI_MS: u32 = 60;
+
+// ------------------------------------------------------------------ les touches simulées
+
+/// Les touches à appuyer puis relâcher (modificateurs d'abord) : codes de touche Windows, dans l'ordre d'appui.
+pub fn touches_a_appuyer(mods: u32, vk: u32) -> Vec<u16> {
+    let mut l = Vec::new();
+    for (bit, code) in [(2, 0x11u16), (1, 0x12), (4, 0x10), (8, 0x5B)] {
+        if mods & bit != 0 {
+            l.push(code);
+        }
+    }
+    l.push(vk as u16);
+    l
+}
+
+/// Appuie (ou relâche) ces touches dans la fenêtre devant, comme le clavier : avec le code de la touche physique
+/// (celui de la disposition du clavier de cette fenêtre), pour les jeux qui le lisent.
+fn clavier(touches: &[u16], relacher: bool) -> bool {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetKeyboardLayout, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
+        KEYEVENTF_KEYUP, MAPVK_VK_TO_VSC_EX, MapVirtualKeyExW, SendInput, VIRTUAL_KEY,
+    };
+    unsafe {
+        let fil = GetWindowThreadProcessId(GetForegroundWindow(), None);
+        let disposition = GetKeyboardLayout(fil);
+        let mut l: Vec<INPUT> = Vec::new();
+        let ordre: Vec<u16> = if relacher { touches.iter().rev().copied().collect() } else { touches.to_vec() };
+        for vk in ordre {
+            let scan = MapVirtualKeyExW(u32::from(vk), MAPVK_VK_TO_VSC_EX, Some(disposition));
+            let mut f = KEYBD_EVENT_FLAGS(0);
+            if scan & 0xFF00 == 0xE000 {
+                f |= KEYEVENTF_EXTENDEDKEY;
+            }
+            if relacher {
+                f |= KEYEVENTF_KEYUP;
+            }
+            l.push(INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VIRTUAL_KEY(vk),
+                        wScan: (scan & 0xFF) as u16,
+                        dwFlags: f,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            });
+        }
+        SendInput(&l, size_of::<INPUT>() as i32) as usize == l.len()
+    }
+}
+
+/// Essai : les touches qui auraient été envoyées (rien n'est envoyé pour de vrai dans un essai).
+static ESSAI_ENVOIS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Essai : les touches simulées demandées depuis le début (« mods:vk »).
+pub fn essai_envois() -> Vec<String> {
+    verrou(&ESSAI_ENVOIS).clone()
+}
 
 // ------------------------------------------------------------------ le thème
 
@@ -334,9 +399,22 @@ pub struct BureauWin {
     /// La vue est à refaire (avec cette liste) après l'appel en cours de la veille.
     vue_a_refaire: Option<Vec<Perso>>,
     noms: HashMap<(u32, isize), Option<String>>,
+    /// La touche simulée encore appuyée (relâchée par la minuterie RELACHE).
+    appuyees: Vec<u16>,
 }
 
 impl BureauWin {
+    /// Relâche la touche simulée encore appuyée.
+    fn relacher(&mut self) {
+        unsafe {
+            let _ = KillTimer(Some(hwnd(self.messages)), RELACHE);
+        }
+        let l = std::mem::take(&mut self.appuyees);
+        if !l.is_empty() && !self.essai {
+            clavier(&l, true);
+        }
+    }
+
     /// Essai : la fenêtre de la vue (0 si fermée) et celle de la barre.
     pub fn vue_hwnd(&self) -> isize {
         self.vue.as_ref().map(|v| v.hwnd()).unwrap_or(0)
@@ -430,6 +508,21 @@ impl Bureau for BureauWin {
         if !self.essai {
             souris_arreter();
         }
+    }
+
+    fn envoyer_touche(&mut self, mods: u32, vk: u32) -> bool {
+        // (la précédente encore appuyée : relâchée d'abord)
+        self.relacher();
+        let l = touches_a_appuyer(mods, vk);
+        if self.essai {
+            verrou(&ESSAI_ENVOIS).push(format!("{mods}:{vk}"));
+        } else if !clavier(&l, false) {
+            clavier(&l, true);
+            return false;
+        }
+        self.appuyees = l;
+        unsafe { SetTimer(Some(hwnd(self.messages)), RELACHE, DUREE_APPUI_MS, None) };
+        true
     }
 
     fn survol_barre(&mut self) -> bool {
@@ -578,6 +671,10 @@ unsafe extern "system" fn proc_messages(h: HWND, m: u32, wp: WPARAM, lp: LPARAM)
             });
             LRESULT(0)
         }
+        WM_TIMER if wp.0 == RELACHE => {
+            avec(|e| e.bureau.relacher());
+            LRESULT(0)
+        }
         WM_ESSAI => {
             essai_traiter();
             LRESULT(0)
@@ -656,6 +753,7 @@ pub fn tourner(p: Params, partage: Arc<Partage>) {
         vue: None,
         vue_a_refaire: None,
         noms: HashMap::new(),
+        appuyees: Vec::new(),
     };
     ESSAI_MESSAGES.store(messages, Ordering::Relaxed);
     let on = config.on;
@@ -717,6 +815,7 @@ pub fn tourner(p: Params, partage: Arc<Partage>) {
     }
     // La fin : raccourcis rendus, barre cachée, fenêtres détruites
     avec(|e| {
+        e.bureau.relacher();
         let Etat { veille, bureau, .. } = e;
         veille.rendre_touches(bureau);
         veille.cacher_barre(bureau);
@@ -826,6 +925,13 @@ mod tests {
         assert_eq!(decision_souris(0x020B, 2, 0, &liens, 0), (true, Some(7111), 5));
         assert_eq!(decision_souris(0x0207, 0, 0, &liens, 0), (false, None, 0));
         assert_eq!(decision_souris(0x0200, 0, 0, &liens, 3), (false, None, 3));
+    }
+
+    #[test]
+    fn touches_simulees() {
+        // (Ctrl + Maj + A : Ctrl, Maj, puis A ; A seul : A)
+        assert_eq!(touches_a_appuyer(6, 0x41), vec![0x11, 0x10, 0x41]);
+        assert_eq!(touches_a_appuyer(0, 0x41), vec![0x41]);
     }
 
     #[test]

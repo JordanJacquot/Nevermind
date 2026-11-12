@@ -6,7 +6,9 @@
 //! Tout ce qui touche Windows passe par le trait [`Bureau`] : le fil de l'Organizer lui donne le vrai Windows
 //! (`windows::organizer`), les tests un faux, et rejouent les scénarios exportés de la version PowerShell.
 
-use super::{ACTIONS, Config, Fenetre, Perso, en_ligne, id_action, meme_nom, nom_touche, souris, touche_windows};
+use super::{
+    ACTIONS, Config, Fenetre, Perso, en_ligne, envoi, id_action, meme_nom, nom_touche, simulee, souris, touche_windows,
+};
 
 /// Une pastille de la barre flottante (un perso connecté).
 #[derive(Debug, Clone, PartialEq)]
@@ -39,6 +41,9 @@ pub trait Bureau {
     fn souris_lier(&mut self, mods: u32, bouton: u32, id: i32);
     fn souris_demarrer(&mut self) -> bool;
     fn souris_arreter(&mut self);
+    /// Appuie sur une touche dans la fenêtre devant (une touche simulée), comme au clavier : modificateurs
+    /// (1 Alt, 2 Ctrl, 4 Maj, 8 Win) et code de touche. `false` si Windows l'a refusé.
+    fn envoyer_touche(&mut self, mods: u32, vk: u32) -> bool;
     /// La souris est-elle sur la barre flottante ?
     fn survol_barre(&mut self) -> bool;
     /// La barre flottante : son contenu, montrée, cachée, remise au-dessus de tout.
@@ -255,6 +260,23 @@ impl Veille {
     /// Un raccourci pris (touche ou bouton de souris) vient d'être appuyé : le perso visé passe devant.
     pub fn touche(&mut self, b: &mut dyn Bureau, id: i32) {
         let Some(a) = self.ids.iter().find(|x| x.0 == id).map(|x| x.1.clone()) else { return };
+        if simulee(&a) {
+            // (une touche simulée : la touche choisie, dans la fenêtre du jeu devant, et rien d'autre)
+            let t = self.config.envoi(&a);
+            let Some((m, vk)) = touche_windows(&t) else { return };
+            // (pas une touche que l'Organizer prend lui-même : elle changerait de perso, ou se renverrait sans fin)
+            if ACTIONS.iter().any(|x| touche_windows(&self.config.touche(x)) == Some((m, vk))) {
+                b.journal(&format!(
+                    "Organizer : {} est déjà un raccourci de l'organizer, pas envoyée.",
+                    nom_touche(&t)
+                ));
+                return;
+            }
+            if !b.envoyer_touche(m, vk) {
+                b.journal(&format!("Organizer : Windows a refusé la touche {}.", nom_touche(&t)));
+            }
+            return;
+        }
         let c = self.cible(b, &a);
         self.afficher_perso(b, c.as_ref().map(|p| (p.nom.as_str(), p.hwnd)));
     }
@@ -423,6 +445,15 @@ impl Veille {
     /// Set-OrgCapturedKey : la touche choisie pour l'action en cours de choix.
     pub fn choisir_touche(&mut self, b: &mut dyn Bureau, texte: &str) {
         let Some(action) = self.capture.take() else { return };
+        if envoi(&action) {
+            // (la touche faite dans le jeu par la touche simulée de même numéro : « E1 » pour « S1 »)
+            let s = format!("S{}", &action[1..]);
+            super::mettre(&mut self.config.envois, &s, texte.to_string());
+            self.enregistrer(b);
+            self.vue_redessiner(b);
+            b.statut(&format!("Organizer : {}.", nom_touche(texte)));
+            return;
+        }
         // (une même touche ne sert qu'à une action)
         if !texte.is_empty() {
             for (k, v) in self.config.touches.iter_mut() {
@@ -438,6 +469,12 @@ impl Veille {
         }
         self.vue_redessiner(b);
         b.statut(&format!("Organizer : {}.", nom_touche(&self.config.touche(&action))));
+    }
+
+    /// Un bouton de souris compte-t-il pendant le choix en cours ? Pas pour la touche faite dans le jeu par une
+    /// touche simulée : celle-là se choisit au clavier.
+    pub fn capture_souris(&self) -> bool {
+        self.capture.as_deref().is_some_and(|a| !envoi(a))
     }
 
     /// Échap pendant le choix d'une touche.

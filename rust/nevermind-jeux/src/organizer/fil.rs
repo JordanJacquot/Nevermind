@@ -214,7 +214,8 @@ pub fn fermer(ctx: &Contexte) {
 pub mod essai {
     use super::{Params, Partage, verrou};
     pub use crate::windows::organizer::{
-        Etat, essai_captures as captures, essai_geste as geste, essai_messages as messages, essai_poster as poster,
+        Etat, WM_SOURIS, essai_captures as captures, essai_envois as envois, essai_geste as geste,
+        essai_messages as messages, essai_poster as poster,
     };
     use std::sync::Arc;
 
