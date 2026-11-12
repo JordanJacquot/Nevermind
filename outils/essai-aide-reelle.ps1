@@ -1579,8 +1579,21 @@ function Test-Cas14 {
         $s5 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'bonjour'; Action = 'aide.bonjour'; P = @{} }, @{ Nom = 'journal'; Action = 'aide.journal'; P = @{} }) }
         Test-Cas 'nom public du verrou pris : l''Aide en SYSTEM démarre quand même et répond' { [bool](Get-Bonjour $s5) }
         Test-Cas 'nom public du verrou pris : l''Aide le note dans son journal' { $s5.R -and @(@($s5.R.journal) -match 'déjà pris par un autre programme').Count }
+        $cheminAide = [string](@(Get-AidesEnCours | Where-Object { $_.Chemin })[0].Chemin)
         try { if ($squatteur -and -not $squatteur.HasExited) { $squatteur.Kill() } } catch {}
         Stop-Aides
+        # (12/11, run 43151526633) Deux vraies Aides lancées en même temps, pour le compte de l'essai (comme une Aide de
+        # secours, avec les droits administrateur) : une seule continue. Avant, une Aide qui avait seulement ouvert
+        # l'espace de noms privé gardait le verrou, et la suivante passait une fois cet espace fermé par son créateur.
+        if ($cheminAide) {
+            $deux = @(1..2 | ForEach-Object { Start-Process -FilePath $cheminAide -WorkingDirectory $env:SystemRoot -WindowStyle Hidden -PassThru })
+            Start-Sleep -Seconds 6
+            $vivantes = @($deux | Where-Object { -not $_.HasExited })
+            Add-Note "deux Aides lancées ensemble ($cheminAide) : $($vivantes.Count) tourne(nt) encore après 6 s"
+            Test-Cas 'deux Aides lancées en même temps : une seule continue' { $vivantes.Count -eq 1 }
+            foreach ($p in $deux) { try { if (-not $p.HasExited) { $p.Kill() } } catch {} }
+            Stop-Aides
+        } else { Test-Cas 'deux Aides lancées en même temps : le chemin de l''Aide est connu' { $false } }
     }
     foreach ($p in $jeu, $garde) { try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {} }
     Stop-Aides
