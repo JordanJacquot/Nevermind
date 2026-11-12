@@ -1173,7 +1173,10 @@ function Get-EtatMachine($Carte, $Services) {
     $pc = Join-Path ([Environment]::GetFolderPath('System')) 'powercfg.exe'
     $etat['alimentation|plan actif'] = [regex]::Match((& $pc /getactivescheme | Out-String), '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}').Value
     $etat['alimentation|plans'] = (@([regex]::Matches((& $pc /list | Out-String), '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}') | ForEach-Object { $_.Value } | Sort-Object) -join ' ')
-    foreach ($t in @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Mindset\*' -and $_.TaskPath -notlike '\MindsetEssai\*' })) {
+    # (12/11) \Microsoft\Windows\Printing\PrintJobCleanupTask : Windows la désactive lui-même à un moment quelconque
+    # sur la machine de GitHub (runs 43165429817, 43168898361, 43178106809 : passage 1 ou 2, avant ou après
+    # l'optimisation). Ni Nevermind ni l'Aide ne touchent aux tâches de Windows : elle n'est pas relevée.
+    foreach ($t in @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Mindset\*' -and $_.TaskPath -notlike '\MindsetEssai\*' -and "$($_.TaskPath)$($_.TaskName)" -ne '\Microsoft\Windows\Printing\PrintJobCleanupTask' })) {
         $etat["tâche|$($t.TaskPath)$($t.TaskName)"] = if ($t.State -eq 'Disabled') { 'désactivée' } else { 'active' }
     }
     # Ce que l'Aide retient elle-même (HKLM\SOFTWARE\Mindset\Nevermind\Aide) : comparé d'une Aide à l'autre, pas à « avant »
