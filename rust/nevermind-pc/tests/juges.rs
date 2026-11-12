@@ -54,6 +54,8 @@ struct FauxPc {
     /// « Tes écrans s'affichent bien ? » posée à l'écran (15 s), et le changement de fréquence lent ; lot I
     ecran_a_l_ecran: bool,
     ecran_lent: Option<std::time::Duration>,
+    /// powercfg lent, en millisecondes (0 : tout de suite), réglable après la mise en place du bloc ; gels
+    powercfg_lent: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl FauxPc {
@@ -160,6 +162,10 @@ impl Pc for FauxPc {
         self.reponse_nvidia.clone()
     }
     fn powercfg(&mut self, args: &[String]) -> (i32, String) {
+        let lent = self.powercfg_lent.load(std::sync::atomic::Ordering::SeqCst);
+        if lent > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(lent));
+        }
         let a0 = args.first().map(|s| s.as_str()).unwrap_or("");
         match a0 {
             "/getactivescheme" => {
@@ -1498,4 +1504,46 @@ fn permis_d_essai() -> Result<Permis, String> {
         };
     }
     CONTEXTE.with(|c| c.exiger_geste())
+}
+
+/// Gels (audit du 10/11, M3) : chaque clic de Ton PC fini sur place, et chaque fin de geste, relisait les réglages de
+/// la page Optimisation et le plan d'alimentation pour les autres blocs (`diffuser`) : deux powercfg sur le fil des
+/// blocs, sans limite de temps. Maintenant cette relecture se fait dans un travail de fond, et les autres blocs la
+/// reçoivent à sa fin. Faux PC au powercfg lent (2 s) : le clic rend la main tout de suite, puis les pages des autres
+/// blocs sont à jour.
+#[test]
+fn un_clic_de_ton_pc_n_attend_pas_powercfg() {
+    use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
+    use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
+    let d = nevermind_noyau::dossier_essai("pc-powercfg-clic");
+    let _ = std::fs::remove_dir_all(&d);
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true).partage();
+    let c = &lire("analyse.json")[0];
+    let (pc, s, _) = charger(&c["entree"]);
+    let lent = pc.powercfg_lent.clone();
+    let lu = nevermind_pc::lecture::Lu { entrees: s.entrees.clone(), demarrage: s.demarrage.clone() };
+    let mut b = nevermind_pc::BlocPc::sur(Box::new(pc), lu);
+    // (l'analyse du faux PC, faite ici)
+    let _ = b.pages(&ctx, "pc");
+    lent.store(2000, Ordering::SeqCst);
+    // « Recommandé » de la page Optimisation : seulement les cases ; rien d'autre ne lit le PC
+    let mut e = Effets::default();
+    let t = Instant::now();
+    assert!(b.action(&ctx, "opti:recommande", &Value::Null, &mut e));
+    let duree = t.elapsed();
+    assert!(duree < Duration::from_secs(1), "le clic a pris {duree:?} : powercfg attendu sur le fil des blocs");
+    // Puis les pages des autres blocs sont à jour, à la fin de la relecture
+    let mut tout = e.0;
+    let fin = Instant::now() + Duration::from_secs(15);
+    while !tout.iter().any(|x| matches!(x, Effet::Signal { nom, .. } if nom == "reglages-jeu")) {
+        assert!(Instant::now() < fin, "les réglages ne sont pas rediffusés : {tout:?}");
+        let mut e = Effets::default();
+        b.travaux_finis(&ctx, &mut e);
+        tout.extend(e.0);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(tout.iter().any(|x| matches!(x, Effet::Signal { nom, .. } if nom == "analyse-pc")), "{tout:?}");
+    lent.store(0, Ordering::SeqCst);
+    let _ = std::fs::remove_dir_all(&d);
 }
