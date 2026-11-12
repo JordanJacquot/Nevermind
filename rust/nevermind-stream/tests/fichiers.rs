@@ -77,20 +77,32 @@ fn obs_33_vrais_fichiers() {
     let n = reglages::appliquer(&e, &pl, &copie, "08/11/2026 à 04:30").unwrap();
     assert!(n.encodeur.is_none());
     let apres = std::fs::read(p.join("basic.ini")).unwrap();
-    // Exactement ce que l'essai réel a changé : 4 lignes changées ou ajoutées, rien d'autre
+    // Exactement ce que l'essai réel a changé (4 lignes changées ou ajoutées), plus le débit qui s'adapte (12/11), rien
+    // d'autre ; et la priorité d'OBS dans global.ini
     let avant_l: Vec<&str> = std::str::from_utf8(&origine).unwrap().lines().collect();
     let apres_l: Vec<&str> = std::str::from_utf8(&apres).unwrap().lines().collect();
     let ajoutees: Vec<&&str> = apres_l.iter().filter(|l| !avant_l.contains(l)).collect();
     let retirees: Vec<&&str> = avant_l.iter().filter(|l| !apres_l.contains(l)).collect();
-    assert_eq!(ajoutees, [&"StreamEncoder=nvenc", &"OutputCX=1920", &"OutputCY=1080", &"FPSCommon=60"]);
+    assert_eq!(
+        ajoutees,
+        [&"DynamicBitrate=true", &"StreamEncoder=nvenc", &"OutputCX=1920", &"OutputCY=1080", &"FPSCommon=60"]
+    );
+    let global_origine = std::fs::read(f.join("global.ini")).unwrap();
+    let global = std::fs::read_to_string(r.join("global.ini")).unwrap();
+    assert!(global.contains("ProcessPriority=AboveNormal"), "{global}");
+    assert_eq!(n.cles_global.len(), 1);
     assert_eq!(retirees, [&"OutputCX=1280", &"OutputCY=720", &"FPSCommon=30"]);
     assert_eq!(&apres[..3], &[0xEF, 0xBB, 0xBF]);
     let lignes = reglages::changements(&e, &pl, &n);
     assert_eq!(lignes[0], "Qualité : 1080p à 60 images par seconde (avant : 720p à 30 images par seconde)");
     assert!(lignes.iter().any(|l| l == "Encodé par ta carte NVIDIA"));
-    // Remettre comme avant : les octets d'origine
+    assert!(lignes.iter().any(|l| l == reglages::PLUS_DEBIT));
+    assert!(lignes.iter().any(|l| l == reglages::PLUS_PRIORITE));
+    assert!(lignes.iter().any(|l| l == &format!("Débit vidéo : 6\u{202f}000 kb/s{}", reglages::DEJA)), "{lignes:?}");
+    // Remettre comme avant : les octets d'origine, des deux fichiers
     copie.remettre().unwrap();
     assert_eq!(std::fs::read(p.join("basic.ini")).unwrap(), origine);
+    assert_eq!(std::fs::read(r.join("global.ini")).unwrap(), global_origine);
     let _ = std::fs::remove_dir_all(&r);
 }
 

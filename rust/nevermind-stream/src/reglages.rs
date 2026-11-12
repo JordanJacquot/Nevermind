@@ -60,6 +60,41 @@ pub struct Etat {
     /// L'image de base (le canevas) si elle est écrite
     pub base: Option<(u32, u32)>,
     pub actuel: Actuel,
+    /// Le dossier de réglages (`...\obs-studio`), où est global.ini (la priorité d'OBS)
+    pub racine: PathBuf,
+    /// Les scènes capturent tout l'écran, sans capture de jeu (un conseil : la capture de jeu coûte moins au PC)
+    pub capture_ecran: bool,
+}
+
+/// Les scènes d'OBS capturent-elles tout l'écran (« monitor_capture ») sans aucune capture de jeu (« game_capture ») ?
+/// La collection de scènes active : `[Basic] SceneCollectionFile` de user.ini (OBS 31 et plus), sinon de global.ini.
+pub fn capture_ecran_obs(racine: &Path) -> bool {
+    let lire_cle = |f: &str| {
+        lire_ini(&racine.join(f))
+            .ok()
+            .flatten()
+            .and_then(|i| i.valeur("Basic", "SceneCollectionFile").map(str::to_string))
+    };
+    let Some(f) = lire_cle("user.ini").or_else(|| lire_cle("global.ini")).filter(|f| !f.trim().is_empty()) else {
+        return false;
+    };
+    // (un nom de fichier seul : jamais un chemin qui sortirait du dossier des scènes)
+    if f.contains(['\\', '/', ':']) || f.contains("..") {
+        return false;
+    }
+    let Ok(o) = std::fs::read(racine.join("basic").join("scenes").join(format!("{f}.json"))) else { return false };
+    let Some(m) = objet(Some(&o)) else { return false };
+    capture_ecran_dans(m.get("sources"), "id")
+}
+
+/// Une liste de sources capture-t-elle l'écran sans capture de jeu ? `cle` : le champ qui donne le type de la source
+/// (« id » dans les scènes d'OBS, « type » dans l'API de Streamlabs, où « id » est le numéro de la source).
+pub fn capture_ecran_dans(sources: Option<&Value>, cle: &str) -> bool {
+    let ids: Vec<&str> = sources
+        .and_then(Value::as_array)
+        .map(|l| l.iter().filter_map(|s| s.get(cle).and_then(Value::as_str)).collect())
+        .unwrap_or_default();
+    ids.contains(&"monitor_capture") && !ids.contains(&"game_capture")
 }
 
 /// Le fichier .ini d'un chemin : `Ok(None)` s'il n'existe pas
@@ -197,6 +232,8 @@ pub fn lire(logiciel: Logiciel, racine: &Path) -> Result<Etat, Probleme> {
         dossier,
         nb_profils: nb,
         version,
+        racine: racine.to_path_buf(),
+        capture_ecran: logiciel == Logiciel::Obs && capture_ecran_obs(racine),
     })
 }
 
@@ -213,6 +250,31 @@ pub struct Nouveau {
     pub sections: Vec<String>,
     /// Les clés de streamEncoder.json changées
     pub cles_json: Vec<CleJson>,
+    /// Le nouveau global.ini (la priorité d'OBS), `None` : pas touché
+    pub global: Option<Vec<u8>>,
+    /// Les clés de global.ini changées
+    pub cles_global: Vec<CleIni>,
+}
+
+/// Le nouveau global.ini et ses clés changées
+pub type NouveauGlobal = (Vec<u8>, Vec<CleIni>);
+
+/// global.ini : la priorité d'OBS montée au-dessus du jeu (`[General] ProcessPriority`, toujours dans global.ini, même
+/// depuis OBS 31). `None` : rien à changer (déjà au-dessus, ou « High » choisie par l'utilisateur). Erreur : abîmé.
+pub fn preparer_global(global: &[u8]) -> Result<Option<NouveauGlobal>, String> {
+    let mut i = Ini::lire(global)?;
+    let avant = i.valeur("General", "ProcessPriority").map(str::to_string);
+    if !crate::calcul::priorite_a_monter(avant.as_deref()) {
+        return Ok(None);
+    }
+    i.mettre("General", "ProcessPriority", crate::calcul::PRIORITE);
+    let cle = CleIni {
+        section: "General".into(),
+        cle: "ProcessPriority".into(),
+        avant,
+        apres: Some(crate::calcul::PRIORITE.into()),
+    };
+    Ok(Some((i.octets(), vec![cle])))
 }
 
 /// Pose une valeur et note la clé (pour savoir ensuite ce que Nevermind a changé)
@@ -280,6 +342,25 @@ pub fn preparer(
         mettre(&mut i, &mut t, "Video", "OutputCY", &plan.sortie.1.to_string());
         mettre(&mut i, &mut t, "Video", "FPSType", "0");
         mettre(&mut i, &mut t, "Video", "FPSCommon", &plan.ips.to_string());
+        // L'image réduite (sortie plus petite que l'image de base) : le filtre le plus net, Lanczos (OBS met bicubique)
+        let base = taille(&i, "Video", "BaseCX", "BaseCY");
+        if base.is_some_and(|b| plan.sortie.1 < b.1)
+            && !i.valeur("Video", "ScaleType").is_some_and(|v| v.eq_ignore_ascii_case("lanczos"))
+        {
+            mettre(&mut i, &mut t, "Video", "ScaleType", "lanczos");
+        }
+        // Le son en 48 kHz (déjà la valeur par défaut d'OBS : remis seulement s'il a été changé)
+        if i.entier("Audio", "SampleRate").is_some_and(|r| r != i64::from(crate::calcul::FREQUENCE_SON)) {
+            mettre(&mut i, &mut t, "Audio", "SampleRate", &crate::calcul::FREQUENCE_SON.to_string());
+        }
+        // Le débit qui baisse tout seul quand la connexion faiblit, puis remonte (au lieu de saccader ou de couper)
+        if i.booleen("Output", "DynamicBitrate") != Some(true) {
+            mettre(&mut i, &mut t, "Output", "DynamicBitrate", "true");
+        }
+        // La reconnexion si le live coupe (déjà active par défaut : remise seulement si elle a été coupée)
+        if i.booleen("Output", "Reconnect") == Some(false) {
+            mettre(&mut i, &mut t, "Output", "Reconnect", "true");
+        }
     }
     let mut encodeur = None;
     let mut cles_json = Vec::new();
@@ -318,6 +399,12 @@ pub fn preparer(
         if let Some((k, v)) = preset {
             m.insert(k.into(), Value::from(v));
         }
+        // (les réglages fins de l'encodeur : seulement ceux qui ont été changés, OBS a déjà les bons par défaut)
+        for (k, v) in e.reglages_fins() {
+            if m.get(k).is_some_and(|x| *x != v) {
+                m.insert(k.into(), v);
+            }
+        }
         cles_json = crate::sauvegarde::cles_json(&objet(encodeur_json).unwrap_or_default(), &m);
         encodeur = Some(json_obs(&m));
     } else {
@@ -339,7 +426,16 @@ pub fn preparer(
     let deja = origine.sections();
     let mut sections: Vec<String> = i.sections().into_iter().filter(|s| !deja.contains(s)).collect();
     sections.dedup();
-    Ok(Nouveau { basic: i.octets(), encodeur, passe_en_avance: passe, cles, sections, cles_json })
+    Ok(Nouveau {
+        basic: i.octets(),
+        encodeur,
+        passe_en_avance: passe,
+        cles,
+        sections,
+        cles_json,
+        global: None,
+        cles_global: Vec::new(),
+    })
 }
 
 /// Ce qui a changé, en mots simples (pour la page)
@@ -347,17 +443,24 @@ pub fn changements(etat: &Etat, plan: &Plan, nouveau: &Nouveau) -> Vec<String> {
     let mut l = Vec::new();
     let a = &etat.actuel;
     if etat.logiciel == Logiciel::Obs {
+        let ips = plan.ips.to_string();
         let avant = match (a.sortie, &a.ips) {
+            (Some(s), Some(i)) if s == plan.sortie && *i == ips => DEJA.to_string(),
             (Some((_, h)), Some(i)) => format!(" (avant : {h}p à {i} images par seconde)"),
             _ => String::new(),
         };
         l.push(format!("Qualité : {}{avant}", plan.qualite()));
     }
-    let avant = a.video_kbps.map(|v| format!(" (avant : {} kb/s)", nombre(v))).unwrap_or_default();
+    let avant = match a.video_kbps {
+        Some(v) if v == plan.video_kbps => DEJA.to_string(),
+        Some(v) => format!(" (avant : {} kb/s)", nombre(v)),
+        None => String::new(),
+    };
     l.push(format!("Débit vidéo : {}{avant}", plan.debit()));
     let avant = match a.encodeur {
         Some(e) if e != plan.encodeur => format!(" (avant : {})", e.par()),
-        _ => String::new(),
+        Some(_) => DEJA.to_string(),
+        None => String::new(),
     };
     l.push(format!("Encodé par {}{avant}", plan.encodeur.par()));
     l.push(format!("Son : {} kb/s", plan.son_kbps));
@@ -367,8 +470,29 @@ pub fn changements(etat: &Etat, plan: &Plan, nouveau: &Nouveau) -> Vec<String> {
     if nouveau.passe_en_avance {
         l.push("Sortie d'OBS en mode Avancé (Kick demande une image clé toutes les 2 secondes)".into());
     }
+    let change = |s: &str, k: &str| nouveau.cles.iter().any(|c| c.section == s && c.cle == k);
+    let fins = Encodeur::Nvenc.reglages_fins();
+    let en_plus = [
+        (change("Video", "ScaleType"), PLUS_NET),
+        (change("Output", "DynamicBitrate"), PLUS_DEBIT),
+        (change("Output", "Reconnect"), PLUS_RECONNEXION),
+        (!nouveau.cles_global.is_empty(), PLUS_PRIORITE),
+        (change("Audio", "SampleRate"), PLUS_SON),
+        (nouveau.cles_json.iter().any(|c| fins.iter().any(|(k, _)| *k == c.cle)), PLUS_ENCODEUR),
+    ];
+    l.extend(en_plus.iter().filter(|x| x.0).map(|x| x.1.to_string()));
     l
 }
+
+/// Ce qui était déjà bien réglé (pour que l'utilisateur ne croie pas que rien n'a été fait)
+pub const DEJA: &str = " (c'était déjà le bon réglage)";
+/// Les réglages en plus, en mots simples (OBS et Streamlabs)
+pub const PLUS_NET: &str = "Image plus nette quand elle est réduite (filtre Lanczos)";
+pub const PLUS_DEBIT: &str = "Débit qui baisse tout seul quand ta connexion faiblit, puis remonte : moins de saccades";
+pub const PLUS_RECONNEXION: &str = "Reconnexion automatique si le live coupe";
+pub const PLUS_PRIORITE: &str = "Ton logiciel de stream passe avant le jeu quand le PC est à fond";
+pub const PLUS_SON: &str = "Son en 48 kHz, ce que les plateformes attendent";
+pub const PLUS_ENCODEUR: &str = "Encodeur NVIDIA remis sur ses meilleurs réglages (haute qualité, deux passes)";
 
 /// Fait le changement : les anciennes valeurs notées dans la copie, puis écriture. Rend les nouveaux fichiers écrits.
 pub fn appliquer(etat: &Etat, plan: &Plan, copie: &Copie, date: &str) -> Result<Nouveau, String> {
@@ -376,8 +500,18 @@ pub fn appliquer(etat: &Etat, plan: &Plan, copie: &Copie, date: &str) -> Result<
     let fe = etat.dossier.join("streamEncoder.json");
     let basic = std::fs::read(&fb).map_err(|e| format!("basic.ini : {e}"))?;
     let enc = std::fs::read(&fe).ok();
-    let n = preparer(etat.logiciel, &basic, enc.as_deref(), plan, etat.version)?;
+    let mut n = preparer(etat.logiciel, &basic, enc.as_deref(), plan, etat.version)?;
+    // global.ini : la priorité d'OBS (un global.ini absent ou abîmé : la priorité n'est pas touchée)
+    let fg = etat.racine.join("global.ini");
+    let global = if etat.logiciel == Logiciel::Obs { std::fs::read(&fg).ok() } else { None };
+    if let Some(Ok(Some((octets, cles)))) = global.as_deref().map(preparer_global) {
+        n.global = Some(octets);
+        n.cles_global = cles;
+    }
     let mut modifs = vec![Modif::Ini { chemin: fb.clone(), cles: n.cles.clone(), sections: n.sections.clone() }];
+    if n.global.is_some() {
+        modifs.push(Modif::Ini { chemin: fg.clone(), cles: n.cles_global.clone(), sections: Vec::new() });
+    }
     if let Some(j) = &n.encodeur {
         modifs.push(Modif::Json {
             chemin: fe.clone(),
@@ -399,6 +533,24 @@ pub fn appliquer(etat: &Etat, plan: &Plan, copie: &Copie, date: &str) -> Result<
         let _ = ecrire_sur(&fb, &basic);
         let _ = copie.annuler(annulation);
         return Err(format!("streamEncoder.json : {e}"));
+    }
+    if let Some(g) = &n.global
+        && let Err(e) = ecrire_sur(&fg, g)
+    {
+        // (les autres fichiers sont remis comme ils étaient juste avant : rien n'est à moitié fait)
+        let _ = ecrire_sur(&fb, &basic);
+        if n.encodeur.is_some() {
+            match &enc {
+                Some(o) => {
+                    let _ = ecrire_sur(&fe, o);
+                }
+                None => {
+                    let _ = std::fs::remove_file(&fe);
+                }
+            }
+        }
+        let _ = copie.annuler(annulation);
+        return Err(format!("global.ini : {e}"));
     }
     Ok(n)
 }
@@ -437,8 +589,84 @@ mod tests {
         let t = String::from_utf8(n.basic).unwrap();
         assert_eq!(
             t,
-            "\u{feff}[General]\nName=Sans titre\n\n[Video]\nBaseCX=1920\nBaseCY=1080\nOutputCX=1920\nOutputCY=1080\nFPSType=0\nFPSCommon=60\n\n[Panels]\nCookieId=X\n\n[SimpleOutput]\nVBitrate=6000\nStreamEncoder=nvenc\nRecQuality=Stream\nABitrate=160\nNVENCPreset2=p5\n"
+            "\u{feff}[General]\nName=Sans titre\n\n[Video]\nBaseCX=1920\nBaseCY=1080\nOutputCX=1920\nOutputCY=1080\nFPSType=0\nFPSCommon=60\n\n[Panels]\nCookieId=X\n\n[SimpleOutput]\nVBitrate=6000\nStreamEncoder=nvenc\nRecQuality=Stream\nABitrate=160\nNVENCPreset2=p5\n\n[Output]\nDynamicBitrate=true\n"
         );
+        // (1080p sur une image de base en 1080p : pas réduite, le filtre ne change pas)
+        assert!(!t.contains("ScaleType"));
+    }
+
+    #[test]
+    fn reglages_en_plus() {
+        // Image de base 1440p envoyée plus petite, son en 44,1 kHz, reconnexion coupée : tout est remis
+        let avant = "[Video]\nBaseCX=2560\nBaseCY=1440\nScaleType=bicubic\n[Audio]\nSampleRate=44100\n[Output]\nMode=Simple\nReconnect=false\nDynamicBitrate=false\n";
+        let p = plan(Plateforme::Twitch, 6_000, true);
+        assert!(p.sortie.1 < 1440);
+        let n = preparer(Logiciel::Obs, avant.as_bytes(), None, &p, Version::lire("33.0.1")).unwrap();
+        let t = String::from_utf8(n.basic.clone()).unwrap();
+        for x in ["ScaleType=lanczos", "SampleRate=48000", "Reconnect=true", "DynamicBitrate=true"] {
+            assert!(t.contains(x), "{x} absent : {t}");
+        }
+        let etat = Etat {
+            logiciel: Logiciel::Obs,
+            profil: String::new(),
+            dossier: PathBuf::new(),
+            nb_profils: 1,
+            version: None,
+            service: None,
+            base: Some((2560, 1440)),
+            actuel: Actuel::default(),
+            racine: PathBuf::new(),
+            capture_ecran: false,
+        };
+        let l = changements(&etat, &p, &n);
+        for x in [PLUS_NET, PLUS_SON, PLUS_RECONNEXION, PLUS_DEBIT] {
+            assert!(l.iter().any(|y| y == x), "{x} absent : {l:?}");
+        }
+        // Déjà tout bon (48 kHz par défaut, reconnexion par défaut, Lanczos déjà là) : seul le débit qui s'adapte
+        let avant =
+            "[Video]\nBaseCX=2560\nBaseCY=1440\nScaleType=lanczos\n[Output]\nMode=Simple\nDynamicBitrate=true\n";
+        let n = preparer(Logiciel::Obs, avant.as_bytes(), None, &p, Version::lire("33.0.1")).unwrap();
+        assert!(
+            !n.cles
+                .iter()
+                .any(|c| ["ScaleType", "SampleRate", "Reconnect", "DynamicBitrate"].contains(&c.cle.as_str()))
+        );
+    }
+
+    #[test]
+    fn reglages_fins_nvenc_seulement_s_ils_ont_change() {
+        let avant = "[Output]\nMode=Advanced\n[AdvOut]\nEncoder=obs_nvenc_h264_tex\n";
+        let p = plan(Plateforme::Twitch, 20_000, true);
+        // (changés par l'utilisateur : remis ; absents : laissés à OBS, qui a déjà les bons)
+        let json = br#"{"tune": "ll", "multipass": "fullres", "lookahead": true, "bf": 0}"#;
+        let n = preparer(Logiciel::Obs, avant.as_bytes(), Some(json), &p, Version::lire("31.0.0")).unwrap();
+        let j: Value = serde_json::from_slice(&n.encodeur.unwrap()).unwrap();
+        assert_eq!((j["tune"].as_str(), j["multipass"].as_str()), (Some("hq"), Some("qres")));
+        assert_eq!((j["lookahead"].as_bool(), j["bf"].as_u64()), (Some(false), Some(2)));
+        assert!(j.get("adaptive_quantization").is_none() && j.get("profile").is_none());
+    }
+
+    #[test]
+    fn priorite() {
+        let (g, c) = preparer_global(b"[General]\nLastVersion=1\n").unwrap().unwrap();
+        assert!(String::from_utf8(g).unwrap().contains("ProcessPriority=AboveNormal"));
+        assert_eq!(c[0].avant, None);
+        assert!(preparer_global(b"[General]\nProcessPriority=High\n").unwrap().is_none());
+        assert!(preparer_global(b"[General]\nProcessPriority=AboveNormal\n").unwrap().is_none());
+        assert!(preparer_global(b"[General]\nProcessPriority=Normal\n").unwrap().is_some());
+    }
+
+    #[test]
+    fn capture_d_ecran() {
+        let s = serde_json::json!([{ "id": "monitor_capture" }, { "id": "image_source" }]);
+        assert!(capture_ecran_dans(Some(&s), "id"));
+        let s = serde_json::json!([{ "id": "monitor_capture" }, { "id": "game_capture" }]);
+        assert!(!capture_ecran_dans(Some(&s), "id"));
+        assert!(!capture_ecran_dans(None, "id"));
+        // (Streamlabs : le type dans « type », « id » est le numéro de la source)
+        let s = serde_json::json!([{ "id": "monitor_capture_1a2b", "type": "monitor_capture" }]);
+        assert!(capture_ecran_dans(Some(&s), "type"));
+        assert!(!capture_ecran_dans(Some(&s), "id"));
     }
 
     #[test]

@@ -207,7 +207,8 @@ $Parametres = @(
     @('SimpleOutput', 'StreamEncoder'), @('SimpleOutput', 'VBitrate'), @('SimpleOutput', 'ABitrate'), @('SimpleOutput', 'Preset'),
     @('SimpleOutput', 'NVENCPreset2'), @('SimpleOutput', 'FilePath'), @('SimpleOutput', 'RecFormat2'), @('SimpleOutput', 'RecQuality'),
     @('AdvOut', 'Encoder'), @('AdvOut', 'RecFilePath'), @('AdvOut', 'RecFormat2'), @('AdvOut', 'RecEncoder'), @('AdvOut', 'TrackIndex'),
-    @('AdvOut', 'Track1Bitrate'), @('AdvOut', 'Rescale'), @('AdvOut', 'RescaleFilter')
+    @('AdvOut', 'Track1Bitrate'), @('AdvOut', 'Rescale'), @('AdvOut', 'RescaleFilter'),
+    @('Output', 'DynamicBitrate'), @('Output', 'Reconnect'), @('Video', 'ScaleType'), @('Audio', 'SampleRate')
 )
 function Get-Pris([switch]$Muet) {
     $pris = [ordered]@{}
@@ -366,6 +367,13 @@ Show-Fichiers 'après « Optimiser »'
 $Pris = Get-Pris
 Test-Plan 'Twitch, relu par OBS' $Pris $Plan 'Simple'
 Test-Cas 'service de stream, serveur et clé pas touchés' { @(Get-Differences $Avant $Pris | Where-Object { $_ -like 'Service.*' }).Count -eq 0 }
+# Les réglages en plus (12/11) : le débit qui s'adapte, relu par OBS ; le filtre net si l'image est réduite ; la
+# priorité d'OBS dans global.ini (OBS relancé ne l'a pas remise à « Normal »)
+Test-Cas 'débit qui s''adapte activé (relu par OBS)' { (Get-Valeur $Pris 'Output.DynamicBitrate') -eq 'true' }
+if ([int]$Plan.sortie[1] -lt [int]$Pris['Video.baseHeight']) { Test-Cas 'filtre net Lanczos pour l''image réduite (relu par OBS)' { (Get-Valeur $Pris 'Video.ScaleType') -eq 'lanczos' } }
+$g = Get-Content -LiteralPath (Join-Path $Reglages 'global.ini') -Raw -Encoding UTF8
+Test-Cas 'priorité d''OBS au-dessus du jeu (global.ini, ProcessPriority=AboveNormal, gardée par OBS relancé)' { $g -match '(?m)^ProcessPriority=AboveNormal\s*$' }
+Test-Cas 'la page dit les réglages en plus' { [string]($j.page | ConvertTo-Json -Depth 20 -Compress) -match 'Débit qui baisse tout seul' }
 $rec = Invoke-Enregistrement 'twitch'
 Test-Cas "les enregistrements vont toujours dans « $MonDossier »" { $rec.chemin -like "$MonDossier\*" }
 
@@ -424,7 +432,7 @@ $PlanP = $j.plan
 $e2 = Get-Empreintes
 $d = @(Get-Changes $e1 $e2); foreach ($x in $d) { Write-Detail "fichier changé par Nevermind : $x" }
 Test-Cas "Nevermind règle le profil « $NomProfil »" { $PlanP.profil -eq $NomProfil -and @($j.annonces | Where-Object { $_ -like 'OBS est réglé : *' }).Count -eq 1 }
-Test-Cas 'le profil par défaut n''est pas touché (seuls les fichiers du profil réglé changent)' { $d.Count -gt 0 -and @($d | Where-Object { $_ -notlike "basic\profiles\$(Split-Path -Leaf $PlanP.dossier_profil)\*" }).Count -eq 0 }
+Test-Cas 'le profil par défaut n''est pas touché (seuls les fichiers du profil réglé changent, et global.ini pour la priorité)' { $d.Count -gt 0 -and @($d | Where-Object { $_ -notlike "basic\profiles\$(Split-Path -Leaf $PlanP.dossier_profil)\*" -and $_ -ne 'global.ini' }).Count -eq 0 }
 [void](Start-Obs 'relance-profil')
 $pp = Get-Pris
 Test-Cas "OBS rouvre « $NomProfil »" { $pp['Profil'] -eq $NomProfil }

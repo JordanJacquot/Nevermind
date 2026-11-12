@@ -221,6 +221,27 @@ impl Encodeur {
             Encodeur::X264 => Some(("Preset", "veryfast")),
         }
     }
+    /// Les réglages fins de l'encodeur NVIDIA en mode Avancé (recherche du 12/11/2026, sources d'OBS 30.2.3 et 31.0.0,
+    /// guide OBS de NVIDIA) : haute qualité, deux passes au quart de la taille, répartition du débit selon ce que l'œil
+    /// voit, 2 images B, profil High, sans « lookahead » (il coûte de la carte pendant le jeu, et OBS le coupe avec le
+    /// débit qui s'adapte). Ce sont les valeurs par défaut d'OBS : elles ne sont remises que si elles ont été changées.
+    /// La clé de la répartition : `psycho_aq` jusqu'à OBS 30, `adaptive_quantization` depuis 31 (les deux sont
+    /// regardées : OBS 31 convertit l'ancienne).
+    pub fn reglages_fins(self) -> Vec<(&'static str, serde_json::Value)> {
+        use serde_json::Value;
+        match self {
+            Encodeur::Nvenc => vec![
+                ("tune", Value::from("hq")),
+                ("multipass", Value::from("qres")),
+                ("psycho_aq", Value::from(true)),
+                ("adaptive_quantization", Value::from(true)),
+                ("bf", Value::from(2)),
+                ("profile", Value::from("high")),
+                ("lookahead", Value::from(false)),
+            ],
+            _ => Vec::new(),
+        }
+    }
     /// Le même réglage dans streamEncoder.json (mode Avancé) : (clé, valeur). NVENC de 28 à 30 : « preset2 ».
     pub fn preset_avance(self, version: Option<Version>) -> Option<(&'static str, &'static str)> {
         let v = version.map(|v| v.majeure).unwrap_or(99);
@@ -386,6 +407,22 @@ pub fn largeur_pour(base: (u32, u32), h: u32) -> u32 {
     let w = ((bw * u64::from(h) + bh / 2) / bh) as u32;
     w + (w % 2)
 }
+
+/// La priorité donnée au logiciel de stream (OBS : `[General] ProcessPriority` de global.ini ; Streamlabs : son
+/// réglage Avancé du même nom) : au-dessus du jeu, sans aller jusqu'à « High » (qui gênerait tout le PC).
+pub const PRIORITE: &str = "AboveNormal";
+
+/// La priorité actuelle peut-elle être montée ? Oui si elle est absente (Normal par défaut), normale ou plus basse ;
+/// « High », choisie par l'utilisateur, est gardée.
+pub fn priorite_a_monter(actuelle: Option<&str>) -> bool {
+    match actuelle {
+        None => true,
+        Some(p) => ["Normal", "BelowNormal", "Idle", ""].iter().any(|x| p.trim().eq_ignore_ascii_case(x)),
+    }
+}
+
+/// La fréquence du son attendue par les plateformes
+pub const FREQUENCE_SON: u32 = 48_000;
 
 /// Le calcul : la qualité à régler pour cette connexion, cette carte, cet écran et cette plateforme
 pub fn calculer(e: &Entree) -> Plan {

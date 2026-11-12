@@ -245,6 +245,11 @@ function Get-Pris([switch]$Muet) {
     $pris = [ordered]@{}
     $r = Invoke-Slobs 'fetchSettingsFromObs' 'SettingsService' @('Output') -Silencieux
     foreach ($g in @($r.formData)) { foreach ($p in @($g.parameters)) { if ($p.name) { $pris["Output.$($p.name)"] = $p.value } } }
+    # (12/11 : les réglages en plus, dans les catégories Avancé et Son)
+    foreach ($cat in 'Advanced', 'Audio') {
+        $r = Invoke-Slobs 'fetchSettingsFromObs' 'SettingsService' @($cat) -Silencieux
+        foreach ($g in @($r.formData)) { foreach ($p in @($g.parameters)) { if ($p.name) { $pris["$cat.$($p.name)"] = $p.value } } }
+    }
     $s = Invoke-Slobs 'state' 'VideoSettingsService' -Silencieux
     if ($s -and $s.horizontal) { foreach ($p in $s.horizontal.PSObject.Properties) { $pris["Video.$($p.Name)"] = $p.Value } }
     $m = Invoke-Slobs 'getModel' 'StreamingService' -Silencieux
@@ -264,7 +269,7 @@ function Show-Formulaire([string]$Titre) {
 }
 # Les clés qui diffèrent entre deux relevés (Video.* et Output.*)
 function Get-Differences($A, $B) {
-    @(@($A.Keys) + @($B.Keys) | Sort-Object -Unique | Where-Object { $_ -match '^(Video|Output)\.' -and ([string]($A[$_] | ConvertTo-Json -Compress -Depth 6)) -ne ([string]($B[$_] | ConvertTo-Json -Compress -Depth 6)) } |
+    @(@($A.Keys) + @($B.Keys) | Sort-Object -Unique | Where-Object { $_ -match '^(Video|Output|Advanced|Audio)\.' -and ([string]($A[$_] | ConvertTo-Json -Compress -Depth 6)) -ne ([string]($B[$_] | ConvertTo-Json -Compress -Depth 6)) } |
         ForEach-Object { "$_ : $($A[$_] | ConvertTo-Json -Compress -Depth 6) -> $($B[$_] | ConvertTo-Json -Compress -Depth 6)" })
 }
 
@@ -373,7 +378,18 @@ $j = Invoke-Nevermind @('regler', '3', 'twitch', $Base)
 $Plan = $j.plan
 Test-Cas "annonce « Streamlabs est réglé : ... »" { @($j.annonces | Where-Object { $_ -like 'Streamlabs est réglé : *' }).Count -eq 1 }
 Start-Sleep -Seconds 2
-Test-Plan 'pris tout de suite' (Get-Pris) $Plan 'x264'
+$Pris5 = Get-Pris
+Test-Plan 'pris tout de suite' $Pris5 $Plan 'x264'
+# Les réglages en plus (12/11) : le débit qui s'adapte et la priorité (si Streamlabs les propose : sinon, noté), le
+# filtre net (l'image de 3 Mb/s est plus petite que l'image de base)
+Write-Detail "Avancé et Son avant : $((@($Avant.Keys) | Where-Object { $_ -match '^(Advanced|Audio)\.' } | ForEach-Object { "$_=$($Avant[$_])" }) -join ' ; ')"
+Write-Detail "Avancé et Son après : $((@($Pris5.Keys) | Where-Object { $_ -match '^(Advanced|Audio)\.' } | ForEach-Object { "$_=$($Pris5[$_])" }) -join ' ; ')"
+if ($Pris5.Contains('Advanced.DynamicBitrate')) { Test-Cas 'débit qui s''adapte activé' { [string]$Pris5['Advanced.DynamicBitrate'] -eq 'True' } }
+else { Write-Note 'DynamicBitrate absent du formulaire Avancé de cette version' }
+if ($Pris5.Contains('Advanced.ProcessPriority')) { Test-Cas 'priorité au-dessus du jeu (AboveNormal)' { [string]$Pris5['Advanced.ProcessPriority'] -eq 'AboveNormal' } }
+else { Write-Note 'ProcessPriority absent du formulaire Avancé de cette version' }
+if ($Pris5.Contains('Video.scaleType') -and [int]$Plan.sortie[1] -lt [int]$Avant['Video.baseHeight']) { Test-Cas 'filtre net (Lanczos, scaleType 4) pour l''image réduite' { [string]$Pris5['Video.scaleType'] -eq '4' } }
+Test-Cas 'la page dit les réglages en plus' { [string]($j.page | ConvertTo-Json -Depth 20 -Compress) -match 'Débit qui baisse tout seul' }
 [void](Stop-Streamlabs 'apres-optimiser')
 Show-Fichiers 'après « Optimiser » et fermeture'
 [void](Start-Streamlabs 'relance-optimise')

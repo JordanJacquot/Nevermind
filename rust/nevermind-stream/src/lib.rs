@@ -147,6 +147,8 @@ pub struct BlocStream {
     en_partie: bool,
     /// Les OBS ouverts à la dernière détection (pour voir s'ouvrir un OBS portable depuis Performances)
     obs_ouverts: Vec<PathBuf>,
+    /// Les scènes de Streamlabs capturent tout l'écran sans capture de jeu (lu par son API au dernier « Optimiser »)
+    capture_ecran_streamlabs: bool,
 }
 
 impl BlocStream {
@@ -341,7 +343,12 @@ impl BlocStream {
             let copie = Self::copie(ctx, l);
             let copie_date = copie.existe().then(|| copie.date().unwrap_or_default());
             let changement = self.memoire(ctx).changements.get(&l).cloned();
+            let capture_ecran = match l {
+                Logiciel::Obs => t.etat.as_ref().is_ok_and(|e| e.capture_ecran),
+                Logiciel::Streamlabs => self.capture_ecran_streamlabs,
+            };
             logiciels.push(VueLogiciel {
+                capture_ecran,
                 logiciel: l,
                 etat: t.etat,
                 ouvert: t.ouvert,
@@ -466,6 +473,7 @@ impl BlocStream {
                 return;
             }
         };
+        self.capture_ecran_streamlabs = lu.capture_ecran;
         if lu.occupe {
             refus(self, pages::STREAMLABS_OCCUPE.into());
             return;

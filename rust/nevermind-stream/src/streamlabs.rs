@@ -47,7 +47,16 @@ pub struct Lu {
     pub video: Map<String, Value>,
     /// Le formulaire Sortie, tel que Streamlabs le donne
     pub sortie: Value,
+    /// Le formulaire Avancé (débit qui s'adapte, reconnexion, priorité), vide s'il ne se lit pas
+    pub avance_form: Value,
+    /// Le formulaire Son (fréquence), vide s'il ne se lit pas
+    pub son_form: Value,
+    /// Les scènes capturent tout l'écran sans capture de jeu (un conseil)
+    pub capture_ecran: bool,
 }
+
+/// Les catégories de réglages que Nevermind lit et change (jamais celle du stream, où est la clé)
+pub const CATEGORIES: [&str; 3] = ["Output", "Advanced", "Audio"];
 
 impl Lu {
     /// L'image de base (le canevas)
@@ -114,19 +123,51 @@ pub fn lire(p: &dyn Porte) -> Result<Lu, String> {
         .any(|k| m.get(*k).and_then(Value::as_str).is_some_and(|s| s != "offline"));
     let v = p.appeler("VideoSettingsService", "state", &[])?;
     let video = v.get("horizontal").and_then(Value::as_object).cloned().ok_or("réglages vidéo absents")?;
-    let sortie = formulaire_sortie(p)?;
-    Ok(Lu { occupe, video, sortie })
+    let sortie = formulaire(p, "Output")?;
+    // (Avancé et Son : en plus ; s'ils ne se lisent pas, ces réglages-là sont seulement laissés de côté)
+    let avance_form = formulaire(p, "Advanced").unwrap_or_else(|_| json!([]));
+    let son_form = formulaire(p, "Audio").unwrap_or_else(|_| json!([]));
+    let capture_ecran = p
+        .appeler("SourcesService", "getSources", &[])
+        .map(|s| crate::reglages::capture_ecran_dans(Some(&s), "type"))
+        .unwrap_or(false);
+    Ok(Lu { occupe, video, sortie, avance_form, son_form, capture_ecran })
 }
 
-/// Le formulaire Sortie, relu dans le moteur de Streamlabs (seulement cette catégorie : jamais celle du stream, où est
-/// la clé)
-fn formulaire_sortie(p: &dyn Porte) -> Result<Value, String> {
-    let r = p.appeler("SettingsService", "fetchSettingsFromObs", &[json!("Output")])?;
+/// Un formulaire de réglages, relu dans le moteur de Streamlabs (seulement Output, Advanced ou Audio : jamais la
+/// catégorie du stream, où est la clé)
+fn formulaire(p: &dyn Porte, categorie: &str) -> Result<Value, String> {
+    debug_assert!(CATEGORIES.contains(&categorie));
+    let r = p.appeler("SettingsService", "fetchSettingsFromObs", &[json!(categorie)])?;
     let f = r.get("formData").cloned().unwrap_or(r);
     if !f.is_array() {
-        return Err("formulaire Sortie illisible".into());
+        return Err(format!("formulaire {categorie} illisible"));
     }
     Ok(f)
+}
+
+impl Lu {
+    /// Le formulaire d'une catégorie
+    fn form(&self, categorie: &str) -> &Value {
+        match categorie {
+            "Advanced" => &self.avance_form,
+            "Audio" => &self.son_form,
+            _ => &self.sortie,
+        }
+    }
+}
+
+/// Un champ cherché dans toutes les sous-parties d'un formulaire : (sous-partie, champ)
+fn champ_partout<'a>(form: &'a Value, nom: &str) -> Option<(String, &'a Map<String, Value>)> {
+    form.as_array()?.iter().find_map(|g| {
+        let sous = g["nameSubCategory"].as_str()?;
+        let p = g["parameters"]
+            .as_array()?
+            .iter()
+            .filter_map(Value::as_object)
+            .find(|p| p.get("name").and_then(Value::as_str) == Some(nom))?;
+        Some((sous.to_string(), p))
+    })
 }
 
 /// Le préréglage de vitesse de l'encodeur dans le formulaire (champ, valeur), s'il existe pour cet encodeur
@@ -201,6 +242,43 @@ fn sortie(lu: &Lu, plan: &Plan, l: &mut Vec<Reglage>) {
     {
         pose("Streaming", n, json!(v));
     }
+    // (les réglages fins de l'encodeur, mode Avancé : seulement ceux que l'utilisateur a changés, comme pour OBS)
+    if avance && lu.encodeur() == Some(e) {
+        for (n, v) in e.reglages_fins() {
+            pose("Streaming", n, v);
+        }
+    }
+}
+
+/// Le filtre de Streamlabs pour réduire l'image (`scaleType` de sa vidéo, les nombres d'OBS : 4 = Lanczos)
+pub const LANCZOS: u64 = 4;
+
+/// Les réglages en plus (comme pour OBS) : le filtre net quand l'image est réduite, le débit qui s'adapte, la
+/// reconnexion, la priorité, le son en 48 kHz. Chacun seulement si Streamlabs le propose sur ce PC.
+fn en_plus(lu: &Lu, plan: &Plan, l: &mut Vec<Reglage>) {
+    let reduite = lu.base().is_some_and(|b| plan.sortie.1 < b.1);
+    if reduite
+        && let Some(avant) = lu.video.get("scaleType")
+        && !meme(avant, &json!(LANCZOS))
+    {
+        l.push(Reglage { cible: "Video/scaleType".into(), avant: avant.clone(), apres: json!(LANCZOS) });
+    }
+    let mut pose = |cat: &str, nom: &str, voulu: &dyn Fn(&Value) -> Option<Value>| {
+        if let Some((sous, c)) = champ_partout(lu.form(cat), nom) {
+            let avant = c.get("value").cloned().unwrap_or(Value::Null);
+            if let Some(v) = voulu(&avant).filter(|v| !meme(&avant, v)) {
+                l.push(Reglage { cible: format!("{cat}/{sous}/{nom}"), avant, apres: v });
+            }
+        }
+    };
+    pose("Advanced", "DynamicBitrate", &|_| Some(json!(true)));
+    pose("Advanced", "Reconnect", &|a| (a == &json!(false)).then(|| json!(true)));
+    pose("Advanced", "ProcessPriority", &|a| {
+        crate::calcul::priorite_a_monter(a.as_str()).then(|| json!(crate::calcul::PRIORITE))
+    });
+    pose("Audio", "SampleRate", &|a| {
+        nombre(a).filter(|r| *r != u64::from(crate::calcul::FREQUENCE_SON)).map(|_| json!(crate::calcul::FREQUENCE_SON))
+    });
 }
 
 /// La largeur de sortie que Streamlabs garde : un multiple de 4 (essai réel du 12/11/2026 : 854 écrit devient 852 quand
@@ -233,6 +311,7 @@ pub fn prevoir(lu: &Lu, plan: &Plan) -> Prevu {
     } else {
         sortie(lu, plan, &mut l);
     }
+    en_plus(lu, plan, &mut l);
     Prevu { passe_en_avance: passe, reglages: l }
 }
 
@@ -343,17 +422,25 @@ pub fn appliquer(p: &dyn Porte, lu: &Lu, plan: &Plan, copie: &Copie, date: &str)
 
 /// Ce qui a changé, en mots simples (pour la page)
 pub fn changements(lu: &Lu, plan: &Plan, fait: &Fait) -> Vec<String> {
+    use crate::reglages::{DEJA, PLUS_DEBIT, PLUS_ENCODEUR, PLUS_NET, PLUS_PRIORITE, PLUS_RECONNEXION, PLUS_SON};
     let mut l = Vec::new();
+    let ips = plan.ips.to_string();
     let avant = match (lu.sortie_video(), lu.ips()) {
+        (Some((w, h)), Some(i)) if (w, h) == (largeur(plan.sortie.0), plan.sortie.1) && i == ips => DEJA.to_string(),
         (Some((_, h)), Some(i)) => format!(" (avant : {h}p à {i} images par seconde)"),
         _ => String::new(),
     };
     l.push(format!("Qualité : {}{avant}", plan.qualite()));
-    let avant = lu.debit().map(|v| format!(" (avant : {} kb/s)", crate::calcul::nombre(v))).unwrap_or_default();
+    let avant = match lu.debit() {
+        Some(v) if v == plan.video_kbps => DEJA.to_string(),
+        Some(v) => format!(" (avant : {} kb/s)", crate::calcul::nombre(v)),
+        None => String::new(),
+    };
     l.push(format!("Débit vidéo : {}{avant}", plan.debit()));
     let avant = match lu.encodeur() {
         Some(e) if e != plan.encodeur => format!(" (avant : {})", e.par()),
-        _ => String::new(),
+        Some(_) => DEJA.to_string(),
+        None => String::new(),
     };
     l.push(format!("Encodé par {}{avant}", plan.encodeur.par()));
     l.push(format!("Son : {} kb/s", plan.son_kbps));
@@ -363,6 +450,17 @@ pub fn changements(lu: &Lu, plan: &Plan, fait: &Fait) -> Vec<String> {
     if fait.passe_en_avance {
         l.push("Sortie de Streamlabs en mode Avancé (Kick demande une image clé toutes les 2 secondes)".into());
     }
+    let change = |fin: &str| fait.reglages.iter().any(|r| r.cible.ends_with(fin));
+    let fins = Encodeur::Nvenc.reglages_fins();
+    let en_plus = [
+        (change("Video/scaleType"), PLUS_NET),
+        (change("/DynamicBitrate"), PLUS_DEBIT),
+        (change("/Reconnect"), PLUS_RECONNEXION),
+        (change("/ProcessPriority"), PLUS_PRIORITE),
+        (change("/SampleRate"), PLUS_SON),
+        (fins.iter().any(|(k, _)| change(&format!("Output/Streaming/{k}"))), PLUS_ENCODEUR),
+    ];
+    l.extend(en_plus.iter().filter(|x| x.0).map(|x| x.1.to_string()));
     l
 }
 
@@ -408,6 +506,14 @@ pub fn ecrire(p: &dyn Porte, reglages: &[Reglage], retour: bool) -> Result<(), S
         let (Some(_), Some(nom)) = (c.next(), c.next()) else { continue };
         p.appeler("SettingsService", "setSettingValue", &[json!("Output"), json!(nom), val(r)])?;
     }
+    // (les réglages en plus : Avancé et Son, chacun dans sa catégorie)
+    for r in reglages {
+        let mut c = r.cible.splitn(3, '/');
+        let (Some(cat), Some(_), Some(nom)) = (c.next(), c.next(), c.next()) else { continue };
+        if cat == "Advanced" || cat == "Audio" {
+            p.appeler("SettingsService", "setSettingValue", &[json!(cat), json!(nom), val(r)])?;
+        }
+    }
     Ok(())
 }
 
@@ -416,10 +522,11 @@ pub fn actuelle(lu: &Lu, cible: &str) -> Value {
     if let Some(k) = cible.strip_prefix("Video/") {
         return lu.video.get(k).cloned().unwrap_or(Value::Null);
     }
-    let Some(r) = cible.strip_prefix("Output/") else { return Value::Null };
-    let mut c = r.splitn(2, '/');
-    match (c.next(), c.next()) {
-        (Some(s), Some(n)) => valeur(&lu.sortie, s, n).cloned().unwrap_or(Value::Null),
+    let mut c = cible.splitn(3, '/');
+    match (c.next(), c.next(), c.next()) {
+        (Some(cat), Some(s), Some(n)) if CATEGORIES.contains(&cat) => {
+            valeur(lu.form(cat), s, n).cloned().unwrap_or(Value::Null)
+        }
         _ => Value::Null,
     }
 }
@@ -440,6 +547,7 @@ fn existe(lu: &Lu, cible: &str) -> bool {
     if cible.starts_with("Video/") {
         return true;
     }
-    let mut c = cible.trim_start_matches("Output/").splitn(2, '/');
-    matches!((c.next(), c.next()), (Some(s), Some(n)) if champ(&lu.sortie, s, n).is_some())
+    let mut c = cible.splitn(3, '/');
+    matches!((c.next(), c.next(), c.next()),
+        (Some(cat), Some(s), Some(n)) if CATEGORIES.contains(&cat) && champ(lu.form(cat), s, n).is_some())
 }

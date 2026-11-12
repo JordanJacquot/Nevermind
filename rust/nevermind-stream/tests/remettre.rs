@@ -199,7 +199,7 @@ fn profil_renomme_ou_supprime_dit_en_clair() {
     assert_eq!(
         action(&mut b, &ctx, "stream:remettre:obs"),
         [
-            "Le profil d'OBS réglé par Nevermind n'existe plus (il a été renommé ou supprimé) : il n'y a plus rien à remettre."
+            "Le profil d'OBS réglé par Nevermind n'existe plus (il a été renommé ou supprimé). La priorité d'OBS est revenue comme avant."
         ]
     );
     assert!(!ctx.donnees.join(r"streameur\obs\copie.json").exists(), "la copie est effacée");

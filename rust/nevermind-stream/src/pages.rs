@@ -51,7 +51,14 @@ pub struct VueLogiciel {
     pub changement: Option<Changement>,
     /// Un message de la dernière action (logiciel ouvert, erreur)
     pub alerte: Option<String>,
+    /// Les scènes capturent tout l'écran sans capture de jeu (un conseil)
+    pub capture_ecran: bool,
 }
+
+/// Le conseil quand les scènes capturent tout l'écran
+pub const CONSEIL_CAPTURE: &str = "Dans tes scènes, tu captures tout l'écran. Si tu le peux, ajoute plutôt une « Capture de jeu » : elle coûte moins à ton PC et ne montre que le jeu (pas tes notifications).";
+/// Le conseil pour laisser de la marge à la carte graphique
+pub const CONSEIL_IPS: &str = "Bloque les images par seconde de ton jeu un peu en dessous de ce que ta carte sait faire (dans les options du jeu, ou avec la limite du pilote de ta carte). Une carte graphique à fond fait saccader le stream, même avec les bons réglages.";
 
 /// Toute la page
 #[derive(Debug, Clone, Default)]
@@ -213,6 +220,19 @@ fn blocs(v: &Vue, l: &VueLogiciel) -> Vec<Value> {
             };
             b.push(json!({ "type": "ligne", "icone": "horloge", "couleur": "T", "texte": "Image clé", "valeur": "Toutes les 2 secondes", "note": note }));
         }
+        // Les réglages en plus (12/11)
+        b.push(json!({ "type": "ligne", "icone": "ecran", "couleur": "T", "texte": "Image plus nette", "valeur": "Filtre Lanczos",
+            "note": "Quand l'image envoyée est plus petite que ton écran, elle est réduite avec le filtre le plus net." }));
+        b.push(json!({ "type": "ligne", "icone": "ondes", "couleur": "T", "texte": "Débit qui s'adapte", "valeur": "Activé",
+            "note": "Si ta connexion faiblit pendant le live, le débit baisse un instant puis remonte : l'image est un peu moins nette quelques secondes, au lieu de saccader ou de couper." }));
+        b.push(json!({ "type": "ligne", "icone": "puce", "couleur": "T", "texte": "Priorité", "valeur": "Au-dessus du jeu",
+            "note": format!("Quand le PC est à fond, c'est le jeu qui ralentit un peu, pas ton stream. Si tu avais mis {n} en priorité haute toi-même, Nevermind la garde.") }));
+        b.push(json!({ "type": "ligne", "icone": "internet", "couleur": "T", "texte": "Reconnexion", "valeur": "Automatique",
+            "note": "Si le live coupe, il repart tout seul. C'est déjà le réglage de départ : Nevermind le remet seulement s'il a été coupé." }));
+        if p.encodeur == Encodeur::Nvenc {
+            b.push(json!({ "type": "ligne", "icone": "puce", "couleur": "T", "texte": "Réglages fins de l'encodeur", "valeur": "Haute qualité",
+                "note": "Deux passes, débit placé là où l'œil regarde, 2 images B. Ce sont les réglages de départ : Nevermind les remet seulement s'ils ont été changés." }));
+        }
     }
     // La connexion
     b.push(json!({ "type": "titre", "texte": "Ta connexion" }));
@@ -231,7 +251,16 @@ fn blocs(v: &Vue, l: &VueLogiciel) -> Vec<Value> {
         b.push(json!({ "type": "titre", "texte": "Ce qui a changé", "droite": c.date }));
         b.push(json!({ "type": "texte", "texte": format!("{}.", c.phrase) }));
         b.push(json!({ "type": "liste", "elements": c.lignes, "ton": "ok" }));
+        if c.lignes.iter().any(|x| x.ends_with(crate::reglages::DEJA)) {
+            b.push(json!({ "type": "note", "texte": "« C'était déjà le bon réglage » : tu avais déjà choisi ce que Nevermind conseille. Il l'a vérifié et n'y a pas touché." }));
+        }
     }
+    // Les conseils (Nevermind ne change rien ici : c'est à toi de voir)
+    b.push(json!({ "type": "titre", "texte": "Nos conseils" }));
+    if l.capture_ecran {
+        b.push(json!({ "type": "ligne", "icone": "alerte", "couleur": "orange", "texte": "Capture de tout l'écran", "note": CONSEIL_CAPTURE, "ton": "attention" }));
+    }
+    b.push(json!({ "type": "ligne", "icone": "manette", "couleur": "P", "texte": "Laisse de la marge à ta carte graphique", "note": CONSEIL_IPS }));
     let profil = match &l.etat {
         Ok(e) if l.logiciel == Logiciel::Obs && e.nb_profils > 1 => {
             format!(" Profil réglé : {} (celui qu'OBS ouvre).", e.profil)
@@ -290,6 +319,10 @@ pub fn annonce_remise(l: Logiciel, b: &crate::sauvegarde::Bilan) -> String {
             Logiciel::Obs => "Le profil d'OBS réglé par Nevermind n'existe plus (il a été renommé ou supprimé) : il n'y a plus rien à remettre.".into(),
             Logiciel::Streamlabs => "Les réglages de Streamlabs changés par Nevermind n'existent plus : il n'y a plus rien à remettre.".into(),
         };
+    }
+    // (le profil n'est plus là, mais la priorité d'OBS, dans global.ini, a pu revenir)
+    if b.disparus > 0 && l == Logiciel::Obs {
+        return "Le profil d'OBS réglé par Nevermind n'existe plus (il a été renommé ou supprimé). La priorité d'OBS est revenue comme avant.".into();
     }
     let mut t = if b.abimes > 0 {
         format!(

@@ -26,6 +26,11 @@ struct Etat {
     refuse: Option<String>,
     /// Le débit le plus haut de la plateforme de Streamlabs (il l'applique lui-même)
     limite: Option<u64>,
+    /// Les valeurs du formulaire Avancé (débit qui s'adapte, reconnexion, priorité) et du formulaire Son
+    avancees: Map<String, Value>,
+    son: Map<String, Value>,
+    /// Les sources des scènes (`SourcesService.getSources`)
+    sources: Value,
 }
 
 #[derive(Clone)]
@@ -81,6 +86,34 @@ impl Etat {
         }
         Value::Array(groupes)
     }
+
+    /// Le formulaire d'une catégorie (Output, Advanced, Audio)
+    fn formulaire_de(&self, cat: &str) -> Value {
+        match cat {
+            "Advanced" => {
+                let a = &self.avancees;
+                let v = |k: &str| a.get(k).cloned().unwrap_or(Value::Null);
+                json!([
+                    { "nameSubCategory": "General", "parameters": [liste("ProcessPriority", &v("ProcessPriority"), &["High", "AboveNormal", "Normal", "BelowNormal", "Idle"])] },
+                    { "nameSubCategory": "Automatically Reconnect", "parameters": [champ("Reconnect", &v("Reconnect")), champ("RetryDelay", &json!(2))] },
+                    { "nameSubCategory": "Network", "parameters": [champ("DynamicBitrate", &v("DynamicBitrate"))] },
+                ])
+            }
+            "Audio" => {
+                json!([{ "nameSubCategory": "Untitled", "parameters": [liste("SampleRate", &self.son["SampleRate"], &["44100", "48000"])] }])
+            }
+            _ => self.formulaire(),
+        }
+    }
+
+    /// Le réglage d'une catégorie, s'il existe dans son formulaire
+    fn existe(&self, cat: &str, nom: &str) -> bool {
+        self.formulaire_de(cat)
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["parameters"].as_array().unwrap().iter().any(|p| p["name"].as_str() == Some(nom)))
+    }
 }
 
 impl Systeme for Faux {
@@ -133,12 +166,23 @@ impl Systeme for Faux {
                 Ok(Value::Null)
             }
             ("SettingsService", "fetchSettingsFromObs") => {
-                assert_eq!(
-                    args,
-                    [json!("Output")],
-                    "seulement la Sortie (jamais la catégorie du stream, où est la clé)"
+                let cat = args[0].as_str().unwrap_or_default();
+                assert!(
+                    ["Output", "Advanced", "Audio"].contains(&cat),
+                    "seulement Sortie, Avancé et Son (jamais la catégorie du stream, où est la clé) : {cat}"
                 );
-                Ok(json!({ "type": 0, "formData": e.formulaire() }))
+                Ok(json!({ "type": 0, "formData": e.formulaire_de(cat) }))
+            }
+            ("SourcesService", "getSources") => Ok(e.sources.clone()),
+            ("SettingsService", "setSettingValue") if args[0] != json!("Output") => {
+                let cat = args[0].as_str().unwrap().to_string();
+                assert!(cat == "Advanced" || cat == "Audio", "catégorie inattendue : {cat}");
+                let nom = args[1].as_str().unwrap().to_string();
+                if e.existe(&cat, &nom) && e.refuse.as_deref() != Some(&format!("{cat}/{nom}")) {
+                    let m = if cat == "Advanced" { &mut e.avancees } else { &mut e.son };
+                    m.insert(nom, args[2].clone());
+                }
+                Ok(Value::Null)
             }
             ("SettingsService", "setSettingValue") => {
                 assert_eq!(args[0], json!("Output"));
@@ -195,6 +239,12 @@ fn faux(ctx: &Contexte) -> Faux {
             demandes: Vec::new(),
             refuse: None,
             limite: None,
+            avancees: json!({ "ProcessPriority": "Normal", "Reconnect": true, "DynamicBitrate": false })
+                .as_object()
+                .unwrap()
+                .clone(),
+            son: json!({ "SampleRate": "48000" }).as_object().unwrap().clone(),
+            sources: json!([{ "id": "game_capture_1", "type": "game_capture" }]),
         })),
         r,
     )
@@ -266,7 +316,27 @@ fn optimiser_regle_la_resolution_et_les_images_par_seconde() {
     // la clé de stream n'est jamais demandée : seulement la Sortie
     assert!(f.0.lock().unwrap().demandes.iter().all(|d| !d.contains("Stream\"") && !d.contains("getSettingsFormData")));
     let p = page(&mut b, &ctx);
-    assert!(p.contains("Qualité : 1080p à 60 images par seconde (avant : 1080p à 60 images par seconde)"), "{p}");
+    assert!(p.contains("Qualité : 1080p à 60 images par seconde (c'était déjà le bon réglage)"), "{p}");
+    // les réglages en plus : débit qui s'adapte et priorité (la reconnexion et le son étaient déjà bons ; l'image
+    // n'est pas réduite : pas de filtre)
+    {
+        let e = f.0.lock().unwrap();
+        assert_eq!(
+            (&e.avancees["DynamicBitrate"], &e.avancees["ProcessPriority"]),
+            (&json!(true), &json!("AboveNormal"))
+        );
+        assert_eq!(e.son["SampleRate"], json!("48000"));
+        assert_eq!(e.video["scaleType"], json!(3));
+    }
+    assert!(p.contains("Débit qui baisse tout seul") && p.contains("passe avant le jeu"), "{p}");
+    // (dans « Ce qui a changé » : pas les réglages qui étaient déjà bons)
+    assert!(
+        !p.contains("Reconnexion automatique si")
+            && !p.contains("48 kHz")
+            && !p.contains("quand elle est réduite (filtre"),
+        "{p}"
+    );
+    assert!(p.contains("Nos conseils") && p.contains("Laisse de la marge") && !p.contains("Capture de tout l'écran"));
     assert!(p.contains("Remettre comme avant"), "{p}");
     assert!(!p.contains('\u{2014}') && !p.contains('\u{2013}'));
 }
@@ -280,9 +350,13 @@ fn optimiser_puis_remettre_comme_avant() {
         let e = f.0.lock().unwrap();
         (e.video.clone(), e.sortie.clone())
     };
+    let avancees = f.0.lock().unwrap().avancees.clone();
     let a = agir(&mut b, &ctx, "stream:optimiser:streamlabs", Value::Null);
     assert!(a[0].starts_with("Streamlabs est réglé : 480p à 30 images par seconde"), "{a:?}");
     assert_eq!(video(&f), (json!(852), json!(480), json!(30), json!(1)));
+    // (l'image est réduite : le filtre net ; et les réglages Avancés)
+    assert_eq!(f.0.lock().unwrap().video["scaleType"], json!(4));
+    assert_eq!(f.0.lock().unwrap().avancees["DynamicBitrate"], json!(true));
     // l'utilisateur change lui-même son débit vidéo depuis : il est gardé
     f.0.lock().unwrap().sortie.insert("VBitrate".into(), json!(2000));
     // Streamlabs fermé : « Remettre comme avant » attend qu'il soit ouvert, la copie est gardée
@@ -298,6 +372,7 @@ fn optimiser_puis_remettre_comme_avant() {
     );
     let e = f.0.lock().unwrap();
     assert_eq!(e.video, avant.0);
+    assert_eq!(e.avancees, avancees, "le débit qui s'adapte et la priorité reviennent aussi");
     let mut attendu = avant.1.clone();
     attendu.insert("VBitrate".into(), json!(2000));
     assert_eq!(e.sortie, attendu);
