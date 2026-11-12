@@ -847,6 +847,36 @@ function Get-JournalNevermind {
         if (Test-Path -LiteralPath $f) { Get-Content -LiteralPath $f -Encoding UTF8 -ErrorAction SilentlyContinue }
     })
 }
+# (12/11) Le cas 8 échoue par moments dans le job « Aide en vrai (rust) » (runs 43152381365, 43157810734, 43159528804,
+# 43161144546) : Nevermind plante-t-il au démarrage ? À chaque contrôle en échec des parties b et c : le code de sortie
+# des processus, la fin du journal de Nevermind, les événements récents du journal Application de Windows, et les
+# rapports d'erreur de Windows (WER) de Mindset.exe et de WebView2.
+function Test-Cas8Diag([string]$Nom, [scriptblock]$Condition, [object[]]$Processus, [datetime]$Debut) {
+    $avant = $script:Echoues.Count
+    Test-Cas $Nom $Condition
+    if ($script:Echoues.Count -eq $avant) { return }
+    $g = { param($t) Write-Host "         | $t" -ForegroundColor DarkGray }
+    & $g "DIAGNOSTIC du cas 8 ($Nom)"
+    foreach ($p in @($Processus | Where-Object { $_ })) {
+        $code = try { if ($p.HasExited) { $c = [int]$p.ExitCode; "$c (0x$('{0:X8}' -f $c))" } else { 'encore ouvert' } } catch { "illisible ($($_.Exception.Message))" }
+        & $g "processus $($p.Id) : code de sortie $code"
+    }
+    & $g 'les 20 dernières lignes du journal de Nevermind :'
+    foreach ($l in @(Get-JournalNevermind | Select-Object -Last 20)) { & $g "  $l" }
+    $sources = 'Application Error', 'Windows Error Reporting', '.NET Runtime', 'Application Hang'
+    $ev = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $Debut } -ErrorAction SilentlyContinue |
+        Where-Object { $sources -contains $_.ProviderName -or [string]$_.Message -match 'Mindset\.exe|WebView2|msedgewebview2' })
+    & $g "événements du journal Application depuis le début du cas : $($ev.Count)"
+    foreach ($x in $ev) { & $g "  [$($x.TimeCreated.ToString('HH:mm:ss'))] $($x.ProviderName) ($($x.Id)) : $([string]$x.Message -replace '\r?\n', ' / ')" }
+    foreach ($d in 'ReportArchive', 'ReportQueue') {
+        $racineWer = Join-Path $env:ProgramData "Microsoft\Windows\WER\$d"
+        foreach ($r in @(Get-ChildItem -LiteralPath $racineWer -Directory -ErrorAction SilentlyContinue |
+                Where-Object { ($_.Name -like 'AppCrash_Mindset*' -or $_.Name -like 'AppCrash_msedgewebview*' -or $_.Name -like 'AppHang_Mindset*') -and $_.LastWriteTime -ge $Debut })) {
+            & $g "rapport WER $d\$($r.Name) :"
+            foreach ($l in @(Get-Content -LiteralPath (Join-Path $r.FullName 'Report.wer') -ErrorAction SilentlyContinue)) { & $g "  $l" }
+        }
+    }
+}
 function Test-Cas8 {
     Write-Partie '8. Changement de nom : Nevermind 1.11.0 (OptiGame) mis à jour par le nouveau Mindset, une seule instance'
     Reset-Machine
@@ -854,6 +884,7 @@ function Test-Cas8 {
     $e = Get-Compte $NomElodie
     $version = Get-VersionScript (Join-Path $Depot 'Nevermind\fichiers\Nevermind.ps1')
     $suite = Join-Path $env:LOCALAPPDATA 'Mindset\suite.json'
+    $debut = Get-Date
     try {
         # a. Nevermind 1.11.0 installé par Mindset 2.12.0 (la vraie Release), puis mis à jour par le nouveau Mindset
         $r = Install-Appli $Installateur212 $Paquet111 $e.Sid 'OptiGame'
@@ -882,28 +913,22 @@ function Test-Cas8 {
         $neuf = Start-Nevermind "$NevermindC\Mindset.exe"
         $arrete = Wait-Jusque { $neuf.HasExited } 60
         Show-Nevermind 'pendant que 1.11.0 est ouverte'
-        Test-Cas 'la version renommée refuse de démarrer tant que 1.11.0 est ouverte : elle s''arrête seule, sans garder Local\Nevermind-Instance' { $arrete -and -not (Test-Verrou 'Local\Nevermind-Instance') -and -not $vieux.HasExited }
-        Test-Cas 'son journal le dit (« Lancement caché abandonné »)' { @(Get-JournalNevermind | Where-Object { $_ -match 'Lancement caché abandonné' }).Count -ge 1 }
-        # (12/11, run 43152381365 essai 1 : ce contrôle a échoué une fois sans cause connue ; la prochaine fois, la cause)
-        if (-not @(Get-JournalNevermind | Where-Object { $_ -match 'Lancement caché abandonné' }).Count) {
-            $code = try { $neuf.ExitCode } catch { '?' }
-            Write-Host "         | code de sortie de la version renommée : $code ; les 15 dernières lignes de son journal :" -ForegroundColor DarkGray
-            foreach ($l in @(Get-JournalNevermind | Select-Object -Last 15)) { Write-Host "         |   $l" -ForegroundColor DarkGray }
-        }
+        Test-Cas8Diag 'la version renommée refuse de démarrer tant que 1.11.0 est ouverte : elle s''arrête seule, sans garder Local\Nevermind-Instance' { $arrete -and -not (Test-Verrou 'Local\Nevermind-Instance') -and -not $vieux.HasExited } @($neuf, $vieux) $debut
+        Test-Cas8Diag 'son journal le dit (« Lancement caché abandonné »)' { @(Get-JournalNevermind | Where-Object { $_ -match 'Lancement caché abandonné' }).Count -ge 1 } @($neuf, $vieux) $debut
         Stop-Nevermind
 
         # c. Seule : elle démarre, tient ses deux verrous, et une seule instance
         $neuf = Start-Nevermind "$NevermindC\Mindset.exe"
-        Test-Cas 'seule, la version renommée démarre et tient Local\Nevermind-Instance ET Local\OptiGame-Instance (les anciens Mindset la voient ouverte)' {
+        Test-Cas8Diag 'seule, la version renommée démarre et tient Local\Nevermind-Instance ET Local\OptiGame-Instance (les anciens Mindset la voient ouverte)' {
             Wait-Jusque { (Test-Verrou 'Local\Nevermind-Instance') -and (Test-Verrou 'Local\OptiGame-Instance') } 120
-        }
+        } @($neuf) $debut
         Start-Sleep -Seconds 10
         Show-Nevermind 'version renommée ouverte'
-        Test-Cas "elle reste ouverte, son journal dit « Démarrage Nevermind $version »" { -not $neuf.HasExited -and @(Get-JournalNevermind | Where-Object { $_ -match "Démarrage Nevermind $([regex]::Escape($version))" }).Count -ge 1 }
+        Test-Cas8Diag "elle reste ouverte, son journal dit « Démarrage Nevermind $version »" { -not $neuf.HasExited -and @(Get-JournalNevermind | Where-Object { $_ -match "Démarrage Nevermind $([regex]::Escape($version))" }).Count -ge 1 } @($neuf) $debut
         $deux = Start-Nevermind "$NevermindC\Mindset.exe"
         $arrete = Wait-Jusque { $deux.HasExited } 60
         Show-Nevermind 'après un deuxième lancement'
-        Test-Cas 'un deuxième lancement s''arrête seul : une seule instance' { $arrete -and -not $neuf.HasExited -and @(Get-Nevermind $ProgrammesC).Count -eq 1 }
+        Test-Cas8Diag 'un deuxième lancement s''arrête seul : une seule instance' { $arrete -and -not $neuf.HasExited -and @(Get-Nevermind $ProgrammesC).Count -eq 1 } @($neuf, $deux) $debut
         Stop-Nevermind
         }
         # (Mindset 2.12.0 n'installe plus une nouvelle version : le zip de compatibilité n'est plus publié depuis la
