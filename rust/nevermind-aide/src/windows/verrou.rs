@@ -42,7 +42,7 @@ const INTEGRITE_ELEVEE: &str = "S-1-16-12288";
 const DROITS_ESPACE: &str = "D:P(A;;GA;;;SY)(A;;GA;;;BA)";
 
 /// L'espace de noms privé de l'Aide, ouvert tant que la valeur vit
-struct Espace {
+pub(super) struct Espace {
     espace: HANDLE,
     frontiere: HANDLE,
 }
@@ -81,7 +81,7 @@ fn ajouter_sid(frontiere: &mut HANDLE, sid: &str, integrite: bool) -> Result<(),
 }
 
 /// L'espace de noms privé de l'Aide, créé ou rejoint. `Err` : ce processus n'a pas les droits pour y entrer.
-fn espace_prive() -> Result<Espace, String> {
+pub(super) fn espace_prive() -> Result<Espace, String> {
     // SAFETY : frontière et espace à nous, refermés par Espace ; descripteur de sécurité libéré par MemoireLocale
     unsafe {
         let frontiere = CreateBoundaryDescriptorW(&HSTRING::from(FRONTIERE), 0);
