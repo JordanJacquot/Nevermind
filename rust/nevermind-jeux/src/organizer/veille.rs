@@ -7,7 +7,7 @@
 //! (`windows::organizer`), les tests un faux, et rejouent les scénarios exportés de la version PowerShell.
 
 use super::{
-    ACTIONS, Config, Fenetre, Perso, en_ligne, envoi, id_action, meme_nom, nom_touche, simulee, souris, touche_windows,
+    Config, Fenetre, Perso, actions, en_ligne, envoi, id_action, meme_nom, nom_touche, simulee, souris, touche_windows,
 };
 
 /// Une pastille de la barre flottante (un perso connecté).
@@ -84,6 +84,8 @@ pub struct Veille {
     pub glisse: bool,
     /// L'action dont on choisit la touche ($script:OrgCapture).
     pub capture: Option<String>,
+    /// La touche simulée en cours de création (« S4 ») : le bouton de souris, puis la touche du jeu.
+    pub creation: Option<String>,
 }
 
 impl Veille {
@@ -194,9 +196,14 @@ impl Veille {
         let avant = self.refusees.len();
         b.souris_vider();
         let mut avec_souris = false;
-        for a in ACTIONS {
+        for a in actions() {
+            let a = a.as_str();
             let id = id_action(a);
-            let texte = self.config.touche(a);
+            let mut texte = self.config.touche(a);
+            // (un bouton de souris pas encore relié à une touche du jeu, en cours de création : pas écouté)
+            if simulee(a) && self.config.envoi(a).is_empty() {
+                texte.clear();
+            }
             if let Some((m, bouton)) = souris(&texte) {
                 b.souris_lier(m, bouton, id);
                 self.ids.push((id, a.to_string()));
@@ -218,10 +225,10 @@ impl Veille {
         }
         if avec_souris && !b.souris_demarrer() {
             b.journal("Organizer : boutons de souris indisponibles (écoute refusée par Windows).");
-            for a in ACTIONS {
-                let t = self.config.touche(a);
+            for a in actions() {
+                let t = self.config.touche(&a);
                 if souris(&t).is_some() {
-                    refuser(&mut self.refusees, a, t);
+                    refuser(&mut self.refusees, &a, t);
                 }
             }
         }
@@ -265,7 +272,7 @@ impl Veille {
             let t = self.config.envoi(&a);
             let Some((m, vk)) = touche_windows(&t) else { return };
             // (pas une touche que l'Organizer prend lui-même : elle changerait de perso, ou se renverrait sans fin)
-            if ACTIONS.iter().any(|x| touche_windows(&self.config.touche(x)) == Some((m, vk))) {
+            if actions().iter().any(|x| touche_windows(&self.config.touche(x)) == Some((m, vk))) {
                 b.journal(&format!(
                     "Organizer : {} est déjà un raccourci de l'organizer, pas envoyée.",
                     nom_touche(&t)
@@ -448,10 +455,45 @@ impl Veille {
         if envoi(&action) {
             // (la touche faite dans le jeu par la touche simulée de même numéro : « E1 » pour « S1 »)
             let s = format!("S{}", &action[1..]);
+            if texte.is_empty() && self.creation.as_deref() == Some(s.as_str()) {
+                // (pas de touche à la fin d'une création : rien n'est gardé)
+                self.capture = Some(action);
+                self.vue_redessiner(b);
+                return;
+            }
             super::mettre(&mut self.config.envois, &s, texte.to_string());
+            let fin_creation = self.creation.take().is_some();
             self.enregistrer(b);
+            if self.touches_prises {
+                self.rendre_touches(b);
+            }
             self.vue_redessiner(b);
-            b.statut(&format!("Organizer : {}.", nom_touche(texte)));
+            if fin_creation {
+                b.statut(&format!(
+                    "C'est prêt : {} fait {} dans le jeu.",
+                    nom_touche(&self.config.touche(&s)),
+                    nom_touche(texte)
+                ));
+            } else {
+                b.statut(&format!("Organizer : {}.", nom_touche(texte)));
+            }
+            return;
+        }
+        // (la création d'une touche simulée : le bouton choisi, on passe à la touche du jeu)
+        if simulee(&action) && self.creation.as_deref() == Some(action.as_str()) {
+            if texte.is_empty() {
+                self.capture = Some(action);
+                self.vue_redessiner(b);
+                return;
+            }
+            for (k, v) in self.config.touches.iter_mut() {
+                if !meme_nom(k, &action) && meme_nom(v, texte) {
+                    v.clear();
+                }
+            }
+            super::mettre(&mut self.config.touches, &action, texte.to_string());
+            self.capture = Some(format!("E{}", &action[1..]));
+            self.vue_redessiner(b);
             return;
         }
         // (une même touche ne sert qu'à une action)
@@ -477,9 +519,46 @@ impl Veille {
         self.capture.as_deref().is_some_and(|a| !envoi(a))
     }
 
-    /// Échap pendant le choix d'une touche.
+    /// Une touche du clavier compte-t-elle pendant le choix en cours ? Pas pour le bouton d'une touche simulée : il
+    /// se choisit à la souris (Échap annule toujours).
+    pub fn capture_clavier(&self) -> bool {
+        self.capture.as_deref().is_some_and(|a| !simulee(a))
+    }
+
+    /// « + Ajouter un bouton » : la création guidée d'une touche simulée commence (le bouton de souris, puis la touche
+    /// du jeu). Rien si les 20 sont prises.
+    pub fn commencer_creation(&mut self, b: &mut dyn Bureau) {
+        let Some(s) = super::simulee_libre(&self.config) else { return };
+        self.creation = Some(s.clone());
+        self.capture = Some(s);
+        self.vue_redessiner(b);
+    }
+
+    /// La croix d'une touche simulée : elle est enlevée.
+    pub fn supprimer_simulee(&mut self, b: &mut dyn Bureau, s: &str) {
+        if !simulee(s) {
+            return;
+        }
+        super::mettre(&mut self.config.touches, s, String::new());
+        super::mettre(&mut self.config.envois, s, String::new());
+        self.config.touches.retain(|(k, v)| !(meme_nom(k, s) && v.is_empty()));
+        self.config.envois.retain(|(k, v)| !(meme_nom(k, s) && v.is_empty()));
+        self.enregistrer(b);
+        if self.touches_prises {
+            self.rendre_touches(b);
+        }
+        self.vue_redessiner(b);
+    }
+
+    /// Échap (ou « Annuler ») pendant le choix d'une touche. Une création pas finie est oubliée.
     pub fn annuler_choix(&mut self, b: &mut dyn Bureau) {
         self.capture = None;
+        if let Some(s) = self.creation.take() {
+            super::mettre(&mut self.config.touches, &s, String::new());
+            super::mettre(&mut self.config.envois, &s, String::new());
+            self.config.touches.retain(|(k, v)| !(meme_nom(k, &s) && v.is_empty()));
+            self.config.envois.retain(|(k, v)| !(meme_nom(k, &s) && v.is_empty()));
+        }
         self.vue_redessiner(b);
     }
 

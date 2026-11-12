@@ -337,26 +337,31 @@ impl Barre {
             }
             let k = b.3 / (22.0 * s + 6.0 * s).max(1.0);
             let k = if p.devant { k } else { 1.0 };
-            // Pastille : l'initiale sur la couleur de la classe
-            let pv = crate::organizer::vue::PastilleVue::de(&p.nom, &p.classe);
+            // Pastille : le logo de la classe s'il est sur le PC, sinon l'initiale sur la couleur de la classe
             let op = if p.devant { 1.0 } else { 0.75 };
             let rb = 11.0 * s * k;
             let (cx, cy) = (b.0 + 4.0 * s * k + rb, b.1 + b.3 / 2.0);
-            let col = Couleur::hex(pv.couleur);
-            t.disque(cx, cy, rb, &Peinture::Vertical(col.opacite(op), Couleur::hex("#33000000").opacite(op)));
-            t.cercle(cx, cy, rb, 1.0 * s, &Peinture::Unie(Couleur::hex("#55FFFFFF").opacite(op)));
-            let fi = Police { familles: self.theme.police, taille: (22.0 * 0.45 * s * k).round() as i32, graisse: 700 };
-            dessin::ecrire(
-                &mut t,
-                &pv.initiale,
-                &fi,
-                Couleur::hex("#FFFFFF").opacite(op),
-                (cx - rb) as i32,
-                (cy - rb) as i32,
-                (2.0 * rb).ceil() as i32,
-                (2.0 * rb).ceil() as i32,
-                Mise::Centre,
-            );
+            if let Some(logo) = super::logos::logo(crate::organizer::id_classe(&p.classe)) {
+                t.coller_echelle(&logo, cx - rb, cy - rb, 2.0 * rb, 2.0 * rb, op);
+            } else {
+                let pv = crate::organizer::vue::PastilleVue::de(&p.nom, &p.classe);
+                let col = Couleur::hex(pv.couleur);
+                t.disque(cx, cy, rb, &Peinture::Vertical(col.opacite(op), Couleur::hex("#33000000").opacite(op)));
+                t.cercle(cx, cy, rb, 1.0 * s, &Peinture::Unie(Couleur::hex("#55FFFFFF").opacite(op)));
+                let fi =
+                    Police { familles: self.theme.police, taille: (22.0 * 0.45 * s * k).round() as i32, graisse: 700 };
+                dessin::ecrire(
+                    &mut t,
+                    &pv.initiale,
+                    &fi,
+                    Couleur::hex("#FFFFFF").opacite(op),
+                    (cx - rb) as i32,
+                    (cy - rb) as i32,
+                    (2.0 * rb).ceil() as i32,
+                    (2.0 * rb).ceil() as i32,
+                    Mise::Centre,
+                );
+            }
             let tx = cx + rb + 7.0 * s * k;
             let tl = b.0 + b.2 - 12.0 * s * k - tx;
             let pol = Police { familles: self.theme.police, taille: (12.0 * s * k).round() as i32, graisse: 600 };

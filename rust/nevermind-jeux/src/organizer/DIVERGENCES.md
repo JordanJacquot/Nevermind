@@ -56,6 +56,7 @@ New-OrgKeyRow, New-OrgKeyButton ; WinFocus (Focus, Foreground, Pid, KeepOnTop, N
     autres ; la touche part dans la fenêtre devant seulement (SendInput, appuyée 60 ms, avec le code de la touche
     physique), jamais vers plusieurs fenêtres. Une touche qui est déjà un raccourci de l'Organizer n'est pas envoyée.
     « Sends » n'est écrit dans organizer.json que s'il y en a. Essai (`p.essai`) : la touche est notée, jamais envoyée.
+12. **La vue sur un seul écran** (12/11, maquette « E1 » choisie par Jordan). Trois colonnes : les persos CONNECTÉS    seulement (plus de persos déconnectés ni de bouton « Retirer » ; l'ordre d'initiative reste gardé sans être montré),    chacun avec son logo de classe et sa touche (la liste « Perso 1 à 8 » n'existe plus) ; raccourcis et barre    flottante ; boutons de souris en pastilles (20 au plus, S1 à S20) créés en deux grandes cases (le bouton de souris,    puis la touche du jeu). Les logos des classes reviennent comme dans la version PowerShell (DofusDB, gardés dans    `<données>organizerasse-<n>.png`, lus par WIC ; jamais téléchargés pendant un essai).
 
 ## Signaux
 

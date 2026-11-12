@@ -8,6 +8,8 @@
 mod barre;
 #[path = "organizer_dessin.rs"]
 pub mod dessin;
+#[path = "organizer_logos.rs"]
+pub mod logos;
 #[path = "organizer_vue.rs"]
 mod vue;
 
@@ -48,6 +50,8 @@ const WM_REVEIL: u32 = WM_APP + 1;
 const MINUTERIE: usize = 1;
 /// La minuterie qui relâche la touche d'une touche simulée.
 const RELACHE: usize = 2;
+/// La minuterie qui regarde, vue ouverte, si un logo de classe est arrivé.
+const LOGOS: usize = 3;
 /// Combien de temps la touche simulée reste appuyée : comme un appui au clavier (un jeu qui regarde le clavier une
 /// fois par image la voit).
 const DUREE_APPUI_MS: u32 = 60;
@@ -603,10 +607,19 @@ pub fn avec<R>(f: impl FnOnce(&mut Etat) -> R) -> Option<R> {
 impl Etat {
     /// Après chaque geste : la vue refaite si la veille l'a demandé, la minuterie allumée seulement si la veille tourne.
     fn apres(&mut self) {
-        if let Some(l) = self.bureau.vue_a_refaire.take()
-            && let Some(v) = self.bureau.vue.as_mut()
-        {
-            v.modele(crate::organizer::vue::modele(&self.veille, &l));
+        // (un logo de classe vient d'arriver : la vue et la barre sont redessinées avec lui)
+        if logos::arrives() {
+            let Etat { veille, bureau, .. } = self;
+            if veille.vue {
+                veille.montrer_vue(bureau, true);
+            }
+            veille.dessiner_barre(bureau);
+        }
+        if let Some(l) = self.bureau.vue_a_refaire.take() {
+            let devant = self.bureau.devant();
+            if let Some(v) = self.bureau.vue.as_mut() {
+                v.modele(crate::organizer::vue::modele(&self.veille, &l, devant));
+            }
         }
         let m = self.bureau.messages;
         if self.veille.active && !self.minuterie {
@@ -628,15 +641,24 @@ impl Etat {
         }
         let t = self.bureau.barre.theme.clone();
         self.bureau.vue = vue::FenetreVue::creer(t);
+        // (les logos qui arrivent pendant que la vue est ouverte : regardés chaque seconde)
+        unsafe { SetTimer(Some(hwnd(self.bureau.messages)), LOGOS, 1000, None) };
         let Etat { veille, bureau, .. } = self;
         veille.montrer_vue(bureau, true);
     }
 
     pub fn fermer_vue(&mut self) {
         let Etat { veille, bureau, .. } = self;
+        // (une création de bouton pas finie est oubliée)
+        if veille.capture.is_some() || veille.creation.is_some() {
+            veille.annuler_choix(bureau);
+        }
         veille.montrer_vue(bureau, false);
         veille.capture = None;
         veille.glisse = false;
+        unsafe {
+            let _ = KillTimer(Some(hwnd(bureau.messages)), LOGOS);
+        }
         if let Some(v) = bureau.vue.take() {
             v.detruire();
         }
@@ -669,6 +691,11 @@ unsafe extern "system" fn proc_messages(h: HWND, m: u32, wp: WPARAM, lp: LPARAM)
                     veille.passe(bureau, false);
                 }
             });
+            LRESULT(0)
+        }
+        WM_TIMER if wp.0 == LOGOS => {
+            // (rien à faire ici : `apres` regarde si un logo est arrivé)
+            avec(|_| ());
             LRESULT(0)
         }
         WM_TIMER if wp.0 == RELACHE => {
@@ -740,6 +767,8 @@ pub fn tourner(p: Params, partage: Arc<Partage>) {
         }));
     }
     let config = Config::lire(None, &p.donnees);
+    // (les logos des classes : le dossier de la version PowerShell ; jamais téléchargés pendant un essai)
+    logos::regler(p.donnees.join("organizer"), !p.essai);
     let t = theme(&p.theme);
     let bureau = BureauWin {
         partage: partage.clone(),

@@ -93,6 +93,45 @@ fn distance_arrondi(px: f32, py: f32, hx: f32, hy: f32, r: f32) -> f32 {
     ext + qx.max(qy).min(0.0) - r
 }
 
+/// Pour `coller_echelle`, sur un axe : la part du pixel `d` couverte par le segment [o, o + taille), et les pixels de
+/// la source (sur `n`) qui le remplissent avec leur poids (total 1).
+fn poids_echelle(d: i32, o: f32, taille: f32, n: i32) -> (f32, Vec<(i32, f32)>) {
+    let a = (d as f32).max(o);
+    let b = (d as f32 + 1.0).min(o + taille);
+    if b <= a || n <= 0 {
+        return (0.0, Vec::new());
+    }
+    let k = n as f32 / taille;
+    let (sa, sb) = ((a - o) * k, (b - o) * k);
+    let mut w = Vec::new();
+    if k >= 1.0 {
+        // Réduite : la moyenne des pixels couverts (comptés pour la part couverte)
+        let (i0, i1) = (sa.floor() as i32, (sb.ceil() as i32).min(n));
+        for i in i0.max(0)..i1 {
+            let p = sb.min(i as f32 + 1.0) - sa.max(i as f32);
+            if p > 0.0 {
+                w.push((i, p));
+            }
+        }
+    } else {
+        // Agrandie : entre les deux pixels voisins du centre
+        let c = (sa + sb) / 2.0 - 0.5;
+        let i0 = c.floor();
+        let f = c - i0;
+        let i0 = i0 as i32;
+        w.push((i0.clamp(0, n - 1), 1.0 - f));
+        w.push(((i0 + 1).clamp(0, n - 1), f));
+    }
+    let total: f32 = w.iter().map(|x| x.1).sum();
+    if total <= 0.0 {
+        return (0.0, Vec::new());
+    }
+    for x in &mut w {
+        x.1 /= total;
+    }
+    (b - a, w)
+}
+
 impl Toile {
     pub fn nouvelle(l: i32, h: i32) -> Toile {
         Toile { l: l.max(1), h: h.max(1), px: vec![0; (l.max(1) * h.max(1)) as usize] }
@@ -195,6 +234,57 @@ impl Toile {
                     a,
                 );
                 self.poser(x + tx, y + ty, c, opacite);
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    /// Une autre toile posée par-dessus, réduite (ou agrandie) dans le rectangle (x, y, l, h), avec son opacité.
+    /// Réduite : chaque pixel est la moyenne des pixels de `t` qu'il couvre ; agrandie : mélange des quatre voisins.
+    /// Le calcul se fait sur les couleurs prémultipliées (pas de liseré sombre autour des bords transparents).
+    pub fn coller_echelle(&mut self, t: &Toile, x: f32, y: f32, l: f32, h: f32, opacite: f32) {
+        if l <= 0.0 || h <= 0.0 || opacite <= 0.0 || t.px.is_empty() {
+            return;
+        }
+        let x0 = (x.floor() as i32).max(0);
+        let x1 = ((x + l).ceil() as i32).min(self.l);
+        let y0 = (y.floor() as i32).max(0);
+        let y1 = ((y + h).ceil() as i32).min(self.h);
+        if x0 >= x1 || y0 >= y1 {
+            return;
+        }
+        let colonnes: Vec<(f32, Vec<(i32, f32)>)> = (x0..x1).map(|d| poids_echelle(d, x, l, t.l)).collect();
+        let lignes: Vec<(f32, Vec<(i32, f32)>)> = (y0..y1).map(|d| poids_echelle(d, y, h, t.h)).collect();
+        for (py, (cy, wy)) in (y0..y1).zip(&lignes) {
+            if *cy <= 0.0 {
+                continue;
+            }
+            for (px, (cx, wx)) in (x0..x1).zip(&colonnes) {
+                if *cx <= 0.0 {
+                    continue;
+                }
+                let mut s = [0.0f32; 4];
+                for &(sy, ky) in wy {
+                    let base = (sy * t.l) as usize;
+                    for &(sx, kx) in wx {
+                        let p = t.px[base + sx as usize];
+                        let k = kx * ky;
+                        s[0] += (p >> 24) as f32 * k;
+                        s[1] += ((p >> 16) & 255) as f32 * k;
+                        s[2] += ((p >> 8) & 255) as f32 * k;
+                        s[3] += (p & 255) as f32 * k;
+                    }
+                }
+                if s[0] <= 0.0 {
+                    continue;
+                }
+                let c = Couleur(
+                    (s[1] / s[0]).min(1.0),
+                    (s[2] / s[0]).min(1.0),
+                    (s[3] / s[0]).min(1.0),
+                    (s[0] / 255.0).min(1.0),
+                );
+                self.poser(px, py, c, cx * cy * opacite);
             }
         }
     }
@@ -436,5 +526,41 @@ mod tests {
         let p = Peinture::Plasma { couleurs: [Couleur::hex("#00E5FF"); 4], angle: 30.0, opacite: 0.5 };
         assert!((p.en(3.0, 3.0, (0.0, 0.0, 10.0, 10.0)).3 - 0.5).abs() < 1e-6);
         t.flouter(4);
+    }
+
+    #[test]
+    fn coller_echelle_reduit_et_agrandit() {
+        // Un logo de 128 px : moitié gauche rouge, moitié droite transparente
+        let mut logo = Toile::nouvelle(128, 128);
+        for y in 0..128 {
+            for x in 0..64 {
+                logo.px[y * 128 + x] = 0xFFFF_0000;
+            }
+        }
+        let mut t = Toile::nouvelle(40, 40);
+        t.coller_echelle(&logo, 4.0, 4.0, 32.0, 32.0, 1.0);
+        // (rouge plein à gauche, vide à droite, rien hors du rectangle)
+        assert_eq!(t.px[(20 * 40 + 10) as usize], 0xFFFF_0000);
+        assert_eq!(t.px[(20 * 40 + 30) as usize], 0);
+        assert_eq!(t.px[(2 * 40 + 10) as usize], 0);
+        assert_eq!(t.px[(20 * 40 + 2) as usize], 0);
+        // Une colonne à cheval : la moyenne (moitié couverte), en rouge pur (pas de liseré sombre)
+        let mut deux = Toile::nouvelle(2, 1);
+        deux.px[0] = 0xFFFF_FFFF;
+        let mut u = Toile::nouvelle(1, 1);
+        u.coller_echelle(&deux, 0.0, 0.0, 1.0, 1.0, 1.0);
+        let p = u.px[0];
+        assert!(((p >> 24) as i32 - 128).abs() <= 1, "{p:08X}");
+        assert_eq!((p >> 16) & 255, p >> 24);
+        // Opacité et rectangle à cheval sur un pixel : couverture partielle
+        let mut v = Toile::nouvelle(4, 4);
+        v.coller_echelle(&logo, 0.5, 0.0, 1.0, 1.0, 0.5);
+        assert!(((v.px[0] >> 24) as i32 - 64).abs() <= 1, "{:08X}", v.px[0]);
+        // Agrandie : un pixel devient un carré plein
+        let mut un = Toile::nouvelle(1, 1);
+        un.px[0] = 0xFF00_FF00;
+        let mut w = Toile::nouvelle(10, 10);
+        w.coller_echelle(&un, 0.0, 0.0, 10.0, 10.0, 1.0);
+        assert!(w.px.iter().all(|&p| p == 0xFF00_FF00));
     }
 }

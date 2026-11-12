@@ -33,6 +33,8 @@ features = [
     # (l'Organizer : fenêtres du jeu, raccourcis, souris, barre flottante, vue)
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
+    # (les logos des classes : PNG lus par Windows, WIC)
+    "Win32_Graphics_Imaging",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_LibraryLoader",
     "Win32_System_StationsAndDesktops",

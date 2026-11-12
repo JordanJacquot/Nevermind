@@ -18,13 +18,35 @@ use serde_json::{Map, Value, json};
 use std::path::Path;
 
 pub const MAX_TOUCHES: usize = 8;
-/// Le nombre de « touches simulées » : un bouton de souris (ou un raccourci) qui appuie sur une touche dans le jeu.
-pub const MAX_SIMULEES: usize = 3;
+/// Le nombre de « touches simulées » : un bouton de souris qui appuie sur une touche dans le jeu (la vue en garde 20
+/// au plus : elles tiennent toutes sur un écran, sans défilement).
+pub const MAX_SIMULEES: usize = 20;
 /// Les identifiants des raccourcis ($OrgHotkeyBase) : 7100 suivant, 7101 précédent, 7111 à 7118 perso 1 à 8,
-/// 7131 à 7133 touches simulées 1 à 3.
+/// 7131 à 7150 touches simulées 1 à 20.
 pub const BASE_TOUCHES: i32 = 7100;
+
 /// Les actions, dans l'ordre de Register-OrgHotkeys (puis les touches simulées, propres à la version Rust).
-pub const ACTIONS: [&str; 13] = ["Next", "Prev", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "S1", "S2", "S3"];
+pub fn actions() -> Vec<String> {
+    let mut l = vec!["Next".to_string(), "Prev".to_string()];
+    l.extend((1..=MAX_TOUCHES).map(|i| format!("P{i}")));
+    l.extend((1..=MAX_SIMULEES).map(|i| format!("S{i}")));
+    l
+}
+
+/// Le numéro d'une touche simulée (« S12 » : 12).
+fn numero_simulee(a: &str) -> Option<usize> {
+    a.strip_prefix('S').and_then(|n| n.parse().ok()).filter(|n| (1..=MAX_SIMULEES).contains(n))
+}
+
+/// Les touches simulées réglées (un bouton ou une touche choisis), dans l'ordre de leur numéro.
+pub fn simulees(c: &Config) -> Vec<String> {
+    (1..=MAX_SIMULEES).map(|i| format!("S{i}")).filter(|s| !c.touche(s).is_empty() || !c.envoi(s).is_empty()).collect()
+}
+
+/// La première touche simulée libre (`None` : les 20 sont prises).
+pub fn simulee_libre(c: &Config) -> Option<String> {
+    (1..=MAX_SIMULEES).map(|i| format!("S{i}")).find(|s| c.touche(s).is_empty() && c.envoi(s).is_empty())
+}
 
 /// L'identifiant du raccourci d'une action.
 pub fn id_action(a: &str) -> i32 {
@@ -36,14 +58,14 @@ pub fn id_action(a: &str) -> i32 {
     }
 }
 
-/// Une touche simulée (« S1 » à « S3 ») : son raccourci appuie sur une touche dans le jeu au lieu de changer de perso.
+/// Une touche simulée (« S1 » à « S20 ») : son raccourci appuie sur une touche dans le jeu au lieu de changer de perso.
 pub fn simulee(a: &str) -> bool {
-    a.len() == 2 && a.starts_with('S') && a.as_bytes()[1].is_ascii_digit()
+    numero_simulee(a).is_some()
 }
 
-/// La touche envoyée par une touche simulée (« E1 » à « E3 », choisie dans la vue) : seulement au clavier.
+/// La touche envoyée par une touche simulée (« E1 » à « E20 », choisie dans la vue) : seulement au clavier.
 pub fn envoi(a: &str) -> bool {
-    a.len() == 2 && a.starts_with('E') && a.as_bytes()[1].is_ascii_digit()
+    a.strip_prefix('E').and_then(|n| n.parse::<usize>().ok()).is_some_and(|n| (1..=MAX_SIMULEES).contains(&n))
 }
 
 /// Deux noms égaux pour PowerShell (-eq, -contains, clés d'une table) : sans tenir compte de la casse.

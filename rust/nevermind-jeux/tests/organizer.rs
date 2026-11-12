@@ -455,6 +455,41 @@ fn touche_simulee() {
     assert!(b.ev.is_empty(), "{:?}", b.ev);
 }
 
+/// La création guidée (maquette D) : « + Ajouter », le bouton de souris (le clavier ne compte pas), puis la touche du
+/// jeu ; Annuler oublie une création pas finie ; la croix enlève un bouton ; 20 au plus.
+#[test]
+fn creation_guidee_des_boutons_de_souris() {
+    let mut b = Faux::default();
+    let mut v = Veille::nouvelle(Config::default());
+    v.commencer_creation(&mut b);
+    assert_eq!((v.creation.as_deref(), v.capture.as_deref()), (Some("S1"), Some("S1")));
+    assert!(v.capture_souris() && !v.capture_clavier(), "étape 1 : seulement la souris");
+    v.choisir_touche(&mut b, "Souris5");
+    assert_eq!(v.capture.as_deref(), Some("E1"), "étape 2 : la touche du jeu");
+    assert!(!v.capture_souris() && v.capture_clavier(), "étape 2 : seulement le clavier");
+    v.choisir_touche(&mut b, "A");
+    assert_eq!((v.creation.as_deref(), v.capture.as_deref()), (None, None));
+    assert_eq!((v.config.touche("S1"), v.config.envoi("S1")), ("Souris5".to_string(), "A".to_string()));
+    assert!(b.ev.iter().any(|e| e == "statut C'est prêt : Souris 5 (avant) fait A dans le jeu."), "{:?}", b.ev);
+    // Une deuxième, annulée après le bouton : rien n'est gardé
+    v.commencer_creation(&mut b);
+    assert_eq!(v.creation.as_deref(), Some("S2"));
+    v.choisir_touche(&mut b, "Molette");
+    v.annuler_choix(&mut b);
+    assert!(v.config.touche("S2").is_empty() && v.creation.is_none());
+    assert_eq!(nevermind_jeux::organizer::simulees(&v.config), ["S1"]);
+    // La croix
+    v.supprimer_simulee(&mut b, "S1");
+    assert!(nevermind_jeux::organizer::simulees(&v.config).is_empty());
+    // 20 au plus
+    for i in 1..=20 {
+        v.config.touches.push((format!("S{i}"), "Souris4".into()));
+        v.config.envois.push((format!("S{i}"), "B".into()));
+    }
+    v.commencer_creation(&mut b);
+    assert!(v.creation.is_none(), "les 20 sont prises");
+}
+
 /// Sans touche simulée, le fichier des réglages reste celui de la version PowerShell (pas de « Sends »).
 #[test]
 fn reglages_sans_touche_simulee() {

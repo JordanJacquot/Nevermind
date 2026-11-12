@@ -242,6 +242,19 @@ mod essai {
         let dossier = sortie.join("donnees");
         let _ = std::fs::remove_dir_all(&dossier);
         std::fs::create_dir_all(&dossier).unwrap();
+        // (les logos des classes : jamais téléchargés pendant un essai ; ceux d'un dossier donné, s'il y en a un, sont
+        // posés comme s'ils l'avaient été : symbol_<n>.png devient classe-<n>.png)
+        if let Ok(src) = std::env::var("NEVERMIND_ESSAI_LOGOS")
+            && let Ok(l) = std::fs::read_dir(&src)
+        {
+            let _ = std::fs::create_dir_all(dossier.join("organizer"));
+            for f in l.flatten() {
+                let n = f.file_name().to_string_lossy().to_string();
+                if let Some(id) = n.strip_prefix("symbol_").and_then(|x| x.strip_suffix(".png")) {
+                    let _ = std::fs::copy(f.path(), dossier.join("organizer").join(format!("classe-{id}.png")));
+                }
+            }
+        }
         let m = "Ctrl+Alt+Maj+Win+";
         let config = format!(
             r#"{{"On":true,"Bar":true,"BarAlways":false,"Order":["Alice"],"Hotkeys":{{"Next":"{m}F23","Prev":"{m}F24","P1":"{m}F13","P2":"{m}F14","P3":"{m}F20","P4":"{m}Souris4","P5":"","P6":"","P7":"","P8":""}}}}"#
@@ -399,6 +412,23 @@ mod essai {
         );
         let _ = std::fs::create_dir_all(sortie.join("4"));
         let _ = writeln!(r, "captures 4 (touche simulée réglée) : {:?}", e::captures(&sortie.join("4")));
+        // La création guidée (les deux grandes cases), étape 1, puis annulée
+        let _ = e::geste(|x| {
+            let nevermind_jeux::organizer::fil::essai::Etat { veille, bureau, .. } = x;
+            veille.commencer_creation(bureau);
+            format!("{:?}", veille.creation)
+        });
+        let _ = std::fs::create_dir_all(sortie.join("5"));
+        let _ = writeln!(r, "captures 5 (création, étape 1) : {:?}", e::captures(&sortie.join("5")));
+        let _ = writeln!(
+            r,
+            "création annulée : {}",
+            e::geste(|x| {
+                let nevermind_jeux::organizer::fil::essai::Etat { veille, bureau, .. } = x;
+                veille.annuler_choix(bureau);
+                format!("{:?} {:?}", veille.creation, nevermind_jeux::organizer::simulees(&veille.config))
+            })
+        );
         devant.store(bob, Ordering::Relaxed);
         std::thread::sleep(Duration::from_millis(800));
         let _ = e::poster(e::WM_SOURIS, 7131);

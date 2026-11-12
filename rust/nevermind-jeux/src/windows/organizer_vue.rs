@@ -1,11 +1,12 @@
-//! La vue de l'Organizer (Build-OrgPanel) dans sa propre fenêtre : « Mes personnages » (ordre d'initiative, glisser une
-//! ligne pour la déplacer, Afficher, Retirer), « Raccourcis » (cliquer puis appuyer sur la touche ou le bouton de
-//! souris voulu) et « Barre flottante ». Les textes viennent de `organizer::vue`, les mêmes que la version PowerShell.
+//! La vue de l'Organizer dans sa propre fenêtre, sur un seul écran en trois colonnes (maquette « E1 » du 12/11) :
+//! « Mes personnages » (les connectés, leur logo, leur touche ; glisser une ligne pour l'ordre d'initiative, un clic
+//! pour mettre sa fenêtre devant), « Raccourcis » et « Barre flottante », « Boutons de souris » (les touches simulées en
+//! pastilles, la création en deux grandes cases). Les textes viennent de `organizer::vue`.
 
 use super::barre::bmp;
 use super::dessin::{self, Couleur, Mise, Peinture, Police, Toile};
 use super::{Etat, Theme, hwnd};
-use crate::organizer::vue::{self as v, BoutonLigne, Modele};
+use crate::organizer::vue::{self as v, Modele};
 use crate::organizer::{Capture, souris_capturee, touche_capturee};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute};
@@ -40,10 +41,17 @@ enum Zone {
     Barre,
     Toujours,
     Remettre,
-    Bouton(BoutonLigne),
     Touche(String),
     Poignee(String),
     Ligne(String),
+    /// Un clic sur la ligne d'un perso : sa fenêtre devant.
+    Afficher(isize),
+    /// Une pastille de bouton de souris : changer son bouton, sa touche, l'enlever.
+    PuceBouton(String),
+    PuceTouche(String),
+    Enlever(String),
+    Ajouter,
+    Annuler,
 }
 
 pub struct FenetreVue {
@@ -105,8 +113,8 @@ impl FenetreVue {
                 WS_OVERLAPPEDWINDOW,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
-                (1060.0 * s) as i32,
-                (800.0 * s) as i32,
+                (1180.0 * s) as i32,
+                (720.0 * s) as i32,
                 None,
                 None,
                 Some(inst.into()),
@@ -209,173 +217,178 @@ impl FenetreVue {
         let dy = -self.defile;
         let blanc = Couleur::hex("#FFFFFF");
         let gris = Couleur::hex("#8E88A8");
-        // En-tête
-        let x0 = 24.0 * s;
-        let mut y = 20.0 * s + dy;
-        let ft = self.police(26.0, 700);
+        let icones = |taille: f32| Police {
+            familles: "Segoe Fluent Icons, Segoe MDL2 Assets",
+            taille: (taille * s).round() as i32,
+            graisse: 400,
+        };
+        let mono = |taille: f32| Police {
+            familles: "Cascadia Code, Consolas",
+            taille: (taille * s).round() as i32,
+            graisse: 700,
+        };
+
+        // ------------------------------------------------ En-tête : le titre, et l'interrupteur à droite
+        let x0 = 22.0 * s;
+        let largeur = l as f32 - 2.0 * x0;
+        let y = 16.0 * s + dy;
+        let ft = self.police(23.0, 700);
         let (_, th) = dessin::mesurer(v::TITRE, &ft, None);
         dessin::ecrire(&mut t, v::TITRE, &ft, blanc, x0 as i32, y as i32, l, th, Mise::Ligne);
-        y += th as f32 + 4.0 * s;
-        let fs = self.police(13.0, 400);
+        let fs = self.police(12.5, 400);
         let (_, sh) = dessin::mesurer(v::SOUS_TITRE, &fs, None);
-        dessin::ecrire(&mut t, v::SOUS_TITRE, &fs, Couleur::hex("#A6A1BC"), x0 as i32, y as i32, l, sh, Mise::Ligne);
-        y += sh as f32 + 18.0 * s;
-        let haut = y;
-        let droite_l = 330.0 * s;
-        let gauche_l = (l as f32 - 2.0 * x0 - 16.0 * s - droite_l).max(360.0 * s);
-        let xd = x0 + gauche_l + 16.0 * s;
+        let ys = y + th as f32 + 2.0 * s;
+        dessin::ecrire(&mut t, v::SOUS_TITRE, &fs, Couleur::hex("#A6A1BC"), x0 as i32, ys as i32, l, sh, Mise::Ligne);
+        let mut corps = Vec::new();
+        let il = 250.0 * s;
+        self.interrupteur(
+            &mut corps,
+            x0 + largeur - il,
+            y + 4.0 * s,
+            il,
+            v::ACTIVER,
+            v::ACTIVER_NOTE,
+            m.on,
+            Zone::Activer,
+        );
+        self.peindre(&mut t, corps);
+        let haut = ys + sh as f32 + 14.0 * s;
+
+        // ------------------------------------------------ Les trois colonnes (1 ; 0,95 ; 1,25)
+        let ecart = 14.0 * s;
+        let utile = largeur - 2.0 * ecart;
+        let (l1, l2) = (utile * 1.0 / 3.2, utile * 0.95 / 3.2);
+        let l3 = utile - l1 - l2;
+        let (xa, xb, xc) = (x0, x0 + l1 + ecart, x0 + l1 + l2 + 2.0 * ecart);
+        let marge = 15.0 * s;
 
         // ------------------------------------------------ Mes personnages
-        let (cx, cl) = (x0 + 20.0 * s, gauche_l - 40.0 * s);
-        let mut cy = haut + 18.0 * s;
-        let debut_carte = haut;
+        let (cx, cl) = (xa + marge, l1 - 2.0 * marge);
+        let mut cy = haut + 14.0 * s;
         let mut corps = Vec::new();
         cy = self.entete_carte(&mut corps, cx, cy, cl, v::PERSOS_TITRE, v::PERSOS_NOTE, p);
-        cy = self.interrupteur(&mut corps, cx, cy, cl, v::ACTIVER, v::ACTIVER_NOTE, m.on, Zone::Activer);
         if m.vide {
             let ft = self.police(12.5, 400);
-            let (_, hh) = dessin::mesurer(v::AUCUNE_FENETRE, &ft, Some((cl - 32.0 * s) as i32));
-            let bh = hh as f32 + 36.0 * s;
-            corps.push(Dessin::Rect(cx, cy, cl, bh, 14.0 * s, Peinture::Unie(Couleur::hex("#0AFFFFFF"))));
+            let (_, hh) = dessin::mesurer(v::AUCUNE_FENETRE, &ft, Some((cl - 28.0 * s) as i32));
+            let bh = hh as f32 + 28.0 * s;
+            corps.push(Dessin::Rect(cx, cy, cl, bh, 12.0 * s, Peinture::Unie(Couleur::hex("#0AFFFFFF"))));
             corps.push(Dessin::Texte(
                 v::AUCUNE_FENETRE.into(),
                 ft,
                 Couleur::hex("#A6A1BC"),
-                cx + 16.0 * s,
-                cy + 18.0 * s,
-                cl - 32.0 * s,
+                cx + 14.0 * s,
+                cy + 14.0 * s,
+                cl - 28.0 * s,
                 hh as f32,
                 Mise::Lignes,
             ));
             cy += bh;
         }
         for li in &m.lignes {
-            let rh = 46.0 * s;
-            let fond = Couleur::hex(if li.en_ligne { "#12FFFFFF" } else { "#06FFFFFF" });
-            corps.push(Dessin::Rect(cx, cy, cl, rh, 12.0 * s, Peinture::Unie(fond)));
-            let bord = if !li.nom.is_empty() && self.glisse.is_some() && self.cible.as_deref() == Some(li.nom.as_str())
-            {
-                p
-            } else {
-                Couleur::hex("#14FFFFFF")
-            };
-            corps.push(Dessin::Bord(cx, cy, cl, rh, 12.0 * s, 1.0 * s, Peinture::Unie(bord)));
-            let mut x = cx + 10.0 * s;
-            let icones = Police {
-                familles: "Segoe Fluent Icons, Segoe MDL2 Assets",
-                taille: (13.0 * s).round() as i32,
-                graisse: 400,
-            };
+            let rh = 42.0 * s;
+            let fond = Couleur::hex(if li.devant { "#1400E5FF" } else { "#10FFFFFF" });
+            corps.push(Dessin::Rect(cx, cy, cl, rh, 11.0 * s, Peinture::Unie(fond)));
+            let cible = !li.nom.is_empty() && self.glisse.is_some() && self.cible.as_deref() == Some(li.nom.as_str());
+            let bord =
+                if cible || li.devant { p.opacite(if cible { 1.0 } else { 0.55 }) } else { Couleur::hex("#14FFFFFF") };
+            corps.push(Dessin::Bord(cx, cy, cl, rh, 11.0 * s, 1.0 * s, Peinture::Unie(bord)));
+            let mut x = cx + 9.0 * s;
             if !li.nom.is_empty() {
                 corps.push(Dessin::Texte(
                     "\u{E76F}".into(),
-                    icones,
+                    icones(12.0),
                     Couleur::hex("#655E7E"),
                     x,
                     cy,
-                    14.0 * s,
+                    13.0 * s,
                     rh,
                     Mise::Centre,
                 ));
-                self.zones.push(((x - 4.0 * s, cy, 22.0 * s, rh), Zone::Poignee(li.nom.clone())));
+                self.zones.push(((x - 4.0 * s, cy, 21.0 * s, rh), Zone::Poignee(li.nom.clone())));
                 self.zones.push(((cx, cy, cl, rh), Zone::Ligne(li.nom.clone())));
             }
-            x += 14.0 * s + 10.0 * s;
-            corps.push(Dessin::Texte(li.numero.clone(), self.police(13.0, 700), p, x, cy, 18.0 * s, rh, Mise::Ligne));
-            x += 18.0 * s;
+            self.zones.push(((cx, cy, cl, rh), Zone::Afficher(li.hwnd)));
+            x += 13.0 * s + 8.0 * s;
+            corps.push(Dessin::Texte(li.numero.clone(), self.police(12.5, 700), p, x, cy, 14.0 * s, rh, Mise::Ligne));
+            x += 14.0 * s + 4.0 * s;
             corps.push(Dessin::Pastille(
                 li.pastille.initiale.clone(),
                 li.pastille.couleur,
+                li.pastille.id_classe,
                 x + 15.0 * s,
                 cy + rh / 2.0,
                 15.0 * s,
-                if li.en_ligne { 1.0 } else { 0.4 },
+                1.0,
             ));
-            x += 30.0 * s + 10.0 * s;
-            let fb = self.police(12.5, 600);
-            let (bl, _) = match &li.bouton {
-                BoutonLigne::Afficher(_) => dessin::mesurer("Afficher", &fb, None),
-                BoutonLigne::Retirer(_) => dessin::mesurer("Retirer", &fb, None),
-                BoutonLigne::Aucun => (0, 0),
-            };
-            let bw = if bl > 0 { bl as f32 + 28.0 * s } else { 0.0 };
-            let info_l = cl - (x - cx) - bw - 20.0 * s;
-            let fnom = self.police(13.5, 600);
+            x += 30.0 * s + 9.0 * s;
+            // La touche du perso, à droite
+            let mut bw = 0.0;
+            if let Some(k) = &li.touche {
+                let (tl, tth) = dessin::mesurer(&k.bouton, &mono(11.5), None);
+                bw = (tl as f32 + 18.0 * s).max(46.0 * s).min(cl * 0.45);
+                let bh = tth as f32 + 9.0 * s;
+                let bb = (cx + cl - 9.0 * s - bw, cy + (rh - bh) / 2.0, bw, bh);
+                corps.push(Dessin::Touche(k.bouton.clone(), bb, k.en_choix, k.vide));
+                infobulles.push((bb, if k.refusee { v::DEJA_PRISE } else { v::TOUCHE_AIDE }));
+                self.zones.push((bb, Zone::Touche(k.action.clone())));
+            }
+            let info_l = cl - (x - cx) - bw - 18.0 * s;
             corps.push(Dessin::Texte(
                 li.titre.clone(),
-                fnom,
-                if li.en_ligne { blanc } else { gris },
+                self.police(13.0, 600),
+                blanc,
                 x,
-                cy + 6.0 * s,
+                cy + 5.0 * s,
                 info_l,
-                18.0 * s,
+                17.0 * s,
                 Mise::Ligne,
             ));
-            let fe = self.police(11.5, 400);
+            let refus = li.touche.as_ref().is_some_and(|k| k.refusee);
+            let (etat, couleur_etat) = if refus {
+                ("Touche déjà prise par un autre programme".to_string(), Couleur::hex("#F04438"))
+            } else if li.devant {
+                (format!("{}  ·  devant", li.etat), Couleur::hex("#22D37A"))
+            } else {
+                (li.etat.clone(), Couleur::hex("#22D37A"))
+            };
             corps.push(Dessin::Texte(
-                li.etat.clone(),
-                fe,
-                if li.etat_ok { Couleur::hex("#22D37A") } else { gris },
+                etat,
+                self.police(11.0, 400),
+                couleur_etat,
                 x,
-                cy + 24.0 * s,
+                cy + 22.0 * s,
                 info_l,
-                16.0 * s,
+                15.0 * s,
                 Mise::Ligne,
             ));
-            if bw > 0.0 {
-                let bx = cx + cl - 10.0 * s - bw;
-                let bb = (bx, cy + (rh - 30.0 * s) / 2.0, bw, 30.0 * s);
-                let texte = if matches!(li.bouton, BoutonLigne::Afficher(_)) { "Afficher" } else { "Retirer" };
-                let z = Zone::Bouton(li.bouton.clone());
-                corps.push(Dessin::Bouton(texte.into(), bb, self.survol.as_ref() == Some(&z)));
-                if matches!(li.bouton, BoutonLigne::Retirer(_)) {
-                    infobulles.push((bb, v::RETIRER_AIDE));
-                }
-                self.zones.push((bb, z));
-            }
-            cy += rh + 6.0 * s;
+            cy += rh + 5.0 * s;
         }
-        let fin_gauche = cy + 18.0 * s - 6.0 * s;
-        self.carte(&mut t, x0, debut_carte, gauche_l, fin_gauche - debut_carte);
+        let fin_1 = cy + 15.0 * s - 5.0 * s;
+        self.carte(&mut t, xa, haut, l1, fin_1 - haut);
         self.peindre(&mut t, corps);
 
-        // ------------------------------------------------ Raccourcis
-        let (cx, cl) = (xd + 20.0 * s, droite_l - 40.0 * s);
-        let mut cy = haut + 18.0 * s;
+        // ------------------------------------------------ Raccourcis (perso suivant, précédent)
+        let (cx, cl) = (xb + marge, l2 - 2.0 * marge);
+        let mut cy = haut + 14.0 * s;
         let mut corps = Vec::new();
         cy = self.entete_carte(&mut corps, cx, cy, cl, v::RACCOURCIS_TITRE, v::RACCOURCIS_NOTE, self.theme.s);
         for k in &m.touches {
-            if let Some((titre, note)) = k.titre_avant {
-                let f = self.police(12.0, 600);
-                cy += 8.0 * s;
-                corps.push(Dessin::Texte(titre.into(), f, gris, cx, cy, cl, 16.0 * s, Mise::Ligne));
-                cy += 16.0 * s + 8.0 * s;
-                if let Some(note) = note {
-                    let fnote = self.police(11.5, 400);
-                    let (_, nh) = dessin::mesurer(note, &fnote, Some(cl as i32));
-                    corps.push(Dessin::Texte(note.into(), fnote, gris, cx, cy, cl, nh as f32, Mise::Lignes));
-                    cy += nh as f32 + 8.0 * s;
-                }
-            }
-            let fm = Police { familles: "Cascadia Code, Consolas", taille: (12.0 * s).round() as i32, graisse: 700 };
-            let (tl, th) = dessin::mesurer(&k.bouton, &fm, None);
-            // (une touche très longue : le bouton ne prend pas plus de 70 % de la ligne, son texte finit par « ... »)
-            let bw = (tl as f32 + 20.0 * s).max(70.0 * s).min(cl * 0.7);
-            let bh = th as f32 + 8.0 * s + 3.0 * s;
+            let (tl, tth) = dessin::mesurer(&k.bouton, &mono(11.5), None);
+            let bw = (tl as f32 + 18.0 * s).max(60.0 * s).min(cl * 0.55);
+            let bh = tth as f32 + 9.0 * s;
             let ll = cl - bw - 8.0 * s;
-            let fr = self.police(11.5, 400);
+            let fr = self.police(11.0, 400);
             let hr = if k.refusee { dessin::mesurer(v::DEJA_PRISE, &fr, Some(ll as i32)).1 as f32 } else { 0.0 };
-            let lh = if k.refusee { 21.0 * s + hr } else { 20.0 * s };
+            let lh = if k.refusee { 19.0 * s + hr } else { 18.0 * s };
             let rh = bh.max(lh);
-            let fl = self.police(13.0, 600);
             corps.push(Dessin::Texte(
                 k.libelle.clone(),
-                fl,
+                self.police(12.5, 600),
                 Couleur::hex("#EEEBF7"),
                 cx,
                 cy + (rh - lh) / 2.0,
                 ll,
-                20.0 * s,
+                18.0 * s,
                 Mise::Ligne,
             ));
             if k.refusee {
@@ -384,7 +397,7 @@ impl FenetreVue {
                     fr,
                     Couleur::hex("#F04438"),
                     cx,
-                    cy + (rh - lh) / 2.0 + 21.0 * s,
+                    cy + (rh - lh) / 2.0 + 19.0 * s,
                     ll,
                     hr,
                     Mise::Lignes,
@@ -392,39 +405,249 @@ impl FenetreVue {
             }
             let bb = (cx + cl - bw, cy + (rh - bh) / 2.0, bw, bh);
             corps.push(Dessin::Touche(k.bouton.clone(), bb, k.en_choix, k.vide));
-            infobulles.push((bb, k.aide));
+            infobulles.push((bb, v::TOUCHE_AIDE));
             self.zones.push((bb, Zone::Touche(k.action.clone())));
             cy += rh + 8.0 * s;
         }
-        let fin_r = cy + 18.0 * s - 8.0 * s;
-        self.carte(&mut t, xd, haut, droite_l, fin_r - haut);
+        let fin_r = cy + 15.0 * s - 8.0 * s;
+        self.carte(&mut t, xb, haut, l2, fin_r - haut);
         self.peindre(&mut t, corps);
 
-        // ------------------------------------------------ Barre flottante
-        let haut_b = fin_r + 16.0 * s;
-        let mut cy = haut_b + 18.0 * s;
+        // ------------------------------------------------ Barre flottante, sous les raccourcis
+        let haut_b = fin_r + ecart;
+        let mut cy = haut_b + 14.0 * s;
         let mut corps = Vec::new();
-        cy = self.entete_carte(&mut corps, cx, cy, cl, v::BARRE_TITRE, v::BARRE_NOTE, self.theme.t);
+        cy = self.entete_carte(&mut corps, cx, cy, cl, v::BARRE_TITRE, v::BARRE_NOTE, self.theme.p);
+        // (l'aperçu de la barre : les logos des persos connectés, celui devant mis en avant)
+        let nommes: Vec<&v::Ligne> = m.lignes.iter().filter(|x| !x.nom.is_empty()).collect();
+        if !nommes.is_empty() {
+            let r = 11.0 * s;
+            let pas = 2.0 * r + 3.0 * s;
+            let par_ligne = (((cl - 14.0 * s) / pas).floor() as usize).max(1);
+            let lignes_b = nommes.len().div_ceil(par_ligne);
+            let bl = (nommes.len().min(par_ligne) as f32) * pas + 11.0 * s;
+            let bh = lignes_b as f32 * pas + 7.0 * s;
+            corps.push(Dessin::Rect(
+                cx,
+                cy,
+                bl,
+                bh,
+                bh.min(2.0 * r + 10.0 * s) / 2.0,
+                Peinture::Unie(Couleur::hex("#EB0C0920")),
+            ));
+            corps.push(Dessin::Bord(
+                cx,
+                cy,
+                bl,
+                bh,
+                bh.min(2.0 * r + 10.0 * s) / 2.0,
+                1.0 * s,
+                Peinture::Unie(p.opacite(0.35)),
+            ));
+            for (i, li) in nommes.iter().enumerate() {
+                let (col, lig) = (i % par_ligne, i / par_ligne);
+                let px = cx + 7.0 * s + col as f32 * pas + r;
+                let py = cy + 5.0 * s + lig as f32 * pas + r;
+                corps.push(Dessin::Pastille(
+                    li.pastille.initiale.clone(),
+                    li.pastille.couleur,
+                    li.pastille.id_classe,
+                    px,
+                    py,
+                    r,
+                    if li.devant { 1.0 } else { 0.75 },
+                ));
+                if li.devant {
+                    corps.push(Dessin::Anneau(px, py, r + 1.5 * s, p));
+                }
+            }
+            cy += bh + 10.0 * s;
+        }
         cy = self.interrupteur(&mut corps, cx, cy, cl, v::BARRE, v::BARRE_SOUS, m.barre, Zone::Barre);
         cy = self.interrupteur(&mut corps, cx, cy, cl, v::TOUJOURS, v::TOUJOURS_SOUS, m.toujours, Zone::Toujours);
-        let f = self.police(12.0, 400);
-        let (_, hh) = dessin::mesurer(v::PLEIN_ECRAN, &f, Some(cl as i32));
-        corps.push(Dessin::Texte(v::PLEIN_ECRAN.into(), f, gris, cx, cy, cl, hh as f32, Mise::Lignes));
-        cy += hh as f32 + 8.0 * s + 4.0 * s;
-        let fb = self.police(12.5, 600);
+        let fb = self.police(12.0, 600);
         let (bl, _) = dessin::mesurer(v::REMETTRE, &fb, None);
-        let bb = (cx, cy, (bl as f32 + 28.0 * s).min(cl), 32.0 * s);
+        let bb = (cx, cy, (bl as f32 + 24.0 * s).min(cl), 30.0 * s);
         corps.push(Dessin::Bouton(v::REMETTRE.into(), bb, self.survol == Some(Zone::Remettre)));
+        infobulles.push((bb, v::PLEIN_ECRAN));
         self.zones.push((bb, Zone::Remettre));
-        cy += 32.0 * s;
-        let fin_b = cy + 18.0 * s;
-        self.carte(&mut t, xd, haut_b, droite_l, fin_b - haut_b);
+        cy += 30.0 * s;
+        let fin_b = cy + 15.0 * s;
+        self.carte(&mut t, xb, haut_b, l2, fin_b - haut_b);
+        self.peindre(&mut t, corps);
+
+        // ------------------------------------------------ Boutons de souris
+        let (cx, cl) = (xc + marge, l3 - 2.0 * marge);
+        let mut cy = haut + 14.0 * s;
+        let mut corps = Vec::new();
+        cy = self.entete_carte(&mut corps, cx, cy, cl, v::SOURIS_TITRE, v::SOURIS_NOTE, self.theme.t);
+        if let Some(c) = &m.creation {
+            // Les deux grandes cases : le bouton de souris, puis la touche du jeu
+            let fl = 26.0 * s;
+            let tl = (cl - fl) / 2.0;
+            let th2 = 104.0 * s;
+            for (i, (titre, glyphe, valeur, active)) in [
+                (
+                    v::CASE_SOURIS,
+                    "\u{E962}",
+                    if c.etape == 1 { v::EN_ATTENTE.to_string() } else { c.bouton.clone() },
+                    c.etape == 1,
+                ),
+                (
+                    v::CASE_TOUCHE,
+                    "\u{E765}",
+                    if c.etape == 2 { v::EN_ATTENTE.to_string() } else { "?".to_string() },
+                    c.etape == 2,
+                ),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let x = cx + i as f32 * (tl + fl);
+                let fond = if active { p.opacite(0.08) } else { Couleur::hex("#08FFFFFF") };
+                let bord = if active { p } else { Couleur::hex("#17FFFFFF") };
+                corps.push(Dessin::Rect(x, cy, tl, th2, 12.0 * s, Peinture::Unie(fond)));
+                corps.push(Dessin::Bord(x, cy, tl, th2, 12.0 * s, 1.0 * s, Peinture::Unie(bord)));
+                let op = if active || i == 0 { 1.0 } else { 0.45 };
+                corps.push(Dessin::Texte(
+                    titre.to_uppercase(),
+                    self.police(10.5, 700),
+                    gris.opacite(op),
+                    x,
+                    cy + 9.0 * s,
+                    tl,
+                    14.0 * s,
+                    Mise::Centre,
+                ));
+                corps.push(Dessin::Texte(
+                    glyphe.into(),
+                    icones(24.0),
+                    blanc.opacite(op),
+                    x,
+                    cy + 26.0 * s,
+                    tl,
+                    34.0 * s,
+                    Mise::Centre,
+                ));
+                let (vl, vh) = dessin::mesurer(&valeur, &mono(11.5), None);
+                let bw = (vl as f32 + 18.0 * s).min(tl - 12.0 * s);
+                let bh = vh as f32 + 9.0 * s;
+                let bb = (x + (tl - bw) / 2.0, cy + 68.0 * s, bw, bh);
+                corps.push(Dessin::Touche(valeur, bb, active, !active && i == 1));
+            }
+            corps.push(Dessin::Texte(
+                "→".into(),
+                self.police(18.0, 700),
+                self.theme.s,
+                cx + tl,
+                cy,
+                fl,
+                th2,
+                Mise::Centre,
+            ));
+            cy += th2 + 10.0 * s;
+            let consigne = if c.etape == 1 { v::ETAPE_SOURIS } else { v::ETAPE_TOUCHE };
+            let fc = self.police(12.5, 600);
+            let (_, ch) = dessin::mesurer(consigne, &fc, Some(cl as i32));
+            corps.push(Dessin::Texte(
+                consigne.into(),
+                fc,
+                Couleur::hex("#EEEBF7"),
+                cx,
+                cy,
+                cl,
+                ch as f32,
+                Mise::Lignes,
+            ));
+            cy += ch as f32 + 10.0 * s;
+            let (al, _) = dessin::mesurer(v::ANNULER, &self.police(12.0, 600), None);
+            let ab = (cx + cl - al as f32 - 24.0 * s, cy, al as f32 + 24.0 * s, 30.0 * s);
+            corps.push(Dessin::Bouton(v::ANNULER.into(), ab, self.survol == Some(Zone::Annuler)));
+            self.zones.push((ab, Zone::Annuler));
+            cy += 30.0 * s;
+        } else {
+            // Les pastilles, deux par ligne : « bouton → touche ✕ »
+            let ecart_p = 6.0 * s;
+            let pl = (cl - ecart_p) / 2.0;
+            let ph = 28.0 * s;
+            for (i, pu) in m.puces.iter().enumerate() {
+                let x = cx + (i % 2) as f32 * (pl + ecart_p);
+                let y = cy + (i / 2) as f32 * (ph + ecart_p);
+                corps.push(Dessin::Rect(x, y, pl, ph, 9.0 * s, Peinture::Unie(Couleur::hex("#0CFFFFFF"))));
+                corps.push(Dessin::Bord(x, y, pl, ph, 9.0 * s, 1.0 * s, Peinture::Unie(Couleur::hex("#14FFFFFF"))));
+                let xl = 20.0 * s;
+                let (kl, kh) = dessin::mesurer(&pu.touche, &mono(11.0), None);
+                let kw = (kl as f32 + 22.0 * s).max(30.0 * s).min(pl * 0.45);
+                let kb = (x + pl - xl - 4.0 * s - kw, y + (ph - kh as f32 - 6.0 * s) / 2.0, kw, kh as f32 + 6.0 * s);
+                let bx = x + 6.0 * s;
+                corps.push(Dessin::Texte("\u{E962}".into(), icones(11.0), gris, bx, y, 13.0 * s, ph, Mise::Centre));
+                let bl_ = kb.0 - bx - 16.0 * s - 18.0 * s;
+                let couleur_b = if pu.choix_bouton { p } else { Couleur::hex("#EEEBF7") };
+                corps.push(Dessin::Texte(
+                    pu.bouton.clone(),
+                    self.police(11.5, 600),
+                    couleur_b,
+                    bx + 16.0 * s,
+                    y,
+                    bl_,
+                    ph,
+                    Mise::Ligne,
+                ));
+                self.zones.push(((bx, y, bl_ + 16.0 * s, ph), Zone::PuceBouton(pu.id.clone())));
+                corps.push(Dessin::Texte(
+                    "→".into(),
+                    self.police(12.0, 700),
+                    self.theme.s,
+                    kb.0 - 18.0 * s,
+                    y,
+                    16.0 * s,
+                    ph,
+                    Mise::Centre,
+                ));
+                corps.push(Dessin::Touche(pu.touche.clone(), kb, pu.choix_touche, false));
+                self.zones.push((kb, Zone::PuceTouche(pu.id.clone())));
+                let xb_ = (x + pl - xl, y, xl, ph);
+                let couleur_x =
+                    if self.survol == Some(Zone::Enlever(pu.id.clone())) { Couleur::hex("#F04438") } else { gris };
+                corps.push(Dessin::Texte(
+                    "\u{E711}".into(),
+                    icones(9.0),
+                    couleur_x,
+                    xb_.0,
+                    y,
+                    xl - 4.0 * s,
+                    ph,
+                    Mise::Centre,
+                ));
+                self.zones.push((xb_, Zone::Enlever(pu.id.clone())));
+                infobulles.push(((x, y, pl - xl, ph), v::PUCE_AIDE));
+                infobulles.push((xb_, v::ENLEVER_AIDE));
+            }
+            if !m.puces.is_empty() {
+                cy += m.puces.len().div_ceil(2) as f32 * (ph + ecart_p) + 4.0 * s;
+            }
+            if m.plein {
+                let fp = self.police(11.5, 400);
+                let (_, hp) = dessin::mesurer(v::PLEIN, &fp, Some(cl as i32));
+                corps.push(Dessin::Texte(v::PLEIN.into(), fp, gris, cx, cy, cl, hp as f32, Mise::Lignes));
+                cy += hp as f32;
+            } else {
+                let fa = self.police(12.0, 600);
+                let (al, _) = dessin::mesurer(v::AJOUTER, &fa, None);
+                let ab = (cx, cy, al as f32 + 26.0 * s, 30.0 * s);
+                corps.push(Dessin::Ajouter(v::AJOUTER.into(), ab, self.survol == Some(Zone::Ajouter)));
+                self.zones.push((ab, Zone::Ajouter));
+                cy += 30.0 * s;
+            }
+        }
+        let fin_3 = cy + 15.0 * s;
+        self.carte(&mut t, xc, haut, l3, fin_3 - haut);
         self.peindre(&mut t, corps);
 
         // ------------------------------------------------ La note du bas
-        let bas = fin_gauche.max(fin_b) + 16.0 * s;
-        let f = self.police(12.0, 400);
-        let (_, nh) = dessin::mesurer(v::NOTE_BAS, &f, Some((l as f32 - 2.0 * x0 - 4.0 * s) as i32));
+        let bas = fin_1.max(fin_b).max(fin_3) + 12.0 * s;
+        let f = self.police(11.5, 400);
+        let (_, nh) = dessin::mesurer(v::NOTE_BAS, &f, Some((largeur - 4.0 * s) as i32));
         dessin::ecrire(
             &mut t,
             v::NOTE_BAS,
@@ -432,11 +655,11 @@ impl FenetreVue {
             Couleur::hex("#655E7E"),
             (x0 + 4.0 * s) as i32,
             bas as i32,
-            (l as f32 - 2.0 * x0 - 4.0 * s) as i32,
+            (largeur - 4.0 * s) as i32,
             nh,
             Mise::Lignes,
         );
-        self.hauteur = bas + nh as f32 + 8.0 * s + 16.0 * s - dy;
+        self.hauteur = bas + nh as f32 + 14.0 * s - dy;
         self.toile = t;
         self.infobulles(&infobulles);
         unsafe {
@@ -548,7 +771,30 @@ impl FenetreVue {
                     dessin::ecrire(t, &tx, &f, c, x as i32, y as i32, l.ceil() as i32, h.ceil() as i32, mise)
                 }
                 Dessin::Point(x, y, c) => t.disque(x, y, 4.5 * s, &Peinture::Unie(c)),
-                Dessin::Pastille(ini, col, x, y, r, op) => {
+                Dessin::Anneau(x, y, r, c) => t.cercle(x, y, r, 1.5 * s, &Peinture::Unie(c)),
+                Dessin::Ajouter(tx, b, survol) => {
+                    let r = self.theme.rayon(10.0, 2.0) * s;
+                    t.rect_arrondi(b.0, b.1, b.2, b.3, r, &Peinture::Unie(p.opacite(if survol { 0.16 } else { 0.08 })));
+                    t.contour_arrondi(b.0, b.1, b.2, b.3, r, 1.0 * s, &Peinture::Unie(p.opacite(0.5)));
+                    dessin::ecrire(
+                        t,
+                        &tx,
+                        &self.police(12.0, 600),
+                        p,
+                        b.0 as i32,
+                        b.1 as i32,
+                        b.2 as i32,
+                        b.3 as i32,
+                        Mise::Centre,
+                    );
+                }
+                // (le logo de la classe s'il est là, sinon l'initiale sur la couleur de la classe)
+                Dessin::Pastille(_, _, id, x, y, r, op) if super::logos::logo(id).is_some() => {
+                    if let Some(lg) = super::logos::logo(id) {
+                        t.coller_echelle(&lg, x - r, y - r, 2.0 * r, 2.0 * r, op);
+                    }
+                }
+                Dessin::Pastille(ini, col, _, x, y, r, op) => {
                     t.disque(
                         x,
                         y,
@@ -679,6 +925,7 @@ impl FenetreVue {
         // (les boutons d'abord, puis la poignée, puis la ligne entière)
         let mut l: Vec<&(Boite, Zone)> = self.zones.iter().filter(|(b, _)| dans(*b, x, y)).collect();
         l.sort_by_key(|(_, z)| match z {
+            Zone::Afficher(_) => 3,
             Zone::Ligne(_) => 2,
             Zone::Poignee(_) => 1,
             _ => 0,
@@ -734,7 +981,12 @@ enum Dessin {
     Bord(f32, f32, f32, f32, f32, f32, Peinture),
     Texte(String, Police, Couleur, f32, f32, f32, f32, Mise),
     Point(f32, f32, Couleur),
-    Pastille(String, &'static str, f32, f32, f32, f32),
+    /// Initiale, couleur, numéro de la classe (pour son logo), centre, rayon, opacité.
+    Pastille(String, &'static str, u32, f32, f32, f32, f32),
+    /// Un anneau (le perso devant, dans l'aperçu de la barre).
+    Anneau(f32, f32, f32, Couleur),
+    /// « + Ajouter un bouton ».
+    Ajouter(String, (f32, f32, f32, f32), bool),
     Bouton(String, (f32, f32, f32, f32), bool),
     Touche(String, (f32, f32, f32, f32), bool, bool),
     Interrupteur((f32, f32, f32, f32), bool),
@@ -806,7 +1058,7 @@ fn evenement(e: &mut Etat, m: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
             }
             let c = match fv.zone(pt.x as f32, pt.y as f32) {
                 Some(Zone::Poignee(_)) => IDC_SIZEALL,
-                Some(Zone::Ligne(_)) | None => IDC_ARROW,
+                None => IDC_ARROW,
                 Some(_) => IDC_HAND,
             };
             unsafe {
@@ -848,7 +1100,15 @@ fn evenement(e: &mut Etat, m: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
                 return Some(LRESULT(0));
             }
             let h = fv.h;
+            let lignes: Vec<(String, isize)> = fv.modele.lignes.iter().map(|l| (l.nom.clone(), l.hwnd)).collect();
             let Etat { veille, bureau, .. } = e;
+            let choisir = |veille: &mut crate::organizer::veille::Veille, bureau: &mut super::BureauWin, a: String| {
+                veille.capture = Some(a);
+                veille.montrer_vue(bureau, true);
+                unsafe {
+                    let _ = SetFocus(Some(hwnd(h)));
+                }
+            };
             match z.unwrap() {
                 Zone::Activer => {
                     let on = !veille.config.on;
@@ -867,21 +1127,36 @@ fn evenement(e: &mut Etat, m: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
                     bureau.barre.recentrer();
                     bureau.partage_statut(v::REMISE);
                 }
-                Zone::Bouton(BoutonLigne::Afficher(hw)) => veille.afficher_fenetre(bureau, hw),
-                Zone::Bouton(BoutonLigne::Retirer(n)) => veille.retirer(bureau, &n),
-                Zone::Touche(a) => {
-                    veille.capture = Some(a);
-                    veille.montrer_vue(bureau, true);
+                Zone::Afficher(hw) => veille.afficher_fenetre(bureau, hw),
+                Zone::Ligne(n) => {
+                    if let Some((_, hw)) = lignes.iter().find(|(x, _)| *x == n) {
+                        veille.afficher_fenetre(bureau, *hw);
+                    }
+                }
+                Zone::Touche(a) => choisir(veille, bureau, a),
+                Zone::PuceBouton(sid) => choisir(veille, bureau, sid),
+                Zone::PuceTouche(sid) => choisir(veille, bureau, format!("E{}", &sid[1..])),
+                Zone::Enlever(sid) => veille.supprimer_simulee(bureau, &sid),
+                Zone::Ajouter => {
+                    veille.commencer_creation(bureau);
                     unsafe {
                         let _ = SetFocus(Some(hwnd(h)));
                     }
                 }
-                _ => {}
+                Zone::Annuler => veille.annuler_choix(bureau),
+                Zone::Poignee(_) => {}
             }
             Some(LRESULT(0))
         }
         WM_KEYDOWN | WM_SYSKEYDOWN if e.veille.capture.is_some() => {
             let Etat { veille, bureau, .. } = e;
+            // (le bouton d'une touche simulée se choisit à la souris : au clavier, seul Échap compte)
+            if !veille.capture_clavier() {
+                if wp.0 as u32 == 0x1B {
+                    veille.annuler_choix(bureau);
+                }
+                return Some(LRESULT(0));
+            }
             match touche_capturee(wp.0 as u32, modificateurs()) {
                 Capture::Attendre => {}
                 Capture::Annuler => veille.annuler_choix(bureau),
@@ -921,8 +1196,8 @@ unsafe extern "system" fn proc_vue(h: HWND, m: u32, wp: WPARAM, lp: LPARAM) -> L
         WM_GETMINMAXINFO => {
             let i = unsafe { &mut *(lp.0 as *mut MINMAXINFO) };
             let s = unsafe { GetDpiForWindow(h) }.max(96) as i32;
-            i.ptMinTrackSize.x = 760 * s / 96;
-            i.ptMinTrackSize.y = 480 * s / 96;
+            i.ptMinTrackSize.x = 1000 * s / 96;
+            i.ptMinTrackSize.y = 560 * s / 96;
             return LRESULT(0);
         }
         _ => {}
