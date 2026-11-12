@@ -652,9 +652,9 @@ mod tests {
     }
 
     /// (12/11, essai réel cas 8) Nevermind 1.11.0 tout juste lancé : il tient son verrou mais n'a pas encore créé
-    /// %LOCALAPPDATA%\OptiGame. Le lancement caché abandonné note dans l'ancien dossier (celui de la copie ouverte),
-    /// sans créer le nouveau : sinon, au lancement suivant, le nouveau dossier existe et les données d'OptiGame ne
-    /// sont jamais déplacées.
+    /// l'ancien dossier de données. Le lancement caché abandonné note dans l'ancien dossier (celui de la copie
+    /// ouverte), sans créer le nouveau : sinon, au lancement suivant, le nouveau dossier existe et les anciennes
+    /// données ne sont jamais déplacées.
     #[test]
     fn copie_ouverte_sans_dossier_encore_la_note_va_dans_l_ancien() {
         let e = Essai::nouveau("ouverte-sans-dossier");
