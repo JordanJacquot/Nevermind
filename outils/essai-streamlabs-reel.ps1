@@ -60,13 +60,30 @@ function Get-ProcessusStreamlabs {
             $_.Name -eq 'Streamlabs OBS.exe' -or ($_.Name -in 'obs64.exe', 'crash-handler-process.exe' -and [string]$_.ExecutablePath -match 'Streamlabs|obs-studio-node')
         })
 }
+# Pour comprendre un lancement raté : les processus (fenêtre, ligne de commande) et la fin du journal de Streamlabs
+function Show-Lancement {
+    foreach ($p in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { [string]$_.ExecutablePath -match 'Streamlabs|slobs|updater' -or $_.Name -match 'updater|Streamlabs' })) {
+        $titre = ''; try { $titre = (Get-Process -Id $p.ProcessId -ErrorAction Stop).MainWindowTitle } catch {}
+        $cl = [string]$p.CommandLine; if ($cl.Length -gt 300) { $cl = $cl.Substring(0, 300) + '...' }
+        Write-Detail "processus $($p.ProcessId) $($p.Name) fenêtre « $titre » : $cl"
+    }
+    foreach ($j in @(Get-ChildItem -LiteralPath $Reglages -Recurse -File -Filter '*.log' -ErrorAction SilentlyContinue | Where-Object { $_.Length -lt 2MB })) {
+        Write-Detail "--- $($j.FullName.Substring($Reglages.Length + 1)) (fin)"
+        foreach ($l in @(Get-Content -LiteralPath $j.FullName -Tail 60 -ErrorAction SilentlyContinue)) { Write-Detail "    $l" }
+    }
+}
 function Test-Tube { try { @([IO.Directory]::GetFiles('\\.\pipe\')) -contains '\\.\pipe\slobs' } catch { $false } }
 function Start-Streamlabs([string]$Nom) {
     $exe = Join-Path $script:Installe 'Streamlabs OBS.exe'
     $p = Start-Process -FilePath $exe -PassThru -WorkingDirectory $script:Installe
     Write-Detail "Streamlabs lancé ($Nom), processus $($p.Id)"
-    $tube = Wait-Jusque { Test-Tube } 240
-    if (-not $tube) { Write-Note "le tube \\.\pipe\slobs n'est pas apparu en 240 s ($Nom)"; Save-Capture "$Nom-sans-tube"; return $false }
+    $tube = Wait-Jusque { Test-Tube } 150
+    if (-not $tube) {
+        Write-Note "le tube \\.\pipe\slobs n'est pas apparu en 150 s ($Nom)"
+        Save-Capture "$Nom-sans-tube"
+        Show-Lancement
+        return $false
+    }
     # (le tube est là tôt : on attend que l'API réponde, puis que le moteur ait fini de charger)
     $pret = Wait-Jusque { $null -ne (Invoke-Slobs 'getModel' 'StreamingService' -Silencieux) } 120
     Start-Sleep -Seconds 10
@@ -272,6 +289,7 @@ if (@(Get-ProcessusStreamlabs).Count) { [void](Stop-Streamlabs 'après installat
 Write-Partie '2. Premier lancement : Streamlabs crée ses réglages'
 $lance = Start-Streamlabs 'premier'
 Test-Cas 'Streamlabs démarre et son API répond (\\.\pipe\slobs)' { $lance }
+if (-not $lance) { [void](Stop-Streamlabs 'premier'); Show-Fichiers 'premier lancement raté'; Write-Host 'Streamlabs ne démarre pas : essai arrêté.' -ForegroundColor Red; exit 1 }
 foreach ($r in 'SettingsService', 'VideoSettingsService', 'StreamingService', 'StreamSettingsService', 'DualOutputService', 'VideoService', 'OutputSettingsService', 'UserService', 'OnboardingService', 'AppService') {
     Show-Api 'getModel' $r
 }
