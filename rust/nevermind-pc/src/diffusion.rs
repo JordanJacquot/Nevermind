@@ -27,19 +27,29 @@ pub struct Cases {
     pub demarrage: Vec<(Demarrage, String, &'static str)>,
 }
 
-/// `Build-GamingTab` : chaque réglage, fait ou pas, coché par défaut s'il est conseillé
-pub fn lire_reglages(pc: &mut dyn Pc, build: i64, plan_cree: Option<&str>, c: &mut Cases) {
-    let anciens = c.reglages.clone();
-    c.reglages = reglages::disponibles(build)
+/// `Build-GamingTab`, la lecture : chaque réglage, fait ou pas (powercfg pour le plan d'alimentation : dans un travail
+/// de fond, jamais sur le fil des blocs ; gels)
+pub fn faits_reglages(pc: &mut dyn Pc, build: i64, plan_cree: Option<&str>) -> Vec<(String, bool)> {
+    reglages::disponibles(build).into_iter().map(|t| (t.id.to_string(), reglages::test(pc, t.id, plan_cree))).collect()
+}
+
+/// `Build-GamingTab`, les cases : chaque réglage lu, coché par défaut s'il est conseillé (une case déjà cochée ou
+/// décochée à la main le reste)
+pub fn prendre_reglages(faits: Vec<(String, bool)>, c: &mut Cases) {
+    let anciens = std::mem::take(&mut c.reglages);
+    c.reglages = faits
         .into_iter()
-        .map(|t| {
-            let ok = reglages::test(pc, t.id, plan_cree);
+        .map(|(id, ok)| {
             let coche = if ok {
                 false
             } else {
-                anciens.iter().find(|(i, f, _)| i == t.id && !f).map(|x| x.2).unwrap_or(t.conseille)
+                anciens
+                    .iter()
+                    .find(|(i, f, _)| *i == id && !f)
+                    .map(|x| x.2)
+                    .unwrap_or_else(|| reglages::reglage(&id).is_some_and(|t| t.conseille))
             };
-            (t.id.to_string(), ok, coche)
+            (id, ok, coche)
         })
         .collect();
 }

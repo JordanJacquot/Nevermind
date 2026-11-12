@@ -865,6 +865,15 @@ fn tout_corriger_ne_fige_pas_pendant_le_point_de_restauration() {
         let mut e = Effets::default();
         assert!(b.action(&ctx, "toutcorriger", &Value::Null, &mut e));
         tout.extend(e.0);
+        // (gels : la relecture pour les autres blocs se fait en fond ; finie avant « Exécuter », comme en vrai)
+        let fin = Instant::now() + Duration::from_secs(10);
+        while b.travail_en_cours() {
+            assert!(Instant::now() < fin, "la relecture ne finit pas");
+            std::thread::sleep(Duration::from_millis(10));
+            let mut e = Effets::default();
+            b.travaux_finis(&ctx, &mut e);
+            tout.extend(e.0);
+        }
         let _ = b.pages(&ctx, "fiche");
         let mut e = Effets::default();
         let debut = Instant::now();
