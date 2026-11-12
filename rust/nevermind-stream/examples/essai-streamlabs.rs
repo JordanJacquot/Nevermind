@@ -7,7 +7,8 @@
 //!
 //!   cargo run -p nevermind-stream --example essai-streamlabs -- <données d'essai> <commande> [...]
 //!
-//! Commandes : `etat` (la page), `regler <envoi en Mb/s> [plateforme]` (la mesure donnée au bloc, puis « Optimiser »),
+//! Commandes : `etat` (la page), `regler <envoi en Mb/s> [plateforme] [image de base LxH]` (la mesure donnée au bloc, puis « Optimiser » ;
+//! l'image de base est celle que Streamlabs donne par son API, pour calculer le plan attendu),
 //! `remettre` (« Remettre comme avant »). Le résultat est écrit en JSON sur la sortie : les annonces, la page, et le plan
 //! que Nevermind a calculé (résolution, images par seconde, débit, encodeur), pour que l'essai vérifie ce que Streamlabs
 //! a vraiment pris. Rien de la clé de stream.
@@ -30,7 +31,7 @@ fn annonces(e: &Effets) -> Vec<String> {
 }
 
 /// Le plan que le bloc calcule (les mêmes entrées : cartes, image de base, plateforme, version de Streamlabs)
-fn plan(envoi_kbps: u32, plateforme: Plateforme) -> Value {
+fn plan(envoi_kbps: u32, plateforme: Plateforme, base: Option<(u32, u32)>) -> Value {
     let s = SystemeReel;
     let Some(i) = s.installations().into_iter().find(|i| i.logiciel == Logiciel::Streamlabs) else {
         return Value::Null;
@@ -40,7 +41,7 @@ fn plan(envoi_kbps: u32, plateforme: Plateforme) -> Value {
     let p = calculer(&Entree {
         envoi_kbps,
         cartes: s.cartes(),
-        base: reglages::base(etat.as_ref(), s.ecran()),
+        base: base.unwrap_or_else(|| reglages::base(etat.as_ref(), s.ecran())),
         plateforme,
         version,
     });
@@ -78,7 +79,8 @@ fn main() {
             if a.get(4).is_some() {
                 b.action(&ctx, "stream:plateforme:streamlabs", &json!(p.id()), &mut e);
             }
-            r["plan"] = plan((envoi * 1000.0).round() as u32, p);
+            let base = a.get(5).and_then(|b| b.split_once('x')).and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)));
+            r["plan"] = plan((envoi * 1000.0).round() as u32, p, base);
             let _ = b.pages(&ctx, "streameur");
             b.action(&ctx, "stream:optimiser:streamlabs", &Value::Null, &mut e);
         }

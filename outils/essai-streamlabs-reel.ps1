@@ -238,23 +238,25 @@ function Invoke-Nevermind([string[]]$Arguments) {
 }
 
 # ---------- ce que Streamlabs a pris (par son API) ----------
-function Get-Formulaire([string]$Categorie) {
-    $r = Invoke-Slobs 'getSettingsFormData' 'SettingsService' @($Categorie) -Silencieux
-    if ($null -eq $r) { return $null }
-    $h = @{}
-    foreach ($g in @($r)) { foreach ($p in @($g.parameters)) { if ($p.name) { $h[$p.name] = $p.value } } }
-    $h
-}
-function Get-Pris {
-    $v = Get-Formulaire 'Video'; $o = Get-Formulaire 'Output'
-    $pris = [ordered]@{ api_video = ($null -ne $v); api_sortie = ($null -ne $o) }
-    if ($v) { foreach ($k in $v.Keys) { $pris["Video.$k"] = $v[$k] } }
-    if ($o) { foreach ($k in $o.Keys) { $pris["Output.$k"] = $o[$k] } }
-    # (la vidéo telle que Streamlabs la garde maintenant : VideoSettingsService, sortie horizontale)
+# La sortie : le formulaire relu dans son moteur (SettingsService.fetchSettingsFromObs, catégorie Output) ; la vidéo :
+# VideoSettingsService.state (sortie horizontale), là où Streamlabs la garde depuis la sortie double
+function Get-Pris([switch]$Muet) {
+    $pris = [ordered]@{}
+    $r = Invoke-Slobs 'fetchSettingsFromObs' 'SettingsService' @('Output') -Silencieux
+    foreach ($g in @($r.formData)) { foreach ($p in @($g.parameters)) { if ($p.name) { $pris["Output.$($p.name)"] = $p.value } } }
     $s = Invoke-Slobs 'state' 'VideoSettingsService' -Silencieux
-    if ($s -and $s.horizontal) { foreach ($p in $s.horizontal.PSObject.Properties) { $pris["V2.$($p.Name)"] = $p.Value } }
-    Write-Detail "Pris par Streamlabs : $($pris | ConvertTo-Json -Compress -Depth 6)"
+    if ($s -and $s.horizontal) { foreach ($p in $s.horizontal.PSObject.Properties) { $pris["Video.$($p.Name)"] = $p.Value } }
+    $m = Invoke-Slobs 'getModel' 'StreamingService' -Silencieux
+    $pris['Etat.enregistrement'] = [string]$m.recordingStatus
+    if (-not $Muet) { Write-Detail "Pris par Streamlabs : $($pris | ConvertTo-Json -Compress -Depth 6)" }
     $pris
+}
+function Get-Valeurs($Pris) { [ordered]@{ sortie = "$($Pris['Video.outputWidth'])x$($Pris['Video.outputHeight'])"; ips = "$($Pris['Video.fpsNum'])/$($Pris['Video.fpsDen'])"; mode = [string]$Pris['Output.Mode']; debit = $(if ($Pris['Output.Mode'] -eq 'Advanced') { [string]$Pris['Output.bitrate'] } else { [string]$Pris['Output.VBitrate'] }); encodeur = $(if ($Pris['Output.Mode'] -eq 'Advanced') { [string]$Pris['Output.Encoder'] } else { [string]$Pris['Output.StreamEncoder'] }); image_cle = [string]$Pris['Output.keyint_sec']; dossier_avance = [string]$Pris['Output.RecFilePath']; dossier_simple = [string]$Pris['Output.FilePath'] } }
+function Show-Valeurs([string]$Titre, $V) { Write-Detail "$Titre : $($V | ConvertTo-Json -Compress)" }
+# Les clés qui diffèrent entre deux relevés (Video.* et Output.*)
+function Get-Differences($A, $B) {
+    @(@($A.Keys) + @($B.Keys) | Sort-Object -Unique | Where-Object { $_ -match '^(Video|Output)\.' -and ([string]($A[$_] | ConvertTo-Json -Compress -Depth 6)) -ne ([string]($B[$_] | ConvertTo-Json -Compress -Depth 6)) } |
+        ForEach-Object { "$_ : $($A[$_] | ConvertTo-Json -Compress -Depth 6) -> $($B[$_] | ConvertTo-Json -Compress -Depth 6)" })
 }
 
 # =====================================================================================================================
@@ -305,63 +307,108 @@ Write-Note "Version de Streamlabs Desktop essayée : $Version"
 [void](Wait-Jusque { -not @(Get-ProcessusStreamlabs).Count } 5)
 if (@(Get-ProcessusStreamlabs).Count) { [void](Stop-Streamlabs 'après installation') }
 
-Write-Partie '2. Premier lancement : Streamlabs crée ses réglages'
+
+Write-Partie '2. Premier lancement : Streamlabs crée ses réglages ; un réglage « à soi » (60 images par seconde)'
 $lance = Start-Streamlabs 'premier'
 Test-Cas 'Streamlabs démarre et son API répond (\\.\pipe\slobs)' { $lance }
 if (-not $lance) { [void](Stop-Streamlabs 'premier'); Show-Fichiers 'premier lancement raté'; Write-Host 'Streamlabs ne démarre pas : essai arrêté.' -ForegroundColor Red; exit 1 }
-foreach ($r in 'SettingsService', 'VideoSettingsService', 'StreamingService', 'StreamSettingsService', 'DualOutputService', 'VideoService', 'OutputSettingsService', 'UserService', 'OnboardingService', 'AppService') {
-    Show-Api 'getModel' $r
-}
-Show-Api 'getCategories' 'SettingsService'
-Show-Api 'getSettingsFormData' 'SettingsService' @('Video')
-Show-Api 'getSettingsFormData' 'SettingsService' @('Output')
-Show-Api 'getSettingsFormData' 'SettingsService' @('Stream')
-Show-Api 'state' 'VideoSettingsService'
-Show-Api 'values' 'VideoSettingsService'
+# (l'utilisateur a mis 60 images par seconde dans ses Paramètres : ce que « Remettre comme avant » doit rendre)
+Show-Api 'setSettings' 'VideoSettingsService' @(@{ fpsNum = 60; fpsDen = 1 }, 'horizontal')
+Start-Sleep -Seconds 2
 $Avant = Get-Pris
+$Base = "$($Avant['Video.baseWidth'])x$($Avant['Video.baseHeight'])"
+Show-Valeurs 'Avant' (Get-Valeurs $Avant)
+Test-Cas 'réglage de départ : 60 images par seconde (pris par Streamlabs)' { [string]$Avant['Video.fpsNum'] -eq '60' }
 [void](Stop-Streamlabs 'premier')
-$EmpA = Get-Empreintes
 Show-Fichiers 'après le premier lancement'
 
-Write-Partie '3. Streamlabs ouvert pendant « Optimiser » : refusé proprement, rien de changé'
-[void](Start-Streamlabs 'ouvert')
+Write-Partie '3. « Optimiser » Streamlabs fermé : refusé proprement, rien de changé'
 $e1 = Get-Empreintes
-$j = Invoke-Nevermind @('regler', '3')
+$j = Invoke-Nevermind @('regler', '3', 'twitch', $Base)
 $e2 = Get-Empreintes
-Test-Cas 'refus « Ferme Streamlabs puis reclique sur Optimiser »' { @($j.annonces) -contains 'Ferme Streamlabs puis reclique sur Optimiser' }
-Test-Cas 'aucune copie faite, aucun fichier de Streamlabs touché par Nevermind' { -not (Test-Path -LiteralPath (Join-Path $Donnees 'streameur\streamlabs\copie.json')) -and -not $j.copie }
-Compare-Empreintes $e1 $e2 'pendant le refus (Streamlabs ouvert : ses propres écritures comptent aussi)'
-[void](Stop-Streamlabs 'ouvert')
+Test-Cas 'refus « Ouvre Streamlabs puis reclique sur Optimiser »' { @($j.annonces) -contains 'Ouvre Streamlabs puis reclique sur Optimiser' }
+Test-Cas 'aucune copie faite' { -not $j.copie -and -not (Test-Path -LiteralPath (Join-Path $Donnees 'streameur\streamlabs\copie.json')) }
+Compare-Empreintes $e1 $e2 'pendant le refus'
+Test-Cas 'aucun fichier de Streamlabs changé pendant le refus' { $l = @(@($e1.Keys) + @($e2.Keys) | Sort-Object -Unique | Where-Object { $e1[$_] -ne $e2[$_] }); $l.Count -eq 0 }
 
-Write-Partie '4. « Optimiser » Streamlabs fermé (Twitch, 3 Mb/s), puis Streamlabs relancé : ce qu''il a pris'
-$EmpAvant = Get-Empreintes
-$j = Invoke-Nevermind @('regler', '3', 'twitch')
+Write-Partie '4. Streamlabs ouvert, en train d''enregistrer : « Optimiser » refusé, rien de changé'
+[void](Start-Streamlabs 'enregistrement')
+Show-Api 'toggleRecording' 'StreamingService'
+$enreg = Wait-Jusque { (Invoke-Slobs 'getModel' 'StreamingService' -Silencieux).recordingStatus -eq 'recording' } 30
+$p1 = Get-Pris -Muet
+$j = Invoke-Nevermind @('regler', '3', 'twitch', $Base)
+$p2 = Get-Pris -Muet
+Test-Cas 'Streamlabs enregistre' { $enreg }
+Test-Cas 'refus « Streamlabs est en train de streamer ou d''enregistrer. Arrête, puis reclique sur Optimiser. »' { @($j.annonces) -contains 'Streamlabs est en train de streamer ou d''enregistrer. Arrête, puis reclique sur Optimiser.' }
+$d = @(Get-Differences $p1 $p2)
+foreach ($x in $d) { Write-Detail "changé : $x" }
+Test-Cas 'aucun réglage changé pendant l''enregistrement, aucune copie' { $d.Count -eq 0 -and -not $j.copie }
+Show-Api 'toggleRecording' 'StreamingService'
+[void](Wait-Jusque { (Invoke-Slobs 'getModel' 'StreamingService' -Silencieux).recordingStatus -eq 'offline' } 30)
+
+Write-Partie '5. « Optimiser » Streamlabs ouvert (Twitch, 3 Mb/s) : ce que Streamlabs a pris, tout de suite et après relance'
+function Test-Plan([string]$Quand, $Pris, $Plan, [string]$Encodeur) {
+    $v = Get-Valeurs $Pris
+    $res = "$($Plan.sortie[0])x$($Plan.sortie[1])"
+    Show-Valeurs $Quand $v
+    Test-Cas "$Quand : résolution de sortie $res" { $v.sortie -eq $res }
+    Test-Cas "$Quand : $($Plan.ips) images par seconde" { $v.ips -eq "$($Plan.ips)/1" }
+    Test-Cas "$Quand : débit vidéo $($Plan.video_kbps) kb/s" { $v.debit -eq [string]$Plan.video_kbps }
+    Test-Cas "$Quand : encodeur $Encodeur" { $v.encodeur -eq $Encodeur }
+}
+$j = Invoke-Nevermind @('regler', '3', 'twitch', $Base)
 $Plan = $j.plan
-$EmpApres = Get-Empreintes
-Compare-Empreintes $EmpAvant $EmpApres 'écrit par Nevermind'
-Show-Fichiers 'juste après « Optimiser »'
-Test-Cas 'Optimiser : annonce « Streamlabs est réglé »' { @($j.annonces | Where-Object { $_ -like 'Streamlabs est réglé*' }).Count -eq 1 }
-[void](Start-Streamlabs 'apres-optimiser')
-$Pris = Get-Pris
-$sortie = "$($Plan.sortie[0])x$($Plan.sortie[1])"
-Test-Cas "résolution de sortie prise par Streamlabs : $sortie (plan de Nevermind)" { [string]$Pris['Video.Output'] -eq $sortie }
-Test-Cas "images par seconde prises par Streamlabs : $($Plan.ips)" { [string]$Pris['Video.FPSCommon'] -eq [string]$Plan.ips -or [string]$Pris['Video.FPSInt'] -eq [string]$Plan.ips }
-Test-Cas "débit vidéo pris par Streamlabs : $($Plan.video_kbps) kb/s" { [string]$Pris['Output.VBitrate'] -eq [string]$Plan.video_kbps -or [string]$Pris['Output.bitrate'] -eq [string]$Plan.video_kbps }
+Test-Cas "annonce « Streamlabs est réglé : ... »" { @($j.annonces | Where-Object { $_ -like 'Streamlabs est réglé : *' }).Count -eq 1 }
+Start-Sleep -Seconds 2
+Test-Plan 'pris tout de suite' (Get-Pris) $Plan 'x264'
 [void](Stop-Streamlabs 'apres-optimiser')
-Show-Fichiers 'après la relance (Streamlabs a relu, puis réécrit ?)'
+Show-Fichiers 'après « Optimiser » et fermeture'
+[void](Start-Streamlabs 'relance-optimise')
+Test-Plan 'gardé après relance' (Get-Pris) $Plan 'x264'
 
-Write-Partie '5. « Remettre comme avant », puis Streamlabs relancé : tout est revenu'
+Write-Partie '6. « Remettre comme avant » : Streamlabs fermé, refusé ; ouvert, tout revient (et reste après relance)'
+[void](Stop-Streamlabs 'avant-remettre')
 $j = Invoke-Nevermind @('remettre')
-Show-Fichiers 'juste après « Remettre comme avant »'
-[void](Start-Streamlabs 'apres-remettre')
-$Remis = Get-Pris
-foreach ($k in @($Avant.Keys | Where-Object { $_ -match '^(Video|Output)\.' })) {
-    if ([string]($Avant[$k] | ConvertTo-Json -Compress -Depth 6) -ne [string]($Remis[$k] | ConvertTo-Json -Compress -Depth 6)) { Write-Detail "différent après remise : $k : $($Avant[$k] | ConvertTo-Json -Compress -Depth 6) -> $($Remis[$k] | ConvertTo-Json -Compress -Depth 6)" }
-}
-Test-Cas 'tout est revenu comme avant (Vidéo et Sortie, lus par l''API)' {
-    $Avant.api_video -and @($Avant.Keys | Where-Object { $_ -match '^(Video|Output)\.' -and [string]($Avant[$_] | ConvertTo-Json -Compress -Depth 6) -ne [string]($Remis[$_] | ConvertTo-Json -Compress -Depth 6) }).Count -eq 0
-}
+Test-Cas 'Streamlabs fermé : refus « Ouvre Streamlabs puis reclique sur Remettre comme avant », copie gardée' { @($j.annonces) -contains 'Ouvre Streamlabs puis reclique sur Remettre comme avant' -and $null -ne $j.copie }
+[void](Start-Streamlabs 'remettre')
+$j = Invoke-Nevermind @('remettre')
+Test-Cas 'annonce « Les réglages d''avant sont revenus dans Streamlabs. »' { @($j.annonces) -contains 'Les réglages d''avant sont revenus dans Streamlabs.' }
+Start-Sleep -Seconds 2
+$d = @(Get-Differences $Avant (Get-Pris))
+foreach ($x in $d) { Write-Detail "différent d'avant : $x" }
+Test-Cas 'tout est revenu comme avant, tout de suite (API)' { $d.Count -eq 0 }
 [void](Stop-Streamlabs 'apres-remettre')
+[void](Start-Streamlabs 'relance-remis')
+$d = @(Get-Differences $Avant (Get-Pris))
+foreach ($x in $d) { Write-Detail "différent d'avant : $x" }
+Test-Cas 'tout est resté comme avant après relance' { $d.Count -eq 0 }
+
+Write-Partie '7. Kick (image clé de 2 s) : mode Avancé, enregistrements au même endroit ; puis tout revient'
+# (l'utilisateur enregistre ailleurs que dans le dossier par défaut : son dossier doit suivre en mode Avancé)
+$monDossier = Join-Path $Racine 'mes videos'
+New-Item -ItemType Directory -Force -Path $monDossier | Out-Null
+Show-Api 'setSettingValue' 'SettingsService' @('Output', 'FilePath', $monDossier)
+Start-Sleep -Seconds 1
+$AvantKick = Get-Pris
+$j = Invoke-Nevermind @('regler', '20', 'kick', $Base)
+$PlanK = $j.plan
+Start-Sleep -Seconds 2
+$pk = Get-Pris
+$v = Get-Valeurs $pk
+Test-Plan 'Kick, pris tout de suite' $pk $PlanK 'obs_x264'
+Test-Cas 'Kick : sortie en mode Avancé' { $v.mode -eq 'Advanced' }
+Test-Cas 'Kick : une image clé toutes les 2 secondes' { $v.image_cle -eq '2' }
+Test-Cas "Kick : les enregistrements restent dans « $monDossier »" { $v.dossier_avance -eq $monDossier }
+[void](Stop-Streamlabs 'kick')
+[void](Start-Streamlabs 'relance-kick')
+$v = Get-Valeurs (Get-Pris)
+Test-Cas 'Kick : mode Avancé, image clé et débit gardés après relance' { $v.mode -eq 'Advanced' -and $v.image_cle -eq '2' -and $v.debit -eq [string]$PlanK.video_kbps }
+$j = Invoke-Nevermind @('remettre')
+Start-Sleep -Seconds 2
+$d = @(Get-Differences $AvantKick (Get-Pris))
+foreach ($x in $d) { Write-Detail "différent d'avant : $x" }
+Test-Cas 'Kick : tout est revenu comme avant (mode Simple, vidéo, débit)' { $d.Count -eq 0 }
+[void](Stop-Streamlabs 'fin')
 
 Write-Partie 'Bilan'
 Write-Host "Streamlabs Desktop $Version : $($script:Reussis) réussi(s), $($script:Echoues.Count) échoué(s)"
