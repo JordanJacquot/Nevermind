@@ -1,0 +1,66 @@
+# Le mode streameur de Nevermind essayé sur un VRAI OBS Studio, sur la machine jetable de GitHub : l'installateur
+# officiel (release GitHub d'obsproject/obs-studio, signature et empreinte vérifiées), installé en silence ;
+# « Optimiser » et « Remettre comme avant » de Nevermind (le bloc stream, rust\nevermind-stream\examples\essai-obs-reel.rs) ;
+# puis ce qu'OBS a vraiment pris, lu par sa porte officielle obs-websocket et par son journal pendant un court
+# enregistrement. Tout le code est dans outils\essai-obs-reel.ps1.
+#   gh workflow run obs-reel.yml
+name: OBS en vrai
+
+on:
+  workflow_dispatch:
+  # À RETIRER à la fusion : l'essai tourne à chaque envoi de la branche de travail
+  push:
+    branches: [obs-reel]
+
+permissions:
+  contents: read
+
+jobs:
+  essai:
+    name: "OBS Studio en vrai (${{ matrix.version }})"
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # derniere : la dernière version officielle ; 31.1.2 : la dernière 31 (user.ini, NVENC renommé) ;
+        # 30.2.3 : la dernière 30 (le profil dans global.ini, obs-websocket réglé dans global.ini)
+        version: [derniere, 31.1.2, 30.2.3]
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: powershell
+    env:
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: "Rust, la version figée par rust/rust-toolchain.toml"
+        working-directory: rust
+        run: |
+          rustup toolchain install
+          if ($LASTEXITCODE) { rustup show; if ($LASTEXITCODE) { exit 1 } }
+          rustc --version
+
+      - name: "Construire l'essai (exemple essai-obs-reel du bloc stream, --locked)"
+        working-directory: rust
+        run: |
+          cargo build --locked -p nevermind-stream --example essai-obs-reel
+          if ($LASTEXITCODE) { exit 1 }
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "EXEMPLE=$((Resolve-Path 'target\debug\examples\essai-obs-reel.exe').Path)`n")
+
+      - name: "OBS Studio : installé, Optimiser, relancé, Remettre comme avant"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .\outils\essai-obs-reel.ps1 -Exemple $env:EXEMPLE -Version ${{ matrix.version }}
+
+      - name: "Captures d'écran et journaux d'OBS"
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: captures-obs-${{ matrix.version }}
+          path: |
+            C:\essai-obs\captures\
+            ~\AppData\Roaming\obs-studio\logs\
+          if-no-files-found: ignore
+          retention-days: 7
