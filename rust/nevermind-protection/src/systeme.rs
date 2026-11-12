@@ -47,8 +47,22 @@ pub trait Systeme: Send + Sync {
     /// La mise à jour de la base de virus (Update-MpSignature)
     fn mettre_a_jour_base(&self) -> Result<(), String>;
     /// Supprimer les menaces actives (Remove-MpThreat)
+    ///
+    /// Lot J (suite, garde-fous) : sans le permis du verrou des gestes, ça ne compile pas :
+    /// ```compile_fail
+    /// fn menaces(s: &dyn nevermind_protection::systeme::Systeme) {
+    ///     let _ = s.supprimer_menaces();
+    /// }
+    /// ```
     fn supprimer_menaces(&self) -> Result<(), String>;
     /// Désactiver une tâche planifiée puis la relire : `Ok(true)` si elle est bien désactivée
+    ///
+    /// Lot J (suite, garde-fous) : sans le permis du verrou des gestes, ça ne compile pas :
+    /// ```compile_fail
+    /// fn tache(s: &dyn nevermind_protection::systeme::Systeme) {
+    ///     let _ = s.desactiver_tache("Tache", "\\");
+    /// }
+    /// ```
     fn desactiver_tache(&self, nom: &str, chemin: &str) -> Result<bool, String>;
     /// Les détections de Defender lues sur place, et les noms des menaces (Get-MpThreatDetection, Get-MpThreat)
     fn detections(&self) -> Detections;

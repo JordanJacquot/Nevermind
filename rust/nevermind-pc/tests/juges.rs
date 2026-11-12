@@ -1556,3 +1556,84 @@ fn un_clic_de_ton_pc_n_attend_pas_powercfg() {
     lent.store(0, Ordering::SeqCst);
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// Gels, suite : ouvrir une fiche qui parle du plan d'alimentation (« Tout corriger », un clic sur le constat, ou
+/// « ouvrir-fiche » demandé par un autre bloc) lançait encore powercfg sur le fil des blocs (le plan actif, la liste des
+/// plans), sans limite de temps. Maintenant la fiche reprend ce que la relecture de fond a déjà lu. Faux PC au powercfg
+/// lent (2 s) : chaque ouverture rend la main tout de suite, et la fiche dit bien le plan actif.
+#[test]
+fn ouvrir_une_fiche_n_attend_pas_powercfg() {
+    use nevermind_noyau::{Bloc, Contexte, Effets};
+    use std::sync::atomic::Ordering;
+    use std::time::{Duration, Instant};
+    let d = nevermind_noyau::dossier_essai("pc-powercfg-fiche");
+    let _ = std::fs::remove_dir_all(&d);
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true).partage();
+    // La relecture de fond finie (comme en vrai, quelques dixièmes de seconde après l'analyse ou un geste)
+    let attendre = |b: &mut nevermind_pc::BlocPc| {
+        let fin = Instant::now() + Duration::from_secs(60);
+        while b.travail_en_cours() {
+            assert!(Instant::now() < fin, "la relecture ne finit pas");
+            b.travaux_finis(&ctx, &mut Effets::default());
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        b.travaux_finis(&ctx, &mut Effets::default());
+    };
+    let texte = |b: &nevermind_pc::BlocPc| {
+        b.session().fiche.as_ref().map(|f| fiche::page(f, None).to_string()).unwrap_or_default()
+    };
+    let fermer = |b: &mut nevermind_pc::BlocPc| {
+        b.action(&ctx, "fiche:close", &Value::Null, &mut Effets::default());
+    };
+    // (un juge dont un constat a une fiche qui décrit le plan d'alimentation : son id, sa ligne dans la page, et le
+    //  nom du plan actif)
+    let mut trouve = None;
+    'cas: for c in lire("analyse.json").iter().chain(lire("corrections.json").iter()) {
+        let (pc, s, _) = charger(&c["entree"]);
+        let Some(actif) = pc.plans.iter().find(|(g, _)| *g == pc.actif).map(|(_, n)| n.clone()) else { continue };
+        let lent = pc.powercfg_lent.clone();
+        let lu = nevermind_pc::lecture::Lu { entrees: s.entrees.clone(), demarrage: s.demarrage.clone() };
+        let mut b = nevermind_pc::BlocPc::sur(Box::new(pc), lu);
+        let _ = b.pages(&ctx, "pc");
+        attendre(&mut b);
+        let attendu = format!("Plan d'alimentation : maintenant « {actif} »");
+        for k in 0..100 {
+            if !b.action(&ctx, &format!("constat:{k}"), &Value::Null, &mut Effets::default()) {
+                break;
+            }
+            attendre(&mut b);
+            let id = b.session().fiche.as_ref().and_then(|f| f.items.first()).map(|f| f.id.clone());
+            let oui = texte(&b).contains(&attendu);
+            fermer(&mut b);
+            attendre(&mut b);
+            if let (true, Some(id)) = (oui, id) {
+                trouve = Some((b, lent, k, id, attendu));
+                break 'cas;
+            }
+        }
+    }
+    let (mut b, lent, k, id, attendu) = trouve.expect("aucun juge avec une fiche du plan d'alimentation");
+    lent.store(2000, Ordering::SeqCst);
+    // Chaque ouverture : la main rendue tout de suite, et la fiche dit le plan actif
+    let ouvrir = |b: &mut nevermind_pc::BlocPc, quoi: &str, f: &dyn Fn(&mut nevermind_pc::BlocPc)| {
+        let t = Instant::now();
+        f(b);
+        let duree = t.elapsed();
+        assert!(duree < Duration::from_secs(1), "{quoi} a pris {duree:?} : powercfg attendu sur le fil des blocs");
+        attendre(b);
+        assert!(texte(b).contains(&attendu), "{quoi} : la fiche ne dit pas « {attendu} » : {}", texte(b));
+        fermer(b);
+        attendre(b);
+    };
+    ouvrir(&mut b, "« ouvrir-fiche » d'un autre bloc", &|b| {
+        b.signal(&ctx, "ouvrir-fiche", &json!({ "id": id }), &mut Effets::default())
+    });
+    ouvrir(&mut b, "le clic sur le constat", &|b| {
+        assert!(b.action(&ctx, &format!("constat:{k}"), &Value::Null, &mut Effets::default()))
+    });
+    ouvrir(&mut b, "« Tout corriger »", &|b| {
+        assert!(b.action(&ctx, "toutcorriger", &Value::Null, &mut Effets::default()))
+    });
+    lent.store(0, Ordering::SeqCst);
+    let _ = std::fs::remove_dir_all(&d);
+}

@@ -22,6 +22,13 @@ pub struct Resultat {
 }
 
 /// Le geste sur chaque processus de l'appli. `mode` : « poli » (WM_CLOSE à ses fenêtres) ou « force ».
+///
+/// Lot J (suite, garde-fous) : sans le permis du verrou des gestes, ça ne compile pas :
+/// ```compile_fail
+/// fn fermer(pc: &dyn nevermind_memoire::pc::Pc, regle: &nevermind_memoire::pc::ContexteRegle) {
+///     let _ = nevermind_memoire::fermeture::fermer(pc, &[], regle, "force");
+/// }
+/// ```
 pub fn fermer(pc: &dyn Pc, cibles: &[Cible], ctx: &ContexteRegle, mode: &str) -> Resultat {
     let mut r = Resultat::default();
     for c in cibles {

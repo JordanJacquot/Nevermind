@@ -78,6 +78,13 @@ pub trait Sonde: Send + Sync {
     /// La liste des fabricants (fabricants.txt, téléchargée chez l'IEEE la première fois)
     fn fabricants(&self, chemin: &Path) -> Option<Fabricants>;
     /// Passer le réseau en public (`Set-NetConnectionProfile`)
+    ///
+    /// Lot J (suite, garde-fous) : sans le permis du verrou des gestes, ça ne compile pas :
+    /// ```compile_fail
+    /// fn public(s: &dyn nevermind_reseau::sonde::Sonde) {
+    ///     let _ = s.passer_public(3);
+    /// }
+    /// ```
     fn passer_public(&self, index: i64) -> Result<(), String>;
     /// L'heure locale : année, mois, jour, heure, minute
     fn maintenant(&self) -> [u32; 5] {

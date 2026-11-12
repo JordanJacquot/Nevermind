@@ -194,6 +194,14 @@ pub trait Pc {
     /// Ouvrir une adresse (`Open-Url`).
     fn ouvrir(&mut self, adresse: &str);
     /// Une commande (`shutdown.exe /r /fw /t 10`) : son code de sortie.
+    ///
+    /// Lot J (suite, garde-fous) : une commande change le PC (redémarrer dans le BIOS) ; sans le permis du verrou des
+    /// gestes, ça ne compile pas :
+    /// ```compile_fail
+    /// fn bios(pc: &mut dyn nevermind_pc::pc::Pc) {
+    ///     let _ = pc.commande("shutdown.exe", &["/r".into(), "/fw".into(), "/t".into(), "10".into()]);
+    /// }
+    /// ```
     fn commande(&mut self, exe: &str, args: &[String]) -> i32;
     /// Les règles du pare-feu posées par Nevermind (« Nevermind : bloque ... », « OptiGame : bloque ... »).
     fn regles_pare_feu(&self) -> usize {

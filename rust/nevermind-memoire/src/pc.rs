@@ -17,6 +17,19 @@ pub struct Lecture {
 }
 
 /// Le PC (lecture seule, sauf les deux gestes de fermeture, sur des processus vérifiés)
+///
+/// Lot J (suite, garde-fous) : fermer un programme change le PC ; sans le permis du verrou des gestes, ça ne compile
+/// pas :
+/// ```compile_fail
+/// fn fermer(pc: &dyn nevermind_memoire::pc::Pc) {
+///     let _ = pc.fermer_poliment(1, 2, "C:\\x.exe");
+/// }
+/// ```
+/// ```compile_fail
+/// fn forcer(pc: &dyn nevermind_memoire::pc::Pc) {
+///     let _ = pc.forcer(1, 2, "C:\\x.exe");
+/// }
+/// ```
 pub trait Pc: Send + Sync {
     /// `Get-DonneesMemoire` : `demarrage` (les programmes de la page Démarrage), `connus` (les pilotes déjà retrouvés)
     fn lire(&self, demarrage: &[String], connus: &HashMap<String, Vec<Pilote>>) -> Lecture;

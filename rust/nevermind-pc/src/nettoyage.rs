@@ -268,6 +268,12 @@ fn taille_journal(b: f64) -> String {
 }
 
 /// `$CleanScript` : le nettoyage d'une catégorie de l'utilisateur, fichier par fichier
+///
+/// Lot J (suite, garde-fous) : effacer des fichiers change le PC ; sans le permis du verrou des gestes, ça ne compile
+/// pas :
+/// ```compile_fail
+/// let _ = nevermind_pc::nettoyage::nettoyer_chemins(&[], &[], std::time::SystemTime::now());
+/// ```
 pub fn nettoyer_chemins(chemins: &[String], exclus: &[String], maintenant: SystemTime) -> ResultatNettoyage {
     let avant = maintenant.checked_sub(Duration::from_secs(86400)).unwrap_or(maintenant);
     let saut = sauter(chemins, exclus);

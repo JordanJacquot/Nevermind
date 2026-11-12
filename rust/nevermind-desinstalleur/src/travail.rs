@@ -33,6 +33,27 @@ pub const ANCIENNES_TACHES: [&str; 2] = ["OptiGame (démarrage)", "Nexo (démarr
 pub const CLE_AIDE: &str = "HKLM:\\SOFTWARE\\Mindset\\Nevermind\\Aide";
 
 /// Ce qui, hors restauration, touche Windows ou l'écran
+///
+/// Lot J (suite, garde-fous) : les tâches planifiées (schtasks), la clé de l'Aide et la fermeture des programmes
+/// changent le PC ; sans le permis du verrou des gestes, rien de cela ne compile :
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { s.arreter_tache_aide(); }
+/// ```
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { let _ = s.retirer_demarrage(); }
+/// ```
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { let _ = s.retirer_tache("Nexo (démarrage)"); }
+/// ```
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { let _ = s.retirer_tache_aide(); }
+/// ```
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { let _ = s.effacer_cle_aide(); }
+/// ```
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { s.fermer_processus(1, std::path::Path::new("x")); }
+/// ```
 pub trait Systeme {
     /// historique.json (`Import-History`), pour les changements définitifs
     fn historique(&mut self) -> Vec<Value>;
