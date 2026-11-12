@@ -9,7 +9,7 @@
   },
   "attendu": {
     "reponses": "la réponse de l'Aide à chaque demande, dans l'ordre : { ok, r } ou { ok = false, e }",
-    "lancements": "les arguments de chaque PresentMon lancé, dans l'ordre (la fermeture de session à l'arrêt comprise)"
+    "lancements": "les arguments de chaque PresentMon lancé, dans l'ordre (la fermeture de session à l'arrêt comprise ; pas quand un nouveau PresentMon prend la place : il la ferme lui-même, --stop_existing_session)"
   },
   "cas": [
     {
@@ -152,7 +152,6 @@
         ],
         "lancements": [
           "--process_name \"aab.exe\" --process_name \"a_b.exe\" --process_name \"bf6.exe\" --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
-          "--terminate_existing_session --session_name Nevermind",
           "--process_name \"battlefield 6.exe\" --process_name \"bf6.exe\" --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
           "--terminate_existing_session --session_name Nevermind"
         ]
@@ -180,7 +179,6 @@
         ],
         "lancements": [
           "--process_name \"notepad.exe\" --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
-          "--terminate_existing_session --session_name Nevermind",
           "--process_id 4321 --terminate_on_proc_exit --output_stdout --no_console_stats --stop_existing_session --session_name Nevermind",
           "--terminate_existing_session --session_name Nevermind"
         ]
