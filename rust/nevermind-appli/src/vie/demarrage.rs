@@ -255,11 +255,17 @@ fn resoudre_donnees(
         return (ancien, None);
     }
     let nouveau = dossier_donnees_gere(env.racine.as_deref(), &env.localappdata);
-    if nouveau.is_dir() || !ancien.is_dir() {
+    if nouveau.is_dir() {
         return (nouveau, None);
     }
+    // (12/11, essai réel cas 8) avant de regarder si l'ancien dossier existe : une copie ouverte sans nouveau dossier
+    // se sert de l'ancien, même si elle ne l'a pas encore créé (Nevermind 1.11.0 tout juste lancé). Le nouveau créé
+    // ici par la note d'un lancement abandonné empêcherait le déplacement des données au lancement suivant.
     if desinstaller || instance_ouverte(noms, systeme) {
         return (ancien, None);
+    }
+    if !ancien.is_dir() {
+        return (nouveau, None);
     }
     let (a, n) = (ancien.display(), nouveau.display());
     if racine_disque(&nouveau) != racine_disque(&ancien) {
@@ -643,6 +649,49 @@ mod tests {
         assert_eq!(l.dossier_donnees, e.racine.join(r"Mindset\Donnees\Nevermind"));
         assert!(l.dossier_donnees.join("parametres.json").is_file() && !ancien.exists());
         assert!(l.note_donnees.unwrap().starts_with("Données déplacées : "));
+    }
+
+    /// (12/11, essai réel cas 8) Nevermind 1.11.0 tout juste lancé : il tient son verrou mais n'a pas encore créé
+    /// %LOCALAPPDATA%\OptiGame. Le lancement caché abandonné note dans l'ancien dossier (celui de la copie ouverte),
+    /// sans créer le nouveau : sinon, au lancement suivant, le nouveau dossier existe et les données d'OptiGame ne
+    /// sont jamais déplacées.
+    #[test]
+    fn copie_ouverte_sans_dossier_encore_la_note_va_dans_l_ancien() {
+        let e = Essai::nouveau("ouverte-sans-dossier");
+        e.gerer("neon");
+        let ancien = e.racine.join(r"Local\OptiGame");
+        let nouveau = e.racine.join(r"Mindset\Donnees\Nevermind");
+        let mut s = Faux::default();
+        s.tenus.insert(VERROUS[1].into());
+        // (comme note_lancement de programme.rs : le dossier créé, puis la ligne ajoutée)
+        let mut note = |d: &Path, t: &str| {
+            std::fs::create_dir_all(d).unwrap();
+            std::fs::write(d.join("journal.txt"), t).unwrap();
+        };
+        let d = demarrer(
+            Arguments { demarrage: true, ..Default::default() },
+            &e.env(),
+            &Noms::nevermind(),
+            &mut s,
+            &mut note,
+        );
+        assert!(matches!(d, Depart::DejaOuverte));
+        assert!(ancien.join("journal.txt").is_file(), "la note est dans l'ancien dossier");
+        assert!(!nouveau.exists(), "le nouveau dossier n'est pas créé");
+        // 1.11.0 écrit ses données puis se ferme : le lancement suivant les déplace
+        std::fs::write(ancien.join("parametres.json"), "{}").unwrap();
+        let mut s = Faux::default();
+        let Depart::Lancer(l) = demarrer(
+            Arguments { demarrage: true, ..Default::default() },
+            &e.env(),
+            &Noms::nevermind(),
+            &mut s,
+            &mut sans_note(),
+        ) else {
+            panic!()
+        };
+        assert_eq!(l.dossier_donnees, nouveau);
+        assert!(nouveau.join("parametres.json").is_file() && !ancien.exists(), "données déplacées");
     }
 
     #[test]

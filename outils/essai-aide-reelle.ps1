@@ -935,7 +935,10 @@ function Test-Cas8 {
         Test-Cas8Diag 'seule, la version renommée démarre et tient Local\Nevermind-Instance ET Local\OptiGame-Instance (les anciens Mindset la voient ouverte)' {
             Wait-Jusque { (Test-Verrou 'Local\Nevermind-Instance') -and (Test-Verrou 'Local\OptiGame-Instance') } 120
         } @($neuf) $debut
-        Start-Sleep -Seconds 10
+        # (12/11) le script charge ses modules avant d'écrire « Démarrage » : 14 s sur la machine de GitHub au run
+        # 43178106809, la ligne est arrivée après les 10 s fixes d'avant. Attendue jusqu'à 60 s.
+        $null = Wait-Jusque { $neuf.HasExited -or @(Get-JournalNevermind | Where-Object { $_ -match 'Démarrage Nevermind' }).Count -ge 1 } 60
+        Start-Sleep -Seconds 2
         Show-Nevermind 'version renommée ouverte'
         $avantC = $script:Echoues.Count
         Test-Cas8Diag "elle reste ouverte, son journal dit « Démarrage Nevermind $version »" { -not $neuf.HasExited -and @(Get-JournalNevermind | Where-Object { $_ -match "Démarrage Nevermind $([regex]::Escape($version))" }).Count -ge 1 } @($neuf) $debut

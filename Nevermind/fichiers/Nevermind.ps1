@@ -75,7 +75,8 @@ if ($Managed -and -not $Demarrage -and -not $Uninstall -and -not $env:NEVERMIND_
 # Ligne du journal écrite avant le chargement des modules (Write-Log n'existe pas encore) : un lancement abandonné
 # doit laisser une trace, sinon Mindset affiche seulement « n'a pas pu s'ouvrir »
 function Write-LaunchNote([string]$Text) {
-    try { [IO.File]::AppendAllText((Join-Path $DataDir 'journal.txt'), "$(Get-Date -Format s) $Text (processus $PID)`r`n", (New-Object Text.UTF8Encoding($false))) } catch {}
+    # (12/11) le dossier d'abord : AppendAllText ne le crée pas, et la ligne était perdue sans bruit
+    try { [void][IO.Directory]::CreateDirectory($DataDir); [IO.File]::AppendAllText((Join-Path $DataDir 'journal.txt'), "$(Get-Date -Format s) $Text (processus $PID)`r`n", (New-Object Text.UTF8Encoding($false))) } catch {}
 }
 
 # Les verrous d'instance unique. Nevermind prend les deux : le sien, et celui de son ancien nom (Local\OptiGame-Instance),
@@ -134,8 +135,11 @@ function Get-ManagedDataDir {
 function Resolve-DataDir {
     if (-not $Managed) { return $OldDataDir }
     $new = Get-ManagedDataDir
-    if ([IO.Directory]::Exists($new) -or -not [IO.Directory]::Exists($OldDataDir)) { return $new }
+    if ([IO.Directory]::Exists($new)) { return $new }
+    # (12/11, essai réel cas 8) avant de regarder si l'ancien dossier existe : une copie ouverte sans nouveau dossier se
+    # sert de l'ancien, même si elle ne l'a pas encore créé (Nevermind 1.11.0 tout juste lancé)
     if ($Uninstall -or (Test-InstanceRunning)) { return $OldDataDir }
+    if (-not [IO.Directory]::Exists($OldDataDir)) { return $new }
     if ([IO.Path]::GetPathRoot($new) -ne [IO.Path]::GetPathRoot($OldDataDir)) {
         $script:DataDirNote = "Données : $OldDataDir est sur un autre disque que $new, rien n'est copié (Mindset s'en charge), l'ancien dossier est gardé pour cette fois"
         return $OldDataDir
