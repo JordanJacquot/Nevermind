@@ -204,11 +204,16 @@ fn texte_de(v: &Option<ValeurReg>) -> String {
 
 /// Le plan d'alimentation actif (`Get-ActiveScheme`) : (identifiant en minuscules, nom)
 pub fn plan_actif(pc: &mut dyn Pc) -> Option<(String, String)> {
+    let (_, o) = pc.powercfg(&["/getactivescheme".into()]);
+    plan_actif_lu(&o)
+}
+
+/// Le plan d'alimentation actif d'après ce que `powercfg /getactivescheme` a écrit (déjà lu, ou lu à l'instant)
+pub fn plan_actif_lu(o: &str) -> Option<(String, String)> {
     static R: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?i)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*\((.+)\)").unwrap()
     });
-    let (_, o) = pc.powercfg(&["/getactivescheme".into()]);
-    R.captures(&o).map(|c| (c[1].to_lowercase(), c[2].trim().to_string()))
+    R.captures(o).map(|c| (c[1].to_lowercase(), c[2].trim().to_string()))
 }
 
 /// `powercfg /list | Out-String`
@@ -306,22 +311,28 @@ pub fn changements(id: &str) -> Changements {
     }
 }
 
-/// `Get-ChangementAlimentation` (lu sans rien changer, même ordre de choix que `Set-PowerPlan`)
-pub fn changement_alimentation(pc: &mut dyn Pc, portable: bool, plan_cree: Option<&str>) -> Vec<Declaration> {
+/// `Get-ChangementAlimentation` (lu sans rien changer, même ordre de choix que `Set-PowerPlan`). `lire` : ce que
+/// powercfg écrit pour ces arguments de lecture (`/getactivescheme`, `/list`), lu à l'instant ou déjà lu en fond (la
+/// fiche ; gels)
+pub fn changement_alimentation(
+    lire: &mut dyn FnMut(crate::corrections::LecturePowercfg) -> String,
+    portable: bool,
+    plan_cree: Option<&str>,
+) -> Vec<Declaration> {
     let p = |cible: &str, guid: &str| Declaration {
         sorte: "power".into(),
         cible: cible.into(),
         guid: guid.into(),
         ..Default::default()
     };
-    let s = plan_actif(pc);
+    let s = plan_actif_lu(&lire(crate::corrections::LecturePowercfg::PlanActif));
     if portable && s.as_ref().is_some_and(|(g, _)| g == NORMAL) {
         return vec![p(
             "Utilisation normale, curseur sur « Meilleures performances » (si Windows le refuse : Performances élevées)",
             "",
         )];
     }
-    let liste = liste_plans(pc);
+    let liste = lire(crate::corrections::LecturePowercfg::Plans);
     for g in [Some(HAUTES_PERF), plan_cree].into_iter().flatten() {
         if g.is_empty() {
             continue;

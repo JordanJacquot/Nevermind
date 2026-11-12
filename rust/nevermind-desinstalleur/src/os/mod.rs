@@ -117,8 +117,9 @@ fn profil_du_compte() -> String {
     }
 }
 
-/// schtasks.exe avec ces arguments, sans fenêtre : son code de sortie (`None` s'il n'a pas pu se lancer)
-fn schtasks(args: &[&str]) -> Option<i32> {
+/// schtasks.exe avec ces arguments (une tâche arrêtée ou retirée : ça change le PC, avec le permis du verrou des
+/// gestes ; lot J, suite), sans fenêtre : son code de sortie (`None` s'il n'a pas pu se lancer)
+fn schtasks(_p: &Permis, args: &[&str]) -> Option<i32> {
     Command::new(format!("{}\\schtasks.exe", system32()))
         .args(args)
         .creation_flags(SANS_FENETRE)
@@ -130,9 +131,23 @@ fn schtasks(args: &[&str]) -> Option<i32> {
         .and_then(|s| s.code())
 }
 
+/// La tâche planifiée `nom` existe (`schtasks /Query`, une lecture : sans permis), sans fenêtre
+fn tache_presente(nom: &str) -> bool {
+    Command::new(format!("{}\\schtasks.exe", system32()))
+        .args(["/Query", "/TN", nom])
+        .creation_flags(SANS_FENETRE)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .ok()
+        .and_then(|s| s.code())
+        == Some(0)
+}
+
 /// Retire cette tâche planifiée : son erreur, dite simplement
-fn retirer(tache: &str) -> Result<(), String> {
-    match schtasks(&["/Delete", "/TN", tache, "/F"]) {
+fn retirer(p: &Permis, tache: &str) -> Result<(), String> {
+    match schtasks(p, &["/Delete", "/TN", tache, "/F"]) {
         Some(0) => Ok(()),
         Some(c) => Err(format!("la tâche « {tache} » n'a pas pu être retirée (schtasks a répondu {c})")),
         None => Err("schtasks.exe n'a pas pu se lancer".into()),
@@ -361,36 +376,36 @@ impl Systeme for SystemeWindows<'_> {
             self.ctx.journal(ligne);
         }
     }
-    fn arreter_tache_aide(&mut self) {
-        let _ = schtasks(&["/End", "/TN", &format!("{}{}", travail::TACHE_AIDE_DOSSIER, travail::TACHE_AIDE_NOM)]);
+    fn arreter_tache_aide(&mut self, p: &Permis) {
+        let _ = schtasks(p, &["/End", "/TN", &format!("{}{}", travail::TACHE_AIDE_DOSSIER, travail::TACHE_AIDE_NOM)]);
     }
     fn processus(&mut self) -> Vec<(u32, String)> {
         self.aide.processus()
     }
-    fn fermer_processus(&mut self, pid: u32, chemin: &Path) {
+    fn fermer_processus(&mut self, _p: &Permis, pid: u32, chemin: &Path) {
         // (lot C : par une poignée gardée, son chemin relu par elle, comme l'Aide ; jamais rouvert par son numéro)
         let _ = self.aide.fermer(pid, &chemin.to_string_lossy());
     }
-    fn retirer_demarrage(&mut self) -> Result<(), String> {
+    fn retirer_demarrage(&mut self, p: &Permis) -> Result<(), String> {
         if !self.tache_existe(travail::TACHE_DEMARRAGE) {
             return Ok(());
         }
-        retirer(travail::TACHE_DEMARRAGE)
+        retirer(p, travail::TACHE_DEMARRAGE)
     }
     fn tache_existe(&mut self, nom: &str) -> bool {
-        schtasks(&["/Query", "/TN", nom]) == Some(0)
+        tache_presente(nom)
     }
-    fn retirer_tache(&mut self, nom: &str) -> Result<(), String> {
-        retirer(nom)
+    fn retirer_tache(&mut self, p: &Permis, nom: &str) -> Result<(), String> {
+        retirer(p, nom)
     }
-    fn retirer_tache_aide(&mut self) -> Result<(), String> {
+    fn retirer_tache_aide(&mut self, p: &Permis) -> Result<(), String> {
         let t = format!("{}{}", travail::TACHE_AIDE_DOSSIER, travail::TACHE_AIDE_NOM);
         if !self.tache_existe(&t) {
             return Ok(());
         }
-        retirer(&t)
+        retirer(p, &t)
     }
-    fn effacer_cle_aide(&mut self) -> Result<(), String> {
+    fn effacer_cle_aide(&mut self, _p: &Permis) -> Result<(), String> {
         let c = "SOFTWARE\\Mindset\\Nevermind\\Aide";
         if windows_registry::LOCAL_MACHINE.open(c).is_err() {
             return Ok(());
@@ -807,11 +822,11 @@ impl Pc for PcDesinstallation<'_> {
     fn ouvrir(&mut self, adresse: &str) {
         self.pc.ouvrir(adresse);
     }
-    fn commande(&mut self, exe: &str, args: &[String]) -> i32 {
-        if exe.eq_ignore_ascii_case("shutdown.exe") && self.exiger_geste().is_err() {
-            return 1;
-        }
-        self.pc.commande(exe, args)
+    fn commande(&mut self, p: &Permis, exe: &str, args: &[String]) -> i32 {
+        self.pc.commande(p, exe, args)
+    }
+    fn rapport_batterie(&mut self, fichier: &str) -> i32 {
+        self.pc.rapport_batterie(fichier)
     }
     fn regles_pare_feu(&self) -> usize {
         self.aide.regles_pare_feu()

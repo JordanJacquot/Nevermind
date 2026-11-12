@@ -11,6 +11,12 @@
 //! fonction qui écrit. Le passage obligé par le compilateur (le `Permis` du noyau, lot J) vient en plus : ce relevé
 //! garde ce qu'il ne couvre pas encore (les écritures propres à chaque bloc, par exemple).
 //!
+//! Lot J, suite (garde-fous) : le permis est aussi demandé par la fermeture des programmes de la page RAM
+//! (`fermer_poliment`, `forcer`, `fermeture::fermer`), `Pc::commande` et `nettoyer_chemins` de Ton PC,
+//! `supprimer_menaces` et `desactiver_tache` de Protection, `passer_public` du Réseau, et les tâches planifiées, la
+//! clé de l'Aide et la fermeture des programmes du désinstalleur (des doctests compile_fail le prouvent). Ce relevé
+//! les suit encore, en plus.
+//!
 //! Ne sont pas relevés : l'Aide elle-même et ses règles (elles font ce que Nevermind demande ; le verrou est côté
 //! Nevermind), le pont PowerShell, les tests et les exemples. Toute autre exception est écrite ci-dessous, avec sa
 //! raison, et le test vérifie qu'elle sert encore.
@@ -75,6 +81,9 @@ const APPELS: &[&str] = &[
     // le nettoyage, Defender, les tâches planifiées, le profil du réseau
     "nettoyer_dossier(",
     "nettoyer_chemins(",
+    // (lot J, suite : fermer un programme, page RAM)
+    "fermer_poliment(",
+    "pc.forcer(",
     "supprimer_menaces(",
     "desactiver_tache(",
     "passer_public(",
@@ -127,16 +136,8 @@ const EXCEPTIONS: &[(&str, &str, &str)] = &[
         "aide_lente",
         "la fausse Aide de la construction d'essai : elle ne fait rien sur le PC",
     ),
-    (
-        "nevermind-desinstalleur/src/os/mod.rs",
-        "schtasks",
-        "la désinstallation retire la tâche de l'Aide : Nevermind est fermé, et le désinstalleur tient le verrou pendant tout son travail (main.rs)",
-    ),
-    (
-        "nevermind-desinstalleur/src/os/mod.rs",
-        "effacer_cle_aide",
-        "la désinstallation efface la clé de l'Aide : Nevermind est fermé, et le désinstalleur tient le verrou pendant tout son travail (main.rs)",
-    ),
+    // (lot J, suite : les schtasks et la clé de l'Aide du désinstalleur demandent maintenant le permis ; plus
+    //  d'exception pour eux)
     // (lot J : les relais vers l'Aide dont l'action n'est pas écrite, et qui n'ont pas à tenir le verrou)
     (
         "nevermind-noyau/src/aide.rs",

@@ -528,8 +528,8 @@ pub fn telecharger_fabricants(chemin: &std::path::Path) {
 }
 
 /// Passer le réseau de cette carte en public (Set-NetConnectionProfile, comme la version PowerShell : sans droits
-/// administrateur, Windows peut refuser)
-pub fn passer_public(index: i64) -> Result<(), String> {
+/// administrateur, Windows peut refuser). Avec le permis du verrou des gestes (lot J, suite).
+pub fn passer_public(_p: &nevermind_noyau::Permis, index: i64) -> Result<(), String> {
     let o = Command::new("powershell.exe")
         .args([
             "-NoProfile",

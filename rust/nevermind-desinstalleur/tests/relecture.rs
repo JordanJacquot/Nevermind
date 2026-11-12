@@ -82,7 +82,7 @@ impl Pc for FauxPc {
         Ok(())
     }
     fn ouvrir(&mut self, _a: &str) {}
-    fn commande(&mut self, _exe: &str, _args: &[String]) -> i32 {
+    fn commande(&mut self, _p: &Permis, _exe: &str, _args: &[String]) -> i32 {
         0
     }
     fn dossier_temp(&self) -> String {
@@ -188,28 +188,28 @@ impl Systeme for FauxSysteme {
         self.messages.push(texte.into());
     }
     fn journal(&mut self, _ligne: &str) {}
-    fn arreter_tache_aide(&mut self) {}
+    fn arreter_tache_aide(&mut self, _p: &Permis) {}
     fn processus(&mut self) -> Vec<(u32, String)> {
         if self.nevermind_ouvert { vec![(10, format!("{}\\Mindset.exe", self.racine.display()))] } else { Vec::new() }
     }
-    fn fermer_processus(&mut self, pid: u32, _chemin: &Path) {
+    fn fermer_processus(&mut self, _p: &Permis, pid: u32, _chemin: &Path) {
         if pid == 10 {
             self.nevermind_ouvert = false;
         }
     }
-    fn retirer_demarrage(&mut self) -> Result<(), String> {
+    fn retirer_demarrage(&mut self, _p: &Permis) -> Result<(), String> {
         Ok(())
     }
     fn tache_existe(&mut self, _nom: &str) -> bool {
         false
     }
-    fn retirer_tache(&mut self, _nom: &str) -> Result<(), String> {
+    fn retirer_tache(&mut self, _p: &Permis, _nom: &str) -> Result<(), String> {
         Ok(())
     }
-    fn retirer_tache_aide(&mut self) -> Result<(), String> {
+    fn retirer_tache_aide(&mut self, _p: &Permis) -> Result<(), String> {
         Ok(())
     }
-    fn effacer_cle_aide(&mut self) -> Result<(), String> {
+    fn effacer_cle_aide(&mut self, _p: &Permis) -> Result<(), String> {
         Ok(())
     }
     fn effacer_raccourci_bureau(&mut self) {}
@@ -287,7 +287,8 @@ fn essai(nom: &str) -> Essai {
 
 fn lancer(e: &mut Essai, impose: Option<Choix>) -> Fin {
     let lieux = Lieux { racine: e.racine.clone(), donnees: e.racine.join("donnees"), suite: None, pid: 999_999 };
-    travail::desinstaller(&mut e.pc, &mut e.sys, e.debut.clone(), None, &lieux, impose)
+    let permis = permis_d_essai().unwrap();
+    travail::desinstaller(&mut e.pc, &mut e.sys, &permis, e.debut.clone(), None, &lieux, impose)
 }
 
 /// M2 : le réglage changé pendant la question (B) et le service coupé pendant la question sont remis comme avant, en

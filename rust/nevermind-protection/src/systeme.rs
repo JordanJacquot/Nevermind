@@ -4,6 +4,7 @@
 use crate::etat::{Environnement, EtatS};
 use crate::ps::Date;
 use crate::regles::{DetectionLue, Detections};
+use nevermind_noyau::Permis;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -48,22 +49,34 @@ pub trait Systeme: Send + Sync {
     fn mettre_a_jour_base(&self) -> Result<(), String>;
     /// Supprimer les menaces actives (Remove-MpThreat)
     ///
-    /// Lot J (suite, garde-fous) : sans le permis du verrou des gestes, ça ne compile pas :
+    /// Lot J (suite, garde-fous) : avec le permis du verrou des gestes, ça compile :
+    /// ```no_run
+    /// fn menaces(s: &dyn nevermind_protection::systeme::Systeme, p: &nevermind_noyau::Permis) {
+    ///     let _ = s.supprimer_menaces(p);
+    /// }
+    /// ```
+    /// Sans lui, ça ne compile pas :
     /// ```compile_fail
     /// fn menaces(s: &dyn nevermind_protection::systeme::Systeme) {
     ///     let _ = s.supprimer_menaces();
     /// }
     /// ```
-    fn supprimer_menaces(&self) -> Result<(), String>;
+    fn supprimer_menaces(&self, p: &Permis) -> Result<(), String>;
     /// Désactiver une tâche planifiée puis la relire : `Ok(true)` si elle est bien désactivée
     ///
-    /// Lot J (suite, garde-fous) : sans le permis du verrou des gestes, ça ne compile pas :
+    /// Lot J (suite, garde-fous) : avec le permis du verrou des gestes, ça compile :
+    /// ```no_run
+    /// fn tache(s: &dyn nevermind_protection::systeme::Systeme, p: &nevermind_noyau::Permis) {
+    ///     let _ = s.desactiver_tache(p, "Tache", "\\");
+    /// }
+    /// ```
+    /// Sans lui, ça ne compile pas :
     /// ```compile_fail
     /// fn tache(s: &dyn nevermind_protection::systeme::Systeme) {
     ///     let _ = s.desactiver_tache("Tache", "\\");
     /// }
     /// ```
-    fn desactiver_tache(&self, nom: &str, chemin: &str) -> Result<bool, String>;
+    fn desactiver_tache(&self, p: &Permis, nom: &str, chemin: &str) -> Result<bool, String>;
     /// Les détections de Defender lues sur place, et les noms des menaces (Get-MpThreatDetection, Get-MpThreat)
     fn detections(&self) -> Detections;
     /// Un fichier dans le Bloc-notes
@@ -160,14 +173,14 @@ impl Systeme for Faux {
         self.noter("mettre à jour la base".into());
         Ok(())
     }
-    fn supprimer_menaces(&self) -> Result<(), String> {
+    fn supprimer_menaces(&self, _p: &Permis) -> Result<(), String> {
         self.noter("supprimer les menaces".into());
         if let Some(r) = self.suppression.lock().unwrap_or_else(|e| e.into_inner()).take() {
             let _ = r.recv_timeout(std::time::Duration::from_secs(10));
         }
         Ok(())
     }
-    fn desactiver_tache(&self, nom: &str, chemin: &str) -> Result<bool, String> {
+    fn desactiver_tache(&self, _p: &Permis, nom: &str, chemin: &str) -> Result<bool, String> {
         self.noter(format!("désactiver {chemin}{nom}"));
         if self.refus.iter().any(|r| r == nom) {
             return Err("Accès refusé.".into());

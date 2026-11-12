@@ -217,7 +217,7 @@ impl Pc for FauxPc {
     fn ouvrir(&mut self, a: &str) {
         self.geste("ouvrir", json!(a));
     }
-    fn commande(&mut self, exe: &str, _args: &[String]) -> i32 {
+    fn commande(&mut self, _p: &Permis, exe: &str, _args: &[String]) -> i32 {
         self.geste("commande", json!(exe));
         0
     }
@@ -326,7 +326,7 @@ impl Systeme for FauxSysteme {
     fn journal(&mut self, ligne: &str) {
         self.journal.borrow_mut().push(ligne.into());
     }
-    fn arreter_tache_aide(&mut self) {
+    fn arreter_tache_aide(&mut self, _p: &Permis) {
         self.geste(
             "tache.arreter",
             json!({ "TaskName": travail::TACHE_AIDE_NOM, "TaskPath": travail::TACHE_AIDE_DOSSIER }),
@@ -335,28 +335,28 @@ impl Systeme for FauxSysteme {
     fn processus(&mut self) -> Vec<(u32, String)> {
         self.processus.clone()
     }
-    fn fermer_processus(&mut self, pid: u32, _chemin: &Path) {
+    fn fermer_processus(&mut self, _p: &Permis, pid: u32, _chemin: &Path) {
         self.geste("processus.fermer", json!(pid));
     }
-    fn retirer_demarrage(&mut self) -> Result<(), String> {
+    fn retirer_demarrage(&mut self, _p: &Permis) -> Result<(), String> {
         self.geste("demarrage.retirer", Value::Null);
         if self.demarrage_refuse { Err("Accès refusé.".into()) } else { Ok(()) }
     }
     fn tache_existe(&mut self, nom: &str) -> bool {
         self.anciennes.iter().any(|t| t == nom)
     }
-    fn retirer_tache(&mut self, nom: &str) -> Result<(), String> {
+    fn retirer_tache(&mut self, _p: &Permis, nom: &str) -> Result<(), String> {
         self.geste("tache.supprimer", json!({ "TaskName": nom, "TaskPath": null }));
         Ok(())
     }
-    fn retirer_tache_aide(&mut self) -> Result<(), String> {
+    fn retirer_tache_aide(&mut self, _p: &Permis) -> Result<(), String> {
         self.geste(
             "tache.supprimer",
             json!({ "TaskName": travail::TACHE_AIDE_NOM, "TaskPath": travail::TACHE_AIDE_DOSSIER }),
         );
         if self.aide_restee { Err("Accès refusé.".into()) } else { Ok(()) }
     }
-    fn effacer_cle_aide(&mut self) -> Result<(), String> {
+    fn effacer_cle_aide(&mut self, _p: &Permis) -> Result<(), String> {
         self.geste("registre.effacer.cle", json!(travail::CLE_AIDE));
         if self.aide_restee { Err("Accès refusé.".into()) } else { Ok(()) }
     }
@@ -578,7 +578,9 @@ fn rejouer(c: &Value, base: &Path) -> Result<(), String> {
     let probleme = e["probleme"].as_str().map(String::from);
     let options: Vec<String> = net::champ_liste(e, "options").iter().map(net::texte).collect();
     let lieux = Lieux { racine: racine.clone(), donnees: donnees.clone(), suite: None, pid: 999_999 };
-    let fin = travail::desinstaller(&mut pc, &mut sys, sv, probleme.as_deref(), &lieux, choix_impose(&options));
+    let permis = permis_d_essai().unwrap();
+    let fin =
+        travail::desinstaller(&mut pc, &mut sys, &permis, sv, probleme.as_deref(), &lieux, choix_impose(&options));
 
     let chemins = [(racine.display().to_string(), "{APPLI}"), (donnees.display().to_string(), "{DONNEES}")];
     let gestes_rust = json!(*gestes.borrow());
@@ -710,7 +712,8 @@ fn nevermind_ouvert_est_ferme_avec_l_aide() {
         ..Default::default()
     };
     let lieux = Lieux { racine: racine.clone(), donnees: base.join("donnees"), suite: None, pid: 15 };
-    let _ = travail::desinstaller(&mut pc, &mut sys, Sauvegarde::default(), None, &lieux, Some(Choix::Garder));
+    let permis = permis_d_essai().unwrap();
+    let _ = travail::desinstaller(&mut pc, &mut sys, &permis, Sauvegarde::default(), None, &lieux, Some(Choix::Garder));
     let fermes: Vec<i64> = gestes
         .borrow()
         .iter()
@@ -810,7 +813,8 @@ impl Essai {
             suite: self.geree.then(|| self.suite.clone()),
             pid: 999_999,
         };
-        let fin = travail::desinstaller(&mut pc, &mut sys, sv, self.probleme, &lieux, impose);
+        let permis = permis_d_essai().unwrap();
+        let fin = travail::desinstaller(&mut pc, &mut sys, &permis, sv, self.probleme, &lieux, impose);
         (fin, sys.messages)
     }
 }

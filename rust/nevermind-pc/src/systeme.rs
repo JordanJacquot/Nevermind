@@ -480,8 +480,9 @@ impl Pc for PcWindows<'_> {
     fn ouvrir(&mut self, adresse: &str) {
         self.effets.push(Effet::OuvrirAdresse(adresse.into()));
     }
-    fn commande(&mut self, exe: &str, args: &[String]) -> i32 {
-        if self.ctx.essai || (exe.eq_ignore_ascii_case("shutdown.exe") && self.ctx.exiger_geste().is_err()) {
+    fn commande(&mut self, _p: &Permis, exe: &str, args: &[String]) -> i32 {
+        // (le permis, et encore le verrou vérifié ici : un permis gardé après la fin du geste ne change rien)
+        if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return 1;
         }
         #[cfg(windows)]
@@ -491,6 +492,20 @@ impl Pc for PcWindows<'_> {
         #[cfg(not(windows))]
         {
             let _ = (exe, args);
+            1
+        }
+    }
+    fn rapport_batterie(&mut self, fichier: &str) -> i32 {
+        if self.ctx.essai {
+            return 1;
+        }
+        #[cfg(windows)]
+        {
+            crate::windows::commande("powercfg.exe", &["/batteryreport".into(), "/output".into(), fichier.into()]).0
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = fichier;
             1
         }
     }
@@ -532,11 +547,11 @@ impl Pc for PcWindows<'_> {
     fn hiberfil(&self) -> bool {
         Path::new(&format!("{}\\hiberfil.sys", std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into()))).exists()
     }
-    fn nettoyer_dossier(&mut self, _p: &Permis, _id: &str, chemins: &[String], exclus: &[String]) -> ResultatNettoyage {
+    fn nettoyer_dossier(&mut self, p: &Permis, _id: &str, chemins: &[String], exclus: &[String]) -> ResultatNettoyage {
         if self.ctx.essai || self.ctx.exiger_geste().is_err() {
             return ResultatNettoyage::default();
         }
-        crate::nettoyage::nettoyer_chemins(chemins, exclus, std::time::SystemTime::now())
+        crate::nettoyage::nettoyer_chemins(p, chemins, exclus, std::time::SystemTime::now())
     }
     fn reglage(&self, nom: &str) -> Option<Value> {
         self.ctx.reglage(nom)

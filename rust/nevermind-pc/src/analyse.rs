@@ -147,9 +147,15 @@ pub fn batterie_get(p: &Batterie, k: &str) -> Option<[Option<i64>; 2]> {
 
 /// `Get-BatteryPowerSettings` : lu dans `powercfg /q SCHEME_CURRENT <sous-groupe batterie>`
 pub fn reglages_batterie(pc: &mut dyn Pc) -> Batterie {
+    let (_, o) = pc.powercfg(&["/q".into(), "SCHEME_CURRENT".into(), SOUS_GROUPE_BATTERIE.into()]);
+    reglages_batterie_lus(&o)
+}
+
+/// `Get-BatteryPowerSettings` d'après ce que `powercfg /q SCHEME_CURRENT <sous-groupe batterie>` a écrit (déjà lu, ou
+/// lu à l'instant)
+pub fn reglages_batterie_lus(o: &str) -> Batterie {
     static AC: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)(alternatif|\bAC\b).*:\s*0x([0-9a-fA-F]+)"));
     static DC: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)(continu|\bDC\b).*:\s*0x([0-9a-fA-F]+)"));
-    let (_, o) = pc.powercfg(&["/q".into(), "SCHEME_CURRENT".into(), SOUS_GROUPE_BATTERIE.into()]);
     let mut r: Batterie = Vec::new();
     let mut cur: Option<String> = None;
     for l in o.lines() {

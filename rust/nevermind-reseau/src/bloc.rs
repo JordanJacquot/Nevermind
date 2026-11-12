@@ -559,7 +559,9 @@ impl BlocReseau {
                     log.push(json!({ "Type": "reg", "Path": cle, "Name": "fDenyTSConnections", "Existed": st["Existed"], "Value": st["Value"], "Kind": st["Kind"], "Nouveau": 1, "NouveauType": "DWord" }));
                     ctx.exiger_geste().and_then(|p| ctx.changer_registre(&p, cle, "fDenyTSConnections", &json!(1), "DWord"))
                 }
-                Geste::Public => sonde.passer_public(crate::texte::reel(Some(&act.arg)) as i64),
+                Geste::Public => ctx
+                    .exiger_geste()
+                    .and_then(|p| sonde.passer_public(&p, crate::texte::reel(Some(&act.arg)) as i64)),
                 Geste::Ouvrir | Geste::ChangerDns | Geste::Partages => Ok(()),
             };
             FinGeste::Audit { act: Box::new(act), titre, r: r.map(|_| log) }

@@ -3,6 +3,7 @@
 
 use crate::constat::Cible;
 use crate::donnees::{Donnees, Pilote};
+use nevermind_noyau::Permis;
 // (publics : un faux PC des tests de l'hôte en a besoin)
 pub use aide_regles::fermeture::{Contexte as ContexteRegle, Fiche};
 use serde_json::Value;
@@ -18,8 +19,15 @@ pub struct Lecture {
 
 /// Le PC (lecture seule, sauf les deux gestes de fermeture, sur des processus vérifiés)
 ///
-/// Lot J (suite, garde-fous) : fermer un programme change le PC ; sans le permis du verrou des gestes, ça ne compile
-/// pas :
+/// Lot J (suite, garde-fous) : fermer un programme change le PC ; il faut le permis du verrou des gestes (« Fermer »
+/// prend le verrou au clic, comme « processus.fermer » de l'Aide). Avec lui, ça compile :
+/// ```no_run
+/// fn fermer(pc: &dyn nevermind_memoire::pc::Pc, p: &nevermind_noyau::Permis) {
+///     let _ = pc.fermer_poliment(p, 1, 2, "C:\\x.exe");
+///     let _ = pc.forcer(p, 1, 2, "C:\\x.exe");
+/// }
+/// ```
+/// Sans lui, ça ne compile pas :
 /// ```compile_fail
 /// fn fermer(pc: &dyn nevermind_memoire::pc::Pc) {
 ///     let _ = pc.fermer_poliment(1, 2, "C:\\x.exe");
@@ -42,9 +50,9 @@ pub trait Pc: Send + Sync {
     /// `[NmFermeture]::Verifier` : 1 c'est bien lui, 0 il est déjà fermé, -1 pas le même ou plus de poignée
     fn verifier(&self, pid: i64, debut: i64, chemin: &str) -> i32;
     /// `[NmFermeture]::FermerPoliment` : WM_CLOSE à ses fenêtres ; le nombre de fenêtres, -1 pas le même, -2 déjà fermé
-    fn fermer_poliment(&self, pid: i64, debut: i64, chemin: &str) -> i32;
+    fn fermer_poliment(&self, p: &Permis, pid: i64, debut: i64, chemin: &str) -> i32;
     /// `[NmFermeture]::Forcer` : 1 fait, -1 pas le même, -2 déjà fermé, -3 refusé par Windows
-    fn forcer(&self, pid: i64, debut: i64, chemin: &str) -> i32;
+    fn forcer(&self, p: &Permis, pid: i64, debut: i64, chemin: &str) -> i32;
     /// `[NmFermeture]::Vivant` : 1 toujours là, 0 fermé, -1 plus de poignée
     fn vivant(&self, pid: i64) -> i32;
     /// `Get-EtatFermeture` : « bloquee », « question » ou « rangee »
@@ -93,10 +101,10 @@ impl Pc for PcAbsent {
     fn verifier(&self, _: i64, _: i64, _: &str) -> i32 {
         -1
     }
-    fn fermer_poliment(&self, _: i64, _: i64, _: &str) -> i32 {
+    fn fermer_poliment(&self, _: &Permis, _: i64, _: i64, _: &str) -> i32 {
         -1
     }
-    fn forcer(&self, _: i64, _: i64, _: &str) -> i32 {
+    fn forcer(&self, _: &Permis, _: i64, _: i64, _: &str) -> i32 {
         -1
     }
     fn vivant(&self, _: i64) -> i32 {

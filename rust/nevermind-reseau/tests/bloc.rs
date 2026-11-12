@@ -127,7 +127,7 @@ impl Sonde for FausseSonde {
             .into(),
         )
     }
-    fn passer_public(&self, _: i64) -> Result<(), String> {
+    fn passer_public(&self, _: &nevermind_noyau::Permis, _: i64) -> Result<(), String> {
         Err("essai".into())
     }
     fn maintenant(&self) -> [u32; 5] {

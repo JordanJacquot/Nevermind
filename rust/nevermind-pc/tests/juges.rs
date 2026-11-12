@@ -268,11 +268,18 @@ impl Pc for FauxPc {
     fn ouvrir(&mut self, a: &str) {
         self.geste("ouvrir", json!(a));
     }
-    fn commande(&mut self, exe: &str, _args: &[String]) -> i32 {
+    fn commande(&mut self, _p: &Permis, exe: &str, _args: &[String]) -> i32 {
         if let Some(d) = self.commande_lente {
             std::thread::sleep(d);
         }
         self.geste("commande", json!(exe));
+        0
+    }
+    fn rapport_batterie(&mut self, _fichier: &str) -> i32 {
+        if let Some(d) = self.commande_lente {
+            std::thread::sleep(d);
+        }
+        self.geste("commande", json!("powercfg.exe"));
         0
     }
     fn dossier_temp(&self) -> String {

@@ -231,8 +231,8 @@ impl Sonde for SondeWindows {
         std::fs::read_to_string(chemin).ok().map(|t| lire_fabricants(&t))
     }
 
-    fn passer_public(&self, index: i64) -> Result<(), String> {
-        reseau::passer_public(index)
+    fn passer_public(&self, p: &nevermind_noyau::Permis, index: i64) -> Result<(), String> {
+        reseau::passer_public(p, index)
     }
 
     fn maintenant(&self) -> [u32; 5] {

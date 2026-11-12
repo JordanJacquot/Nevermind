@@ -852,11 +852,11 @@ impl nevermind_protection::systeme::Systeme for Lent {
     fn mettre_a_jour_base(&self) -> Result<(), String> {
         self.f.mettre_a_jour_base()
     }
-    fn supprimer_menaces(&self) -> Result<(), String> {
-        self.f.supprimer_menaces()
+    fn supprimer_menaces(&self, p: &nevermind_noyau::Permis) -> Result<(), String> {
+        self.f.supprimer_menaces(p)
     }
-    fn desactiver_tache(&self, nom: &str, chemin: &str) -> Result<bool, String> {
-        self.f.desactiver_tache(nom, chemin)
+    fn desactiver_tache(&self, p: &nevermind_noyau::Permis, nom: &str, chemin: &str) -> Result<bool, String> {
+        self.f.desactiver_tache(p, nom, chemin)
     }
     fn detections(&self) -> regles::Detections {
         std::thread::sleep(self.detections_attente);

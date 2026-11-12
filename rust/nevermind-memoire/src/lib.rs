@@ -26,7 +26,7 @@ pub mod windows;
 use constat::{Appli, Cible, Constat, Correction};
 use donnees::{Donnees, Jeux, Pilote};
 use nevermind_noyau::travaux::{Rendu, Travaux};
-use nevermind_noyau::{Bloc, Contexte, Effet, Effets};
+use nevermind_noyau::{Bloc, Contexte, Effet, Effets, Geste};
 use pc::{Aide, AideDuContexte, Lecture, Pc};
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
@@ -631,20 +631,47 @@ impl BlocMemoire {
         self.question(effets, Question::Fermer(Box::new(g)), &texte, Self::oui_non(), &[]);
     }
 
+    /// Le travail de « Fermer » (dans un fil à part) : il emporte le geste pris au clic, et ferme avec le permis du
+    /// verrou (lot J, suite : fermer un programme change le PC, comme « processus.fermer » de l'Aide). Le verrou est
+    /// rendu à la fin du travail, même après une panique. Sans contexte partagé (les tests d'un bloc seul), le travail
+    /// est fait sur place et son résultat attend dans un fil déjà fini.
     fn lancer_travail_fermeture(
         &mut self,
+        ctx: &Contexte,
+        geste: Geste,
         cibles: Vec<Cible>,
         mode: &str,
     ) -> Option<JoinHandle<Result<fermeture::Resultat, String>>> {
         let pc = self.pc();
         let mode = mode.to_string();
-        std::thread::Builder::new()
-            .name("memoire-fermeture".into())
-            .spawn(move || {
-                let ctx = pc.contexte_fermeture()?;
-                Ok(fermeture::fermer(pc.as_ref(), &cibles, &ctx, &mode))
-            })
-            .ok()
+        let travail = move |ctx: &Contexte| -> Result<fermeture::Resultat, String> {
+            geste.ici();
+            let permis = ctx.exiger_geste()?;
+            let regle = pc.contexte_fermeture()?;
+            let r = fermeture::fermer(pc.as_ref(), &permis, &cibles, &regle, &mode);
+            drop(geste);
+            Ok(r)
+        };
+        let fil = std::thread::Builder::new().name("memoire-fermeture".into());
+        match ctx.partage_actuel() {
+            Some(partage) => fil.spawn(move || travail(&partage)).ok(),
+            None => {
+                let r = travail(ctx);
+                fil.spawn(move || r).ok()
+            }
+        }
+    }
+
+    /// Le verrou des gestes pour « Fermer » (lot J, suite) : pris au clic ; un autre geste le tient, le clic est
+    /// refusé et le dit (« Attends la fin de ... »), rien ne part plus tard
+    fn geste_fermer(ctx: &Contexte, effets: &mut Effets, nom: &str) -> Option<Geste> {
+        match ctx.prendre_geste(&format!("Fermer {nom}"), "RAM") {
+            Ok(g) => Some(g),
+            Err(refus) => {
+                effets.ajouter(Effet::Annonce(refus));
+                None
+            }
+        }
     }
 
     fn commencer_fermeture(&mut self, ctx: &Contexte, effets: &mut Effets, g: Appli) {
@@ -652,13 +679,14 @@ impl BlocMemoire {
             Self::message(effets, "Je relis la mémoire : réessaie dans un instant.");
             return;
         }
+        let Some(geste) = Self::geste_fermer(ctx, effets, &g.nom) else { return };
         let mut chemins: Vec<String> = Vec::new();
         for c in &g.cibles {
             if !chemins.contains(&c.chemin) {
                 chemins.push(c.chemin.clone());
             }
         }
-        let fil = self.lancer_travail_fermeture(g.cibles.clone(), "poli");
+        let fil = self.lancer_travail_fermeture(ctx, geste, g.cibles.clone(), "poli");
         ctx.journal(&format!(
             "Mémoire : fermeture polie de {} ({} processus, {})",
             g.nom,
@@ -802,7 +830,12 @@ impl BlocMemoire {
         }
         let restants = f.restants.clone();
         let nom = f.nom.clone();
-        let fil = self.lancer_travail_fermeture(restants.clone(), "force");
+        // (un autre geste tient le verrou : refusé et dit ; la fermeture s'arrête là, comme « Laisser ouvert »)
+        let Some(geste) = Self::geste_fermer(ctx, effets, &nom) else {
+            self.finir_fermeture(ctx, effets);
+            return;
+        };
+        let fil = self.lancer_travail_fermeture(ctx, geste, restants.clone(), "force");
         if let Some(f) = &mut self.fermeture {
             f.mode = "force".into();
             f.etape = "travail".into();

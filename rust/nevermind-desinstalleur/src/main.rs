@@ -144,13 +144,19 @@ mod windows_main {
             travail::Lieux { racine: l.racine, donnees: l.donnees.clone(), suite: l.suite, pid: std::process::id() };
         // (« Tout restaurer » du bloc pc ne change le PC que sous le verrou des gestes, lot A : le désinstalleur, seul
         //  dans son processus, le prend pour toute la désinstallation)
+        // (lot J, suite : et le permis de ce verrou, que demandent les tâches planifiées, la clé de l'Aide et la
+        //  fermeture des programmes ; sur ce fil, il ne peut pas manquer une fois le geste pris)
         let Ok(_geste) = ctx.prendre_geste("Désinstaller", "Désinstallation") else {
+            fenetre::avertissement("Nevermind n'a pas pu commencer la désinstallation : rien n'a été changé.");
+            return 1;
+        };
+        let Ok(permis) = ctx.exiger_geste() else {
             fenetre::avertissement("Nevermind n'a pas pu commencer la désinstallation : rien n'a été changé.");
             return 1;
         };
         // (la sauvegarde, les réglages et l'historique lus ici servent à la question ; ils sont relus après la fermeture
         //  de l'Aide et de Nevermind, juste avant la remise en état : lot H, M2)
-        let _ = travail::desinstaller(&mut pc, &mut sys, sv, probleme.as_deref(), &lieux, impose);
+        let _ = travail::desinstaller(&mut pc, &mut sys, &permis, sv, probleme.as_deref(), &lieux, impose);
         // Le journal et les états d'origine changés, à la fin, sans suivre de lien (si les données sont gardées) ; la
         // référence : les réglages relus juste avant la remise en état
         let reference = sys.reglages_relus.take().unwrap_or(reglages_lus);
