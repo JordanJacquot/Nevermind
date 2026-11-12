@@ -82,6 +82,8 @@ pub(crate) struct FaussesMesures {
     pub(crate) presentmon_refus: Option<String>,
     /// Ce qui est lancé, dans l'ordre : les arguments de chaque PresentMon, et ceux de la fermeture de sa session
     pub(crate) lancements: Vec<String>,
+    /// La fermeture de la session d'un PresentMon arrêté prend ce temps (jusqu'à 3 s en vrai) ; gels
+    pub(crate) fermeture_lente: Option<std::time::Duration>,
     /// Le nom de session de chaque trace réseau démarrée
     pub(crate) traces: Vec<String>,
     /// Les traces restées ouvertes fermées au démarrage de l'Aide (leur nom)
@@ -502,6 +504,10 @@ impl Systeme for FauxSysteme {
         Ok(Box::new(FauxLance))
     }
     fn fermer_session_presentmon(&self, _chemin: &str) {
+        let lente = self.mesures.lock().unwrap().fermeture_lente;
+        if let Some(d) = lente {
+            std::thread::sleep(d);
+        }
         let s = self.sessions().0;
         self.mesures.lock().unwrap().lancements.push(format!("--terminate_existing_session --session_name {s}"));
     }
