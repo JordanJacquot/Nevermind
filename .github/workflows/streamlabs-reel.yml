@@ -7,10 +7,6 @@ name: Streamlabs en vrai
 
 on:
   workflow_dispatch:
-  # À RETIRER à la fusion de la branche streamlabs dans main (workflow_dispatch ne marche que pour un fichier présent
-  # sur main : en attendant, l'essai part à chaque envoi de cette branche).
-  push:
-    branches: [streamlabs]
 
 permissions:
   contents: read
