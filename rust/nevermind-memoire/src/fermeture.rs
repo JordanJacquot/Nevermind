@@ -5,6 +5,7 @@
 use crate::constat::Cible;
 use crate::pc::Pc;
 use aide_regles::fermeture::{self, Contexte as ContexteRegle};
+use nevermind_noyau::Permis;
 
 /// Un processus pas fermé, et pourquoi
 #[derive(Clone, Debug, PartialEq)]
@@ -22,7 +23,24 @@ pub struct Resultat {
 }
 
 /// Le geste sur chaque processus de l'appli. `mode` : « poli » (WM_CLOSE à ses fenêtres) ou « force ».
-pub fn fermer(pc: &dyn Pc, cibles: &[Cible], ctx: &ContexteRegle, mode: &str) -> Resultat {
+///
+/// Lot J (suite, garde-fous) : avec le permis du verrou des gestes, ça compile :
+/// ```no_run
+/// fn fermer(
+///     pc: &dyn nevermind_memoire::pc::Pc,
+///     p: &nevermind_noyau::Permis,
+///     regle: &nevermind_memoire::pc::ContexteRegle,
+/// ) {
+///     let _ = nevermind_memoire::fermeture::fermer(pc, p, &[], regle, "force");
+/// }
+/// ```
+/// Sans lui, ça ne compile pas :
+/// ```compile_fail
+/// fn fermer(pc: &dyn nevermind_memoire::pc::Pc, regle: &nevermind_memoire::pc::ContexteRegle) {
+///     let _ = nevermind_memoire::fermeture::fermer(pc, &[], regle, "force");
+/// }
+/// ```
+pub fn fermer(pc: &dyn Pc, p: &Permis, cibles: &[Cible], ctx: &ContexteRegle, mode: &str) -> Resultat {
     let mut r = Resultat::default();
     for c in cibles {
         let v = pc.verifier(c.pid, c.debut, &c.chemin);
@@ -42,9 +60,9 @@ pub fn fermer(pc: &dyn Pc, cibles: &[Cible], ctx: &ContexteRegle, mode: &str) ->
             continue;
         }
         let n = if mode == "force" {
-            pc.forcer(c.pid, c.debut, &c.chemin)
+            pc.forcer(p, c.pid, c.debut, &c.chemin)
         } else {
-            pc.fermer_poliment(c.pid, c.debut, &c.chemin)
+            pc.fermer_poliment(p, c.pid, c.debut, &c.chemin)
         };
         match n {
             -2 => r.deja.push(c.clone()),

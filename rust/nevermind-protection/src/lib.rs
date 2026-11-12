@@ -1099,16 +1099,18 @@ fn geste_long(
     sys: Option<&dyn Systeme>,
     sorte: &Sorte,
 ) -> (Option<(String, String)>, Option<String>, Vec<Effet>) {
-    if let Err(e) = ctx.exiger_geste() {
-        return (None, Some(e), Vec::new());
-    }
+    // (lot J, suite : le permis du verrou, que demandent les gestes de Defender et du Planificateur)
+    let permis = match ctx.exiger_geste() {
+        Ok(p) => p,
+        Err(e) => return (None, Some(e), Vec::new()),
+    };
     let mut definitif: Option<(String, String)> = None;
     let mut erreur: Option<String> = None;
     let mut annonces = Vec::new();
     match sorte {
         Sorte::SupprimerMenaces => {
             if let Some(s) = sys
-                && let Err(e) = s.supprimer_menaces()
+                && let Err(e) = s.supprimer_menaces(&permis)
             {
                 erreur = Some(e);
             }
@@ -1142,7 +1144,7 @@ fn geste_long(
             let (mut faites, mut ratees) = (Vec::new(), Vec::new());
             if let Some(s) = sys {
                 for t in l {
-                    match s.desactiver_tache(&t.nom, &t.chemin) {
+                    match s.desactiver_tache(&permis, &t.nom, &t.chemin) {
                         Ok(true) => faites.push(t.nom.clone()),
                         Ok(false) => ratees.push(t.nom.clone()),
                         Err(e) => {

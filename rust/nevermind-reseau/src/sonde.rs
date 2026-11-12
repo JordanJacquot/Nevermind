@@ -78,7 +78,20 @@ pub trait Sonde: Send + Sync {
     /// La liste des fabricants (fabricants.txt, téléchargée chez l'IEEE la première fois)
     fn fabricants(&self, chemin: &Path) -> Option<Fabricants>;
     /// Passer le réseau en public (`Set-NetConnectionProfile`)
-    fn passer_public(&self, index: i64) -> Result<(), String>;
+    ///
+    /// Lot J (suite, garde-fous) : avec le permis du verrou des gestes, ça compile :
+    /// ```no_run
+    /// fn public(s: &dyn nevermind_reseau::sonde::Sonde, p: &nevermind_noyau::Permis) {
+    ///     let _ = s.passer_public(p, 3);
+    /// }
+    /// ```
+    /// Sans lui, ça ne compile pas :
+    /// ```compile_fail
+    /// fn public(s: &dyn nevermind_reseau::sonde::Sonde) {
+    ///     let _ = s.passer_public(3);
+    /// }
+    /// ```
+    fn passer_public(&self, p: &nevermind_noyau::Permis, index: i64) -> Result<(), String>;
     /// L'heure locale : année, mois, jour, heure, minute
     fn maintenant(&self) -> [u32; 5] {
         heure_utc()
@@ -148,7 +161,7 @@ impl Sonde for SondeVide {
     fn fabricants(&self, chemin: &Path) -> Option<Fabricants> {
         std::fs::read_to_string(chemin).ok().map(|t| crate::appareil::lire_fabricants(&t))
     }
-    fn passer_public(&self, _: i64) -> Result<(), String> {
+    fn passer_public(&self, _: &nevermind_noyau::Permis, _: i64) -> Result<(), String> {
         Err("pas de réseau".into())
     }
 }

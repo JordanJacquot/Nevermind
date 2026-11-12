@@ -35,20 +35,25 @@ fn programme_d_essai() {
     assert_eq!(f.protection, Some(0));
     assert!(!f.compte.is_empty() && f.session.is_some_and(|s| s >= 0));
     let p = i64::from(pid);
+    // (le permis d'un contexte d'essai dont ce fil tient le verrou des gestes ; lot J, suite)
+    let dc = nevermind_noyau::dossier_essai("memoire-natif-permis");
+    let ctx = nevermind_noyau::Contexte::nouveau(dc.join("a"), dc.join("d"), false, true);
+    let _g = ctx.prendre_geste("Fermer", "Essai").unwrap();
+    let permis = ctx.exiger_geste().unwrap();
     assert_eq!(pc.verifier(p, debut, &chemin), 1);
     assert_eq!(pc.verifier(p, debut - 1, &chemin), -1, "numéro repris pas vu");
     assert_eq!(pc.verifier(p, debut, r"C:\autre.exe"), -1, "autre chemin pas vu");
-    assert_eq!(pc.forcer(p, debut - 1, &chemin), -1, "fiche périmée forcée");
+    assert_eq!(pc.forcer(&permis, p, debut - 1, &chemin), -1, "fiche périmée forcée");
     assert_eq!(pc.vivant(p), 1);
     // Sans fenêtre : rien à fermer poliment, et l'état est « rangée »
-    assert_eq!(pc.fermer_poliment(p, debut, &chemin), 0);
+    assert_eq!(pc.fermer_poliment(&permis, p, debut, &chemin), 0);
     assert_eq!(pc.etat_fermeture(&[Cible { pid: p, debut, chemin: chemin.clone(), octets: 0.0 }]), "rangee");
     // La bonne fiche : fermée de force
-    assert_eq!(pc.forcer(p, debut, &chemin), 1);
+    assert_eq!(pc.forcer(&permis, p, debut, &chemin), 1);
     let _ = enfant.wait();
     assert_eq!(pc.vivant(p), 0);
     assert_eq!(pc.verifier(p, debut, &chemin), 0, "déjà fermé pas vu");
-    assert_eq!(pc.forcer(p, debut, &chemin), -2);
+    assert_eq!(pc.forcer(&permis, p, debut, &chemin), -2);
     windows::relacher();
     assert_eq!(pc.vivant(p), -1, "poignée pas rendue");
 }

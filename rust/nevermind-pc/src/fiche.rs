@@ -170,7 +170,10 @@ fn ligne_declaration(m: &mut Moteur, d: &Declaration, cache: &mut Option<crate::
         }
         "pcfg" => {
             if cache.is_none() {
-                *cache = Some(crate::analyse::reglages_batterie(m.pc));
+                // (déjà lu en fond pour la fiche, sinon lu à l'instant ; gels)
+                *cache = Some(crate::analyse::reglages_batterie_lus(
+                    &m.lire_powercfg(crate::corrections::LecturePowercfg::Batterie),
+                ));
             }
             let cur = cache.as_ref().and_then(|c| crate::analyse::batterie_get(c, &d.cle));
             let maint = match cur {
@@ -200,7 +203,7 @@ fn ligne_declaration(m: &mut Moteur, d: &Declaration, cache: &mut Option<crate::
             )
         }
         "power" => {
-            let s = crate::reglages::plan_actif(m.pc);
+            let s = crate::reglages::plan_actif_lu(&m.lire_powercfg(crate::corrections::LecturePowercfg::PlanActif));
             let pareil = s.as_ref().is_some_and(|(g, _)| !d.guid.is_empty() && g.eq_ignore_ascii_case(&d.guid));
             format!(
                 "Plan d'alimentation : maintenant « {} », après « {} »{}",

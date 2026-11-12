@@ -268,7 +268,23 @@ fn taille_journal(b: f64) -> String {
 }
 
 /// `$CleanScript` : le nettoyage d'une catégorie de l'utilisateur, fichier par fichier
-pub fn nettoyer_chemins(chemins: &[String], exclus: &[String], maintenant: SystemTime) -> ResultatNettoyage {
+///
+/// Lot J (suite, garde-fous) : effacer des fichiers change le PC ; il faut le permis du verrou des gestes :
+/// ```no_run
+/// let ctx: nevermind_noyau::Contexte = todo!();
+/// let p = ctx.exiger_geste().unwrap();
+/// let _ = nevermind_pc::nettoyage::nettoyer_chemins(&p, &[], &[], std::time::SystemTime::now());
+/// ```
+/// Sans lui, ça ne compile pas :
+/// ```compile_fail
+/// let _ = nevermind_pc::nettoyage::nettoyer_chemins(&[], &[], std::time::SystemTime::now());
+/// ```
+pub fn nettoyer_chemins(
+    _p: &nevermind_noyau::Permis,
+    chemins: &[String],
+    exclus: &[String],
+    maintenant: SystemTime,
+) -> ResultatNettoyage {
     let avant = maintenant.checked_sub(Duration::from_secs(86400)).unwrap_or(maintenant);
     let saut = sauter(chemins, exclus);
     let mut r = ResultatNettoyage::default();
@@ -358,9 +374,14 @@ mod tests {
         let racine = d.to_string_lossy().to_string();
         // (« maintenant » dans deux jours : les fichiers ont plus de 24 h)
         let plus_tard = SystemTime::now() + Duration::from_secs(2 * 86400);
+        // (le permis d'un contexte d'essai dont ce fil tient le verrou)
+        let dc = nevermind_noyau::dossier_essai("pc-nettoyage-permis");
+        let ctx = nevermind_noyau::Contexte::nouveau(dc.join("a"), dc.join("d"), false, true);
+        let _g = ctx.prendre_geste("Nettoyer", "Essai").unwrap();
+        let p = ctx.exiger_geste().unwrap();
         let l = lister_chemins(std::slice::from_ref(&racine), &["claude".into()], plus_tard, 10);
         assert_eq!(l["Count"], json!(2));
-        let r = nettoyer_chemins(std::slice::from_ref(&racine), &["claude".into()], plus_tard);
+        let r = nettoyer_chemins(&p, std::slice::from_ref(&racine), &["claude".into()], plus_tard);
         assert_eq!(r.supprimes, 2);
         assert!(r.journal.iter().any(|x| x.starts_with("[SUPPRIMÉ] ") && x.ends_with(" - 3 Ko")));
         assert!(d.join("claude\\garde.txt").exists(), "le dossier de Claude est gardé");
@@ -368,7 +389,7 @@ mod tests {
         assert!(d.exists(), "le dossier de départ reste");
         // (maintenant : rien n'a plus de 24 h)
         std::fs::write(d.join("neuf.tmp"), b"x").unwrap();
-        assert_eq!(nettoyer_chemins(&[racine], &[], SystemTime::now()).supprimes, 0);
+        assert_eq!(nettoyer_chemins(&p, &[racine], &[], SystemTime::now()).supprimes, 0);
         let _ = std::fs::remove_dir_all(&d);
     }
 }

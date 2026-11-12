@@ -70,10 +70,10 @@ impl Pc for FauxPcMemoire {
     fn verifier(&self, _: i64, _: i64, _: &str) -> i32 {
         0
     }
-    fn fermer_poliment(&self, _: i64, _: i64, _: &str) -> i32 {
+    fn fermer_poliment(&self, _: &nevermind_noyau::Permis, _: i64, _: i64, _: &str) -> i32 {
         -2
     }
-    fn forcer(&self, _: i64, _: i64, _: &str) -> i32 {
+    fn forcer(&self, _: &nevermind_noyau::Permis, _: i64, _: i64, _: &str) -> i32 {
         -2
     }
     fn vivant(&self, _: i64) -> i32 {

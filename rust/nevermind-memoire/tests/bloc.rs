@@ -69,11 +69,11 @@ impl Pc for FauxPc {
         }
         i32::from(self.vivants.lock().unwrap().contains(&pid))
     }
-    fn fermer_poliment(&self, pid: i64, _: i64, _: &str) -> i32 {
+    fn fermer_poliment(&self, _: &nevermind_noyau::Permis, pid: i64, _: i64, _: &str) -> i32 {
         self.gestes.lock().unwrap().push(format!("poli:{pid}"));
         1
     }
-    fn forcer(&self, pid: i64, _: i64, _: &str) -> i32 {
+    fn forcer(&self, _: &nevermind_noyau::Permis, pid: i64, _: i64, _: &str) -> i32 {
         self.gestes.lock().unwrap().push(format!("force:{pid}"));
         1
     }

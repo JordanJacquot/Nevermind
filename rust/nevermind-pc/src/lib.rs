@@ -73,6 +73,9 @@ struct Relu {
     ecrans: Vec<String>,
     plan_ok: bool,
     nombre: usize,
+    /// Les lectures de powercfg d'une fiche (le plan actif, la liste des plans, la batterie) : la fiche s'ouvre ensuite
+    /// sans lancer powercfg sur le fil des blocs (gels)
+    powercfg: corrections::PowercfgLu,
 }
 
 /// La clé de la relecture faite pour la diffusion (une à la fois ; une demandée pendant ce temps est faite après)
@@ -299,7 +302,7 @@ impl BlocPc {
             fond.effet(nevermind_noyau::signaux::occupe("Préparation du rapport de la batterie..."));
             let rapport = |pc: &mut dyn Pc| {
                 let f = format!("{}\\rapport-batterie.html", pc.dossier_temp());
-                (pc.commande("powercfg.exe", &["/batteryreport".into(), "/output".into(), f.clone()]) == 0).then_some(f)
+                (pc.rapport_batterie(&f) == 0).then_some(f)
             };
             let f = match essai {
                 Some(p) => rapport(p.lock().unwrap_or_else(|e| e.into_inner()).as_mut()),
@@ -358,6 +361,11 @@ impl BlocPc {
             Verrou::Priorite(nom) => (Some(ctx.geste_prioritaire(&nom, PAGE)), None),
             Verrou::Tour(nom, page) => (None, Some((nom, page))),
         };
+        // (un geste peut changer le plan d'alimentation : ce qui en a été relu pour la fiche ne sert plus, la
+        //  diffusion qui suit le geste le relit ; gels)
+        if geste.is_some() || tour.is_some() {
+            self.session.powercfg_lu = None;
+        }
         let mut at =
             Atelier { session: self.session.clone(), cases: self.cases.clone(), annonces: Vec::new(), relu: false };
         let attente_tour = self.attente_tour_essai.unwrap_or(nevermind_noyau::gestes::ATTENTE_REPRISE);
@@ -629,6 +637,7 @@ impl BlocPc {
                     ecrans: pc.ecrans(),
                     plan_ok: reglages::test_plan(pc, cree.as_deref()),
                     nombre: corrections::compte_total(&sv, pc),
+                    powercfg: corrections::lire_powercfg_fiche(pc),
                 }
             };
             match essai {
@@ -659,7 +668,9 @@ impl BlocPc {
     /// Les signaux aux autres blocs, avec ce que la relecture a lu
     fn diffuser_relu(&mut self, relu: Relu, effets: &mut Effets) {
         let Some(a) = self.session.analyse.clone() else { return };
-        let Relu { faits, demarrage, ecrans, plan_ok, nombre } = relu;
+        let Relu { faits, demarrage, ecrans, plan_ok, nombre, powercfg } = relu;
+        // (pour ouvrir une fiche sans powercfg sur le fil des blocs ; gels)
+        self.session.powercfg_lu = Some(powercfg);
         diffusion::prendre_reglages(faits, &mut self.cases);
         self.cases.demarrage = demarrage;
         self.tests.ecrans = ecrans;

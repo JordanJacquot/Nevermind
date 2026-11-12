@@ -130,6 +130,43 @@ pub struct Moteur<'a> {
     /// La sauvegarde telle qu'elle était à la dernière écriture (ou au début du geste) : ce que le geste a changé
     /// depuis est seul fusionné dans sauvegarde.json (lot A, étape 2)
     base: Sauvegarde,
+    /// Ce que powercfg a déjà écrit pour les lectures de la fiche ([`LecturePowercfg`]), relu en fond par la diffusion
+    /// de Ton PC (gels) : la fiche s'ouvre sans lancer powercfg sur le fil des blocs. `None` (les gestes, ou rien de
+    /// relu encore) : lu sur le PC à l'instant.
+    pub powercfg_lu: Option<PowercfgLu>,
+}
+
+/// Les lectures de powercfg que fait une fiche de Ton PC (gels : relues en fond, avant que la fiche soit ouverte)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LecturePowercfg {
+    /// `powercfg /getactivescheme` : le plan actif
+    PlanActif,
+    /// `powercfg /list` : les plans
+    Plans,
+    /// `powercfg /q SCHEME_CURRENT <sous-groupe batterie>` : les réglages de la batterie
+    Batterie,
+}
+
+impl LecturePowercfg {
+    /// Toutes, dans l'ordre
+    pub const TOUTES: [LecturePowercfg; 3] = [Self::PlanActif, Self::Plans, Self::Batterie];
+
+    /// Ce que powercfg écrit pour cette lecture, lu sur le PC à l'instant (des lectures seulement : rien ne change)
+    pub fn lire(self, pc: &mut dyn Pc) -> String {
+        match self {
+            Self::PlanActif => pc.powercfg(&["/getactivescheme".into()]).1,
+            Self::Plans => pc.powercfg(&["/list".into()]).1,
+            Self::Batterie => pc.powercfg(&["/q".into(), "SCHEME_CURRENT".into(), SOUS_GROUPE_BATTERIE.into()]).1,
+        }
+    }
+}
+
+/// Ce que powercfg a écrit, pour chaque lecture d'une fiche
+pub type PowercfgLu = std::collections::HashMap<LecturePowercfg, String>;
+
+/// Les lectures de la fiche faites sur ce PC (dans un travail de fond : la diffusion de Ton PC)
+pub fn lire_powercfg_fiche(pc: &mut dyn Pc) -> PowercfgLu {
+    LecturePowercfg::TOUTES.iter().map(|l| (*l, l.lire(pc))).collect()
 }
 
 fn erreur_reg(e: String) -> String {
@@ -139,7 +176,16 @@ fn erreur_reg(e: String) -> String {
 impl<'a> Moteur<'a> {
     pub fn nouveau(pc: &'a mut dyn Pc, sv: &'a mut Sauvegarde, portable: bool) -> Self {
         let base = sv.clone();
-        Moteur { pc, sv, journal: None, portable, demarrage_a_relire: false, question: None, base }
+        Moteur { pc, sv, journal: None, portable, demarrage_a_relire: false, question: None, base, powercfg_lu: None }
+    }
+
+    /// powercfg en lecture (`/getactivescheme`, `/list`, les réglages de la batterie) : ce qui a déjà été lu en fond
+    /// pour la fiche, sinon lu sur le PC à l'instant
+    pub fn lire_powercfg(&mut self, l: LecturePowercfg) -> String {
+        if let Some(t) = self.powercfg_lu.as_ref().and_then(|x| x.get(&l)) {
+            return t.clone();
+        }
+        l.lire(self.pc)
     }
 
     fn noter(&mut self, e: Value) {
@@ -291,7 +337,8 @@ impl<'a> Moteur<'a> {
             Changements::Aucun => Vec::new(),
             Changements::Liste(l) => l.clone(),
             Changements::Alimentation => {
-                reglages::changement_alimentation(self.pc, self.portable, self.sv.plan_cree.as_deref())
+                let (portable, cree) = (self.portable, self.sv.plan_cree.clone());
+                reglages::changement_alimentation(&mut |a| self.lire_powercfg(a), portable, cree.as_deref())
             }
             Changements::Raccourcis => reglages::changements_raccourcis(self.pc)?,
             Changements::Fenetre => reglages::changement_fenetre(self.pc),

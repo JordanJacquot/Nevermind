@@ -64,6 +64,10 @@ pub struct Session {
     pub restauration_faite: bool,
     pub journal_resultat: Option<Vec<Value>>,
     pub historique_resultat: Option<String>,
+    /// Ce que powercfg a écrit pour les lectures d'une fiche (le plan actif, la liste des plans, la batterie), relu en
+    /// fond par la diffusion : ouvrir une fiche ne lance plus powercfg sur le fil des blocs (gels). `None` : pas encore
+    /// relu, ou un geste a pu le changer depuis ; la fiche le lit alors à l'instant, comme avant.
+    pub powercfg_lu: Option<crate::corrections::PowercfgLu>,
 }
 
 /// `Get-HistoryItems`
@@ -149,7 +153,10 @@ impl Session {
     /// `Open-Sheet` d'un point
     pub fn ouvrir(&mut self, pc: &mut dyn Pc, f: &Constat) {
         let ignores = self.ignores.clone();
+        let lu = self.powercfg_lu.clone();
         let mut m = self.moteur(pc);
+        // (le plan d'alimentation déjà relu en fond : pas de powercfg sur le fil des blocs ; gels)
+        m.powercfg_lu = lu;
         let fi = fiche::ouvrir(&mut m, f, &ignores);
         self.fiche = Some(fi);
     }
@@ -165,7 +172,9 @@ impl Session {
         }
         // (un seul point : sa fiche à lui, comme Open-Sheet avec un seul élément)
         let ignores = self.ignores.clone();
+        let lu = self.powercfg_lu.clone();
         let mut m = self.moteur(pc);
+        m.powercfg_lu = lu;
         let fi = if auto.len() == 1 {
             fiche::ouvrir(&mut m, &auto[0], &ignores)
         } else {
@@ -846,8 +855,8 @@ pub fn executer_correction(
             m.pc.lancer(&a).map_err(|e| message_lancement(&a, &e))
         }
         Some(Execution::Bios) => {
-            m.pc.exiger_geste()?;
-            let code = m.pc.commande("shutdown.exe", &["/r".into(), "/fw".into(), "/t".into(), "10".into()]);
+            let p = m.pc.exiger_geste()?;
+            let code = m.pc.commande(&p, "shutdown.exe", &["/r".into(), "/fw".into(), "/t".into(), "10".into()]);
             if code != 0 {
                 return Err(format!(
                     "Ce PC ne permet pas de redémarrer directement dans le BIOS (code {code}). Redémarre et appuie sur Suppr ou F2 pendant le démarrage."

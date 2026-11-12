@@ -17,6 +17,7 @@
 
 use crate::choix::Choix;
 use crate::{conseils, donnees};
+use nevermind_noyau::Permis;
 use nevermind_pc::corrections::{self, Moteur, Sauvegarde};
 use nevermind_pc::pc::Pc;
 use serde_json::Value;
@@ -33,6 +34,39 @@ pub const ANCIENNES_TACHES: [&str; 2] = ["OptiGame (démarrage)", "Nexo (démarr
 pub const CLE_AIDE: &str = "HKLM:\\SOFTWARE\\Mindset\\Nevermind\\Aide";
 
 /// Ce qui, hors restauration, touche Windows ou l'écran
+///
+/// Lot J (suite, garde-fous) : les tâches planifiées (schtasks), la clé de l'Aide et la fermeture des programmes
+/// changent le PC : ils demandent le permis du verrou des gestes, que la désinstallation prend pour tout son travail
+/// (main.rs). Avec lui, ça compile :
+/// ```no_run
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme, p: &nevermind_noyau::Permis) {
+///     s.arreter_tache_aide(p);
+///     let _ = s.retirer_demarrage(p);
+///     let _ = s.retirer_tache(p, "Nexo (démarrage)");
+///     let _ = s.retirer_tache_aide(p);
+///     let _ = s.effacer_cle_aide(p);
+///     s.fermer_processus(p, 1, std::path::Path::new("x"));
+/// }
+/// ```
+/// Sans lui, rien de cela ne compile :
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { s.arreter_tache_aide(); }
+/// ```
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { let _ = s.retirer_demarrage(); }
+/// ```
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { let _ = s.retirer_tache("Nexo (démarrage)"); }
+/// ```
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { let _ = s.retirer_tache_aide(); }
+/// ```
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { let _ = s.effacer_cle_aide(); }
+/// ```
+/// ```compile_fail
+/// fn f(s: &mut dyn nevermind_desinstalleur::travail::Systeme) { s.fermer_processus(1, std::path::Path::new("x")); }
+/// ```
 pub trait Systeme {
     /// historique.json (`Import-History`), pour les changements définitifs
     fn historique(&mut self) -> Vec<Value>;
@@ -47,24 +81,24 @@ pub trait Systeme {
     /// Une ligne au journal de Nevermind (`Write-Log`)
     fn journal(&mut self, ligne: &str);
     /// `Stop-ScheduledTask -TaskPath '\Mindset\' -TaskName 'Nevermind (aide)'` (erreurs ignorées)
-    fn arreter_tache_aide(&mut self);
+    fn arreter_tache_aide(&mut self, p: &Permis);
     /// Les programmes en cours : numéro et chemin complet (vide si illisible)
     fn processus(&mut self) -> Vec<(u32, String)>;
     /// Ferme ce programme et attend sa fin (3 s au plus ; erreurs ignorées), seulement s'il est bien `chemin` : relu par
     /// la poignée qui le ferme (lot C : le numéro, lu dans la liste, a pu être redonné à un autre programme depuis)
-    fn fermer_processus(&mut self, pid: u32, chemin: &Path);
+    fn fermer_processus(&mut self, p: &Permis, pid: u32, chemin: &Path);
     /// `Set-AutoStart $false` : la tâche « Nevermind (démarrage) » retirée si elle existe
-    fn retirer_demarrage(&mut self) -> Result<(), String>;
+    fn retirer_demarrage(&mut self, p: &Permis) -> Result<(), String>;
     /// Une tâche de ce nom existe (`Get-ScheduledTask -TaskName`)
     fn tache_existe(&mut self, nom: &str) -> bool;
     /// `Unregister-ScheduledTask -TaskName` (la tâche existe) : son erreur, dite à la fin et notée au journal
-    fn retirer_tache(&mut self, nom: &str) -> Result<(), String>;
+    fn retirer_tache(&mut self, p: &Permis, nom: &str) -> Result<(), String>;
     /// `Unregister-ScheduledTask -TaskPath '\Mindset\' -TaskName 'Nevermind (aide)'` : rien à faire si elle n'existe
     /// pas ; son erreur sinon, dite à la fin et notée au journal (audit du 08/11 : elle n'est plus avalée)
-    fn retirer_tache_aide(&mut self) -> Result<(), String>;
+    fn retirer_tache_aide(&mut self, p: &Permis) -> Result<(), String>;
     /// `Remove-Item HKLM:\SOFTWARE\Mindset\Nevermind\Aide -Recurse` : rien à faire si elle n'existe pas ; son erreur
     /// sinon, dite à la fin et notée au journal
-    fn effacer_cle_aide(&mut self) -> Result<(), String>;
+    fn effacer_cle_aide(&mut self, p: &Permis) -> Result<(), String>;
     /// Le raccourci du bureau effacé (erreurs ignorées)
     fn effacer_raccourci_bureau(&mut self);
     /// `Remove-MenuShortcut` : le raccourci du menu Démarrer vers cette copie (et le dossier « Mindset » vide)
@@ -254,10 +288,12 @@ fn avertissements(probleme: Option<&str>, historique: &[Value]) -> (String, Vec<
 /// La désinstallation. `sv` et `probleme` : la sauvegarde des réglages d'origine (`Import-Backup`) et son problème
 /// éventuel (« abimee », « absente »), lus au début pour la question ; relus après la fermeture de l'Aide et de
 /// Nevermind ([`Systeme::relire_donnees`]) pour la remise en état. `impose` : le choix venu de la ligne de commande (pas
-/// de question).
+/// de question). `permis` : le permis du verrou des gestes, que la désinstallation tient pour tout son travail (lot J,
+/// suite : les tâches planifiées, la clé de l'Aide et la fermeture des programmes le demandent).
 pub fn desinstaller(
     pc: &mut dyn Pc,
     sys: &mut dyn Systeme,
+    permis: &Permis,
     sv: Sauvegarde,
     probleme: Option<&str>,
     lieux: &Lieux,
@@ -302,10 +338,10 @@ pub fn desinstaller(
     // lui-même). Reconnue par son chemin, jamais par son nom seul (seule l'Aide de ce dossier). L'Aide en SYSTEM :
     // d'abord arrêtée par sa tâche, que Windows arrête même quand le processus refuse d'être fermé.
     let exe_aide = dans(&lieux.racine, "NevermindAide.exe");
-    sys.arreter_tache_aide();
+    sys.arreter_tache_aide(permis);
     for (pid, chemin) in sys.processus() {
         if pid != lieux.pid && egal_chemin(&chemin, &exe_aide) {
-            sys.fermer_processus(pid, &exe_aide);
+            sys.fermer_processus(permis, pid, &exe_aide);
         }
     }
     // (DIVERGENCES.md, point 3 : Nevermind lui-même, s'il est ouvert depuis ce dossier, est fermé aussi : il tiendrait
@@ -315,7 +351,7 @@ pub fn desinstaller(
         if pid != lieux.pid
             && let Some(e) = exes_appli.iter().find(|e| egal_chemin(&chemin, e))
         {
-            sys.fermer_processus(pid, e);
+            sys.fermer_processus(permis, pid, e);
         }
     }
     // Lot H (M2) : Nevermind était encore ouvert pendant la question (ou juste avant, piloté par Mindset) ; il a pu
@@ -349,7 +385,7 @@ pub fn desinstaller(
         !erreurs.is_empty() || probleme.as_deref().is_some_and(|p| !p.is_empty()),
     );
     erreurs.extend(err_donnees.iter().cloned());
-    if let Err(e) = sys.retirer_demarrage() {
+    if let Err(e) = sys.retirer_demarrage(permis) {
         erreurs.push(format!("Démarrage automatique: {e}"));
     }
     // (audit du 08/11 : ces erreurs ne sont plus avalées ; elles sont dites à la fin, passées à Mindset et notées au
@@ -357,16 +393,16 @@ pub fn desinstaller(
     let mut restes: Vec<String> = Vec::new();
     for t in ANCIENNES_TACHES {
         if sys.tache_existe(t)
-            && let Err(e) = sys.retirer_tache(t)
+            && let Err(e) = sys.retirer_tache(permis, t)
         {
             restes.push(format!("Ancienne tâche: {e}"));
         }
     }
     // L'Aide : sa tâche planifiée (créée par Mindset) et ce qu'elle retenait (DNS d'origine)
-    if let Err(e) = sys.retirer_tache_aide() {
+    if let Err(e) = sys.retirer_tache_aide(permis) {
         restes.push(format!("Tâche de l'Aide: {e}"));
     }
-    if let Err(e) = sys.effacer_cle_aide() {
+    if let Err(e) = sys.effacer_cle_aide(permis) {
         restes.push(format!("Réglages de l'Aide: {e}"));
     }
     for r in &restes {

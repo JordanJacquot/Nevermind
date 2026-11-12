@@ -131,7 +131,7 @@ impl Pc for PcWindows {
     fn verifier(&self, pid: i64, debut: i64, chemin: &str) -> i32 {
         processus::verifier(pid, debut, chemin)
     }
-    fn fermer_poliment(&self, pid: i64, debut: i64, chemin: &str) -> i32 {
+    fn fermer_poliment(&self, _p: &nevermind_noyau::Permis, pid: i64, debut: i64, chemin: &str) -> i32 {
         let v = processus::verifier(pid, debut, chemin);
         if v == 0 {
             return -2;
@@ -141,7 +141,7 @@ impl Pc for PcWindows {
         }
         fenetres::fermer_poliment(pid)
     }
-    fn forcer(&self, pid: i64, debut: i64, chemin: &str) -> i32 {
+    fn forcer(&self, _p: &nevermind_noyau::Permis, pid: i64, debut: i64, chemin: &str) -> i32 {
         let v = processus::verifier(pid, debut, chemin);
         if v == 0 {
             return -2;

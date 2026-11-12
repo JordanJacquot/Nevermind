@@ -190,11 +190,35 @@ pub trait Pc {
     /// Lancer un programme de Windows (`Start-Process` : ShellExecute, qui pose la question de Windows s'il demande
     /// les droits, comme mdsched.exe). Attend la réponse à cette question : hors du fil des blocs. `Err` : pourquoi il
     /// ne s'est pas ouvert (M8, audit du 08/11 : l'erreur était jetée, et le bouton ne faisait rien).
+    /// Seulement des programmes qui ouvrent leur fenêtre sans rien changer d'eux-mêmes (mdsched.exe, qui demande à
+    /// l'utilisateur, perfmon.exe /rel, le Bloc-notes) ; une commande qui change le PC passe par [`Pc::commande`],
+    /// avec le permis.
     fn lancer(&mut self, args: &[String]) -> Result<(), String>;
     /// Ouvrir une adresse (`Open-Url`).
     fn ouvrir(&mut self, adresse: &str);
     /// Une commande (`shutdown.exe /r /fw /t 10`) : son code de sortie.
-    fn commande(&mut self, exe: &str, args: &[String]) -> i32;
+    ///
+    /// Lot J (suite, garde-fous) : une commande change le PC (redémarrer dans le BIOS) ; elle demande le permis du
+    /// verrou des gestes. Avec lui, elle compile :
+    /// ```no_run
+    /// fn bios(ctx: &nevermind_noyau::Contexte, pc: &mut dyn nevermind_pc::pc::Pc) {
+    ///     let p = ctx.exiger_geste().unwrap();
+    ///     let _ = pc.commande(&p, "shutdown.exe", &["/r".into(), "/fw".into(), "/t".into(), "10".into()]);
+    /// }
+    /// ```
+    /// Sans lui, elle ne compile pas :
+    /// ```compile_fail
+    /// fn bios(pc: &mut dyn nevermind_pc::pc::Pc) {
+    ///     let _ = pc.commande("shutdown.exe", &["/r".into(), "/fw".into(), "/t".into(), "10".into()]);
+    /// }
+    /// ```
+    fn commande(&mut self, p: &Permis, exe: &str, args: &[String]) -> i32;
+    /// Le rapport de la batterie (`powercfg /batteryreport /output <fichier>`) : une lecture, sans permis ; son code
+    /// de sortie. Par défaut 1 (pas de rapport) : seulement les faux PC qui n'en font pas ; ceux de Nevermind et des
+    /// juges ont le leur.
+    fn rapport_batterie(&mut self, _fichier: &str) -> i32 {
+        1
+    }
     /// Les règles du pare-feu posées par Nevermind (« Nevermind : bloque ... », « OptiGame : bloque ... »).
     fn regles_pare_feu(&self) -> usize {
         0

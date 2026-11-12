@@ -165,12 +165,12 @@ impl Systeme for Vrai {
         lancer_mpcmdrun(&["-SignatureUpdate"], None)
     }
 
-    fn supprimer_menaces(&self) -> Result<(), String> {
+    fn supprimer_menaces(&self, _p: &nevermind_noyau::Permis) -> Result<(), String> {
         let _c = com::Com::pret();
         com::methode(DEFENDER, SUPPRIMER_MENACES.0, SUPPRIMER_MENACES.1)
     }
 
-    fn desactiver_tache(&self, nom: &str, chemin: &str) -> Result<bool, String> {
+    fn desactiver_tache(&self, _p: &nevermind_noyau::Permis, nom: &str, chemin: &str) -> Result<bool, String> {
         let _c = com::Com::pret();
         taches::desactiver(nom, chemin)
     }
