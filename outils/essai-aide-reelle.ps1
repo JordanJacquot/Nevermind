@@ -847,6 +847,49 @@ function Get-JournalNevermind {
         if (Test-Path -LiteralPath $f) { Get-Content -LiteralPath $f -Encoding UTF8 -ErrorAction SilentlyContinue }
     })
 }
+# (12/11) Le cas 8 échoue par moments dans le job « Aide en vrai (rust) » (runs 43152381365, 43157810734, 43159528804,
+# 43161144546) : Nevermind plante-t-il au démarrage ? À chaque contrôle en échec des parties b et c : le code de sortie
+# des processus, la fin du journal de Nevermind, les événements récents du journal Application de Windows, et les
+# rapports d'erreur de Windows (WER) de Mindset.exe et de WebView2.
+function Test-Cas8Diag([string]$Nom, [scriptblock]$Condition, [object[]]$Processus, [datetime]$Debut) {
+    $avant = $script:Echoues.Count
+    Test-Cas $Nom $Condition
+    if ($script:Echoues.Count -eq $avant) { return }
+    $g = { param($t) Write-Host "         | $t" -ForegroundColor DarkGray }
+    & $g "DIAGNOSTIC du cas 8 ($Nom)"
+    foreach ($p in @($Processus | Where-Object { $_ })) {
+        $code = try { if ($p.HasExited) { $c = [int]$p.ExitCode; "$c (0x$('{0:X8}' -f $c))" } else { 'encore ouvert' } } catch { "illisible ($($_.Exception.Message))" }
+        $vie = try { $f = if ($p.HasExited) { $p.ExitTime } else { Get-Date }; '{0:N1} s (lancé {1:HH:mm:ss.fff}, {2} {3:HH:mm:ss.fff})' -f ($f - $p.StartTime).TotalSeconds, $p.StartTime, $(if ($p.HasExited) { 'arrêté' } else { 'vu ouvert' }), $f } catch { "illisible ($($_.Exception.Message))" }
+        & $g "processus $($p.Id) : code de sortie $code ; durée de vie $vie"
+    }
+    & $g 'les 20 dernières lignes du journal de Nevermind :'
+    foreach ($l in @(Get-JournalNevermind | Select-Object -Last 20)) { & $g "  $l" }
+    # (12/11) La note de b et la ligne « Démarrage » de c sont écrites sans nouvel essai : une ouverture refusée du
+    # journal les perd. Les deux dossiers de données, et l'erreur de journal gardée dans les réglages (LogError).
+    foreach ($d in (Join-Path $env:LOCALAPPDATA 'Mindset\Nevermind'), (Join-Path $env:LOCALAPPDATA 'OptiGame')) {
+        if (-not (Test-Path -LiteralPath $d)) { & $g "dossier $d : absent"; continue }
+        $fichiers = @(Get-ChildItem -LiteralPath $d -Force -ErrorAction SilentlyContinue | ForEach-Object { '{0} ({1}, {2:HH:mm:ss.fff})' -f $_.Name, $(if ($_.PSIsContainer) { 'dossier' } else { "$($_.Length) o" }), $_.LastWriteTime })
+        & $g "dossier $d (créé $('{0:HH:mm:ss.fff}' -f (Get-Item -LiteralPath $d -Force).CreationTime)) : $($fichiers -join ' ; ')"
+        $par = Join-Path $d 'parametres.json'
+        if (Test-Path -LiteralPath $par) {
+            $err = [regex]::Match([IO.File]::ReadAllText($par, [Text.Encoding]::UTF8), '"LogError"\s*:\s*"((?:[^"\\]|\\.)*)"').Groups[1].Value
+            & $g "  LogError dans parametres.json : $(if ($err) { $err } else { '(aucune)' })"
+        }
+    }
+    $sources = 'Application Error', 'Windows Error Reporting', '.NET Runtime', 'Application Hang'
+    $ev = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $Debut } -ErrorAction SilentlyContinue |
+        Where-Object { $sources -contains $_.ProviderName -or [string]$_.Message -match 'Mindset\.exe|WebView2|msedgewebview2' })
+    & $g "événements du journal Application depuis le début du cas : $($ev.Count)"
+    foreach ($x in $ev) { & $g "  [$($x.TimeCreated.ToString('HH:mm:ss'))] $($x.ProviderName) ($($x.Id)) : $([string]$x.Message -replace '\r?\n', ' / ')" }
+    foreach ($d in 'ReportArchive', 'ReportQueue') {
+        $racineWer = Join-Path $env:ProgramData "Microsoft\Windows\WER\$d"
+        foreach ($r in @(Get-ChildItem -LiteralPath $racineWer -Directory -ErrorAction SilentlyContinue |
+                Where-Object { ($_.Name -like 'AppCrash_Mindset*' -or $_.Name -like 'AppCrash_msedgewebview*' -or $_.Name -like 'AppHang_Mindset*') -and $_.LastWriteTime -ge $Debut })) {
+            & $g "rapport WER $d\$($r.Name) :"
+            foreach ($l in @(Get-Content -LiteralPath (Join-Path $r.FullName 'Report.wer') -ErrorAction SilentlyContinue)) { & $g "  $l" }
+        }
+    }
+}
 function Test-Cas8 {
     Write-Partie '8. Changement de nom : Nevermind 1.11.0 (OptiGame) mis à jour par le nouveau Mindset, une seule instance'
     Reset-Machine
@@ -854,6 +897,7 @@ function Test-Cas8 {
     $e = Get-Compte $NomElodie
     $version = Get-VersionScript (Join-Path $Depot 'Nevermind\fichiers\Nevermind.ps1')
     $suite = Join-Path $env:LOCALAPPDATA 'Mindset\suite.json'
+    $debut = Get-Date
     try {
         # a. Nevermind 1.11.0 installé par Mindset 2.12.0 (la vraie Release), puis mis à jour par le nouveau Mindset
         $r = Install-Appli $Installateur212 $Paquet111 $e.Sid 'OptiGame'
@@ -882,22 +926,32 @@ function Test-Cas8 {
         $neuf = Start-Nevermind "$NevermindC\Mindset.exe"
         $arrete = Wait-Jusque { $neuf.HasExited } 60
         Show-Nevermind 'pendant que 1.11.0 est ouverte'
-        Test-Cas 'la version renommée refuse de démarrer tant que 1.11.0 est ouverte : elle s''arrête seule, sans garder Local\Nevermind-Instance' { $arrete -and -not (Test-Verrou 'Local\Nevermind-Instance') -and -not $vieux.HasExited }
-        Test-Cas 'son journal le dit (« Lancement caché abandonné »)' { @(Get-JournalNevermind | Where-Object { $_ -match 'Lancement caché abandonné' }).Count -ge 1 }
+        Test-Cas8Diag 'la version renommée refuse de démarrer tant que 1.11.0 est ouverte : elle s''arrête seule, sans garder Local\Nevermind-Instance' { $arrete -and -not (Test-Verrou 'Local\Nevermind-Instance') -and -not $vieux.HasExited } @($neuf, $vieux) $debut
+        Test-Cas8Diag 'son journal le dit (« Lancement caché abandonné »)' { @(Get-JournalNevermind | Where-Object { $_ -match 'Lancement caché abandonné' }).Count -ge 1 } @($neuf, $vieux) $debut
         Stop-Nevermind
 
         # c. Seule : elle démarre, tient ses deux verrous, et une seule instance
         $neuf = Start-Nevermind "$NevermindC\Mindset.exe"
-        Test-Cas 'seule, la version renommée démarre et tient Local\Nevermind-Instance ET Local\OptiGame-Instance (les anciens Mindset la voient ouverte)' {
+        Test-Cas8Diag 'seule, la version renommée démarre et tient Local\Nevermind-Instance ET Local\OptiGame-Instance (les anciens Mindset la voient ouverte)' {
             Wait-Jusque { (Test-Verrou 'Local\Nevermind-Instance') -and (Test-Verrou 'Local\OptiGame-Instance') } 120
-        }
-        Start-Sleep -Seconds 10
+        } @($neuf) $debut
+        # (12/11) le script charge ses modules avant d'écrire « Démarrage » : 14 s sur la machine de GitHub au run
+        # 43178106809, la ligne est arrivée après les 10 s fixes d'avant. Attendue jusqu'à 60 s.
+        $null = Wait-Jusque { $neuf.HasExited -or @(Get-JournalNevermind | Where-Object { $_ -match 'Démarrage Nevermind' }).Count -ge 1 } 60
+        Start-Sleep -Seconds 2
         Show-Nevermind 'version renommée ouverte'
-        Test-Cas "elle reste ouverte, son journal dit « Démarrage Nevermind $version »" { -not $neuf.HasExited -and @(Get-JournalNevermind | Where-Object { $_ -match "Démarrage Nevermind $([regex]::Escape($version))" }).Count -ge 1 }
+        $avantC = $script:Echoues.Count
+        Test-Cas8Diag "elle reste ouverte, son journal dit « Démarrage Nevermind $version »" { -not $neuf.HasExited -and @(Get-JournalNevermind | Where-Object { $_ -match "Démarrage Nevermind $([regex]::Escape($version))" }).Count -ge 1 } @($neuf) $debut
+        if ($script:Echoues.Count -gt $avantC) {
+            # (12/11) en retard ou perdue ? Le journal relu 30 s plus tard (diagnostic seulement, le contrôle reste en échec)
+            $tard = Wait-Jusque { @(Get-JournalNevermind | Where-Object { $_ -match 'Démarrage Nevermind' }).Count -ge 1 } 30
+            Write-Host "         | 30 s plus tard ($('{0:HH:mm:ss.fff}' -f (Get-Date))) : ligne « Démarrage » $(if ($tard) { 'arrivée en retard' } else { 'toujours absente' }) ; processus $(if ($neuf.HasExited) { 'arrêté' } else { 'ouvert' })" -ForegroundColor DarkGray
+            foreach ($l in @(Get-JournalNevermind | Select-Object -Last 20)) { Write-Host "         |   $l" -ForegroundColor DarkGray }
+        }
         $deux = Start-Nevermind "$NevermindC\Mindset.exe"
         $arrete = Wait-Jusque { $deux.HasExited } 60
         Show-Nevermind 'après un deuxième lancement'
-        Test-Cas 'un deuxième lancement s''arrête seul : une seule instance' { $arrete -and -not $neuf.HasExited -and @(Get-Nevermind $ProgrammesC).Count -eq 1 }
+        Test-Cas8Diag 'un deuxième lancement s''arrête seul : une seule instance' { $arrete -and -not $neuf.HasExited -and @(Get-Nevermind $ProgrammesC).Count -eq 1 } @($neuf, $deux) $debut
         Stop-Nevermind
         }
         # (Mindset 2.12.0 n'installe plus une nouvelle version : le zip de compatibilité n'est plus publié depuis la
@@ -1119,7 +1173,10 @@ function Get-EtatMachine($Carte, $Services) {
     $pc = Join-Path ([Environment]::GetFolderPath('System')) 'powercfg.exe'
     $etat['alimentation|plan actif'] = [regex]::Match((& $pc /getactivescheme | Out-String), '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}').Value
     $etat['alimentation|plans'] = (@([regex]::Matches((& $pc /list | Out-String), '[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}') | ForEach-Object { $_.Value } | Sort-Object) -join ' ')
-    foreach ($t in @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Mindset\*' -and $_.TaskPath -notlike '\MindsetEssai\*' })) {
+    # (12/11) \Microsoft\Windows\Printing\PrintJobCleanupTask : Windows la désactive lui-même à un moment quelconque
+    # sur la machine de GitHub (runs 43165429817, 43168898361, 43178106809 : passage 1 ou 2, avant ou après
+    # l'optimisation). Ni Nevermind ni l'Aide ne touchent aux tâches de Windows : elle n'est pas relevée.
+    foreach ($t in @(Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.TaskPath -notlike '\Mindset\*' -and $_.TaskPath -notlike '\MindsetEssai\*' -and "$($_.TaskPath)$($_.TaskName)" -ne '\Microsoft\Windows\Printing\PrintJobCleanupTask' })) {
         $etat["tâche|$($t.TaskPath)$($t.TaskName)"] = if ($t.State -eq 'Disabled') { 'désactivée' } else { 'active' }
     }
     # Ce que l'Aide retient elle-même (HKLM\SOFTWARE\Mindset\Nevermind\Aide) : comparé d'une Aide à l'autre, pas à « avant »
@@ -1579,8 +1636,21 @@ function Test-Cas14 {
         $s5 = Invoke-Client $e @{ Mode = 'appel'; SansDemande = $true; Actions = @(@{ Nom = 'bonjour'; Action = 'aide.bonjour'; P = @{} }, @{ Nom = 'journal'; Action = 'aide.journal'; P = @{} }) }
         Test-Cas 'nom public du verrou pris : l''Aide en SYSTEM démarre quand même et répond' { [bool](Get-Bonjour $s5) }
         Test-Cas 'nom public du verrou pris : l''Aide le note dans son journal' { $s5.R -and @(@($s5.R.journal) -match 'déjà pris par un autre programme').Count }
+        $cheminAide = [string](@(Get-AidesEnCours | Where-Object { $_.Chemin })[0].Chemin)
         try { if ($squatteur -and -not $squatteur.HasExited) { $squatteur.Kill() } } catch {}
         Stop-Aides
+        # (12/11, run 43151526633) Deux vraies Aides lancées en même temps, pour le compte de l'essai (comme une Aide de
+        # secours, avec les droits administrateur) : une seule continue. Avant, une Aide qui avait seulement ouvert
+        # l'espace de noms privé gardait le verrou, et la suivante passait une fois cet espace fermé par son créateur.
+        if ($cheminAide) {
+            $deux = @(1..2 | ForEach-Object { Start-Process -FilePath $cheminAide -WorkingDirectory $env:SystemRoot -WindowStyle Hidden -PassThru })
+            Start-Sleep -Seconds 6
+            $vivantes = @($deux | Where-Object { -not $_.HasExited })
+            Add-Note "deux Aides lancées ensemble ($cheminAide) : $($vivantes.Count) tourne(nt) encore après 6 s"
+            Test-Cas 'deux Aides lancées en même temps : une seule continue' { $vivantes.Count -eq 1 }
+            foreach ($p in $deux) { try { if (-not $p.HasExited) { $p.Kill() } } catch {} }
+            Stop-Aides
+        } else { Test-Cas 'deux Aides lancées en même temps : le chemin de l''Aide est connu' { $false } }
     }
     foreach ($p in $jeu, $garde) { try { if ($p -and -not $p.HasExited) { $p.Kill() } } catch {} }
     Stop-Aides
