@@ -114,8 +114,8 @@ programmes au démarrage passaient pour activés. Corrigé dans le script (`retu
 ## Mes périphériques (nouveau, 13/11 ; pas dans la version PowerShell)
 - Page « Ton PC », juste après « Ton PC maintenant » : « Mes périphériques », une ligne par casque, souris ou clavier
   (nom du produit, « Casque · En charge », barre et %, ou « Filaire » ; vert en charge, rouge sous 20 %, orange sous
-  35 %), puis « Ouvrir G Hub » (un bouton par logiciel de marque installé : Logitech G Hub ; iCUE, Synapse et GG sont
-  reconnus, mais seuls les appareils Logitech sont lus). La ligne mène à la page de détail de l'appareil
+  35 %), et dans la ligne « Ouvrir G Hub » si le logiciel de la marque est installé (Logitech G Hub ; iCUE, Synapse et
+  GG sont reconnus, mais seuls les appareils Logitech sont lus). Le reste de la ligne mène à la page de détail de l'appareil
   (`perif:<sorte>-<nom>`, parent « pc » : anneau de la batterie, Batterie, Connexion, Marque, Logiciel). Aucune
   section sans appareil.
 - Lecture (`Pc::peripheriques`, module Windows `windows::peripheriques`) : des questions HID seulement, identifiant de
