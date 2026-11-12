@@ -203,9 +203,16 @@ fn sortie(lu: &Lu, plan: &Plan, l: &mut Vec<Reglage>) {
     }
 }
 
+/// La largeur de sortie que Streamlabs garde : un multiple de 4 (essai réel du 12/11/2026 : 854 écrit devient 852 quand
+/// il se relance, comme dans sa propre liste de résolutions)
+pub fn largeur(l: u32) -> u32 {
+    (l & !3).max(4)
+}
+
 /// La vidéo à changer : résolution de sortie et images par seconde (l'image de base n'est pas touchée)
 fn video(lu: &Lu, plan: &Plan, l: &mut Vec<Reglage>) {
-    for (k, v) in [("outputWidth", plan.sortie.0), ("outputHeight", plan.sortie.1), ("fpsNum", plan.ips), ("fpsDen", 1)]
+    for (k, v) in
+        [("outputWidth", largeur(plan.sortie.0)), ("outputHeight", plan.sortie.1), ("fpsNum", plan.ips), ("fpsDen", 1)]
     {
         let avant = lu.video.get(k).cloned().unwrap_or(Value::Null);
         if !meme(&avant, &json!(v)) {

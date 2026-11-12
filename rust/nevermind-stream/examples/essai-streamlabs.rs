@@ -46,7 +46,7 @@ fn plan(envoi_kbps: u32, plateforme: Plateforme, base: Option<(u32, u32)>) -> Va
         version,
     });
     json!({
-        "sortie": [p.sortie.0, p.sortie.1], "ips": p.ips, "video_kbps": p.video_kbps, "son_kbps": p.son_kbps,
+        "sortie": [nevermind_stream::streamlabs::largeur(p.sortie.0), p.sortie.1], "ips": p.ips, "video_kbps": p.video_kbps, "son_kbps": p.son_kbps,
         "encodeur": p.encodeur.simple(), "image_cle_s": p.image_cle_s, "plateforme": p.plateforme.id(),
         "reglages": i.reglages, "dossier": i.dossier, "version": i.version,
     })
@@ -101,5 +101,9 @@ fn main() {
         .ok()
         .and_then(|o| serde_json::from_slice::<Value>(&o).ok())
         .unwrap_or(Value::Null);
+    // (les dernières lignes du journal du mode streameur : pourquoi un réglage n'a pas pu se faire)
+    let journal = std::fs::read_to_string(ctx.fichier_journal()).unwrap_or_default();
+    let lignes: Vec<&str> = journal.lines().filter(|l| l.contains("Mode streameur")).collect();
+    r["journal"] = json!(lignes[lignes.len().saturating_sub(4)..]);
     println!("{}", serde_json::to_string_pretty(&r).unwrap_or_default());
 }

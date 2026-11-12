@@ -272,7 +272,7 @@ fn optimiser_puis_remettre_comme_avant() {
     };
     let a = agir(&mut b, &ctx, "stream:optimiser:streamlabs", Value::Null);
     assert!(a[0].starts_with("Streamlabs est réglé : 480p à 30 images par seconde"), "{a:?}");
-    assert_eq!(video(&f), (json!(854), json!(480), json!(30), json!(1)));
+    assert_eq!(video(&f), (json!(852), json!(480), json!(30), json!(1)));
     // l'utilisateur change lui-même son débit vidéo depuis : il est gardé
     f.0.lock().unwrap().sortie.insert("VBitrate".into(), json!(2000));
     // Streamlabs fermé : « Remettre comme avant » attend qu'il soit ouvert, la copie est gardée

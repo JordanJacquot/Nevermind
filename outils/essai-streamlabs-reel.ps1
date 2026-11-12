@@ -234,6 +234,7 @@ function Invoke-Nevermind([string[]]$Arguments) {
     $j = $null; try { $j = $t | ConvertFrom-Json } catch {}
     Write-Detail "Nevermind $($Arguments -join ' ') (code $($p.ExitCode)) : annonces $(@($j.annonces) -join ' | ')"
     if ($j.plan) { Write-Detail "  plan : $($j.plan | ConvertTo-Json -Compress)" }
+    foreach ($l in @($j.journal)) { if ($l) { Write-Detail "  journal : $l" } }
     $j
 }
 
@@ -253,6 +254,14 @@ function Get-Pris([switch]$Muet) {
 }
 function Get-Valeurs($Pris) { [ordered]@{ sortie = "$($Pris['Video.outputWidth'])x$($Pris['Video.outputHeight'])"; ips = "$($Pris['Video.fpsNum'])/$($Pris['Video.fpsDen'])"; mode = [string]$Pris['Output.Mode']; debit = $(if ($Pris['Output.Mode'] -eq 'Advanced') { [string]$Pris['Output.bitrate'] } else { [string]$Pris['Output.VBitrate'] }); encodeur = $(if ($Pris['Output.Mode'] -eq 'Advanced') { [string]$Pris['Output.Encoder'] } else { [string]$Pris['Output.StreamEncoder'] }); image_cle = [string]$Pris['Output.keyint_sec']; dossier_avance = [string]$Pris['Output.RecFilePath']; dossier_simple = [string]$Pris['Output.FilePath'] } }
 function Show-Valeurs([string]$Titre, $V) { Write-Detail "$Titre : $($V | ConvertTo-Json -Compress)" }
+# Les champs du formulaire Sortie, par sous-partie (nom=valeur, et les choix d'un champ à liste)
+function Show-Formulaire([string]$Titre) {
+    $r = Invoke-Slobs 'fetchSettingsFromObs' 'SettingsService' @('Output') -Silencieux
+    foreach ($g in @($r.formData)) {
+        $l = @($g.parameters | ForEach-Object { $o = if ($_.options) { " [$((@($_.options | ForEach-Object { $_.value }) -join '|'))]" } else { '' }; "$($_.name)=$($_.value)$o" })
+        Write-Detail "Sortie ($Titre) / $($g.nameSubCategory) : $($l -join ' ; ')"
+    }
+}
 # Les clés qui diffèrent entre deux relevés (Video.* et Output.*)
 function Get-Differences($A, $B) {
     @(@($A.Keys) + @($B.Keys) | Sort-Object -Unique | Where-Object { $_ -match '^(Video|Output)\.' -and ([string]($A[$_] | ConvertTo-Json -Compress -Depth 6)) -ne ([string]($B[$_] | ConvertTo-Json -Compress -Depth 6)) } |
@@ -313,6 +322,10 @@ $lance = Start-Streamlabs 'premier'
 Test-Cas 'Streamlabs démarre et son API répond (\\.\pipe\slobs)' { $lance }
 if (-not $lance) { [void](Stop-Streamlabs 'premier'); Show-Fichiers 'premier lancement raté'; Write-Host 'Streamlabs ne démarre pas : essai arrêté.' -ForegroundColor Red; exit 1 }
 # (l'utilisateur a mis 60 images par seconde dans ses Paramètres : ce que « Remettre comme avant » doit rendre)
+Show-Formulaire 'mode Simple'
+Show-Api 'setSettingValue' 'SettingsService' @('Output', 'Mode', 'Advanced')
+Show-Formulaire 'mode Avancé'
+Show-Api 'setSettingValue' 'SettingsService' @('Output', 'Mode', 'Simple')
 Show-Api 'setSettings' 'VideoSettingsService' @(@{ fpsNum = 60; fpsDen = 1 }, 'horizontal')
 Start-Sleep -Seconds 2
 $Avant = Get-Pris
