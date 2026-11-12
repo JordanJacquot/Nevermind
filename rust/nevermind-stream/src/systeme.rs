@@ -38,6 +38,16 @@ pub trait Systeme: Send {
     fn cartes(&self) -> Vec<Carte>;
     /// La taille de l'écran principal (pixels)
     fn ecran(&self) -> Option<(u32, u32)>;
+    /// Une demande à l'API de Streamlabs Desktop (son tube `\\.\pipe\slobs`, voir tube.rs et streamlabs.rs). Par
+    /// défaut : pas d'API (Streamlabs n'est pas réglé).
+    fn streamlabs(
+        &self,
+        _ressource: &str,
+        _methode: &str,
+        _args: &[serde_json::Value],
+    ) -> Result<serde_json::Value, String> {
+        Err("pas d'API de Streamlabs".into())
+    }
     /// Un OBS que rien n'a installé (dézippé, portable), vu ouvert dans ce dossier : son installation s'il y est
     /// encore. Par défaut : seulement un OBS en mode portable (ses réglages sont dans son dossier).
     fn obs_vu(&self, dossier: &Path) -> Option<Installation> {

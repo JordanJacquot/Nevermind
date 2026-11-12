@@ -14,7 +14,9 @@
 //! Signaux envoyés : `streameur` {disponible, regle} (au bloc perf, pour sa carte), `test-debit` {} (au bloc pc : le
 //! test « Connexion Internet »). Signal attendu : `debit-mesure` {R:[ping, téléchargement, envoi...]} (bloc pc).
 //!
-//! Règles : Nevermind ne ferme jamais le logiciel (s'il est ouvert : « Ferme OBS puis reclique sur Optimiser ») ; la
+//! Règles : Nevermind ne ferme ni n'ouvre jamais le logiciel ; OBS se règle fermé, par ses fichiers (sinon « Ferme OBS puis
+//! reclique sur Optimiser ») ; Streamlabs se règle ouvert, par son API (sinon « Ouvre Streamlabs puis reclique sur
+//! Optimiser », voir streamlabs.rs) ; la
 //! clé de stream n'est jamais lue dans une variable, ni écrite au journal, ni montrée ; les anciennes valeurs
 //! sont notées avant tout changement ; un OBS portable est trouvé quand il est ouvert.
 
@@ -25,7 +27,9 @@ pub mod reel;
 pub mod reglages;
 pub mod sauvegarde;
 pub mod service;
+pub mod streamlabs;
 pub mod systeme;
+pub mod tube;
 #[cfg(windows)]
 mod windows;
 
@@ -104,6 +108,15 @@ impl Memoire {
             "obs_vus": self.obs_vus.iter().map(|d| d.to_string_lossy().into_owned()).collect::<Vec<_>>(),
             "obs_dernier": self.obs_dernier.as_ref().map(|d| d.to_string_lossy().into_owned()),
         })
+    }
+}
+
+/// L'API de Streamlabs, par le PC du bloc (le vrai tube, ou celui du faux PC des tests)
+struct PorteSys<'a>(&'a dyn Systeme);
+
+impl streamlabs::Porte for PorteSys<'_> {
+    fn appeler(&self, ressource: &str, methode: &str, args: &[Value]) -> Result<Value, String> {
+        self.0.streamlabs(ressource, methode, args)
     }
 }
 
@@ -300,13 +313,18 @@ impl BlocStream {
     }
 
     fn plan(&mut self, ctx: &Contexte, t: &Trouve) -> Option<Plan> {
+        self.plan_sur(ctx, t, None)
+    }
+
+    /// Le plan, sur l'image de base donnée (celle que Streamlabs donne par son API) ou sinon celle des réglages
+    fn plan_sur(&mut self, ctx: &Contexte, t: &Trouve, base: Option<(u32, u32)>) -> Option<Plan> {
         let (plateforme, _, _) = self.plateforme(ctx, t);
         let envoi = self.memoire(ctx).envoi.as_ref()?.0;
         let etat = t.etat.as_ref().ok();
         Some(calculer(&Entree {
             envoi_kbps: envoi,
             cartes: self.cartes.clone().unwrap_or_default(),
-            base: reglages::base(etat, self.ecran),
+            base: base.unwrap_or_else(|| reglages::base(etat, self.ecran)),
             plateforme,
             version: etat
                 .and_then(|e| e.version)
@@ -363,6 +381,12 @@ impl BlocStream {
             effets.ajouter(Effet::Annonce(pages::SANS_LOGICIEL.into()));
             return;
         };
+        if l == Logiciel::Streamlabs {
+            self.optimiser_streamlabs(ctx, &t, effets);
+            self.detecter(ctx);
+            effets.ajouter(Effet::Rafraichir);
+            return;
+        }
         if self.ouvert_maintenant(ctx, l) {
             let m = pages::ferme_puis(l, "Optimiser");
             ctx.journal(&format!("Mode streameur : {} est ouvert, rien n'est changé", l.nom()));
@@ -422,28 +446,115 @@ impl BlocStream {
         effets.ajouter(Effet::Rafraichir);
     }
 
+    /// « Optimiser » Streamlabs : par son API, pendant qu'il est ouvert (voir streamlabs.rs)
+    fn optimiser_streamlabs(&mut self, ctx: &Contexte, t: &Trouve, effets: &mut Effets) {
+        let l = Logiciel::Streamlabs;
+        let mut refus = |s: &mut Self, m: String| {
+            s.alertes.insert(l, m.clone());
+            effets.ajouter(Effet::Annonce(m));
+        };
+        if !self.ouvert_maintenant(ctx, l) {
+            ctx.journal("Mode streameur : Streamlabs est fermé, rien n'est changé");
+            refus(self, pages::ouvre_puis(l, "Optimiser"));
+            return;
+        }
+        let lu = match streamlabs::lire(&PorteSys(self.sys(ctx))) {
+            Ok(x) => x,
+            Err(e) => {
+                ctx.journal(&format!("Mode streameur : l'API de Streamlabs ne répond pas ({e}), rien n'est changé"));
+                refus(self, pages::STREAMLABS_SANS_API.into());
+                return;
+            }
+        };
+        if lu.occupe {
+            refus(self, pages::STREAMLABS_OCCUPE.into());
+            return;
+        }
+        let Some(plan) = self.plan_sur(ctx, t, lu.base()) else {
+            if self.mesure.is_none() {
+                let e = self.demander_mesure();
+                effets.ajouter(e);
+            }
+            effets
+                .ajouter(Effet::Annonce("Nevermind mesure d'abord ta connexion, puis reclique sur Optimiser.".into()));
+            return;
+        };
+        let date = nevermind_noyau::moment::date_historique(&ctx.maintenant());
+        let copie = Self::copie(ctx, l);
+        let porte = PorteSys(self.sys(ctx));
+        match streamlabs::appliquer(&porte, &lu, &plan, &copie, &date) {
+            Ok(fait) => {
+                ctx.journal(&format!(
+                    "Mode streameur : Streamlabs réglé par son API : {}x{} à {} i/s, {} kb/s, encodeur {}, {} ({} réglage(s) changé(s))",
+                    plan.sortie.0,
+                    plan.sortie.1,
+                    plan.ips,
+                    plan.video_kbps,
+                    plan.encodeur.simple(),
+                    plan.plateforme.nom(),
+                    fait.reglages.len()
+                ));
+                let lignes = streamlabs::changements(&lu, &plan, &fait);
+                self.memoire(ctx).changements.insert(l, Changement { date, phrase: plan.phrase(), lignes });
+                self.garder(ctx);
+                self.alertes.remove(&l);
+                effets.ajouter(Effet::Annonce(pages::annonce_reglee(l, &plan)));
+            }
+            Err(e) => {
+                ctx.noter_erreur(&format!("Mode streameur : Streamlabs pas réglé : {e}"));
+                let m = format!("Nevermind n'a pas pu changer les réglages {} : rien n'a été changé.", l.de());
+                self.alertes.insert(l, m.clone());
+                effets.ajouter(Effet::Annonce(m));
+            }
+        }
+    }
+
     fn remettre(&mut self, ctx: &Contexte, l: Logiciel, effets: &mut Effets) {
-        if self.ouvert_maintenant(ctx, l) {
+        let ouvert = self.ouvert_maintenant(ctx, l);
+        let copie = Self::copie(ctx, l);
+        // Streamlabs : ce que son API a changé se remet Streamlabs ouvert ; ses fichiers (copie faite par Nevermind
+        // 2.3.0), Streamlabs fermé. Ouvert, l'API d'abord ; le reste de la copie attend qu'il soit fermé.
+        let (api, fichiers) = copie.besoins();
+        let resultat = if l == Logiciel::Streamlabs && api && (ouvert || !fichiers) {
+            if !ouvert {
+                let m = pages::ouvre_puis(l, "Remettre comme avant");
+                self.alertes.insert(l, m.clone());
+                effets.ajouter(Effet::Annonce(m));
+                return;
+            }
+            let porte = PorteSys(self.sys(ctx));
+            copie.remettre_avec(Some(&porte))
+        } else if ouvert {
             let m = pages::ferme_puis(l, "Remettre comme avant");
             self.alertes.insert(l, m.clone());
             effets.ajouter(Effet::Annonce(m));
             return;
-        }
-        match Self::copie(ctx, l).remettre() {
+        } else {
+            copie.remettre()
+        };
+        match resultat {
             Ok(b) => {
                 ctx.journal(&format!(
-                    "Mode streameur : réglages d'avant remis dans {} ({} fichier(s) remis, {} disparu(s), {} copie(s) abîmée(s), {} réglage(s) changé(s) depuis gardé(s))",
+                    "Mode streameur : réglages d'avant remis dans {} ({} partie(s) remise(s), {} disparue(s), {} copie(s) abîmée(s), {} réglage(s) changé(s) depuis gardé(s), {} partie(s) pour plus tard)",
                     l.nom(),
                     b.remis,
                     b.disparus,
                     b.abimes,
-                    b.gardes
+                    b.gardes,
+                    b.restants
                 ));
-                // (la copie est effacée dans tous ces cas : réessayer ne changerait rien)
-                self.memoire(ctx).changements.remove(&l);
-                self.garder(ctx);
-                self.alertes.remove(&l);
-                effets.ajouter(Effet::Annonce(pages::annonce_remise(l, &b)));
+                if b.restants > 0 {
+                    // (une partie attend que Streamlabs soit fermé : « Remettre comme avant » reste)
+                    let m = pages::ferme_puis(l, "Remettre comme avant pour finir");
+                    self.alertes.insert(l, m.clone());
+                    effets.ajouter(Effet::Annonce(m));
+                } else {
+                    // (la copie est effacée dans tous ces cas : réessayer ne changerait rien)
+                    self.memoire(ctx).changements.remove(&l);
+                    self.garder(ctx);
+                    self.alertes.remove(&l);
+                    effets.ajouter(Effet::Annonce(pages::annonce_remise(l, &b)));
+                }
             }
             Err(e) => {
                 ctx.noter_erreur(&format!("Mode streameur : réglages d'avant pas remis dans {} : {e}", l.nom()));

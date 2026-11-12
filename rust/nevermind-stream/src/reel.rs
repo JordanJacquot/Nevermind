@@ -125,6 +125,14 @@ impl Systeme for SystemeReel {
     fn cartes(&self) -> Vec<Carte> {
         cartes()
     }
+    fn streamlabs(
+        &self,
+        ressource: &str,
+        methode: &str,
+        args: &[serde_json::Value],
+    ) -> Result<serde_json::Value, String> {
+        crate::tube::appeler(crate::tube::TUBE, ressource, methode, args)
+    }
     fn ecran(&self) -> Option<(u32, u32)> {
         ecran()
     }

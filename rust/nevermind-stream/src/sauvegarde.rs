@@ -28,6 +28,8 @@ use std::path::{Path, PathBuf};
 
 /// Le format de copie.json écrit maintenant
 const VERSION: u64 = 2;
+/// Le « chemin » des réglages changés par l'API de Streamlabs dans la copie (ce n'est pas un fichier)
+pub const CHEMIN_API: &str = "streamlabs:api";
 
 /// Les clés de basic.ini que Nevermind a pu changer avant le 10/11/2026 (pour relire une ancienne copie)
 const CLES_ANCIENNES: [(&str, &str); 20] = [
@@ -114,6 +116,8 @@ pub enum Modif {
     Ini { chemin: PathBuf, cles: Vec<CleIni>, sections: Vec<String> },
     /// Un fichier JSON (streamEncoder.json) : ses octets d'avant (`None` : absent), ceux écrits, les clés changées
     Json { chemin: PathBuf, avant: Option<Vec<u8>>, apres: Vec<u8>, cles: Vec<CleJson> },
+    /// Des réglages de Streamlabs changés par son API (streamlabs.rs), chacun avec sa valeur d'avant et celle écrite
+    Api { cles: Vec<crate::streamlabs::Reglage> },
 }
 
 /// Une clé de .ini dans la copie : `apres` vaut `None` quand la valeur écrite n'est pas connue (ancienne copie) : elle
@@ -141,6 +145,10 @@ enum Entree {
         empreinte: Option<u64>,
         cles: Vec<CleJson>,
     },
+    /// Des réglages de Streamlabs changés par son API (`cle` : la cible, comme « Video/outputWidth »)
+    Api {
+        cles: Vec<CleJson>,
+    },
     /// Une ancienne copie illisible pour ce fichier : jamais remise
     Abimee {
         chemin: String,
@@ -151,6 +159,7 @@ impl Entree {
     fn chemin(&self) -> &str {
         match self {
             Entree::Ini { chemin, .. } | Entree::Json { chemin, .. } | Entree::Abimee { chemin } => chemin,
+            Entree::Api { .. } => CHEMIN_API,
         }
     }
 }
@@ -184,12 +193,43 @@ pub struct Bilan {
     pub abimes: usize,
     /// Les clés changées par l'utilisateur depuis, gardées telles qu'il les a mises
     pub gardes: usize,
+    /// Les parties de la copie pas encore remises (Streamlabs ouvert pour ce que son API a changé, fermé pour ses
+    /// fichiers) : gardées pour la fois suivante
+    pub restants: usize,
 }
 
 /// De quoi défaire [`Copie::garder`] si le changement ne se fait pas
 #[derive(Debug)]
 pub struct Annulation {
     fiche: Option<Vec<u8>>,
+}
+
+/// Des clés JSON (ou de l'API) dans la copie : `avant`, `apres` absents quand la valeur était absente
+fn cles_valeur(cles: &[CleJson]) -> Vec<Value> {
+    cles.iter()
+        .map(|c| {
+            let mut o = json!({ "cle": c.cle });
+            if let Some(v) = &c.avant {
+                o["avant"] = v.clone();
+            }
+            if let Some(v) = &c.apres {
+                o["apres"] = v.clone();
+            }
+            o
+        })
+        .collect()
+}
+
+fn cles_lues(f: &Value) -> Option<Vec<CleJson>> {
+    let mut cles = Vec::new();
+    for c in f["cles"].as_array()? {
+        cles.push(CleJson {
+            cle: c["cle"].as_str()?.to_string(),
+            avant: c.get("avant").cloned(),
+            apres: c.get("apres").cloned(),
+        });
+    }
+    Some(cles)
 }
 
 fn valeur_texte(v: &Value) -> Option<String> {
@@ -216,22 +256,10 @@ impl Fiche {
                     json!({ "chemin": chemin, "sorte": "ini", "cles": cles, "sections_ajoutees": sections })
                 }
                 Entree::Json { chemin, avant, empreinte, cles } => {
-                    let cles: Vec<Value> = cles
-                        .iter()
-                        .map(|c| {
-                            let mut o = json!({ "cle": c.cle });
-                            if let Some(v) = &c.avant {
-                                o["avant"] = v.clone();
-                            }
-                            if let Some(v) = &c.apres {
-                                o["apres"] = v.clone();
-                            }
-                            o
-                        })
-                        .collect();
                     json!({ "chemin": chemin, "sorte": "json", "avant": avant.as_deref().map(hex),
-                        "empreinte": empreinte.map(|e| format!("{e:016x}")), "cles": cles })
+                        "empreinte": empreinte.map(|e| format!("{e:016x}")), "cles": cles_valeur(cles) })
                 }
+                Entree::Api { cles } => json!({ "chemin": CHEMIN_API, "sorte": "api", "cles": cles_valeur(cles) }),
                 Entree::Abimee { chemin } => json!({ "chemin": chemin, "sorte": "abimee" }),
             })
             .collect();
@@ -274,16 +302,9 @@ impl Fiche {
                         Value::Null => None,
                         x => Some(u64::from_str_radix(x.as_str()?, 16).ok()?),
                     };
-                    let mut cles = Vec::new();
-                    for c in f["cles"].as_array()? {
-                        cles.push(CleJson {
-                            cle: c["cle"].as_str()?.to_string(),
-                            avant: c.get("avant").cloned(),
-                            apres: c.get("apres").cloned(),
-                        });
-                    }
-                    Entree::Json { chemin, avant, empreinte, cles }
+                    Entree::Json { chemin, avant, empreinte, cles: cles_lues(f)? }
                 }
+                "api" => Entree::Api { cles: cles_lues(f)? },
                 "abimee" => Entree::Abimee { chemin },
                 _ => return None,
             });
@@ -378,6 +399,19 @@ impl Fiche {
                     cles: cles.clone(),
                 },
             ),
+            Modif::Api { cles } => (
+                CHEMIN_API.to_string(),
+                Entree::Api {
+                    cles: cles
+                        .iter()
+                        .map(|r| CleJson {
+                            cle: r.cible.clone(),
+                            avant: Some(r.avant.clone()).filter(|v| !v.is_null()),
+                            apres: Some(r.apres.clone()).filter(|v| !v.is_null()),
+                        })
+                        .collect(),
+                },
+            ),
         };
         let Some(e) = self.fichiers.iter_mut().find(|e| e.chemin().eq_ignore_ascii_case(&chemin)) else {
             self.fichiers.push(neuve);
@@ -402,6 +436,14 @@ impl Fiche {
                 if emp.is_some() {
                     *emp = ne;
                 }
+                for c in n {
+                    match cles.iter_mut().find(|x| x.cle == c.cle) {
+                        Some(x) => x.apres = c.apres,
+                        None => cles.push(c),
+                    }
+                }
+            }
+            (Entree::Api { cles }, Entree::Api { cles: n }) => {
                 for c in n {
                     match cles.iter_mut().find(|x| x.cle == c.cle) {
                         Some(x) => x.apres = c.apres,
@@ -549,6 +591,24 @@ impl Copie {
     /// Remet ce que Nevermind a changé, puis efface la copie. Erreur : un fichier n'a pas pu être écrit (la copie est
     /// gardée pour réessayer).
     pub fn remettre(&self) -> Result<Bilan, String> {
+        self.remettre_avec(None)
+    }
+
+    /// Ce que la copie demande pour être remise : (des réglages changés par l'API de Streamlabs, qui le veut ouvert ;
+    /// des fichiers, qui le veulent fermé). Une copie illisible ou abîmée ne demande rien.
+    pub fn besoins(&self) -> (bool, bool) {
+        match self.lire() {
+            Lecture::Bonne(f) => (
+                f.fichiers.iter().any(|e| matches!(e, Entree::Api { .. })),
+                f.fichiers.iter().any(|e| !matches!(e, Entree::Api { .. })),
+            ),
+            _ => (false, false),
+        }
+    }
+
+    /// [`Copie::remettre`], avec l'API de Streamlabs pour les réglages qu'elle a changés (`None` : pas d'API, ces
+    /// réglages ne se remettent pas, la copie est gardée)
+    pub fn remettre_avec(&self, porte: Option<&dyn crate::streamlabs::Porte>) -> Result<Bilan, String> {
         let fiche = match self.lire_avec(true) {
             Lecture::Aucune => return Err("aucune copie des anciens réglages".into()),
             // (pas lue : elle est gardée telle quelle pour réessayer, jamais effacée ; lot K)
@@ -561,14 +621,35 @@ impl Copie {
         };
         let mut bilan = Bilan::default();
         let mut erreurs = Vec::new();
+        // (Streamlabs ouvert : seulement ce que l'API a changé ; fermé : seulement les fichiers. Le reste est gardé dans
+        // la copie, pour la fois suivante)
+        let mut restants = Vec::new();
         for e in &fiche.fichiers {
+            if let Entree::Api { cles } = e {
+                let Some(p) = porte else {
+                    restants.push(e.clone());
+                    continue;
+                };
+                match remettre_api(p, cles) {
+                    Ok(g) => {
+                        bilan.remis += 1;
+                        bilan.gardes += g;
+                    }
+                    Err(x) => erreurs.push(format!("Streamlabs : {x}")),
+                }
+                continue;
+            }
+            if porte.is_some() && !matches!(e, Entree::Abimee { .. }) {
+                restants.push(e.clone());
+                continue;
+            }
             let chemin = Path::new(e.chemin());
             if !chemin.parent().is_some_and(Path::is_dir) {
                 bilan.disparus += 1;
                 continue;
             }
             let r = match e {
-                Entree::Abimee { .. } => {
+                Entree::Abimee { .. } | Entree::Api { .. } => {
                     bilan.abimes += 1;
                     continue;
                 }
@@ -588,7 +669,14 @@ impl Copie {
         if !erreurs.is_empty() {
             return Err(erreurs.join(" ; "));
         }
-        let _ = std::fs::remove_dir_all(&self.dossier);
+        if restants.is_empty() {
+            let _ = std::fs::remove_dir_all(&self.dossier);
+        } else {
+            bilan.restants = restants.len();
+            let reste = Fiche { date: fiche.date, profil: fiche.profil, fichiers: restants };
+            let t = serde_json::to_vec_pretty(&reste.valeur()).map_err(|e| e.to_string())?;
+            ecrire_sur(&self.fiche(), &t).map_err(|e| format!("fiche de la copie : {e}"))?;
+        }
         Ok(bilan)
     }
 }
@@ -678,6 +766,43 @@ fn remettre_json(chemin: &Path, avant: Option<&[u8]>, emp: Option<u64>, cles: &[
         } else {
             ecrire_verifie(chemin, &crate::reglages::json_obs(&m))?;
         }
+    }
+    Ok(gardes)
+}
+
+/// Remet par l'API de Streamlabs les réglages qui ont encore la valeur écrite par Nevermind, et vérifie qu'ils ont
+/// pris. Rend le nombre de réglages gardés (changés par l'utilisateur depuis).
+fn remettre_api(p: &dyn crate::streamlabs::Porte, cles: &[CleJson]) -> Result<usize, String> {
+    use crate::streamlabs::{Reglage, actuelle, ecrire, lire, meme, pas_pris};
+    let lu = lire(p)?;
+    if lu.occupe {
+        return Err("Streamlabs est en train de streamer ou d'enregistrer".into());
+    }
+    let mut gardes = 0;
+    let mut a_remettre = Vec::new();
+    for c in cles {
+        let maintenant = actuelle(&lu, &c.cle);
+        let avant = c.avant.clone().unwrap_or(Value::Null);
+        let ecrit = c.apres.clone().unwrap_or(Value::Null);
+        if meme(&maintenant, &avant) {
+            continue;
+        }
+        if !meme(&maintenant, &ecrit) {
+            gardes += 1;
+            continue;
+        }
+        // (une valeur d'avant absente ne se remet pas par l'API : le réglage reste tel quel)
+        if !avant.is_null() {
+            a_remettre.push(Reglage { cible: c.cle.clone(), avant: maintenant, apres: avant });
+        }
+    }
+    if a_remettre.is_empty() {
+        return Ok(gardes);
+    }
+    ecrire(p, &a_remettre, false)?;
+    let rate = pas_pris(p, &a_remettre)?;
+    if !rate.is_empty() {
+        return Err(format!("pas repris par Streamlabs : {}", rate.join(", ")));
     }
     Ok(gardes)
 }

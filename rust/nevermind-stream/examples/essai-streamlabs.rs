@@ -79,7 +79,8 @@ fn main() {
             if a.get(4).is_some() {
                 b.action(&ctx, "stream:plateforme:streamlabs", &json!(p.id()), &mut e);
             }
-            let base = a.get(5).and_then(|b| b.split_once('x')).and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)));
+            let base =
+                a.get(5).and_then(|b| b.split_once('x')).and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)));
             r["plan"] = plan((envoi * 1000.0).round() as u32, p, base);
             let _ = b.pages(&ctx, "streameur");
             b.action(&ctx, "stream:optimiser:streamlabs", &Value::Null, &mut e);
