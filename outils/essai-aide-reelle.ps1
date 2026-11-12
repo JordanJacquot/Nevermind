@@ -859,10 +859,23 @@ function Test-Cas8Diag([string]$Nom, [scriptblock]$Condition, [object[]]$Process
     & $g "DIAGNOSTIC du cas 8 ($Nom)"
     foreach ($p in @($Processus | Where-Object { $_ })) {
         $code = try { if ($p.HasExited) { $c = [int]$p.ExitCode; "$c (0x$('{0:X8}' -f $c))" } else { 'encore ouvert' } } catch { "illisible ($($_.Exception.Message))" }
-        & $g "processus $($p.Id) : code de sortie $code"
+        $vie = try { $f = if ($p.HasExited) { $p.ExitTime } else { Get-Date }; '{0:N1} s (lancé {1:HH:mm:ss.fff}, {2} {3:HH:mm:ss.fff})' -f ($f - $p.StartTime).TotalSeconds, $p.StartTime, $(if ($p.HasExited) { 'arrêté' } else { 'vu ouvert' }), $f } catch { "illisible ($($_.Exception.Message))" }
+        & $g "processus $($p.Id) : code de sortie $code ; durée de vie $vie"
     }
     & $g 'les 20 dernières lignes du journal de Nevermind :'
     foreach ($l in @(Get-JournalNevermind | Select-Object -Last 20)) { & $g "  $l" }
+    # (12/11) La note de b et la ligne « Démarrage » de c sont écrites sans nouvel essai : une ouverture refusée du
+    # journal les perd. Les deux dossiers de données, et l'erreur de journal gardée dans les réglages (LogError).
+    foreach ($d in (Join-Path $env:LOCALAPPDATA 'Mindset\Nevermind'), (Join-Path $env:LOCALAPPDATA 'OptiGame')) {
+        if (-not (Test-Path -LiteralPath $d)) { & $g "dossier $d : absent"; continue }
+        $fichiers = @(Get-ChildItem -LiteralPath $d -Force -ErrorAction SilentlyContinue | ForEach-Object { '{0} ({1}, {2:HH:mm:ss.fff})' -f $_.Name, $(if ($_.PSIsContainer) { 'dossier' } else { "$($_.Length) o" }), $_.LastWriteTime })
+        & $g "dossier $d (créé $('{0:HH:mm:ss.fff}' -f (Get-Item -LiteralPath $d -Force).CreationTime)) : $($fichiers -join ' ; ')"
+        $par = Join-Path $d 'parametres.json'
+        if (Test-Path -LiteralPath $par) {
+            $err = [regex]::Match([IO.File]::ReadAllText($par, [Text.Encoding]::UTF8), '"LogError"\s*:\s*"((?:[^"\\]|\\.)*)"').Groups[1].Value
+            & $g "  LogError dans parametres.json : $(if ($err) { $err } else { '(aucune)' })"
+        }
+    }
     $sources = 'Application Error', 'Windows Error Reporting', '.NET Runtime', 'Application Hang'
     $ev = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $Debut } -ErrorAction SilentlyContinue |
         Where-Object { $sources -contains $_.ProviderName -or [string]$_.Message -match 'Mindset\.exe|WebView2|msedgewebview2' })
@@ -924,7 +937,14 @@ function Test-Cas8 {
         } @($neuf) $debut
         Start-Sleep -Seconds 10
         Show-Nevermind 'version renommée ouverte'
+        $avantC = $script:Echoues.Count
         Test-Cas8Diag "elle reste ouverte, son journal dit « Démarrage Nevermind $version »" { -not $neuf.HasExited -and @(Get-JournalNevermind | Where-Object { $_ -match "Démarrage Nevermind $([regex]::Escape($version))" }).Count -ge 1 } @($neuf) $debut
+        if ($script:Echoues.Count -gt $avantC) {
+            # (12/11) en retard ou perdue ? Le journal relu 30 s plus tard (diagnostic seulement, le contrôle reste en échec)
+            $tard = Wait-Jusque { @(Get-JournalNevermind | Where-Object { $_ -match 'Démarrage Nevermind' }).Count -ge 1 } 30
+            Write-Host "         | 30 s plus tard ($('{0:HH:mm:ss.fff}' -f (Get-Date))) : ligne « Démarrage » $(if ($tard) { 'arrivée en retard' } else { 'toujours absente' }) ; processus $(if ($neuf.HasExited) { 'arrêté' } else { 'ouvert' })" -ForegroundColor DarkGray
+            foreach ($l in @(Get-JournalNevermind | Select-Object -Last 20)) { Write-Host "         |   $l" -ForegroundColor DarkGray }
+        }
         $deux = Start-Nevermind "$NevermindC\Mindset.exe"
         $arrete = Wait-Jusque { $deux.HasExited } 60
         Show-Nevermind 'après un deuxième lancement'
