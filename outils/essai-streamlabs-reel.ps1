@@ -6,9 +6,13 @@
 # JAMAIS sur un vrai PC : le script refuse de tourner hors de GitHub Actions.
 #
 #   .\outils\essai-streamlabs-reel.ps1 -Exemple <essai-streamlabs.exe>
+#   -Source installateur   la version du bouton « Télécharger » de streamlabs.com (latest.yml, SHA-512 vérifié)
+#   -Source mise-a-jour    la version que la mise à jour automatique de Streamlabs installe chez ses utilisateurs
+#                          (latest.json, souvent plus récente), sur le même site officiel
+# Streamlabs est lancé avec --skip-update : la version essayée reste celle installée.
 #
 # Code de sortie 1 si un cas échoue.
-param([Parameter(Mandatory)][string]$Exemple, [string]$Racine = 'C:\essai-sl')
+param([Parameter(Mandatory)][string]$Exemple, [ValidateSet('installateur', 'mise-a-jour')][string]$Source = 'installateur', [string]$Racine = 'C:\essai-sl')
 
 if ($env:GITHUB_ACTIONS -ne 'true') {
     Write-Host 'Refusé : cet essai installe Streamlabs Desktop et change ses réglages pour de vrai. Il ne tourne que sur la machine jetable de GitHub Actions.' -ForegroundColor Red
@@ -75,7 +79,9 @@ function Show-Lancement {
 function Test-Tube { try { @([IO.Directory]::GetFiles('\\.\pipe\')) -contains '\\.\pipe\slobs' } catch { $false } }
 function Start-Streamlabs([string]$Nom) {
     $exe = Join-Path $script:Installe 'Streamlabs OBS.exe'
-    $p = Start-Process -FilePath $exe -PassThru -WorkingDirectory $script:Installe
+    # (--skip-update : la version essayée reste celle installée ; sans lui, Streamlabs lance son programme de mise à
+    # jour au démarrage, qui attend en vain sur la machine de GitHub)
+    $p = Start-Process -FilePath $exe -ArgumentList '--skip-update' -PassThru -WorkingDirectory $script:Installe
     Write-Detail "Streamlabs lancé ($Nom), processus $($p.Id)"
     $tube = Wait-Jusque { Test-Tube } 150
     if (-not $tube) {
@@ -244,6 +250,9 @@ function Get-Pris {
     $pris = [ordered]@{ api_video = ($null -ne $v); api_sortie = ($null -ne $o) }
     if ($v) { foreach ($k in $v.Keys) { $pris["Video.$k"] = $v[$k] } }
     if ($o) { foreach ($k in $o.Keys) { $pris["Output.$k"] = $o[$k] } }
+    # (la vidéo telle que Streamlabs la garde maintenant : VideoSettingsService, sortie horizontale)
+    $s = Invoke-Slobs 'state' 'VideoSettingsService' -Silencieux
+    if ($s -and $s.horizontal) { foreach ($p in $s.horizontal.PSObject.Properties) { $pris["V2.$($p.Name)"] = $p.Value } }
     Write-Detail "Pris par Streamlabs : $($pris | ConvertTo-Json -Compress -Depth 6)"
     $pris
 }
@@ -255,23 +264,33 @@ Write-Partie '1. Le vrai Streamlabs Desktop (installateur officiel, signé), ins
 $Installateur = Join-Path $Racine 'installateur\Streamlabs-Desktop-Setup.exe'
 New-Item -ItemType Directory -Force -Path (Split-Path $Installateur) | Out-Null
 $attendu = $null
-try {
-    $yml = (Invoke-WebRequest -Uri 'https://slobs-cdn.streamlabs.com/latest.yml' -UseBasicParsing).Content
-    if ($yml -is [byte[]]) { $yml = [Text.Encoding]::UTF8.GetString($yml) }
-    if ($yml -match '(?m)^version:\s*(\S+)') { $Version = $Matches[1] }
-    if ($yml -match '(?m)^sha512:\s*(\S+)') { $attendu = $Matches[1] }
-} catch { Write-Note "latest.yml illisible : $($_.Exception.Message)" }
-Write-Detail "Dernière version annoncée par Streamlabs : $Version"
-$req = [Net.HttpWebRequest]::Create('https://streamlabs.com/streamlabs-desktop/download')
-$req.AllowAutoRedirect = $false; $req.UserAgent = 'Mozilla/5.0'
-$rep = $req.GetResponse(); $lien = $rep.Headers['Location']; $rep.Close()
+if ($Source -eq 'mise-a-jour') {
+    # La version que la mise à jour automatique de Streamlabs installe chez les utilisateurs (latest.json, celui que lit
+    # son propre programme de mise à jour), prise sur le même site officiel
+    $j = (Invoke-WebRequest -Uri 'https://slobs-cdn.streamlabs.com/latest.json' -UseBasicParsing).Content
+    if ($j -is [byte[]]) { $j = [Text.Encoding]::UTF8.GetString($j) }
+    $Version = [string]($j | ConvertFrom-Json).version
+    Write-Detail "Version installée par la mise à jour automatique de Streamlabs : $Version"
+    $lien = "https://slobs-cdn.streamlabs.com/Streamlabs+Desktop+Setup+$Version.exe"
+} else {
+    try {
+        $yml = (Invoke-WebRequest -Uri 'https://slobs-cdn.streamlabs.com/latest.yml' -UseBasicParsing).Content
+        if ($yml -is [byte[]]) { $yml = [Text.Encoding]::UTF8.GetString($yml) }
+        if ($yml -match '(?m)^version:\s*(\S+)') { $Version = $Matches[1] }
+        if ($yml -match '(?m)^sha512:\s*(\S+)') { $attendu = $Matches[1] }
+    } catch { Write-Note "latest.yml illisible : $($_.Exception.Message)" }
+    Write-Detail "Version du bouton « Télécharger » de streamlabs.com : $Version"
+    $req = [Net.HttpWebRequest]::Create('https://streamlabs.com/streamlabs-desktop/download')
+    $req.AllowAutoRedirect = $false; $req.UserAgent = 'Mozilla/5.0'
+    $rep = $req.GetResponse(); $lien = $rep.Headers['Location']; $rep.Close()
+}
 Write-Detail "Lien officiel : $lien"
 Invoke-WebRequest -Uri $lien -OutFile $Installateur -UseBasicParsing
 $sig = Get-AuthenticodeSignature -LiteralPath $Installateur
 $sha = [Convert]::ToBase64String([Security.Cryptography.SHA512]::Create().ComputeHash([IO.File]::ReadAllBytes($Installateur)))
 Write-Detail "Installateur : $((Get-Item $Installateur).Length) o, signature $($sig.Status), signé par $($sig.SignerCertificate.Subject)"
 Test-Cas "installateur officiel ($lien) signé Authenticode, signature valide" { $lien -match '^https://slobs-cdn\.streamlabs\.com/' -and $sig.Status -eq 'Valid' -and $sig.SignerCertificate.Subject -match 'Streamlabs|General Workings|Logitech' }
-Test-Cas "installateur identique à celui annoncé par latest.yml ($Version, SHA-512)" { $attendu -and $sha -eq $attendu }
+if ($attendu) { Test-Cas "installateur identique à celui annoncé par latest.yml ($Version, SHA-512)" { $sha -eq $attendu } }
 $p = Start-Process -FilePath $Installateur -ArgumentList '/S' -PassThru -Wait
 Write-Detail "Installateur fini (code $($p.ExitCode))"
 foreach ($c in @("$env:ProgramFiles\Streamlabs OBS", "$env:LOCALAPPDATA\Programs\Streamlabs OBS", "${env:ProgramFiles(x86)}\Streamlabs OBS")) {
@@ -297,6 +316,8 @@ Show-Api 'getCategories' 'SettingsService'
 Show-Api 'getSettingsFormData' 'SettingsService' @('Video')
 Show-Api 'getSettingsFormData' 'SettingsService' @('Output')
 Show-Api 'getSettingsFormData' 'SettingsService' @('Stream')
+Show-Api 'state' 'VideoSettingsService'
+Show-Api 'values' 'VideoSettingsService'
 $Avant = Get-Pris
 [void](Stop-Streamlabs 'premier')
 $EmpA = Get-Empreintes
