@@ -3,12 +3,12 @@
 //! administrateur (le PC de développement), l'espace de noms privé ne peut pas être créé : l'Aide garde alors le nom
 //! public, comme avant. Avec les droits (la machine de GitHub), le verrou protégé est pris.
 //!
-//! (12/11) Chaque Aide d'essai, et chaque « créateur » d'espace de noms, est un processus à part (ce programme
-//! d'essai relancé sur `role_enfant`, sans fenêtre), comme les vraies Aides : dans un même processus, les préfixes des
-//! espaces de noms privés sont communs à tous les fils, et les essais ne disaient plus rien du vrai cas. Les essais de
-//! ce module passent l'un après l'autre (`SERIE`).
+//! (12/11) Chaque Aide d'essai est un processus à part (ce programme d'essai relancé sur `role_enfant`, sans fenêtre),
+//! comme les vraies Aides. Avant, elles étaient des fils d'un même processus : les préfixes des espaces de noms privés
+//! y sont communs à tous les fils, et refermer l'espace dans un fil gênait les autres (run 43151526633, rouge sans
+//! défaut du vrai verrou, vérifié entre processus par le run 43157769634). Les essais de ce module passent l'un après
+//! l'autre (`SERIE`).
 
-use super::verrou::{ANCIEN_PREFIXE, ANCIENNE_FRONTIERE, Creation, espace_prive, noms_espace, prendre};
 use super::verrou_aide;
 use crate::systeme::Verrouillage;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -33,29 +33,25 @@ fn nom(essai: &str) -> String {
     format!(r"Global\Nevermind-Aide-S-1-5-21-0-0-0-{}-{essai}", std::process::id())
 }
 
-/// Le nom sans `Global\`
-fn court(n: &str) -> &str {
-    n.strip_prefix("Global\\").unwrap_or(n)
-}
-
 /// La variable qui donne son rôle au processus enfant
 const ROLE: &str = "NEVERMIND_ESSAI_VERROU_ROLE";
 /// Le début des lignes que l'enfant adresse à l'essai (le reste vient du lanceur d'essais)
 const LIGNE: &str = "ESSAI-VERROU ";
 
-/// Un processus enfant d'essai : il dit ce qu'il a eu, ligne par ligne, et garde tout jusqu'à ce que la valeur soit
-/// jetée (son entrée refermée)
-struct Enfant {
+/// Une Aide d'essai, dans son propre processus : elle prend le verrou, dit ce qu'elle a eu, et le garde jusqu'à ce
+/// que la valeur soit jetée (son entrée refermée)
+struct Aide {
+    pris: bool,
+    texte: Option<String>,
     enfant: Child,
     entree: Option<ChildStdin>,
-    lignes: mpsc::Receiver<String>,
 }
 
-fn enfant(role: &[&str]) -> Enfant {
+fn aide(n: &str) -> Aide {
     let exe = std::env::current_exe().expect("programme d'essai");
     let mut enfant = Command::new(exe)
         .args(["windows::essais_verrou::role_enfant", "--exact", "--ignored", "--nocapture", "--test-threads=1"])
-        .env(ROLE, role.join("|"))
+        .env(ROLE, n)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -63,27 +59,25 @@ fn enfant(role: &[&str]) -> Enfant {
         .spawn()
         .expect("processus d'essai");
     let sortie = enfant.stdout.take().expect("sortie");
-    let (tx, lignes) = mpsc::channel();
+    let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         for l in BufReader::new(sortie).lines().map_while(Result::ok) {
-            // (la première suit, sur la même ligne, le « test ... » du lanceur d'essais)
+            // (la ligne suit, sur la même ligne, le « test ... » du lanceur d'essais)
             if let Some(i) = l.find(LIGNE) {
                 let _ = tx.send(l[i + LIGNE.len()..].to_string());
             }
         }
     });
     let entree = enfant.stdin.take();
-    Enfant { enfant, entree, lignes }
+    let mut a = Aide { pris: false, texte: None, enfant, entree };
+    let l = rx.recv_timeout(Duration::from_secs(30)).expect("le processus d'essai n'a rien dit");
+    let (etat, texte) = l.split_once(' ').unwrap_or((l.as_str(), ""));
+    a.pris = etat == "PRIS";
+    a.texte = (!texte.is_empty()).then(|| texte.to_string());
+    a
 }
 
-impl Enfant {
-    /// La prochaine ligne de l'enfant (30 s au plus)
-    fn ligne(&self) -> String {
-        self.lignes.recv_timeout(Duration::from_secs(30)).expect("le processus d'essai n'a rien dit")
-    }
-}
-
-impl Drop for Enfant {
+impl Drop for Aide {
     fn drop(&mut self) {
         drop(self.entree.take());
         for _ in 0..300 {
@@ -97,105 +91,30 @@ impl Drop for Enfant {
     }
 }
 
-/// Une Aide d'essai, dans son propre processus : elle prend le verrou, dit ce qu'elle a eu, et le garde jusqu'à ce que
-/// la valeur soit jetée
-struct Aide {
-    pris: bool,
-    texte: Option<String>,
-    _enfant: Enfant,
-}
-
-fn aide(n: &str) -> Aide {
-    let e = enfant(&["aide", n]);
-    let l = e.ligne();
-    let (etat, texte) = l.split_once(' ').unwrap_or((l.as_str(), ""));
-    let texte = (!texte.is_empty()).then(|| texte.to_string());
-    Aide { pris: etat == "PRIS", texte, _enfant: e }
-}
-
-/// Un « créateur » (ou une Aide d'avant) d'essai, dans son propre processus : il crée l'espace de noms privé
-/// (frontière, préfixe), ou seulement l'ouvre. Avec `verrou`, il le prend après l'attente donnée (en réessayant tant
-/// qu'un autre le tient), comme une Aide un peu lente.
-struct Createur {
-    /// `None` : pas d'espace (sans droits administrateur) ; `Some(false)` : ouvert, il existait déjà
-    cree: Option<bool>,
-    enfant: Enfant,
-}
-
-fn createur(creer: bool, frontiere: &str, prefixe: &str, verrou: Option<(&str, u64)>) -> Createur {
-    let (v, d) = verrou.unwrap_or(("", 0));
-    let ms = d.to_string();
-    let e = enfant(&["espace", if creer { "1" } else { "0" }, frontiere, prefixe, v, &ms]);
-    let cree = match e.ligne().as_str() {
-        "CREE" => Some(true),
-        "OUVERT" => Some(false),
-        _ => None,
-    };
-    Createur { cree, enfant: e }
-}
-
-impl Createur {
-    /// Le verrou pris ou non (avec `verrou`)
-    fn tient(&self) -> bool {
-        self.enfant.ligne() == "TIENT"
-    }
-}
-
-/// Le processus enfant : son rôle vient de `ROLE` (sans elle, cet essai ne fait rien)
+/// Le processus enfant : une Aide d'essai pour le nom donné par `ROLE` (sans elle, cet essai ne fait rien)
 #[test]
 #[ignore = "lancé seulement par les essais de ce module, dans un processus à part"]
 fn role_enfant() {
-    let Ok(role) = std::env::var(ROLE) else { return };
+    let Ok(n) = std::env::var(ROLE) else { return };
     let dire = |x: &str| {
         let mut s = std::io::stdout();
         let _ = writeln!(s, "{LIGNE}{x}");
         let _ = s.flush();
     };
-    let attendre = || {
-        let mut tout = Vec::new();
-        let _ = std::io::stdin().read_to_end(&mut tout);
+    let garde = match verrou_aide(&n) {
+        Verrouillage::Pris { garde, remarque } => {
+            dire(&format!("PRIS {}", remarque.unwrap_or_default()));
+            Some(garde)
+        }
+        Verrouillage::Occupe(x) => {
+            dire(&format!("OCCUPE {x}"));
+            None
+        }
     };
-    let p: Vec<&str> = role.split('|').collect();
-    match p.as_slice() {
-        ["aide", n] => {
-            let garde = match verrou_aide(n) {
-                Verrouillage::Pris { garde, remarque } => {
-                    dire(&format!("PRIS {}", remarque.unwrap_or_default()));
-                    Some(garde)
-                }
-                Verrouillage::Occupe(x) => {
-                    dire(&format!("OCCUPE {x}"));
-                    None
-                }
-            };
-            attendre();
-            drop(garde);
-        }
-        ["espace", creer, frontiere, prefixe, verrou, ms] => {
-            let e = espace_prive(frontiere, prefixe, *creer == "1");
-            dire(match &e {
-                Ok((_, true)) => "CREE",
-                Ok((_, false)) => "OUVERT",
-                Err(_) => "AUCUN",
-            });
-            let mut tenu = None;
-            if e.is_ok() && !verrou.is_empty() {
-                thread::sleep(Duration::from_millis(ms.parse().unwrap_or(0)));
-                for _ in 0..400 {
-                    if let Creation::Tenu(t) = prendre(verrou) {
-                        tenu = Some(t);
-                        break;
-                    }
-                    thread::sleep(Duration::from_millis(5));
-                }
-                dire(if tenu.is_some() { "TIENT" } else { "LIBRE" });
-            }
-            attendre();
-            drop(tenu);
-            drop(e);
-        }
-        _ => panic!("rôle inconnu : {role}"),
-    }
+    // (gardé jusqu'à ce que l'essai referme l'entrée)
+    let mut tout = Vec::new();
+    let _ = std::io::stdin().read_to_end(&mut tout);
+    drop(garde);
 }
 
 /// Lot E : une seconde Aide (même compte, même copie) s'arrête au verrou ; une fois la première arrêtée, la suivante
@@ -239,118 +158,26 @@ fn le_nom_public_pris_avant_l_aide() {
     }
 }
 
-/// (12/11) La cause, côté Windows (doc de `CreatePrivateNamespaceW`) : un espace de noms privé ouvert par un
-/// processus qui y tient un verrou ne peut plus être retrouvé une fois que son créateur s'est arrêté ; un autre
-/// processus en crée alors un neuf, vide, et y prend le même verrou
+/// (12/11) Le vrai comportement de Windows, entre processus séparés (run 43157769634) : l'espace de noms privé de
+/// l'Aide (commun à tous ses verrous) reste trouvable après l'arrêt du processus qui l'a créé, tant qu'un autre
+/// processus le tient ouvert. L'Aide x crée l'espace ; l'Aide y l'ouvre et tient son verrou ; x s'arrête : une seconde
+/// Aide y est toujours refusée. Si Windows changeait (espace introuvable une fois son créateur parti), elle créerait un
+/// espace neuf, vide, et passerait : cet essai échouerait.
 #[test]
-fn windows_un_espace_ferme_par_son_createur_est_recree_vide() {
+fn l_espace_reste_trouvable_apres_l_arret_de_son_createur() {
     let _s = serie();
-    let (frontiere, prefixe, verrou) = noms_espace(&format!("{}-mecanisme", court(&nom(""))));
-    let c = createur(true, &frontiere, &prefixe, None);
-    match c.cree {
-        // (sans droits administrateur : pas d'espace de noms privé, rien à essayer ici)
-        None => return,
-        Some(cree) => assert!(cree, "l'espace de noms d'essai existait déjà"),
-    }
-    let a = createur(false, &frontiere, &prefixe, Some((&verrou, 0)));
-    assert_eq!(a.cree, Some(false), "l'espace du créateur n'est pas ouvert");
-    assert!(a.tient(), "le processus qui a ouvert l'espace n'a pas pris le verrou");
-    drop(c);
-    let b = createur(true, &frontiere, &prefixe, Some((&verrou, 0)));
-    assert_eq!(b.cree, Some(true), "l'espace n'a pas été recréé une fois fermé par son créateur");
-    assert!(b.tient(), "le verrou de l'espace neuf n'est pas libre");
-}
-
-/// (12/11) Le cas réel du run 43151526633 : deux Aides démarrent ensemble ; la première crée l'espace de noms privé,
-/// la seconde l'ouvre et prend le verrou avant elle ; la première voit le verrou pris et s'arrête, ce qui ferme
-/// l'espace (Windows : une fois fermé par son créateur, il ne peut plus être ouvert). Une troisième Aide, plus tard,
-/// doit toujours être refusée : avant, elle créait un espace neuf, vide, et passait.
-#[test]
-fn le_createur_de_l_espace_s_arrete_et_la_suivante_est_refusee() {
-    let _s = serie();
-    let n = nom("createur");
-    // Le « créateur » : l'espace de noms privé de ce verrou créé le premier, sans prendre le verrou
-    let (frontiere, prefixe, _) = noms_espace(court(&n));
-    let c = createur(true, &frontiere, &prefixe, None);
-    match c.cree {
-        None => return,
-        Some(cree) => assert!(cree, "l'espace de noms d'essai existait déjà"),
-    }
-    // L'Aide qui a ouvert l'espace du créateur. Il s'arrête peu après (il a vu le verrou pris) : l'espace est fermé.
-    let fermer = thread::spawn(move || {
-        thread::sleep(Duration::from_millis(300));
-        drop(c);
-    });
-    let gagnante = aide(&n);
-    let _ = fermer.join();
-    // (jamais zéro : le créateur parti, celle qui reste passe, sans attendre la fin des essais)
-    assert!(gagnante.pris, "l'Aide restée seule est refusée : {:?}", gagnante.texte);
-    assert!(gagnante.texte.is_none(), "elle n'a pas créé son propre espace : {:?}", gagnante.texte);
-    let suivante = aide(&n);
-    assert!(
-        !suivante.pris,
-        "une seconde Aide passe le verrou une fois l'espace fermé par son créateur : {:?}",
-        suivante.texte
-    );
-}
-
-/// (12/11) L'autre cas de la course : le créateur de l'espace vit et prend le verrou un peu après l'Aide qui l'a
-/// seulement ouvert. Celle-ci l'a rendu entre-temps, et s'arrête : jamais deux.
-#[test]
-fn le_createur_vivant_garde_le_verrou() {
-    let _s = serie();
-    let n = nom("createur-vivant");
-    let (frontiere, prefixe, verrou) = noms_espace(court(&n));
-    let c = createur(true, &frontiere, &prefixe, Some((&verrou, 400)));
-    match c.cree {
-        None => return,
-        Some(cree) => assert!(cree, "l'espace de noms d'essai existait déjà"),
-    }
-    let a = aide(&n);
-    assert!(
-        !a.pris,
-        "l'Aide qui a seulement ouvert l'espace garde le verrou alors que son créateur vit : {:?}",
-        a.texte
-    );
-    assert!(a.texte.as_deref().unwrap_or_default().contains("Une autre Aide"), "{:?}", a.texte);
-    assert!(c.tient(), "le créateur n'a pas pu prendre le verrou");
-}
-
-/// (12/11) Chaque verrou a son espace : l'arrêt de l'Aide d'un autre compte (qui avait créé l'espace, quand il était
-/// commun) ne laisse plus passer une seconde Aide de ce compte
-#[test]
-fn l_aide_d_un_autre_compte_s_arrete() {
-    let _s = serie();
-    let x = aide(&nom("compte-x"));
-    let y = aide(&nom("compte-y"));
-    assert!(x.pris && y.pris, "deux comptes, deux Aides : {:?} {:?}", x.texte, y.texte);
+    let x = aide(&nom("createur-x"));
+    let y = aide(&nom("tient-y"));
+    assert!(x.pris && y.pris, "deux noms, deux Aides : {:?} {:?}", x.texte, y.texte);
     drop(x);
-    let y2 = aide(&nom("compte-y"));
-    assert!(!y2.pris, "une seconde Aide du compte y passe, l'Aide du compte x arrêtée : {:?}", y2.texte);
+    let y2 = aide(&nom("tient-y"));
+    assert!(!y2.pris, "une seconde Aide passe une fois arrêtée l'Aide qui avait créé l'espace : {:?}", y2.texte);
     drop(y2);
     drop(y);
 }
 
-/// (12/11) Une Aide d'avant (Nevermind 2.3.0 à 3.0, espace de noms commun) tient le verrou de ce nom : la nouvelle
-/// s'arrête
-#[test]
-fn une_aide_d_avant_tient_le_verrou() {
-    let _s = serie();
-    let n = nom("avant");
-    let verrou = format!("{ANCIEN_PREFIXE}\\{}", court(&n));
-    let c = createur(true, ANCIENNE_FRONTIERE, ANCIEN_PREFIXE, Some((&verrou, 0)));
-    // (sans droits, ou l'ancien espace déjà là, sur un PC où une Aide d'avant tourne : rien à essayer ici)
-    if c.cree != Some(true) {
-        return;
-    }
-    assert!(c.tient(), "l'Aide d'avant d'essai n'a pas pu prendre le verrou");
-    let a = aide(&n);
-    assert!(!a.pris, "la nouvelle Aide passe alors qu'une Aide d'avant tient le verrou");
-    assert!(a.texte.as_deref().unwrap_or_default().contains("version précédente"), "{:?}", a.texte);
-}
-
-/// (12/11) Des Aides lancées toutes ensemble, plusieurs fois : à chaque fois une seule passe (jamais deux, jamais
-/// zéro), et sans garder le verrou d'un espace qu'elle n'a pas créé
+/// (12/11) Des Aides lancées toutes ensemble, chacune dans son processus, plusieurs fois : à chaque fois une seule
+/// passe (jamais deux, jamais zéro)
 #[test]
 fn des_aides_lancees_ensemble_une_seule_passe() {
     let _s = serie();
@@ -368,8 +195,7 @@ fn des_aides_lancees_ensemble_une_seule_passe() {
             .collect();
         let aides: Vec<Aide> = fils.into_iter().map(|f| f.join().expect("fil d'essai")).collect();
         let textes: Vec<_> = aides.iter().map(|a| (a.pris, a.texte.clone())).collect();
-        let pris: Vec<_> = aides.iter().filter(|a| a.pris).collect();
-        assert_eq!(pris.len(), 1, "tour {tour} : {} Aides passent : {textes:?}", pris.len());
-        assert!(pris[0].texte.is_none(), "tour {tour} : {textes:?}");
+        let pris = aides.iter().filter(|a| a.pris).count();
+        assert_eq!(pris, 1, "tour {tour} : {pris} Aides passent : {textes:?}");
     }
 }

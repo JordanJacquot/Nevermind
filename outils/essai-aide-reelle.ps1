@@ -884,6 +884,12 @@ function Test-Cas8 {
         Show-Nevermind 'pendant que 1.11.0 est ouverte'
         Test-Cas 'la version renommée refuse de démarrer tant que 1.11.0 est ouverte : elle s''arrête seule, sans garder Local\Nevermind-Instance' { $arrete -and -not (Test-Verrou 'Local\Nevermind-Instance') -and -not $vieux.HasExited }
         Test-Cas 'son journal le dit (« Lancement caché abandonné »)' { @(Get-JournalNevermind | Where-Object { $_ -match 'Lancement caché abandonné' }).Count -ge 1 }
+        # (12/11, run 43152381365 essai 1 : ce contrôle a échoué une fois sans cause connue ; la prochaine fois, la cause)
+        if (-not @(Get-JournalNevermind | Where-Object { $_ -match 'Lancement caché abandonné' }).Count) {
+            $code = try { $neuf.ExitCode } catch { '?' }
+            Write-Host "         | code de sortie de la version renommée : $code ; les 15 dernières lignes de son journal :" -ForegroundColor DarkGray
+            foreach ($l in @(Get-JournalNevermind | Select-Object -Last 15)) { Write-Host "         |   $l" -ForegroundColor DarkGray }
+        }
         Stop-Nevermind
 
         # c. Seule : elle démarre, tient ses deux verrous, et une seule instance
