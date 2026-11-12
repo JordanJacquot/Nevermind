@@ -242,7 +242,8 @@ function Invoke-Enregistrement([string]$Nom) {
     $r = Invoke-Obs 'StopRecord'
     [void](Wait-Jusque { (Invoke-Obs 'GetRecordStatus' -Silencieux).outputActive -ne $true } 20)
     Write-Detail "enregistrement ($Nom) : actif $actif, vidéo « $($r.outputPath) »"
-    [pscustomobject]@{ actif = $actif; chemin = [string]$r.outputPath; journal = $journal }
+    # (OBS donne le chemin avec des « / » : remis à la façon de Windows pour le comparer)
+    [pscustomobject]@{ actif = $actif; chemin = ([string]$r.outputPath).Replace([char]47, [char]92); journal = $journal }
 }
 # Les réglages du dernier encodeur x264 lancé, lus dans le journal d'OBS (après sa fermeture : tout y est écrit)
 function Get-Encodeur([string]$Journal) {
