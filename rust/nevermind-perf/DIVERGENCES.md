@@ -121,3 +121,6 @@ FpsOverlayStyle, FpsOverlayCorner) et fiche d'une partie : bloc jeux ; ce bloc r
 - (second audit du 09/11) La dalle Nettoyage a aussi `jugement` (« à nettoyer » au-delà de 1 Go, quand elle est
   orange), que kit.js écrit après l'état : « 1,5 Go à nettoyer ». Avant, seule la couleur le disait. Retiré lui aussi
   avant la comparaison.
+- (13/11) Mesures en direct pendant un jeu : Nevermind affiché dans Mindset (fenêtre enfant de celle de Mindset, au
+  premier plan) compte comme « Nevermind devant » (`devant()` cherche une fenêtre de Nevermind dans celle du premier
+  plan). Avant, jeu ouvert, les mesures s'arrêtaient dans Mindset : processeur « ... ».

@@ -20,6 +20,7 @@ use windows::Wdk::Graphics::Direct3D::{
 };
 use windows::Wdk::System::SystemInformation::{NtQuerySystemInformation, SystemProcessInformation};
 use windows::Win32::Foundation::{CloseHandle, FILETIME, HANDLE, HMODULE, LUID, WAIT_TIMEOUT};
+use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory1, DXGI_ADAPTER_FLAG_SOFTWARE, IDXGIFactory1};
 use windows::Win32::Graphics::Gdi::{
     DEVMODEW, DISPLAY_DEVICEW, ENUM_CURRENT_SETTINGS, ENUM_DISPLAY_SETTINGS_MODE, EnumDisplayDevicesW,
@@ -40,7 +41,10 @@ use windows::Win32::System::Threading::{
     GetSystemTimes, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE,
     QueryFullProcessImageNameW, WaitForSingleObject,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId};
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumChildWindows, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+};
+use windows::core::BOOL;
 use windows::core::{HSTRING, PCSTR, PCWSTR, PWSTR};
 
 /// Un programme lancé sans console (CREATE_NO_WINDOW)
@@ -382,6 +386,12 @@ impl Systeme for WindowsReel {
             let h = GetForegroundWindow();
             let mut pid = 0u32;
             GetWindowThreadProcessId(h, Some(&mut pid));
+            // (Nevermind affiché dans Mindset : sa fenêtre est une enfant de celle de Mindset, qui est au premier plan.
+            //  C'est Nevermind qu'on regarde : sinon, jeu ouvert, les mesures en direct s'arrêtaient, processeur « ... »)
+            let soi = std::process::id();
+            if pid != 0 && pid != soi && a_une_fenetre_de(h, soi) {
+                pid = soi;
+            }
             let mut b = [0u16; 256];
             let n = GetWindowTextW(h, &mut b);
             (pid, String::from_utf16_lossy(&b[..n.max(0) as usize]))
@@ -554,4 +564,86 @@ pub fn temps_processeur_soi() -> u64 {
         let _ = GetProcessTimes(GetCurrentProcess(), &mut a, &mut b, &mut k, &mut u);
     }
     ft(k) + ft(u)
+}
+
+/// Une fenêtre enfant de `h` appartient au programme `pid` (Nevermind accroché dans la fenêtre de Mindset)
+fn a_une_fenetre_de(h: HWND, pid: u32) -> bool {
+    struct Cherche {
+        pid: u32,
+        vu: bool,
+    }
+    unsafe extern "system" fn rappel(e: HWND, l: LPARAM) -> BOOL {
+        // SAFETY : `l` pointe sur le `Cherche` de l'appel, vivant pendant toute l'énumération
+        let c = unsafe { &mut *(l.0 as *mut Cherche) };
+        let mut p = 0u32;
+        // SAFETY : simple lecture sur une fenêtre donnée par Windows
+        unsafe { GetWindowThreadProcessId(e, Some(&mut p)) };
+        if p == c.pid {
+            c.vu = true;
+            return BOOL(0);
+        }
+        BOOL(1)
+    }
+    if h.is_invalid() {
+        return false;
+    }
+    let mut c = Cherche { pid, vu: false };
+    // SAFETY : le rappel ne garde rien après l'appel ; `c` vit jusqu'à la fin
+    unsafe {
+        let _ = EnumChildWindows(Some(h), Some(rappel), LPARAM(&mut c as *mut Cherche as isize));
+    }
+    c.vu
+}
+
+#[cfg(test)]
+mod essai_accroche {
+    use super::a_une_fenetre_de;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_CHILD, WS_POPUP,
+    };
+    use windows::core::w;
+
+    /// Une fenêtre (jamais montrée) qui en contient une autre du même programme : trouvée ; un autre programme : non
+    #[test]
+    fn fenetre_accrochee_trouvee() {
+        // SAFETY : deux fenêtres « STATIC » sans WS_VISIBLE, détruites à la fin
+        unsafe {
+            let parent = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                w!("STATIC"),
+                w!(""),
+                WS_POPUP,
+                0,
+                0,
+                10,
+                10,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("fenêtre parente");
+            let enfant = CreateWindowExW(
+                WINDOW_EX_STYLE(0),
+                w!("STATIC"),
+                w!(""),
+                WS_CHILD,
+                0,
+                0,
+                5,
+                5,
+                Some(parent),
+                None,
+                None,
+                None,
+            )
+            .expect("fenêtre enfant");
+            let soi = std::process::id();
+            assert!(a_une_fenetre_de(parent, soi));
+            assert!(!a_une_fenetre_de(parent, soi.wrapping_add(4)));
+            assert!(!a_une_fenetre_de(enfant, soi), "pas d'enfant dans l'enfant");
+            let _ = DestroyWindow(enfant);
+            let _ = DestroyWindow(parent);
+        }
+    }
 }
