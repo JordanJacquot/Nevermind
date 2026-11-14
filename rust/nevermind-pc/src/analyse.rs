@@ -49,9 +49,10 @@ static VIRTUELLE: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)Remote|Virtual|Par
 static DEDIEE: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)NVIDIA|GeForce|Radeon RX|Radeon Pro|Arc"));
 static NVIDIA: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)NVIDIA|GeForce"));
 /// Les cartes NVIDIA que le dernier pilote « Game Ready » prend encore en charge : Turing et après (toutes les RTX, les
-/// GTX 16xx, les MX 4xx et 5xx, les T400 à T2000, Quadro ou non, Max-Q ou non). Les GTX 10xx et avant (Pascal,
-/// Maxwell...) restent sur la branche 580 : le dernier pilote ne s'installe pas sur elles (second audit du 09/11).
-/// Lot K : la Quadro T2000 (Turing, portables) manquait.
+/// GTX 16xx, les MX 4xx et 5xx, les T400 à T2000, Quadro ou non, Max-Q ou non). Les GTX 10xx et avant, les MX 1xx à
+/// 3xx, les Quadro P et M (Pascal, Maxwell) et Volta (TITAN V, Quadro GV100) restent sur la branche 580 : le dernier
+/// pilote ne s'installe pas sur elles (second audit du 09/11). Lot K : la Quadro T2000 (Turing, portables) manquait.
+/// Relu le 14/11 sans source en ligne : seule une carte sortie depuis, hors RTX, demanderait d'y revenir.
 static NVIDIA_SUIVIE: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?i)\bRTX\b|\bGTX\s*16\d\d|\bMX\s*[45]\d\d\b|\bT(400|500|550|600|1000|1200|2000)\b"));
 static AMD: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)AMD|Radeon"));

@@ -186,8 +186,31 @@ pub fn applis_demarrer() -> Vec<(String, String)> {
     v
 }
 
-/// La fenêtre « Choisis le programme du jeu (.exe) ».
-pub fn choisir_exe() -> Option<String> {
+/// La fenêtre propriétaire de la fenêtre de choix : la fenêtre principale de Nevermind, pour que le choix reste devant
+/// elle, seulement si c'est encore une fenêtre à elle, de ce programme (comme pour le choix du dossier de Protection,
+/// lot F). Accrochée dans Mindset (elle est alors l'enfant d'une fenêtre d'un autre programme), aucune : la fenêtre
+/// de Mindset serait bloquée pendant le choix.
+fn proprietaire(h: usize) -> Option<windows::Win32::Foundation::HWND> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor, GetWindowThreadProcessId, IsWindow};
+    if h == 0 {
+        return None;
+    }
+    let w = HWND(h as *mut core::ffi::c_void);
+    let mut pid = 0u32;
+    // SAFETY : lectures seules sur une poignée vérifiée par IsWindow
+    let a_elle = unsafe {
+        IsWindow(Some(w)).as_bool() && GetAncestor(w, GA_ROOT) == w && {
+            GetWindowThreadProcessId(w, Some(&mut pid));
+            pid == std::process::id()
+        }
+    };
+    a_elle.then_some(w)
+}
+
+/// La fenêtre « Choisis le programme du jeu (.exe) », devant la fenêtre principale de Nevermind quand elle peut en
+/// être la propriétaire ([`proprietaire`]).
+pub fn choisir_exe(fenetre: usize) -> Option<String> {
     let _com = Com::ouvrir();
     unsafe {
         let d: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
@@ -200,7 +223,7 @@ pub fn choisir_exe() -> Option<String> {
         if let Ok(o) = d.GetOptions() {
             let _ = d.SetOptions(o | FOS_FILEMUSTEXIST);
         }
-        d.Show(None).ok()?;
+        d.Show(proprietaire(fenetre)).ok()?;
         let it = d.GetResult().ok()?;
         nom_element(&it, SIGDN_FILESYSPATH)
     }

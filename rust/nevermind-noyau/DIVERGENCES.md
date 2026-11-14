@@ -38,6 +38,11 @@ reste au caractère près. Voici les seules différences, chacune voulue ou sans
    est dépassé. » (en PowerShell, le message anglais de .NET « The operation has timed out. »).
 9. **Désinstallation.** La voie « sur place » d'Invoke-Aide (désinstallation en administrateur, actions de l'Aide
    faites dans le même processus) n'est pas dans le noyau : elle appartient à la désinstallation.
+9 bis. **Démarrage de l'Aide (nevermind-aide, 14/11).** En PowerShell, l'Aide ouvrait son canal, puis renommait les
+   anciennes règles du pare-feu (« OptiGame : bloque », Get-NetFirewallRule, souvent plusieurs secondes) avant
+   d'écouter : la toute première demande de Nevermind, déjà connectée, attendait la fin. Le Rust faisait pareil (toutes
+   les règles lues par COM) et sa sonde de 1,5 s concluait à une Aide muette. Maintenant le renommage se fait dans un
+   fil à part, pendant que l'Aide écoute déjà (les demandes du pare-feu cherchent de toute façon les deux noms).
 
 ## Mises à jour
 

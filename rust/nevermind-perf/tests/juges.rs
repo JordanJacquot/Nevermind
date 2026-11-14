@@ -447,3 +447,60 @@ fn aucune_appli_cochee() {
     let f = jeu::fermer_pour_partie(true, &jeu::selection(Some(&json!([]))), &ouverts, |_, p| p.len());
     assert!(f.is_empty());
 }
+
+/// Restes du 10/11 : les dalles RAM et Connexion ne disaient leur jugement que par la couleur (orange au-delà de 80 %
+/// de RAM, vert, orange ou rouge selon le ping). Il est maintenant aussi écrit (`jugement`, ajouté à l'état par
+/// kit.js) : « 85 % (élevé) », « 24 ms (bon) », « 80 ms (moyen) », « 150 ms (mauvais) ». Sur chaque juge, et sur des
+/// entrées faites pour l'essai : une dalle colorée a toujours un mot, une dalle sans couleur n'en a pas.
+#[test]
+fn ram_et_connexion_disent_leur_jugement_en_mots() {
+    fn dalle(p: &Value, id: &str) -> Value {
+        p["perf"]["blocs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|b| b["type"] == "outils")
+            .flat_map(|b| b["elements"].as_array().cloned().unwrap_or_default())
+            .find(|x| x["id"] == id)
+            .unwrap_or(Value::Null)
+    }
+    let mut entrees: Vec<(String, Value)> = juge("pages.json")
+        .into_iter()
+        .map(|c| (c["nom"].as_str().unwrap_or("?").to_string(), c["entree"].clone()))
+        .collect();
+    for (nom, e) in [
+        ("ram 85", json!({ "ram": { "utilisee": 85.0, "totale": 100.0 } })),
+        ("ram 40", json!({ "ram": { "utilisee": 40.0, "totale": 100.0 } })),
+        ("ram 40 alerte", json!({ "memoire": { "pourcent": 40, "alertes": 1 } })),
+        ("ping bon", json!({ "internet": { "moy": 24.0, "statut": "ok" } })),
+        ("ping moyen", json!({ "internet": { "moy": 80.0, "statut": "warn" } })),
+        ("ping mauvais", json!({ "internet": { "moy": 150.0, "statut": "bad" } })),
+        ("carte bridée", json!({ "internet": { "moy": 24.0, "statut": "ok" }, "bridage": true })),
+    ] {
+        entrees.push((nom.to_string(), e));
+    }
+    let mut vus = std::collections::BTreeSet::new();
+    for (nom, e) in &entrees {
+        let p = Value::Object(pages::pages(e));
+        let ram = dalle(&p, "memoire");
+        match ram["ton"].as_str() {
+            Some("attention") => {
+                let j = ram["jugement"].as_str().unwrap_or_else(|| panic!("{nom} : RAM orange sans mot : {ram}"));
+                vus.insert(format!("ram {j}"));
+            }
+            _ => assert!(ram["jugement"].is_null(), "{nom} : RAM sans couleur avec un mot : {ram}"),
+        }
+        let cx = dalle(&p, "connexion");
+        let colore = matches!(cx["ton"].as_str(), Some("ok" | "attention" | "urgent"));
+        let en_mots = cx["etiquette"] == "Carte trop lente" || cx["etiquette"] == "À tester";
+        if colore && !en_mots {
+            let j = cx["jugement"].as_str().unwrap_or_else(|| panic!("{nom} : Connexion colorée sans mot : {cx}"));
+            vus.insert(format!("ping {j}"));
+        } else {
+            assert!(cx["jugement"].is_null(), "{nom} : Connexion avec un mot en trop : {cx}");
+        }
+    }
+    for attendu in ["ram (élevé)", "ram (à voir)", "ping (bon)", "ping (moyen)", "ping (mauvais)"] {
+        assert!(vus.contains(attendu), "« {attendu} » jamais vu : {vus:?}");
+    }
+}

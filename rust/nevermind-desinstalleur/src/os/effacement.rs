@@ -28,11 +28,12 @@ use windows::Win32::Foundation::{
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, DELETE, FILE_ACCESS_RIGHTS, FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_APPEND_DATA,
     FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT,
-    FILE_BASIC_INFO, FILE_DISPOSITION_FLAG_DELETE, FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE,
-    FILE_DISPOSITION_FLAG_POSIX_SEMANTICS, FILE_DISPOSITION_INFO, FILE_DISPOSITION_INFO_EX, FILE_FLAG_BACKUP_SEMANTICS,
-    FILE_FLAG_OPEN_REPARSE_POINT, FILE_FULL_DIR_INFO, FILE_LIST_DIRECTORY, FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES,
-    FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO, FILE_WRITE_ATTRIBUTES,
-    FILE_WRITE_DATA, FileBasicInfo, FileDispositionInfo, FileDispositionInfoEx, FileFullDirectoryInfo,
+    FILE_ATTRIBUTE_TAG_INFO, FILE_BASIC_INFO, FILE_DISPOSITION_FLAG_DELETE,
+    FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS, FILE_DISPOSITION_INFO,
+    FILE_DISPOSITION_INFO_EX, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_FULL_DIR_INFO,
+    FILE_LIST_DIRECTORY, FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA,
+    FileAttributeTagInfo, FileBasicInfo, FileDispositionInfo, FileDispositionInfoEx, FileFullDirectoryInfo,
     FileFullDirectoryRestartInfo, FileStandardInfo, FlushFileBuffers, GETFINALPATHNAMEBYHANDLE_FLAGS,
     GetFileInformationByHandleEx, GetFinalPathNameByHandleW, GetLongPathNameW, OPEN_EXISTING, ReadFile, SYNCHRONIZE,
     SetFileInformationByHandle, VOLUME_NAME_DOS, WriteFile,
@@ -110,20 +111,38 @@ fn chemin_final(h: HANDLE) -> io::Result<String> {
     })
 }
 
-/// Les attributs, lus par la poignée
+/// L'étiquette des fichiers « dans le nuage » (OneDrive avec « Fichiers à la demande », et tout autre service de
+/// synchronisation qui passe par Windows) : IO_REPARSE_TAG_CLOUD, et ses 16 variantes 0x9000_X01A
+const ETIQUETTE_NUAGE: u32 = 0x9000_001A;
+const MASQUE_NUAGE: u32 = 0xFFFF_0FFF;
+
+/// Les attributs tels que ce module les juge (restes du 10/11, OneDrive « nuage ») : un fichier ou un dossier gardé
+/// par un service de synchronisation porte un point d'analyse à l'étiquette « nuage ». Ce n'est pas un lien : il ne
+/// mène nulle part ailleurs, il est bien là où il est (le chemin final est vérifié à part). Il est donc vu comme un
+/// fichier ou un dossier ordinaire. Avant, en administrateur, un Bureau dans OneDrive pouvait passer pour un lien, et
+/// le raccourci de Nevermind y restait. Une jonction, un lien symbolique ou toute autre étiquette restent des liens.
+pub(crate) fn attributs_juges(attributs: u32, etiquette: u32) -> u32 {
+    if attributs & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0 && etiquette & MASQUE_NUAGE == ETIQUETTE_NUAGE {
+        attributs & !FILE_ATTRIBUTE_REPARSE_POINT.0
+    } else {
+        attributs
+    }
+}
+
+/// Les attributs, lus par la poignée avec l'étiquette du point d'analyse ([`attributs_juges`])
 fn attributs(h: HANDLE) -> io::Result<u32> {
-    let mut i = FILE_BASIC_INFO::default();
+    let mut i = FILE_ATTRIBUTE_TAG_INFO::default();
     // SAFETY : structure de la bonne taille
     unsafe {
         GetFileInformationByHandleEx(
             h,
-            FileBasicInfo,
-            (&mut i as *mut FILE_BASIC_INFO).cast(),
-            size_of::<FILE_BASIC_INFO>() as u32,
+            FileAttributeTagInfo,
+            (&mut i as *mut FILE_ATTRIBUTE_TAG_INFO).cast(),
+            size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
         )
         .map_err(erreur)?;
     }
-    Ok(i.FileAttributes)
+    Ok(attributs_juges(i.FileAttributes, i.ReparseTag))
 }
 
 /// Ouvre `chemin` sans suivre de lien, et vérifie qu'il est bien là où on l'attend (`attendu`)

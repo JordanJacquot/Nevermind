@@ -44,12 +44,12 @@ impl Systeme for Lent {
     fn lancer(&self, e: &str, a: &str, d: &str) -> Result<(), String> {
         self.sys.lancer(e, a, d)
     }
-    fn choisir_exe(&self) -> Option<String> {
+    fn choisir_exe(&self, proprietaire: usize) -> Option<String> {
         self.fenetres.fetch_add(1, Ordering::SeqCst);
         if let Some(r) = self.feu.lock().unwrap().take() {
             let _ = r.recv_timeout(Duration::from_secs(60));
         }
-        self.sys.choisir_exe()
+        self.sys.choisir_exe(proprietaire)
     }
     fn infos_programme(&self, e: &str) -> (String, String) {
         self.sys.infos_programme(e)
@@ -176,5 +176,28 @@ fn supprimer_des_restes_montre_son_attente_et_dit_le_clic_refuse() {
         "pas d'attente montrée pendant la suppression : {tout:?}"
     );
     assert_eq!(pastilles.last().map(|p| p["texte"].clone()), Some(serde_json::json!("")), "l'attente reste");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// Restes du 10/11 : la fenêtre « Choisis le programme du jeu (.exe) » reçoit la fenêtre principale de Nevermind
+/// comme propriétaire (avant : aucune, elle pouvait passer derrière Nevermind ou Mindset), comme le choix du dossier
+/// de Protection. Le faux système note la propriétaire, sans rien montrer.
+#[test]
+fn la_fenetre_de_choix_d_un_jeu_a_nevermind_pour_proprietaire() {
+    let d = dossier_essai("jeux-choix-proprietaire");
+    let _ = std::fs::remove_dir_all(&d);
+    let ctx = Contexte::nouveau(d.clone(), d.clone(), false, true).partage();
+    ctx.definir_fenetre(0x1234);
+    let sys = Arc::new(SystemeEssai { exe_choisi: None, ..Default::default() });
+    let mut b = BlocJeux::avec(sys.clone());
+    let _ = b.pages(&ctx, "jeux");
+    let mut e = Effets::default();
+    assert!(b.action(&ctx, "clic:BtnLibAdd", &Value::Null, &mut e));
+    let fin = Instant::now() + Duration::from_secs(10);
+    while sys.proprietaire_choix.lock().unwrap().is_none() {
+        assert!(Instant::now() < fin, "la fenêtre de choix n'est pas demandée");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(*sys.proprietaire_choix.lock().unwrap(), Some(0x1234));
     let _ = std::fs::remove_dir_all(&d);
 }

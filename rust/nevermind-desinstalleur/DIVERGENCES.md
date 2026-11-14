@@ -100,6 +100,10 @@ registre. Tout est identique, sauf ce qui suit.
     changer. En administrateur, chaque raccourci est ouvert par rapport à son dossier vérifié, relu, puis effacé par la
     même poignée ; un bureau qui est une jonction, ou qui passe par une, n'est pas touché. Lancé sans les droits, le
     désinstalleur repasse ensuite sous le compte et efface lui-même ceux qui lancent encore cette copie.
+    (14/11) Un fichier ou un dossier gardé par OneDrive (« Fichiers à la demande » : point d'analyse à l'étiquette
+    « nuage », IO_REPARSE_TAG_CLOUD) n'est pas un lien : un Bureau dans OneDrive et son raccourci sont traités comme
+    un dossier et un fichier ordinaires, comme en PowerShell (`effacement::attributs_juges`). Avant, en administrateur,
+    ils pouvaient être refusés comme des liens et le raccourci restait. Jonctions et liens symboliques : inchangé.
 18. **Les programmes fermés** (l'Aide, Nevermind) : ouverts une fois, leur chemin relu par cette poignée juste avant
     de les fermer par elle (comme l'Aide, M6) ; un numéro redonné à un autre programme depuis la liste n'est pas fermé.
 

@@ -73,6 +73,8 @@ pub(crate) struct FauxSysteme {
     verrou_occupe: bool,
     /// Le compte des processus que le faux PC ne liste pas (aucun : illisible), comme ceux des mesures rejouées
     compte_par_defaut: Option<String>,
+    /// La lecture des règles du pare-feu prend ce temps (le vrai PC les parcourt une par une, par COM)
+    regles_lentes: Option<std::time::Duration>,
 }
 
 /// Ce que le faux PC répond pour les mesures continues
@@ -238,6 +240,7 @@ impl FauxSysteme {
             nom_du_verrou_pris: false,
             verrou_occupe: false,
             compte_par_defaut: None,
+            regles_lentes: None,
         }
     }
 
@@ -260,6 +263,12 @@ impl FauxSysteme {
     /// Une autre Aide tient déjà le verrou
     pub(crate) fn avec_verrou_occupe(mut self) -> Self {
         self.verrou_occupe = true;
+        self
+    }
+
+    /// La lecture des règles du pare-feu prend ce temps
+    pub(crate) fn avec_regles_lentes(mut self, d: std::time::Duration) -> Self {
+        self.regles_lentes = Some(d);
         self
     }
 
@@ -385,6 +394,9 @@ impl Systeme for FauxSysteme {
         Ok(())
     }
     fn pare_feu_regles(&self) -> Result<Vec<String>, String> {
+        if let Some(d) = self.regles_lentes {
+            std::thread::sleep(d);
+        }
         Ok(self.etat().regles.clone())
     }
     fn pare_feu_ajouter(&self, nom: &str, programme: &str, service: Option<&str>, entrant: bool) -> Result<(), String> {
@@ -1036,4 +1048,33 @@ fn une_seconde_aide_s_arrete_au_verrou() {
     assert!(f.etat().appels.is_empty(), "la seconde Aide a ouvert son canal : {:?}", f.etat().appels);
     let m = f.mesures.lock().unwrap();
     assert!(m.traces_fermees.is_empty() && m.sessions_fps_fermees.is_empty());
+}
+
+/// Restes du 10/11 (« l'Aide muette à la toute première demande ») : au démarrage, l'Aide ouvre son canal, puis renommait
+/// les anciennes règles du pare-feu (toutes les règles de Windows lues une par une par COM) AVANT d'écouter. Pendant ce
+/// temps, Nevermind trouve le canal ouvert, s'y connecte (Windows accepte la connexion avant ConnectNamedPipe) et
+/// attend une réponse qui ne vient qu'à la fin du renommage : sa sonde (1,5 s) conclut à une Aide muette. Maintenant le
+/// renommage se fait à côté, et la première demande reçoit sa réponse tout de suite. Les anciennes règles sont quand
+/// même renommées.
+#[test]
+fn la_premiere_demande_n_attend_pas_le_renommage_des_regles() {
+    let f = Arc::new(FauxSysteme::new().avec_regles_lentes(std::time::Duration::from_millis(2500)));
+    f.etat().regles = vec![format!("{REGLE_ANCIENNE}Vieux")];
+    let rep = Arc::clone(&f.reponses);
+    f.connexions.lock().unwrap().push_back(connexion(NEVERMIND as u32, &[Some(b"{\"a\":\"aide.bonjour\"}\n")], &rep));
+    let debut = std::time::Instant::now();
+    let f2 = Arc::clone(&f);
+    let aide = std::thread::spawn(move || serveur::lancer(f2, Some(ELODIE)));
+    while rep.lock().unwrap().is_empty() {
+        assert!(debut.elapsed() < std::time::Duration::from_secs(10), "aucune réponse");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let attente = debut.elapsed();
+    aide.join().unwrap();
+    assert!(
+        attente < std::time::Duration::from_millis(1000),
+        "la première demande a attendu {attente:?} : plus que la sonde de Nevermind (1,5 s)"
+    );
+    assert!(rep.lock().unwrap()[0].contains("\"ok\":true"), "{:?}", rep.lock().unwrap());
+    assert_eq!(f.etat().regles, vec!["Nevermind : bloque Vieux".to_string()], "anciennes règles pas renommées");
 }

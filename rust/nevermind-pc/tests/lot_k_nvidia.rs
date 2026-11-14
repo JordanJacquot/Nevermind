@@ -23,3 +23,34 @@ fn la_quadro_t2000_est_prise_en_charge() {
         assert!(!nvidia_suivie(n), "{n}");
     }
 }
+
+/// Relecture du 14/11 : Volta (TITAN V, Quadro GV100) et les MX Pascal ou Maxwell (MX 1xx à 3xx) restent sur la branche
+/// 580, comme Pascal ; les cartes Turing et après les plus récentes, portables compris, sont bien suivies.
+#[test]
+fn volta_et_mx_anciennes_hors_liste_cartes_recentes_dedans() {
+    use nevermind_pc::analyse::nvidia_suivie;
+    for n in [
+        "NVIDIA GeForce RTX 5090",
+        "NVIDIA GeForce RTX 5060 Laptop GPU",
+        "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+        "NVIDIA GeForce GTX 1630",
+        "NVIDIA GeForce MX550",
+        "NVIDIA GeForce MX570",
+        "NVIDIA T500",
+        "NVIDIA T400 4GB",
+    ] {
+        assert!(nvidia_suivie(n), "{n}");
+    }
+    for n in [
+        "NVIDIA TITAN V",
+        "NVIDIA Quadro GV100",
+        "NVIDIA GeForce MX350",
+        "NVIDIA GeForce MX250",
+        "NVIDIA GeForce MX130",
+        "NVIDIA GeForce GTX 1050 Ti",
+        "NVIDIA Tesla T4",
+        "Intel(R) Arc(TM) A770 Graphics",
+    ] {
+        assert!(!nvidia_suivie(n), "{n}");
+    }
+}

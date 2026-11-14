@@ -1074,7 +1074,10 @@ impl BlocJeux {
             None => {
                 if !self.travaux.en_cours(CHOIX) {
                     let sys = self.sys.clone();
-                    self.travaux.lancer(ctx, CHOIX, move |_| FinJeux::Choisi(sys.choisir_exe()));
+                    // (devant la fenêtre de Nevermind, qui en est la propriétaire, comme le choix du dossier de
+                    //  Protection : sans elle, la fenêtre de choix pouvait passer derrière Nevermind ou Mindset)
+                    let fenetre = ctx.fenetre();
+                    self.travaux.lancer(ctx, CHOIX, move |_| FinJeux::Choisi(sys.choisir_exe(fenetre)));
                     self.relever_travaux(ctx, effets);
                 }
                 return;

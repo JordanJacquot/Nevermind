@@ -136,6 +136,17 @@ pub fn etat_mode_jeu(e: &Value) -> String {
     )
 }
 
+/// Ce que la dalle Connexion ajoute après le ping, en mots (pas seulement par la couleur) : le statut du dernier test
+/// (`ok`, `warn`, `bad` de Invoke-NetTest) ; rien pour un statut inconnu ou « info », qui n'a pas de couleur
+fn jugement_ping(statut: &str) -> Value {
+    match statut.to_lowercase().as_str() {
+        "ok" => json!("(bon)"),
+        "warn" => json!("(moyen)"),
+        "bad" => json!("(mauvais)"),
+        _ => Value::Null,
+    }
+}
+
 /// Les pages, comme Get-PagesPerf (sans la page RAM)
 pub fn pages(e: &Value) -> Map<String, Value> {
     let lignes_reg = liste(e.get("reglages"));
@@ -233,9 +244,15 @@ pub fn pages(e: &Value) -> Map<String, Value> {
         { "id": "memoire", "nom": "RAM", "resume": "Mémoire utilisée", "note": "Ce qui prend la mémoire", "icone": "memoire", "couleur": "P",
           "niveau": match ram_p { Some(p) => json!(p.clamp(0, 100)), None => Value::Null },
           "etiquette": match ram_p { Some(p) => json!(format!("{p} %")), None => Value::Null },
+          // (le jugement dit aussi en mots, pas seulement par la couleur : « 85 % (élevé) », ou « 40 % (à voir) » quand
+          //  c'est une alerte de la page RAM qui la rend orange)
+          "jugement": if ram_p.is_some_and(|p| p >= 80) { json!("(élevé)") } else if ram_alerte && ram_p.is_some() { json!("(à voir)") } else { Value::Null },
           "ton": if ram_alerte || ram_p.is_some_and(|p| p >= 80) { "attention" } else { "" } },
         { "id": "connexion", "nom": "Connexion", "resume": "Ping et stabilité", "note": "Temps de réponse (ping), stabilité, DNS", "icone": "ondes", "couleur": "P",
           "etiquette": if bridage { json!("Carte trop lente") } else if let Some(i) = inter { json!(format!("{} ms", nombre_texte(i.get("moy")))) } else { json!("À tester") },
+          // (le jugement du ping dit aussi en mots : « 24 ms (bon) », « 80 ms (moyen) », « 150 ms (mauvais) » ; « Carte
+          //  trop lente » et « À tester » le disent déjà)
+          "jugement": if bridage { Value::Null } else if let Some(i) = inter { jugement_ping(&ch(i.get("statut"))) } else { Value::Null },
           "ton": if bridage { json!("attention") } else if let Some(i) = inter { ton_statut(&ch(i.get("statut"))) } else { json!("") } }
     ]);
     let mut blocs_perf = vec![

@@ -36,8 +36,9 @@ pub trait Systeme: Send + Sync {
     fn faux(&self) -> bool {
         false
     }
-    /// Demande à l'utilisateur le programme d'un jeu (.exe) ; `None` s'il annule.
-    fn choisir_exe(&self) -> Option<String>;
+    /// Demande à l'utilisateur le programme d'un jeu (.exe) ; `None` s'il annule. `proprietaire` : la fenêtre
+    /// principale de Nevermind (0 : aucune), devant laquelle la fenêtre de choix reste.
+    fn choisir_exe(&self, proprietaire: usize) -> Option<String>;
     /// Le nom de produit et la description d'un programme (FileVersionInfo).
     fn infos_programme(&self, exe: &str) -> (String, String);
 }
@@ -53,6 +54,8 @@ pub struct SystemeEssai {
     pub applis: Vec<(String, String)>,
     pub heure: Option<Moment>,
     pub exe_choisi: Option<String>,
+    /// La propriétaire donnée à la dernière fenêtre de choix (notée, rien n'est montré)
+    pub proprietaire_choix: Mutex<Option<usize>>,
     pub infos: HashMap<String, (String, String)>,
     pub lances: Mutex<Vec<(String, String, String)>>,
     /// Un lancement refusé (par exemple « tu as répondu Non à la demande de Windows ») : le texte de l'erreur
@@ -112,7 +115,8 @@ impl Systeme for SystemeEssai {
     fn faux(&self) -> bool {
         true
     }
-    fn choisir_exe(&self) -> Option<String> {
+    fn choisir_exe(&self, proprietaire: usize) -> Option<String> {
+        *self.proprietaire_choix.lock().unwrap_or_else(|e| e.into_inner()) = Some(proprietaire);
         self.exe_choisi.clone()
     }
     fn infos_programme(&self, exe: &str) -> (String, String) {
@@ -150,8 +154,8 @@ impl Systeme for SystemeWindows {
     fn lancer(&self, exe: &str, arguments: &str, dossier: &str) -> Result<(), String> {
         crate::windows::lancer(exe, arguments, dossier)
     }
-    fn choisir_exe(&self) -> Option<String> {
-        crate::windows::choisir_exe()
+    fn choisir_exe(&self, proprietaire: usize) -> Option<String> {
+        crate::windows::choisir_exe(proprietaire)
     }
     fn infos_programme(&self, exe: &str) -> (String, String) {
         crate::windows::infos_programme(exe)
@@ -185,7 +189,7 @@ impl Systeme for SystemeWindows {
     fn lancer(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
         Err("pas sous Windows".into())
     }
-    fn choisir_exe(&self) -> Option<String> {
+    fn choisir_exe(&self, _: usize) -> Option<String> {
         None
     }
     fn infos_programme(&self, _: &str) -> (String, String) {

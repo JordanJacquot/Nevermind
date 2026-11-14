@@ -26,8 +26,11 @@ Tout est identique, sauf ce qui suit.
 7. **Programmes au démarrage** : le nom montré est celui de l'entrée (PowerShell prenait le nom du produit lu dans
    l'exécutable, `FileVersionInfo`) ; la cible des raccourcis .lnk du dossier Démarrage n'est pas lue (le raccourci
    lui-même sert d'exécutable). Les icônes (`image`) ne sont pas envoyées.
-8. **Dernier pilote NVIDIA** (`NvLatest`, geforce.com) : pas lu (pas de client HTTP dans le bloc) : l'analyse se base sur
-   l'âge du pilote, comme quand l'option « Vérifier le pilote NVIDIA » est coupée.
+8. **Dernier pilote NVIDIA** (`NvLatest`, geforce.com) : lu depuis le 08/11 comme en PowerShell (même adresse, curl de
+   Windows sans fenêtre, 6 s au plus, jamais en mode test ; `systeme::completer_pilote_nvidia`), mais seulement pour
+   une carte que ce pilote prend encore en charge (voir « Pilote NVIDIA des vieilles cartes »). Sans réponse, l'analyse
+   se base sur l'âge du pilote, comme quand l'option « Vérifier le pilote NVIDIA » est coupée. (Avant le 08/11 : jamais
+   lu.)
 9. **Mode test** (`ctx.essai`) : sur le vrai PC, aucune écriture (registre, powercfg, écrans, Aide sauf lectures).
    Le PC est lu (WMI, registre, powercfg en lecture), comme la version PowerShell en test, pour que la construction
    d'essai montre l'analyse de Ton PC (avant le câblage du 06/11, rien n'était lu et l'analyse restait « en cours »).
@@ -107,7 +110,9 @@ programmes au démarrage passaient pour activés. Corrigé dans le script (`retu
 
 ## Pilote NVIDIA des vieilles cartes (second audit du 09/11)
 - Le dernier pilote « Game Ready » (`NvLatest`) n'est demandé et comparé que pour une carte qu'il prend encore en charge
-  (`analyse::nvidia_suivie` : RTX, GTX 16xx, MX 4xx et 5xx, T400 à T1200). En PowerShell, toute carte NVIDIA y était
+  (`analyse::nvidia_suivie` : Turing et après, soit RTX, GTX 16xx, MX 4xx et 5xx, T400 à T2000 ; la T2000 depuis le
+  lot K). Pascal, Maxwell et Volta (GTX 10xx et avant, MX 1xx à 3xx, Quadro P et M, TITAN V) restent sur la branche
+  580 et n'y sont pas. En PowerShell, toute carte NVIDIA y était
   comparée : une GTX 1060 restait sur « Nouveau pilote NVIDIA disponible » vers un pilote qui ne s'installe pas sur
   elle. Pour les autres, la règle de l'âge du pilote installé, comme sans réponse de NVIDIA.
 

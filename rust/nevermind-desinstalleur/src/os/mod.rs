@@ -921,6 +921,34 @@ mod tests {
         c.get_args().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>().join(" ")
     }
 
+    /// Restes du 10/11 (OneDrive « nuage » en administrateur) : un fichier ou un dossier gardé par OneDrive (« Fichiers à
+    /// la demande ») porte un point d'analyse à l'étiquette « nuage » (IO_REPARSE_TAG_CLOUD et ses variantes). Avant,
+    /// tout point d'analyse comptait comme un lien : en administrateur, un Bureau dans OneDrive et le raccourci qui s'y
+    /// trouve étaient refusés, et le raccourci de Nevermind restait. Maintenant seule l'étiquette « nuage » est vue comme
+    /// un fichier ordinaire ; jonctions, liens symboliques et autres étiquettes restent des liens. (Les attributs et
+    /// étiquettes sont donnés ici : rien n'est lu sur le PC, et la machine de GitHub n'a pas OneDrive.)
+    #[test]
+    fn un_fichier_dans_le_nuage_n_est_pas_un_lien() {
+        use effacement::attributs_juges;
+        const DOSSIER: u32 = 0x10;
+        const ANALYSE: u32 = 0x400;
+        const ARCHIVE: u32 = 0x20;
+        const RAPPEL: u32 = 0x0040_0000; // FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS (fichier pas encore téléchargé)
+        // OneDrive : IO_REPARSE_TAG_CLOUD, CLOUD_1 à CLOUD_F (un raccourci du Bureau, le Bureau lui-même)
+        for etiquette in [0x9000_001A_u32, 0x9000_101A, 0x9000_601A, 0x9000_F01A] {
+            assert_eq!(attributs_juges(ARCHIVE | ANALYSE | RAPPEL, etiquette), ARCHIVE | RAPPEL, "{etiquette:#x}");
+            assert_eq!(attributs_juges(DOSSIER | ANALYSE, etiquette), DOSSIER, "{etiquette:#x}");
+        }
+        // Jonction (IO_REPARSE_TAG_MOUNT_POINT), lien symbolique, lien d'appli (APPEXECLINK), déduplication : des liens
+        for etiquette in [0xA000_0003_u32, 0xA000_000C, 0x8000_001B, 0x8000_0013] {
+            assert_eq!(attributs_juges(DOSSIER | ANALYSE, etiquette), DOSSIER | ANALYSE, "{etiquette:#x}");
+            assert_eq!(attributs_juges(ARCHIVE | ANALYSE, etiquette), ARCHIVE | ANALYSE, "{etiquette:#x}");
+        }
+        // Sans point d'analyse : rien ne change, quelle que soit l'étiquette lue
+        assert_eq!(attributs_juges(ARCHIVE, 0x9000_001A), ARCHIVE);
+        assert_eq!(attributs_juges(DOSSIER, 0), DOSSIER);
+    }
+
     /// Lot H : Local AppData est toujours celui du profil du compte, jamais un dossier choisi par une redirection (ni
     /// par une variable USERPROFILE changée). Sur ce PC (rien n'y est redirigé ni changé), on vérifie seulement que
     /// c'est bien `<profil>\AppData\Local` ; la redirection elle-même est essayée sur GitHub (cas 9 de

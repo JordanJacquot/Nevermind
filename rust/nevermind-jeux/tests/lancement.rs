@@ -190,7 +190,7 @@ impl nevermind_jeux::systeme::Systeme for AppsLentes {
     fn faux(&self) -> bool {
         true
     }
-    fn choisir_exe(&self) -> Option<String> {
+    fn choisir_exe(&self, _: usize) -> Option<String> {
         None
     }
     fn infos_programme(&self, e: &str) -> (String, String) {
