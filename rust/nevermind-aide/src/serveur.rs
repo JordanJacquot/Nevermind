@@ -225,7 +225,7 @@ pub fn lancer<H: Hote>(h: Arc<H>, sid_recu: Option<&str>) {
     if moi.admin {
         s.fermer_sessions_restees();
     }
-    // Les anciennes règles du pare-feu (« OptiGame : bloque ») renommées à côté, pendant que l'Aide écoute déjà :
+    // Les anciennes règles du pare-feu (à l'ancien nom de Nevermind) renommées à côté, pendant que l'Aide écoute déjà :
     // Windows les lit toutes une par une (par COM), parfois plusieurs secondes. Avant, c'était fait ici, canal déjà
     // ouvert : Nevermind s'y connectait et sa toute première demande attendait la fin (restes du 10/11, « l'Aide muette
     // à la toute première demande »). Attendu à la fin de l'Aide.
