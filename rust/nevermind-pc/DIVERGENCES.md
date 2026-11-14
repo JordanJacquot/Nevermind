@@ -126,3 +126,15 @@ programmes au démarrage passaient pour activés. Corrigé dans le script (`retu
   jamais écran caché. « Ouvrir G Hub » : `Pc::lancer` (ShellExecute), comme les autres programmes.
 - Mode test (`ctx.essai`) : des appareils d'exemple, jamais les vrais. Faux PC des tests et des juges : aucun
   appareil par défaut (la page « pc » des juges ne change pas : la section est ajoutée par le bloc après `pages_pc`).
+
+## Plan d'alimentation disparu (14/11 ; pas dans la version PowerShell)
+- Un plan noté peut disparaître du PC (`powercfg -restoredefaultschemes` du bouton de Mindcare, Windows Update, un
+  autre logiciel). Nevermind s'en rend compte en lisant `powercfg /list` (rien n'est conclu si la liste est vide).
+- Plan de Nevermind (`CreatedScheme`) disparu, au moment de régler l'alimentation (mode jeu, correction de Ton PC) :
+  l'identifiant mort est oublié et enregistré, puis la copie est recréée comme la première fois et le nouvel
+  identifiant gardé (oublié d'abord : la sauvegarde ne remplace jamais une valeur déjà notée). Aucun message.
+- Plan d'origine (`PowerScheme`) disparu : au réglage, il est remplacé par Équilibré
+  (381b4222-f694-41f0-9685-ff5bb260df2e) ; « Tout restaurer » (et donc le désinstalleur) et « Revenir en arrière »
+  remettent Équilibré au lieu d'échouer. Une copie de Nevermind disparue : son « /delete » part comme dans la
+  version PowerShell (les juges l'attendent), la réponse de powercfg est ignorée, aucune erreur.
+  Toutes les écritures passent comme avant par `powercfg_changer`, avec le permis du verrou des gestes.

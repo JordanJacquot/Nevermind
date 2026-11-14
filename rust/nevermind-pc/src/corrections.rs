@@ -462,14 +462,24 @@ impl<'a> Moteur<'a> {
         let actuel = reglages::plan_actif(self.pc);
         let mut cible: Option<String> = None;
         let liste = reglages::liste_plans(self.pc);
+        // (14/11) Un plan noté qui a disparu du PC (`powercfg -restoredefaultschemes` de Mindcare, Windows Update, un
+        //  autre logiciel) : son identifiant est oublié. Le plan de Nevermind est recréé plus bas comme la première
+        //  fois ; l'origine devient Équilibré. Oublié et enregistré d'abord : la sauvegarde ne remplace jamais une
+        //  valeur déjà notée (lot A), la nouvelle ne serait pas gardée sinon.
+        let cree_disparu = self.sv.plan_cree.as_deref().is_some_and(|c| plan_disparu(&liste, c));
+        let origine_disparue = self.sv.plan.as_deref().is_some_and(|o| plan_disparu(&liste, o));
+        if cree_disparu || origine_disparue {
+            if cree_disparu {
+                self.sv.plan_cree = None;
+            }
+            if origine_disparue {
+                self.sv.plan = None;
+            }
+            self.sauver()?;
+        }
         if liste.to_lowercase().contains(HAUTES_PERF) {
             cible = Some(HAUTES_PERF.into());
-        } else if let Some(c) = self
-            .sv
-            .plan_cree
-            .clone()
-            .filter(|c| reglages::liste_plans(self.pc).to_lowercase().contains(&c.to_lowercase()))
-        {
+        } else if let Some(c) = self.sv.plan_cree.clone().filter(|c| liste.to_lowercase().contains(&c.to_lowercase())) {
             cible = Some(c);
         } else {
             let (_, out) = self.pc_args(&["-duplicatescheme", HAUTES_PERF]);
@@ -485,10 +495,12 @@ impl<'a> Moteur<'a> {
             }
             return Err("Ce PC ne propose pas le plan Performances élevées. Va dans Paramètres > Système > Alimentation et choisis le mode « Meilleures performances ».".into());
         };
-        if let Some((g, _)) = &actuel
-            && self.sv.plan.is_none()
-        {
-            self.sv.plan = Some(g.clone());
+        if self.sv.plan.is_none() {
+            if origine_disparue {
+                self.sv.plan = Some(NORMAL.into());
+            } else if let Some((g, _)) = &actuel {
+                self.sv.plan = Some(g.clone());
+            }
         }
         self.sauver()?;
         if let Some((g, n)) = &actuel {
@@ -612,7 +624,11 @@ pub fn annuler_journal(m: &mut Moteur, journal: &[Value]) -> Vec<String> {
                     }
                 }
                 "power" => {
-                    let g = champ_texte(e, "Guid");
+                    let mut g = champ_texte(e, "Guid");
+                    // (14/11 : le plan d'avant a disparu du PC : Équilibré, comme « Tout restaurer »)
+                    if est_guid(&g) && plan_disparu(&reglages::liste_plans(m.pc), &g) {
+                        g = NORMAL.into();
+                    }
                     m.pc_args(&["/setactive", &g]);
                 }
                 "overlay" => {
@@ -692,6 +708,18 @@ fn est_guid(s: &str) -> bool {
     s.len() == 36 && reglages::GUID.find(s).is_some_and(|m| m.start() == 0 && m.end() == 36)
 }
 
+/// La liste des plans (`powercfg /list`) a été lue : au moins un identifiant de plan dedans. Sinon (powercfg n'a rien
+/// répondu), rien n'est conclu sur un plan absent.
+fn liste_lue(plans: &str) -> bool {
+    plans.chars().collect::<Vec<_>>().windows(9).any(|w| w[..8].iter().all(|c| c.is_ascii_hexdigit()) && w[8] == '-')
+}
+
+/// Le plan `guid` a disparu du PC (`powercfg -restoredefaultschemes` de Mindcare, Windows Update, un autre logiciel) :
+/// la liste des plans a été lue et il n'y est plus (14/11)
+fn plan_disparu(plans: &str, guid: &str) -> bool {
+    est_guid(guid) && liste_lue(plans) && !plans.to_lowercase().contains(&guid.to_lowercase())
+}
+
 /// `Restore-AllSettings` : tout ce qui est noté remis comme avant. Ce qui n'a pas pu l'être reste noté (pour
 /// « Réessayer »). Renvoie la liste de ce qui n'a pas pu être remis.
 pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
@@ -760,8 +788,13 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
         let _ = m.pc.ecrire_reglage_d_origine(&permis, "SvcOriginal", json!(garde), false);
     }
     // Le plan d'alimentation d'origine d'abord (les réglages « batterie » vont ensuite dans leur plan)
+    // (14/11 : un plan noté peut avoir disparu du PC, `powercfg -restoredefaultschemes` de Mindcare, Windows Update...
+    //  L'origine disparue : Équilibré à la place, au lieu d'une erreur. Le plan de Nevermind disparu : son « /delete »
+    //  part comme dans la version PowerShell, la réponse de powercfg est ignorée, aucune erreur.)
+    let liste_plans = if m.sv.plan.is_some() { reglages::liste_plans(m.pc) } else { String::new() };
     if let Some(ps) = m.sv.plan.clone() {
-        let (code, _) = m.pc_args(&["/setactive", &ps]);
+        let vers = if plan_disparu(&liste_plans, &ps) { NORMAL.to_string() } else { ps.clone() };
+        let (code, _) = m.pc_args(&["/setactive", &vers]);
         if code != 0 {
             erreurs.push(format!("Plan d'alimentation: pas remis (powercfg a répondu {code})"));
         } else {
@@ -781,11 +814,7 @@ pub fn tout_restaurer(m: &mut Moteur) -> Vec<String> {
     let pcfg = liste_textes(m.pc.reglage("PcfgOriginal"));
     let mut pcfg_reste = Vec::new();
     let plans = if pcfg.is_empty() { String::new() } else { reglages::liste_plans(m.pc) };
-    let a_des_plans = plans
-        .chars()
-        .collect::<Vec<_>>()
-        .windows(9)
-        .any(|w| w[..8].iter().all(|c| c.is_ascii_hexdigit()) && w[8] == '-');
+    let a_des_plans = liste_lue(&plans);
     for l in &pcfg {
         let x: Vec<&str> = l.split('|').collect();
         let plan = if x.len() >= 4 && est_guid(x[3]) { x[3].to_string() } else { "SCHEME_CURRENT".into() };

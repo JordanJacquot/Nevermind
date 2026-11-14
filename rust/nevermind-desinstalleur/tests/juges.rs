@@ -1014,3 +1014,34 @@ fn permis_d_essai() -> Result<Permis, String> {
     }
     CONTEXTE.with(|c| c.exiger_geste())
 }
+
+/// Plan d'alimentation disparu (14/11) : `powercfg -restoredefaultschemes` (Mindcare), Windows Update ou un autre
+/// logiciel a effacé la copie de Nevermind ou le plan d'origine. Plan de Nevermind absent : aucune erreur (son
+/// « /delete » part comme dans la version PowerShell, la réponse est ignorée) ; plan d'origine absent : Équilibré
+/// remis, aucune erreur. Faux PC : jamais le vrai powercfg.
+#[test]
+fn plan_disparu_au_desinstalleur() {
+    const EQUILIBRE: &str = "381b4222-f694-41f0-9685-ff5bb260df2e";
+    const HP: &str = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
+    for (origine, actif) in
+        [(None, EQUILIBRE), (Some(EQUILIBRE), HP), (Some("abcdef01-2345-4678-9abc-def012345678"), HP)]
+    {
+        let e = Essai::nouveau("plan-disparu");
+        let racine = e.base.join("Mindset").join("Programmes").join("Nevermind");
+        std::fs::create_dir_all(&racine).unwrap();
+        let mut pc = FauxPc {
+            plans: vec![(EQUILIBRE.into(), "Utilisation normale".into()), (HP.into(), "Performances élevées".into())],
+            actif: actif.into(),
+            ..Default::default()
+        };
+        let mut sys = FauxSysteme { reponse: Some(Choix::Garder), journal: e.journal.clone(), ..Default::default() };
+        let sv = Sauvegarde::depuis(&json!({
+            "PowerScheme": origine, "CreatedScheme": "deadbeef-0000-4000-8000-000000000001" }));
+        let lieux = Lieux { racine, donnees: e.donnees.clone(), suite: Some(e.suite.clone()), pid: 999_999 };
+        let permis = permis_d_essai().unwrap();
+        let fin = travail::desinstaller(&mut pc, &mut sys, &permis, sv, None, &lieux, Some(Choix::Garder));
+        let Fin::Faite { erreurs, .. } = fin else { panic!("annulée") };
+        assert!(erreurs.is_empty(), "{origine:?} : {erreurs:?}");
+        assert_eq!(pc.actif, EQUILIBRE, "{origine:?}");
+    }
+}

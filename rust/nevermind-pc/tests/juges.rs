@@ -56,6 +56,8 @@ struct FauxPc {
     ecran_lent: Option<std::time::Duration>,
     /// powercfg lent, en millisecondes (0 : tout de suite), réglable après la mise en place du bloc ; gels
     powercfg_lent: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// sauvegarde.json sur le disque, fusionné comme par l'écrivain unique du noyau (lot A) ; `None` : écrit tel quel
+    disque: Option<Value>,
 }
 
 impl FauxPc {
@@ -314,6 +316,15 @@ impl Pc for FauxPc {
     }
     fn sauvegarde_ecrire(&mut self, _p: &Permis, _s: &Value) -> Result<(), String> {
         Ok(())
+    }
+    fn sauvegarde_fusionner(&mut self, p: &Permis, base: &Value, voulue: &Value) -> Result<Option<Value>, String> {
+        self.exiger_geste()?;
+        let Some(disque) = self.disque.clone() else { return self.sauvegarde_ecrire(p, voulue).map(|_| None) };
+        use nevermind_noyau::sauvegarde as ns;
+        let lire = |v: &Value| ns::depuis_json(&v.as_object().cloned().unwrap_or_default());
+        let r = ns::fusionner(&lire(&disque), &lire(base), &lire(voulue)).en_json();
+        self.disque = Some(r.clone());
+        Ok(Some(r))
     }
     fn sauvegarde_effacer(&mut self, _p: &Permis) {
         self.geste("fichier.effacer", json!(["sauvegarde.json", "sauvegarde.json.bak", "sauvegarde.json.tmp"]));
@@ -1643,4 +1654,134 @@ fn ouvrir_une_fiche_n_attend_pas_powercfg() {
     });
     lent.store(0, Ordering::SeqCst);
     let _ = std::fs::remove_dir_all(&d);
+}
+
+// ---------------------------------------------------------------------------
+// Plan d'alimentation disparu (14/11) : `powercfg -restoredefaultschemes` (bouton de Mindcare), Windows Update ou un
+// autre logiciel efface la copie de « Performances élevées » faite par Nevermind, ou le plan d'origine gardé pour
+// « Restaurer ». Nevermind s'en rend compte tout seul. Faux PC : jamais le vrai powercfg.
+// ---------------------------------------------------------------------------
+const PLAN_HP: &str = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
+const PLAN_EQUILIBRE: &str = "381b4222-f694-41f0-9685-ff5bb260df2e";
+/// La copie de Nevermind, effacée
+const CREE_MORT: &str = "deadbeef-0000-4000-8000-000000000001";
+/// Un plan d'origine perso, effacé
+const ORIGINE_MORTE: &str = "abcdef01-2345-4678-9abc-def012345678";
+/// La copie que le faux PC crée (`-duplicatescheme`)
+const NOUVELLE_COPIE: &str = "c0ffee00-1111-2222-3333-444455556666";
+
+/// Un PC remis aux plans de Windows (« Performances élevées » caché, Équilibré actif), avec sauvegarde.json sur le
+/// disque fusionné comme en vrai
+fn pc_remis_a_zero(sv: &Sauvegarde) -> FauxPc {
+    FauxPc {
+        plans: vec![(PLAN_EQUILIBRE.into(), "Utilisation normale".into())],
+        actif: PLAN_EQUILIBRE.into(),
+        disque: Some(sv.json()),
+        ..Default::default()
+    }
+}
+
+fn gestes_powercfg(pc: &FauxPc) -> Vec<Vec<String>> {
+    pc.gestes
+        .iter()
+        .filter(|g| net::champ_texte(g, "geste") == "powercfg")
+        .map(|g| net::liste(&g["donnees"]).iter().map(net::texte).collect())
+        .collect()
+}
+
+fn disque(pc: &FauxPc, cle: &str) -> Option<String> {
+    pc.disque.as_ref().and_then(|d| d.get(cle)).and_then(|v| v.as_str()).map(String::from)
+}
+
+/// Mode jeu (signal « alimentation » du bloc jeux) : la copie de Nevermind a disparu, elle est recréée et son nouvel
+/// identifiant gardé (en mémoire et dans sauvegarde.json, malgré « la plus ancienne valeur gagne »), sans message
+#[test]
+fn plan_disparu_avant_le_mode_jeu() {
+    let sv = Sauvegarde { plan: Some(PLAN_EQUILIBRE.into()), plan_cree: Some(CREE_MORT.into()), ..Default::default() };
+    let mut pc = pc_remis_a_zero(&sv);
+    let mut s = Session { sv, ..Default::default() };
+    s.corriger_reglages(&mut pc, &["power".to_string()]);
+    assert_eq!(pc.actif, NOUVELLE_COPIE, "{:?}", pc.gestes);
+    assert_eq!(s.sv.plan_cree.as_deref(), Some(NOUVELLE_COPIE));
+    assert_eq!(disque(&pc, "CreatedScheme").as_deref(), Some(NOUVELLE_COPIE), "{:?}", pc.disque);
+    assert_eq!(disque(&pc, "PowerScheme").as_deref(), Some(PLAN_EQUILIBRE));
+    assert!(gestes_powercfg(&pc).iter().any(|a| a[0] == "-duplicatescheme"));
+    let messages: Vec<String> = pc
+        .gestes
+        .iter()
+        .filter(|g| net::champ_texte(g, "geste") == "message")
+        .map(|g| net::texte(&g["donnees"]))
+        .collect();
+    assert!(messages.is_empty(), "{messages:?}");
+}
+
+/// Correction de Ton PC : la copie et le plan d'origine ont disparu. Le constat d'avant dit « pas fait » et propose
+/// « Performances élevées » (aucune erreur) ; la correction recrée la copie, l'origine devient Équilibré.
+#[test]
+fn plan_disparu_avant_une_correction() {
+    let sv = Sauvegarde { plan: Some(ORIGINE_MORTE.into()), plan_cree: Some(CREE_MORT.into()), ..Default::default() };
+    let mut pc = pc_remis_a_zero(&sv);
+    assert!(!nevermind_pc::reglages::test(&mut pc, "power", Some(CREE_MORT)));
+    let decl = nevermind_pc::reglages::changement_alimentation(&mut |l| l.lire(&mut pc), false, Some(CREE_MORT));
+    assert_eq!(decl.first().map(|d| d.cible.as_str()), Some("Performances élevées"));
+    let mut sv = sv;
+    let r = {
+        let mut m = Moteur::nouveau(&mut pc, &mut sv, false);
+        m.appliquer_reglage("power")
+    };
+    assert_eq!(r, Ok(()));
+    assert_eq!(pc.actif, NOUVELLE_COPIE, "{:?}", pc.gestes);
+    assert_eq!(sv.plan_cree.as_deref(), Some(NOUVELLE_COPIE));
+    assert_eq!(sv.plan.as_deref(), Some(PLAN_EQUILIBRE), "l'origine morte n'est pas gardée");
+    assert_eq!(disque(&pc, "CreatedScheme").as_deref(), Some(NOUVELLE_COPIE), "{:?}", pc.disque);
+    assert_eq!(disque(&pc, "PowerScheme").as_deref(), Some(PLAN_EQUILIBRE), "{:?}", pc.disque);
+    assert!(nevermind_pc::reglages::test(&mut pc, "power", sv.plan_cree.as_deref()));
+}
+
+/// « Restaurer » : le plan d'origine a disparu, Équilibré est remis au lieu d'une erreur ; la copie disparue ne donne
+/// aucune erreur (son « /delete » part comme dans la version PowerShell, la réponse est ignorée) ; aucun identifiant
+/// mort n'est gardé
+#[test]
+fn plan_disparu_avant_restaurer() {
+    let mut sv =
+        Sauvegarde { plan: Some(ORIGINE_MORTE.into()), plan_cree: Some(CREE_MORT.into()), ..Default::default() };
+    let mut pc = pc_remis_a_zero(&sv);
+    pc.plans.push((PLAN_HP.into(), "Performances élevées".into()));
+    pc.actif = PLAN_HP.into();
+    let erreurs = {
+        let mut m = Moteur::nouveau(&mut pc, &mut sv, false);
+        corrections::tout_restaurer(&mut m)
+    };
+    assert!(erreurs.is_empty(), "{erreurs:?}");
+    assert_eq!(pc.actif, PLAN_EQUILIBRE);
+    assert_eq!((sv.plan.as_deref(), sv.plan_cree.as_deref()), (None, None));
+
+    // La copie disparue seule : le plan d'origine (toujours là) est remis, aucune erreur
+    let mut sv = Sauvegarde { plan: Some(PLAN_HP.into()), plan_cree: Some(CREE_MORT.into()), ..Default::default() };
+    let mut pc = pc_remis_a_zero(&sv);
+    pc.plans.push((PLAN_HP.into(), "Performances élevées".into()));
+    let erreurs = {
+        let mut m = Moteur::nouveau(&mut pc, &mut sv, false);
+        corrections::tout_restaurer(&mut m)
+    };
+    assert!(erreurs.is_empty(), "{erreurs:?}");
+    assert_eq!(pc.actif, PLAN_HP);
+    assert_eq!(gestes_powercfg(&pc)[0], vec!["/setactive".to_string(), PLAN_HP.into()]);
+    assert_eq!((sv.plan.as_deref(), sv.plan_cree.as_deref()), (None, None));
+}
+
+/// « Revenir en arrière » d'un réglage : le plan d'avant a disparu, Équilibré est remis
+#[test]
+fn plan_disparu_avant_revenir_en_arriere() {
+    let mut sv = Sauvegarde::default();
+    let mut pc = pc_remis_a_zero(&sv);
+    pc.plans.push((NOUVELLE_COPIE.into(), "Performances élevées".into()));
+    pc.actif = NOUVELLE_COPIE.into();
+    let journal = vec![json!({ "Type": "power", "Guid": ORIGINE_MORTE, "Nom": "Mon plan", "Nouveau": NOUVELLE_COPIE })];
+    let erreurs = {
+        let mut m = Moteur::nouveau(&mut pc, &mut sv, false);
+        corrections::annuler_journal(&mut m, &journal)
+    };
+    assert!(erreurs.is_empty(), "{erreurs:?}");
+    assert_eq!(pc.actif, PLAN_EQUILIBRE, "{:?}", pc.gestes);
 }
