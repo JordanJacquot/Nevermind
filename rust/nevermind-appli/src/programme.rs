@@ -530,7 +530,10 @@ impl Etat {
                         self.journal(&format!("Ouverture impossible : {}", a.chars().take(120).collect::<String>()));
                     }
                 }
-                Demande::Partie(oui) => self.vie.partie = oui,
+                Demande::Partie(jeu) => {
+                    self.vie.partie = jeu.is_some();
+                    self.vie.jeu = jeu.unwrap_or_default();
+                }
             }
         }
     }
@@ -633,6 +636,16 @@ fn croix(app: &AppHandle) {
 #[cfg(feature = "essai")]
 fn essai_demandes(etat: &mut Etat) {
     use crate::essai::{ACTIONS_DEMANDE, CAPTURE, CAPTURE_DEMANDE};
+    // (une partie simulée, comme les signaux « partie-commencee » et « partie-finie » du bloc perf : le programme du
+    // jeu, « 1 » pour un jeu sans programme connu, ou « 0 »)
+    let partie = etat.dossier_donnees.join("partie.demande");
+    if let Ok(texte) = std::fs::read_to_string(&partie) {
+        let _ = std::fs::remove_file(&partie);
+        let t = texte.trim_start_matches('\u{feff}').trim();
+        let jeu = (t != "0").then(|| if t == "1" { String::new() } else { t.to_string() });
+        etat.journal(&format!("Essai : partie simulée {}", if jeu.is_some() { "commencée" } else { "finie" }));
+        etat.demandes(vec![Demande::Partie(jeu)]);
+    }
     let demande = etat.dossier_donnees.join(ACTIONS_DEMANDE);
     if let Ok(texte) = std::fs::read_to_string(&demande) {
         let _ = std::fs::remove_file(&demande);

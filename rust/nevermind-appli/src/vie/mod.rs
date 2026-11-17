@@ -96,8 +96,15 @@ pub trait Fenetre {
     fn est_devant(&self) -> bool;
     /// Le processus au premier plan est celui-ci (`Test-ThemeSansGener` : `$fg -eq $PID`).
     fn premier_plan_est_a_moi(&self) -> bool;
+    /// Le programme de la fenêtre au premier plan (« Dofus.exe »), `None` s'il n'y en a pas ou qu'il ne se lit pas.
+    fn programme_devant(&self) -> Option<String>;
     /// La page est-elle visible pour WebView2 (`SetIsVisible`) : cachée, elle se met en pause.
     fn page_visible(&mut self, visible: bool);
     /// La page en veille profonde (`TrySuspend`) ou réveillée (`Resume`), une minute après avoir été cachée.
     fn page_en_veille(&mut self, veille: bool);
+    /// Pour le journal : ce que Windows dit de chaque niveau de la fenêtre (numéro, classe, programme, visible,
+    /// réduite), de la fenêtre au premier plan et des racines. Rien par défaut (les fausses fenêtres des tests).
+    fn diagnostic(&self) -> String {
+        String::new()
+    }
 }

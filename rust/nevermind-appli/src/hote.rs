@@ -55,8 +55,8 @@ pub enum Demande {
     MenuMindset,
     /// Une adresse ou un dossier (`Open-Url`)
     OuvrirAdresse(String),
-    /// Une partie commence ou finit (signal d'un bloc)
-    Partie(bool),
+    /// Une partie commence (le programme du jeu, « exe » du signal, vide s'il manque) ou finit (`None`)
+    Partie(Option<String>),
     /// Une page de Mindset à ouvrir (`Open-MindsetSettings` : « parametres:general » dans afficher-page.txt)
     PageMindset(String),
     /// Se relancer avec le thème choisi (`Set-AppTheme`)
@@ -770,11 +770,12 @@ impl Hote {
                     match nom.as_str() {
                         "partie-commencee" => {
                             self.k.partie = true;
-                            self.demandes.push(Demande::Partie(true));
+                            let exe = donnees.get("exe").and_then(|x| x.as_str()).unwrap_or_default();
+                            self.demandes.push(Demande::Partie(Some(exe.to_string())));
                         }
                         "partie-finie" => {
                             self.k.partie = false;
-                            self.demandes.push(Demande::Partie(false));
+                            self.demandes.push(Demande::Partie(None));
                         }
                         // (une pastille par travail : celle d'un bloc ne s'efface pas quand un autre finit ; lot A)
                         "occupe" => {

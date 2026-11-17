@@ -100,11 +100,94 @@ fn racine(h: usize) -> usize {
     if r != 0 { r } else { h }
 }
 
+/// Le nom de la classe de fenêtre (`GetClassNameW`).
+fn classe(h: usize) -> String {
+    let mut b = [0u16; 128];
+    // SAFETY : lecture seule dans un tampon de ce fil
+    let n = unsafe { windows::Win32::UI::WindowsAndMessaging::GetClassNameW(hwnd(h), &mut b) };
+    String::from_utf16_lossy(&b[..n.max(0) as usize])
+}
+
+/// Le numéro du processus d'une fenêtre et le nom de son programme (« ? » s'il ne se lit pas).
+fn programme(h: usize) -> (u32, String) {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{
+        OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    };
+    let mut pid = 0u32;
+    // SAFETY : lecture seule ; pid vit pendant l'appel
+    unsafe { GetWindowThreadProcessId(hwnd(h), Some(&mut pid)) };
+    if pid == 0 {
+        return (0, "?".into());
+    }
+    let mut nom = "?".to_string();
+    // SAFETY : un handle de lecture limitée, fermé tout de suite ; tampon de ce fil
+    unsafe {
+        if let Ok(p) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
+            let mut b = [0u16; 520];
+            let mut n = b.len() as u32;
+            if QueryFullProcessImageNameW(p, PROCESS_NAME_WIN32, windows::core::PWSTR(b.as_mut_ptr()), &mut n).is_ok() {
+                let chemin = String::from_utf16_lossy(&b[..n as usize]);
+                nom = chemin.rsplit('\\').next().unwrap_or("?").to_string();
+            }
+            let _ = CloseHandle(p);
+        }
+    }
+    (pid, nom)
+}
+
+/// Une fenêtre en mots pour le journal : « 0x1234 Classe (Programme.exe 4242) ».
+fn decrire(h: usize) -> String {
+    if h == 0 {
+        return "aucune".into();
+    }
+    let (pid, nom) = programme(h);
+    format!("{h:#x} {} ({nom} {pid})", classe(h))
+}
+
+/// Pour le journal : pourquoi l'écran est jugé caché ou non. Chaque niveau (la fenêtre puis ses parents), la fenêtre
+/// au premier plan et sa racine, la racine de Nevermind.
+pub fn diagnostic(h: usize) -> String {
+    let mut l = Vec::new();
+    let mut x = h;
+    while existe(x) && l.len() < NIVEAUX_MAX {
+        // SAFETY : lectures seules sur une fenêtre qui existe
+        let (visible, reduite) = unsafe { (IsWindowVisible(hwnd(x)).as_bool(), IsIconic(hwnd(x)).as_bool()) };
+        l.push(format!(
+            "{} {}{}",
+            decrire(x),
+            if visible { "visible" } else { "PAS VISIBLE" },
+            if reduite { " RÉDUITE" } else { "" }
+        ));
+        x = parent(x);
+    }
+    // SAFETY : lecture seule
+    let devant = unsafe { GetForegroundWindow() }.0 as usize;
+    format!(
+        "niveaux [{}] ; premier plan {} ; sa racine {} ; racine de Nevermind {}",
+        l.join(" > "),
+        decrire(devant),
+        if devant != 0 { decrire(racine(devant)) } else { "aucune".into() },
+        decrire(racine(h))
+    )
+}
+
 /// `VueNatif.EstDevant` (natif.cs:2462-2468) : sa fenêtre principale (la sienne, ou Mindset) est au premier plan.
 pub fn est_devant(h: usize) -> bool {
     // SAFETY : lecture seule
     let devant = unsafe { GetForegroundWindow() }.0 as usize;
     h != 0 && devant != 0 && racine(devant) == racine(h)
+}
+
+/// Le programme de la fenêtre au premier plan (« Dofus.exe »), `None` s'il n'y en a pas ou qu'il ne se lit pas.
+pub fn programme_devant() -> Option<String> {
+    // SAFETY : lecture seule
+    let devant = unsafe { GetForegroundWindow() }.0 as usize;
+    if devant == 0 {
+        return None;
+    }
+    let (_, nom) = programme(devant);
+    (nom != "?").then_some(nom)
 }
 
 /// Le processus de la fenêtre au premier plan est celui-ci (`Test-ThemeSansGener`).
@@ -213,6 +296,12 @@ impl Fenetre for FenetreTauri {
     }
     fn premier_plan_est_a_moi(&self) -> bool {
         premier_plan_a_moi()
+    }
+    fn programme_devant(&self) -> Option<String> {
+        programme_devant()
+    }
+    fn diagnostic(&self) -> String {
+        diagnostic(self.h)
     }
     fn page_visible(&mut self, visible: bool) {
         if let Err(e) = super::webview2::page_visible(&self.fenetre, visible) {

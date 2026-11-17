@@ -356,7 +356,7 @@ fn effets_des_blocs() {
     eff.borrow_mut().extend([
         Effet::Annonce("Analyse de ton PC lancée".into()),
         Effet::OuvrirAdresse("https://exemple.fr".into()),
-        Effet::Signal { nom: "partie-commencee".into(), donnees: json!({ "pid": 4 }) },
+        Effet::Signal { nom: "partie-commencee".into(), donnees: json!({ "pid": 4, "exe": "Dofus" }) },
         Effet::Quitter,
     ]);
     let d = h.recevoir(action("x", "accueil"), Duration::ZERO, &mut e);
@@ -364,9 +364,20 @@ fn effets_des_blocs() {
         p.borrow().ordres.last(),
         Some(&json!({ "kit": "message", "texte": "Analyse de ton PC lancée", "bravo": false }))
     );
-    assert_eq!(d, vec![Demande::OuvrirAdresse("https://exemple.fr".into()), Demande::Partie(true), Demande::Quitter]);
+    assert_eq!(
+        d,
+        vec![
+            Demande::OuvrirAdresse("https://exemple.fr".into()),
+            Demande::Partie(Some("Dofus".into())),
+            Demande::Quitter
+        ]
+    );
     assert!(h.partie());
-    assert!(recu.borrow().iter().any(|x| x == r#"signal partie-commencee {"pid":4}"#), "le signal va aux autres blocs");
+    assert!(
+        recu.borrow().iter().any(|x| x == r#"signal partie-commencee {"pid":4,"exe":"Dofus"}"#),
+        "le signal va aux autres blocs : {:?}",
+        recu.borrow()
+    );
 }
 
 #[test]

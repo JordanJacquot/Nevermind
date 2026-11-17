@@ -77,9 +77,16 @@ pub struct Vie {
     attente_theme: Option<String>,
     pack_absent: Option<String>,
     fin: bool,
-    /// Une partie est en cours (signal des blocs) : regardée seulement si Nevermind est devant
+    /// Une partie est en cours (signal des blocs) : pas regardée quand le jeu est au premier plan
     pub partie: bool,
+    /// Le programme du jeu de la partie en cours (« Dofus », l'« exe » du signal), vide s'il n'est pas connu
+    pub jeu: String,
+    /// Le dernier « pourquoi » écrit au journal, et quand (caché pendant qu'elle est affichée dans Mindset)
+    pourquoi: Option<(Duration, String)>,
 }
+
+/// Cachée dans Mindset : le « pourquoi » est écrit chaque seconde pendant tant de temps, puis seulement s'il change.
+const POURQUOI_CHAQUE_SECONDE: Duration = Duration::from_secs(60);
 
 /// `Get-ThemePack` réussit (un pack.json lisible dans le dossier du pack) : comme themes.ps1:78-82.
 pub fn pack_present(packs: &Path, id: &str) -> bool {
@@ -108,6 +115,8 @@ impl Vie {
             pack_absent: None,
             fin: false,
             partie: false,
+            jeu: String::new(),
+            pourquoi: None,
         }
     }
 
@@ -168,11 +177,31 @@ impl Vie {
     }
 
     /// `Test-Regardee` (vue.ps1:234-237) : à l'écran (la fenêtre et ses parents visibles, la fenêtre principale pas
-    /// réduite), et pendant une partie seulement si elle est devant.
+    /// réduite), et pendant une partie seulement si le jeu n'est pas au premier plan.
+    ///
+    /// (Avant la 2.3.7 : pendant une partie, regardée seulement si sa fenêtre principale était devant. Mais Windows
+    /// dit souvent qu'aucune fenêtre n'est devant, ou désigne une petite fenêtre cachée de Mindset (le menu près de
+    /// l'horloge) : la page se mettait en pause et Nevermind restait noir dans Mindset jusqu'au clic suivant.)
     pub fn est_regardee(&self, f: &dyn Fenetre) -> bool {
         let n = f.niveaux();
         let vue = !n.is_empty() && n.iter().all(|x| x.visible) && !n.last().is_some_and(|x| x.reduite);
-        vue && !(self.partie && !f.est_devant())
+        vue && !(self.partie && self.jeu_devant(f))
+    }
+
+    /// Le jeu de la partie en cours est au premier plan (le même programme : n'importe laquelle de ses fenêtres).
+    /// Un jeu sans programme connu ne met jamais en pause.
+    fn jeu_devant(&self, f: &dyn Fenetre) -> bool {
+        let sans_exe = |s: &str| {
+            let s = s.trim();
+            let n = s.len();
+            if n > 4 && s.is_char_boundary(n - 4) && s[n - 4..].eq_ignore_ascii_case(".exe") {
+                s[..n - 4].to_string()
+            } else {
+                s.to_string()
+            }
+        };
+        let jeu = sans_exe(&self.jeu);
+        !jeu.is_empty() && f.programme_devant().is_some_and(|p| sans_exe(&p).eq_ignore_ascii_case(&jeu))
     }
 
     /// `Update-VeilleVue` (vue.ps1:239-264).
@@ -184,18 +213,39 @@ impl Vie {
         ev: &mut Vec<Evenement>,
     ) {
         let regardee = self.est_regardee(f);
+        // (pour le journal : ce qui fait juger l'écran regardé ou non)
+        let pourquoi = |v: &Vie, f: &dyn Fenetre| {
+            let d = f.diagnostic();
+            (!d.is_empty()).then(|| {
+                format!(
+                    "partie {}, jeu au premier plan {}, devant {}, affiché dans Mindset {} ; {d}",
+                    if v.partie {
+                        format!("oui ({})", if v.jeu.is_empty() { "programme inconnu" } else { &v.jeu })
+                    } else {
+                        "non".into()
+                    },
+                    if v.partie && v.jeu_devant(f) { "oui" } else { "non" },
+                    if f.est_devant() { "oui" } else { "non" },
+                    if v.accrochee { "oui" } else { "non" }
+                )
+            })
+        };
         if regardee {
             if self.regardee == Some(true) {
                 return;
             }
             self.regardee = Some(true);
             self.cachee_depuis = None;
+            self.pourquoi = None;
             if self.en_veille {
                 f.page_en_veille(false);
                 self.en_veille = false;
             }
             f.page_visible(true);
             journal("Écran : de nouveau à l'écran");
+            if let Some(p) = pourquoi(self, f) {
+                journal(&format!("Écran : à l'écran car {p}"));
+            }
             ev.push(Evenement::Regardee(true));
             return;
         }
@@ -204,8 +254,30 @@ impl Vie {
             self.cachee_depuis = Some(maintenant);
             f.page_visible(false);
             journal("Écran : caché, en pause");
+            if let Some(p) = pourquoi(self, f) {
+                journal(&format!("Écran : caché car {p}"));
+                self.pourquoi = Some((maintenant, p));
+            }
             ev.push(Evenement::Regardee(false));
             return;
+        }
+        // Caché alors qu'il est affiché dans Mindset : le pourquoi, chaque seconde pendant une minute, puis s'il change
+        if self.accrochee
+            && let Some(p) = pourquoi(self, f)
+        {
+            let depuis = self.cachee_depuis.map_or(Duration::ZERO, |d| maintenant.saturating_sub(d));
+            let ecrire = match &self.pourquoi {
+                None => true,
+                Some((quand, avant)) => {
+                    *avant != p
+                        || (depuis < POURQUOI_CHAQUE_SECONDE
+                            && maintenant.saturating_sub(*quand) >= Duration::from_secs(1))
+                }
+            };
+            if ecrire {
+                journal(&format!("Écran : toujours caché dans Mindset, car {p}"));
+                self.pourquoi = Some((maintenant, p));
+            }
         }
         if !self.en_veille && self.cachee_depuis.is_some_and(|d| maintenant.saturating_sub(d) >= AVANT_VEILLE) {
             f.page_en_veille(true);
@@ -366,6 +438,8 @@ mod tests {
         reduite: bool,
         devant: bool,
         a_moi: bool,
+        /// Le programme au premier plan
+        programme: Option<String>,
         min: Vec<Option<Taille>>,
         barre: Vec<bool>,
         page: Vec<bool>,
@@ -414,6 +488,9 @@ mod tests {
         }
         fn premier_plan_est_a_moi(&self) -> bool {
             self.a_moi
+        }
+        fn programme_devant(&self) -> Option<String> {
+            self.programme.clone()
         }
         fn page_visible(&mut self, v: bool) {
             self.page.push(v);
@@ -540,16 +617,43 @@ mod tests {
         let ev = v.avancer(Duration::from_millis(61_400), &mut f, &mut s, &mut |_| {});
         assert!(ev.contains(&Evenement::Regardee(true)));
         assert_eq!((f.veille.clone(), f.page.clone()), (vec![true, false], vec![false, true]));
-        // Pendant une partie : regardée seulement si elle est devant
+        // Pendant une partie : pas regardée seulement quand le jeu est au premier plan (n'importe laquelle de ses
+        // fenêtres, le nom avec ou sans « .exe », en majuscules ou non)
         v.partie = true;
+        v.jeu = "Dofus".into();
+        f.programme = Some("DOFUS.exe".into());
         let ev = v.avancer(Duration::from_millis(61_800), &mut f, &mut s, &mut |_| {});
-        assert!(ev.contains(&Evenement::Regardee(false)), "un jeu devant : pas regardée");
-        f.devant = true;
+        assert!(ev.contains(&Evenement::Regardee(false)), "le jeu devant : pas regardée");
+        // Aucune fenêtre au premier plan (Windows le dit souvent) : regardée, même si elle n'est pas « devant »
+        // (l'écran noir de Nevermind dans Mindset, 15/11/2026)
+        f.programme = None;
         let ev = v.avancer(Duration::from_millis(62_200), &mut f, &mut s, &mut |_| {});
-        assert!(ev.contains(&Evenement::Regardee(true)));
+        assert!(ev.contains(&Evenement::Regardee(true)), "rien au premier plan : regardée");
+        // Le jeu revient devant, puis une fenêtre de Mindset (le menu caché près de l'horloge) : regardée
+        f.programme = Some("Dofus.exe".into());
+        let ev = v.avancer(Duration::from_millis(62_600), &mut f, &mut s, &mut |_| {});
+        assert!(ev.contains(&Evenement::Regardee(false)));
+        f.programme = Some("Mindset.exe".into());
+        let ev = v.avancer(Duration::from_millis(63_000), &mut f, &mut s, &mut |_| {});
+        assert!(ev.contains(&Evenement::Regardee(true)), "Mindset au premier plan : regardée");
+        // Un jeu sans programme connu ne met jamais en pause
+        v.jeu.clear();
+        f.programme = Some("Dofus.exe".into());
+        let ev = v.avancer(Duration::from_millis(63_400), &mut f, &mut s, &mut |_| {});
+        assert!(!ev.contains(&Evenement::Regardee(false)));
+        assert!(v.est_regardee(&f));
+        // La partie finie : regardée même avec le jeu devant
+        v.jeu = "Dofus".into();
+        v.partie = false;
+        assert!(v.est_regardee(&f));
+        v.partie = true;
+        f.devant = true;
+        f.programme = Some("Nevermind.exe".into());
+        let ev = v.avancer(Duration::from_millis(63_800), &mut f, &mut s, &mut |_| {});
+        assert!(!ev.contains(&Evenement::Regardee(false)));
         // Réduite : pas regardée
         f.reduite = true;
-        let ev = v.avancer(Duration::from_millis(62_600), &mut f, &mut s, &mut |_| {});
+        let ev = v.avancer(Duration::from_millis(64_200), &mut f, &mut s, &mut |_| {});
         assert!(ev.contains(&Evenement::Regardee(false)));
     }
 
