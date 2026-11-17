@@ -12,7 +12,6 @@ nevermind-noyau = { path = "../nevermind-noyau" }
 serde_json = { version = "=1.0.154", features = ["preserve_order"] }
 indexmap = "=2.14.2"
 regex = { version = "=1.13.1", default-features = false, features = ["std", "unicode"] }
-chrono = { version = "=0.4.45", default-features = false, features = ["clock", "std"] }
 windows-registry = "=0.6.1"
 
 [dependencies.windows]
@@ -31,6 +30,7 @@ features = [
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Services",
     "Win32_System_Threading",
+    "Win32_System_Time",
     "Win32_System_IO",
     "Win32_Security_Cryptography_Catalog",
     "Win32_Security_Cryptography_Sip",

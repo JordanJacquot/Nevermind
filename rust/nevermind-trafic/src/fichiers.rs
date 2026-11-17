@@ -45,7 +45,7 @@ pub fn lire(chemin: &Path, journal: &dyn Fn(&str)) -> Result<Option<Value>, ()> 
                     Err(e) => e.to_string(),
                     _ => "fichier vide".into(),
                 };
-                let dest = format!("{}.abime-{}", p.display(), chrono::Local::now().format("%Y%m%d-%H%M%S"));
+                let dest = format!("{}.abime-{}", p.display(), crate::dates::maintenant().compacte());
                 journal(&format!(
                     "Fichier abîmé ({} : {pourquoi}), mis de côté : {}",
                     p.display(),

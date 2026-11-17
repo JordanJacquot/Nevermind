@@ -10,6 +10,7 @@
 //! Signaux attendus : « partie-commencee » { jeu, exe, pid } et « partie-finie » { jeu, exe, pid, duree_s } (bloc Perf), « jeux-index »
 //! { Exes: [...] } (les .exe des jeux installés). Signaux envoyés : voir `signaux`.
 
+pub mod dates;
 pub mod fichiers;
 pub mod format;
 pub mod ip;
@@ -178,12 +179,6 @@ impl Default for BlocTrafic {
 
 const ACTION_QUESTION: &str = "trafic-reponse";
 
-/// Une date au format « o » de .NET (« 2026-11-06T21:03:12.1234567+01:00 »)
-pub fn date_o(d: chrono::DateTime<chrono::Local>) -> String {
-    use chrono::Timelike;
-    format!("{}.{:07}{}", d.format("%Y-%m-%dT%H:%M:%S"), d.nanosecond() % 1_000_000_000 / 100, d.format("%:z"))
-}
-
 /// `flux.demarrer` a échoué SANS réponse de l'Aide (pause, sonde muette, demande restée sans réponse) : la trace est à
 /// redemander quand elle répondra. Un refus de l'Aide (elle a répondu « non ») ne l'est pas (lot I).
 fn trace_sans_reponse(erreur: &str) -> bool {
@@ -323,7 +318,7 @@ impl BlocTrafic {
             .ok()
             .flatten()
             .unwrap_or(Value::Null);
-        self.annuaire = Annuaire::depuis(&v, chrono::Local::now().date_naive());
+        self.annuaire = Annuaire::depuis(&v, crate::dates::maintenant().jours());
     }
 
     fn sauver_annuaire(&mut self, ctx: &Contexte) {
@@ -511,7 +506,7 @@ impl BlocTrafic {
         }
         let sys = self.sys();
         let maintenant = self.maintenant();
-        let date = date_o(chrono::Local::now());
+        let date = crate::dates::maintenant().format_o();
         let jeu = s.jeu.clone();
         let mut env = EnvLag {
             ctx,
@@ -613,7 +608,7 @@ impl BlocTrafic {
                                 o: r.o,
                                 c: r.c,
                                 n: r.n,
-                                d: chrono::Local::now().format("%Y-%m-%d").to_string(),
+                                d: crate::dates::maintenant().iso_jour(),
                             });
                             self.annuaire.manques.clear();
                             change = true;
@@ -943,7 +938,7 @@ impl BlocTrafic {
         let mut m = alertes::marques(ctx.reglage(nom));
         m.retain(|(k, _)| k.to_lowercase() != cle.to_lowercase());
         if oui {
-            m.push((cle.to_string(), chrono::Local::now().format("%d/%m/%Y").to_string()));
+            m.push((cle.to_string(), crate::dates::maintenant().jour_mois_annee()));
         }
         let v: Vec<Value> = m.into_iter().map(|(k, d)| json!(format!("{k}|{d}"))).collect();
         let _ = ctx.ecrire_reglage(nom, Value::Array(v), false);

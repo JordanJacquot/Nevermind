@@ -1066,6 +1066,27 @@ pub fn http_get(url: &str, accepte: &str, sans_proxy: bool) -> Result<String, St
 
 // Essais sur le vrai Windows, en lecture seulement : rien n'est changé, aucun paquet ne part sur Internet
 // (le ping vise 127.0.0.1 seulement).
+/// L'heure locale du PC (fuseau et heure d'été de Windows) pour une heure universelle, chacune en
+/// [année, mois, jour, heure, minute, seconde] (`SystemTimeToTzSpecificLocalTime`). Pour `dates`.
+pub fn heure_locale(u: [u16; 6]) -> Option<[u16; 6]> {
+    use windows::Win32::Foundation::SYSTEMTIME;
+    use windows::Win32::System::Time::SystemTimeToTzSpecificLocalTime;
+    let st = SYSTEMTIME {
+        wYear: u[0],
+        wMonth: u[1],
+        wDayOfWeek: 0,
+        wDay: u[2],
+        wHour: u[3],
+        wMinute: u[4],
+        wSecond: u[5],
+        wMilliseconds: 0,
+    };
+    let mut l = SYSTEMTIME::default();
+    // SAFETY : lecture du fuseau du PC ; les deux structures vivent pendant l'appel
+    unsafe { SystemTimeToTzSpecificLocalTime(None, &st, &mut l) }.ok()?;
+    Some([l.wYear, l.wMonth, l.wDay, l.wHour, l.wMinute, l.wSecond])
+}
+
 #[cfg(test)]
 mod essais {
     use super::*;

@@ -51,16 +51,16 @@ pub struct Annuaire {
 }
 
 /// Le nombre de jours entre deux dates « yyyy-MM-dd »
-fn age_jours(d: &str, aujourd_hui: chrono::NaiveDate) -> f64 {
-    match chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d") {
-        Ok(x) => (aujourd_hui - x).num_days() as f64,
-        Err(_) => 999.0,
+fn age_jours(d: &str, aujourd_hui: i64) -> f64 {
+    match crate::dates::lire_jour(d) {
+        Some(x) => (aujourd_hui - x) as f64,
+        None => 999.0,
     }
 }
 
 impl Annuaire {
     /// Lit l'annuaire (les entrées de plus de 60 jours, ou sans nom, sont oubliées)
-    pub fn depuis(v: &Value, aujourd_hui: chrono::NaiveDate) -> Annuaire {
+    pub fn depuis(v: &Value, aujourd_hui: i64) -> Annuaire {
         let mut a = Annuaire { charge: true, ..Default::default() };
         for e in crate::valeur::liste(v) {
             let (s, o, d) = (texte(champ(&e, "S")), texte(champ(&e, "O")), texte(champ(&e, "D")));

@@ -11,7 +11,6 @@ use crate::trafic::alertes::{Alerte, libelle_signature};
 use crate::trafic::etat::{App, Releve, nom_port, port_suspect};
 use crate::trafic::types::{self, Sorte};
 use crate::valeur::{champ, liste, nombre, num, texte, vrai};
-use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use serde_json::{Value, json};
 
 /// Ce que ConvertTo-Json écrit pour `$(if ($faux) { ... })` dans une table : `{}` (le kit le prend comme une
@@ -32,23 +31,15 @@ pub fn ton_statut(n: &str) -> Value {
 }
 
 /// `[datetime]$x` : la date d'une mesure en heure locale
-pub fn date_locale(s: &str) -> Option<DateTime<Local>> {
-    if let Ok(d) = DateTime::parse_from_rfc3339(s) {
-        return Some(d.with_timezone(&Local));
-    }
-    for f in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"] {
-        if let Ok(n) = NaiveDateTime::parse_from_str(s, f) {
-            return Local.from_local_datetime(&n).earliest();
-        }
-    }
-    None
+pub fn date_locale(s: &str) -> Option<crate::dates::Date> {
+    crate::dates::lire(s)
 }
 
 /// Les mesures du lag, de la plus récente à la plus ancienne
 pub fn mesures_recentes(sessions: &[Value], max: usize) -> Vec<&Value> {
     let mut l: Vec<(&Value, i64)> = sessions
         .iter()
-        .map(|s| (s, date_locale(&texte(champ(s, "Date"))).map(|d| d.timestamp_micros()).unwrap_or(i64::MIN)))
+        .map(|s| (s, date_locale(&texte(champ(s, "Date"))).map(|d| d.cle()).unwrap_or(i64::MIN)))
         .collect();
     l.sort_by_key(|x| std::cmp::Reverse(x.1));
     l.into_iter().take(max).map(|x| x.0).collect()
@@ -82,7 +73,7 @@ pub fn onglet_lag(sessions: &[Value], mesure_active: bool, en_cours: bool) -> Va
         let niv = texte(champ(champ(s, "Diag"), "Level"));
         blocs.push(json!({
             "type": "ligne", "id": format!("lag:{}", texte(champ(s, "Id"))),
-            "quand": [d.map(|d| d.format("%d/%m").to_string()).unwrap_or_default(), d.map(|d| d.format("%H:%M").to_string()).unwrap_or_default()],
+            "quand": [d.map(|d| d.jour_mois()).unwrap_or_default(), d.map(|d| d.heure_minute()).unwrap_or_default()],
             "texte": format!("{} : {}", texte(champ(s, "Game")), texte(champ(champ(s, "Diag"), "Title"))),
             "note": format!("{}. {}", duree_jeu(num(champ(s, "Seconds"))), ligne_mesure(s)),
             "etiquette": etiquette_niveau(&niv), "ton": ton_statut(&niv),
@@ -97,7 +88,7 @@ pub fn onglet_lag(sessions: &[Value], mesure_active: bool, en_cours: bool) -> Va
             "icone": "internet",
             "couleur": match niv.as_str() { "ok" => "vert", "warn" => "orange", "bad" => "rouge", _ => "T" },
             "titre": texte(champ(champ(s0, "Diag"), "Title")),
-            "texte": format!("Dernière mesure : {}, le {} à {}.{}", texte(champ(s0, "Game")), d0.map(|d| d.format("%d/%m").to_string()).unwrap_or_default(), d0.map(|d| d.format("%H:%M").to_string()).unwrap_or_default(), if ligne.is_empty() { String::new() } else { format!(" {ligne}.") }),
+            "texte": format!("Dernière mesure : {}, le {} à {}.{}", texte(champ(s0, "Game")), d0.map(|d| d.jour_mois()).unwrap_or_default(), d0.map(|d| d.heure_minute()).unwrap_or_default(), if ligne.is_empty() { String::new() } else { format!(" {ligne}.") }),
             "boutons": [{ "id": format!("lag:{}", texte(champ(s0, "Id"))), "texte": "Voir le détail" }],
             "resume": [
                 { "nom": "État", "valeur": match niv.as_str() { "ok" => "Stable", "warn" => "À voir", "bad" => "Problème", _ => "-" }, "ton": if vrai(&ton) { ton } else { json!("") } },
@@ -329,11 +320,8 @@ pub fn panneau_lag(s: &Value) -> (Panneau, String, String, String, String) {
     let mut p = Panneau::default();
     let d = date_locale(&texte(champ(s, "Date")));
     let titre = format!("Connexion : {}", texte(champ(s, "Game")));
-    let sous = format!(
-        "{}, {} de mesure",
-        d.map(|d| d.format("%d/%m/%Y à %H:%M").to_string()).unwrap_or_default(),
-        duree_jeu(num(champ(s, "Seconds")))
-    );
+    let sous =
+        format!("{}, {} de mesure", d.map(|d| d.complete()).unwrap_or_default(), duree_jeu(num(champ(s, "Seconds"))));
     let niv = texte(champ(champ(s, "Diag"), "Level"));
     let etat_texte = match niv.as_str() {
         "ok" => "Stable",
