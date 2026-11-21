@@ -23,8 +23,12 @@
     tauri.invoke('action', { message: copie }).catch(() => {});
   }
 
+  // Les messages en attente sont rendus seulement quand kit.js a fini de se charger : il s'abonne au milieu de son
+  // chargement, avant d'avoir créé window.kit, et un état rendu à ce moment-là était perdu (« Cannot access 'kit'
+  // before initialization », écran vide pour de bon ; vu en vrai le 21/11/2026 dans Jobmind 0.1.5)
+  let ouvert = false;
   function donner(d) {
-    if (!ecouteurs.length) { enAttente.push(d); return; }
+    if (!ouvert) { enAttente.push(d); return; }
     for (const f of ecouteurs) {
       try { f({ data: d }); } catch (e) { envoyer({ type: 'erreur', texte: String((e && e.message) || e).slice(0, 300) }); }
     }
@@ -55,7 +59,7 @@
     addEventListener(type, f) {
       if (type !== 'message' || typeof f !== 'function') return;
       ecouteurs.push(f);
-      enAttente.splice(0).forEach(donner);
+      if (ecouteurs.length === 1) setTimeout(() => { ouvert = true; enAttente.splice(0).forEach(donner); }, 0);
     },
   });
 
